@@ -1,0 +1,139 @@
+.infrastructure-page {
+  flex: 1;
+  overflow-y: auto;
+  background-color: #f8fafc;
+  padding: 2rem;
+}
+
+.infrastructure-header {
+  margin-bottom: 2rem;
+}
+
+.infrastructure-title {
+  font-size: 1.875rem;
+  font-weight: 700;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.infrastructure-subtitle {
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.infrastructure-content {
+  max-width: 1200px;
+}
+
+.infrastructure-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 3rem;
+}
+
+.infrastructure-card {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.infrastructure-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.infrastructure-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.infrastructure-card-icon {
+  font-size: 1.5rem;
+  color: #f59e0b;
+}
+
+.infrastructure-card-header h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.infrastructure-card p {
+  color: #64748b;
+  font-size: 0.875rem;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.infrastructure-stats {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.infrastructure-coming-soon {
+  background: white;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  padding: 2rem;
+}
+
+/* Reutilizamos los estilos de Technical para consistencia */
+.infrastructure-coming-soon .coming-soon-content {
+  text-align: center;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.infrastructure-coming-soon .coming-soon-icon {
+  font-size: 3rem;
+  color: #d1d5db;
+  margin-bottom: 1rem;
+}
+
+.infrastructure-coming-soon h3 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 1rem;
+}
+
+.infrastructure-coming-soon p {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.infrastructure-coming-soon .feature-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  display: inline-block;
+}
+
+.infrastructure-coming-soon .feature-list li {
+  padding: 0.5rem 0;
+  color: #374151;
+  font-size: 0.875rem;
+  position: relative;
+  padding-left: 1.5rem;
+}
+
+.infrastructure-coming-soon .feature-list li:before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #059669;
+  font-weight: bold;
+}

@@ -1,0 +1,117 @@
+/* Tema DTF */
+[data-area="DTF"] {
+  --area-primary: #2563eb;
+  --area-secondary: #3b82f6;
+  --area-accent: #60a5fa;
+  --area-light: #dbeafe;
+  --area-border: #bfdbfe;
+  --area-dark: #1e40af;
+}
+
+/* Badges específicos DTF */
+.dtf-roll-badge {
+  background: var(--area-light);
+  color: var(--area-primary);
+  border: 1px solid var(--area-border);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.dtf-meters-value {
+  font-weight: 600;
+  color: var(--area-dark);
+  font-size: 0.875rem;
+}
+
+.dtf-ink-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid;
+}
+
+.dtf-ink-standard {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+.dtf-ink-uv {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+.dtf-ink-white {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #e5e7eb;
+}
+
+.dtf-resolution {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.dtf-printer-select {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  background: white;
+  outline: none;
+  cursor: pointer;
+}
+
+.dtf-printer-select:focus {
+  border-color: var(--area-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.dtf-files-button {
+  background: var(--area-light);
+  color: var(--area-primary);
+  border: 1px solid var(--area-border);
+  border-radius: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  transition: all 0.2s;
+}
+
+.dtf-files-button:hover {
+  background: var(--area-primary);
+  color: white;
+}
+
+/* Estados específicos DTF */
+.dtf-status-printing {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.dtf-status-pendiente {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+}
+
+.dtf-status-finalizado {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}

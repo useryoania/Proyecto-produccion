@@ -1,0 +1,70 @@
+.searchContainer {
+  max-width: 80rem;
+  margin: 0 auto 2.5rem auto;
+}
+
+.searchCard {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 1.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  border: 1px solid white;
+  position: relative;
+  overflow: hidden;
+}
+
+.searchCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 0.25rem;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #6366f1);
+}
+
+.searchHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.searchHeader label {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #374151;
+}
+
+.searchHeader i {
+  color: #3b82f6;
+  font-size: 1rem;
+}
+
+.searchInput {
+  position: relative;
+}
+
+.searchInput i {
+  position: absolute;
+  left: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #9ca3af;
+  font-size: 1.25rem;
+}
+
+.input {
+  width: 100%;
+  padding: 1rem 1rem 1rem 3rem;
+  background: #f8fafc;
+  border: 2px solid #f1f5f9;
+  border-radius: 0.75rem;
+  font-size: 1.125rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.input:focus {
+  border-color: #3b82f6;
+}

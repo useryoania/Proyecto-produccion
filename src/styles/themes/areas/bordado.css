@@ -1,0 +1,20 @@
+[data-area="BORD"] {
+  --area-primary: #db2777;
+  --area-secondary: #ec4899;
+  --area-accent: #f472b6;
+  --area-light: #fce7f3;
+  --area-border: #fbcfe8;
+}
+
+.matrix-badge {
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+}
+
+.matrix-approved { background: #dcfce7; color: #166534; }
+.matrix-pending { background: #fef3c7; color: #92400e; }
+.matrix-testing { background: #dbeafe; color: #1e40af; }

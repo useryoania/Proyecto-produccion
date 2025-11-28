@@ -1,0 +1,12 @@
+/* src/components/production/sidebars/MatrixSidebar.module.css */
+
+.sidebar {
+  width: 200px;
+  background-color: #f8f8f8;
+  padding: 15px;
+  border-right: 1px solid #ddd;
+}
+
+.sidebar h3 {
+  margin-top: 0;
+}

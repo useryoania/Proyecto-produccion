@@ -1,0 +1,148 @@
+.sidebar {
+  width: 18rem;
+  background: white;
+  border-right: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.05);
+}
+
+.sidebarHeader {
+  padding: 1.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  background: linear-gradient(135deg, #1e293b 0%, #374151 100%);
+  color: white;
+}
+
+.sidebarHeader h2 {
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.25rem 0;
+  color: #f1f5f9;
+}
+
+.sidebarHeader p {
+  font-size: 0.625rem;
+  color: #94a3b8;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.sidebarNav {
+  flex: 1;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.section {
+  margin-bottom: 1.5rem;
+}
+
+.sectionTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0 0 0.5rem 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.areaList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.areaButton {
+  width: 100%;
+  text-align: left;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.areaButton:hover {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.areaButton:active {
+  transform: translateX(2px);
+}
+
+.areaIcon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.areaButton:hover .areaIcon {
+  transform: scale(1.1);
+}
+
+.areaName {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  transition: color 0.2s;
+}
+
+.areaButton:hover .areaName {
+  color: #1e293b;
+  font-weight: 600;
+}
+
+/* Colores de íconos */
+.indigo { background: #e0e7ff; color: #4f46e5; }
+.blue { background: #dbeafe; color: #2563eb; }
+.purple { background: #f3e8ff; color: #9333ea; }
+.orange { background: #ffedd5; color: #ea580c; }
+.cyan { background: #cffafe; color: #0891b2; }
+.pink { background: #fce7f3; color: #db2777; }
+.red { background: #fee2e2; color: #dc2626; }
+.yellow { background: #fef3c7; color: #d97706; }
+.teal { background: #ccfbf1; color: #0d9488; }
+.rose { background: #ffe4e6; color: #e11d48; }
+.green { background: #dcfce7; color: #16a34a; }
+.slate { background: #f1f5f9; color: #475569; }
+.amber { background: #fef3c7; color: #d97706; }
+
+/* Scrollbar personalizado */
+.sidebarNav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebarNav::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+.sidebarNav::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.sidebarNav::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
