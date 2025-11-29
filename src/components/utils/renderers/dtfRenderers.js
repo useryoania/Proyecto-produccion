@@ -89,5 +89,5 @@ export const applyDtfFilters = (orders, filters) => {
 
 // ✅ DATOS MOCK ESPECÍFICOS DTF
 export const getDtfMockOrders = () => {
-  return AREA_CONFIGS.DTF.mockData.orders;
+  return areaConfigs.DTF.mockData.orders;
 };

@@ -35,6 +35,7 @@ import Infraestructura from './components/production/areas/Infraestructura.js';
 import { mockMachines, mockOrders } from './data/mockData.js';
 
 import './styles/custom.css';
+import "./styles/area-theme.css";
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
@@ -69,7 +70,7 @@ function App() {
         return <GenericArea areaKey="DTF" onSwitchTab={switchTab} />;
 
       case 'planilla-bordado':
-        return <GenericArea areaKey="Bordado" onSwitchTab={switchTab} />;
+        return <GenericArea areaKey="BORD" onSwitchTab={switchTab} />;
 
       //
       // ===== ÁREAS ESPECÍFICAS =====

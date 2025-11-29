@@ -1,0 +1,41 @@
+/* ======================================= */
+/* 🧭 SIDEBAR */
+/* ======================================= */
+.area-sidebar {
+  width: 260px;
+  background: white;
+  border-right: 1px solid var(--border-color);
+  padding: 16px;
+}
+
+.area-sidebar h3 {
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--text-dark);
+  margin-bottom: 15px;
+}
+
+.area-filter-section {
+  margin-bottom: 18px;
+}
+
+.area-filter-label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.area-select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: #f9fafb;
+  font-size: 14px;
+}
+
+.area-select:focus {
+  outline: none;
+  border-color: var(--area-dtf-border);
+}

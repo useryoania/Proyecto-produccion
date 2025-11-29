@@ -1,4 +1,4 @@
-import { mockOrders } from '../data/mockData';
+import { mockOrders } from '../data/mockData.js';
 
 // Simulación de API
 const simulateApiCall = (data, delay = 500) => 

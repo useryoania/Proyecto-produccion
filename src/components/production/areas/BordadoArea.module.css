@@ -1,4 +1,4 @@
-/* ===== HEADER GENERAL ===== */
+/* ===== HEADER ===== */
 .headerContainer {
   background-color: white;
   padding: 1rem 1.5rem;
@@ -27,10 +27,8 @@
   color: #9ca3af;
   background: none;
   border: none;
-  cursor: pointer;
   font-size: 1rem;
-  padding: 0.5rem;
-  border-radius: 0.375rem;
+  cursor: pointer;
 }
 
 /* ===== TITULOS ===== */
@@ -44,7 +42,6 @@
   font-size: 0.625rem;
   color: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
 }
 
 /* ===== TABS ===== */
@@ -62,32 +59,31 @@
   font-weight: bold;
   border-radius: 0.25rem;
   border: none;
-  cursor: pointer;
 }
 
 .tabButtonActive {
   background-color: #ffffff;
-  color: #1e293b;
+  color: #374151;
   box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
 .tabButtonInactive {
   background-color: transparent;
-  color: #64748b;
+  color: #9ca3af;
 }
 
-/* ===== FILTROS ESPECÍFICOS DTF ===== */
-.filterBadge {
-  background-color: #dbeafe;
-  border: 1px solid #bfdbfe;
-  color: #1e40af;
+/* ===== FILTRO DE MÁQUINA ===== */
+.machineFilter {
+  background-color: #ffedd5;
+  border: 1px solid #fed7aa;
+  color: #d97706;
   font-size: 0.75rem;
   border-radius: 0.375rem;
   padding: 0.5rem 0.75rem;
   font-weight: bold;
 }
 
-/* ===== BOTONES DE ACCION ===== */
+/* ===== BOTONES ===== */
 .actionButton {
   padding: 0.5rem 1rem;
   font-size: 0.75rem;
@@ -105,19 +101,19 @@
   color: #64748b;
 }
 
-.buttonFiles {
-  background-color: #e0f2fe;
-  color: #0284c7;
+.buttonInsumos {
+  background-color: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #d97706;
 }
 
 .buttonFalla {
   background-color: #fef2f2;
   color: #dc2626;
-  border: 1px solid #fecaca;
 }
 
 .buttonNuevaOrden {
-  background-color: #3b82f6;
+  background-color: #ea580c;
   color: white;
-  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 1px 3px rgba(234, 88, 12, 0.3);
 }

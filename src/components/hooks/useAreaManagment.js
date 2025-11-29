@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { AREA_CONFIGS } from '../utils/configs/areaConfigs.js';
+import {  areaConfigs } from '../utils/configs/areaConfigs.js';
 
 export const useAreaManagement = (areaKey, extensions = []) => {
   const [modals, setModals] = useState([]);
