@@ -43,7 +43,7 @@ CREATE TABLE dbo.Ordenes (
     DescripcionTrabajo NVARCHAR(300),
     Estado VARCHAR(50) DEFAULT 'Pendiente',
     Prioridad VARCHAR(20) DEFAULT 'Normal',
-    Variante NVARCHAR(50),
+    Material NVARCHAR(50),
     Magnitud NVARCHAR(50),
     Nota NVARCHAR(MAX),
     FechaIngreso DATETIME DEFAULT GETDATE(),
@@ -57,13 +57,13 @@ CREATE TABLE dbo.Ordenes (
 
 /* 4. INSERTAR DATOS */
 INSERT INTO dbo.Areas (AreaID, Nombre, Categoria, ui_config) VALUES
-('DTF', 'Impresión DTF', 'Impresión', '{"printers": ["DTF-01", "DTF-02"], "headers": ["#", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Variante", "Magnitud", "Rollo", "Equipo", "Estado", "Nota", ""], "gridTemplate": "40px 40px 70px 80px 180px 180px 90px 80px 80px 100px 100px 50px 50px"}'),
+('DTF', 'Impresión DTF', 'Impresión', '{"printers": ["DTF-01", "DTF-02"], "headers": ["#", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Material", "Magnitud", "Rollo", "Equipo", "Estado", "Nota", ""], "gridTemplate": "40px 40px 70px 80px 180px 180px 90px 80px 80px 100px 100px 50px 50px"}'),
 ('BORD', 'Bordado', 'Procesos', '{"printers": ["Tajima 6", "Brother 4"], "headers": ["#", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Puntadas", "Col.", "Cant.", "Matriz", "Equipo", "Estado", ""], "gridTemplate": "40px 40px 70px 80px 180px 180px 90px 60px 80px 100px 90px 100px 50px"}');
 
 INSERT INTO dbo.Maquinas (Nombre, AreaID, Estado) VALUES 
 ('DTF-01', 'DTF', 'OK'), ('Tajima 6', 'BORD', 'OK');
 
-INSERT INTO dbo.Ordenes (AreaID, Cliente, DescripcionTrabajo, Estado, Prioridad, Variante, Magnitud, RolloID, MaquinaID) 
+INSERT INTO dbo.Ordenes (AreaID, Cliente, DescripcionTrabajo, Estado, Prioridad, Material, Magnitud, RolloID, MaquinaID) 
 VALUES ('DTF', 'Cliente Test', 'Prueba Migración', 'Pendiente', 'Normal', 'DTF Comun', '10m', 'R-001', 1);
 `;
 

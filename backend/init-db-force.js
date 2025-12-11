@@ -49,7 +49,7 @@ CREATE TABLE dbo.Orders (
 
 -- 4. Insertar Datos Semilla
 INSERT INTO dbo.Areas (code, name, category, ui_config) VALUES
-('DTF', 'Impresión DTF', 'Impresión', '{"printers": ["DTF-01", "DTF-02"], "headers": ["#", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Diseños", "Metros", "Variante", "Rollo", "Equipo", "Estado", ""], "gridTemplate": "40px 40px 70px 80px 180px 180px 70px 70px 90px 80px 90px 100px 50px"}'),
+('DTF', 'Impresión DTF', 'Impresión', '{"printers": ["DTF-01", "DTF-02"], "headers": ["#", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Diseños", "Metros", "Material", "Rollo", "Equipo", "Estado", ""], "gridTemplate": "40px 40px 70px 80px 180px 180px 70px 70px 90px 80px 90px 100px 50px"}'),
 ('BORD', 'Bordado', 'Procesos', '{"printers": ["Tajima 6", "Brother 4"], "headers": ["#", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Puntadas", "Col.", "Cant.", "Matriz", "Equipo", "Estado", ""], "gridTemplate": "40px 40px 70px 80px 180px 180px 90px 60px 80px 100px 90px 100px 50px"}');
 `;
 

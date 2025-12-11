@@ -71,7 +71,7 @@ const OrderDetailModal = ({ order, isOpen, onClose, onStatusChange }) => {
               </div>
               {order.variant && (
                 <div className={styles.detailItem}>
-                  <span className={styles.detailLabel}>Variante:</span>
+                  <span className={styles.detailLabel}>Material:</span>
                   <span className={styles.detailValue}>{order.variant}</span>
                 </div>
               )}

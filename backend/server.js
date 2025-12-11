@@ -17,5 +17,6 @@ app.use('/api/workflows', require('./routes/workflowsRoutes'));
 app.use('/api/logistics', require('./routes/logisticsRoutes'));
 app.use('/api/rolls', require('./routes/rollsRoutes'));
 app.use('/api/production', require('./routes/productionRoutes'));
+app.use('/api/import', require('./routes/importRoutes'));
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 Servidor backend corriendo en puerto ${PORT}`));

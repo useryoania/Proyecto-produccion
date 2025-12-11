@@ -108,7 +108,7 @@ const OrderDetailPanel = ({ order, onClose }) => {
                         <h3>Especificaciones</h3>
                         <div className={styles.gridInfo}>
                             <div className={styles.infoItem}>
-                                <label>Variante</label><span>{currentOrder.variant || '-'}</span>
+                                <label>Material</label><span>{currentOrder.variant || '-'}</span>
                             </div>
                             <div className={styles.infoItem}>
                                 <label>Total (BD)</label>

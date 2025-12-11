@@ -1,16 +1,15 @@
 import React, { useState, useEffect, useMemo } from "react";
-import ProductionTable from "../components/ProductionTable";
-import AreaFilters from "../components/AreaFilters";
 
-// Panel de Detalle Deslizante
+// Componentes
+import ProductionTable from "../components/ProductionTable"; 
 import OrderDetailPanel from "../../production/components/OrderDetailPanel";
 
 // Servicios
 import { ordersService } from '../../../services/api';
 
 // Vistas Alternativas
-import RollsKanban from "../../pages/RollsKanban";
-import ProductionKanban from "../../pages/ProductionKanban";
+import RollsKanban from "../../pages/RollsKanban"; 
+import ProductionKanban from "../../pages/ProductionKanban"; 
 
 // Modales
 import NewOrderModal from "../../modals/NewOrderModal";
@@ -25,8 +24,8 @@ import SidebarProcesses from "../../layout/SidebarProcesses";
 import RollSidebar from "../../layout/RollSidebar";
 import MatrixSidebar from "../../layout/MatrixSidebar";
 
+// Configuración y Estilos
 import { areaConfigs } from "../../utils/configs/areaConfigs";
-
 import styles from "./AreaView.module.css";
 
 export default function AreaView({
@@ -39,13 +38,15 @@ export default function AreaView({
   onSwitchTab
 }) {
   // --- ESTADOS DE NAVEGACIÓN ---
-  const [activeTab, setActiveTab] = useState("todo");
-  const [isKanbanMode, setIsKanbanMode] = useState(false);      // Armado de Lotes
-  const [isProductionMode, setIsProductionMode] = useState(false); // Lote a Producción
+  const [activeTab, setActiveTab] = useState("todo"); 
+  const [isKanbanMode, setIsKanbanMode] = useState(false);      
+  const [isProductionMode, setIsProductionMode] = useState(false); 
 
-  // --- ESTADOS DE FILTRO ---
+  // --- ESTADOS DE FILTRO & UI ---
   const [sidebarFilter, setSidebarFilter] = useState("ALL"); 
   const [sidebarMode, setSidebarMode] = useState("rolls"); 
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true); // <--- NUEVO: Controla si se ve la barra
+  
   const [clientFilter, setClientFilter] = useState(""); 
   const [variantFilter, setVariantFilter] = useState("ALL");
 
@@ -54,8 +55,8 @@ export default function AreaView({
   const [loadingOrders, setLoadingOrders] = useState(false);
 
   // --- SELECCIÓN ---
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [selectedOrders, setSelectedOrders] = useState([]);
+  const [selectedOrder, setSelectedOrder] = useState(null); 
+  const [selectedIds, setSelectedIds] = useState([]);       
 
   // --- MODALES ---
   const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
@@ -81,46 +82,55 @@ export default function AreaView({
 
   useEffect(() => { if (areaKey) fetchOrders(); }, [areaKey, activeTab]);
   
-  // Resetear al cambiar de área
+  // Resetear filtros al cambiar de área
   useEffect(() => { 
       setSidebarFilter("ALL"); 
       setClientFilter("");
       setVariantFilter("ALL");
-      setSelectedOrders([]);
+      setSelectedIds([]);
       setSidebarMode("rolls");
       setIsKanbanMode(false);
       setIsProductionMode(false);
+      setIsSidebarOpen(true); // Reiniciamos sidebar abierto
   }, [areaKey]);
-
-  useEffect(() => {
-    if (activeTab === "todo") switchView("table");
-    else switchView("history");
-  }, [activeTab]);
 
   // 2. FILTRADO
   const filteredOrders = useMemo(() => {
     let result = dbOrders;
     
+    // Filtro Sidebar
     if (sidebarFilter !== 'ALL') {
-        if (sidebarMode === 'rolls') result = result.filter(o => o.rollId === sidebarFilter);
-        else if (sidebarMode === 'machines') result = result.filter(o => o.printer === sidebarFilter);
+        if (sidebarFilter === 'Sin Asignar') {
+             // Caso especial para nulos
+             if (sidebarMode === 'rolls') result = result.filter(o => !o.rollId);
+             else result = result.filter(o => !o.printer);
+        } else {
+             if (sidebarMode === 'rolls') result = result.filter(o => o.rollId === sidebarFilter);
+             else result = result.filter(o => o.printer === sidebarFilter);
+        }
         
-        if (areaKey === 'BORD' && sidebarMode === 'rolls') result = result.filter(o => o.matrixStatus === sidebarFilter);
+        if (areaKey === 'BORD' && sidebarMode === 'rolls') {
+            result = result.filter(o => o.matrixStatus === sidebarFilter);
+        }
     }
 
-    if (clientFilter) result = result.filter(o => o.client.toLowerCase().includes(clientFilter.toLowerCase()));
+    if (clientFilter) result = result.filter(o => o.client && o.client.toLowerCase().includes(clientFilter.toLowerCase()));
     if (variantFilter !== 'ALL') result = result.filter(o => o.variant === variantFilter);
-    if (filters.printer) result = result.filter(o => o.printer === filters.printer);
     
     return result;
-  }, [dbOrders, sidebarFilter, sidebarMode, clientFilter, variantFilter, areaKey, filters]);
+  }, [dbOrders, sidebarFilter, sidebarMode, clientFilter, variantFilter, areaKey]);
 
-  // 3. SIDEBAR (Solo se muestra en vista de tabla)
+  // 3. RENDERIZADO DEL SIDEBAR
   const renderSidebar = () => {
-    if (areaKey === 'DTF' || areaKey === 'SUB' || areaKey === 'DIRECTA') {
+    if (!isSidebarOpen) return null; // Si está cerrado, no renderiza nada aquí
+
+    // Áreas de Impresión
+    if (areaKey === 'DTF' || areaKey === 'SUB' || areaKey === 'ECOUV') {
         let sidebarData = dbOrders;
+        
+        // Si estamos en modo MÁQUINAS, mapeamos para que RollSidebar entienda la data
         if (sidebarMode === 'machines') {
-            sidebarData = dbOrders.map(o => ({ ...o, rollId: o.printer || 'Sin Asignar' }));
+            sidebarData = dbOrders.map(o => ({ ...o, rollId: o.printer })); // printer puede ser null, RollSidebar lo maneja
         }
 
         return (
@@ -129,21 +139,40 @@ export default function AreaView({
                     <button className={sidebarMode === 'rolls' ? styles.switchActive : styles.switchBtn} onClick={() => { setSidebarMode('rolls'); setSidebarFilter('ALL'); }}>Lotes</button>
                     <button className={sidebarMode === 'machines' ? styles.switchActive : styles.switchBtn} onClick={() => { setSidebarMode('machines'); setSidebarFilter('ALL'); }}>Equipos</button>
                 </div>
-                <RollSidebar orders={sidebarData} currentFilter={sidebarFilter} onFilterChange={setSidebarFilter} />
+                
+                <RollSidebar 
+                    orders={sidebarData} 
+                    currentFilter={sidebarFilter} 
+                    onFilterChange={setSidebarFilter}
+                    onClose={() => setIsSidebarOpen(false)} // <--- Acción cerrar
+                    title={sidebarMode === 'rolls' ? 'LOTES / ROLLOS' : 'EQUIPOS'} // <--- Título dinámico
+                />
             </div>
         );
     }
-    if (areaKey === 'BORD') return <MatrixSidebar orders={dbOrders} currentFilter={sidebarFilter} onFilterChange={setSidebarFilter} />;
+    
+    if (areaKey === 'BORD') {
+        return <MatrixSidebar orders={dbOrders} currentFilter={sidebarFilter} onFilterChange={setSidebarFilter} />;
+    }
+    
     return <SidebarProcesses allAreaConfigs={areaConfigs} currentArea={areaKey} onAreaChange={(key) => onSwitchTab(`planilla-${key.toLowerCase()}`)} />;
   };
 
   const handleGoBack = () => onSwitchTab && onSwitchTab('dashboard');
-  const handleToggleSelection = (id) => setSelectedOrders(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const handleSelectionChange = (ids) => setSelectedIds(ids); 
+  const handleSyncERP = async () => {
+        try {
+            const res = await fetch('http://localhost:5000/api/import/sync'); 
+            const data = await res.json();
+            alert(data.message || 'Sincronización completada');
+            fetchOrders();
+        } catch (e) { alert('Error al sincronizar con ERP'); }
+  };
 
   const readyCount = dbOrders.filter(o => o.status === 'Finalizado').length;
   const uniqueVariants = [...new Set(dbOrders.map(o => o.variant).filter(Boolean))];
 
-  if (!areaConfig) return <div>Cargando configuración...</div>;
+  if (!areaConfig) return <div style={{padding:20}}>Cargando configuración...</div>;
 
   return (
     <div className={styles.layoutContainer}>
@@ -153,9 +182,10 @@ export default function AreaView({
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} area={areaConfig.name} />
       <ReportFailureModal isOpen={isFailureOpen} onClose={() => setIsFailureOpen(false)} areaName={areaConfig.name} areaCode={areaKey} />
       <StockRequestModal isOpen={isStockOpen} onClose={() => setIsStockOpen(false)} areaName={areaConfig.name} areaCode={areaKey} />
-      <LogisticsCartModal isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} areaName={areaConfig.name} areaCode={areaKey} onSuccess={() => { setActiveTab('history'); fetchOrders(); }} />
-      <RollAssignmentModal isOpen={isRollModalOpen} onClose={() => setIsRollModalOpen(false)} selectedIds={selectedOrders} onSuccess={() => { setSelectedOrders([]); fetchOrders(); }} />
+      <LogisticsCartModal isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} areaName={areaConfig.name} areaCode={areaKey} onSuccess={() => { setActiveTab('all'); fetchOrders(); }} />
+      <RollAssignmentModal isOpen={isRollModalOpen} onClose={() => setIsRollModalOpen(false)} selectedIds={selectedIds} onSuccess={() => { setSelectedIds([]); fetchOrders(); }} />
 
+      {/* HEADER */}
       <header className={styles.headerContainer}>
         <div className={styles.headerTopRow}>
             <div className={styles.titleGroup}>
@@ -163,17 +193,13 @@ export default function AreaView({
                 <div className={styles.titles}><h1>{areaConfig.name}</h1><span className={styles.breadcrumb}>PRODUCCIÓN</span></div>
             </div>
             <div className={styles.navCenter}>
-                <div className={styles.viewTabs}>
-                    <button className={views.currentView === "table" ? styles.viewTabActive : styles.viewTab} onClick={() => switchView("table")}>Producción</button>
-                    <button className={views.currentView === "kanban" ? styles.viewTabActive : styles.viewTab} onClick={() => switchView("kanban")}>Logística</button>
-                </div>
-                <div className={styles.verticalDivider}></div>
                 <div className={styles.filterTabs}>
                     <button className={activeTab === "todo" ? styles.filterTabActive : styles.filterTab} onClick={() => setActiveTab("todo")}>Para Hacer</button>
                     <button className={activeTab === "all" ? styles.filterTabActive : styles.filterTab} onClick={() => setActiveTab("all")}>Historial</button>
                 </div>
             </div>
             <div className={styles.actionButtons}>
+                 <button className={styles.btnConfig} onClick={handleSyncERP} title="Sincronizar ERP" style={{marginRight:5, background:'#f0fdf4', color:'#166534', borderColor:'#bbf7d0'}}><i className="fa-solid fa-rotate"></i> Sync ERP</button>
                  <button className={styles.btnConfig} onClick={() => onSwitchTab('config')} title="Configuración"><i className="fa-solid fa-gear"></i></button>
                  <button className={styles.btnInsumos} onClick={() => setIsStockOpen(true)}><i className="fa-solid fa-boxes-stacked"></i> Insumos</button>
                  <button className={styles.btnFalla} onClick={() => setIsFailureOpen(true)}><i className="fa-solid fa-triangle-exclamation"></i> Falla</button>
@@ -181,44 +207,24 @@ export default function AreaView({
             </div>
         </div>
 
-        {/* FILA DE PROCESOS */}
         <div className={styles.processControlRow}>
             <div className={styles.processActions}>
-                {/* Armado de Lotes */}
-                <button 
-                    className={isKanbanMode ? styles.btnPrimary : styles.btnSecondary} 
-                    onClick={() => { setIsKanbanMode(!isKanbanMode); setIsProductionMode(false); }}
-                >
-                    <i className={`fa-solid ${isKanbanMode ? 'fa-table' : 'fa-layer-group'}`}></i> 
-                    {isKanbanMode ? 'Ver Tabla' : 'Armado de Lotes'}
+                <button className={isKanbanMode ? styles.btnPrimary : styles.btnSecondary} onClick={() => { setIsKanbanMode(!isKanbanMode); setIsProductionMode(false); }}>
+                    <i className={`fa-solid ${isKanbanMode ? 'fa-table' : 'fa-layer-group'}`}></i> {isKanbanMode ? 'Ver Tabla' : 'Armado de Lotes'}
                 </button>
-
-                {/* Lote a Producción */}
-                {(areaKey === 'DTF' || areaKey === 'SUB') && (
-                    <button 
-                        className={isProductionMode ? styles.btnPrimary : styles.btnSecondary} 
-                        onClick={() => { setIsProductionMode(!isProductionMode); setIsKanbanMode(false); }}
-                    >
-                        <i className="fa-solid fa-scroll"></i> 
-                        {isProductionMode ? 'Ver Tabla' : 'Lote a Producción'}
+                {(areaKey === 'DTF' || areaKey === 'SUB'|| areaKey === 'ECOUV') && (
+                    <button className={isProductionMode ? styles.btnPrimary : styles.btnSecondary} onClick={() => { setIsProductionMode(!isProductionMode); setIsKanbanMode(false); }}>
+                        <i className="fa-solid fa-scroll"></i> {isProductionMode ? 'Ver Tabla' : 'Lote a Producción'}
                     </button>
                 )}
-
-                {/* Entrega */}
                 <button className={styles.btnEntrega} onClick={() => setIsCartOpen(true)}>
-                    <i className="fa-solid fa-cart-shopping" style={{ fontSize: '1.1rem' }}></i>
-                    <span style={{marginLeft:5}}>Entrega</span>
+                    <i className="fa-solid fa-cart-shopping" style={{ fontSize: '1.1rem' }}></i><span style={{marginLeft:5}}>Entrega</span>
                     {readyCount > 0 && <span className={styles.cartBadge}>{readyCount > 99 ? '99+' : readyCount}</span>}
                 </button>
             </div>
-
             <div className={styles.quickFilters}>
-                <div className={styles.filterInputGroup}>
-                    <i className="fa-solid fa-magnifying-glass"></i>
-                    <input type="text" placeholder="Buscar Cliente..." value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} />
-                </div>
-                <div className={styles.filterInputGroup}>
-                    <i className="fa-solid fa-filter"></i>
+                <div className={styles.filterInputGroup}><i className="fa-solid fa-magnifying-glass"></i><input type="text" placeholder="Buscar Cliente..." value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} /></div>
+                <div className={styles.filterInputGroup}><i className="fa-solid fa-filter"></i>
                     <select value={variantFilter} onChange={(e) => setVariantFilter(e.target.value)}>
                         <option value="ALL">Todas Variantes</option>
                         {uniqueVariants.map(v => <option key={v} value={v}>{v}</option>)}
@@ -228,32 +234,51 @@ export default function AreaView({
         </div>
       </header>
 
-      {/* CUERPO */}
+      {/* CUERPO PRINCIPAL */}
       <div className={styles.bodyContainer}>
-        {/* Sidebar se oculta en modos Kanban */}
-        {!isKanbanMode && !isProductionMode && (
+        
+        {/* A) SIDEBAR (Solo visible en modo Tabla y si isSidebarOpen es true) */}
+        {!isKanbanMode && !isProductionMode && isSidebarOpen && (
             <aside className={styles.sidebarColumn}>
                 {renderSidebar()}
             </aside>
         )}
+
+        {/* B) BOTÓN PARA RE-ABRIR SIDEBAR (Solo si está cerrado) */}
+        {!isKanbanMode && !isProductionMode && !isSidebarOpen && (
+            <div 
+                style={{ 
+                    width: '30px', 
+                    background: '#f8fafc', 
+                    borderRight: '1px solid #e2e8f0', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    paddingTop: '15px', 
+                    cursor: 'pointer' 
+                }}
+                onClick={() => setIsSidebarOpen(true)}
+                title="Mostrar Panel Lateral"
+            >
+                <i className="fa-solid fa-angles-right" style={{ color: '#94a3b8' }}></i>
+                <span style={{ writingMode: 'vertical-rl', marginTop: '20px', fontSize: '0.8rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    {sidebarMode === 'rolls' ? 'Lotes' : 'Equipos'}
+                </span>
+            </div>
+        )}
         
+        {/* CONTENIDO CENTRAL */}
         <main className={styles.mainContent}>
             {loadingOrders ? (
-                <div style={{textAlign:'center', padding:40, color:'#64748b'}}>Cargando datos...</div>
+                <div style={{textAlign:'center', padding:40, color:'#64748b'}}><i className="fa-solid fa-spinner fa-spin" style={{marginRight:10}}></i> Cargando datos...</div>
             ) : (
                 <>
-                    {isKanbanMode ? (
-                        <RollsKanban areaCode={areaKey} />
-                    ) : isProductionMode ? (
-                        <ProductionKanban areaCode={areaKey} />
-                    ) : (
-                        <ProductionTable 
-                            areaConfig={areaConfig} 
-                            orders={filteredOrders} 
-                            selectedOrders={selectedOrders}
-                            onToggleSelection={handleToggleSelection}
-                            onRowClick={(order) => setSelectedOrder(order)}
-                        />
+                    {isKanbanMode ? ( <RollsKanban areaCode={areaKey} /> ) : 
+                     isProductionMode ? ( <ProductionKanban areaCode={areaKey} /> ) : 
+                     (
+                        <div style={{ flex: 1, overflow: 'hidden', height:'100%', width:'100%' }}>
+                            <ProductionTable rowData={filteredOrders} onRowSelected={handleSelectionChange} onRowClick={(order) => setSelectedOrder(order)} />
+                        </div>
                     )}
                 </>
             )}
@@ -263,4 +288,4 @@ export default function AreaView({
       <OrderDetailPanel order={selectedOrder} onClose={() => setSelectedOrder(null)} />
     </div>
   );
-}
+};

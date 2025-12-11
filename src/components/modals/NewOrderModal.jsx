@@ -23,7 +23,7 @@ const NewOrderModal = ({ isOpen, onClose, areaName, areaCode }) => {
     cliente: '',
     descripcion: '',
     prioridad: 'Normal',
-    variante: '',
+    material: '',
     magnitud: '0.00m', // Se calculará automático
     fechaEntrega: '',
     nota: ''
@@ -64,7 +64,7 @@ const NewOrderModal = ({ isOpen, onClose, areaName, areaCode }) => {
     if (isOpen && areaCode) {
         loadConfig();
         // Reset completo al abrir
-        setOrderData({ cliente: '', descripcion: '', prioridad: 'Normal', variante: '', magnitud: '0.00m', fechaEntrega: '', nota: '' });
+        setOrderData({ cliente: '', descripcion: '', prioridad: 'Normal', material: '', magnitud: '0.00m', fechaEntrega: '', nota: '' });
         setFiles([]);
         setMaterials([]);
         setWorkflow([]);
@@ -195,8 +195,8 @@ const NewOrderModal = ({ isOpen, onClose, areaName, areaCode }) => {
                     </div>
 
                     <div className={styles.formGroup}>
-                        <label>Variante / Material</label>
-                        <input type="text" className={styles.textInput} placeholder="Ej: DTF UV, DryFit..." value={orderData.variante} onChange={e=>setOrderData({...orderData, variante:e.target.value})} />
+                        <label>Material</label>
+                        <input type="text" className={styles.textInput} placeholder="Ej: DTF UV, DryFit..." value={orderData.material} onChange={e=>setOrderData({...orderData, material:e.target.value})} />
                     </div>
 
                     <div className={styles.formGroup}>

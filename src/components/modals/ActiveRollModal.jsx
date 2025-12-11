@@ -30,7 +30,7 @@ const ActiveRollModal = ({ isOpen, onClose, roll, onSuccess }) => {
         doc.addImage(qrUrl, 'PNG', 150, 10, 40, 40);
 
         // Tabla de Órdenes
-        const tableColumn = ["ID", "Cliente", "Trabajo", "Variante", "Metros"];
+        const tableColumn = ["ID", "Cliente", "Trabajo", "Material", "Metros"];
         const tableRows = roll.orders.map(o => [
             o.id,
             o.client,

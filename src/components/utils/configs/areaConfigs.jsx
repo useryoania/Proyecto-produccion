@@ -1,7 +1,6 @@
-// src/utils/configs/areaConfigs.js
 import React from 'react';
 
-// 🎨 Estilos Base (Coinciden con tus módulos CSS)
+// 🎨 Estilos Base
 const s = {
   gridCell: "gridCell",
   gridCellCenter: "gridCellCenter",
@@ -14,210 +13,242 @@ const s = {
   positionNumber: "positionNumber"
 };
 
-/* -------------------------------------------------------------------------- */
-/* HELPER: Renderizado de Celdas Comunes (Checkbox, ID, Cliente, Estado)      */
-/* -------------------------------------------------------------------------- */
-const renderCommonCells = (order, index, styles, handlers, extraCells = []) => {
-  // Protección contra handlers undefined
-  const { isSelected, onToggle } = handlers || { isSelected: false, onToggle: () => {} };
-  
-  // Formateo de fecha seguro
-  const formatDate = (dateString) => {
-      if (!dateString) return 'Hoy';
-      const date = new Date(dateString);
-      return isNaN(date.getTime()) ? 'Hoy' : date.toLocaleDateString('es-ES', {day: '2-digit', month: '2-digit'});
-  };
-
-  return [
-    // 1. Checkbox
-    <div key="check" className={styles.gridCellCenter}>
-      <input 
-        type="checkbox" 
-        checked={isSelected} 
-        onChange={() => onToggle(order.id)}
-        style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-      />
-    </div>,
-    
-    // 2. Posición
-    <div key="pos" className={styles.gridCellCenter}>
-      <span className={styles.positionNumber}>{(index + 1).toString().padStart(2, '0')}</span>
-    </div>,
-    
-    // 3. ID Orden
-    <div key="id" className={styles.gridCell}>
-       <span className={styles.orderNumber}>#{order.id}</span>
-    </div>,
-    
-    // 4. Ingreso
-    <div key="date" className={styles.gridCellCenter}>
-        <span className={styles.date}>{formatDate(order.entryDate)}</span>
-    </div>,
-    
-    // 5. Cliente
-    <div key="cli" className={styles.gridCell}>
-       <span className={styles.clientName} title={order.client}>{order.client}</span>
-    </div>,
-    
-    // 6. Trabajo
-    <div key="desc" className={styles.gridCell}>
-       <span className={styles.jobDescription} title={order.desc}>{order.desc}</span>
-    </div>,
-    
-    // --- CELDAS ESPECÍFICAS (Insertadas aquí) ---
-    ...extraCells,
-
-    // X. Equipo / Máquina (Común a casi todos)
-    <div key="mac" className={styles.gridCellCenter}>
-        <span className={styles.machine}>{order.printer || '-'}</span>
-    </div>,
-
-    // Y. Estado
-    <div key="status" className={styles.gridCellCenter}>
-       <span className={`${styles.statusBadge} ${styles[order.status?.replace(/\s/g, '')] || ''}`}>
-         {order.status}
-       </span>
-    </div>,
-    
-    // Z. Chat / Acciones
-    <div key="chat" className={styles.gridCellCenter}>
-        <i className="fa-regular fa-comment-dots" style={{color: '#94a3b8', cursor:'pointer'}}></i>
-    </div>
-  ];
+// Formateo de fecha DD/MM/AA
+const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return isNaN(date.getTime()) ? '-' : date.toLocaleDateString('es-ES', {
+        day: '2-digit', month: '2-digit', year: '2-digit'
+    });
 };
 
 /* -------------------------------------------------------------------------- */
-/* CONFIGURACIÓN POR ÁREA                                                     */
-/* Las claves deben ser 'planilla-' + codigo_bd.toLowerCase()                 */
+/* RENDERIZADO ESTÁNDAR PARA IMPRESIÓN (FLEXIBLE Y ALINEADO)                  */
 /* -------------------------------------------------------------------------- */
+const renderPrintRow = (o, i, styles, handlers) => {
+    const { isSelected, onToggle } = handlers || { isSelected: false, onToggle: () => {} };
+
+    // Estilo para celdas de texto que deben cortarse con "..." si son muy largas
+    // Esto evita que la tabla se rompa visualmente.
+    const textCellStyle = {
+        whiteSpace: 'nowrap',       // No permite salto de línea (mantiene la fila ordenada)
+        overflow: 'hidden',         // Oculta lo que sobra
+        textOverflow: 'ellipsis',   // Pone "..." al final
+        display: 'block',           // Necesario para que el ellipsis funcione
+        lineHeight: '30px',         // Centrado vertical aproximado
+        fontSize: '0.8rem',
+        color: '#1e293b'
+    };
+
+    return [
+        // 0. Checkbox
+        <div key="chk" className={styles.gridCellCenter}>
+            <input type="checkbox" checked={isSelected} onChange={() => onToggle(o.id)} style={{cursor:'pointer', width: '16px', height: '16px'}} />
+        </div>,
+
+        // 1. Fecha
+        <div key="date" className={styles.gridCellCenter}>
+            <span className={styles.date} style={{color:'#64748b', fontSize:'0.75rem'}}>{formatDate(o.entryDate)}</span>
+        </div>,
+
+        // 2. Prioridad
+        <div key="prio" className={styles.gridCellCenter}>
+            {o.priority === 'Urgente' ? 
+                <span style={{background:'#fee2e2', color:'#dc2626', padding:'2px 6px', borderRadius:'4px', fontSize:'0.7rem', fontWeight:'bold', border:'1px solid #fecaca'}}>URG.</span> : 
+                <span style={{color:'#94a3b8', fontSize:'0.75rem'}}>Normal</span>
+            }
+        </div>,
+
+        // 3. Orden
+        <div key="code" className={styles.gridCell}>
+             <span className={styles.orderNumber} title={o.code} style={{fontWeight:'700', color:'#334155', fontSize:'0.8rem', whiteSpace:'nowrap'}}>
+                {o.code || `#${o.id}`}
+             </span>
+        </div>,
+
+        // 4. Cliente (Flexible 1fr)
+        <div key="cli" className={styles.gridCell} title={o.client}>
+            <span style={textCellStyle}>{o.client}</span>
+        </div>,
+
+        // 5. Trabajo (Flexible 1.2fr)
+        <div key="job" className={styles.gridCell} title={o.desc}>
+            <span style={textCellStyle}>{o.desc}</span>
+        </div>,
+
+        // 6. Material (Flexible 2fr - EL MÁS ANCHO)
+        <div key="mat" className={styles.gridCell} title={o.material}>
+            <span style={{...textCellStyle, fontWeight: '500'}}>{o.material || '-'}</span>
+        </div>,
+
+        // 7. Variante (CodStock)
+        <div key="var" className={styles.gridCellCenter}>
+            <span title={o.variantCode} style={{fontSize:'0.7rem', color:'#64748b', fontFamily:'monospace', background:'#f8fafc', padding:'2px 4px', borderRadius:'4px', border:'1px solid #e2e8f0', whiteSpace:'nowrap', maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis'}}>
+                {o.variantCode || '-'}
+            </span>
+        </div>,
+
+        // 8. Archivos
+        <div key="files" className={styles.gridCellCenter}>
+            <span style={{background:'#f1f5f9', padding:'2px 6px', borderRadius:'4px', fontSize:'0.75rem', color:'#64748b', display:'flex', alignItems:'center', gap:'4px'}}>
+                <i className="fa-regular fa-file-image"></i>
+                <b>{o.filesCount || 0}</b>
+            </span>
+        </div>,
+
+        // 9. Lote
+        <div key="roll" className={styles.gridCellCenter}>
+            {o.rollId ? 
+                <span style={{background:'#eff6ff', color:'#2563eb', padding:'2px 6px', borderRadius:'10px', fontSize:'0.7rem', fontWeight:'bold', border:'1px solid #bfdbfe', whiteSpace:'nowrap'}}>{o.rollId}</span> 
+                : <span style={{color:'#cbd5e1'}}>-</span>
+            }
+        </div>,
+
+        // 10. Máquina
+        <div key="maq" className={styles.gridCellCenter}>
+            <span className={styles.machine} style={{fontSize:'0.75rem', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'100%'}} title={o.printer}>
+                {o.printer || '-'}
+            </span>
+        </div>,
+
+        // 11. Nota
+        <div key="note" className={styles.gridCellCenter}>
+            <i className="fa-regular fa-comment-dots" style={{color: '#94a3b8', cursor:'pointer'}}></i>
+        </div>
+    ];
+};
+
+/* -------------------------------------------------------------------------- */
+/* RENDERIZADO LEGACY (Bordado, etc.)                                         */
+/* -------------------------------------------------------------------------- */
+const renderCommonCells = (order, index, styles, handlers, extraCells = []) => {
+    const { isSelected, onToggle } = handlers || { isSelected: false, onToggle: () => {} };
+    return [
+      <div key="check" className={styles.gridCellCenter}><input type="checkbox" checked={isSelected} onChange={() => onToggle(order.id)} style={{cursor:'pointer'}}/></div>,
+      <div key="pos" className={styles.gridCellCenter}><span className={styles.positionNumber}>{(index + 1).toString().padStart(2, '0')}</span></div>,
+      <div key="id" className={styles.gridCell}><span className={styles.orderNumber}>#{order.id}</span></div>,
+      <div key="date" className={styles.gridCellCenter}><span className={styles.date}>{formatDate(order.entryDate)}</span></div>,
+      <div key="cli" className={styles.gridCell}><span className={styles.clientName} title={order.client}>{order.client}</span></div>,
+      <div key="desc" className={styles.gridCell}><span className={styles.jobDescription} title={order.desc}>{order.desc}</span></div>,
+      ...extraCells,
+      <div key="mac" className={styles.gridCellCenter}><span className={styles.machine}>{order.printer || '-'}</span></div>,
+      <div key="status" className={styles.gridCellCenter}><span className={`${styles.statusBadge} ${styles[order.status?.replace(/\s/g, '')] || ''}`}>{order.status}</span></div>,
+      <div key="chat" className={styles.gridCellCenter}><i className="fa-regular fa-comment-dots" style={{color: '#94a3b8', cursor:'pointer'}}></i></div>
+    ];
+};
+
+/* -------------------------------------------------------------------------- */
+/* CONFIGURACIÓN DE ÁREAS (GRID OPTIMIZADO PARA PANTALLA COMPLETA)            */
+/* -------------------------------------------------------------------------- */
+
+// DEFINICIÓN DE ANCHOS FLEXIBLES (TOTAL 12 COLUMNAS):
+// 1.  Check: 30px (Fijo)
+// 2.  Fecha: 60px (Fijo)
+// 3.  Prio:  60px (Fijo)
+// 4.  Orden: 110px (Fijo)
+// 5.  Cliente: 1fr (Flexible)
+// 6.  Trabajo: 1.2fr (Un poco más ancho)
+// 7.  Material: 2fr (El DOBLE de ancho que Cliente, aquí va el texto largo)
+// 8.  Var: 70px (Fijo)
+// 9.  Arch: 50px (Fijo)
+// 10. Lote: 70px (Fijo)
+// 11. Maq: 90px (Fijo)
+// 12. Nota: 40px (Fijo)
+
+const FLEXIBLE_GRID = "30px 60px 60px 110px 1fr 1.2fr 2fr 70px 50px 70px 90px 40px";
+const FLEXIBLE_HEADERS = ["", "Fecha", "Prio.", "Orden", "Cliente", "Trabajo", "Material", "Var.", "Arch.", "Lote", "Máq.", ""];
 
 export const areaConfigs = {
   
-  // ==================== IMPRESIÓN ====================
-
+  'DTF': { 
+    name: "Impresión DTF Textil",
+    fileRequirements: [ { type: 'Impresión', label: 'Archivo de Impresión', required: true } ],
+    gridTemplate: FLEXIBLE_GRID,
+    headers: FLEXIBLE_HEADERS,
+    renderRowCells: renderPrintRow
+  },
   'planilla-dtf': { 
     name: "Impresión DTF Textil",
-    // Grid: Check, Pos, ID, Date, Client, Job | Variante, Magnitud, Rollo | Equipo, Status, Chat
-    fileRequirements: [ { type: 'Impresión', label: 'Archivo de Impresión (TIFF/PDF)', required: true } ],
-    gridTemplate: "40px 40px 70px 80px 180px 180px 100px 80px 100px 100px 100px 50px",
-    headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Variante", "Magnitud", "Rollo", "Equipo", "Estado", ""],
-    renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
-        // Variante (ej: DTF UV)
-        <div key="var" className={styles.gridCellCenter}>{o.variant || 'Estándar'}</div>,
-        // Magnitud (ej: 15m)
-        <div key="mag" className={styles.gridCellCenter}><strong>{o.magnitude || '-'}</strong></div>,
-        // Rollo (Badge azul)
-        <div key="roll" className={styles.gridCellCenter}>
-            {o.rollId ? 
-                <span style={{background:'#eff6ff', color:'#2563eb', padding:'2px 8px', borderRadius:'10px', fontSize:'0.75rem', fontWeight:'bold', border:'1px solid #bfdbfe'}}>
-                    {o.rollId}
-                </span> : 
-                <span style={{color:'#cbd5e1'}}>-</span>
-            }
-        </div>
-    ])
+    fileRequirements: [ { type: 'Impresión', label: 'Archivo de Impresión', required: true } ],
+    gridTemplate: FLEXIBLE_GRID,
+    headers: FLEXIBLE_HEADERS,
+    renderRowCells: renderPrintRow
   },
 
-  'planilla-sub': { // Si en DB el código es 'SUB'
-    name: "Sublimación",
-    gridTemplate: "40px 40px 70px 80px 180px 180px 100px 80px 90px 100px 100px 50px",
-    headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Tela", "Metros", "Papel", "Equipo", "Estado", ""],
-    renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
-        <div key="fab" className={styles.gridCell}>{o.meta?.fabric || '-'}</div>,
-        <div key="met" className={styles.gridCellCenter}><strong>{o.magnitude || '0m'}</strong></div>,
-        <div key="pap" className={styles.gridCellCenter}>{o.meta?.paper || 'Normal'}</div>
-    ])
+  'ECOUV': {
+    name: "Impresión EcoUV",
+    fileRequirements: [ { type: 'Impresión', label: 'Archivo de Impresión', required: true } ],
+    gridTemplate: FLEXIBLE_GRID,
+    headers: FLEXIBLE_HEADERS,
+    renderRowCells: renderPrintRow
   },
-  
-  // Alias por si el sidebar usa nombre largo
+  'planilla-ecouv': {
+    name: "Impresión EcoUV",
+    fileRequirements: [ { type: 'Impresión', label: 'Archivo de Impresión', required: true } ],
+    gridTemplate: FLEXIBLE_GRID,
+    headers: FLEXIBLE_HEADERS,
+    renderRowCells: renderPrintRow
+  },
+
+  'SUB': { 
+    name: "Sublimación",
+    gridTemplate: FLEXIBLE_GRID,
+    headers: FLEXIBLE_HEADERS,
+    renderRowCells: renderPrintRow
+  },
+  'planilla-sub': { 
+    name: "Sublimación",
+    gridTemplate: FLEXIBLE_GRID,
+    headers: FLEXIBLE_HEADERS,
+    renderRowCells: renderPrintRow
+  },
   'planilla-sublimacion': { 
     name: "Sublimación",
-    gridTemplate: "40px 40px 70px 80px 180px 180px 100px 80px 90px 100px 100px 50px",
-    headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Tela", "Metros", "Papel", "Equipo", "Estado", ""],
-    renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
-        <div key="fab" className={styles.gridCell}>{o.meta?.fabric || '-'}</div>,
-        <div key="met" className={styles.gridCellCenter}><strong>{o.magnitude || '0m'}</strong></div>,
-        <div key="pap" className={styles.gridCellCenter}>{o.meta?.paper || 'Normal'}</div>
-    ])
+    gridTemplate: FLEXIBLE_GRID,
+    headers: FLEXIBLE_HEADERS,
+    renderRowCells: renderPrintRow
   },
-
-  'planilla-uv': {
-    name: "Impresión ECO UV",
-    gridTemplate: "40px 40px 70px 80px 180px 180px 120px 80px 100px 100px 50px",
-    headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Material", "Unid.", "Equipo", "Estado", ""],
-    renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
-        <div key="mat" className={styles.gridCell}>{o.variant || 'Rígido'}</div>,
-        <div key="uni" className={styles.gridCellCenter}><strong>{o.magnitude || '0'}</strong></div>
-    ])
-  },
-
   'planilla-directa': {
     name: "Gigantografía 3.20",
-    gridTemplate: "40px 40px 70px 80px 180px 180px 120px 80px 100px 100px 50px",
-    headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Lona/Vinilo", "m²", "Equipo", "Estado", ""],
-    renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
-        <div key="mat" className={styles.gridCell}>{o.variant || 'Front'}</div>,
-        <div key="sqm" className={styles.gridCellCenter}><strong>{o.magnitude || '0'}</strong></div>
-    ])
+    gridTemplate: FLEXIBLE_GRID,
+    headers: FLEXIBLE_HEADERS,
+    renderRowCells: renderPrintRow
   },
 
-  // ==================== PROCESOS ====================
-
-  'planilla-bord': { // Si en DB es 'BORD'
+  // --- ÁREAS LEGACY ---
+  'planilla-bord': { 
     name: "Bordado Industrial",
     gridTemplate: "40px 40px 70px 80px 180px 180px 80px 60px 80px 90px 100px 100px 50px",
-    fileRequirements: [
-        { type: 'Boceto', label: 'Boceto / Arte', required: true },
-        { type: 'Matriz', label: 'Archivo Matriz (.DST)', required: false }
-    ],
+    fileRequirements: [{ type: 'Boceto', label: 'Boceto', required: true }],
     headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Puntadas", "Col.", "Cant.", "Matriz", "Equipo", "Estado", ""],
     renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
         <div key="pts" className={styles.gridCellCenter}>{o.meta?.stitches ? (o.meta.stitches/1000).toFixed(1)+'k' : '-'}</div>,
         <div key="col" className={styles.gridCellCenter}>{o.meta?.colors || 1}</div>,
         <div key="cnt" className={styles.gridCellCenter}><strong>{o.magnitude || '0'}</strong></div>,
-        <div key="mat" className={styles.gridCellCenter}>
-             <span style={{fontSize:'0.65rem', fontWeight:'bold', color: o.meta?.matrix_status === 'Aprobado' ? 'green' : 'orange'}}>
-                {o.meta?.matrix_status || 'N/A'}
-             </span>
-        </div>
+        <div key="mat" className={styles.gridCellCenter}><span style={{fontSize:'0.65rem', fontWeight:'bold'}}>{o.meta?.matrix_status || 'N/A'}</span></div>
     ])
   },
-  
-  // Alias para sidebar
   'planilla-bordado': {
     name: "Bordado Industrial",
     gridTemplate: "40px 40px 70px 80px 180px 180px 80px 60px 80px 90px 100px 100px 50px",
-    fileRequirements: [
-        { type: 'Boceto', label: 'Boceto / Arte', required: true },
-        { type: 'Matriz', label: 'Archivo Matriz (.DST)', required: false }
-    ],
+    fileRequirements: [{ type: 'Boceto', label: 'Boceto', required: true }],
     headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Puntadas", "Col.", "Cant.", "Matriz", "Equipo", "Estado", ""],
     renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
         <div key="pts" className={styles.gridCellCenter}>{o.meta?.stitches ? (o.meta.stitches/1000).toFixed(1)+'k' : '-'}</div>,
         <div key="col" className={styles.gridCellCenter}>{o.meta?.colors || 1}</div>,
         <div key="cnt" className={styles.gridCellCenter}><strong>{o.magnitude || '0'}</strong></div>,
-        <div key="mat" className={styles.gridCellCenter}>
-             <span style={{fontSize:'0.65rem', fontWeight:'bold', color: o.meta?.matrix_status === 'Aprobado' ? 'green' : 'orange'}}>
-                {o.meta?.matrix_status || 'N/A'}
-             </span>
-        </div>
+        <div key="mat" className={styles.gridCellCenter}><span style={{fontSize:'0.65rem', fontWeight:'bold'}}>{o.meta?.matrix_status || 'N/A'}</span></div>
     ])
   },
-
   'planilla-laser': {
     name: "Corte Láser",
     gridTemplate: "40px 40px 70px 80px 180px 180px 120px 80px 100px 100px 50px",
-    fileRequirements: [
-        { type: 'Boceto', label: 'Boceto / Arte', required: true },
-        { type: 'Matriz', label: 'Archivo Matriz (.DST)', required: false }
-    ],
     headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Material", "Unid.", "Equipo", "Estado", ""],
     renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
         <div key="mat" className={styles.gridCell}>{o.variant || 'MDF'}</div>,
         <div key="uni" className={styles.gridCellCenter}><strong>{o.magnitude || '0'}</strong></div>
     ])
   },
-
   'planilla-costura': {
     name: "Taller de Costura",
     gridTemplate: "40px 40px 70px 80px 180px 180px 120px 80px 100px 100px 50px",
@@ -227,14 +258,9 @@ export const areaConfigs = {
         <div key="uni" className={styles.gridCellCenter}><strong>{o.magnitude || '0'}</strong></div>
     ])
   },
-
-  // ==================== LOGÍSTICA & SOPORTE ====================
-  // Configuraciones mínimas para evitar errores si se navega aquí
-  
   'planilla-deposito': { name: "Depósito", gridTemplate: "1fr", headers: ["Vista Inventario"], renderRowCells: () => [] },
   'despacho': { name: "Despacho", gridTemplate: "1fr", headers: ["Lista Despachos"], renderRowCells: () => [] },
   'servicio': { name: "Servicio Técnico", gridTemplate: "1fr", headers: ["Tickets"], renderRowCells: () => [] },
   'infraestructura': { name: "Infraestructura", gridTemplate: "1fr", headers: ["Obras"], renderRowCells: () => [] },
   'planilla-coordinacion': { name: "Coordinación", gridTemplate: "1fr", headers: ["Kanban"], renderRowCells: () => [] }
-
 };
