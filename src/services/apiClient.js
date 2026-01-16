@@ -1,7 +1,18 @@
 import axios from 'axios';
 
-// Detecta URL de entorno (Vite) o usa localhost por defecto
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Detecta URL de entorno (Vite) o construye dinámicamente usando el hostname actual
+// Esto permite acceder desde otras IPs en la red local sin hardcodear localhost
+const getBaseUrl = () => {
+    if (import.meta.env.VITE_API_URL) {
+        return import.meta.env.VITE_API_URL;
+    }
+    const { protocol, hostname } = window.location;
+    return `${protocol}//${hostname}:5000/api`;
+};
+
+export const API_URL = getBaseUrl();
+// Remove /api for Socket.io connection
+export const SOCKET_URL = API_URL.replace('/api', '');
 
 const api = axios.create({
     baseURL: API_URL,

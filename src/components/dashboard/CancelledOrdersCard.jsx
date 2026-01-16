@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { io } from "socket.io-client";
 import { useAuth } from "../../context/AuthContext";
 import { ordersService } from "../../services/modules/ordersService";
+import { SOCKET_URL } from "../../services/apiClient";
 
 export default function CancelledOrdersCard() {
     const { user } = useAuth(); // user contains token, role, areaKey
@@ -21,12 +22,7 @@ export default function CancelledOrdersCard() {
 
     // Socket.io for realtime updates
     useEffect(() => {
-        // Use environment variable for socket URL if available, else standard fallback
-        const socketUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
-        // Remove /api if present in URL for socket connection (Socket usually runs on root)
-        const cleanSocketUrl = socketUrl.replace('/api', '');
-
-        const socket = io(cleanSocketUrl, { reconnectionAttempts: 5 });
+        const socket = io(SOCKET_URL, { reconnectionAttempts: 5 });
 
         socket.on("connect_error", (err) => {
             console.error("🔴 Connection Error Socket.io:", err);

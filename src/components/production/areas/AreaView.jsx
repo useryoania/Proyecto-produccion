@@ -23,7 +23,8 @@ import RollAssignmentModal from "../../modals/RollAssignmentModal";
 import RollSidebar from "../../layout/RollSidebar";
 import MatrixSidebar from "../../layout/MatrixSidebar";
 
-import { ordersService, rollsService } from '../../../services/api'; // Added rollsService
+import { ordersService, rollsService } from '../../../services/api';
+import { SOCKET_URL } from '../../../services/apiClient';
 import { useAuth } from '../../../context/AuthContext';
 
 // --- SUBCOMPONENT: MAGIC BUTTON ---
@@ -139,7 +140,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
 
     // Socket.io: escuchar actualizaciones en tiempo real
     useEffect(() => {
-        const socket = io('http://localhost:5000');
+        const socket = io(SOCKET_URL);
         socket.on('server:order_updated', (payload) => {
             console.log('🔔 Evento socket order_updated:', payload);
             refetch(); // refrescar al recibir notificación

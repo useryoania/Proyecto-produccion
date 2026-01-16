@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import DynamicGrid from '../common/DynamicGrid';
+import { API_URL } from '../../services/apiClient';
 
 const AdminDashboard = () => {
     const [reportType, setReportType] = useState('orders'); // 'orders', 'rolls', 'machines'
@@ -11,7 +12,7 @@ const AdminDashboard = () => {
         setLoading(true);
         try {
             // Asegúrate que el puerto 5000 sea correcto para tu backend
-            const res = await fetch(`http://localhost:5000/api/admin/dynamic?reportType=${reportType}`);
+            const res = await fetch(`${API_URL}/admin/dynamic?reportType=${reportType}`);
             if (res.ok) {
                 const json = await res.json();
                 setData(json);

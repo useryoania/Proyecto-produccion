@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { API_URL } from '../../services/apiClient';
 
 const ChatWidget = () => {
     const { user } = useAuth();
@@ -32,7 +33,7 @@ const ChatWidget = () => {
 
         try {
             // Llamada al backend
-            const response = await axios.post('http://localhost:5000/api/chat',
+            const response = await axios.post(`${API_URL}/chat`,
                 {
                     message: userMsg.text,
                     userId: user?.id || user?.IdUsuario,
