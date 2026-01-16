@@ -1,13 +1,46 @@
 const express = require('express');
 const router = express.Router();
-const controller = require('../controllers/ordersController');
 
-// GET /api/orders (Obtener todas las órdenes o filtrar por ?area=DTF)
-router.get('/', controller.getOrdersByArea);
-router.post('/', controller.createOrder);
-router.get('/priorities', controller.getPrioritiesConfig);
-router.post('/assign-roll', controller.assignRoll); // POST /api/orders/assign-roll
-router.put('/files/update', controller.updateFile);
-router.post('/files/add', controller.addFile);
-router.delete('/files/:id', controller.deleteFile);
+// Importamos el controlador
+const ordersController = require('../controllers/ordersController');
+
+// 👇 Importamos Middleware de Autenticación
+const { verifyToken, authorizeAdminOrArea } = require('../middleware/authMiddleware');
+
+// --- AQUÍ VAN LAS RUTAS DE CONSULTA ESPECÍFICA (Antes de las rutas con :id) ---
+
+// Reportes y Búsqueda Avanzada
+router.post('/search/advanced', ordersController.advancedSearchOrders); // TODO: Restaurar verifyToken luego de debug
+router.get('/details/:id', ordersController.getOrderFullDetails); // También liberamos detalles para prueba
+router.get('/search/integral/:ref', ordersController.getIntegralPedidoDetailsV2); // Nueva Ruta Integral (Version SQL SP)
+router.get('/priorities', ordersController.getPrioritiesConfig);
+
+// Ruta para el resumen de la ActiveOrdersCard.jsx (Protegida)
+router.get('/active', verifyToken, authorizeAdminOrArea, ordersController.getActiveOrdersSummary);
+router.get('/cancelled', verifyToken, authorizeAdminOrArea, ordersController.getCancelledOrdersSummary);
+router.get('/failed', verifyToken, authorizeAdminOrArea, ordersController.getFailedOrdersSummary);
+
+// 1. RUTAS PRINCIPALES (CRUD)
+router.get('/', verifyToken, ordersController.getOrdersByArea);      // Obtener lista completa
+router.post('/', verifyToken, ordersController.createOrder);         // Crear orden
+
+// Acciones específicas SIN ID en URL (POST global)
+router.post('/assign-roll', verifyToken, ordersController.assignRoll);
+router.post('/unassign-roll', verifyToken, ordersController.unassignOrder);
+router.post('/cancel', verifyToken, ordersController.cancelOrder);
+router.post('/cancel-request', verifyToken, ordersController.cancelRequest);
+router.post('/cancel-roll', verifyToken, ordersController.cancelRoll);
+
+// Rutas con :id (DEBEN IR AL FINAL de los GET/PUT/DELETE específicos)
+router.delete('/:id', verifyToken, ordersController.deleteOrder);
+router.put('/:id/status', verifyToken, ordersController.updateStatus);
+router.get('/history/:id', verifyToken, ordersController.getOrderHistory);
+
+// 2. GESTIÓN DE ARCHIVOS
+router.put('/file/update', verifyToken, ordersController.updateFile);
+router.post('/file/add', verifyToken, ordersController.addFile);
+router.post('/file/cancel', verifyToken, ordersController.cancelFile);
+router.delete('/file/:id', verifyToken, ordersController.deleteFile);
+
+router.post('/assign-fabric-bobbin', verifyToken, ordersController.assignFabricBobbin);
 module.exports = router;

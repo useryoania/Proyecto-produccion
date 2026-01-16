@@ -1,0 +1,12 @@
+const express = require('express');
+const router = express.Router();
+const receptionController = require('../controllers/receptionController');
+
+// Rutas de Recepción / Atención al Cliente
+router.get('/init-data', receptionController.getInitData);
+router.post('/create', receptionController.createReception);
+router.get('/history', receptionController.getHistory);
+router.get('/orders-by-client', receptionController.getOrdersByClient);
+
+
+module.exports = router;

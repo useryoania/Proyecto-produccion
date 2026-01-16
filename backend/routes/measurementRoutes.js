@@ -11,4 +11,8 @@ router.post('/analyze', controller.measureFiles);
 // POST: Guardar cambios en base de datos
 router.post('/save', controller.saveMeasurements);
 
+router.post('/auto-measure', controller.measureFiles);
+router.post('/process-batch', controller.processBatch);
+
 module.exports = router;
+

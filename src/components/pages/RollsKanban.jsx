@@ -1,18 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { rollsService } from '../../services/api';
+import { socket as socketService } from '../../services/socketService';
 import CreateRollModal from '../modals/CreateRollModal';
-import styles from './RollsKanban.module.css';
+import KanbanCard from '../production/components/KanbanCard';
+import RollDetailsModal from '../modals/RollDetailsModal';
 
 // Helper Fecha seguro
 const formatDate = (dateString) => {
     if (!dateString) return '-';
     try {
-        return new Date(dateString).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' });
+        const d = new Date(dateString);
+        return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' });
     } catch (e) { return '-'; }
 };
 
-// Componente MultiSelect Materiales
+
+
+// --- MULTISELECT MATERIALES (TAILWIND) ---
 const MaterialMultiSelect = ({ options, selected, onChange }) => {
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef(null);
@@ -38,49 +43,76 @@ const MaterialMultiSelect = ({ options, selected, onChange }) => {
     const isAllSelected = options.length > 0 && selected.length === options.length;
 
     return (
-        <div className={styles.multiSelectWrapper} ref={wrapperRef}>
-            <button className={styles.multiSelectBtn} onClick={() => setIsOpen(!isOpen)}>
-                <span>Materiales</span>
-                {selected.length > 0 && <span className={styles.badgeCount} style={{marginLeft:5, background:'#2563eb', color:'white', fontSize:'0.6rem', padding:'1px 5px', borderRadius:10}}>{selected.length}</span>}
-                <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'}`} style={{fontSize:'0.6rem', marginLeft:'8px'}}></i>
+        <div className="relative" ref={wrapperRef}>
+            <button
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all shadow-sm
+                    ${selected.length > 0 ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                onClick={() => setIsOpen(!isOpen)}
+            >
+                <span>MATERIALES</span>
+                {selected.length > 0 && (
+                    <span className="bg-blue-600 text-white text-[10px] px-1.5 rounded-full">{selected.length}</span>
+                )}
+                <i className={`fa-solid fa-chevron-${isOpen ? 'up' : 'down'} text-[10px] ml-1 opacity-50`}></i>
             </button>
+
             {isOpen && (
-                <div className={styles.dropdownMenu}>
-                    <label className={styles.dropdownItem} style={{fontWeight:'bold', color:'#2563eb'}}>
-                        <input type="checkbox" checked={isAllSelected} onChange={handleSelectAll} />
+                <div className="absolute top-full left-0 mt-1 w-64 max-h-80 bg-white border border-slate-200 rounded-lg shadow-xl overflow-y-auto z-50 p-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <label className="flex items-center gap-2 px-2 py-2 text-xs font-bold text-blue-600 cursor-pointer hover:bg-blue-50 rounded mb-1">
+                        <input type="checkbox" checked={isAllSelected} onChange={handleSelectAll} className="rounded text-blue-600 focus:ring-blue-500 border-slate-300" />
                         <span>{isAllSelected ? 'Deseleccionar Todos' : 'Seleccionar Todos'}</span>
                     </label>
-                    <div style={{height:1, background:'#e2e8f0', margin:'4px 0'}}></div>
+                    <div className="h-px bg-slate-100 my-1"></div>
                     {options.map(opt => (
-                        <label key={opt} className={styles.dropdownItem}>
-                            <input type="checkbox" checked={selected.includes(opt)} onChange={() => handleToggle(opt)} />
-                            <span>{opt}</span>
+                        <label key={opt} className="flex items-center gap-2 px-2 py-1.5 text-xs text-slate-600 cursor-pointer hover:bg-slate-50 rounded">
+                            <input type="checkbox" checked={selected.includes(opt)} onChange={() => handleToggle(opt)} className="rounded text-blue-600 focus:ring-blue-500 border-slate-300" />
+                            <span className="truncate" title={opt}>{opt}</span>
                         </label>
                     ))}
-                    {options.length === 0 && <div style={{padding:10, fontSize:'0.7rem'}}>Cargando materiales...</div>}
                 </div>
             )}
         </div>
     );
 };
 
+// --- COMPONENTE PRINCIPAL ---
 const RollsKanban = ({ areaCode }) => {
-    const [rolls, setRolls] = useState([]);     
-    const [pending, setPending] = useState([]); 
+    const [rolls, setRolls] = useState([]);
+    const [pending, setPending] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
+
+    // ESTADOS NUEVOS PARA EDICIÓN Y DETALLE
+    const [editingRollId, setEditingRollId] = useState(null);
+    const [tempName, setTempName] = useState("");
+    const [detailsRoll, setDetailsRoll] = useState(null);
 
     // Filtros
     const [selectedIds, setSelectedIds] = useState([]);
     const [filterPrio, setFilterPrio] = useState('ALL');
     const [filterVar, setFilterVar] = useState('ALL');
     const [filterMat, setFilterMat] = useState([]);
+    const [filterType, setFilterType] = useState('ALL');
 
     const loadBoard = async () => {
         try {
+            // setLoading(true); // Don't block UI on background refresh if desired, or keep it.
+            // Keeping loading usually good for feedback, but for socket update maybe silent?
+            // Let's keep it simple and reuse existing logic
+            // Check if we are already loading to avoid loops? No, loadBoard sets it.
             setLoading(true);
             const data = await rollsService.getBoard(areaCode);
-            setRolls(data.rolls || []);
+
+            const sortedRolls = (data.rolls || []).map(r => ({
+                ...r,
+                orders: r.orders.sort((a, b) => {
+                    const seqA = a.sequence === null ? 999999 : a.sequence;
+                    const seqB = b.sequence === null ? 999999 : b.sequence;
+                    return seqA - seqB;
+                })
+            }));
+
+            setRolls(sortedRolls);
             setPending(data.pendingOrders || []);
         } catch (error) {
             console.error(error);
@@ -91,10 +123,68 @@ const RollsKanban = ({ areaCode }) => {
 
     useEffect(() => { loadBoard(); }, [areaCode]);
 
-    // OBTENCIÓN SEGURA DE DATOS
+    // SOCKET SYNC LISTENER
+    useEffect(() => {
+        const handleSync = (data) => {
+            console.log("⚡ [Socket] New Orders Synced:", data);
+            loadBoard();
+        };
+
+        socketService.on('server:ordersUpdated', handleSync);
+        return () => socketService.off('server:ordersUpdated', handleSync);
+    }, [areaCode]); // Re-bind if areaCode changes, though loadBoard uses current state/props logic
+
+
+    // LÓGICA DE EDICIÓN DE NOMBRE
+    const startEditing = (roll) => {
+        setEditingRollId(roll.id);
+        setTempName(roll.name);
+    };
+
+    const saveRollName = async (rollId) => {
+        if (!tempName.trim()) {
+            setEditingRollId(null);
+            return;
+        }
+
+        // Actualización Optimista
+        const updatedRolls = rolls.map(r => r.id === rollId ? { ...r, name: tempName } : r);
+        setRolls(updatedRolls);
+        setEditingRollId(null);
+
+        try {
+            await rollsService.updateName(rollId, tempName);
+        } catch (error) {
+            console.error("Error actualizando nombre:", error);
+            loadBoard(); // Revertir si falla
+        }
+    };
+
+    const handleKeyDown = (e, rollId) => {
+        if (e.key === 'Enter') saveRollName(rollId);
+        if (e.key === 'Escape') setEditingRollId(null);
+    };
+
+    // ACCIÓN: DESARMAR ROLLO
+    const handleDismantle = async (roll) => {
+        if (!window.confirm(`¿Estás seguro de devolver TODO el lote "${roll.name}" a Pendientes?\n\nEl lote se eliminará y las órdenes volverán a la columna de pendientes.`)) return;
+
+        try {
+            setLoading(true);
+            await rollsService.dismantle(roll.id);
+            await loadBoard();
+        } catch (error) {
+            console.error("Error desarmando lote:", error);
+            alert("No se pudo desarmar el lote.");
+            setLoading(false);
+        }
+    };
+
+    // Helpers de Datos
     const getMaterial = (o) => o.material || o.Material || 'Sin Material';
     const getVariant = (o) => o.variantCode || o.Variante || '';
     const getPriority = (o) => o.priority || o.Prioridad || 'Normal';
+    const getType = (o) => o.tipoOrden || o.TipoOrden || 'Ordinaria';
 
     const uniquePriorities = [...new Set(pending.map(o => getPriority(o)))];
     const uniqueVariants = [...new Set(pending.map(o => getVariant(o)).filter(Boolean))];
@@ -104,183 +194,281 @@ const RollsKanban = ({ areaCode }) => {
     const filteredPending = pending.filter(o => {
         if (filterPrio !== 'ALL' && getPriority(o) !== filterPrio) return false;
         if (filterVar !== 'ALL' && getVariant(o) !== filterVar) return false;
+        if (filterType !== 'ALL' && getType(o) !== filterType) return false;
         if (filterMat.length > 0 && !filterMat.includes(getMaterial(o))) return false;
         return true;
     });
 
-    // SELECCIÓN
     const toggleOrderSelection = (id) => {
         setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
     };
 
     const toggleSelectAll = () => {
-        if (selectedIds.length === filteredPending.length && filteredPending.length > 0) {
-            setSelectedIds([]);
-        } else {
-            setSelectedIds(filteredPending.map(o => o.id));
-        }
+        if (selectedIds.length === filteredPending.length && filteredPending.length > 0) setSelectedIds([]);
+        else setSelectedIds(filteredPending.map(o => o.id));
     };
 
-    // DRAG AND DROP
+    // --- LÓGICA DRAG AND DROP ---
     const onDragEnd = async (result) => {
         const { source, destination, draggableId } = result;
+
         if (!destination) return;
-        if (source.droppableId === destination.droppableId) return;
+        if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
-        const targetRollId = destination.droppableId === 'pending' ? null : destination.droppableId;
-        const draggedIdInt = parseInt(draggableId);
+        const newRolls = rolls.map(r => ({ ...r, orders: [...r.orders] }));
+        const newPending = [...pending];
 
-        // Bloqueo
-        if (targetRollId) {
-            const targetRoll = rolls.find(r => r.id === targetRollId);
-            if (targetRoll && (targetRoll.machineId || targetRoll.status === 'Producción' || targetRoll.status === 'Cerrado')) {
-                return alert("⛔ Lote bloqueado.");
-            }
-        }
+        // CASO 1: VIENE DE PENDIENTES
+        if (source.droppableId === 'pending') {
+            const destRollIndex = newRolls.findIndex(r => String(r.id) === String(destination.droppableId));
+            if (destRollIndex === -1) return;
 
-        // Selección múltiple
-        let idsToMove = [];
-        if (selectedIds.includes(draggedIdInt)) idsToMove = [...selectedIds];
-        else idsToMove = [draggedIdInt];
+            const movedOrderIndex = newPending.findIndex(o => String(o.id) === String(draggableId));
+            if (movedOrderIndex === -1) return;
 
-        // Optimistic UI
-        const ordersToMove = [];
-        const newPending = pending.filter(o => {
-            if (idsToMove.includes(o.id)) {
-                ordersToMove.push(o);
-                return false;
-            }
-            return true;
-        });
+            const [movedOrder] = newPending.splice(movedOrderIndex, 1);
+            const destRoll = newRolls[destRollIndex];
+            movedOrder.rollId = destRoll.id;
 
-        const newRolls = rolls.map(r => {
-            const ordersInRoll = r.orders.filter(o => idsToMove.includes(o.id));
-            if (ordersInRoll.length > 0) {
-                ordersToMove.push(...ordersInRoll);
-                const reduction = ordersInRoll.reduce((sum, o) => sum + (parseFloat(o.magnitude || o.Magnitud) || 0), 0);
-                return { ...r, orders: r.orders.filter(o => !idsToMove.includes(o.id)), currentUsage: Math.max(0, r.currentUsage - reduction) };
-            }
-            return r;
-        });
+            destRoll.orders.splice(destination.index, 0, movedOrder);
+            destRoll.currentUsage += (movedOrder.magnitude || 0);
 
-        if (targetRollId === null) {
-            setPending([...ordersToMove, ...newPending]);
-            setRolls(newRolls);
-        } else {
             setPending(newPending);
-            setRolls(newRolls.map(r => {
-                if (r.id === targetRollId) {
-                    const increase = ordersToMove.reduce((sum, o) => sum + (parseFloat(o.magnitude || o.Magnitud) || 0), 0);
-                    return { ...r, orders: [...r.orders, ...ordersToMove], currentUsage: r.currentUsage + increase };
-                }
-                return r;
-            }));
+            setRolls(newRolls);
+
+            try {
+                await rollsService.moveOrder({
+                    orderId: movedOrder.id,
+                    targetRollId: destRoll.id
+                });
+                const destIds = destRoll.orders.map(o => o.id);
+                await rollsService.reorderOrders(destRoll.id, destIds);
+            } catch (error) { console.error(error); }
+            return;
         }
 
-        setSelectedIds([]);
+        // CASO 2: ENTRE ROLLOS
+        const sourceRollIndex = newRolls.findIndex(r => String(r.id) === String(source.droppableId));
+        const destRollIndex = newRolls.findIndex(r => String(r.id) === String(destination.droppableId));
 
-        try {
-            await rollsService.moveOrder(idsToMove, targetRollId); 
-        } catch (error) {
-            console.error(error);
-            loadBoard();
+        if (sourceRollIndex === -1) return;
+
+        const sourceRoll = newRolls[sourceRollIndex];
+        const [movedOrder] = sourceRoll.orders.splice(source.index, 1);
+
+        if (sourceRollIndex === destRollIndex) {
+            sourceRoll.orders.splice(destination.index, 0, movedOrder);
+            setRolls(newRolls);
+            try {
+                const orderIds = sourceRoll.orders.map(o => o.id);
+                await rollsService.reorderOrders(sourceRoll.id, orderIds);
+            } catch (e) { console.error(e); }
+        } else {
+            if (destRollIndex === -1) return;
+            const destRoll = newRolls[destRollIndex];
+            movedOrder.rollId = destRoll.id;
+            destRoll.orders.splice(destination.index, 0, movedOrder);
+
+            sourceRoll.currentUsage -= (movedOrder.magnitude || 0);
+            destRoll.currentUsage += (movedOrder.magnitude || 0);
+
+            setRolls(newRolls);
+            try {
+                await rollsService.moveOrder({
+                    orderId: movedOrder.id,
+                    targetRollId: destRoll.id
+                });
+                const destIds = destRoll.orders.map(o => o.id);
+                await rollsService.reorderOrders(destRoll.id, destIds);
+            } catch (e) { console.error(e); }
         }
     };
 
-    if (loading) return <div style={{padding:40, textAlign:'center'}}>Cargando...</div>;
+    if (loading) return (
+        <div className="flex items-center justify-center h-full bg-slate-50">
+            <div className="flex flex-col items-center gap-3">
+                <i className="fa-solid fa-circle-notch fa-spin text-4xl text-blue-500"></i>
+                <p className="font-bold text-slate-400">Cargando Planeamiento...</p>
+            </div>
+        </div>
+    );
 
     return (
-        <div className={styles.kanbanContainer}>
-            
-            <div className={styles.toolbar}>
-                <div className={styles.filterGroup}>
-                    <span className={styles.filterLabel}>Prioridad:</span>
-                    <div className={styles.buttonGroup}>
-                        <button className={`${styles.filterBtn} ${filterPrio === 'ALL' ? styles.filterBtnActive : ''}`} onClick={() => setFilterPrio('ALL')}>Todas</button>
+        <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
+            {/* TOOLBAR */}
+            <div className="p-3 bg-white border-b border-slate-200 flex flex-wrap gap-4 items-center shrink-0 shadow-sm z-20">
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase text-slate-400">Prioridad:</span>
+                    <div className="flex gap-1">
+                        <button className={`px-2 py-1 rounded text-[10px] font-bold border ${filterPrio === 'ALL' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-slate-500 border-slate-200'}`} onClick={() => setFilterPrio('ALL')}>TODAS</button>
                         {uniquePriorities.map(p => (
-                            <button key={p} className={`${styles.filterBtn} ${filterPrio === p ? styles.filterBtnActive : ''}`} onClick={() => setFilterPrio(p)}>{p}</button>
+                            <button key={p} className={`px-2 py-1 rounded text-[10px] font-bold border ${filterPrio === p ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-slate-500 border-slate-200'}`} onClick={() => setFilterPrio(p)}>{p.toUpperCase()}</button>
                         ))}
                     </div>
                 </div>
-                <div className={styles.divider}></div>
-                <div className={styles.filterGroup}>
-                    <span className={styles.filterLabel}>Variante:</span>
-                    <div className={styles.buttonGroup}>
-                        <button className={`${styles.filterBtn} ${filterVar === 'ALL' ? styles.filterBtnActive : ''}`} onClick={() => setFilterVar('ALL')}>Todas</button>
-                        {uniqueVariants.slice(0, 6).map(v => (
-                            <button key={v} className={`${styles.filterBtn} ${filterVar === v ? styles.filterBtnActive : ''}`} onClick={() => setFilterVar(v)}>{v}</button>
+
+                <div className="w-px h-6 bg-slate-200"></div>
+
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase text-slate-400">Tipo:</span>
+                    <div className="flex gap-1">
+                        <button className={`px-2 py-1 rounded text-[10px] font-bold border ${filterType === 'ALL' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-slate-500 border-slate-200'}`} onClick={() => setFilterType('ALL')}>TODAS</button>
+                        <button className={`px-2 py-1 rounded text-[10px] font-bold border ${filterType === 'Falla' ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-red-500 border-slate-200'}`} onClick={() => setFilterType('Falla')}>FALLAS</button>
+                    </div>
+                </div>
+
+                <div className="w-px h-6 bg-slate-200"></div>
+
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black uppercase text-slate-400">Variante:</span>
+                    <div className="flex gap-1">
+                        <button className={`px-2 py-1 rounded text-[10px] font-bold border ${filterVar === 'ALL' ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-slate-500 border-slate-200'}`} onClick={() => setFilterVar('ALL')}>TODAS</button>
+                        {uniqueVariants.slice(0, 4).map(v => (
+                            <button key={v} className={`px-2 py-1 rounded text-[10px] font-bold border ${filterVar === v ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-white text-slate-500 border-slate-200'}`} onClick={() => setFilterVar(v)}>{v}</button>
                         ))}
                     </div>
                 </div>
-                <div className={styles.divider}></div>
-                <div className={styles.filterGroup}>
-                    <span className={styles.filterLabel}>Material:</span>
-                    <MaterialMultiSelect options={uniqueMaterials} selected={filterMat} onChange={setFilterMat} />
-                </div>
+
+                <div className="w-px h-6 bg-slate-200"></div>
+
+                <MaterialMultiSelect options={uniqueMaterials} selected={filterMat} onChange={setFilterMat} />
             </div>
 
             <DragDropContext onDragEnd={onDragEnd}>
-                <div className={styles.board}>
-                    
+                <div className="flex gap-4 overflow-x-auto p-6 h-full items-start bg-slate-50/50">
+
                     {/* COLUMNA PENDIENTES */}
-                    <div className={styles.column} style={{ borderTop: '4px solid #f59e0b', background: '#fff' }}>
-                        <div className={styles.columnHeader}>
-                            <div className={styles.headerCheckbox}>
-                                <input 
-                                    type="checkbox" 
+                    <div className="w-80 min-w-[320px] flex flex-col max-h-full bg-white rounded-xl shadow-sm border border-amber-200 border-t-4 border-t-amber-400">
+                        <div className="p-3 border-b border-amber-50 bg-amber-50/30 rounded-t-xl shrink-0 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="checkbox"
                                     checked={filteredPending.length > 0 && selectedIds.length === filteredPending.length}
                                     onChange={toggleSelectAll}
+                                    className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400 border-slate-300 cursor-pointer"
                                 />
-                            </div>
-                            <div className={styles.columnTitle}>
-                                PENDIENTES
-                                <span className={styles.columnCount}>{filteredPending.length}</span>
+                                <div className="font-black text-slate-700 text-sm flex items-center gap-2">
+                                    PENDIENTES <span className="text-[10px] bg-amber-100 text-amber-700 px-2 rounded-full">{filteredPending.length}</span>
+                                </div>
                             </div>
                         </div>
-                        
                         <Droppable droppableId="pending">
                             {(provided) => (
-                                <div className={styles.droppableArea} ref={provided.innerRef} {...provided.droppableProps}>
+                                <div
+                                    className="p-3 flex-1 overflow-y-auto custom-scrollbar bg-slate-50/30"
+                                    ref={provided.innerRef}
+                                    {...provided.droppableProps}
+                                >
                                     {filteredPending.map((order, index) => (
-                                        <KanbanCard 
-                                            key={order.id} 
-                                            order={order} 
-                                            index={index} 
-                                            isSelected={selectedIds.includes(order.id)}
-                                            onToggle={() => toggleOrderSelection(order.id)}
-                                        />
+                                        <KanbanCard key={order.id} order={order} index={index} isSelected={selectedIds.includes(order.id)} onToggle={() => toggleOrderSelection(order.id)} />
                                     ))}
                                     {provided.placeholder}
+                                    {filteredPending.length === 0 && (
+                                        <div className="py-10 text-center text-slate-300 italic text-xs">Sin órdenes pendientes</div>
+                                    )}
                                 </div>
                             )}
                         </Droppable>
                     </div>
 
-                    {/* ROLLOS */}
+                    {/* COLUMNAS DE ROLLOS */}
                     {rolls.map(roll => {
                         const percent = roll.capacity > 0 ? Math.min((roll.currentUsage / roll.capacity) * 100, 100) : 0;
                         const isLocked = !!roll.machineId || roll.status === 'Producción' || roll.status === 'Cerrado';
+                        const isEditing = editingRollId === roll.id;
+
+                        // Color handling
+                        const rollColor = roll.color || '#6366f1';
+
                         return (
-                            <div key={roll.id} className={styles.column} style={{ borderTop: `4px solid ${roll.color || '#6366f1'}` }}>
-                                <div className={styles.columnHeader} style={{display:'block'}}>
-                                    <div style={{display:'flex', justifyContent:'space-between', marginBottom:5}}>
-                                        <div className={styles.columnTitle} style={{color: roll.color}}>
-                                            {isLocked && <i className="fa-solid fa-lock"></i>} {roll.name}
+                            <div key={roll.id} className="w-80 min-w-[320px] flex flex-col max-h-full bg-slate-100 rounded-xl shadow-sm border border-slate-200 border-t-4" style={{ borderTopColor: rollColor }}>
+                                <div className="p-3 bg-white border-b border-slate-200 rounded-t-xl shrink-0">
+                                    <div className="flex justify-between items-start mb-2">
+
+                                        {/* EDICIÓN DE NOMBRE */}
+                                        <div className="flex-1 font-bold text-sm text-slate-800 flex items-center gap-2 mr-2">
+                                            {isLocked && <i className="fa-solid fa-lock text-slate-300 text-xs"></i>}
+
+                                            {isEditing ? (
+                                                <input
+                                                    type="text"
+                                                    autoFocus
+                                                    value={tempName}
+                                                    onChange={(e) => setTempName(e.target.value)}
+                                                    onBlur={() => saveRollName(roll.id)}
+                                                    onKeyDown={(e) => handleKeyDown(e, roll.id)}
+                                                    className="w-full px-2 py-1 text-sm border-2 border-blue-500 rounded focus:outline-none"
+                                                />
+                                            ) : (
+                                                <span
+                                                    // PERMITIMOS EDITAR SIEMPRE (incluso si está bloqueado/isLocked)
+                                                    // Se retira la restricción !isLocked
+                                                    onClick={() => startEditing(roll)}
+                                                    title="Clic para editar nombre"
+                                                    className="truncate cursor-pointer hover:text-blue-600 transition-colors"
+                                                    style={{ color: rollColor }}
+                                                >
+                                                    {roll.name}
+                                                    <i className="fa-solid fa-pencil text-[10px] ml-1 opacity-20 hover:opacity-100"></i>
+                                                </span>
+                                            )}
                                         </div>
-                                        <span className={styles.columnCount}>{roll.orders.length}</span>
+
+                                        {/* BOTONES DE ACCIÓN */}
+                                        <div className="flex items-center gap-1">
+
+                                            {/* BOTÓN DESARMAR (Solo si no está bloqueado) */}
+                                            {!isLocked && (
+                                                <button
+                                                    className="w-6 h-6 flex items-center justify-center rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                                                    title="Devolver todo a Pendientes"
+                                                    onClick={() => handleDismantle(roll)}
+                                                >
+                                                    <i className="fa-solid fa-trash-arrow-up text-xs"></i>
+                                                </button>
+                                            )}
+
+                                            <button
+                                                className="w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-blue-500 hover:bg-slate-50 transition-colors"
+                                                title="Ver detalle"
+                                                onClick={() => setDetailsRoll(roll)}
+                                            >
+                                                <i className="fa-regular fa-eye"></i>
+                                            </button>
+                                            <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2 py-0.5 rounded-full border border-slate-200">{roll.orders.length}</span>
+                                        </div>
+
                                     </div>
-                                    <div style={{width:'100%', height:'4px', background:'#e2e8f0', borderRadius:'2px', overflow:'hidden'}}>
-                                        <div style={{width: `${percent}%`, background: roll.color || '#6366f1', height:'100%'}}></div>
+
+                                    {/* Progress Bar */}
+                                    <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mb-1">
+                                        <div
+                                            className="h-full rounded-full transition-all duration-500"
+                                            style={{ width: `${percent}%`, background: rollColor }}
+                                        ></div>
                                     </div>
-                                    <div style={{fontSize:'0.65rem', textAlign:'right', color:'#64748b', marginTop:2}}>{roll.currentUsage?.toFixed(1)} / {roll.capacity}m</div>
+                                    <div className="text-[10px] text-right text-slate-400 font-mono">
+                                        <span className="font-bold text-slate-600">{roll.currentUsage?.toFixed(1)}</span> / {roll.capacity}m
+                                    </div>
                                 </div>
-                                <Droppable droppableId={roll.id} isDropDisabled={isLocked}>
+
+                                <Droppable droppableId={String(roll.id)} isDropDisabled={isLocked}>
                                     {(provided) => (
-                                        <div className={styles.droppableArea} ref={provided.innerRef} {...provided.droppableProps} style={{opacity: isLocked ? 0.7 : 1}}>
+                                        <div
+                                            className={`p-2 flex-1 overflow-y-auto custom-scrollbar transition-opacity ${isLocked ? 'opacity-60 grayscale' : ''}`}
+                                            ref={provided.innerRef}
+                                            {...provided.droppableProps}
+                                        >
                                             {roll.orders.map((order, index) => (
-                                                <KanbanCard key={order.id} order={order} index={index} isSelected={false} onToggle={() => {}} isReadOnly={true} />
+                                                <KanbanCard key={order.id} order={order} index={index} isSelected={false} onToggle={() => { }} isReadOnly={isLocked} showSequence={true} />
                                             ))}
                                             {provided.placeholder}
+                                            {roll.orders.length === 0 && (
+                                                <div className="h-full flex flex-col items-center justify-center text-slate-300 py-10 gap-2 border-2 border-dashed border-slate-200 rounded-lg m-1">
+                                                    <i className="fa-solid fa-box-open text-2xl opacity-50"></i>
+                                                    <span className="text-xs">Lote vacío</span>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </Droppable>
@@ -288,92 +476,26 @@ const RollsKanban = ({ areaCode }) => {
                         );
                     })}
 
-                    <button className={styles.addRollBtn} onClick={() => setIsCreateOpen(true)}>
-                        <div className={styles.addIconCircle}><i className="fa-solid fa-plus"></i></div><span>Nuevo Lote</span>
+                    {/* BOTÓN NUEVO LOTE */}
+                    <button
+                        className="w-20 min-w-[80px] h-full rounded-xl border-2 border-dashed border-slate-200 text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all flex flex-col items-center justify-start py-10 gap-2 group shrink-0"
+                        onClick={() => setIsCreateOpen(true)}
+                    >
+                        <div className="w-10 h-10 rounded-full bg-slate-100 group-hover:bg-blue-100 flex items-center justify-center transition-colors">
+                            <i className="fa-solid fa-plus text-lg"></i>
+                        </div>
+                        <span className="text-xs font-bold writing-vertical-lr rotate-180 uppercase tracking-widest">Nuevo Lote</span>
                     </button>
                 </div>
             </DragDropContext>
 
+            {/* MODALES */}
             <CreateRollModal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)} areaCode={areaCode} onSuccess={loadBoard} />
-        </div>
-    );
-};
 
-// --- TARJETA CORREGIDA: AHORA SÍ MUESTRA LA MEDIDA ---
-const KanbanCard = ({ order, index, isSelected, onToggle, isReadOnly }) => {
-    // 1. Extracción segura de datos (Soporta nombres de backend y frontend)
-    const code = order.code || order.CodigoOrden || `#${order.id}`;
-    const date = formatDate(order.entryDate || order.FechaIngreso);
-    const client = order.client || order.Cliente;
-    const desc = order.desc || order.DescripcionTrabajo;
-    const material = order.material || order.Material;
-    const variant = order.variantCode || order.Variante;
-    
-    // 2. CORRECCIÓN MEDIDA: Buscamos en todas las propiedades posibles
-    const magnitude = order.magnitudeStr || order.Magnitud || order.magnitude;
-    const priority = order.priority || order.Prioridad || 'Normal';
-
-    return (
-        <Draggable draggableId={String(order.id)} index={index}>
-            {(provided, snapshot) => (
-                <div
-                    className={`${styles.card} ${isSelected ? styles.cardSelected : ''}`}
-                    ref={provided.innerRef}
-                    {...provided.draggableProps}
-                    {...provided.dragHandleProps}
-                    style={{
-                        ...provided.draggableProps.style,
-                        opacity: snapshot.isDragging ? 0.9 : 1,
-                        borderLeftColor: priority === 'Urgente' ? '#dc2626' : '#94a3b8'
-                    }}
-                    onClick={(e) => { if (!isReadOnly && !e.defaultPrevented) onToggle(); }}
-                >
-                    {!isReadOnly && (
-                        <div className={styles.cardCheckbox} onClick={(e) => e.stopPropagation()}>
-                            <input type="checkbox" checked={isSelected} onChange={onToggle} />
-                        </div>
-                    )}
-
-                    {/* CABECERA: Código y Fecha */}
-                    <div className={styles.cardTop}>
-                        <span className={styles.cardCode}>{code}</span>
-                        <span className={styles.cardDate}><i className="fa-regular fa-calendar"></i> {date}</span>
-                    </div>
-
-                    {/* CUERPO: Info Cliente vs Técnica */}
-                    <div className={styles.cardBody}>
-                        <div className={styles.cardMain}>
-                            <div className={styles.cardClient} title={client}>{client}</div>
-                            <div className={styles.cardJob} title={desc}>{desc}</div>
-                        </div>
-                        <div className={styles.cardMeta}>
-                            <span className={`${styles.badgePrio} ${priority === 'Urgente' ? styles.prioUrgente : styles.prioNormal}`}>
-                                {priority}
-                            </span>
-                            
-                            {variant && (
-                                <span className={styles.metaItem} title="Variante">
-                                    {variant}
-                                </span>
-                            )}
-                            
-                            {/* AQUÍ MOSTRAMOS LA MEDIDA CON ICONO DE REGLA */}
-                            {magnitude && (
-                                <span className={styles.metaItem} title="Medida" style={{color:'#0f172a', fontWeight:'bold'}}>
-                                    <i className="fa-solid fa-ruler-horizontal" style={{marginRight:4, fontSize:'0.6rem', color:'#94a3b8'}}></i>
-                                    {magnitude}
-                                </span>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* PIE: Material */}
-                    <div className={styles.cardBottom}>
-                        <span className={styles.materialText} title={material}>{material || 'Sin Material'}</span>
-                    </div>
-                </div>
+            {detailsRoll && (
+                <RollDetailsModal roll={detailsRoll} onClose={() => setDetailsRoll(null)} />
             )}
-        </Draggable>
+        </div>
     );
 };
 

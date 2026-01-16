@@ -1,0 +1,71 @@
+import React, { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { io } from "socket.io-client";
+import { useAuth } from "../../context/AuthContext";
+import { ordersService } from "../../services/modules/ordersService";
+
+export default function CancelledOrdersCard() {
+    const { user } = useAuth(); // user contains token, role, areaKey
+    const areaKey = user.role !== "admin" ? user.areaKey : null;
+
+    // React Query implementation
+    const { data: summary, isLoading, refetch } = useQuery({
+        queryKey: ['cancelledOrdersSummary', areaKey],
+        queryFn: () => ordersService.getCancelledSummary(areaKey),
+        refetchInterval: 60000,
+        staleTime: 1000 * 30,
+    });
+
+    // Handle initial state or missing data
+    const displaySummary = summary || { totalGeneral: 0, perArea: {} };
+
+    // Socket.io for realtime updates
+    useEffect(() => {
+        // Use environment variable for socket URL if available, else standard fallback
+        const socketUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+        // Remove /api if present in URL for socket connection (Socket usually runs on root)
+        const cleanSocketUrl = socketUrl.replace('/api', '');
+
+        const socket = io(cleanSocketUrl, { reconnectionAttempts: 5 });
+
+        socket.on("connect_error", (err) => {
+            console.error("🔴 Connection Error Socket.io:", err);
+        });
+
+        socket.on("server:order_updated", () => {
+            // We refetch even if status is not explicitly 'CANCELADO' to keep counts accurate if an order was active and is now cancelled
+            console.log("⚡ socket: update received, refetching cancelled summary...");
+            refetch();
+        });
+
+        return () => socket.disconnect();
+    }, [refetch]);
+
+    const loading = isLoading;
+
+    return (
+        <div className="relative bg-white rounded-2xl p-6 border border-slate-100 shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden group">
+            <div className="relative z-10">
+                <div className="flex items-center mb-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-red-500 to-pink-600 shadow-lg flex items-center justify-center text-white text-2xl mr-3">
+                        <i className="fa-solid fa-ban" />
+                    </div>
+                    <h4 className="text-3xl font-black text-slate-800">Órdenes Canceladas</h4>
+                </div>
+                <p className="text-4xl font-bold text-slate-800 mb-2">
+                    {loading ? <i className="fa-solid fa-spinner fa-spin text-2xl text-red-500"></i> : displaySummary.totalGeneral}
+                </p>
+                <div className="text-sm text-slate-600">
+                    {Object.entries(displaySummary.perArea || {}).map(([area, total]) => (
+                        <div key={area} className="flex justify-between">
+                            <span>{area}</span>
+                            <span>{total}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+            {/* Background decorative icon */}
+            <i className="fa-solid fa-ban active:scale-95 absolute -right-4 -bottom-4 text-8xl text-red-50 opacity-30 group-hover:scale-110 transition-transform duration-500 rotate-12" />
+        </div>
+    );
+}

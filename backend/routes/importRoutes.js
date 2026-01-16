@@ -2,7 +2,8 @@ const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/importController');
 
-// GET /api/import/sync
-router.get('/sync', controller.syncOrders);
+// POST /api/import/sync
+router.post('/sync', controller.syncOrders);
+router.post('/test-json', controller.testImportJson);
 
 module.exports = router;

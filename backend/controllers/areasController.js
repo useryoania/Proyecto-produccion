@@ -3,16 +3,41 @@ const { getPool, sql } = require('../config/db');
 // =====================================================================
 // 1. OBTENER LISTA DE ÁREAS (Para el Sidebar)
 // =====================================================================
+// =====================================================================
+// 1. OBTENER LISTA DE ÁREAS (Para el Sidebar y Configuración)
+// =====================================================================
 exports.getAllAreas = async (req, res) => {
     try {
         const pool = await getPool();
-        // Filtramos por EsEstandar si la columna existe, si no, trae todo
-        const result = await pool.request().query(`
-            SELECT AreaID as code, Nombre as name, Categoria as category 
-            FROM dbo.Areas
-            WHERE EsEstandar = 1
-            ORDER BY Nombre ASC
-        `);
+
+        // 🛑 CONSULTA MODIFICADA: Devuelve nombres de columna estándar para consistencia
+        const { productive, withStock } = req.query;
+        let query = "SELECT DISTINCT a.AreaID, a.Nombre, a.Categoria, a.RenderKey, a.ui_config FROM dbo.Areas a";
+
+        const conditions = [];
+
+        if (productive === 'true') {
+            conditions.push("(a.EsProductivo = 1 OR a.Productiva = 1)");
+        }
+
+        if (withStock === 'true') {
+            // Filtrar áreas que tienen insumos relacionados (por asignación explícita, mapeo ERP o stock físico)
+            conditions.push(`(
+                EXISTS (SELECT 1 FROM InsumosPorArea ipa WHERE ipa.AreaID = a.AreaID) 
+                OR EXISTS (SELECT 1 FROM ConfigMapeoERP map WHERE map.AreaID_Interno = a.AreaID)
+                OR EXISTS (SELECT 1 FROM InventarioBobinas ib WHERE ib.AreaID = a.AreaID)
+            )`);
+        }
+
+        if (conditions.length > 0) {
+            query += " WHERE " + conditions.join(" AND ");
+        }
+
+        query += " ORDER BY a.Nombre ASC";
+
+        const result = await pool.request().query(query);
+
+        // Retornamos directamente, el front usa AreaID y Nombre
         res.json(result.recordset);
     } catch (err) {
         console.error("❌ Error en getAllAreas:", err.message);
@@ -31,7 +56,7 @@ exports.getAreaDetails = async (req, res) => {
 
         // A. Equipos
         const equipos = await reqSql.query("SELECT * FROM dbo.ConfigEquipos WHERE AreaID = @id AND Activo = 1");
-        
+
         // B. Insumos (Marcando asignados)
         const insumos = await reqSql.query(`
             SELECT i.InsumoID, i.Nombre, i.UnidadDefault, 
@@ -65,7 +90,7 @@ exports.getAreaDetails = async (req, res) => {
 // 3. GESTIÓN DE EQUIPOS
 // =====================================================================
 exports.addPrinter = async (req, res) => {
-    const { areaId, nombre } = req.body;
+    const { areaId, nombre, capacidad, velocidad, estado, estadoProceso } = req.body;
     if (!areaId || !nombre) return res.status(400).json({ error: "Faltan datos" });
 
     try {
@@ -73,9 +98,17 @@ exports.addPrinter = async (req, res) => {
         await pool.request()
             .input('AreaID', sql.VarChar(20), areaId)
             .input('Nombre', sql.NVarChar(100), nombre)
-            .query("INSERT INTO dbo.ConfigEquipos (AreaID, Nombre, Activo) VALUES (@AreaID, @Nombre, 1)");
+            .input('Capacidad', sql.Int, capacidad === '' ? 100 : (capacidad || 100))
+            .input('Velocidad', sql.Int, velocidad === '' ? 10 : (velocidad || 10))
+            .input('Estado', sql.NVarChar(50), estado || 'DISPONIBLE')
+            .input('EstadoProceso', sql.NVarChar(50), estadoProceso || 'DETENIDO')
+            .query("INSERT INTO dbo.ConfigEquipos (AreaID, Nombre, Activo, Capacidad, Velocidad, Estado, EstadoProceso) VALUES (@AreaID, @Nombre, 1, @Capacidad, @Velocidad, @Estado, @EstadoProceso)");
         res.json({ success: true, message: 'Equipo agregado' });
     } catch (err) {
+        console.error("❌ ERROR CRÍTICO AL AGREGAR EQUIPO:");
+        console.error("Datos recibidos:", { areaId, nombre, capacidad, velocidad, estado, estadoProceso });
+        console.error("Mensaje de error SQL:", err.message);
+        console.error("Stack trace:", err.stack);
         res.status(500).json({ error: err.message });
     }
 };
@@ -110,30 +143,76 @@ exports.toggleInsumoArea = async (req, res) => {
 // =====================================================================
 // 5. GESTIÓN DE ESTADOS (Guardar Orden y Colores)
 // =====================================================================
-exports.saveStatuses = async (req, res) => {
-    const { areaId, estados } = req.body;
+// =====================================================================
+// 5. GESTIÓN DE ESTADOS (CRUD)
+// =====================================================================
+
+// AGREGAR ESTADO
+exports.addStatus = async (req, res) => {
+    const { areaId, nombre, colorHex, orden, esFinal, tipoEstado } = req.body;
     try {
         const pool = await getPool();
-        const transaction = new sql.Transaction(pool);
-        await transaction.begin();
+        await pool.request()
+            .input('AreaID', sql.VarChar(20), areaId)
+            .input('Nombre', sql.NVarChar(50), nombre)
+            .input('Color', sql.VarChar(20), colorHex || '#cccccc')
+            .input('Orden', sql.Int, orden || 0)
+            .input('Final', sql.Bit, esFinal ? 1 : 0)
+            .input('TipoEstado', sql.NVarChar(50), tipoEstado || 'ESTADOENAREA')
+            .query("INSERT INTO dbo.ConfigEstados (AreaID, Nombre, ColorHex, Orden, EsFinal, TipoEstado) VALUES (@AreaID, @Nombre, @Color, @Orden, @Final, @TipoEstado)");
 
-        // Borrar y reinsertar (Estrategia simple para reordenamiento)
-        await new sql.Request(transaction).input('id', sql.VarChar(20), areaId)
-            .query("DELETE FROM dbo.ConfigEstados WHERE AreaID = @id");
-
-        for (const st of estados) {
-            await new sql.Request(transaction)
-                .input('AreaID', sql.VarChar(20), areaId)
-                .input('Nombre', sql.NVarChar(50), st.Nombre)
-                .input('Color', sql.VarChar(20), st.ColorHex)
-                .input('Orden', sql.Int, st.Orden)
-                .input('Final', sql.Bit, st.EsFinal ? 1 : 0)
-                .query("INSERT INTO dbo.ConfigEstados (AreaID, Nombre, ColorHex, Orden, EsFinal) VALUES (@AreaID, @Nombre, @Color, @Orden, @Final)");
-        }
-
-        await transaction.commit();
-        res.json({ success: true });
+        res.json({ success: true, message: 'Estado agregado' });
     } catch (err) {
+        console.error("Error adding status:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ACTUALIZAR ESTADO
+exports.updateStatus = async (req, res) => {
+    const { id } = req.params;
+    const { nombre, colorHex, orden, esFinal, tipoEstado } = req.body;
+    try {
+        const pool = await getPool();
+        await pool.request()
+            .input('ID', sql.Int, id)
+            .input('Nombre', sql.NVarChar(50), nombre)
+            .input('Color', sql.VarChar(20), colorHex)
+            .input('Orden', sql.Int, orden)
+            .input('Final', sql.Bit, esFinal ? 1 : 0)
+            .input('TipoEstado', sql.NVarChar(50), tipoEstado)
+            .query(`
+                UPDATE dbo.ConfigEstados
+                SET Nombre = ISNULL(@Nombre, Nombre),
+                    ColorHex = ISNULL(@Color, ColorHex),
+                    Orden = ISNULL(@Orden, Orden),
+                    EsFinal = ISNULL(@Final, EsFinal),
+                    TipoEstado = ISNULL(@TipoEstado, TipoEstado)
+                WHERE EstadoID = @ID
+            `);
+        res.json({ success: true, message: 'Estado actualizado' });
+    } catch (err) {
+        console.error("Error updating status:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ELIMINAR ESTADO
+exports.deleteStatus = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const pool = await getPool();
+        const result = await pool.request()
+            .input('ID', sql.Int, id)
+            .query("DELETE FROM dbo.ConfigEstados WHERE EstadoID = @ID");
+
+        if (result.rowsAffected[0] > 0) {
+            res.json({ success: true, message: 'Estado eliminado' });
+        } else {
+            res.status(404).json({ error: 'Estado no encontrado' });
+        }
+    } catch (err) {
+        console.error("Error deleting status:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -200,25 +279,58 @@ exports.updateAreaConfig = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
-// ...
 
-// EDITAR EQUIPO EXISTENTE (Nombre, Capacidad, Velocidad)
+// ELIMINAR EQUIPO
+exports.deletePrinter = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const pool = await getPool();
+        const result = await pool.request()
+            .input('ID', sql.Int, id)
+            .query("DELETE FROM dbo.ConfigEquipos WHERE EquipoID = @ID");
+
+        if (result.rowsAffected[0] > 0) {
+            res.json({ success: true, message: 'Equipo eliminado' });
+        } else {
+            res.status(404).json({ error: 'Equipo no encontrado' });
+        }
+    } catch (err) {
+        console.error("Error deleting printer:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// EDITAR EQUIPO EXISTENTE (Nombre, Capacidad, Velocidad, Estado, EstadoProceso, Activo)
 exports.updatePrinter = async (req, res) => {
     const { id } = req.params; // EquipoID
-    const { nombre, capacidad, velocidad } = req.body;
+    const { nombre, capacidad, velocidad, estado, estadoProceso, activo } = req.body;
 
     try {
         const pool = await getPool();
-        await pool.request()
+        const request = pool.request()
             .input('ID', sql.Int, id)
             .input('Nombre', sql.NVarChar(100), nombre)
-            .input('Capacidad', sql.Int, capacidad || 0)
-            .input('Velocidad', sql.Int, velocidad || 0)
-            .query(`
-                UPDATE dbo.ConfigEquipos 
-                SET Nombre = @Nombre, Capacidad = @Capacidad, Velocidad = @Velocidad 
-                WHERE EquipoID = @ID
-            `);
+            .input('Capacidad', sql.Int, capacidad === '' ? 0 : (capacidad || 0))
+            .input('Velocidad', sql.Int, velocidad === '' ? 0 : (velocidad || 0))
+            .input('Estado', sql.NVarChar(50), estado || null)
+            .input('EstadoProceso', sql.NVarChar(50), estadoProceso || null);
+
+        // Solo actualizar Activo si viene en el body explicitly (puede ser boolean o bit)
+        let query = `
+            UPDATE dbo.ConfigEquipos 
+            SET Nombre = @Nombre, Capacidad = @Capacidad, Velocidad = @Velocidad, 
+                Estado = ISNULL(@Estado, Estado),
+                EstadoProceso = ISNULL(@EstadoProceso, EstadoProceso)
+        `;
+
+        if (activo !== undefined) {
+            request.input('Activo', sql.Bit, activo ? 1 : 0);
+            query += `, Activo = @Activo`;
+        }
+
+        query += ` WHERE EquipoID = @ID`;
+
+        await request.query(query);
 
         res.json({ success: true, message: 'Equipo actualizado' });
     } catch (err) {

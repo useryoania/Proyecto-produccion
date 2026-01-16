@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { logisticsService, ordersService } from '../../services/api'; // <--- IMPORTAR ordersService
-import styles from './Modals.module.css';
+import { logisticsService, ordersService } from '../../services/api';
 
 const LogisticsCartModal = ({ isOpen, onClose, areaName, areaCode, onSuccess }) => {
     const [orders, setOrders] = useState([]);
@@ -8,7 +7,6 @@ const LogisticsCartModal = ({ isOpen, onClose, areaName, areaCode, onSuccess }) 
     const [loading, setLoading] = useState(false);
     const [cadete, setCadete] = useState('');
 
-    // ... (useEffect y loadCandidates igual que antes) ...
     useEffect(() => {
         if (isOpen && areaCode) {
             loadCandidates();
@@ -22,41 +20,33 @@ const LogisticsCartModal = ({ isOpen, onClose, areaName, areaCode, onSuccess }) 
         try {
             const data = await logisticsService.getCandidates(areaCode);
             setOrders(data);
-        } catch (e) { console.error(e); } 
+        } catch (e) { console.error(e); }
         finally { setLoading(false); }
     };
 
-    // ... (toggleSelect y toggleAll igual que antes) ...
     const toggleSelect = (id) => {
         if (selected.includes(id)) setSelected(selected.filter(s => s !== id));
         else setSelected([...selected, id]);
     };
-    
+
     const toggleAll = () => {
         if (selected.length === orders.length) setSelected([]);
         else setSelected(orders.map(o => o.id));
     };
 
-    // NUEVA FUNCIÓN: Sacar del carrito (Revertir estado)
     const removeFromCart = async (orderId) => {
         if (!confirm("¿Sacar esta orden del carrito? Volverá a estado 'Pendiente'.")) return;
-        
+
         try {
-            // Cambiamos estado a algo previo (ej: Pendiente o En Proceso)
-            await ordersService.updateStatus(orderId, 'Pendiente'); 
-            
-            // La quitamos de la lista local visualmente
+            await ordersService.updateStatus(orderId, 'Pendiente');
             setOrders(orders.filter(o => o.id !== orderId));
-            setSelected(selected.filter(id => id !== orderId)); // Deseleccionar si estaba marcada
-            
-            // Notificar al padre para que actualice el contador del badge
-            if (onSuccess) onSuccess(); 
+            setSelected(selected.filter(id => id !== orderId));
+            if (onSuccess) onSuccess();
         } catch (error) {
             alert("Error al devolver orden");
         }
     };
 
-    // ... (handleDispatch igual que antes) ...
     const handleDispatch = async () => {
         if (selected.length === 0) return alert("Selecciona al menos una orden.");
         setLoading(true);
@@ -69,98 +59,104 @@ const LogisticsCartModal = ({ isOpen, onClose, areaName, areaCode, onSuccess }) 
             alert(`✅ COMPROBANTE GENERADO: ${res.codigo}`);
             if (onSuccess) onSuccess();
             onClose();
-        } catch (error) { alert("Error al generar despacho"); } 
+        } catch (error) { alert("Error al generar despacho"); }
         finally { setLoading(false); }
     };
 
     if (!isOpen) return null;
 
+    // Tailwind Clases
+    const inputClass = "w-full px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-800 bg-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all placeholder:text-slate-400";
+    const labelClass = "block mb-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide";
+
     return (
-        <div className={styles.modalOverlay} style={{zIndex: 1200}}>
-            <div className={styles.modalLarge}>
-                
-                {/* HEADER */}
-                <div className={styles.modalHeader}>
-                    <h3>
-                        <i className="fa-solid fa-cart-shopping" style={{color:'#6366f1'}}></i>
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+
+                {/* HEADER ÍNDIGO */}
+                <div className="px-6 py-4 bg-indigo-50 border-b border-indigo-100 flex justify-between items-center shrink-0">
+                    <h3 className="text-lg font-bold text-indigo-900 flex items-center gap-2">
+                        <i className="fa-solid fa-cart-shopping text-indigo-600"></i>
                         Carrito de Entrega: {areaName}
                     </h3>
-                    <button onClick={onClose} className={styles.closeButton}><i className="fa-solid fa-xmark"></i></button>
+                    <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-indigo-400 hover:bg-indigo-100 hover:text-indigo-700 transition-colors">
+                        <i className="fa-solid fa-xmark text-lg"></i>
+                    </button>
                 </div>
 
-                <div className={styles.modalContent}>
-                    {/* ... (Barra superior Cadete igual) ... */}
-                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:'20px'}}>
-                         <div className={styles.formGroup} style={{flex:1, maxWidth:'350px', marginBottom:0}}>
-                            <label>Responsable / Cadete</label>
-                            <input type="text" className={styles.textInput} placeholder="Ej: Juan Pérez" value={cadete} onChange={e=>setCadete(e.target.value)} />
+                <div className="flex-1 overflow-y-auto p-6 bg-white flex flex-col">
+                    {/* BARRA SUPERIOR */}
+                    <div className="flex justify-between items-end mb-6 gap-6">
+                        <div className="flex-1 max-w-md">
+                            <label className={labelClass}>Responsable / Cadete</label>
+                            <div className="relative">
+                                <i className="fa-solid fa-user-tag absolute left-3 top-2.5 text-slate-400"></i>
+                                <input type="text" className={`${inputClass} pl-9 font-semibold`} placeholder="¿Quién retira?" value={cadete} onChange={e => setCadete(e.target.value)} autoFocus />
+                            </div>
                         </div>
-                        <div style={{textAlign:'right'}}>
-                            <div style={{fontSize:'0.85rem', color:'#64748b', fontWeight:600}}>Total a Enviar</div>
-                            <div style={{fontSize:'1.8rem', fontWeight:'800', color:'#0f172a', lineHeight:1}}>
-                                {selected.length} <span style={{fontSize:'1.1rem', fontWeight:'600', color:'#94a3b8'}}>/ {orders.length}</span>
+                        <div className="text-right">
+                            <div className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Total a Enviar</div>
+                            <div className="text-3xl font-black text-slate-800 leading-none">
+                                {selected.length} <span className="text-lg font-semibold text-slate-400">/ {orders.length}</span>
                             </div>
                         </div>
                     </div>
 
                     {/* TABLA */}
-                    <div className={styles.tableContainer}>
-                        <table className={styles.cleanTable}>
-                            <thead>
-                                <tr>
-                                    <th style={{textAlign:'center', width:'40px'}}>
-                                        <input type="checkbox" onChange={toggleAll} checked={orders.length > 0 && selected.length === orders.length} style={{cursor:'pointer'}} />
-                                    </th>
-                                    <th>Orden</th>
-                                    <th>Cliente</th>
-                                    <th>Trabajo</th>
-                                    <th style={{textAlign:'center'}}>Acción</th> {/* Columna Nueva */}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {orders.map(o => (
-                                    <tr key={o.id} className={`${styles.tableRow} ${selected.includes(o.id) ? styles.tableRowSelected : ''}`}>
-                                        <td className={styles.tableCell} style={{textAlign:'center'}}>
-                                            <input type="checkbox" checked={selected.includes(o.id)} onChange={()=>toggleSelect(o.id)} style={{cursor:'pointer'}} />
-                                        </td>
-                                        <td className={styles.tableCell} style={{fontWeight:'700'}}>#{o.id}</td>
-                                        <td className={styles.tableCell}>{o.client}</td>
-                                        <td className={styles.tableCell} style={{color:'#64748b'}}>{o.description}</td>
-                                        
-                                        {/* BOTÓN DEVOLVER */}
-                                        <td className={styles.tableCell} style={{textAlign:'center'}}>
-                                            <button 
-                                                onClick={(e) => { e.stopPropagation(); removeFromCart(o.id); }}
-                                                title="Sacar del carrito (Devolver a producción)"
-                                                style={{
-                                                    background:'#fef2f2', border:'1px solid #fecaca', 
-                                                    color:'#ef4444', borderRadius:'6px', padding:'4px 8px', 
-                                                    cursor:'pointer'
-                                                }}
-                                            >
-                                                <i className="fa-solid fa-rotate-left"></i>
-                                            </button>
-                                        </td>
+                    <div className="flex-1 border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm flex flex-col">
+                        <div className="overflow-y-auto flex-1">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-xs uppercase tracking-wide sticky top-0 z-10">
+                                    <tr>
+                                        <th className="p-3 text-center w-10 bg-slate-50">
+                                            <input type="checkbox" onChange={toggleAll} checked={orders.length > 0 && selected.length === orders.length} className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 cursor-pointer" />
+                                        </th>
+                                        <th className="p-3 bg-slate-50">Orden</th>
+                                        <th className="p-3 bg-slate-50">Cliente</th>
+                                        <th className="p-3 bg-slate-50">Trabajo</th>
+                                        <th className="p-3 text-center bg-slate-50 w-20">Acción</th>
                                     </tr>
-                                ))}
-                                {orders.length === 0 && !loading && (
-                                    <tr><td colSpan="5" style={{padding:40, textAlign:'center', color:'#94a3b8'}}>El carrito está vacío.</td></tr>
-                                )}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {orders.map(o => (
+                                        <tr key={o.id} className={`hover:bg-slate-50 transition-colors ${selected.includes(o.id) ? 'bg-indigo-50/50' : ''}`}>
+                                            <td className="p-3 text-center">
+                                                <input type="checkbox" checked={selected.includes(o.id)} onChange={() => toggleSelect(o.id)} className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300 cursor-pointer" />
+                                            </td>
+                                            <td className="p-3 font-bold text-slate-700">#{o.id}</td>
+                                            <td className="p-3 text-slate-600 font-medium">{o.client}</td>
+                                            <td className="p-3 text-slate-500 italic">{o.description}</td>
+
+                                            {/* BOTÓN DEVOLVER */}
+                                            <td className="p-3 text-center">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); removeFromCart(o.id); }}
+                                                    className="p-1.5 rounded-md text-red-500 hover:bg-red-50 hover:text-red-600 border border-transparent hover:border-red-100 transition-all"
+                                                    title="Sacar del carrito"
+                                                >
+                                                    <i className="fa-solid fa-rotate-left"></i>
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {orders.length === 0 && !loading && (
+                                        <tr><td colSpan="5" className="p-10 text-center text-slate-400 italic">El carrito está vacío.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
                 {/* FOOTER */}
-                <div className={styles.modalFooter}>
-                    <button onClick={onClose} className={styles.cancelButton}>Cerrar</button>
-                    <button 
-                        onClick={handleDispatch} 
-                        className={styles.saveButton} 
-                        style={{background: '#4f46e5'}}
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end items-center gap-3 shrink-0">
+                    <button onClick={onClose} className="px-4 py-2 text-slate-500 hover:text-slate-800 font-semibold transition-colors">Cancelar</button>
+                    <button
+                        onClick={handleDispatch}
+                        className={`px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2 ${loading || selected.length === 0 ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
                         disabled={loading || selected.length === 0}
                     >
-                        {loading ? 'Procesando...' : `Despachar Seleccionados`}
+                        {loading ? 'Procesando...' : <><i className="fa-solid fa-paper-plane"></i> Despachar Seleccionados</>}
                     </button>
                 </div>
             </div>

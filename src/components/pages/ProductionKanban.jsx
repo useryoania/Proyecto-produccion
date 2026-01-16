@@ -1,118 +1,31 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { productionService, rollsService } from '../../services/api'; // Usamos tus servicios originales
+import React, { useState, useEffect } from 'react';
+import { DragDropContext, Droppable } from '@hello-pangea/dnd';
+import { productionService, rollsService } from '../../services/api';
 import ActiveRollModal from '../modals/ActiveRollModal';
-import RollDetailModal from '../modals/RollDetailModal'; // Nuevo modal para ver órdenes
-import styles from './ProductionKanban.module.css'; // Usaremos este nuevo archivo CSS
-
-// Formato de duración (Necesario para mostrar el tiempo transcurrido)
-const formatDuration = (seconds) => {
-    if (!seconds || seconds < 0) return '00:00:00';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-};
-
-// --- COMPONENTE DE LA TARJETA DEL ROLLO ---
-const RollCard = ({ roll, index, isMachineView, onToggleStatus, onFinish, onManage, onReassign, onOpenDetail }) => {
-    // Nota: Asumo que los rollos tienen propiedades como .rollCode, .totalMeters, .usage, .capacity
-    const percent = Math.min((roll.usage / roll.capacity) * 100, 100);
-    const isRunning = roll.status === 'Producción';
-    const isPaused = roll.status === 'Pausado';
-    const isEnCola = roll.status === 'En cola' || !roll.machineId;
-    const isLocked = roll.status === 'Producción'; // Restricción de movimiento
-    
-    // Calcula el tiempo de producción (usaremos currentDuration si viene del backend)
-    const timeDisplay = formatDuration(roll.currentDuration); 
-    
-    // Botón principal
-    let primaryButton;
-    if (isRunning) {
-        primaryButton = <button className={styles.btnPause} onClick={(e) => {e.stopPropagation(); onToggleStatus(roll.id, roll.status)}} title="Pausar Impresión"><i className="fa-solid fa-pause"></i> Pausar</button>;
-    } else if (isPaused || isEnCola) {
-        primaryButton = <button className={styles.btnStart} onClick={(e) => {e.stopPropagation(); onToggleStatus(roll.id, roll.status)}} title="Iniciar Impresión"><i className="fa-solid fa-play"></i> Iniciar</button>;
-    }
-
-    // El drag sólo está habilitado si NO está imprimiendo
-    return (
-        <Draggable draggableId={String(roll.id)} index={index} isDragDisabled={isLocked}>
-            {(provided, snapshot) => (
-                <div
-                    className={`${styles.rollCard} ${styles[roll.status.replace(/\s+/g, '')]} ${isLocked ? styles.lockedCard : ''}`}
-                    ref={provided.innerRef}
-                    {...provided.draggableProps}
-                    {...provided.dragHandleProps}
-                    style={{
-                        ...provided.draggableProps.style,
-                        opacity: snapshot.isDragging || isLocked ? 0.7 : 1,
-                        cursor: isLocked ? 'not-allowed' : 'grab'
-                    }}
-                >
-                    {/* INFO PRINCIPAL DEL ROLLO */}
-                    <div className={styles.rollInfo}>
-                        <span className={styles.rollCode} style={{color: roll.color}}>{roll.rollCode || roll.id}</span>
-                        <span className={styles.statusBadge}>{roll.status}</span>
-                    </div>
-
-                    <div className={styles.detailsRow}>
-                        <p className={styles.detailItem}>Metros: <strong>{roll.usage?.toFixed(1)} / {roll.capacity}m</strong></p>
-                        <p className={styles.detailItem}>Órdenes: <strong>{roll.ordersCount || roll.rolls?.length || 0}</strong></p>
-                        <p className={styles.detailItem}>Tiempo: <strong className={isRunning ? styles.timerActive : styles.timerPaused}>{timeDisplay}</strong></p>
-                    </div>
-
-                    {/* BARRA DE PROGRESO */}
-                    <div className={styles.progressBarContainer}>
-                         <div className={styles.progressBar} style={{width: `${percent}%`, background: roll.color}}></div>
-                    </div>
-                    
-                    {/* CONTROLES (SOLO SI ESTÁ ASIGNADO) */}
-                    {isMachineView && (
-                        <div className={styles.rollControls}>
-                            {primaryButton}
-                            
-                            <button 
-                                className={styles.btnView} 
-                                onClick={(e) => {e.stopPropagation(); onOpenDetail(roll)}}
-                                title="Ver detalle de órdenes y material"
-                            >
-                                <i className="fa-solid fa-list-ul"></i> Detalle
-                            </button>
-
-                            <button 
-                                className={styles.btnFinish} 
-                                onClick={(e) => {e.stopPropagation(); onFinish(roll.id)}}
-                                title="Finalizar e imprimir reporte"
-                            >
-                                <i className="fa-solid fa-stop"></i> Finalizar
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
-        </Draggable>
-    );
-};
-
+import RollDetailModal from '../modals/RollDetailModal';
+import RollCard from '../production/components/RollCard';
 
 const ProductionKanban = ({ areaCode }) => {
-    // Usamos el estado del código anterior para la compatibilidad
     const [machines, setMachines] = useState([]);
     const [pendingRolls, setPendingRolls] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [selectedRoll, setSelectedRoll] = useState(null);
-    const [showDetailModal, setShowDetailModal] = useState(false);
 
-    // --- LÓGICA DE CARGA Y SERVICIOS ---
+    // --- ESTADOS SEPARADOS PARA EVITAR CONFLICTO DE MODALES ---
+    const [selectedRoll, setSelectedRoll] = useState(null); // Para ActiveRollModal (Acciones rápidas)
+    const [detailRoll, setDetailRoll] = useState(null);     // Para RollDetailModal (PDF y Tabla)
 
+    // Lógica de carga
     const loadBoard = async () => {
         try {
-            // Nota: Aquí se usa tu productionService.getBoard original.
-            const data = await productionService.getBoard(areaCode); 
+            const data = await productionService.getBoard(areaCode);
+            // data ya contiene { machines, pendingRolls } gracias al nuevo controlador
             setMachines(data.machines || []);
             setPendingRolls(data.pendingRolls || []);
-        } catch (error) { console.error(error); } 
-        finally { setLoading(false); }
+        } catch (error) {
+            console.error("Error cargando el tablero:", error);
+        } finally {
+            setLoading(false);
+        }
     };
 
     useEffect(() => {
@@ -121,130 +34,301 @@ const ProductionKanban = ({ areaCode }) => {
         return () => clearInterval(interval);
     }, [areaCode]);
 
-    // Registro de Tiempos (Iniciar/Pausar)
-    const handleToggleStatus = async (rollId, currentStatus) => {
-        const action = currentStatus === 'Producción' ? 'stop' : 'start';
-        // Optimistic UI update (opcional)
-        // updateRollStatusVisual(rollId, action === 'start' ? 'Producción' : 'Pausado');
+    // Registro de Tiempos (Iniciar/Pausar) - VERSIÓN CORREGIDA DE REACT
+    // Reemplaza tu función handleToggleStatus con esta:
+
+    const handleToggleStatus = async (rollId, currentAction, machineId) => {
+
+        // 1. VALIDACIÓN: SI ES PLAY (START), VERIFICAR QUE LA MÁQUINA ESTÉ LIBRE
+        if (currentAction === 'start') {
+            const targetMachine = machines.find(m => String(m.id) === String(machineId));
+            if (targetMachine) {
+                // Buscamos si hay ALGÚN rollo cuyo estado empiece con 'En maquina' (o 'Producción' por compatibilidad)
+                const isBusy = targetMachine.rolls.some(r =>
+                    (r.status === 'En maquina' || r.status.startsWith('En maquina') || r.status === 'Producción') &&
+                    String(r.id) !== String(rollId)
+                );
+
+                if (isBusy) {
+                    alert("⛔ DETENIDO: Ya hay un rollo en proceso (Play) en esta máquina. Debes pausarlo o finalizarlo primero.");
+                    return; // Cancelamos la acción
+                }
+            }
+        }
+
+        // Guardar estado previo para rollback
+        const prevMachines = JSON.parse(JSON.stringify(machines));
+
+        // 2. ACTUALIZACIÓN OPTIMISTA
+        console.log(`%c [OPTIMISTA] Cambiando estado...`, 'color: orange');
+
+        setMachines(prevM => {
+            return prevM.map(machine => {
+                if (String(machine.id) === String(machineId)) {
+                    const newRolls = machine.rolls.map(r => {
+                        if (String(r.id) === String(rollId)) {
+                            // NUEVO ESTADO: 'En maquina' para start, 'Pausado' para stop
+                            // Nota: El backend agregará el nombre de la máquina después, 
+                            // pero visualmente 'En maquina' activa los estilos correctos por ahora.
+                            const newStatus = currentAction === 'start' ? 'En maquina' : 'Pausado';
+                            return { ...r, status: newStatus };
+                        }
+                        return r;
+                    });
+                    return { ...machine, rolls: newRolls };
+                }
+                return machine;
+            });
+        });
+
+        // 3. LLAMADA AL SERVIDOR
         try {
-            await productionService.toggleStatus(rollId, action);
-            loadBoard(); 
+            await productionService.toggleStatus(rollId, currentAction);
+            console.log("✅ Éxito en servidor.");
+            loadBoard(); // Recargamos para obtener los nombres completos (ej: 'En maquina - Roland')
         } catch (e) {
-            alert("Error al cambiar estado");
-            loadBoard();
+            console.error("❌ ERROR BACKEND:", e);
+            alert(`Error: ${e.response?.data?.error || e.message}`);
+            setMachines(prevMachines); // Rollback
         }
     };
 
-    // Finalizar (Cerrar Rollo)
-    const handleCloseRoll = async (rollId) => {
-        if (!window.confirm("¿Confirmar: Finalizar impresión y cerrar este lote definitivamente?")) return;
+    // Finalizar Rollo <--- DEBE SEGUIR ESTA LÍNEA
+    const handleCloseRoll = async (roll) => {
+        const ordersIncomplete = roll.orders?.filter(o => o.status !== 'Finalizado' && o.status !== 'Imprimiendo').length;
+        if (ordersIncomplete > 0) {
+            const confirmMessage = `ATENCIÓN: ${ordersIncomplete} órdenes aún no están finalizadas. ¿Desea forzar el cierre?`;
+            if (!window.confirm(confirmMessage)) return;
+        }
+        if (!window.confirm(`¿Finalizar impresión y cerrar el lote ${roll.rollCode}?`)) return;
+
         try {
-            await rollsService.closeRoll(rollId);
-            loadBoard(); // Recargar todo el tablero
+            await rollsService.closeRoll(roll.id);
+            loadBoard();
         } catch (e) { alert("Error al finalizar el lote."); }
     };
 
-    // Modal de Detalle de Órdenes
+    // --- MANEJADORES DE MODALES ---
+
+    // 1. Abrir Modal de Detalle (El Azul con PDF)
     const handleOpenRollDetail = (roll) => {
-        setSelectedRoll(roll);
-        setShowDetailModal(true);
+        console.log("Abriendo Detalle para:", roll.rollCode);
+        setDetailRoll(roll); // Solo activamos detailRoll
     };
 
-    // --- DRAG & DROP (Asignación y Reasignación) ---
+    // 2. Abrir Modal de Acciones (Al clickear la tarjeta)
+    const handleSelectRoll = (roll) => {
+        console.log("Seleccionando Rollo:", roll.rollCode);
+        setSelectedRoll(roll); // Solo activamos selectedRoll
+    };
+
+    // --- DRAG & DROP ---
+    // --- DRAG & DROP (OPTIMISTA) ---
     const onDragEnd = async (result) => {
         const { source, destination, draggableId } = result;
 
+        // 1. Validaciones básicas
         if (!destination) return;
-        if (source.droppableId === destination.droppableId) return;
+        // Si el usuario lo suelta donde mismo, no hacemos nada
+        if (
+            source.droppableId === destination.droppableId &&
+            source.index === destination.index
+        ) {
+            return;
+        }
 
-        const rollId = draggableId;
-        // targetMachineId puede ser null (vuelve a pendientes) o el ID de la máquina.
-        const targetMachineId = destination.droppableId === 'pending' ? null : destination.droppableId; 
-        
-        // El bloqueo de movimiento está en RollCard, pero el backend debe re-validar.
-        
-        // Validación máquina ocupada (Tu lógica original)
-        if (targetMachineId) {
-            const maq = machines.find(m => String(m.id) === targetMachineId);
-            if (maq && maq.rolls.length > 0 && maq.rolls[0].id !== rollId) { // Permitir drop si es el mismo rollo
-                return alert("⛔ Máquina ocupada.");
+        // LOG: Diagnóstico de movimiento
+        console.log(`%c [UI] Moviendo Rollo ID: ${draggableId} | De: ${source.droppableId} -> A: ${destination.droppableId}`, 'color: cyan');
+
+        // ============================================================
+        // PASO 2: COPIA DE SEGURIDAD (Por si falla el servidor)
+        // ============================================================
+        const prevPendingRolls = [...pendingRolls];
+        // Hacemos copia profunda de machines porque tiene arrays anidados (rolls)
+        const prevMachines = JSON.parse(JSON.stringify(machines));
+
+        // ============================================================
+        // PASO 3: ACTUALIZACIÓN VISUAL INMEDIATA (Lógica Local)
+        // ============================================================
+        let movedRoll = null;
+
+        // A. CREAMOS NUEVAS VARIABLES PARA MODIFICAR
+        const newPending = [...pendingRolls];
+        const newMachines = machines.map(m => ({ ...m, rolls: [...m.rolls] }));
+
+        // B. BUSCAR Y QUITAR DEL ORIGEN (Source)
+        if (source.droppableId === 'pending') {
+            // Estaba en pendientes
+            movedRoll = newPending[source.index];
+            newPending.splice(source.index, 1);
+        } else {
+            // Estaba en una máquina
+            const sourceMachine = newMachines.find(m => String(m.id) === source.droppableId);
+            if (sourceMachine) {
+                movedRoll = sourceMachine.rolls[source.index];
+                sourceMachine.rolls.splice(source.index, 1);
             }
         }
-        
+
+        // Si por alguna razón no encontramos el rollo, salimos
+        if (!movedRoll) return;
+
+        // C. INSERTAR EN EL DESTINO (Destination)
+        if (destination.droppableId === 'pending') {
+            // Va a pendientes
+            // Opcional: Actualizar estado visualmente a 'En cola'
+            movedRoll = { ...movedRoll, status: 'En cola', machineId: null };
+            newPending.splice(destination.index, 0, movedRoll);
+        } else {
+            // Va a una máquina
+            const destMachine = newMachines.find(m => String(m.id) === destination.droppableId);
+            if (destMachine) {
+                // Opcional: Actualizar estado visualmente para que no se vea raro mientras carga
+                movedRoll = { ...movedRoll, status: 'En cola', machineId: destMachine.id };
+                destMachine.rolls.splice(destination.index, 0, movedRoll);
+            }
+        }
+
+        // D. APLICAR CAMBIOS AL ESTADO DE REACT (¡Aquí ocurre la magia instantánea!)
+        console.log(`%c [UI] Aplicando cambios visuales YA...`, 'color: orange');
+        setPendingRolls(newPending);
+        setMachines(newMachines);
+
+        // ============================================================
+        // PASO 4: LLAMADA AL SERVIDOR (En segundo plano)
+        // ============================================================
+        const rollId = draggableId;
+        const targetMachineId = destination.droppableId === 'pending' ? null : destination.droppableId;
+
         try {
-            // Nota: productionService.assignRoll debe manejar la asignación a la máquina
+            console.log(`%c [SERVER] Enviando petición al backend...`, 'color: yellow');
+            // Nota: Esperamos la promesa (await) solo para saber si falló, 
+            // pero el usuario ya vio el cambio.
             await productionService.assignRoll(rollId, targetMachineId);
-            loadBoard();
-        } catch (e) { alert("Error al mover. Recargando."); loadBoard(); }
+
+            console.log(`%c [SERVER] Éxito. Sincronizado.`, 'color: green');
+            // Opcional: Si el servidor devuelve datos calculados (como tiempos nuevos), 
+            // podrías llamar a loadBoard() aquí, pero cuidado con los saltos visuales.
+            // Por ahora, confiamos en la actualización local.
+
+        } catch (error) {
+            // ============================================================
+            // PASO 5: ROLLBACK (Si falla, volvemos atrás)
+            // ============================================================
+            console.error("Error al mover rollo en servidor:", error);
+
+            // Revertimos a las copias de seguridad
+            setPendingRolls(prevPendingRolls);
+            setMachines(prevMachines);
+
+            const errorMessage = error.response?.data?.message || error.message || "Error desconocido.";
+            alert(`Operación Fallida: ${errorMessage}. Se han revertido los cambios.`);
+        }
     };
 
-    if (loading && machines.length === 0) return <div className={styles.loadingContainer}>Cargando Maquinaria...</div>;
+    if (loading) return (
+        <div className="flex items-center justify-center h-full bg-slate-50">
+            <div className="text-center">
+                <i className="fa-solid fa-circle-notch fa-spin text-4xl text-cyan-500 mb-4"></i>
+                <p className="font-bold text-slate-500">Cargando Tablero...</p>
+            </div>
+        </div>
+    );
 
     // --- RENDERIZADO ---
     return (
-        <div className={styles.kanbanContainer}>
+        <div className="h-full bg-slate-50 flex flex-col overflow-hidden">
             <DragDropContext onDragEnd={onDragEnd}>
-                <div className={styles.board}>
-                    
-                    {/* COLUMNA 1: LOTES EN ESPERA (ORIGEN) */}
-                    <div className={styles.column} style={{ borderTop: '4px solid #f59e0b', background: '#fff' }}>
-                        <div className={styles.columnHeader}>
-                            <div className={styles.columnTitle}><i className="fa-solid fa-layer-group" style={{color:'#f59e0b'}}></i> LOTES EN ESPERA</div>
-                            <span className={styles.columnCount}>{pendingRolls.length}</span>
+                <div className="flex-1 overflow-x-auto p-6 flex gap-6 align-start bg-slate-50">
+
+                    {/* COLUMNA: LOTES EN ESPERA */}
+                    <div className="w-80 min-w-[320px] bg-white rounded-2xl shadow-lg border-t-4 border-amber-500 flex flex-col max-h-full">
+                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-xl sticky top-0 z-10">
+                            <div className="font-black text-slate-800 text-sm flex items-center gap-2">
+                                <i className="fa-solid fa-layer-group text-amber-500"></i>
+                                LOTES EN ESPERA
+                            </div>
+                            <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full">
+                                {pendingRolls.length}
+                            </span>
                         </div>
-                        
+
                         <Droppable droppableId="pending">
                             {(provided) => (
-                                <div className={styles.droppableArea} ref={provided.innerRef} {...provided.droppableProps}>
+                                <div
+                                    className="p-3 flex-1 overflow-y-auto custom-scrollbar bg-slate-50/50"
+                                    ref={provided.innerRef}
+                                    {...provided.droppableProps}
+                                >
                                     {pendingRolls.map((roll, index) => (
-                                        <RollCard 
-                                            key={roll.id} 
-                                            roll={roll} 
+                                        <RollCard
+                                            key={roll.id}
+                                            roll={roll}
                                             index={index}
-                                            isMachineView={false} 
+                                            isMachineView={false}
                                             onOpenDetail={handleOpenRollDetail}
-                                            // En pendientes, el arrastre siempre está habilitado (isLocked=false)
+                                            onSelect={handleSelectRoll}
+                                            onFinish={() => { }}
+                                            onToggleStatus={() => { }}
                                         />
                                     ))}
                                     {provided.placeholder}
+                                    {pendingRolls.length === 0 && (
+                                        <div className="h-24 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-slate-300 text-xs italic">
+                                            Sin lotes pendientes
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </Droppable>
                     </div>
 
-                    {/* COLUMNAS DE MÁQUINAS (DESTINO) */}
+                    {/* COLUMNAS: MÁQUINAS */}
                     {machines.map(machine => {
                         const isBusy = machine.rolls.length > 0;
-                        const statusColor = machine.status === 'OK' ? '#10b981' : '#ef4444';
+                        const statusColor = machine.status === 'OK' ? 'border-emerald-500' : 'border-red-500';
 
                         return (
-                            <div key={machine.id} className={styles.column} style={{ borderTop: `4px solid ${statusColor}`, background: isBusy ? '#f0fdf4' : '#fff' }}>
-                                <div className={styles.columnHeader}>
-                                    <div className={styles.columnTitle} style={{color: '#1e293b'}}>
-                                        <i className={`fa-solid ${isBusy ? 'fa-gear fa-spin' : 'fa-print'}`} style={{color: isBusy ? '#2563eb' : '#94a3b8'}}></i>
+                            <div key={machine.id} className={`w-96 min-w-[320px] bg-white rounded-2xl shadow-lg border-t-4 ${statusColor} flex flex-col max-h-full transition-colors ${isBusy ? 'bg-emerald-50/10' : ''}`}>
+                                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-xl sticky top-0 z-10">
+                                    <div className="font-black text-slate-800 text-sm flex items-center gap-2">
+                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isBusy ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                                            <i className={`fa-solid ${isBusy && machine.rolls[0]?.status.includes('En maquina') ? 'fa-gear fa-spin' : 'fa-print'}`}></i>
+                                        </div>
                                         {machine.name}
                                     </div>
-                                    <span style={{fontSize:'0.65rem', fontWeight:'bold', padding:'2px 6px', borderRadius:'4px', background: machine.status==='OK'?'#dcfce7':'#fee2e2', color: machine.status==='OK'?'#166534':'#991b1b'}}>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${machine.status === 'OK' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                                         {machine.status}
                                     </span>
                                 </div>
 
                                 <Droppable droppableId={String(machine.id)}>
                                     {(provided) => (
-                                        <div className={styles.droppableArea} ref={provided.innerRef} {...provided.droppableProps}>
+                                        <div
+                                            className="p-3 flex-1 overflow-y-auto custom-scrollbar bg-slate-50/50"
+                                            ref={provided.innerRef}
+                                            {...provided.droppableProps}
+                                        >
                                             {machine.rolls.map((roll, index) => (
-                                                <RollCard 
-                                                    key={roll.id} 
-                                                    roll={roll} 
+                                                <RollCard
+                                                    key={roll.id}
+                                                    roll={roll}
                                                     index={index}
                                                     isMachineView={true}
                                                     onToggleStatus={handleToggleStatus}
                                                     onFinish={handleCloseRoll}
                                                     onOpenDetail={handleOpenRollDetail}
+                                                    onSelect={handleSelectRoll}
+                                                    machineId={machine.id}
                                                 />
                                             ))}
                                             {provided.placeholder}
-                                            {machine.rolls.length === 0 && <div style={{textAlign:'center', padding:20, color:'#cbd5e1', fontSize:'0.8rem'}}>Disponible</div>}
+                                            {machine.rolls.length === 0 && (
+                                                <div className="h-32 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-slate-300 gap-2">
+                                                    <i className="fa-solid fa-power-off text-2xl opacity-20"></i>
+                                                    <span className="text-xs font-medium">Disponible</span>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </Droppable>
@@ -254,10 +338,27 @@ const ProductionKanban = ({ areaCode }) => {
 
                 </div>
             </DragDropContext>
-            
-            {/* Modales */}
-            <ActiveRollModal isOpen={!!selectedRoll} onClose={() => setSelectedRoll(null)} roll={selectedRoll} onSuccess={loadBoard} />
-            <RollDetailModal isOpen={showDetailModal} onClose={() => setShowDetailModal(false)} roll={selectedRoll} />
+
+            {/* --- SECCIÓN DE MODALES (SEPARADOS) --- */}
+
+            {/* 1. Modal General (Acciones Rápidas) */}
+            {selectedRoll && (
+                <ActiveRollModal
+                    isOpen={!!selectedRoll}
+                    onClose={() => setSelectedRoll(null)}
+                    roll={selectedRoll}
+                    onSuccess={loadBoard}
+                />
+            )}
+
+            {/* 2. Modal Detalle (PDF y Tabla Azul) */}
+            {detailRoll && (
+                <RollDetailModal
+                    isOpen={!!detailRoll}
+                    onClose={() => setDetailRoll(null)}
+                    roll={detailRoll}
+                />
+            )}
         </div>
     );
 };

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import styles from './Workflow.module.css';
 
 const Workflow = ({ orders }) => {
   const [workflows, setWorkflows] = useState([]);
@@ -11,7 +10,7 @@ const Workflow = ({ orders }) => {
 
   const generateWorkflows = () => {
     const coordOrders = orders.filter(order => order.area === 'COORD');
-    
+
     const generatedWorkflows = coordOrders.map(order => ({
       id: order.id,
       client: order.client,
@@ -63,10 +62,10 @@ const Workflow = ({ orders }) => {
 
   const getStepStatusIcon = (status) => {
     switch (status) {
-      case 'completed': return 'fa-solid fa-check-circle text-green-500';
-      case 'active': return 'fa-solid fa-play-circle text-blue-500 animate-pulse';
-      case 'pending': return 'fa-regular fa-clock text-gray-400';
-      default: return 'fa-regular fa-circle text-gray-300';
+      case 'completed': return 'fa-solid fa-check-circle text-green-500 text-lg';
+      case 'active': return 'fa-solid fa-play-circle text-blue-500 animate-pulse text-lg';
+      case 'pending': return 'fa-regular fa-clock text-gray-300 text-lg';
+      default: return 'fa-regular fa-circle text-gray-200 text-lg';
     }
   };
 
@@ -85,33 +84,33 @@ const Workflow = ({ orders }) => {
   };
 
   return (
-    <div className={styles.flowsContainer}>
-      <div className={styles.flowsHeader}>
+    <div className="flex-1 flex flex-col bg-indigo-50/50 p-6 overflow-y-auto">
+      <div className="flex justify-between items-end mb-6">
         <div>
-          <h2 className={styles.title}>
+          <h2 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
             <i className="fa-solid fa-diagram-project"></i>
             Flujos de Trabajo
           </h2>
-          <p className={styles.subtitle}>
+          <p className="text-sm text-indigo-600 font-medium">
             Estado integral de órdenes multidepartamento
           </p>
         </div>
 
-        <div className={styles.filters}>
+        <div className="flex bg-white rounded-lg p-1 gap-1 shadow-sm border border-indigo-100">
           <button
-            className={`${styles.filterButton} ${filter === 'all' ? styles.filterActive : ''}`}
+            className={`px-4 py-2 text-xs font-bold rounded-md transition-all ${filter === 'all' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
             onClick={() => setFilter('all')}
           >
             Todos ({workflows.length})
           </button>
           <button
-            className={`${styles.filterButton} ${filter === 'active' ? styles.filterActive : ''}`}
+            className={`px-4 py-2 text-xs font-bold rounded-md transition-all ${filter === 'active' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
             onClick={() => setFilter('active')}
           >
             En Proceso ({workflows.filter(w => w.status === 'En Proceso').length})
           </button>
           <button
-            className={`${styles.filterButton} ${filter === 'pending' ? styles.filterActive : ''}`}
+            className={`px-4 py-2 text-xs font-bold rounded-md transition-all ${filter === 'pending' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}
             onClick={() => setFilter('pending')}
           >
             Pendientes ({workflows.filter(w => w.status === 'Pendiente').length})
@@ -119,100 +118,97 @@ const Workflow = ({ orders }) => {
         </div>
       </div>
 
-      <div className={styles.workflowsGrid}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {filteredWorkflows.map(workflow => (
-          <div key={workflow.id} className={styles.workflowCard}>
+          <div key={workflow.id} className="bg-white rounded-xl shadow-sm border border-indigo-100 overflow-hidden hover:shadow-md transition-all group">
             {/* Header */}
-            <div className={styles.workflowHeader}>
-              <div className={styles.workflowInfo}>
-                <span className={styles.workflowId}>ORD-{workflow.id}</span>
-                <span className={`${styles.statusBadge} ${getStatusColor(workflow.status)}`}>
+            <div className="p-4 border-b border-indigo-50 flex justify-between items-center bg-white">
+              <div className="flex items-center gap-3">
+                <span className="font-black text-sm text-indigo-900">ORD-{workflow.id}</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${getStatusColor(workflow.status)}`}>
                   {workflow.status}
                 </span>
               </div>
-              <div className={styles.workflowMeta}>
-                <span className={styles.priority}>{workflow.priority}</span>
-                <span className={styles.lastUpdate}>{workflow.lastUpdate}</span>
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-100">{workflow.priority}</span>
+                <span>{workflow.lastUpdate}</span>
               </div>
             </div>
 
             {/* Client and Product */}
-            <div className={styles.clientSection}>
-              <h3 className={styles.clientName}>{workflow.client}</h3>
-              <p className={styles.productName}>{workflow.product}</p>
+            <div className="p-4 border-b border-indigo-50 bg-white">
+              <h3 className="font-bold text-slate-800 text-sm mb-1">{workflow.client}</h3>
+              <p className="text-xs text-slate-500">{workflow.product}</p>
             </div>
 
             {/* Progress Bar */}
-            <div className={styles.progressSection}>
-              <div className={styles.progressHeader}>
+            <div className="p-4 border-b border-indigo-50 bg-slate-50/50">
+              <div className="flex justify-between items-center mb-2 text-xs font-bold text-slate-600">
                 <span>Progreso General</span>
-                <span className={styles.progressPercentage}>{workflow.progress}%</span>
+                <span className="text-indigo-800">{workflow.progress}%</span>
               </div>
-              <div className={styles.progressBar}>
-                <div 
-                  className={`${styles.progressFill} ${getProgressColor(workflow.progress)}`}
+              <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${getProgressColor(workflow.progress)}`}
                   style={{ width: `${workflow.progress}%` }}
                 ></div>
               </div>
             </div>
 
             {/* Flow Steps */}
-            <div className={styles.flowSteps}>
-              <div className={styles.flowTitle}>
+            <div className="p-5 border-b border-indigo-50">
+              <div className="font-bold text-slate-700 text-xs mb-4 flex items-center gap-2 uppercase tracking-wide">
                 <i className="fa-solid fa-route text-indigo-500"></i>
                 Flujo: {workflow.flow}
               </div>
-              
-              <div className={styles.stepsContainer}>
+
+              <div className="space-y-0 relative">
+                {/* Vertical Line Connector (Absolute) */}
+                <div className="absolute left-[9px] top-2 bottom-4 w-0.5 bg-slate-200 z-0"></div>
+
                 {workflow.steps.map((step, index) => (
-                  <div key={index} className={styles.step}>
-                    <div className={styles.stepIcon}>
+                  <div key={index} className="flex items-start gap-4 relative z-10 pb-4 last:pb-0">
+                    <div className="bg-white rounded-full p-1 border-4 border-white">
                       <i className={getStepStatusIcon(step.status)}></i>
                     </div>
-                    <div className={styles.stepInfo}>
-                      <div className={styles.stepName}>{step.name}</div>
-                      <div className={styles.stepDetails}>
-                        <span className={styles.stepArea}>{step.area}</span>
-                        <span className={styles.stepTime}>{step.time}</span>
+                    <div className="flex-1">
+                      <div className="text-sm font-bold text-slate-700">{step.name}</div>
+                      <div className="flex justify-between items-center mt-1 text-xs">
+                        <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-bold">{step.area}</span>
+                        <span className="text-slate-400">{step.time}</span>
                       </div>
                     </div>
-                    {index < workflow.steps.length - 1 && (
-                      <div className={styles.stepConnector}></div>
-                    )}
                   </div>
                 ))}
               </div>
             </div>
 
             {/* Additional Info */}
-            <div className={styles.additionalInfo}>
-              <div className={styles.infoItem}>
-                <i className="fa-solid fa-truck-loading text-green-500"></i>
-                <span>Abastecimiento: {workflow.supply}</span>
+            <div className="p-4 border-b border-indigo-50 bg-slate-50 grid grid-cols-2 gap-y-3">
+              <div className="flex items-center gap-2 text-xs text-slate-600">
+                <i className="fa-solid fa-truck-loading text-green-500 w-4 text-center"></i>
+                <span>Abastecimiento: <strong>{workflow.supply}</strong></span>
               </div>
-              <div className={styles.infoItem}>
-                <i className="fa-solid fa-factory text-blue-500"></i>
-                <span>Origen: {workflow.source}</span>
+              <div className="flex items-center gap-2 text-xs text-slate-600">
+                <i className="fa-solid fa-factory text-blue-500 w-4 text-center"></i>
+                <span>Origen: <strong>{workflow.source}</strong></span>
               </div>
-              <div className={styles.infoItem}>
-                <i className="fa-solid fa-user text-purple-500"></i>
-                <span>Asignado: {workflow.assignedTo}</span>
+              <div className="flex items-center gap-2 text-xs text-slate-600 col-span-2">
+                <i className="fa-solid fa-user text-purple-500 w-4 text-center"></i>
+                <span>Asignado: <strong>{workflow.assignedTo}</strong></span>
               </div>
             </div>
 
             {/* Actions */}
-            <div className={styles.actions}>
-              <button className={styles.actionButton}>
-                <i className="fa-solid fa-eye"></i>
-                Detalles
+            <div className="p-3 bg-white flex gap-2">
+              <button className="flex-1 py-2 rounded bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 transition-colors flex items-center justify-center gap-2">
+                <i className="fa-solid fa-eye"></i> Detalles
               </button>
-              <button className={styles.actionButton}>
-                <i className="fa-solid fa-pen-to-square"></i>
-                Editar
+              <button className="flex-1 py-2 rounded bg-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-200 transition-colors flex items-center justify-center gap-2">
+                <i className="fa-solid fa-pen-to-square"></i> Editar
               </button>
-              <button className={styles.actionButtonPrimary}>
-                <i className="fa-solid fa-forward"></i>
-                Siguiente Paso
+              <button className="flex-1 py-2 rounded bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 shadow-sm">
+                Next <i className="fa-solid fa-forward"></i>
               </button>
             </div>
           </div>
@@ -221,13 +217,15 @@ const Workflow = ({ orders }) => {
 
       {/* Empty State */}
       {filteredWorkflows.length === 0 && (
-        <div className={styles.emptyState}>
-          <i className="fa-solid fa-diagram-project text-gray-300 text-4xl mb-4"></i>
-          <h3 className={styles.emptyTitle}>No hay flujos activos</h3>
-          <p className={styles.emptyText}>
-            {filter !== 'all' 
-              ? `No hay flujos en estado "${filter}"`
-              : 'No se encontraron órdenes de coordinación'
+        <div className="flex flex-col items-center justify-center py-20 text-center">
+          <div className="w-24 h-24 bg-indigo-100 rounded-full flex items-center justify-center mb-6">
+            <i className="fa-solid fa-diagram-project text-indigo-300 text-5xl"></i>
+          </div>
+          <h3 className="text-xl font-bold text-slate-600 mb-2">No hay flujos activos</h3>
+          <p className="text-slate-400 text-sm max-w-sm mx-auto">
+            {filter !== 'all'
+              ? `No hay flujos en estado "${filter}" actualmente.`
+              : 'No se encontraron órdenes de coordinación para mostrar.'
             }
           </p>
         </div>

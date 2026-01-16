@@ -3,29 +3,34 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 import QRCode from 'qrcode';
 import { ordersService, rollsService } from '../../services/api';
-import styles from './Modals.module.css'; // Reusamos estilos base
+import FabricAssignmentModal from './FabricAssignmentModal';
 
 const ActiveRollModal = ({ isOpen, onClose, roll, onSuccess }) => {
     const [loading, setLoading] = useState(false);
+
+    // FABRIC ASSIGNMENT STATE
+    const [showFabricModal, setShowFabricModal] = useState(false);
+    const [pendingOrderToProcess, setPendingOrderToProcess] = useState(null);
+    const [lastProcessedMaterial, setLastProcessedMaterial] = useState(null);
 
     if (!isOpen || !roll) return null;
 
     // 1. GENERAR PDF CON QR
     const generateManifest = async () => {
         const doc = new jsPDF();
-        
+
         // Generar QR
         const qrData = JSON.stringify({ id: roll.id, name: roll.name, orders: roll.orders.length });
         const qrUrl = await QRCode.toDataURL(qrData);
 
         // Encabezado
         doc.setFontSize(18);
-        doc.text(`Manifiesto de Producción: ${roll.name}`, 14, 20);
-        
+        doc.text(`Manifiesto de Producción: ${roll.name} `, 14, 20);
+
         doc.setFontSize(10);
-        doc.text(`ID Lote: ${roll.id}`, 14, 28);
-        doc.text(`Fecha Impresión: ${new Date().toLocaleString()}`, 14, 33);
-        
+        doc.text(`ID Lote: ${roll.id} `, 14, 28);
+        doc.text(`Fecha Impresión: ${new Date().toLocaleString()} `, 14, 33);
+
         // Pegar QR
         doc.addImage(qrUrl, 'PNG', 150, 10, 40, 40);
 
@@ -51,17 +56,60 @@ const ActiveRollModal = ({ isOpen, onClose, roll, onSuccess }) => {
     };
 
     // 2. MOVER ORDEN INDIVIDUAL (A Calidad/Terminación)
-    const handleMoveOrder = async (orderId) => {
-        if(!confirm("¿Marcar esta orden como impresa y pasar a Terminación?")) return;
-        
+    // MODIFIED: Intercept with Fabric Check
+    const handleMoveOrderClick = (order) => {
+        // Verificar si cambió el material respecto a la última procesada (o es la primera)
+        // Nota: lastProcessedMaterial se resetea al cerrar modal. 
+        // Idealmente lo tomaríamos del estado global o de la orden "anterior" en la lista.
+        // Simplificación: Si tiene BobinaTelaID asignada, pasamos. Si no, preguntamos.
+        // Pero BobinaTelaID puede no venir en el objeto 'roll.orders' si no recargamos.
+
+        // Estrategia: "Just-in-Time" Check
+        // Si el material actual != material anterior (que guardamos en memoria local de sesión)
+        // Opcional: Podríamos chequear order.BobinaTelaID si se populó.
+
+        // Asumimos siempre chequeo si no hay memoria.
+        if (lastProcessedMaterial && lastProcessedMaterial === order.variant) {
+            // Mismo material, procesar directo (asume reutilizar bobina anterior implicita)
+            processOrderMove(order.id);
+        } else {
+            // Cambio de material o primer inicio
+            setPendingOrderToProcess(order);
+            setShowFabricModal(true);
+        }
+    };
+
+    const handleFabricApprove = async (bobinaId) => {
+        if (!pendingOrderToProcess) return;
+
+        // 1. Asignar Bobina en BD
+        try {
+            await ordersService.assignFabricBobbin(pendingOrderToProcess.id, bobinaId);
+
+            // 2. Recordar Material
+            setLastProcessedMaterial(pendingOrderToProcess.variant);
+
+            // 3. Procesar Movimiento
+            await processOrderMove(pendingOrderToProcess.id);
+
+            // 4. Limpiar
+            setShowFabricModal(false);
+            setPendingOrderToProcess(null);
+
+            // 5. Feedback visual (Opcional, processOrderMove ya recarga)
+        } catch (e) {
+            alert("Error al asignar bobina: " + e.message);
+        }
+    };
+
+    const processOrderMove = async (orderId) => {
+        if (!confirm("¿Marcar esta orden como impresa y pasar a Terminación?")) return;
+
         setLoading(true);
         try {
-            // Cambiamos estado a 'Terminación' (o Calidad)
-            // Esto la saca del rollo visualmente en el siguiente refresh
             await ordersService.updateStatus(orderId, 'Terminación');
-            alert("✅ Orden enviada a Terminación/Calidad");
+            // alert("✅ Orden enviada a Terminación/Calidad"); // Feedback sutil mejor
             if (onSuccess) onSuccess(); // Recargar datos del tablero
-            onClose();
         } catch (e) {
             alert("Error al mover orden");
         } finally {
@@ -71,84 +119,133 @@ const ActiveRollModal = ({ isOpen, onClose, roll, onSuccess }) => {
 
     // 3. FINALIZAR ROLLO COMPLETO
     const handleFinishRoll = async () => {
-        if(!confirm("¿Cerrar Lote completo? Todas las órdenes restantes pasarán a Finalizado.")) return;
+        if (!confirm("¿Cerrar Lote completo? Todas las órdenes restantes pasarán a Finalizado.")) return;
         try {
             await rollsService.closeRoll(roll.id);
             if (onSuccess) onSuccess();
             onClose();
-        } catch(e) { alert("Error al cerrar"); }
+        } catch (e) { alert("Error al cerrar"); }
     };
 
     return (
-        <div className={styles.modalOverlay} style={{zIndex: 1400}}>
-            <div className={styles.modalLarge}>
-                <div className={styles.modalHeader}>
-                    <h3>
-                        <i className="fa-solid fa-print" style={{color: roll.color}}></i>
-                        Gestión de Producción: {roll.name}
-                    </h3>
-                    <button onClick={onClose} className={styles.closeButton}><i className="fa-solid fa-xmark"></i></button>
-                </div>
-
-                <div className={styles.modalContent}>
-                    
-                    {/* ACCIONES DEL ROLLO */}
-                    <div style={{display:'flex', justifyContent:'space-between', marginBottom:'20px', background:'#f8fafc', padding:'15px', borderRadius:'8px', border:'1px solid #e2e8f0'}}>
-                        <div>
-                            <p style={{fontSize:'0.8rem', color:'#64748b'}}>Progreso del Lote</p>
-                            <h2 style={{margin:0, color: roll.color}}>{roll.usage} / {roll.capacity}m</h2>
-                        </div>
-                        <div style={{display:'flex', gap:'10px'}}>
-                            <button onClick={generateManifest} className={styles.stockButton} style={{background:'#334155'}}>
-                                <i className="fa-solid fa-qrcode"></i> Imprimir QR / PDF
-                            </button>
-                            <button onClick={handleFinishRoll} className={styles.saveButton} style={{background:'#16a34a'}}>
-                                <i className="fa-solid fa-check-double"></i> Finalizar Todo
-                            </button>
-                        </div>
+        <>
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1400] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
+                <div
+                    className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-300"
+                    onClick={e => e.stopPropagation()}
+                >
+                    {/* Header */}
+                    <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
+                        <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
+                            <i className="fa-solid fa-print p-2 rounded-lg bg-slate-100 shadow-sm" style={{ color: roll.color }}></i>
+                            Gestión de Producción <span className="text-slate-400 font-bold mx-1">/</span> {roll.name}
+                        </h3>
+                        <button
+                            onClick={onClose}
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-red-500 transition-colors"
+                        >
+                            <i className="fa-solid fa-xmark text-xl"></i>
+                        </button>
                     </div>
 
-                    {/* LISTA DE ÓRDENES EN EL ROLLO */}
-                    <h4 style={{fontSize:'0.9rem', color:'#475569', marginBottom:'10px'}}>Órdenes en Cola de Impresión:</h4>
-                    
-                    <div className={styles.tableContainer}>
-                        <table className={styles.cleanTable}>
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Cliente</th>
-                                    <th>Detalle</th>
-                                    <th>Metros</th>
-                                    <th style={{textAlign:'center'}}>Acción</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {roll.orders.map(order => (
-                                    <tr key={order.id} className={styles.tableRow}>
-                                        <td style={{fontWeight:'bold'}}>#{order.id}</td>
-                                        <td>{order.client}</td>
-                                        <td style={{color:'#64748b'}}>{order.desc}</td>
-                                        <td><strong>{order.magnitude}</strong></td>
-                                        <td style={{textAlign:'center'}}>
-                                            <button 
-                                                onClick={() => handleMoveOrder(order.id)}
-                                                title="Marcar como Impreso -> Enviar a Calidad"
-                                                className={styles.iconBtnGreen}
-                                                style={{width:'auto', padding:'4px 10px', fontSize:'0.75rem', gap:'5px'}}
-                                            >
-                                                <i className="fa-solid fa-share"></i> A Calidad
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {roll.orders.length === 0 && <tr><td colSpan="5" style={{padding:20, textAlign:'center'}}>Lote vacío.</td></tr>}
-                            </tbody>
-                        </table>
-                    </div>
+                    <div className="p-6 flex flex-col gap-6 overflow-hidden flex-1 bg-slate-50/50">
 
+                        {/* ACCIONES DEL ROLLO */}
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center flex-wrap gap-4">
+                            <div className="flex flex-col">
+                                <span className="text-[10px] uppercase font-black tracking-widest text-slate-400 mb-1">Progreso Actual</span>
+                                <div className="flex items-baseline gap-2">
+                                    <h2 className="text-2xl font-black" style={{ color: roll.color }}>{roll.usage}</h2>
+                                    <span className="text-slate-400 font-bold text-sm">/ {roll.capacity}m</span>
+                                </div>
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={generateManifest}
+                                    className="px-4 py-2 bg-slate-700 text-white text-sm font-bold rounded-lg shadow hover:bg-slate-800 hover:shadow-lg transition-all active:scale-95 flex items-center gap-2"
+                                >
+                                    <i className="fa-solid fa-qrcode"></i> Imprimir QR / PDF
+                                </button>
+                                <button
+                                    onClick={handleFinishRoll}
+                                    className="px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg shadow hover:bg-emerald-700 hover:shadow-lg transition-all active:scale-95 flex items-center gap-2"
+                                >
+                                    <i className="fa-solid fa-check-double"></i> Finalizar Todo
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* LISTA DE ÓRDENES EN EL ROLLO */}
+                        <div className="flex flex-col flex-1 overflow-hidden bg-white border border-slate-200 rounded-xl shadow-sm">
+                            <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+                                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                                    <i className="fa-solid fa-list-ul"></i> Órdenes en Cola de Impresión
+                                </h4>
+                            </div>
+
+                            <div className="overflow-y-auto flex-1">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="text-xs text-slate-500 uppercase bg-white border-b border-slate-200 sticky top-0">
+                                        <tr>
+                                            <th className="px-4 py-3 font-bold">ID</th>
+                                            <th className="px-4 py-3 font-bold">Cliente</th>
+                                            <th className="px-4 py-3 font-bold">Detalle</th>
+                                            <th className="px-4 py-3 font-bold">Material</th>
+                                            <th className="px-4 py-3 font-bold">Metros</th>
+                                            <th className="px-4 py-3 font-bold text-center w-32">Acción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {roll.orders.map((order, idx) => (
+                                            <tr key={order.id} className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-4 py-3 font-mono font-bold text-slate-700 min-w-[120px]">
+                                                    Orden No.: {order.code || order.id}
+                                                </td>
+                                                <td className="px-4 py-3 font-semibold text-slate-600 truncate max-w-[150px]">{order.client}</td>
+                                                <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]">{order.desc}</td>
+                                                <td className="px-4 py-3">
+                                                    <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[10px] uppercase font-bold border border-indigo-100">
+                                                        {order.variant || order.material || 'N/A'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 font-bold text-slate-800">{order.magnitude}m</td>
+                                                <td className="px-4 py-3 text-center">
+                                                    <button
+                                                        onClick={() => handleMoveOrderClick(order)}
+                                                        title="Marcar como Impreso -> Enviar a Calidad"
+                                                        className="w-full px-2 py-1.5 bg-white border border-emerald-200 text-emerald-600 text-[10px] font-bold rounded hover:bg-emerald-50 hover:border-emerald-300 transition-colors uppercase tracking-wide flex items-center justify-center gap-1.5"
+                                                        disabled={loading}
+                                                    >
+                                                        <i className="fa-solid fa-share"></i> Terminación
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {roll.orders.length === 0 && (
+                                            <tr>
+                                                <td colSpan="6" className="py-12 text-center text-slate-400 italic">
+                                                    Lote vacío. No hay órdenes asignadas.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                    </div>
                 </div>
             </div>
-        </div>
+
+            {/* FABRIC ASSIGNMENT MODAL */}
+            <FabricAssignmentModal
+                isOpen={showFabricModal}
+                onClose={() => setShowFabricModal(false)}
+                materialName={pendingOrderToProcess?.variant || pendingOrderToProcess?.material || ''}
+                orderId={pendingOrderToProcess?.id}
+                onAssign={handleFabricApprove}
+            />
+        </>
     );
 };
 

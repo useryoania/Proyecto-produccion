@@ -1,15 +1,17 @@
 const sql = require('mssql');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const config = {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
-    server: process.env.DB_SERVER, 
+    server: process.env.DB_SERVER,
     database: process.env.DB_DATABASE,
     port: 1433, // Aseguramos el puerto
+    requestTimeout: 60000,
     options: {
         // 👇 COPIADO DE TU TEST EXITOSO
-        encrypt: false, 
+        encrypt: false,
         trustServerCertificate: true,
         enableArithAbort: true
     },
@@ -20,14 +22,31 @@ const config = {
     }
 };
 
+let poolPromise = null;
+
 const getPool = async () => {
     try {
-        const pool = await sql.connect(config);
-        return pool;
+        if (poolPromise) {
+            return await poolPromise;
+        }
+
+        poolPromise = new sql.ConnectionPool(config)
+            .connect()
+            .then(pool => {
+                console.log('✅ Conectado a MSSQL');
+                return pool;
+            })
+            .catch(err => {
+                console.error('❌ Error conectando a MSSQL:', err);
+                poolPromise = null; // Reset promise on error
+                throw err;
+            });
+
+        return await poolPromise;
     } catch (err) {
-        console.error('❌ Error Conexión SQL:', err);
+        console.error('❌ Error en getPool:', err);
         throw err;
     }
 };
 
-module.exports = { sql, getPool };
+module.exports = { sql, getPool, poolPromise };

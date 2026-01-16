@@ -1,18 +1,72 @@
 import React, { useState } from 'react';
-import { rollsService } from '../../services/api';
-import styles from './Modals.module.css'; // Usamos tus estilos limpios
+import { rollsService, insumosService } from '../../services/api';
 
 const CreateRollModal = ({ isOpen, onClose, areaCode, onSuccess }) => {
     const [formData, setFormData] = useState({
         name: '',
         capacity: 100,
-        color: '#3b82f6' // Azul default
+        color: '#3b82f6',
+        bobinaId: null
     });
     const [loading, setLoading] = useState(false);
 
+    // Inventory Logic
+    const [inventory, setInventory] = useState([]);
+    const [selectedMaterialId, setSelectedMaterialId] = useState('');
+    const [suggestedBobina, setSuggestedBobina] = useState(null);
+    const [useBobina, setUseBobina] = useState(false);
+
+    useEffect(() => {
+        if (isOpen && areaCode) {
+            // Load Inventory
+            insumosService.getInventoryByArea(areaCode)
+                .then(data => setInventory(data || []))
+                .catch(err => console.error("Error loading inventory:", err));
+        }
+    }, [isOpen, areaCode]);
+
+    // Handle Material Change
+    const handleMaterialChange = (insumoId) => {
+        setSelectedMaterialId(insumoId);
+        setUseBobina(false);
+        setSuggestedBobina(null);
+        setFormData(prev => ({ ...prev, bobinaId: null }));
+
+        if (!insumoId) return;
+
+        const insumo = inventory.find(i => String(i.InsumoID) === String(insumoId));
+        if (insumo && insumo.ActiveBatches) {
+            // Find FIFO available bobina (Allow En Uso if capacity exists)
+            const available = insumo.ActiveBatches
+                .filter(b => b.MetrosRestantes > 0 && (b.Estado === 'Disponible' || b.Estado === 'En Uso'))
+                .sort((a, b) => new Date(a.FechaIngreso) - new Date(b.FechaIngreso)); // Oldest first
+
+            if (available.length > 0) {
+                setSuggestedBobina({ ...available[0], MaterialName: insumo.Nombre });
+            }
+        }
+    };
+
+    // Toggle Bobina Usage
+    const handleToggleBobina = () => {
+        const newValue = !useBobina;
+        setUseBobina(newValue);
+
+        if (newValue && suggestedBobina) {
+            setFormData(prev => ({
+                ...prev,
+                bobinaId: suggestedBobina.BobinaID,
+                capacity: suggestedBobina.MetrosRestantes,
+                name: prev.name || `${suggestedBobina.MaterialName} - ${new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}`
+            }));
+        } else {
+            setFormData(prev => ({ ...prev, bobinaId: null }));
+        }
+    };
+
     if (!isOpen) return null;
 
-    // Colores predefinidos para elegir rápido
+    // Colores predefinidos
     const colors = [
         { hex: '#3b82f6', name: 'Azul' },
         { hex: '#10b981', name: 'Verde' },
@@ -24,7 +78,7 @@ const CreateRollModal = ({ isOpen, onClose, areaCode, onSuccess }) => {
 
     const handleSubmit = async () => {
         if (!formData.name) return alert("El nombre es obligatorio");
-        
+
         setLoading(true);
         try {
             await rollsService.create({
@@ -34,76 +88,157 @@ const CreateRollModal = ({ isOpen, onClose, areaCode, onSuccess }) => {
             alert("✅ Lote creado exitosamente");
             if (onSuccess) onSuccess();
             onClose();
-            setFormData({ name: '', capacity: 100, color: '#3b82f6' }); // Reset
+            // Reset
+            setFormData({ name: '', capacity: 100, color: '#3b82f6', bobinaId: null });
+            setSelectedMaterialId('');
+            setSuggestedBobina(null);
+            setUseBobina(false);
         } catch (error) {
-            alert("Error al crear el lote");
+            alert("Error al crear el lote: " + (error.response?.data?.error || error.message));
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className={styles.modalOverlay} style={{zIndex: 1300}}>
-            <div className={styles.modal}>
-                <div className={styles.modalHeader}>
-                    <h3><i className="fa-solid fa-scroll" style={{color: formData.color, marginRight:'10px'}}></i> Nuevo Lote de Producción</h3>
-                    <button onClick={onClose} className={styles.closeButton}><i className="fa-solid fa-xmark"></i></button>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[1300] animate-in fade-in duration-200" onClick={onClose}>
+            <div
+                className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300"
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
+                    <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                        <i className="fa-solid fa-scroll text-xl shadow-sm rounded-full p-1" style={{ color: formData.color }}></i>
+                        Nuevo Lote de Producción
+                    </h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-red-500 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-50 transition-colors">
+                        <i className="fa-solid fa-xmark text-lg"></i>
+                    </button>
                 </div>
-                
-                <div className={styles.modalContent}>
-                    <div className={styles.formGroup}>
-                        <label>Nombre del Lote</label>
-                        <input 
-                            type="text" 
-                            className={styles.textInput} 
-                            placeholder="Ej: Urgentes Mañana, Pedido Nike..." 
+
+                {/* Content */}
+                <div className="p-6 flex flex-col gap-5">
+
+                    {/* MATERIAL SELECTION (NEW) */}
+                    <div className="flex flex-col gap-1.5 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex justify-between">
+                            Asignar Material (Opcional)
+                            <i className="fa-solid fa-box-open text-slate-400"></i>
+                        </label>
+                        <select
+                            className="w-full p-2 text-sm border border-slate-300 rounded focus:border-blue-500 outline-none"
+                            value={selectedMaterialId}
+                            onChange={(e) => handleMaterialChange(e.target.value)}
+                        >
+                            <option value="">-- Sin asignar material --</option>
+                            {inventory
+                                .filter(i => i.ActiveBatches && i.ActiveBatches.some(b => b.MetrosRestantes > 0))
+                                .map(i => {
+                                    const totalMetros = i.ActiveBatches.reduce((acc, b) => (b.MetrosRestantes > 0 ? acc + b.MetrosRestantes : acc), 0);
+                                    return (
+                                        <option key={i.InsumoID} value={i.InsumoID}>
+                                            {i.Nombre} ({totalMetros}m disp.)
+                                        </option>
+                                    );
+                                })}
+                        </select>
+
+                        {/* SUGGESTION CARD */}
+                        {suggestedBobina && (
+                            <div className={`mt-2 p-2 rounded border transition-all ${useBobina ? 'bg-green-50 border-green-200' : 'bg-white border-dashed border-slate-300 opacity-80'}`}>
+                                <div className="flex items-start gap-3">
+                                    <input
+                                        type="checkbox"
+                                        checked={useBobina}
+                                        onChange={handleToggleBobina}
+                                        className="mt-1 w-4 h-4 text-green-600 rounded cursor-pointer"
+                                    />
+                                    <div className="flex-1">
+                                        <p className="text-xs font-bold text-slate-700">Usar Bobina Sugerida (FIFO)</p>
+                                        <div className="text-[11px] text-slate-500 flex flex-col mt-0.5">
+                                            <span><strong>ID:</strong> {suggestedBobina.CodigoEtiqueta || suggestedBobina.BobinaID}</span>
+                                            <span><strong>Disponible:</strong> {suggestedBobina.MetrosRestantes} m</span>
+                                            <span><strong>Ingreso:</strong> {new Date(suggestedBobina.FechaIngreso).toLocaleDateString()}</span>
+                                        </div>
+                                    </div>
+                                    {useBobina && <i className="fa-solid fa-check-circle text-green-500 text-lg"></i>}
+                                </div>
+                            </div>
+                        )}
+                        {/* INFO IF NO BOBINAS BUT MATERIAL SELECTED */}
+                        {selectedMaterialId && !suggestedBobina && (
+                            <p className="text-[10px] text-amber-600 mt-1 italic">
+                                <i className="fa-solid fa-triangle-exclamation mr-1"></i> No hay bobinas disponibles para este material.
+                            </p>
+                        )}
+                    </div>
+
+                    {/* Nombre */}
+                    <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Nombre del Lote</label>
+                        <input
+                            type="text"
+                            className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400"
+                            placeholder="Ej: Urgentes Mañana, Pedido Nike..."
                             value={formData.name}
-                            onChange={e => setFormData({...formData, name: e.target.value})}
-                            autoFocus
+                            onChange={e => setFormData({ ...formData, name: e.target.value })}
                         />
                     </div>
 
-                    <div className={styles.formGroup}>
-                        <label>Capacidad Máxima (Metros/Unidades)</label>
-                        <input 
-                            type="number" 
-                            className={styles.textInput} 
-                            value={formData.capacity}
-                            onChange={e => setFormData({...formData, capacity: e.target.value})}
-                        />
-                        <small style={{color:'#94a3b8', fontSize:'0.75rem'}}>Esto define el 100% de la barra de progreso.</small>
+                    {/* Capacidad */}
+                    <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Capacidad Máxima</label>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="number"
+                                className={`w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 transition-all ${useBobina ? 'text-green-600 border-green-200 ring-green-500/20' : 'focus:border-blue-500 focus:ring-blue-500/20'}`}
+                                value={formData.capacity}
+                                onChange={e => setFormData({ ...formData, capacity: e.target.value })}
+                            />
+                            <span className="text-sm font-bold text-slate-400">Metros</span>
+                        </div>
+                        {useBobina && <small className="text-[10px] text-green-600 font-bold">Sincronizado con bobina asignada</small>}
+                        {!useBobina && <small className="text-[10px] text-slate-400 font-medium">Esto define el 100% de la barra de progreso visual.</small>}
                     </div>
 
-                    <div className={styles.formGroup}>
-                        <label>Etiqueta de Color</label>
-                        <div style={{display:'flex', gap:'10px', marginTop:'5px'}}>
+                    {/* Color Picker */}
+                    <div className="flex flex-col gap-2">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Etiqueta de Color</label>
+                        <div className="flex flex-wrap gap-3">
                             {colors.map(c => (
-                                <div 
+                                <button
                                     key={c.hex}
-                                    onClick={() => setFormData({...formData, color: c.hex})}
-                                    style={{
-                                        width: '30px', height: '30px', borderRadius: '50%', 
-                                        background: c.hex, cursor: 'pointer',
-                                        border: formData.color === c.hex ? '3px solid #cbd5e1' : '1px solid transparent',
-                                        transform: formData.color === c.hex ? 'scale(1.1)' : 'scale(1)',
-                                        transition: 'all 0.2s'
-                                    }}
+                                    type="button"
+                                    onClick={() => setFormData({ ...formData, color: c.hex })}
+                                    className={`w-8 h-8 rounded-full shadow-sm transition-all hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 ${formData.color === c.hex ? 'ring-2 ring-slate-400 scale-110' : ''}`}
+                                    style={{ backgroundColor: c.hex }}
                                     title={c.name}
-                                ></div>
+                                ></button>
                             ))}
                         </div>
                     </div>
                 </div>
 
-                <div className={styles.modalFooter}>
-                    <button onClick={onClose} className={styles.cancelButton}>Cancelar</button>
-                    <button 
-                        onClick={handleSubmit} 
-                        className={styles.saveButton} 
-                        style={{background: formData.color, border: 'none'}}
+                {/* Footer */}
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
+                    <button
+                        onClick={onClose}
+                        className="px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-sm font-bold hover:bg-slate-100 transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={handleSubmit}
+                        className="px-4 py-2 text-white rounded-lg text-sm font-bold shadow-lg hover:shadow-xl hover:brightness-110 active:scale-95 transition-all text-shadow disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{ backgroundColor: formData.color }}
                         disabled={loading}
                     >
-                        {loading ? 'Creando...' : 'Crear Lote'}
+                        {loading ? (
+                            <><i className="fa-solid fa-circle-notch fa-spin mr-2"></i>Creando...</>
+                        ) : (
+                            <><i className="fa-solid fa-check mr-2"></i>Crear Lote</>
+                        )}
                     </button>
                 </div>
             </div>

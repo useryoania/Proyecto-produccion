@@ -1,79 +1,82 @@
-import React, { useState } from 'react';
-import ProductionTable from '../components/ProductionTable.jsx';
-import WorkflowFlows from '../components/Workflow.jsx';
+// src/components/production/areas/CoordinacionArea.jsx
+import React, { useState, useEffect } from 'react';
+//import OrderKanban from '../../../production/components/OrderKanban.jsx';
+//import OrderKanbanMetrics from '../../../production/components/OrderKanbanMetrics.jsx';
+//import styles from './CoordinacionArea.module.css';
 
-const CoordinacionArea = ({ orders, onOrderUpdate }) => {
-  const [currentView, setCurrentView] = useState('orders');
+// Componente Wrapper para Coordinación (Vista Manual)
+const CoordinacionArea = ({ onSwitchTab, orders = [] }) => { // CORRECCIÓN: Inicializar orders a []
+    const [selectedView, setSelectedView] = useState('pendientes');
 
-  const areaConfig = {
-    name: 'Coordinación de Producto',
-    gridTemplate: '40px 40px 60px 80px 80px 120px 220px 150px 150px 100px 100px 90px 50px',
-    headers: ['', 'Pos', 'Orden', 'Ingreso', 'Tiempo', 'Cliente', 'Producto', 'Flujo', 'Abastecimiento', 'Origen', 'Estado', 'Chat']
-  };
+    const renderView = () => {
+        // Aseguramos que orders sea un array antes de usar filter
+        const ordersArray = orders || []; 
+        
+        const filteredOrders = ordersArray.filter(order => {
+            if (selectedView === 'pendientes') {
+                return order.status === 'Pendiente' || order.status === 'En Coordinación';
+            }
+            if (selectedView === 'completadas') {
+                return order.status === 'Aprobado' || order.status === 'Revisión';
+            }
+            return true;
+        });
 
-  const renderView = () => {
-    switch (currentView) {
-      case 'orders':
+        if (filteredOrders.length === 0) {
+            return <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No hay órdenes en la vista {selectedView}.</div>;
+        }
+
         return (
-          <ProductionTable
-            orders={orders.filter(o => o.area === 'COORD')}
-            areaConfig={areaConfig}
-            selectedOrders={[]}
-            onOrderSelect={() => {}}
-            onDeselectAll={() => {}}
-          />
+            <div className={styles.kanbanContainer}>
+                <OrderKanban 
+                    orders={filteredOrders} 
+                    title="Órdenes de Coordinación" 
+                    isCoordination={true} 
+                />
+            </div>
         );
-      case 'flows':
-        return <WorkflowFlows orders={orders.filter(o => o.area === 'COORD')} />;
-      default:
-        return null;
-    }
-  };
+    };
 
-  return (
-    <div className="w-full h-full flex flex-col overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-200 bg-white flex justify-between items-center sticky top-0 z-20 shrink-0">
-        <div className="flex gap-4 items-center">
-          <div>
-            <h2 className="font-bold text-slate-800 text-lg leading-tight">
-              {areaConfig.name}
-            </h2>
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">
-              Coordinación
-            </p>
-          </div>
-          
-          <div className="flex bg-indigo-50 rounded p-1 ml-2">
-            <button
-              onClick={() => setCurrentView('orders')}
-              className={`px-3 py-1 text-xs font-bold rounded ${
-                currentView === 'orders' 
-                  ? 'bg-white shadow text-indigo-700' 
-                  : 'text-slate-500 hover:text-indigo-700'
-              }`}
-            >
-              Órdenes
-            </button>
-            <button
-              onClick={() => setCurrentView('flows')}
-              className={`px-3 py-1 text-xs font-bold rounded flex items-center gap-1 ${
-                currentView === 'flows' 
-                  ? 'bg-white shadow text-indigo-700' 
-                  : 'text-slate-500 hover:text-indigo-700'
-              }`}
-            >
-              <i className="fa-solid fa-diagram-project"></i>
-              Flujos de Trabajo
-            </button>
-          </div>
+    return (
+        <div className={styles.layoutContainer}>
+            <header className={styles.header}>
+                <button className={styles.backButton} onClick={() => onSwitchTab('dashboard')}>
+                    <i className="fa-solid fa-arrow-left"></i>
+                </button>
+                <h1>Coordinación y Diseño</h1>
+            </header>
+            
+            <div className={styles.contentWrapper}>
+                <aside className={styles.sidebar}>
+                    <OrderKanbanMetrics 
+                        orders={orders} 
+                        area="COORDINACION" 
+                    />
+                </aside>
+                
+                <main className={styles.mainContent}>
+                    <div className={styles.controls}>
+                        <div className={styles.viewTabs}>
+                            <button 
+                                className={selectedView === 'pendientes' ? styles.tabActive : styles.tab} 
+                                onClick={() => setSelectedView('pendientes')}
+                            >
+                                Pendientes / En Proceso
+                            </button>
+                            <button 
+                                className={selectedView === 'completadas' ? styles.tabActive : styles.tab} 
+                                onClick={() => setSelectedView('completadas')}
+                            >
+                                Aprobadas / Revisadas
+                            </button>
+                        </div>
+                    </div>
+                    
+                    {renderView()}
+                </main>
+            </div>
         </div>
-      </div>
-
-      <div className="flex-1 overflow-hidden">
-        {renderView()}
-      </div>
-    </div>
-  );
+    );
 };
 
 export default CoordinacionArea;
