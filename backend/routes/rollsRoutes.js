@@ -10,6 +10,9 @@ router.post('/reorder', controller.reorderOrders);
 
 // 👇 CORREGIDO: Debe decir "controller" (singular), igual que arriba
 router.post('/update-name', controller.updateRollName);
+router.post('/update', controller.updateRollGeneral); // ✅ Nueva ruta genérica
+router.post('/swap-bobina', controller.swapBobina); // ✅ Relevo de Bobina
+router.post('/split', controller.splitRoll); // ✅ Corte de Lote (Split)
 router.post('/dismantle', controller.dismantleRoll);
 router.get('/history', controller.getRollHistory); // New endpoint for history
 router.get('/:id/labels', controller.getRollLabels); // New

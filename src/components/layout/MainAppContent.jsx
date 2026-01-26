@@ -3,6 +3,7 @@ import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from './Navbar';
+import MachineDetailView from '../pages/MachineDetailView';
 import Dashboard from '../pages/Dashboard';
 import AreaView from '../production/areas/AreaView';
 import ConfigPage from '../pages/ConfigPage';
@@ -18,6 +19,8 @@ import InsumosCatalogPage from '../pages/InsumosCatalogPage';
 import StockRequestsPage from '../pages/StockRequestsPage';
 import ReceptionPage from '../pages/customer-service/ReceptionPage';
 import LogisticsPage from '../pages/customer-service/LogisticsPage'; // Import LogisticsPage
+import ActiveStockPage from '../pages/customer-service/ActiveStockPage';
+import TransportControlPage from '../pages/TransportControlPage';
 
 
 
@@ -163,7 +166,32 @@ const MainAppContent = ({ menuItems = [] }) => {
 
     return (
         <div className="flex flex-col h-screen bg-slate-50 font-sans">
-            <Toaster position="top-center" richColors theme="light" />
+            <Toaster
+                position="top-center"
+                richColors
+                closeButton
+                theme="light"
+                toastOptions={{
+                    className: 'bg-white/95 backdrop-blur-sm border border-slate-100 shadow-2xl rounded-2xl p-4 !py-4',
+                    classNames: {
+                        toast: 'group toast group-[.toaster]:bg-white group-[.toaster]:text-slate-800 group-[.toaster]:border-slate-200 group-[.toaster]:shadow-2xl group-[.toaster]:rounded-2xl',
+                        title: 'text-slate-900 font-bold text-sm',
+                        description: 'text-slate-500 text-xs font-medium',
+                        actionButton: 'bg-indigo-600 text-white font-bold rounded-lg px-3 py-2',
+                        cancelButton: 'bg-slate-100 text-slate-500 font-bold rounded-lg px-3 py-2',
+                        error: 'bg-red-50 border-red-100 text-red-600',
+                        success: 'bg-green-50 border-green-100 text-green-600',
+                        warning: 'bg-orange-50 border-orange-100 text-orange-600',
+                        info: 'bg-blue-50 border-blue-100 text-blue-600',
+                    },
+                    style: {
+                        background: 'white',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '16px',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                    }
+                }}
+            />
             <Navbar />
             <div className="flex flex-1 overflow-hidden">
                 <aside
@@ -238,7 +266,10 @@ const MainAppContent = ({ menuItems = [] }) => {
                             <Route path="/" element={<Dashboard />} />
                             <Route path="/consultas/ordenes" element={<OrdersQueryView />} />
                             <Route path="/consultas/rollos" element={<RollHistory />} />
+                            <Route path="/production/machine/:area/:machineId" element={<MachineDetailView />} />
                             <Route path="/area/:areaId/*" element={<DynamicRouter menuItems={menuItems} />} />
+                            <Route path="/atencion-cliente/despachos" element={<ActiveStockPage />} />
+                            <Route path="/logistica/transporte" element={<TransportControlPage />} />
                             <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
                         </Routes>
                     </div>
@@ -290,6 +321,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/solicitudes') return <StockRequestsPage />;
     if (menuItem.Ruta === '/atencion-cliente/recepcion') return <ReceptionPage />;
     if (menuItem.Ruta === '/atencion-cliente/control') return <LogisticsPage />;
+    if (menuItem.Ruta === '/atencion-cliente/despachos') return <ActiveStockPage />;
 
     if (currentPath === '/consultas/ordenes') return <OrdersQueryView />;
 

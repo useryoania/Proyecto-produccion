@@ -25,6 +25,18 @@ export const rollsService = {
         const { data } = await api.post('/rolls/update-name', { id, name, color });
         return data;
     },
+    update: async (rollId, updates) => { // ✅ Nuevo mètodo genérico
+        const { data } = await api.post('/rolls/update', { rollId, ...updates });
+        return data;
+    },
+    swapBobina: async (data) => {
+        const res = await api.post('/rolls/swap-bobina', data);
+        return res.data;
+    },
+    splitRoll: async (data) => {
+        const res = await api.post('/rolls/split', data);
+        return res.data;
+    },
 
     generateLabels: async (id) => {
         const { data } = await api.post(`/rolls/${id}/generate-labels`);

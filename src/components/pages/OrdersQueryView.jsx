@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { ordersService, areasService } from '../../services/api';
-import OrderTrackingModal from '../common/OrderTrackingModal';
-
-// OrderDetailsModal has been replaced by OrderTrackingModal in common components
-// See import at the top of the file.
-
+// import OrderTrackingModal from '../common/OrderTrackingModal'; // DEPRECATED
+import OrderDetailModal from '../production/components/OrderDetailModal'; // NEW MODAL
 import IntegralOrderView from './IntegralOrderView';
 
 const OrdersQueryView = () => {
-    const [viewMode, setViewMode] = useState('list'); // 'list' | 'integral'
+    // ... (state remains same)
+    const [viewMode, setViewMode] = useState('list');
     const [filters, setFilters] = useState({
         fechaDesde: '',
         fechaHasta: '',
@@ -22,24 +20,23 @@ const OrdersQueryView = () => {
     const [selectedOrder, setSelectedOrder] = useState(null);
 
     useEffect(() => {
-        areasService.getAll().then(res => setAreasDisponibles(res)).catch(e => console.error(e));
+        areasService.getAll({ productive: true }).then(res => setAreasDisponibles(res)).catch(e => console.error(e));
     }, []);
 
+    // ... handleSearch and toggleArea remain same ...
     const handleSearch = async () => {
         setLoading(true);
         try {
-            // Transformar filtros de UI al formato del Backend
             const payload = {
                 filters: {
-                    client: filters.search, // Usamos el campo search para cliente o código (el backend busca ambos si se implementara asi, pero aqui lo mandamos a client/code)
+                    client: filters.search,
                     code: filters.search,
-                    status: filters.mode === 'all' ? null : filters.mode.toUpperCase(), // backend espera mayusculas o null
-                    area: filters.areas.length > 0 ? filters.areas[0] : null, // Por ahora el backend soporta 1 area, mandamos la primera o null
+                    status: filters.mode === 'all' ? null : filters.mode.toUpperCase(),
+                    area: filters.areas.length > 0 ? filters.areas : null,
                     dateFrom: filters.fechaDesde,
                     dateTo: filters.fechaHasta
                 }
             };
-
             const data = await ordersService.advancedSearch(payload);
             setResults(data || []);
         } catch (error) {
@@ -62,7 +59,7 @@ const OrdersQueryView = () => {
 
     return (
         <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
-            {/* TABS SELECTOR */}
+            {/* TABS SELECTOR (Same) */}
             <div className="bg-white px-6 pt-4 border-b border-gray-200 flex gap-6 z-20 shadow-sm shrink-0">
                 <button onClick={() => setViewMode('list')} className={`pb-3 text-sm font-bold border-b-2 transition-all ${viewMode === 'list' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}>
                     <i className="fa-solid fa-list-ul mr-2"></i> Listado de Órdenes
@@ -74,7 +71,7 @@ const OrdersQueryView = () => {
 
             {viewMode === 'integral' ? <IntegralOrderView /> : (
                 <>
-                    {/* TOOLBAR */}
+                    {/* TOOLBAR (Same) */}
                     <div className="bg-white border-b border-gray-200 p-4 shadow-sm z-10">
                         <h1 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
                             <i className="fa-solid fa-magnifying-glass-chart text-blue-600"></i> Consulta Histórica de Órdenes
@@ -100,8 +97,11 @@ const OrdersQueryView = () => {
                                     value={filters.mode} onChange={e => setFilters({ ...filters, mode: e.target.value })}>
                                     <option value="all">Todos</option>
                                     <option value="PENDIENTE">Pendientes</option>
+                                    <option value="EN PROCESO">En Proceso</option>
                                     <option value="FINALIZADO">Finalizados</option>
+                                    <option value="ENTREGADO">Entregados</option>
                                     <option value="CANCELADO">Cancelados</option>
+                                    <option value="FALLA">Fallas</option>
                                 </select>
                             </div>
 
@@ -152,6 +152,7 @@ const OrdersQueryView = () => {
                                         <th className="px-4 py-3">Área</th>
                                         <th className="px-4 py-3">Ingreso</th>
                                         <th className="px-4 py-3">Estado</th>
+                                        <th className="px-4 py-3">Prox. Servicio</th>
                                         <th className="px-4 py-3">Archivos</th>
                                         <th className="px-4 py-3 text-right">Ver</th>
                                     </tr>
@@ -176,6 +177,9 @@ const OrdersQueryView = () => {
                                                     {order.status}
                                                 </span>
                                             </td>
+                                            <td className="px-4 py-3 text-xs text-slate-500 font-medium">
+                                                {order.nextService || '-'}
+                                            </td>
                                             <td className="px-4 py-3">
                                                 <span className="text-xs text-slate-500 font-medium">
                                                     {order.filesCount || 0}
@@ -183,7 +187,7 @@ const OrdersQueryView = () => {
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <button
-                                                    onClick={() => setSelectedOrder(order.id)}
+                                                    onClick={() => setSelectedOrder({ id: order.id, area: order.area })}
                                                     className="w-8 h-8 inline-flex items-center justify-center bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-full transition-all"
                                                 >
                                                     <i className="fa-solid fa-eye text-sm"></i>
@@ -198,7 +202,7 @@ const OrdersQueryView = () => {
 
                     {/* MODAL */}
                     {selectedOrder && (
-                        <OrderTrackingModal orderId={selectedOrder} onClose={() => setSelectedOrder(null)} />
+                        <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} />
                     )}
                 </>
             )}

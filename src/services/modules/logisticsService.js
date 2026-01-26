@@ -66,6 +66,32 @@ const logisticsService = {
     },
     createParcel: async (data) => api.post('/logistics/bultos', data).then(r => r.data),
     createDispatch: async (data) => api.post('/logistics/remitos', data).then(r => r.data),
+
+    confirmTransport: async (data) => {
+        const response = await api.post('/logistics/transport/confirm', data);
+        return response.data;
+    },
+
+    getActiveTransports: async () => {
+        const response = await api.get('/logistics/transport/active');
+        return response.data;
+    },
+
+    getAreaStock: async (areaId) => {
+        const params = areaId ? { areaId } : {};
+        const response = await api.get('/logistics/stock', { params });
+        return response.data;
+    },
+    // --- EXTRAVIADOS ---
+    getLostItems: async () => {
+        const response = await api.get('/logistics/lost');
+        return response.data;
+    },
+
+    recoverItem: async (data) => {
+        const response = await api.post('/logistics/recover', data);
+        return response.data;
+    },
 };
 
 export { logisticsService };

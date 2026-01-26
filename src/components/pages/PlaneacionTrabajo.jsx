@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner'; // Importar Toast
 import { rollsService, productionService } from '../../services/api';
@@ -11,6 +12,7 @@ import ConfirmationModal from '../modals/ConfirmationModal'; // Importar Modal
 import MachineControl from '../production/components/MachineControl';
 
 const PlaneacionTrabajo = ({ AreaID }) => {
+    const navigate = useNavigate();
     const areaCode = AreaID; // Internal alias for compatibility
     // ESTADOS DE INTERACCIÓN
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
@@ -292,8 +294,15 @@ const PlaneacionTrabajo = ({ AreaID }) => {
             await productionService.toggleStatus(rollId, action, destination);
             refreshBoard();
         } catch (error) {
-            console.error("Error cambiando estado:", error);
-            toast.error("Error al cambiar estado");
+            const msg = error.response?.data?.error || error.message || "Error desconocido";
+
+            // Si es error de validación (400), usar warn para no alarmar en consola
+            if (error.response?.status === 400) {
+                console.warn("Accion bloqueada por validación:", msg);
+            } else {
+                console.error("Error cambiando estado:", error);
+            }
+            toast.error(msg);
         }
     };
 
@@ -641,7 +650,8 @@ const PlaneacionTrabajo = ({ AreaID }) => {
                                     }}
                                     onViewDetails={(item) => {
                                         if (item.rolls) {
-                                            // Is Machine detail request
+                                            // Ir a Vista Detallada de Máquina
+                                            navigate(`/production/machine/${areaCode}/${item.id}`);
                                         } else {
                                             setInspectingRollId(item.id);
                                         }

@@ -45,9 +45,10 @@ const InventoryReports = ({ defaultArea }) => {
     // Cálculos Globales
     const totalConsumo = stats.reduce((acc, curr) => acc + (curr.ConsumoNeto || 0), 0);
     const totalFallas = stats.reduce((acc, curr) => acc + (curr.DesperdicioProduccion || 0), 0);
+    const totalReimpresiones = stats.reduce((acc, curr) => acc + (curr.DesperdicioReimpresion || 0), 0);
     const totalRemanente = stats.reduce((acc, curr) => acc + (curr.DesperdicioCierre || 0), 0);
 
-    const totalDesecho = totalFallas + totalRemanente;
+    const totalDesecho = totalFallas + totalRemanente + totalReimpresiones;
     const totalBruto = totalConsumo + totalDesecho;
     const eficienciaGlobal = totalBruto > 0 ? ((totalConsumo / totalBruto) * 100).toFixed(1) : '100.0';
 
@@ -83,7 +84,7 @@ const InventoryReports = ({ defaultArea }) => {
             </div>
 
             {/* KPI CARDS */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 <div className="bg-white p-4 rounded-lg shadow border-l-4 border-blue-500">
                     <div className="text-slate-500 text-sm font-medium">Consumo Productivo</div>
                     <div className="text-2xl font-bold text-slate-800">{totalConsumo.toFixed(0)} <span className="text-sm font-normal text-slate-400">m</span></div>
@@ -94,6 +95,12 @@ const InventoryReports = ({ defaultArea }) => {
                     <div className="text-slate-500 text-sm font-medium">Fallas (Impresión)</div>
                     <div className="text-2xl font-bold text-slate-800">{totalFallas.toFixed(0)} <span className="text-sm font-normal text-slate-400">m</span></div>
                     <div className="text-xs text-red-600 mt-1">Ordenes con 'F'</div>
+                </div>
+
+                <div className="bg-white p-4 rounded-lg shadow border-l-4 border-purple-500">
+                    <div className="text-slate-500 text-sm font-medium">Mermas (Material)</div>
+                    <div className="text-2xl font-bold text-slate-800">{totalReimpresiones.toFixed(0)} <span className="text-sm font-normal text-slate-400">m</span></div>
+                    <div className="text-xs text-purple-600 mt-1">Fallos / Cambios</div>
                 </div>
 
                 <div className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-500">
@@ -126,6 +133,7 @@ const InventoryReports = ({ defaultArea }) => {
                                 <th className="p-3 border-b text-center">Bobinas Cerr.</th>
                                 <th className="p-3 border-b text-right">Consumo (m)</th>
                                 <th className="p-3 border-b text-right text-red-600 bg-red-50">Fallas (m)</th>
+                                <th className="p-3 border-b text-right text-purple-600 bg-purple-50">Merma Mat. (m)</th>
                                 <th className="p-3 border-b text-right text-orange-600 bg-orange-50">Remanente</th>
                                 <th className="p-3 border-b text-right font-bold">Total Desp.</th>
                                 <th className="p-3 border-b text-right">% Merma</th>
@@ -135,7 +143,7 @@ const InventoryReports = ({ defaultArea }) => {
                         <tbody className="divide-y divide-slate-100">
                             {stats.length === 0 ? (
                                 <tr>
-                                    <td colSpan="8" className="p-8 text-center text-slate-400 italic">
+                                    <td colSpan="9" className="p-8 text-center text-slate-400 italic">
                                         No hay datos registrados en este periodo.
                                     </td>
                                 </tr>
@@ -145,6 +153,7 @@ const InventoryReports = ({ defaultArea }) => {
                                     const total = (item.ConsumoNeto || 0) + (item.DesperdicioTotal || 0);
                                     const pOK = total > 0 ? (item.ConsumoNeto / total) * 100 : 0;
                                     const pFail = total > 0 ? (item.DesperdicioProduccion / total) * 100 : 0;
+                                    const pReimp = total > 0 ? (item.DesperdicioReimpresion / total) * 100 : 0;
                                     const pRem = total > 0 ? (item.DesperdicioCierre / total) * 100 : 0;
 
                                     return (
@@ -153,6 +162,7 @@ const InventoryReports = ({ defaultArea }) => {
                                             <td className="p-3 text-center">{item.BobinasCerradas}</td>
                                             <td className="p-3 text-right font-medium">{item.ConsumoNeto.toFixed(1)}</td>
                                             <td className="p-3 text-right text-red-600 bg-red-50 font-medium">{item.DesperdicioProduccion.toFixed(1)}</td>
+                                            <td className="p-3 text-right text-purple-600 bg-purple-50 font-medium">{item.DesperdicioReimpresion.toFixed(1)}</td>
                                             <td className="p-3 text-right text-orange-600 bg-orange-50 font-medium">{item.DesperdicioCierre.toFixed(1)}</td>
                                             <td className="p-3 text-right font-bold text-slate-600">{item.DesperdicioTotal.toFixed(1)}</td>
                                             <td className="p-3 text-right font-bold text-slate-800">{item.PorcentajeDesperdicio}%</td>
@@ -167,6 +177,11 @@ const InventoryReports = ({ defaultArea }) => {
                                                         className="h-full bg-red-500 hover:bg-red-600 transition-colors"
                                                         style={{ width: `${pFail}%` }}
                                                         title={`Fallas: ${pFail.toFixed(1)}%`}
+                                                    ></div>
+                                                    <div
+                                                        className="h-full bg-purple-500 hover:bg-purple-600 transition-colors"
+                                                        style={{ width: `${pReimp}%` }}
+                                                        title={`Mermas Material: ${pReimp.toFixed(1)}%`}
                                                     ></div>
                                                     <div
                                                         className="h-full bg-orange-400 hover:bg-orange-500 transition-colors"

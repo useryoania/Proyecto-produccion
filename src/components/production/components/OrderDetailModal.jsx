@@ -3,6 +3,8 @@ import { ordersService, fileControlService } from '../../../services/api';
 import FileItem, { ActionButton } from './FileItem';
 import ReferenceItem from './ReferenceItem';
 import { toast } from 'sonner';
+import OrderRequirementsList from '../../logistics/OrderRequirementsList';
+
 
 const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
     // Estado Pestañas
@@ -186,7 +188,8 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                 ordersService.updateService({
                     serviceId: editingFileId,
                     cantidad: parseFloat(editValues.copias) || 1,
-                    obs: editValues.observaciones // Ahora enviamos las observaciones editadas
+                    obs: editValues.observaciones, // Ahora enviamos las observaciones editadas
+                    usuario: user.id || user.UsuarioID || 1 // Enviar ID de usuario
                 }).then(() => {
                     setEditingFileId(null);
                     reloadFiles();
@@ -234,9 +237,12 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
         }
 
         const user = JSON.parse(localStorage.getItem('user')) || {};
+        // Fallback robusto: Intenta ID numérico, string, o default 1 (Sistema)
+        const safeUser = user.id || user.UsuarioID || user.userId || 1;
+
         const commonPayload = {
             reason: cancelReason,
-            usuario: user.id || user.UsuarioID || "Desconocido"
+            usuario: safeUser
         };
 
         const promise = (async () => {
@@ -499,6 +505,13 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                 {currentOrder.retiro || '-'}
                             </div>
                         </div>
+
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-slate-400 block mb-1">Próximo Area</label>
+                            <div className="font-bold text-indigo-600 text-sm flex items-center gap-1">
+                                <i className="fa-solid fa-arrow-right text-[10px]"></i> {currentOrder.nextService || '-'}
+                            </div>
+                        </div>
                     </div>
 
                     {currentOrder.rollId && (
@@ -523,6 +536,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                         <div className="flex gap-1 border-b border-slate-200 mb-6 overflow-x-auto">
                             {[
                                 { id: 'files', label: 'Producción', count: productionFiles.length, icon: 'fa-layer-group' },
+                                { id: 'reqs', label: 'Requisitos', count: 0, icon: 'fa-list-check' },
                                 { id: 'refs', label: 'Referencias', count: referenceFiles.length, icon: 'fa-paperclip' },
                                 { id: 'services', label: 'Servicios Extras', count: serviceFiles.length, icon: 'fa-wand-magic-sparkles' },
                                 { id: 'labels', label: 'Etiquetas', count: labels.length, icon: 'fa-tags' }
@@ -549,6 +563,24 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
 
                         {/* CONTENIDO TABS */}
                         <div className="min-h-[250px] animate-in fade-in slide-in-from-bottom-2 duration-300">
+
+                            {/* PESTAÑA: REQUISITOS (Nueva) */}
+                            {activeTab === 'reqs' && (
+                                <div className="p-1">
+                                    <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg flex gap-3 text-blue-800 text-sm mb-4">
+                                        <i className="fa-solid fa-circle-info mt-0.5"></i>
+                                        <p>
+                                            Verifique que los materiales para <b>{currentOrder.area}</b> estén listos.
+                                            <br />
+                                            Los elementos <span className="font-bold text-green-600">Verdes</span> ya están disponibles.
+                                        </p>
+                                    </div>
+                                    <OrderRequirementsList
+                                        ordenId={currentOrder.id}
+                                        areaId={currentOrder.area}
+                                    />
+                                </div>
+                            )}
 
                             {/* PESTAÑA: ARCHIVOS DE PRODUCCIÓN */}
                             {activeTab === 'files' && (

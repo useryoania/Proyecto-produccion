@@ -17,6 +17,14 @@ export const receptionService = {
     getOrdersByClient: async (cliente) => {
         const response = await api.get(`/reception/orders-by-client?cliente=${encodeURIComponent(cliente)}`);
         return response.data;
+    },
+    getStock: async () => {
+        const response = await api.get('/reception/stock');
+        return response.data;
+    },
+    getOrdersForFabric: async (cliente, area, type) => {
+        const response = await api.get(`/reception/orders-for-fabric?cliente=${encodeURIComponent(cliente)}&area=${encodeURIComponent(area || '')}&type=${encodeURIComponent(type || '')}`);
+        return response.data;
     }
 
 };

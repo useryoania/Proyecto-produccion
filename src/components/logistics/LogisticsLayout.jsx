@@ -2,9 +2,12 @@ import React from 'react';
 
 const LogisticsLayout = ({ children, activeTab, setActiveTab }) => {
     const tabs = [
-        { id: 'packing', label: '1. Packing / Etiquetas', icon: 'fa-box-open' },
-        { id: 'dispatch', label: '2. Armado de Remitos', icon: 'fa-truck-fast' },
-        { id: 'reception', label: '3. Recepción (Check-in)', icon: 'fa-clipboard-check' }
+        { id: 'packing', label: '1. Packing', icon: 'fa-box-open' },
+        { id: 'dispatch', label: '2. Remitos', icon: 'fa-file-invoice' },
+        { id: 'transport', label: '3. En Viaje', icon: 'fa-truck-arrow-right' },
+        { id: 'reception', label: '4. Check-in', icon: 'fa-clipboard-check' },
+        { id: 'stock', label: '5. Stock', icon: 'fa-boxes-stacked' },
+        { id: 'lost', label: 'Extraviados', icon: 'fa-triangle-exclamation' }
     ];
 
     return (

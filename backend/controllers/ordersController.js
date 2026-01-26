@@ -42,6 +42,7 @@ exports.getOrdersByArea = async (req, res) => {
                 o.UM,               -- <--- NUEVO: Unidad de Medida recuperada
                 o.meta_data,
                 o.ArchivosCount,
+                o.ProximoServicio,
                 
                 m.Nombre as NombreMaquina,
                 
@@ -74,6 +75,8 @@ exports.getOrdersByArea = async (req, res) => {
         const estadosFinales = "'Entregado', 'Finalizado', 'Cancelado'";
         if (mode === 'history') {
             query += ` AND o.Estado IN (${estadosFinales})`;
+        } else if (mode === 'all') {
+            // No filtrar por estado
         } else {
             query += ` AND o.Estado NOT IN (${estadosFinales})`;
         }
@@ -117,6 +120,7 @@ exports.getOrdersByArea = async (req, res) => {
             ink: o.Tinta || '',         // <--- Mapeo para el frontend
             retiro: o.ModoRetiro || '',
             filesCount: o.ArchivosCount,
+            nextService: o.ProximoServicio || '-',
             meta: o.meta_data ? JSON.parse(o.meta_data) : {},
             filesData: o.files_data ? JSON.parse(o.files_data) : []
         }));
@@ -175,6 +179,18 @@ exports.createOrder = async (req, res) => {
             `);
 
         const newOrderId = resultOrder.recordset[0].OrdenID;
+        const safeUser = String((req.body.usuario && (req.body.usuario.id || req.body.usuario.UsuarioID)) || req.body.usuario || 'Sistema');
+
+        // LOG HISTORIAL
+        await new sql.Request(transaction)
+            .input('OID', sql.Int, newOrderId)
+            .input('Est', sql.VarChar, 'Pendiente')
+            .input('User', sql.VarChar, safeUser)
+            .input('Det', sql.NVarChar, 'Orden Creada')
+            .query(`
+                INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                VALUES (@OID, @Est, GETDATE(), GETDATE(), @User, @Det)
+            `);
 
         if (archivos && archivos.length > 0) {
             for (const file of archivos) {
@@ -229,7 +245,25 @@ exports.assignRoll = async (req, res) => {
                 await new sql.Request(transaction)
                     .input('OID', sql.Int, oid)
                     .input('RID', sql.VarChar(20), rollId)
-                    .query("UPDATE dbo.Ordenes SET RolloID = @RID WHERE OrdenID = @OID");
+                    .query(`
+                        UPDATE dbo.Ordenes 
+                        SET 
+                            RolloID = @RID,
+                            BobinaID = (SELECT BobinaID FROM dbo.Rollos WHERE RolloID = @RID)
+                        WHERE OrdenID = @OID
+                    `);
+
+                // LOG HISTORIAL
+                const safeUserRoll = String((req.body.usuario && (req.body.usuario.id || req.body.usuario.UsuarioID)) || req.body.usuario || 'Sistema');
+                await new sql.Request(transaction)
+                    .input('OID', sql.Int, oid)
+                    .input('Est', sql.VarChar, 'Asignado')
+                    .input('User', sql.VarChar, safeUserRoll)
+                    .input('Det', sql.NVarChar, `Asignado a Rollo/Lote ${rollId}`)
+                    .query(`
+                        INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                        VALUES (@OID, 'PREPARACION', GETDATE(), GETDATE(), @User, @Det)
+                     `);
             }
 
             await transaction.commit();
@@ -300,6 +334,20 @@ exports.updateFile = async (req, res) => {
 
             await transaction.commit();
 
+            // LOG HISTORIAL
+            const safeUser = String((req.body.userId || req.body.usuario || 'Sistema'));
+            if (ordenId) {
+                pool.request()
+                    .input('OID', sql.Int, ordenId)
+                    .input('Est', sql.VarChar, 'Modificado')
+                    .input('User', sql.VarChar, safeUser)
+                    .input('Det', sql.NVarChar, `Archivo modificado (ID: ${fileId})`)
+                    .query(`
+                        INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                        VALUES (@OID, 'EN PROCESO', GETDATE(), GETDATE(), @User, @Det)
+                    `).catch(e => console.error("Log Error:", e));
+            }
+
             // 4. Notificar actualización
             const io = req.app.get('socketio');
             if (io && ordenId) {
@@ -330,6 +378,19 @@ exports.addFile = async (req, res) => {
             .input('Copias', sql.Int, copias)
             .input('Metros', sql.Decimal(10, 2), metros)
             .query("INSERT INTO dbo.ArchivosOrden (OrdenID, NombreArchivo, RutaAlmacenamiento, TipoArchivo, Copias, Metros, FechaSubida) VALUES (@OrdenID, @Nombre, @Ruta, @Tipo, @Copias, @Metros, GETDATE())");
+
+        // LOG HISTORIAL
+        const safeUser = String((req.body.userId || req.body.usuario || 'Sistema'));
+        await pool.request()
+            .input('OID', sql.Int, ordenId)
+            .input('Est', sql.VarChar, 'Nuevo Archivo')
+            .input('User', sql.VarChar, safeUser)
+            .input('Det', sql.NVarChar, `Archivo agregado: ${nombre}`)
+            .query(`
+                INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                VALUES (@OID, 'EN PROCESO', GETDATE(), GETDATE(), @User, @Det)
+             `).catch(e => console.error("Log Error:", e));
+
         res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 };
@@ -432,7 +493,7 @@ exports.advancedSearchOrders = async (req, res) => {
             SELECT 
                 o.OrdenID, o.CodigoOrden, o.Cliente, o.DescripcionTrabajo, o.AreaID, 
                 o.Estado, o.Prioridad, o.FechaIngreso, o.FechaEstimadaEntrega,
-                o.Material, o.Variante, o.Tinta, o.ModoRetiro, o.ArchivosCount
+                o.Material, o.Variante, o.Tinta, o.ModoRetiro, o.ArchivosCount, o.ProximoServicio
             FROM dbo.Ordenes o
             WHERE 1=1
         `;
@@ -453,8 +514,16 @@ exports.advancedSearchOrders = async (req, res) => {
         }
 
         if (params.area && params.area !== 'ALL') {
-            query += " AND o.AreaID LIKE @Area";
-            request.input('Area', sql.VarChar, `%${params.area}%`);
+            if (Array.isArray(params.area)) {
+                if (params.area.length > 0) {
+                    const areaPlaceholders = params.area.map((_, i) => `@Area${i}`).join(',');
+                    query += ` AND o.AreaID IN (${areaPlaceholders})`;
+                    params.area.forEach((a, i) => request.input(`Area${i}`, sql.VarChar, a));
+                }
+            } else {
+                query += " AND o.AreaID LIKE @Area";
+                request.input('Area', sql.VarChar, `%${params.area}%`);
+            }
         }
 
         if (params.dateFrom) {
@@ -490,7 +559,8 @@ exports.advancedSearchOrders = async (req, res) => {
             variantCode: o.Variante || '',
             ink: o.Tinta || '',
             retiro: o.ModoRetiro || '',
-            filesCount: o.ArchivosCount || 0
+            filesCount: o.ArchivosCount || 0,
+            nextService: o.ProximoServicio || '-'
         }));
 
         console.log(`🔍 Búsqueda Avanzada: ${orders.length} resultados encontrados.`);
@@ -563,25 +633,60 @@ exports.getIntegralPedidoDetailsV2 = async (req, res) => {
             FechaIngreso: o.FechaIngreso,
             Estado: o.Estado,
             Magnitud: o.Magnitud,
-            AreaUM: first.UnidadMedida || ''
+            AreaUM: first.UnidadMedida || '',
+            ProximoServicio: o.ProximoServicio
         }));
 
-        // 3.5 Construir Ruta Visual (Step Tracker)
-        // Usamos las órdenes ordenadas para definir los pasos
-        const ruta = orders.map(o => {
-            const st = (o.Estado || '').toUpperCase();
+        // 3.5 Construir Ruta Visual (Step Tracker) - AGRUPADA POR ÁREA
+        // Si hay múltiples órdenes en una misma área, consolidamos el estado.
+        const areaSteps = new Map();
+
+        // Mantener orden de aparición
+        orders.forEach(o => {
+            if (!areaSteps.has(o.AreaID)) {
+                areaSteps.set(o.AreaID, {
+                    id: o.AreaID,
+                    label: o.AreaID,
+                    orders: [],
+                    date: o.FechaHabilitacion || o.FechaIngreso
+                });
+            }
+            areaSteps.get(o.AreaID).orders.push(o);
+        });
+
+        const ruta = Array.from(areaSteps.values()).map(step => {
+            const statuses = step.orders.map(o => (o.Estado || '').toUpperCase());
+
+            // Lógica de Prioridad: VIVO > CANCELADO
+            const isCancelled = (s) => ['CANCELADO', 'ANULADO', 'RECHAZADO'].includes(s);
+            const isCompleted = (s) => ['FINALIZADO', 'ENTREGADO', 'TERMINADO'].includes(s);
+            const isInProcess = (s) => ['PRODUCCION', 'IMPRIMIENDO', 'EN PROCESO', 'EN LOTE', 'CONTROL Y CALIDAD'].includes(s);
+
+            const allCancelled = statuses.every(s => isCancelled(s));
+            // Si hay alguna viva (no cancelada), el estado NO es cancelado.
+            const hasAlive = statuses.some(s => !isCancelled(s));
+
             let stepStatus = 'PENDIENTE';
 
-            if (['FINALIZADO', 'ENTREGADO', 'TERMINADO'].includes(st)) stepStatus = 'COMPLETADO';
-            else if (['CANCELADO', 'ANULADO', 'RECHAZADO'].includes(st)) stepStatus = 'CANCELADO';
-            else if (['PRODUCCION', 'IMPRIMIENDO', 'EN PROCESO', 'EN LOTE', 'CONTROL Y CALIDAD'].includes(st)) stepStatus = 'EN PROCESO';
+            if (allCancelled) {
+                stepStatus = 'CANCELADO';
+            } else if (hasAlive) {
+                // Analizamos el estado de las vivas
+                const aliveStatuses = statuses.filter(s => !isCancelled(s));
+                const allAliveCompleted = aliveStatuses.every(s => isCompleted(s));
+                const anyAliveInProcess = aliveStatuses.some(s => isInProcess(s));
+
+                if (allAliveCompleted) stepStatus = 'COMPLETADO';
+                else if (anyAliveInProcess) stepStatus = 'EN PROCESO';
+                else stepStatus = 'PENDIENTE';
+            }
 
             return {
-                id: o.AreaID,
-                label: o.AreaID,
+                id: step.id,
+                label: step.label,
                 status: stepStatus,
-                date: o.FechaHabilitacion || o.FechaIngreso,
-                orderId: o.OrdenID
+                date: step.date,
+                count: step.orders.length // Info extra útil
             };
         });
 
@@ -590,7 +695,18 @@ exports.getIntegralPedidoDetailsV2 = async (req, res) => {
         const orderIds = orders.map(o => o.OrdenID);
         let historialData = [];
         if (orderIds.length > 0) {
-            const hQuery = `SELECT * FROM HistorialOrdenes WHERE OrdenID IN (${orderIds.join(',')}) ORDER BY FechaInicio DESC`;
+            const hQuery = `
+                SELECT 
+                    H.*, 
+                    H.FechaInicio as Fecha, 
+                    O.CodigoOrden,
+                    COALESCE(U.Nombre, U.Usuario, H.Usuario) as NombreUsuario
+                FROM HistorialOrdenes H
+                INNER JOIN Ordenes O ON H.OrdenID = O.OrdenID
+                LEFT JOIN Usuarios U ON CAST(U.IdUsuario AS VARCHAR) = H.Usuario
+                WHERE H.OrdenID IN (${orderIds.join(',')}) 
+                ORDER BY H.FechaInicio DESC
+            `;
             const hResult = await pool.request().query(hQuery);
             historialData = hResult.recordset;
         }
@@ -665,14 +781,39 @@ exports.getCancelledOrdersSummary = async (req, res) => {
         const { area } = req.query;
         const pool = await getPool();
         const request = pool.request();
-        let query = "SELECT COUNT(*) as count FROM Ordenes WHERE Estado IN ('Cancelado', 'CANCELADO', 'Anulado')";
+
+        // Base Query
+        let queryBase = "FROM Ordenes WHERE Estado IN ('Cancelado', 'CANCELADO', 'Anulado', 'RECHAZADO')";
+
+        // 1. Total General
+        let queryTotal = `SELECT COUNT(*) as count ${queryBase}`;
+
+        // 2. Desglose por Área
+        let queryGroup = `SELECT AreaID, COUNT(*) as count ${queryBase} GROUP BY AreaID`;
+
         if (area) {
-            query += " AND AreaID = @Area";
+            queryTotal += " AND AreaID = @Area";
+            queryGroup = `SELECT AreaID, COUNT(*) as count ${queryBase} AND AreaID = @Area GROUP BY AreaID`;
             request.input('Area', sql.VarChar, area);
         }
-        const result = await request.query(query);
-        res.json({ total: result.recordset[0].count });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+
+        const resTotal = await request.query(queryTotal);
+        const resGroup = await request.query(queryGroup);
+
+        const perArea = {};
+        resGroup.recordset.forEach(row => {
+            if (row.AreaID) perArea[row.AreaID] = row.count;
+        });
+
+        res.json({
+            totalGeneral: resTotal.recordset[0].count,
+            perArea: perArea
+        });
+
+    } catch (e) {
+        console.error("❌ Error Dash Cancelled:", e);
+        res.status(500).json({ error: e.message });
+    }
 };
 
 exports.getFailedOrdersSummary = async (req, res) => {
@@ -680,15 +821,44 @@ exports.getFailedOrdersSummary = async (req, res) => {
         const { area } = req.query;
         const pool = await getPool();
         const request = pool.request();
-        // Asumimos 'FALLA' como estado, o podríamos buscar TotalFallas > 0
-        let query = "SELECT COUNT(*) as count FROM Ordenes WHERE Estado = 'FALLA'";
+
+        // Base Query - Asumimos 'FALLA' como estado principal para el dashboard rápido,
+        // Y TAMBIÉN patrones visuales en el código (-F)
+        let queryBase = `FROM Ordenes WHERE (
+            Estado IN ('FALLA', 'Falla', 'DEFECTO')
+            OR CodigoOrden LIKE 'F%'
+            OR CodigoOrden LIKE '%-F%'
+            OR CodigoOrden LIKE '% F%'
+        )`;
+
+        // 1. Total General
+        let queryTotal = `SELECT COUNT(*) as count ${queryBase}`;
+
+        // 2. Desglose por Área
+        let queryGroup = `SELECT AreaID, COUNT(*) as count ${queryBase} GROUP BY AreaID`;
+
         if (area) {
-            query += " AND AreaID = @Area";
+            queryTotal += " AND AreaID = @Area";
+            queryGroup = `SELECT AreaID, COUNT(*) as count ${queryBase} AND AreaID = @Area GROUP BY AreaID`;
             request.input('Area', sql.VarChar, area);
         }
-        const result = await request.query(query);
-        res.json({ total: result.recordset[0].count });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+
+        const resTotal = await request.query(queryTotal);
+        const resGroup = await request.query(queryGroup);
+
+        const perArea = {};
+        resGroup.recordset.forEach(row => {
+            if (row.AreaID) perArea[row.AreaID] = row.count;
+        });
+
+        res.json({
+            totalGeneral: resTotal.recordset[0].count,
+            perArea: perArea
+        });
+    } catch (e) {
+        console.error("❌ Error Dash Failed:", e);
+        res.status(500).json({ error: e.message });
+    }
 };
 exports.unassignOrder = async (req, res) => { res.json({ success: true }); }; // Dummy success
 // (Versión antigua eliminada)
@@ -799,6 +969,26 @@ exports.updateService = async (req, res) => {
                 .input('Cant', sql.Decimal(18, 2), cantidad) // Cantidad decimal
                 .input('Obs', sql.NVarChar, obs || '')       // Obs opcional
                 .query("UPDATE dbo.ServiciosExtraOrden SET Cantidad = @Cant, Observacion = @Obs WHERE ServicioID = @ID");
+
+            // LOG HISTORIAL
+            // Obtenemos OrdenID
+            const oRes = await new sql.Request(transaction)
+                .input('ID', sql.Int, serviceId)
+                .query("SELECT OrdenID FROM ServiciosExtraOrden WHERE ServicioID = @ID");
+
+            const oId = oRes.recordset[0]?.OrdenID;
+            if (oId) {
+                const safeUser = String((req.body.usuario || 'Sistema'));
+                await new sql.Request(transaction)
+                    .input('OID', sql.Int, oId)
+                    .input('Est', sql.VarChar, 'Servicio Modif.')
+                    .input('User', sql.VarChar, safeUser)
+                    .input('Det', sql.NVarChar, `Servicio Extra Actualizado ID: ${serviceId}`)
+                    .query(`
+                        INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                        VALUES (@OID, 'EN PROCESO', GETDATE(), GETDATE(), @User, @Det)
+                    `);
+            }
 
             // 2. Obtener OrdenID
             const serviceRes = await new sql.Request(transaction)
@@ -1022,7 +1212,7 @@ exports.cancelFile = async (req, res) => {
             await new sql.Request(transaction)
                 .input('ID', sql.Int, fileId)
                 .input('Obs', sql.NVarChar, reason || 'Cancelado por usuario')
-                .input('User', sql.VarChar(100), usuario || 'Sistema')
+                .input('User', sql.VarChar(100), String(usuario || 'Sistema'))
                 .query(`
                     UPDATE dbo.ArchivosOrden 
                     SET EstadoArchivo = 'CANCELADO', 
@@ -1082,8 +1272,30 @@ exports.cancelFile = async (req, res) => {
                                 Observaciones = CONCAT(Observaciones, ' [AUTO-CANCEL: ', @Obs, ']')
                             WHERE OrdenID = @OID
                         `);
+
+                    // LOG ORDER CANCELADO
+                    await new sql.Request(transaction)
+                        .input('OID', sql.Int, ordenId)
+                        .input('Est', sql.VarChar, 'Cancelado')
+                        .input('User', sql.VarChar, String(usuario || 'Sistema'))
+                        .input('Det', sql.NVarChar, 'Orden Auto-Cancelada (Sin archivos activos)')
+                        .query(`
+                           INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                           VALUES (@OID, @Est, GETDATE(), GETDATE(), @User, @Det)
+                       `);
                     orderCancelled = true;
                 }
+
+                // LOG FILE CANCELADO (Siempre)
+                await new sql.Request(transaction)
+                    .input('OID', sql.Int, ordenId)
+                    .input('Est', sql.VarChar, 'Archivo Cancelado')
+                    .input('User', sql.VarChar, String(usuario || 'Sistema'))
+                    .input('Det', sql.NVarChar, `Archivo cancelado: ${reason}`)
+                    .query(`
+                       INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                       VALUES (@OID, 'EN PROCESO', GETDATE(), GETDATE(), @User, @Det)
+                   `);
             }
 
             await transaction.commit();

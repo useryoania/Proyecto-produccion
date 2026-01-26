@@ -17,7 +17,7 @@ exports.getAllAreas = async (req, res) => {
         const conditions = [];
 
         if (productive === 'true') {
-            conditions.push("(a.EsProductivo = 1 OR a.Productiva = 1)");
+            conditions.push("a.Productiva = 1");
         }
 
         if (withStock === 'true') {

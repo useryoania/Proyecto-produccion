@@ -21,8 +21,19 @@ router.get('/remitos/:code', logisticsController.getRemitoByCode);
 // Recepción
 router.post('/receive', logisticsController.receiveDispatch);
 
+// Transport
+router.post('/transport/confirm', logisticsController.confirmTransport);
+router.get('/transport/active', logisticsController.getActiveTransports);
+router.get('/requirements', logisticsController.getOrderRequirements);
+router.get('/requirements/resources', logisticsController.getAvailableResources);
+router.post('/requirements/toggle', logisticsController.toggleRequirement);
+
+// Dashboard & History
 // Dashboard & History
 router.get('/dashboard', logisticsController.getDashboard);
 router.get('/history', logisticsController.getHistory);
+router.get('/stock', logisticsController.getAreaStock); // NEW
+router.get('/lost', logisticsController.getLostItems);
+router.post('/recover', logisticsController.recoverItem);
 
 module.exports = router;

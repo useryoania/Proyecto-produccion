@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { ordersService } from '../../services/modules/ordersService';
 import OrderRouteTracker from '../orders/OrderRouteTracker';
+import OrderDetailModal from '../production/components/OrderDetailModal'; // Importar Modal
 
 const IntegralOrderView = () => {
     const [searchRef, setSearchRef] = useState('');
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [selectedOrder, setSelectedOrder] = useState(null); // Estado para Modal
 
     const handleSearch = async (e) => {
         e?.preventDefault();
@@ -147,6 +149,8 @@ const IntegralOrderView = () => {
                                         <th className="px-6 py-3">Ingreso</th>
                                         <th className="px-6 py-3">Estado</th>
                                         <th className="px-6 py-3 text-center">Magnitud</th>
+                                        <th className="px-6 py-3">Prox. Servicio</th>
+                                        <th className="px-6 py-3 text-center">Ver</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
@@ -169,6 +173,18 @@ const IntegralOrderView = () => {
                                             <td className="px-6 py-3 text-center font-mono text-slate-600">
                                                 {o.Magnitud || 0} <span className="text-xs text-slate-400">{o.AreaUM || ''}</span>
                                             </td>
+                                            <td className="px-6 py-3 text-xs text-slate-500 font-medium">
+                                                {o.ProximoServicio || '-'}
+                                            </td>
+                                            <td className="px-6 py-3 text-center">
+                                                <button
+                                                    onClick={() => setSelectedOrder({ id: o.OrdenID, area: o.AreaID })}
+                                                    className="w-8 h-8 rounded-full bg-slate-50 hover:bg-blue-100 text-slate-400 hover:text-blue-600 transition-all flex items-center justify-center border border-slate-200 hover:border-blue-200"
+                                                    title="Ver Detalle"
+                                                >
+                                                    <i className="fa-regular fa-eye"></i>
+                                                </button>
+                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -176,25 +192,63 @@ const IntegralOrderView = () => {
                         </div>
                     </div>
 
-                    {/* 5. HISTORIAL UNIFICADO */}
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-                        <h3 className="text-sm font-bold text-slate-400 uppercase mb-4">Historial Reciente</h3>
-                        <div className="space-y-4 relative border-l-2 border-slate-100 ml-3 pl-6">
-                            {data.historial.slice(0, 10).map((h, i) => (
-                                <div key={i} className="relative">
-                                    <div className="absolute -left-[31px] top-1 w-3 h-3 rounded-full bg-slate-300 border-2 border-white"></div>
-                                    <div className="text-xs text-slate-400 mb-0.5">{new Date(h.Fecha).toLocaleString()}</div>
-                                    <div className="font-bold text-slate-700 text-sm">{h.Detalle}</div>
-                                    <div className="text-xs text-blue-500 mt-1 flex gap-2">
-                                        <span className="bg-blue-50 px-2 py-0.5 rounded">{h.Estado}</span>
-                                        <span className="text-slate-400">Orden: {h.CodigoOrden}</span>
-                                    </div>
-                                </div>
-                            ))}
+                    {/* 5. HISTORIAL UNIFICADO - TABLA LISTA COMPACTA */}
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
+                            <h3 className="text-sm font-bold text-slate-500 uppercase">Historial Reciente</h3>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs text-left">
+                                <thead className="bg-white text-slate-400 font-bold border-b border-slate-100">
+                                    <tr>
+                                        <th className="px-6 py-2 w-32">Fecha</th>
+                                        <th className="px-6 py-2 w-32">Usuario</th>
+                                        <th className="px-6 py-2">Detalle</th>
+                                        <th className="px-6 py-2 w-24">Estado</th>
+                                        <th className="px-6 py-2 w-24 text-right">Orden</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-50">
+                                    {data.historial.slice(0, 20).map((h, i) => (
+                                        <tr key={i} className="hover:bg-blue-50/30 transition-colors">
+                                            <td className="px-6 py-2 whitespace-nowrap text-slate-500">
+                                                {new Date(h.Fecha).toLocaleString()}
+                                            </td>
+                                            <td className="px-6 py-2 font-medium text-slate-700">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-[10px]">
+                                                        <i className="fa-solid fa-user"></i>
+                                                    </div>
+                                                    {h.NombreUsuario || h.Usuario || 'Sistema'}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-2 text-slate-600">
+                                                {h.Detalle}
+                                            </td>
+                                            <td className="px-6 py-2">
+                                                <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[10px] font-bold border border-slate-200">
+                                                    {h.Estado}
+                                                </span>
+                                            </td>
+                                            <td className="px-6 py-2 text-right font-bold text-blue-600">
+                                                {h.CodigoOrden}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
 
                 </div>
+            )}
+
+            {/* MODAL DETALLE DE ORDEN */}
+            {selectedOrder && (
+                <OrderDetailModal
+                    order={selectedOrder}
+                    onClose={() => setSelectedOrder(null)}
+                />
             )}
         </div>
     );

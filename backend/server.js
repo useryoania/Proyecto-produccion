@@ -88,7 +88,7 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = 5005; // HARDCODED FORCE
+const PORT = process.env.PORT || 5000;
 
 // FORCED RESTART TRIGGER: 2026-01-01 22:38
 

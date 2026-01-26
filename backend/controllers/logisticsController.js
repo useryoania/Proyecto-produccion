@@ -269,7 +269,7 @@ exports.createRemito = async (req, res) => {
                     INSERT INTO Logistica_Envios 
                     (CodigoRemito, AreaOrigenID, AreaDestinoID, UsuarioEmisor, FechaSalida, Estado, Observaciones)
                     OUTPUT INSERTED.EnvioID
-                    VALUES (@Code, @Orig, @Dest, @User, GETDATE(), 'EN_TRANSITO', @Obs)
+                    VALUES (@Code, @Orig, @Dest, @User, GETDATE(), 'ESPERANDO_RETIRO', @Obs)
                 `);
             const envioId = headRes.recordset[0].EnvioID;
 
@@ -343,7 +343,7 @@ exports.getRemitoByCode = async (req, res) => {
 // --- RECEPCION DE DESPACHOS ---
 
 exports.receiveDispatch = async (req, res) => {
-    const { envioId, itemsRecibidos, usuarioId, areaReceptora } = req.body;
+    let { envioId, itemsRecibidos, usuarioId, areaReceptora, codigoEtiqueta } = req.body;
     // itemsRecibidos: [{ bultoId, estado: 'ESCANEADO' | 'FALTANTE' }]
 
     try {
@@ -352,27 +352,218 @@ exports.receiveDispatch = async (req, res) => {
         await transaction.begin();
 
         try {
+            // AUTO-DETECT AREA & SINGLE MODE SUPPORT
+            if (!areaReceptora) {
+                // Fetch from Remito Destino
+                const remitoCheck = await new sql.Request(transaction)
+                    .input('EID', sql.Int, envioId)
+                    .query("SELECT AreaDestinoID FROM Logistica_Envios WHERE EnvioID = @EID");
+                if (remitoCheck.recordset.length > 0) {
+                    areaReceptora = remitoCheck.recordset[0].AreaDestinoID;
+                }
+            }
+
+            // SINGLE ITEM MODE (Scanner)
+            if (codigoEtiqueta && !itemsRecibidos) {
+                // Resolve BultoID
+                const bultoReq = await new sql.Request(transaction)
+                    .input('C', sql.VarChar, codigoEtiqueta)
+                    .query("SELECT BultoID FROM Logistica_Bultos WHERE CodigoEtiqueta = @C");
+
+                if (bultoReq.recordset.length === 0) throw new Error("Bulto no encontrado: " + codigoEtiqueta);
+
+                const bId = bultoReq.recordset[0].BultoID;
+                itemsRecibidos = [{ bultoId: bId, estado: 'ESCANEADO' }];
+            }
+
             let receivedCount = 0;
 
             for (const item of itemsRecibidos) {
-                // Update Item
+                // Update Logistica_EnvioItems
                 await new sql.Request(transaction)
                     .input('Est', sql.VarChar, item.estado)
                     .input('EID', sql.Int, envioId)
                     .input('BID', sql.Int, item.bultoId)
                     .query(`UPDATE Logistica_EnvioItems SET EstadoRecepcion = @Est, FechaEscaneo = GETDATE() WHERE EnvioID = @EID AND BultoID = @BID`);
 
-                // Update Bulto Location if scanned
+                // Update Bulto Location logic
                 if (item.estado === 'ESCANEADO') {
                     await new sql.Request(transaction)
                         .input('Ubi', sql.VarChar, areaReceptora)
                         .input('BID', sql.Int, item.bultoId)
                         .query(`UPDATE Logistica_Bultos SET Estado = 'EN_STOCK', UbicacionActual = @Ubi WHERE BultoID = @BID`);
 
+                    // UPDATE INVENTARIO (SYNC OR CREATE)
+                    // 1. Get Code
+                    const codeReq = await new sql.Request(transaction).input('BID', sql.Int, item.bultoId).query("SELECT CodigoEtiqueta FROM Logistica_Bultos WHERE BultoID = @BID");
+                    const code = codeReq.recordset[0]?.CodigoEtiqueta;
+
+                    // SCOPED VARIABLES
+                    let bultoInfo = {};
+                    let CodigoEtiqueta = null;
+                    let OrdenID = null;
+
+                    if (code) {
+                        // 1. Get Extended Data (Try Order first, then Reception)
+                        // This logic handles both internal Orders (linked in Logistica_Bultos) and Client Fabrics (Linked to Recepciones via Code)
+                        const extData = await new sql.Request(transaction).input('BID', sql.Int, item.bultoId).input('Code', sql.VarChar, code)
+                            .query(`
+                            SELECT 
+                                b.CodigoEtiqueta, 
+                                b.OrdenID, 
+                                r.Referencias, -- Fetch raw references
+                                COALESCE(o.Cliente, r.Cliente) as Cliente
+                            FROM Logistica_Bultos b
+                            LEFT JOIN Ordenes o ON b.OrdenID = o.OrdenID
+                            LEFT JOIN Recepciones r ON b.CodigoEtiqueta = r.Codigo
+                            WHERE b.BultoID = @BID
+                        `);
+
+                        bultoInfo = extData.recordset[0] || {};
+                        CodigoEtiqueta = bultoInfo.CodigoEtiqueta;
+
+                        // Parse OrdenID from Referencias manually to be safer
+                        OrdenID = bultoInfo.OrdenID;
+                        if (!OrdenID && bultoInfo.Referencias) {
+                            // Try to extract first number found in string
+                            const match = bultoInfo.Referencias.match(/\d+/);
+                            if (match) OrdenID = parseInt(match[0]);
+                        }
+
+                        const { Cliente } = bultoInfo;
+                        console.log("Resolved Order Data:", { OrdenID, Cliente, Ref: bultoInfo.Referencias });
+
+                        // --- AUTO-FULFILL REQUIREMENT ON CHECK-IN ---
+                        if (OrdenID && areaReceptora) {
+                            let reqTypeToFulfill = '';
+                            const areaNorm = areaReceptora.toUpperCase();
+
+                            // CASO 1: Recibo TELA en CORTE o SUBLIMACION
+                            if (['SB', 'SUBLIMACION', 'TWC', 'CORTE'].includes(areaNorm)) {
+                                reqTypeToFulfill = 'TELA';
+                            }
+
+                            // CASO 2: Recibo PRENDA/CORTE en ESTAMPADO/BORDADO/COSTURA
+                            if (['EST', 'ESTAMPADO', 'EMB', 'BORDADO', 'TWT', 'COSTURA'].includes(areaNorm)) {
+                                reqTypeToFulfill = 'PRENDA'; // Cubre also 'CORTES' if string match is broad
+                            }
+
+                            // NOTA: Podríamos agregar 'CORTES' explícito si 'PRENDA' no basta. 
+                            // Asumimos que ConfigRequisitosProduccion tiene 'REQ-PRENDA' o 'REQ-CORTES'.
+                            // Usaremos LIKE %TYPE%OR%TYPE2% logic or simple mapping.
+
+                            if (reqTypeToFulfill) {
+                                const obsAuto = `Recibido en ${areaReceptora} (Item: ${code})`;
+
+                                // Buscamos requisitos que coincidan con el tipo Y pertenezcan al Área actual
+                                // O Areas Equivalentes (ej: TWC es Corte, SB es Sublimacion)
+
+                                // Simplificación: Buscamos requisitos para ESTA área que pidan ESTE material
+                                let reqSearch = `%${reqTypeToFulfill}%`;
+                                if (reqTypeToFulfill === 'PRENDA') reqSearch = '%PRENDA%'; // O include CORTES? mejor simple por ahora
+
+                                await new sql.Request(transaction)
+                                    .input('OID', sql.Int, OrdenID)
+                                    .input('Type', sql.VarChar(50), reqSearch)
+                                    .input('Area', sql.VarChar(50), areaReceptora)
+                                    .input('Obs', sql.NVarChar(200), obsAuto)
+                                    .query(`
+                                        MERGE OrdenCumplimientoRequisitos AS target
+                                        USING (
+                                            SELECT RequisitoID, req.AreaID
+                                            FROM ConfigRequisitosProduccion req
+                                            -- Optional Join if strictly needed, but subquery is fine
+                                            WHERE (req.CodigoRequisito LIKE @Type OR req.CodigoRequisito LIKE '%CORTES%')
+                                            AND (
+                                                req.AreaID = @Area 
+                                                OR req.AreaID IN (SELECT AreaID FROM Areas WHERE Nombre = @Area OR Nombre LIKE @Area + '%')
+                                            )
+                                        ) AS source
+                                        ON (target.OrdenID = @OID AND target.RequisitoID = source.RequisitoID)
+                                        WHEN MATCHED THEN
+                                            UPDATE SET Estado = 'CUMPLIDO', FechaCumplimiento = GETDATE(), Observaciones = @Obs
+                                        WHEN NOT MATCHED THEN
+                                            INSERT (OrdenID, AreaID, RequisitoID, Estado, FechaCumplimiento, Observaciones)
+                                            VALUES (@OID, source.AreaID, source.RequisitoID, 'CUMPLIDO', GETDATE(), @Obs);
+                                    `);
+                            }
+                        }
+
+                        // Check if exists
+                        const invCheck = await new sql.Request(transaction)
+                            .input('C', sql.VarChar, code)
+                            .query("SELECT BobinaID, CodigoEtiqueta FROM InventarioBobinas WHERE Referencia = @C OR CodigoEtiqueta = @C");
+
+                        if (invCheck.recordset.length === 0) {
+                            // CREATE (Alta en Inventario)
+                            const newLabel = `BOB-${Date.now()}-${Math.floor(Math.random() * 100)}`;
+                            console.log("Creating NEW Bobina:", newLabel, "for Ref:", code, "Client:", Cliente);
+
+                            await new sql.Request(transaction)
+                                .input('Ubi', sql.VarChar, areaReceptora)
+                                .input('Ref', sql.VarChar, code)
+                                .input('NewCode', sql.VarChar, newLabel)
+                                .input('Cli', sql.VarChar, Cliente || null)
+                                .input('Ord', sql.Int, OrdenID || null)
+                                .query(`
+                                    INSERT INTO InventarioBobinas 
+                                    (InsumoID, AreaID, CodigoEtiqueta, Referencia, ClienteID, OrdenID, MetrosIniciales, MetrosRestantes, Estado, FechaIngreso, LoteProveedor)
+                                    SELECT TOP 1 InsumoID, @Ubi, @NewCode, @Ref, @Cli, @Ord, 100, 100, 'Disponible', GETDATE(), 'INGRESO-CHECKIN'
+                                    FROM Insumos 
+                                    WHERE EsProductivo = 1 
+                                    ORDER BY InsumoID ASC
+                                `);
+                        } else {
+                            // UPDATE (Movimiento y Normalizacion)
+                            const existing = invCheck.recordset[0];
+                            let targetCode = existing.CodigoEtiqueta;
+
+                            // Si el código actual NO es un BOB standard (ej: es un PRE-), lo migramos a BOB
+                            if (!targetCode.startsWith('BOB-')) {
+                                targetCode = `BOB-${Date.now()}-${Math.floor(Math.random() * 100)}`;
+                                console.log("Renaming Legacy Bobina:", existing.CodigoEtiqueta, "->", targetCode);
+                            }
+
+                            console.log("Updating Bobina:", targetCode, "Client:", Cliente);
+
+                            await new sql.Request(transaction)
+                                .input('Ubi', sql.VarChar, areaReceptora)
+                                .input('Ref', sql.VarChar, code)
+                                .input('Cli', sql.VarChar, Cliente || null)
+                                .input('Ord', sql.Int, OrdenID || null)
+                                .input('FinalCode', sql.VarChar, targetCode)
+                                .input('BID', sql.Int, existing.BobinaID)
+                                .query(`
+                                    UPDATE InventarioBobinas 
+                                    SET AreaID = @Ubi,
+                                        CodigoEtiqueta = @FinalCode,
+                                        Referencia = @Ref,
+                                        ClienteID = ISNULL(@Cli, ClienteID),
+                                        OrdenID = ISNULL(@Ord, OrdenID)
+                                    WHERE BobinaID = @BID
+                                `);
+                        }
+                    }
+
                     receivedCount++;
 
-                    // FUSION: Update Orden location as well if possible (optional, to keep sync)
-                    // We'd need to know if ALL bultos of the order moved, but for now we can update 'UbicacionActual' of the order to the new area roughly.
+                    /* 
+                    // --- REQUIREMENTS ENGINE (DISABLED FOR MANUAL VALIDATION) ---
+                    // Se reactivará como "Sugerencia" en la UI más adelante
+                    if (OrdenID) {
+                        // Logic commented out to prevent auto-save
+                    }
+                    */
+                } else if (item.estado === 'PERDIDO') {
+                    // MARCAR COMO PERDIDO EN MAESTRO DE BULTOS
+                    await new sql.Request(transaction)
+                        .input('BID', sql.Int, item.bultoId)
+                        .query(`UPDATE Logistica_Bultos SET Estado = 'PERDIDO', UbicacionActual = 'EXTRAVIADO' WHERE BultoID = @BID`);
+
+                    // Log Movement
+                    await new sql.Request(transaction)
+                        .input('BID', sql.Int, item.bultoId)
+                        .query("INSERT INTO MovimientosLogistica (CodigoBulto, TipoMovimiento, AreaID, UsuarioID, Observaciones) SELECT CodigoEtiqueta, 'PERDIDA', 'EXTRAVIADO', 1, 'Reportado como perdido en Recepción' FROM Logistica_Bultos WHERE BultoID = @BID");
                 }
             }
 
@@ -442,6 +633,548 @@ exports.getHistory = async (req, res) => {
         const r = await pool.request().input('A', sql.VarChar, areaId)
             .query("SELECT TOP 50 * FROM MovimientosLogistica WHERE AreaID = @A ORDER BY FechaMovimiento DESC");
         res.json(r.recordset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ==========================================
+// 3. TRANSPORT / CADETE
+// ==========================================
+
+exports.confirmTransport = async (req, res) => {
+    const { remitoCode, scannedCodes, driverName, driverDetails, userId } = req.body;
+
+    try {
+        const pool = await getPool();
+
+        // 1. Operator Check
+        const uid = userId || 1;
+
+        // 2. Remito Check
+        const remitoRes = await pool.request()
+            .input('C', sql.VarChar, remitoCode)
+            .query("SELECT EnvioID, Estado, AreaOrigenID, AreaDestinoID FROM Logistica_Envios WHERE CodigoRemito = @C");
+
+        if (remitoRes.recordset.length === 0) {
+            return res.status(404).json({ error: 'Remito no encontrado' });
+        }
+        const envio = remitoRes.recordset[0];
+
+        // 3. Check Total Items vs Scanned
+        const totalItemsReq = await pool.request()
+            .input('EID', sql.Int, envio.EnvioID)
+            .query("SELECT COUNT(*) as Total FROM Logistica_EnvioItems WHERE EnvioID = @EID");
+        const totalItems = totalItemsReq.recordset[0].Total;
+        const scannedCount = scannedCodes.length;
+
+        const isPartial = scannedCount < totalItems;
+        const newState = isPartial ? 'EN_TRANSITO_PARCIAL' : 'EN_TRANSITO';
+
+        // 4. Update Transaction
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            const obsText = driverDetails ? `${driverName} (${driverDetails})` : driverName;
+
+            // Log Movements for each scanned item
+            for (const code of scannedCodes) {
+                // Update Movement Log
+                await new sql.Request(transaction)
+                    .input('Cod', sql.VarChar, code)
+                    .input('Tipo', sql.VarChar, 'TRANSITO_INICIO')
+                    .input('Area', sql.VarChar, 'TRANSITO')
+                    .input('UID', sql.Int, uid)
+                    .input('Obs', sql.NVarChar, `Salida con: ${obsText} - Remito: ${remitoCode}`)
+                    .query(`
+                        INSERT INTO MovimientosLogistica (CodigoBulto, TipoMovimiento, AreaID, UsuarioID, Observaciones) 
+                        VALUES (@Cod, @Tipo, @Area, @UID, @Obs)
+                    `);
+            }
+
+            // Update Logistica_Envios: Observaciones + Estado
+            // If partial, maybe we should mark which items were NOT dispatched?
+            // For now, tracking at Remito level is sufficient as per request "EN QUE ESTADO QUEDA".
+            let finalObs = `Transportista: ${obsText}`;
+            if (isPartial) finalObs += ` | PARCIAL (${scannedCount}/${totalItems})`;
+
+            await new sql.Request(transaction)
+                .input('Obs', sql.NVarChar, finalObs)
+                .input('Est', sql.VarChar, newState)
+                .input('EID', sql.Int, envio.EnvioID)
+                .query("UPDATE Logistica_Envios SET Observaciones = ISNULL(Observaciones, '') + ' | ' + @Obs, Estado = @Est WHERE EnvioID = @EID");
+
+            await transaction.commit();
+
+            res.json({
+                success: true,
+                message: isPartial
+                    ? `Despacho PARCIAL confirmado (${scannedCount}/${totalItems}). Estado: ${newState}`
+                    : `Despacho COMPLETO confirmado. Estado: ${newState}`
+            });
+
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
+
+    } catch (err) {
+        console.error("Error confirmTransport:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.getActiveTransports = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const r = await pool.request().query(`
+            SELECT TOP 200
+                e.EnvioID,
+                e.CodigoRemito,
+                e.Estado,
+                e.Observaciones,
+                e.FechaSalida as FechaCreacion,
+                (SELECT COUNT(*) FROM Logistica_EnvioItems WHERE EnvioID = e.EnvioID) as TotalBultos,
+                e.FechaSalida as Fecha
+            FROM Logistica_Envios e
+            ORDER BY e.FechaSalida DESC
+        `);
+        res.json(r.recordset);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// --- REQUISITOS DE PRODUCCION (MANUAL CHECK) ---
+
+exports.getOrderRequirements = async (req, res) => {
+    const { ordenId, areaId } = req.query;
+    try {
+        const pool = await getPool();
+        const r = await pool.request()
+            .input('OID', sql.Int, ordenId)
+            .input('Area', sql.VarChar, areaId)
+            .query(`
+                SELECT 
+                    req.RequisitoID, 
+                    req.CodigoRequisito, 
+                    req.Descripcion, 
+                    req.EsBloqueante,
+                    CASE WHEN cum.Estado = 'CUMPLIDO' THEN 1 ELSE 0 END as Cumplido,
+                    cum.FechaCumplimiento
+                FROM ConfigRequisitosProduccion req
+                LEFT JOIN OrdenCumplimientoRequisitos cum 
+                    ON req.RequisitoID = cum.RequisitoID AND cum.OrdenID = @OID
+                WHERE req.AreaID = @Area
+            `);
+        res.json(r.recordset);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.toggleRequirement = async (req, res) => {
+    const { ordenId, requisitoId, cumplido } = req.body;
+    try {
+        const pool = await getPool();
+        if (cumplido) {
+            await pool.request()
+                .input('OID', sql.Int, ordenId)
+                .input('RID', sql.Int, requisitoId)
+                .query(`
+                    DECLARE @Area NVARCHAR(50) = (SELECT AreaID FROM ConfigRequisitosProduccion WHERE RequisitoID = @RID);
+                    
+                    MERGE OrdenCumplimientoRequisitos AS target
+                    USING (SELECT @OID as OrdenID, @RID as RequisitoID) AS source
+                    ON (target.OrdenID = source.OrdenID AND target.RequisitoID = source.RequisitoID)
+                    WHEN MATCHED THEN
+                        UPDATE SET Estado = 'CUMPLIDO', FechaCumplimiento = GETDATE()
+                    WHEN NOT MATCHED THEN
+                        INSERT (OrdenID, AreaID, RequisitoID, Estado, FechaCumplimiento)
+                        VALUES (@OID, @Area, @RID, 'CUMPLIDO', GETDATE());
+                `);
+        } else {
+            await pool.request()
+                .input('OID', sql.Int, ordenId)
+                .input('RID', sql.Int, requisitoId)
+                .query("DELETE FROM OrdenCumplimientoRequisitos WHERE OrdenID = @OID AND RequisitoID = @RID");
+        }
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.getAreaStock = async (req, res) => {
+    const { areaId } = req.query;
+    try {
+        const pool = await getPool();
+        let query = "SELECT * FROM Logistica_Bultos WHERE Estado = 'EN_STOCK'";
+
+        if (areaId && areaId !== 'TODOS') {
+            query += " AND UbicacionActual = @Area";
+        }
+
+        query += " ORDER BY BultoID DESC";
+
+        const reqSql = pool.request();
+        if (areaId && areaId !== 'TODOS') reqSql.input('Area', sql.VarChar, areaId);
+
+        const r = await reqSql.query(query);
+        res.json(r.recordset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// --- LOST & FOUND ---
+
+exports.getLostItems = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const r = await pool.request().query("SELECT * FROM Logistica_Bultos WHERE Estado = 'PERDIDO'");
+        res.json(r.recordset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.recoverItem = async (req, res) => {
+    const { bultoId, location } = req.body;
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            await new sql.Request(transaction)
+                .input('Loc', sql.VarChar, location || 'RECEPCION')
+                .input('BID', sql.Int, bultoId)
+                .query("UPDATE Logistica_Bultos SET Estado = 'EN_STOCK', UbicacionActual = @Loc WHERE BultoID = @BID");
+
+            await new sql.Request(transaction)
+                .input('Loc', sql.VarChar, location || 'RECEPCION')
+                .input('BID', sql.Int, bultoId)
+                .query(`
+                    INSERT INTO MovimientosLogistica(CodigoBulto, TipoMovimiento, AreaID, UsuarioID, Observaciones)
+                    SELECT CodigoEtiqueta, 'RECUPERACION', @Loc, 1, 'Recuperado de Extraviados'
+                    FROM Logistica_Bultos WHERE BultoID = @BID
+                `);
+
+            await transaction.commit();
+            res.json({ success: true, message: 'Item recuperado existosamente' });
+
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// Let's modify confirmTransport to update Envio Status to 'EN_TRANSITO' is a good practice.
+// But for now, let's query Envios with "Transporte Confirmado" in Obs OR rely on Movimientos.
+
+// Better: Query Logistica_Envios where Estado = 'EN_TRANSITO' (if we update it)
+// Let's implicitly assume any Envio created recently that is not 'RECIBIDO' and has movements 'TRANSITO_INICIO'
+
+// Let's update `confirmTransport` to set Estado = 'EN_TRANSITO' first? 
+// It's safer. BUT user is live.
+// Let's Query:
+// Recent movements of type TRANSITO_INICIO grouped by Remito (via Observaciones parsing or Join).
+
+// Actually, Logistica_Envios contains "CodigoRemito".
+// Let's search unique Remitos that have items in "TRANSITO" state?
+// MovimientosLogistica doesn't change Item State directly in DB (Logistica_Bultos).
+
+// Let's use a smart query:
+// Get Envios where Observaciones LIKE '%Transportista:%' AND Estado != 'RECIBIDO'
+
+// --- REQUISITOS DE PRODUCCION (MANUAL CHECK) ---
+
+exports.getOrderRequirements = async (req, res) => {
+    const { ordenId, areaId } = req.query;
+    try {
+        const pool = await getPool();
+        // Obtener configuración + Estado actual
+        const r = await pool.request()
+            .input('OID', sql.Int, ordenId)
+            .input('Area', sql.VarChar, areaId)
+            .query(`
+                SELECT 
+                    req.RequisitoID, 
+                    req.CodigoRequisito, 
+                    req.Descripcion, 
+                    req.EsBloqueante,
+                    CASE WHEN cum.Estado = 'CUMPLIDO' THEN 1 ELSE 0 END as Cumplido,
+                    cum.FechaCumplimiento,
+                    cum.Observaciones
+                FROM ConfigRequisitosProduccion req
+                LEFT JOIN OrdenCumplimientoRequisitos cum 
+                    ON req.RequisitoID = cum.RequisitoID AND cum.OrdenID = @OID
+                WHERE req.AreaID = @Area
+            `);
+        res.json(r.recordset);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.toggleRequirement = async (req, res) => {
+    const { ordenId, requisitoId, cumplido, observaciones } = req.body; // cumplido: bool
+    try {
+        const pool = await getPool();
+        if (cumplido) {
+            await pool.request()
+                .input('OID', sql.Int, ordenId)
+                .input('RID', sql.Int, requisitoId)
+                .input('Obs', sql.NVarChar, observaciones || '')
+                .query(`
+                    DECLARE @Area NVARCHAR(50) = (SELECT AreaID FROM ConfigRequisitosProduccion WHERE RequisitoID = @RID);
+                    
+                    MERGE OrdenCumplimientoRequisitos AS target
+                    USING (SELECT @OID as OrdenID, @RID as RequisitoID) AS source
+                    ON (target.OrdenID = source.OrdenID AND target.RequisitoID = source.RequisitoID)
+                    WHEN MATCHED THEN
+                        UPDATE SET Estado = 'CUMPLIDO', FechaCumplimiento = GETDATE(), Observaciones = @Obs
+                    WHEN NOT MATCHED THEN
+                        INSERT (OrdenID, AreaID, RequisitoID, Estado, FechaCumplimiento, Observaciones)
+                        VALUES (@OID, @Area, @RID, 'CUMPLIDO', GETDATE(), @Obs);
+                `);
+        } else {
+            // Si desmarca, borramos o ponemos PENDIENTE.
+            // Opcionalmente podríamos dejarlo como PENDIENTE y borrar observaciones?
+            // Por ahora mantenemos la lógica de eliminar para limpiar history, O
+            // Si hay Observaciones, tal vez deberíamos preservar el registro como 'PENDIENTE' con la nota de por qué falla?
+            // "ponme unas observaciones en esa tabla"
+            // El usuario suele querer observaciones cuando FALTA algo también.
+            // Para cambiar lógica simple check, vamos a permitir guardar registro 'PENDIENTE' si hay observación.
+
+            if (observaciones) {
+                await pool.request()
+                    .input('OID', sql.Int, ordenId)
+                    .input('RID', sql.Int, requisitoId)
+                    .input('Obs', sql.NVarChar, observaciones)
+                    .query(`
+                    DECLARE @Area NVARCHAR(50) = (SELECT AreaID FROM ConfigRequisitosProduccion WHERE RequisitoID = @RID);
+                    MERGE OrdenCumplimientoRequisitos AS target
+                    USING (SELECT @OID as OrdenID, @RID as RequisitoID) AS source
+                    ON (target.OrdenID = source.OrdenID AND target.RequisitoID = source.RequisitoID)
+                    WHEN MATCHED THEN
+                        UPDATE SET Estado = 'PENDIENTE', Observaciones = @Obs
+                    WHEN NOT MATCHED THEN
+                        INSERT (OrdenID, AreaID, RequisitoID, Estado, FechaCumplimiento, Observaciones)
+                        VALUES (@OID, @Area, @RID, 'PENDIENTE', NULL, @Obs);
+                `);
+            } else {
+                await pool.request()
+                    .input('OID', sql.Int, ordenId)
+                    .input('RID', sql.Int, requisitoId)
+                    .query("DELETE FROM OrdenCumplimientoRequisitos WHERE OrdenID = @OID AND RequisitoID = @RID");
+            }
+        }
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.getAvailableResources = async (req, res) => {
+    const { ordenId, reqCode, areaId } = req.query;
+    console.log(`[getAvailableResources] Buscando para Orden ${ordenId}, Req: ${reqCode}, Area: ${areaId}`);
+
+    try {
+        const pool = await getPool();
+
+        // 1. Obtener Datos de la Orden (Cliente)
+        const orderRes = await pool.request()
+            .input('OID', sql.Int, ordenId)
+            .query("SELECT Cliente FROM Ordenes WHERE OrdenID = @OID");
+
+        if (orderRes.recordset.length === 0) return res.json([]);
+        const clienteNombre = orderRes.recordset[0].Cliente || '';
+        console.log(`[REQ] Cliente: '${clienteNombre}'`);
+
+        let resources = [];
+        let specificFound = false;
+
+        // Lógica según tipo de requisito
+        if (reqCode && reqCode.includes('TELA')) {
+            // ESTRATEGIA 1: Búsqueda Específica
+            const queryBob = `
+                    SELECT 
+                        BobinaID as id, 
+                        CASE WHEN CodigoEtiqueta IS NULL THEN 'Bob-' + CAST(BobinaID as varchar) ELSE CodigoEtiqueta END as label, 
+                        'Bobina ' + CAST(BobinaID as varchar) + ' (' + CAST(MetrosRestantes as varchar) + 'm) - ' + ISNULL(Referencia, '') as description,
+                        Ubicacion as location
+                    FROM InventarioBobinas 
+                    WHERE Estado IN ('Disponible', 'En Uso')
+                    AND InsumoID = 1146 -- Filtro Solicitado
+                    AND (
+                         OrdenID = @OID 
+                         OR Referencia LIKE '%' + @CliName + '%'
+                    )
+            `;
+            const rSpecific = await pool.request()
+                .input('CliName', sql.NVarChar, clienteNombre || 'XXXXXXXX')
+                .input('OID', sql.Int, ordenId)
+                .query(queryBob);
+
+            resources = rSpecific.recordset;
+
+            if (resources.length > 0) specificFound = true;
+
+            // ESTRATEGIA 2: Fallback (Top 50 disponibles recientes FILTRANDO InsumoID)
+            if (resources.length === 0) {
+                console.log("[REQ] No specific coils found. Fetching generic available coils (Insumo 1146).");
+                const rFallback = await pool.request()
+                    .query(`
+                        SELECT TOP 50
+                            BobinaID as id, 
+                            CASE WHEN CodigoEtiqueta IS NULL THEN 'Bob-' + CAST(BobinaID as varchar) ELSE CodigoEtiqueta END as label, 
+                            'Bobina ' + CAST(BobinaID as varchar) + ' (' + CAST(MetrosRestantes as varchar) + 'm) - ' + ISNULL(Referencia, '') as description,
+                            Ubicacion as location
+                        FROM InventarioBobinas 
+                        WHERE Estado IN ('Disponible')
+                        AND InsumoID = 1146 -- Filtro Solicitado
+                        ORDER BY FechaIngreso DESC
+                    `);
+                resources = rFallback.recordset;
+            }
+        }
+        else if (reqCode && (reqCode.includes('PRENDA') || reqCode.includes('CORTES'))) {
+            // Buscar Bultos Específicos
+            const rSpecific = await pool.request()
+                .input('OID', sql.Int, ordenId)
+                .query(`
+                    SELECT 
+                        BultoID as id, 
+                        CodigoEtiqueta as label, 
+                        Descripcion + ' (' + Estado + ')' as description, 
+                        UbicacionActual as location
+                    FROM Logistica_Bultos
+                    WHERE OrdenID = @OID
+                    AND Estado IN ('EN_STOCK', 'EN_TRANSITO')
+                `);
+            resources = rSpecific.recordset;
+            if (resources.length > 0) specificFound = true;
+
+            // Fallback Bultos - FILTRADO POR AREA
+            if (resources.length === 0) {
+                let locationFilter = null;
+                if (areaId === 'EMB') locationFilter = 'BORDADO';
+                if (areaId === 'EST') locationFilter = 'ESTAMPADO';
+                if (areaId === 'TWT') locationFilter = 'COSTURA'; // Asunción
+                if (areaId === 'TWC') locationFilter = 'CORTE';
+
+                let queryFallback = `
+                        SELECT TOP 50
+                            BultoID as id, 
+                            CodigoEtiqueta as label, 
+                            Descripcion + ' (' + Estado + ')' as description, 
+                            UbicacionActual as location
+                        FROM Logistica_Bultos
+                        WHERE Estado IN ('EN_STOCK')
+                 `;
+
+                if (locationFilter) {
+                    queryFallback += ` AND UbicacionActual = @LocFilter`;
+                }
+
+                queryFallback += ` ORDER BY BultoID DESC`;
+
+                const reqFallback = pool.request();
+                if (locationFilter) reqFallback.input('LocFilter', sql.VarChar, locationFilter);
+
+                const rFallback = await reqFallback.query(queryFallback);
+                resources = rFallback.recordset;
+            }
+        }
+
+        console.log(`[REQ] Returning ${resources.length} resources (Specific: ${specificFound})`);
+        res.json(resources);
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.getAreaStock = async (req, res) => {
+    const { areaId } = req.query;
+    try {
+        const pool = await getPool();
+        let query = "SELECT * FROM Logistica_Bultos WHERE Estado = 'EN_STOCK'";
+
+        if (areaId && areaId !== 'TODOS') {
+            query += " AND UbicacionActual = @Area";
+        }
+
+        query += " ORDER BY BultoID DESC";
+
+        const reqSql = pool.request();
+        if (areaId && areaId !== 'TODOS') reqSql.input('Area', sql.VarChar, areaId);
+
+        const r = await reqSql.query(query);
+        res.json(r.recordset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// --- LOST & FOUND ---
+
+exports.getLostItems = async (req, res) => {
+    try {
+        const pool = await getPool();
+        // Fetch items with state 'PERDIDO'
+        // Also fetch last update time if possible (assume Fecha is in Logs?)
+        // For simplicity, just get from Bultos table
+        const r = await pool.request().query("SELECT * FROM Logistica_Bultos WHERE Estado = 'PERDIDO'");
+        res.json(r.recordset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.recoverItem = async (req, res) => {
+    const { bultoId, location } = req.body;
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. Update Bulto
+            await new sql.Request(transaction)
+                .input('Loc', sql.VarChar, location || 'RECEPCION')
+                .input('BID', sql.Int, bultoId)
+                .query("UPDATE Logistica_Bultos SET Estado = 'EN_STOCK', UbicacionActual = @Loc WHERE BultoID = @BID");
+
+            // 2. Log Movement
+            await new sql.Request(transaction)
+                .input('Loc', sql.VarChar, location || 'RECEPCION')
+                .input('BID', sql.Int, bultoId)
+                .query(`
+                    INSERT INTO MovimientosLogistica(CodigoBulto, TipoMovimiento, AreaID, UsuarioID, Observaciones)
+                    SELECT CodigoEtiqueta, 'RECUPERACION', @Loc, 1, 'Recuperado de Extraviados'
+                    FROM Logistica_Bultos WHERE BultoID = @BID
+            `);
+
+            await transaction.commit();
+            res.json({ success: true, message: 'Item recuperado existosamente' });
+
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

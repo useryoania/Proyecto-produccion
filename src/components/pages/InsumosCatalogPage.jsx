@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '../ui/Button';
 import { inventoryService } from '../../services/modules/inventoryService';
+import { areasService } from '../../services/modules/areasService';
+import { MultiAreaSelector } from '../ui/MultiAreaSelector';
 import { toast } from 'sonner';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 
@@ -11,6 +13,10 @@ const InsumosCatalogPage = () => {
     // Filtros
     const [searchTerm, setSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('');
+    const [filterArea, setFilterArea] = useState('ALL'); // Nuevo filtro de area
+
+    // Data lists
+    const [areasList, setAreasList] = useState([]);
 
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -21,34 +27,52 @@ const InsumosCatalogPage = () => {
         unidad: 'M',
         categoria: '',
         stockMinimo: 0,
-        esProductivo: true
+        esProductivo: true,
+        areas: [] // Para el selector
     });
 
     useEffect(() => {
-        loadInsumos();
+        loadCommonData();
     }, []);
 
-    const loadInsumos = async () => {
+    const loadCommonData = async () => {
         setLoading(true);
         try {
-            const data = await inventoryService.getInsumos();
-            setInsumos(data);
+            const [insumosData, areasData] = await Promise.all([
+                inventoryService.getInsumos(),
+                areasService.getAll({ productive: true, withStock: false }) // Traer todas las productivas
+            ]);
+            setInsumos(insumosData);
+            setAreasList(areasData);
         } catch (error) {
             console.error(error);
-            toast.error("Error cargando insumos");
+            toast.error("Error cargando datos");
         } finally {
             setLoading(false);
         }
     };
 
+    const loadInsumos = async () => {
+        try {
+            const data = await inventoryService.getInsumos();
+            setInsumos(data);
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
     const handleEdit = (item) => {
+        // Parsear AreaIDs "A, B" => ["A", "B"]
+        const itemAreas = item.AreaIDs ? item.AreaIDs.split(',').map(s => s.trim()) : [];
+
         setNewItem({
             nombre: item.Nombre,
             codRef: item.CodigoReferencia || '',
             unidad: item.UnidadDefault || 'M',
             categoria: item.Categoria || '',
             stockMinimo: item.StockMinimo || 0,
-            esProductivo: item.EsProductivo
+            esProductivo: item.EsProductivo,
+            areas: itemAreas
         });
         setEditingId(item.InsumoID);
         setIsModalOpen(true);
@@ -76,7 +100,8 @@ const InsumosCatalogPage = () => {
             unidad: newItem.unidad,
             categoria: newItem.categoria,
             stockMinimo: newItem.stockMinimo,
-            esProductivo: newItem.esProductivo
+            esProductivo: newItem.esProductivo,
+            areas: newItem.areas
         };
 
         try {
@@ -107,7 +132,8 @@ const InsumosCatalogPage = () => {
             unidad: 'M',
             categoria: '',
             stockMinimo: 0,
-            esProductivo: true
+            esProductivo: true,
+            areas: []
         });
     };
 
@@ -143,9 +169,17 @@ const InsumosCatalogPage = () => {
                         <option key={cat} value={cat}>{cat}</option>
                     ))}
                 </select>
-                {(searchTerm || filterCategory) && (
+                <select
+                    className="border rounded p-2 min-w-[150px]"
+                    value={filterArea}
+                    onChange={e => setFilterArea(e.target.value)}
+                >
+                    <option value="ALL">Todas las Áreas</option>
+                    {areasList.map(a => <option key={a.AreaID} value={a.AreaID}>{a.Nombre}</option>)}
+                </select>
+                {(searchTerm || filterCategory || filterArea !== 'ALL') && (
                     <button
-                        onClick={() => { setSearchTerm(''); setFilterCategory(''); }}
+                        onClick={() => { setSearchTerm(''); setFilterCategory(''); setFilterArea('ALL'); }}
                         className="text-sm text-blue-600 hover:underline"
                     >
                         Limpiar Filtros
@@ -160,6 +194,7 @@ const InsumosCatalogPage = () => {
                             <th className="p-4 font-bold text-slate-600 text-sm">Nombre</th>
                             <th className="p-4 font-bold text-slate-600 text-sm">Ref. Orden</th>
                             <th className="p-4 font-bold text-slate-600 text-sm">Categoría</th>
+                            <th className="p-4 font-bold text-slate-600 text-sm">Áreas</th>
                             <th className="p-4 font-bold text-slate-600 text-sm">Unidad</th>
                             <th className="p-4 font-bold text-slate-600 text-sm">Min</th>
                             <th className="p-4 font-bold text-slate-600 text-sm">Prod.</th>
@@ -171,12 +206,24 @@ const InsumosCatalogPage = () => {
                             const matchText = (item.Nombre || '').toLowerCase().includes(searchTerm.toLowerCase())
                                 || (item.CodigoReferencia || '').toLowerCase().includes(searchTerm.toLowerCase());
                             const matchCat = filterCategory ? item.Categoria === filterCategory : true;
-                            return matchText && matchCat;
+                            const matchArea = filterArea && filterArea !== 'ALL'
+                                ? (item.AreaIDs && item.AreaIDs.includes(filterArea))
+                                : true;
+                            return matchText && matchCat && matchArea;
                         }).map(item => (
                             <tr key={item.InsumoID} className="hover:bg-slate-50 transition-colors">
                                 <td className="p-4 text-slate-800 font-medium">{item.Nombre}</td>
                                 <td className="p-4 text-slate-600 font-mono text-xs">{item.CodigoReferencia || '-'}</td>
                                 <td className="p-4 text-slate-600 text-sm">{item.Categoria || '-'}</td>
+                                <td className="p-4 text-slate-600 text-sm">
+                                    {item.AreaIDs ? (
+                                        <div className="flex flex-wrap gap-1">
+                                            {item.AreaIDs.split(',').map(a => (
+                                                <span key={a} className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px] border border-blue-100">{a}</span>
+                                            ))}
+                                        </div>
+                                    ) : <span className="text-slate-300">-</span>}
+                                </td>
                                 <td className="p-4 text-slate-600">{item.UnidadDefault}</td>
                                 <td className="p-4 text-slate-600 text-sm">{item.StockMinimo}</td>
                                 <td className="p-4 text-slate-600 text-center">
@@ -190,7 +237,7 @@ const InsumosCatalogPage = () => {
                         ))}
                         {insumos.length === 0 && !loading && (
                             <tr>
-                                <td colSpan="7" className="p-8 text-center text-slate-400 italic">No hay insumos registrados.</td>
+                                <td colSpan="8" className="p-8 text-center text-slate-400 italic">No hay insumos registrados.</td>
                             </tr>
                         )}
                     </tbody>
@@ -215,6 +262,17 @@ const InsumosCatalogPage = () => {
                             <div>
                                 <label className="block text-sm font-medium mb-1">Categoría (ERP)</label>
                                 <input className="w-full border rounded p-2" value={newItem.categoria} onChange={e => setNewItem({ ...newItem, categoria: e.target.value })} placeholder="Ej: VINILO, TELA, PAPEL" />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Áreas Asignadas</label>
+                                <MultiAreaSelector
+                                    areas={areasList}
+                                    selected={newItem.areas}
+                                    onChange={(selected) => setNewItem({ ...newItem, areas: selected })}
+                                    placeholder="Vincular Áreas..."
+                                />
+                                <p className="text-xs text-slate-400 mt-1">El insumo aparecerá disponible en estas áreas.</p>
                             </div>
 
                             <div className="flex gap-4">

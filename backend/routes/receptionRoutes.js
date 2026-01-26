@@ -7,6 +7,8 @@ router.get('/init-data', receptionController.getInitData);
 router.post('/create', receptionController.createReception);
 router.get('/history', receptionController.getHistory);
 router.get('/orders-by-client', receptionController.getOrdersByClient);
+router.get('/stock', receptionController.getStock);
+router.get('/orders-for-fabric', receptionController.getPotentialOrdersForFabric);
 
 
 module.exports = router;

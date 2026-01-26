@@ -65,7 +65,7 @@ export const ordersService = {
         return response.data;
     },
     getById: async (orderId, area) => {
-        let url = `/orders?q=${orderId}`;
+        let url = `/orders?q=${orderId}&mode=all`;
         if (area) url += `&area=${area}`;
         const response = await api.get(url);
         // Si no devuelve array, asumimos objeto unico o array vacio

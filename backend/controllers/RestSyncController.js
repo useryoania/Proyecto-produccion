@@ -14,7 +14,7 @@ const syncOrdersLogic = async (io) => {
     isProcessing = true;
 
     try {
-        console.log("🏁 INICIANDO SYNC (V3 FINAL - DEBUG MODE) - " + new Date().toISOString());
+        console.log("🏁 INICIANDO SYNC (V4 GOLDEN - DEBUG MODE) - " + new Date().toISOString());
         const pool = await getPool();
 
         // 1. Obtener última factura
@@ -211,6 +211,16 @@ const syncOrdersLogic = async (io) => {
             for (const docId in pedidosAgrupados) {
                 const docData = pedidosAgrupados[docId];
 
+                // 🛑 CHECK IDEMPOTENCIA: Si ya existe el NroDoc en Ordenes, saltamos.
+                const checkDup = await new sql.Request(transaction)
+                    .input('erp', sql.VarChar, docData.nroDoc)
+                    .query("SELECT TOP 1 1 FROM Ordenes WHERE NoDocERP = @erp");
+
+                if (checkDup.recordset.length > 0) {
+                    console.log(`⚠️ Pedido ${docData.nroDoc} ya existe en DB. Saltando importación para evitar duplicados.`);
+                    continue;
+                }
+
                 // A. APLANAR TODO EL DOCUMENTO EN UNA LISTA SECUENCIAL
                 const sortedAreaIDs = Object.keys(docData.areas).sort((a, b) => docData.areas[a].prioridad - docData.areas[b].prioridad);
 
@@ -293,6 +303,9 @@ const syncOrdersLogic = async (io) => {
                     const magnitudStr = magVal > 0 ? magVal.toFixed(2) : "0";
 
                     // 4. INSERTAR
+                    const isPrinting = (areaID || "").toUpperCase().match(/IMPRESION|GIG|SUBLIMACION|SB|DF|ECO|UV/);
+                    const fechaImp = isPrinting ? new Date() : null;
+
                     const reqO = new sql.Request(transaction);
                     const insertRes = await reqO
                         .input('AreaID', sql.VarChar, areaID)
@@ -311,17 +324,20 @@ const syncOrdersLogic = async (io) => {
                         .input('Prox', sql.VarChar, nextService)
                         .input('Mag', sql.VarChar, magnitudStr)
                         .input('UM', sql.VarChar, umReal)
+                        .input('F_EntSec', sql.DateTime, fechaImp) // INPUT NUEVO
                         .query(`
                             INSERT INTO Ordenes (
                                 AreaID, Cliente, DescripcionTrabajo, Prioridad, Estado, EstadoenArea,
                                 FechaIngreso, FechaEstimadaEntrega, Material, Variante, CodigoOrden,
-                                NoDocERP, Nota, Tinta, ModoRetiro, ArchivosCount, Magnitud, ProximoServicio, UM
+                                NoDocERP, Nota, Tinta, ModoRetiro, ArchivosCount, Magnitud, ProximoServicio, UM,
+                                FechaEntradaSector
                             )
                             OUTPUT INSERTED.OrdenID
                             VALUES (
                                 @AreaID, @Cliente, @Desc, @Prio, 'Pendiente', 'Pendiente',
                                 @F_Ing, @F_Ent, @Mat, @Var, @Cod,
-                                @ERP, @Nota, @Tinta, @Retiro, 0, @Mag, @Prox, @UM
+                                @ERP, @Nota, @Tinta, @Retiro, 0, @Mag, @Prox, @UM,
+                                @F_EntSec
                             )
                         `);
 

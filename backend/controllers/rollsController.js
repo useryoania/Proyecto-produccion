@@ -189,6 +189,12 @@ exports.moveOrder = async (req, res) => {
                                 ELSE (SELECT MaquinaID FROM dbo.Rollos WHERE RolloID = @RolloID) 
                             END,
 
+                            -- ✅ Heredar BobinaID del nuevo rollo (Sincronización Inventario)
+                            BobinaID = CASE 
+                                WHEN @RolloID IS NULL THEN NULL 
+                                ELSE (SELECT BobinaID FROM dbo.Rollos WHERE RolloID = @RolloID) 
+                            END,
+
                             -- Actualizar estado según el estado del rollo destino
                             Estado = CASE 
                                 WHEN @RolloID IS NULL THEN 'Pendiente'
@@ -347,19 +353,203 @@ exports.reorderOrders = async (req, res) => {
 };
 // ... (Tus otras funciones getBoardData, moveOrder, etc.)
 
-// 5. ACTUALIZAR NOMBRE DEL ROLLO
-exports.updateRollName = async (req, res) => {
-    const { rollId, name } = req.body;
+// 5. ACTUALIZAR DETALLES GENERALE DEL ROLLO (Nombre, Color, Bobina, Capacidad)
+exports.updateRollGeneral = async (req, res) => {
+    // Frontend sends 'BobinaID' (PascalCase) usually, but we check both just in case
+    let { rollId, name, color, BobinaID, bobinaId, capacity } = req.body;
+
+    // Normalize bobinaId
+    if (BobinaID !== undefined) bobinaId = BobinaID;
+
+    // Si viene solo rollId sin nada que actualizar, retornamos error
+    if (!rollId) return res.status(400).json({ error: "Falta rollId" });
+
     try {
         const pool = await getPool();
-        await pool.request()
-            .input('RolloID', sql.VarChar(20), rollId)
-            .input('Nombre', sql.NVarChar(100), name)
-            .query("UPDATE dbo.Rollos SET Nombre = @Nombre WHERE RolloID = @RolloID");
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
 
-        res.json({ success: true });
+        try {
+            // Construir Query Dinámica según lo que venga
+            const updates = [];
+            const request = new sql.Request(transaction);
+            request.input('RID', sql.VarChar(50), String(rollId));
+
+            if (name !== undefined) {
+                updates.push("Nombre = @Nombre");
+                request.input('Nombre', sql.NVarChar(100), name);
+            }
+            if (color !== undefined) {
+                updates.push("ColorHex = @Color");
+                request.input('Color', sql.VarChar(20), color);
+            }
+            if (capacity !== undefined) {
+                updates.push("CapacidadMaxima = @Capacidad");
+                request.input('Capacidad', sql.Decimal(10, 2), capacity);
+            }
+
+            // Lógica Especial Bobina
+            if (bobinaId !== undefined) {
+                updates.push("BobinaID = @BobinaID");
+                request.input('BobinaID', sql.Int, bobinaId ? Number(bobinaId) : null);
+
+                // Si asignamos bobina, verificar disponibilidad y actualizar inventario (si era null antes)
+                // Para simplificar hoy: solo validamos existencia si no es null
+                if (bobinaId) {
+                    const check = await new sql.Request(transaction)
+                        .input('BID', sql.Int, Number(bobinaId))
+                        .query("SELECT MetrosRestantes FROM InventarioBobinas WHERE BobinaID = @BID");
+
+                    if (check.recordset.length === 0) throw new Error("Bobina no existe");
+
+                    // Marcar como En Uso
+                    await new sql.Request(transaction)
+                        .input('BID', sql.Int, Number(bobinaId))
+                        .query("UPDATE InventarioBobinas SET Estado = 'En Uso' WHERE BobinaID = @BID AND Estado = 'Disponible'");
+                }
+            }
+
+            if (updates.length > 0) {
+                const query = `UPDATE dbo.Rollos SET ${updates.join(', ')} WHERE CAST(RolloID AS VARCHAR(50)) = @RID`;
+                await request.query(query);
+
+                // ✅ Si se actualizó la bobina, propagar a las órdenes del rollo
+                if (bobinaId !== undefined) {
+                    await new sql.Request(transaction)
+                        .input('RID', sql.VarChar(50), String(rollId))
+                        .input('BID', sql.Int, Number(bobinaId))
+                        .query("UPDATE dbo.Ordenes SET BobinaID = @BID WHERE CAST(RolloID AS VARCHAR(50)) = @RID");
+                }
+            }
+
+            await transaction.commit();
+            res.json({ success: true, message: "Rollo actualizado" });
+
+        } catch (innerErr) {
+            await transaction.rollback();
+            throw innerErr;
+        }
+
     } catch (err) {
-        console.error("Error actualizando nombre:", err);
+        console.error("Error actualizando rollo:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// COMPATIBILIDAD VIEJA (UpdateName solamente) - Se mantiene redirigida o independiente
+exports.updateRollName = exports.updateRollGeneral;
+
+// ==========================================
+// 5.b INTERCAMBIO DE BOBINA (SWAP)
+// ==========================================
+exports.swapBobina = async (req, res) => {
+    const { rollId, oldBobinaId, newBobinaId, actionOld } = req.body;
+    // actionOld: 'exhausted' (se acabó, poner a 0) | 'return' (devolver al stock con lo que tenga)
+
+    const userId = req.user ? req.user.id : 1;
+
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. GESTIONAR BOBINA VIEJA (Si existe)
+            if (oldBobinaId) {
+                // Obtener datos actuales para log
+                const oldData = await new sql.Request(transaction)
+                    .input('BID', sql.Int, oldBobinaId)
+                    .query("SELECT MetrosRestantes, InsumoID, CodigoEtiqueta FROM InventarioBobinas WHERE BobinaID = @BID");
+
+                if (oldData.recordset.length > 0) {
+                    const { MetrosRestantes, InsumoID, CodigoEtiqueta } = oldData.recordset[0];
+                    const { wasteMeters, wasteReason } = req.body; // Nuevos parámetros
+
+                    let nuevoEstado = 'Disponible';
+                    let metrosActuales = MetrosRestantes;
+
+                    // 1.a Registrar Desperdicio/Fallo si existe
+                    if (wasteMeters && wasteMeters > 0) {
+                        metrosActuales = Math.max(0, metrosActuales - Number(wasteMeters));
+
+                        await new sql.Request(transaction)
+                            .input('IID', sql.Int, InsumoID)
+                            .input('Cant', sql.Decimal(10, 2), wasteMeters)
+                            .input('Ref', sql.NVarChar(200), `Fallo/Merma en Rollo ${rollId} (Bobina ${CodigoEtiqueta}): ${wasteReason || 'Sin motivo'}`)
+                            .input('UID', sql.Int, userId)
+                            .input('BID', sql.Int, oldBobinaId)
+                            .query("INSERT INTO MovimientosInsumos (InsumoID, TipoMovimiento, Cantidad, Referencia, UsuarioID, BobinaID) VALUES (@IID, 'MERMA_REIMPRESION', @Cant, @Ref, @UID, @BID)");
+                    }
+
+                    let metrosFinales = metrosActuales;
+                    let consumoRegistrado = 0;
+
+                    if (actionOld === 'exhausted') {
+                        nuevoEstado = 'Agotado';
+                        consumoRegistrado = metrosActuales; // El resto se consumió en producción (o se tiró sin marcar como merma específica)
+                        metrosFinales = 0;
+                    }
+                    // Si es 'return', metrosFinales ya es metrosActuales (Restantes - Waste)
+
+                    // Actualizar Bobina Vieja
+                    await new sql.Request(transaction)
+                        .input('BID', sql.Int, oldBobinaId)
+                        .input('St', sql.VarChar(20), nuevoEstado)
+                        .input('Met', sql.Decimal(10, 2), metrosFinales)
+                        .query(`
+                            UPDATE InventarioBobinas 
+                            SET Estado = @St, MetrosRestantes = @Met,
+                                FechaAgotado = CASE WHEN @St='Agotado' THEN GETDATE() ELSE NULL END
+                            WHERE BobinaID = @BID
+                        `);
+
+                    // Registrar Consumo "Normal" (Producción) si hubo consumo total y no fue todo merma
+                    if (consumoRegistrado > 0) {
+                        await new sql.Request(transaction)
+                            .input('IID', sql.Int, InsumoID)
+                            .input('Cant', sql.Decimal(10, 2), consumoRegistrado)
+                            .input('Ref', sql.NVarChar(200), `Consumo Final en Rollo ${rollId} (Bobina ${CodigoEtiqueta})`)
+                            .input('UID', sql.Int, userId)
+                            .input('BID', sql.Int, oldBobinaId)
+                            .query("INSERT INTO MovimientosInsumos (InsumoID, TipoMovimiento, Cantidad, Referencia, UsuarioID, BobinaID) VALUES (@IID, 'CONSUMO', @Cant, @Ref, @UID, @BID)");
+                    }
+                }
+            }
+
+            // 2. ASIGNAR BOBINA NUEVA
+            // Verificar nueva
+            const checkNew = await new sql.Request(transaction)
+                .input('BID', sql.Int, newBobinaId)
+                .query("SELECT Estado FROM InventarioBobinas WHERE BobinaID = @BID");
+
+            if (checkNew.recordset.length === 0) throw new Error("Bobina nueva no existe");
+
+            // Marcar Nueva como En Uso
+            await new sql.Request(transaction)
+                .input('BID', sql.Int, newBobinaId)
+                .query("UPDATE InventarioBobinas SET Estado = 'En Uso' WHERE BobinaID = @BID");
+
+            // 3. ACTUALIZAR ROLLO
+            await new sql.Request(transaction)
+                .input('RID', sql.VarChar(20), rollId)
+                .input('BID', sql.Int, newBobinaId)
+                .query("UPDATE Rollos SET BobinaID = @BID WHERE RolloID = @RID");
+
+            // 4. PROPAGAR CAMBIO A ÓRDENES (Sincronización)
+            await new sql.Request(transaction)
+                .input('RID', sql.VarChar(20), rollId)
+                .input('BID', sql.Int, newBobinaId)
+                .query("UPDATE dbo.Ordenes SET BobinaID = @BID WHERE RolloID = @RID");
+
+            await transaction.commit();
+            res.json({ success: true, message: "Cambio de bobina registrado exitosamente." });
+
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
+    } catch (err) {
+        console.error("Error swapBobina:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -386,6 +576,7 @@ exports.dismantleRoll = async (req, res) => {
                     UPDATE dbo.Ordenes 
                     SET 
                         RolloID = NULL, 
+                        BobinaID = NULL, -- ✅ Limpiar BobinaID
                         MaquinaID = NULL,
                         Secuencia = NULL, 
                         Estado = 'Pendiente', 
@@ -413,6 +604,110 @@ exports.dismantleRoll = async (req, res) => {
         }
     } catch (err) {
         console.error("Error desarmando rollo:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ==========================================
+// 8. SPLIT ROLLO (CORTE DE LOTE POR CAMBIO DE BOBINA)
+// ==========================================
+exports.splitRoll = async (req, res) => {
+    const { rollId, lastOrderId, newBobinaId } = req.body;
+    // rollId: Rollo actual
+    // lastOrderId: ÚLTIMA orden que se imprimió correctamente con la bobina vieja
+    // newBobinaId: Bobina para el NUEVO rollo (donde irán las ordenes restantes)
+
+    if (!rollId || !lastOrderId) {
+        return res.status(400).json({ error: "Falta rollId o lastOrderId" });
+    }
+
+    const userId = req.user ? req.user.id : 1;
+
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. OBTENER INFORMACIÓN DEL ROLLO ACTUAL
+            const rollRes = await new sql.Request(transaction)
+                .input('RID', sql.VarChar(20), rollId)
+                .query("SELECT * FROM Rollos WHERE RolloID = @RID");
+
+            if (rollRes.recordset.length === 0) throw new Error("Rollo no encontrado");
+            const oldRoll = rollRes.recordset[0];
+
+            // 2. CREAR NUEVO ROLLO (Clonando datos básicos)
+            // Generar nuevo ID
+            const newRollId = `R-${Date.now().toString().slice(-6)}-B`;
+            const newRollName = `${oldRoll.Nombre} (Parte 2)`;
+
+            // Si hay nueva bobina, la marcamos en uso
+            if (newBobinaId) {
+                await new sql.Request(transaction)
+                    .input('BID', sql.Int, newBobinaId)
+                    .query("UPDATE InventarioBobinas SET Estado = 'En Uso' WHERE BobinaID = @BID");
+            }
+
+            // Insertar Nuevo Rollo
+            await new sql.Request(transaction)
+                .input('ID', sql.VarChar(20), newRollId)
+                .input('Nom', sql.NVarChar(100), newRollName)
+                .input('Area', sql.VarChar(20), oldRoll.AreaID)
+                .input('Cap', sql.Decimal(10, 2), oldRoll.CapacidadMaxima)
+                .input('Col', sql.VarChar(10), oldRoll.ColorHex || '#cbd5e1')
+                .input('BID', sql.Int, newBobinaId || null) // Nueva bobina o null
+                .query(`
+                    INSERT INTO Rollos (RolloID, Nombre, AreaID, CapacidadMaxima, ColorHex, Estado, FechaCreacion, BobinaID)
+                    VALUES (@ID, @Nom, @Area, @Cap, @Col, 'Abierto', GETDATE(), @BID)
+                `);
+
+            // 3. MOVER ÓRDENES RESTANTES AL NUEVO ROLLO
+            // Seleccionamos las ordenes del rollo actual cuya secuencia sea MAYOR a la de lastOrderId
+            const seqRes = await new sql.Request(transaction)
+                .input('OID', sql.Int, lastOrderId)
+                .query("SELECT Secuencia FROM Ordenes WHERE OrdenID = @OID");
+
+            const cutOffSeq = seqRes.recordset[0]?.Secuencia || 0;
+
+            await new sql.Request(transaction)
+                .input('OldID', sql.VarChar(20), rollId)
+                .input('NewID', sql.VarChar(20), newRollId)
+                .input('NewBob', sql.Int, newBobinaId || null)
+                .input('CutSeq', sql.Int, cutOffSeq)
+                .query(`
+                    UPDATE Ordenes 
+                    SET RolloID = @NewID,
+                        BobinaID = @NewBob,
+                        Estado = 'Pendiente', -- Vuelven a estado inicial del lote nuevo
+                        EstadoenArea = 'En Lote',
+                        MaquinaID = NULL -- Se desasignan de la máquina actual
+                    WHERE RolloID = @OldID 
+                    AND (Secuencia > @CutSeq OR (Secuencia IS NULL AND OrdenID > ${lastOrderId}))
+                `);
+
+            // 4. ACTUALIZAR ROLLO VIEJO (FINALIZAR)
+            await new sql.Request(transaction)
+                .input('RID', sql.VarChar(20), rollId)
+                .query("UPDATE Rollos SET Estado = 'Finalizado', MaquinaID = NULL WHERE RolloID = @RID");
+
+            // Marcar ordenes viejas como finalizadas/impresas
+            // IMPORTANTE: Solo las que quedaron en el rollo viejo (las que tienen secuencia <= cutOffSeq)
+            await new sql.Request(transaction)
+                .input('RID', sql.VarChar(20), rollId)
+                .query("UPDATE Ordenes SET Estado = 'Finalizado' WHERE RolloID = @RID");
+
+            await transaction.commit();
+            res.json({ success: true, newRollId, message: "Lote dividido correctamente." });
+
+        } catch (inner) {
+            await transaction.rollback();
+            console.error("Rollback splitRoll:", inner);
+            throw inner;
+        }
+
+    } catch (err) {
+        console.error("Error splitRoll:", err);
         res.status(500).json({ error: err.message });
     }
 };

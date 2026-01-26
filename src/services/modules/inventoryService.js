@@ -27,6 +27,18 @@ export const inventoryService = {
         return response.data;
     },
 
+    // Ajuste Manual (Sin Cierre)
+    adjustBobina: async (data) => {
+        const response = await api.post('/inventory/stock/adjust', data);
+        return response.data;
+    },
+
+    // Historial
+    getBobinaHistory: async (code) => {
+        const response = await api.get(`/inventory/stock/history?code=${code}`);
+        return response.data;
+    },
+
     // CRUD Insumos
     getInsumos: async () => {
         const response = await api.get('/inventory/insumos');
