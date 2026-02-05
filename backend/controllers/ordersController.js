@@ -933,7 +933,97 @@ exports.getFailedOrdersSummary = async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 };
-exports.unassignOrder = async (req, res) => { res.json({ success: true }); }; // Dummy success
+exports.unassignOrder = async (req, res) => {
+    const { orderId } = req.body;
+    const userId = (req.user && req.user.id) ? req.user.id : 1;
+
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. Obtener RolloID actual antes de quitarlo
+            const current = await new sql.Request(transaction)
+                .input('OID', sql.Int, orderId)
+                .query("SELECT RolloID, CodigoOrden FROM Ordenes WHERE OrdenID = @OID");
+
+            const rollId = current.recordset[0]?.RolloID;
+            const codOrden = current.recordset[0]?.CodigoOrden;
+
+            // 2. Desasignar Orden (Volver a pendiente)
+            await new sql.Request(transaction)
+                .input('OID', sql.Int, orderId)
+                .query(`
+                    UPDATE Ordenes 
+                    SET RolloID = NULL, 
+                        Estado = 'Pendiente', 
+                        Secuencia = NULL, 
+                        MaquinaID = NULL,
+                        EstadoenArea = 'Pendiente'
+                    WHERE OrdenID = @OID
+                `);
+
+            // LOG
+            await new sql.Request(transaction)
+                .input('OID', sql.Int, orderId)
+                .input('User', sql.VarChar, String(userId))
+                .input('Det', sql.NVarChar, `Retirado del Rollo ${rollId || '?'}`)
+                .query(`
+                    INSERT INTO HistorialOrdenes (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                    VALUES (@OID, 'PREPARACION', GETDATE(), GETDATE(), @User, @Det)
+                `);
+
+            // 3. Verificar si el rollo quedó vacío
+            let rollCancelled = false;
+            if (rollId) {
+                const countRes = await new sql.Request(transaction)
+                    .input('RID', sql.VarChar(50), String(rollId))
+                    .query("SELECT COUNT(*) as Cnt FROM Ordenes WHERE RolloID = @RID");
+
+                if (countRes.recordset[0].Cnt === 0) {
+                    // Cancelar Rollo vacio (Limpieza Automática)
+                    console.log(`[AutoCleanup] Rollo ${rollId} quedó vacío. Cancelando...`);
+
+                    // A. Obtener Máquina asignada (si existe) para liberarla visualmente (EstadoProceso)
+                    const rollInfo = await new sql.Request(transaction)
+                        .input('RID', sql.VarChar(50), String(rollId))
+                        .query("SELECT MaquinaID FROM Rollos WHERE RolloID = @RID");
+
+                    const maqId = rollInfo.recordset[0]?.MaquinaID;
+
+                    // B. Actualizar Rollo a Cancelado y quitar Máquina
+                    await new sql.Request(transaction)
+                        .input('RID', sql.VarChar(50), String(rollId))
+                        .query("UPDATE Rollos SET Estado = 'Cancelado', MaquinaID = NULL WHERE RolloID = @RID");
+
+                    // C. Resetear EstadoProceso de la Máquina (si tenía)
+                    if (maqId) {
+                        await new sql.Request(transaction)
+                            .input('MID', sql.Int, maqId)
+                            .query("UPDATE ConfigEquipos SET EstadoProceso = 'Detenido' WHERE EquipoID = @MID");
+                    }
+
+                    // D. Importante: Desvincular Órdenes de la Máquina (aunque estén desasignadas, por seguridad)
+                    // (Ya se hizo en el paso 2 con MaquinaID=NULL, OrdenID=@OID)
+                    // Pero asegurarse de que ninguna otra orden quede pegada a ese rollo (CNT=0 garantiza esto).
+
+                    rollCancelled = true;
+                }
+            }
+
+            await transaction.commit();
+            res.json({ success: true, rollCancelled, message: "Orden retirada del lote." });
+
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
+    } catch (err) {
+        console.error("Error unassignOrder:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
 // (Versión antigua eliminada)
 
 // ===================================

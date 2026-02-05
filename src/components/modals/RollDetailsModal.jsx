@@ -293,7 +293,15 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
             setLoading(true);
             rollsService.getDetails(roll.id)
                 .then(data => setFreshRoll(data))
-                .catch(err => console.error("Error cargando detalles frescos del rollo:", err))
+                .catch(err => {
+                    console.error("Error cargando detalles frescos del rollo:", err);
+                    // Si el rollo no se encuentra (404), probablemente fue cancelado/vaciado automÃ¡ticamente.
+                    if (err.response && err.response.status === 404) {
+                        toast.info("El lote ha sido vaciado y cerrado.");
+                        onClose();
+                        if (onUpdate) onUpdate();
+                    }
+                })
                 .finally(() => setLoading(false));
         }
     };
@@ -313,11 +321,36 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
     const totalFiles = orders.reduce((sum, o) => sum + (o.fileCount || 0), 0);
     const capacityPercent = freshRoll.capacity > 0 ? Math.min((freshRoll.currentUsage / freshRoll.capacity) * 100, 100) : 0;
 
+    // State for Checkboxes
+    const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+
+    // Checkbox Handlers
+    const handleToggleAll = () => {
+        if (selectedOrderIds.length === orders.length) {
+            setSelectedOrderIds([]); // Uncheck all
+        } else {
+            setSelectedOrderIds(orders.map(o => o.id)); // Check all
+        }
+    };
+
+    const handleToggleOne = (id) => {
+        setSelectedOrderIds(prev =>
+            prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+        );
+    };
+
     // Acción de Desasignar (Undo)
     const handleUnassign = async (order) => {
         const isBusy = freshRoll.status === 'Producción' || freshRoll.status === 'Imprimiendo' || (freshRoll.maquinaId && freshRoll.maquinaId !== null);
         if (isBusy) {
             if (!window.confirm(`⚠️ EL ROLLO ESTÁ EN MÁQUINA (${freshRoll.maquinaId || 'Producción'}).\n\n¿Estás seguro de sacar esta orden? Esto podría afectar la secuencia.`)) { return; }
+        }
+
+        // Check if it's the last order
+        if (orders.length === 1) {
+            if (!window.confirm(`⚠️ ESTA ES LA ÚLTIMA ORDEN.\n\nSi retiras esta orden, el rollo quedará vacío y se cancelará (cerrará) automáticamente, liberando la máquina.\n\n¿Confirmas quitar la orden y cerrar el lote?`)) {
+                return;
+            }
         } else {
             if (!window.confirm(`¿Quitar la orden ${order.code || order.CodigoOrden} del rollo? Volverá a Pendientes.`)) { return; }
         }
@@ -329,6 +362,62 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
         } catch (error) {
             console.error("Error desasignando:", error);
             toast.error("Error al desasignar orden.");
+        }
+    };
+
+    const handleUnassignMultiple = async () => {
+        if (!selectedOrderIds.length) return;
+
+        if (!window.confirm(`¿Estás seguro de desasignar ${selectedOrderIds.length} órdenes seleccionadas del rollo?`)) {
+            return;
+        }
+
+        try {
+            setLoading(true);
+            // Use sequential execution to ensure accurate "empty roll" checks on the backend
+            for (const id of selectedOrderIds) {
+                await ordersService.unassignRoll(id);
+            }
+
+            toast.success(`${selectedOrderIds.length} órdenes desasignadas.`);
+            setSelectedOrderIds([]);
+            onUpdate();
+            loadFreshData();
+        } catch (error) {
+            console.error("Error desasignando multiple:", error);
+            toast.error("Error al desasignar órdenes seleccionadas.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleDownloadFiles = async () => {
+        if (!selectedOrderIds.length) return;
+
+        if (!window.confirm(`¿Descargar archivos de las ${selectedOrderIds.length} órdenes seleccionadas?\n\nSe procesarán y guardarán en el SERVIDOR (C:\\ORDENES\\...).`)) {
+            return;
+        }
+
+        try {
+            setLoading(true);
+            const res = await rollsService.downloadFilesByOrders(selectedOrderIds);
+
+            if (res.success) {
+                const errors = res.results.filter(r => r.status === 'ERROR');
+                if (errors.length > 0) {
+                    toast.warning(`Descarga finalizada con ${errors.length} errores. Revise consola.`);
+                    console.error("Errores de descarga:", errors);
+                } else {
+                    toast.success(`Archivos descargados y organizados correctamente en el servidor.`);
+                }
+            } else {
+                toast.error(res.message || "Error en la descarga/procesamiento.");
+            }
+        } catch (error) {
+            console.error("Error bajando archivos:", error);
+            toast.error("Error al descargar archivos.");
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -556,6 +645,14 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                             <table className="w-full text-sm text-left min-w-[800px]">
                                 <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200 font-bold tracking-wider sticky top-0 z-10">
                                     <tr>
+                                        <th className="px-4 py-3 w-10 text-center">
+                                            <input
+                                                type="checkbox"
+                                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                checked={orders.length > 0 && selectedOrderIds.length === orders.length}
+                                                onChange={handleToggleAll}
+                                            />
+                                        </th>
                                         <th className="px-4 py-3 w-12 text-center text-slate-300">#</th>
                                         <th className="px-4 py-3">Orden</th>
                                         <th className="px-4 py-3">Cliente / Trabajo</th>
@@ -563,12 +660,21 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                                         <th className="px-4 py-3 w-16 text-center"><i className="fa-solid fa-paperclip"></i></th>
                                         <th className="px-4 py-3 w-16 text-center">Metros</th>
                                         <th className="px-4 py-3 w-32 text-center">Prioridad</th>
+                                        <th className="px-4 py-3 w-10 text-center" title="Notas"><i className="fa-regular fa-comment-dots"></i></th>
                                         <th className="px-4 py-3 w-24 text-center">Acciones</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {orders.map((o, idx) => (
-                                        <tr key={o.id} className="hover:bg-blue-50/40 transition-colors group">
+                                        <tr key={o.id} className={`transition-colors group ${selectedOrderIds.includes(o.id) ? 'bg-blue-50/60' : 'hover:bg-blue-50/40'}`}>
+                                            <td className="px-4 py-3 text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                    checked={selectedOrderIds.includes(o.id)}
+                                                    onChange={() => handleToggleOne(o.id)}
+                                                />
+                                            </td>
                                             <td className="px-4 py-3 text-center text-slate-300 font-mono text-xs">{idx + 1}</td>
                                             <td className="px-4 py-3 font-bold text-slate-700 min-w-[120px]">Orden No.: {o.code || o.CodigoOrden}</td>
                                             <td className="px-4 py-3 max-w-[240px]">
@@ -602,6 +708,17 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                                                         : 'bg-slate-50 text-slate-500 border-slate-100'}`}>
                                                     {(o.priority || 'Normal')}
                                                 </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                {o.note && o.note.trim() !== '' && (
+                                                    <div className="group/note relative flex justify-center">
+                                                        <i className="fa-solid fa-message text-amber-500 text-lg cursor-help"></i>
+                                                        <div className="absolute bottom-full mb-2 hidden group-hover/note:block z-50 w-48 p-2 bg-slate-800 text-white text-xs rounded shadow-lg">
+                                                            {o.note}
+                                                            <div className="absolute top-full left-1/2 -ml-1 border-4 border-transparent border-t-slate-800"></div>
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <div className="flex items-center justify-center gap-2">
@@ -640,8 +757,26 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
 
                     {/* Footer */}
                     <div className="px-6 py-4 border-t border-slate-100 bg-white flex justify-end gap-3 z-10 shrink-0">
+                        {selectedOrderIds.length > 0 && (
+                            <button
+                                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-md shadow-red-500/20 active:scale-95 mr-auto animate-in fade-in"
+                                onClick={handleUnassignMultiple}
+                            >
+                                <i className="fa-solid fa-rotate-left"></i> Sacar ({selectedOrderIds.length})
+                            </button>
+                        )}
+
+                        {selectedOrderIds.length > 0 && (
+                            <button
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-md shadow-blue-500/20 active:scale-95 animate-in fade-in"
+                                onClick={handleDownloadFiles}
+                            >
+                                <i className="fa-solid fa-download"></i> Descargar ({selectedOrderIds.length})
+                            </button>
+                        )}
+
                         <button
-                            className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-md shadow-emerald-500/20 active:scale-95 mr-auto"
+                            className={`px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-md shadow-emerald-500/20 active:scale-95 ${selectedOrderIds.length > 0 ? '' : 'mr-auto'}`}
                             onClick={handleExportExcel}
                         >
                             <i className="fa-solid fa-file-excel"></i> Descargar Reporte Excel

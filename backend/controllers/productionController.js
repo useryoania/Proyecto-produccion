@@ -24,7 +24,7 @@ exports.getProductionBoard = async (req, res) => {
     try {
         const pool = await getPool();
         const machines = await pool.request().input('Area', sql.VarChar, area)
-            .query("SELECT EquipoID as id, Nombre as name, EstadoProceso as status FROM dbo.ConfigEquipos WHERE AreaID = @Area AND Activo = 1");
+            .query("SELECT EquipoID as id, Nombre as name, CASE WHEN EstadoProceso = 'Detenido' THEN 'OK' ELSE EstadoProceso END as status FROM dbo.ConfigEquipos WHERE AreaID = @Area AND Activo = 1");
 
         const rolls = await pool.request().input('Area', sql.VarChar, area)
             .query(`SELECT R.*, R.RolloID as id, R.Codigo as rollCode, 

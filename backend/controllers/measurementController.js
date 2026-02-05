@@ -214,6 +214,243 @@ exports.processBatch = async (req, res) => {
     }
 };
 
+// --- 5. PROCESAMIENTO POR ÓRDENES (DESCARGAR EN ESTRUCTURA DE CARPETAS) ---
+exports.processOrdersBatch = async (req, res) => {
+    const { orderIds } = req.body;
+    const baseDir = 'C:\\ORDENES';
+    const results = [];
+
+    if (!orderIds || orderIds.length === 0) return res.status(400).json({ error: "No orders provided" });
+
+    try {
+        const pool = await getPool();
+
+        // Obtener archivos de las órdenes seleccionadas con info de Área y Rollo
+        const filesQuery = await pool.request().query(`
+            SELECT 
+                AO.ArchivoID, AO.RutaAlmacenamiento, AO.RutaLocal, AO.NombreArchivo, AO.Copias,
+                O.OrdenID, O.CodigoOrden, O.Cliente, O.DescripcionTrabajo, O.AreaID,
+                ISNULL(R.Nombre, 'Lote ' + CAST(O.RolloID as VARCHAR)) as RollName
+            FROM dbo.ArchivosOrden AO
+            INNER JOIN dbo.Ordenes O ON AO.OrdenID = O.OrdenID
+            LEFT JOIN dbo.Rollos R ON O.RolloID = R.RolloID
+            WHERE O.OrdenID IN (${orderIds.join(',')})
+        `);
+
+        if (filesQuery.recordset.length === 0) {
+            return res.json({ success: true, message: "No se encontraron archivos en las órdenes seleccionadas.", results: [] });
+        }
+
+        // --- PRE-CALCULO DE INDICES (Igual que fileProcessingService) ---
+        // Agrupar archivos por OrdenID para calcular "Archivo X de Y"
+        const filesByOrder = {};
+        filesQuery.recordset.forEach(f => {
+            if (!filesByOrder[f.OrdenID]) filesByOrder[f.OrdenID] = [];
+            filesByOrder[f.OrdenID].push(f);
+        });
+
+        const filesToProcess = [];
+        for (const oId in filesByOrder) {
+            const group = filesByOrder[oId];
+            // Ordenar por ID para consistencia
+            group.sort((a, b) => a.ArchivoID - b.ArchivoID);
+            group.forEach((f, idx) => {
+                f.idxInOrder = idx + 1;
+                f.totalInOrder = group.length;
+                filesToProcess.push(f);
+            });
+        }
+
+        const sanitize = (str) => (str || '').replace(/\//g, '-').replace(/[<>:"\\|?*]/g, ' ').trim();
+
+        for (const file of filesToProcess) {
+            let log = { id: file.ArchivoID, status: 'OK' };
+            try {
+                // DEFINE TARGET DIRECTORY: C:\ORDENES\{AreaID}\{RollName}
+                const safeArea = sanitize(file.AreaID || 'GENERAL');
+                const safeRoll = sanitize(file.RollName || 'Sin-Rollo');
+                const targetDir = path.join(baseDir, safeArea, safeRoll);
+
+                // Asegurar directorio
+                if (!fs.existsSync(targetDir)) {
+                    fs.mkdirSync(targetDir, { recursive: true });
+                }
+
+                // 1. ORIGEN (Descarga Robusta)
+                // 1. ORIGEN (Descarga Forzada - Usuario solicitó "Si existe borre y descargue")
+                const sourcePath = file.RutaAlmacenamiento || '';
+                let tempBuffer = null;
+
+                // [REMOVED LOCAL CHECK TO FORCE DOWNLOAD]
+                // B. Download from URL matches logic in service
+                if (!tempBuffer) {
+                    if (sourcePath.includes('drive.google.com')) {
+                        const driveId = getDriveId(sourcePath);
+                        if (!driveId) throw new Error('Link de Drive inválido');
+                        const downloadUrl = `https://drive.google.com/uc?export=download&id=${driveId}`;
+                        const res = await fetch(downloadUrl, { signal: AbortSignal.timeout(30000) });
+                        if (!res.ok) throw new Error(`Status ${res.status} al descargar de Drive`);
+                        tempBuffer = Buffer.from(await res.arrayBuffer());
+                    } else if (sourcePath.startsWith('http')) {
+                        const res = await fetch(sourcePath, { signal: AbortSignal.timeout(30000) });
+                        if (!res.ok) throw new Error(`Status ${res.status} al descargar de Web`);
+                        tempBuffer = Buffer.from(await res.arrayBuffer());
+                    } else if (fs.existsSync(sourcePath)) {
+                        tempBuffer = fs.readFileSync(sourcePath);
+                    } else {
+                        throw new Error('Archivo origen no encontrado en DB (RutaLocal ni RutaAlmacenamiento válidos)');
+                    }
+                }
+
+                // VALIDACIÓN BÁSICA
+                if (!tempBuffer || tempBuffer.length === 0) throw new Error("El archivo descargado está vacío (0 bytes)");
+                const header = tempBuffer.slice(0, 15).toString().trim().toLowerCase();
+                if (header.startsWith('<!doctype html') || header.startsWith('<html')) {
+                    throw new Error("El archivo descargado parece ser HTML (error Drive/Login).");
+                }
+
+                // Sanitizar: Reemplazar slash / por guion - (para "1/1" -> "1-1") y borrar chars prohibidos
+                // const sanitize = (str) => (str || '').replace(/\//g, '-').replace(/[<>:"\\|?*]/g, ' ').trim();
+
+                // 2. DESTINO (RENOMBRADO) - Detectar extensión real
+                const origExt = path.extname(file.NombreArchivo || '').toLowerCase();
+                let finalExt = origExt;
+
+                // Inspeccionar Magic Numbers (HEX) para mayor precisión
+                // PDF: 25 50 44 46, PNG: 89 50 4E 47, JPG: FF D8 FF
+                const magicHex = tempBuffer.toString('hex', 0, 4).toUpperCase();
+                console.log(`[FileTypeDebug] FileID: ${file.ArchivoID}, Name: ${file.NombreArchivo}, OrigExt: ${origExt}, Magic: ${magicHex}`);
+
+                if (magicHex.startsWith('25504446')) {
+                    finalExt = '.pdf';
+                } else if (magicHex.startsWith('89504E47')) {
+                    finalExt = '.png';
+                } else if (magicHex.startsWith('FFD8FF')) {
+                    finalExt = '.jpg';
+                }
+
+                // Si no detectamos nada por contenido, confiamos en la extensión original si existe.
+                if (!finalExt) {
+                    // Si tampoco existe extensión original, intentamos adivinar por ruta o fallback a .pdf
+                    const urlExt = path.extname(file.RutaAlmacenamiento || '').split('?')[0].toLowerCase();
+                    if (['.jpg', '.jpeg', '.png', '.pdf', '.tiff', '.tif'].includes(urlExt)) {
+                        finalExt = urlExt;
+                    } else {
+                        finalExt = '.pdf'; // Último recurso
+                    }
+                }
+
+                if (finalExt === '.jpeg') finalExt = '.jpg';
+
+                // Naming Format: CODIGO (ORDEN)_CLIENTE_TRABAJO_Archivo X de Y (X n COPIAS)
+                const pCodigo = sanitize(file.CodigoOrden || file.OrdenID.toString());
+                const pCliente = sanitize(file.Cliente || 'Cliente');
+
+                let pTrabajo = sanitize(file.DescripcionTrabajo || 'Trabajo');
+                if (pTrabajo.length > 50) pTrabajo = pTrabajo.substring(0, 50); // Prevent path overflow
+
+                const pArchivo = `Archivo ${file.Copias || 1} de ${1}`; // Simplification primarily for single selections or where index isn't tracked globally here. 
+                // Better approach to match exactly: We need sequential index if processing multiple files for same order.
+                // However, in this loop we iterate a flat list. 
+
+                // Let's rely on baseName logic from fileProcessingService but we need idxInOrder.
+                // Since this is a manual download batch, the strict '1 of N' might be less critical than matching the pattern.
+                // But let's try to match exactly if possible.
+
+                const pCopias = sanitize((file.Copias || 1).toString());
+
+                // EJEMPLO: 61 (1-1)_GOAT_trabajo 2_Archivo 1 de 1 (X 1 COPIAS)
+                // Note: In fileProcessingService, it calculates idxInOrder. Here we don't have it easily without pre-grouping.
+                // For now, using a generic "Archivo" placeholder or file Name if available as priority.
+
+                // Let's use the exact same detailed logic found in fileProcessingService lines 98-112
+
+                // Recalculating index context for correct naming if multiple files per order
+                if (!file.idxInOrder) file.idxInOrder = 1;
+                if (!file.totalInOrder) file.totalInOrder = 1;
+
+                let baseName = `${pCodigo}_${pCliente}_${pTrabajo}_Archivo ${file.idxInOrder} de ${file.totalInOrder} (X ${pCopias} COPIAS)`;
+
+                if (!baseName.toLowerCase().endsWith(finalExt.toLowerCase())) {
+                    baseName += finalExt;
+                }
+
+                const destPath = path.join(targetDir, baseName);
+
+                // "Si existe borre y descargue"
+                if (fs.existsSync(destPath)) {
+                    try { fs.unlinkSync(destPath); } catch (e) {
+                        console.warn("Could not delete existing file:", e.message);
+                    }
+                }
+
+                fs.writeFileSync(destPath, tempBuffer);
+                log.savedTo = destPath;
+
+                // 3. MEDICIÓN AUTOMATICA
+                let widthM = 0;
+                let heightM = 0;
+                try {
+                    const isPdf = finalExt.toLowerCase() === '.pdf' || (tempBuffer.slice(0, 4).toString() === '%PDF');
+                    if (isPdf) {
+                        const pdfDoc = await PDFDocument.load(tempBuffer, { updateMetadata: false });
+                        const pages = pdfDoc.getPages();
+                        if (pages.length > 0) {
+                            const { width, height } = pages[0].getSize();
+                            widthM = cmToM(pointsToCm(width));
+                            heightM = cmToM(pointsToCm(height));
+                        }
+                    } else {
+                        const metadata = await sharp(tempBuffer).metadata();
+                        const density = metadata.density || 72;
+                        widthM = cmToM(pixelsToCm(metadata.width, density));
+                        heightM = cmToM(pixelsToCm(metadata.height, density));
+                    }
+                } catch (measureErr) {
+                    log.measureError = measureErr.message;
+                }
+
+                log.width = parseFloat(widthM.toFixed(2));
+                log.height = parseFloat(heightM.toFixed(2));
+
+                // 4. GUARDAR EN BD
+                if (log.width > 0 && log.height > 0) {
+                    await new sql.Request(pool)
+                        .input('ID', sql.Int, file.ArchivoID)
+                        .input('M', sql.Decimal(10, 2), log.height)
+                        .input('W', sql.Decimal(10, 2), log.width)
+                        .input('H', sql.Decimal(10, 2), log.height)
+                        .input('RL', sql.VarChar(500), destPath) // Actualizar RutaLocal
+                        .input('NA', sql.VarChar(255), baseName) // Actualizar NombreArchivo
+                        .query(`
+                            UPDATE dbo.ArchivosOrden 
+                            SET MedidaConfirmada = @M, Ancho = @W, Alto = @H, RutaLocal = @RL, NombreArchivo = @NA
+                            WHERE ArchivoID = @ID
+                        `);
+                } else {
+                    // Even if measure fail, save location
+                    await new sql.Request(pool)
+                        .input('ID', sql.Int, file.ArchivoID)
+                        .input('RL', sql.VarChar(500), destPath)
+                        .input('NA', sql.VarChar(255), baseName)
+                        .query(`UPDATE dbo.ArchivosOrden SET RutaLocal = @RL, NombreArchivo = @NA WHERE ArchivoID = @ID`);
+                }
+            } catch (err) {
+                console.error(`ERROR PROCESSING FILE ${file.ArchivoID}:`, err);
+                log.status = 'ERROR';
+                log.error = err.message;
+            }
+            results.push(log);
+        }
+
+        res.json({ success: true, results });
+
+    } catch (err) {
+        console.error("Error Orders Batch Process:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
 // --- 2. MEDIR ARCHIVOS (AHORA CON SOPORTE PARA DRIVE) ---
 exports.measureFiles = async (req, res) => {
     const { fileIds } = req.body;

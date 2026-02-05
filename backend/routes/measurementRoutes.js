@@ -13,6 +13,7 @@ router.post('/save', controller.saveMeasurements);
 
 router.post('/auto-measure', controller.measureFiles);
 router.post('/process-batch', controller.processBatch);
+router.post('/process-batch-by-orders', controller.processOrdersBatch);
 
 module.exports = router;
 

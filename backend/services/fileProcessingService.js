@@ -61,7 +61,7 @@ exports.processOrderList = async (orderIds, io) => {
             `);
 
             const files = filesRes.recordset;
-            console.log(`   📂 [FileProcessing] Encontrados ${files.length} archivos para medir.`);
+            console.log(`   📂[FileProcessing] Encontrados ${files.length} archivos para medir.`);
 
             if (files.length === 0) return;
 
@@ -109,7 +109,7 @@ exports.processOrderList = async (orderIds, io) => {
                     const pCopias = sanitize((file.Copias || 1).toString());
 
                     // EJEMPLO: 61 (1-1)_GOAT_trabajo 2_Archivo 1 de 1 (X 1 COPIAS)
-                    let baseName = `${pCodigo}_${pCliente}_${pTrabajo}_${pArchivo} (X ${pCopias} COPIAS)`;
+                    let baseName = `${pCodigo}_${pCliente}_${pTrabajo}_${pArchivo}(X ${pCopias} COPIAS)`;
 
                     // Determinar si ya tenemos ruta local válida y el archivo existe
                     let destPath = '';
@@ -131,9 +131,9 @@ exports.processOrderList = async (orderIds, io) => {
                         if (existingName === baseName) {
                             destPath = file.RutaLocal;
                             needsDownload = false;
-                            console.log(`      ✅ Usando copia local existente (Nombre correcto): ${destPath}`);
+                            console.log(`      ✅ Usando copia local existente(Nombre correcto): ${destPath}`);
                         } else {
-                            console.log(`      ⚠️ RutaLocal existe pero nombre difiere. Se generará nuevo con nombre correcto.`);
+                            console.log(`      ⚠️ RutaLocal existe pero nombre difiere.Se generará nuevo con nombre correcto.`);
                             // No usamos el viejo -> needsDownload = true. 
                             // Si descargamos de nuevo, tendremos 2 archivos.
                         }
@@ -182,17 +182,40 @@ exports.processOrderList = async (orderIds, io) => {
                         }
 
                         // ... Rename Logic ...
-                        let finalExt = '.pdf';
+                        // ... Rename Logic ...
+                        let finalExt = path.extname(file.NombreArchivo || '').toLowerCase(); // Default to original extension
+
                         try {
                             const fd = fs.openSync(tempPath, 'r');
-                            const magic = Buffer.alloc(4);
-                            fs.readSync(fd, magic, 0, 4, 0);
+                            const buffer = Buffer.alloc(4);
+                            fs.readSync(fd, buffer, 0, 4, 0);
                             fs.closeSync(fd);
-                            if (!magic.toString().startsWith('%PDF')) {
-                                const origExt = path.extname(file.NombreArchivo || '') || '.pdf';
-                                finalExt = origExt;
+
+                            const magicHex = buffer.toString('hex').toUpperCase();
+
+                            if (magicHex.startsWith('25504446')) {
+                                finalExt = '.pdf';
+                            } else if (magicHex.startsWith('89504E47')) {
+                                finalExt = '.png';
+                            } else if (magicHex.startsWith('FFD8FF')) {
+                                finalExt = '.jpg';
                             }
-                        } catch (e) { }
+
+                            // Fallbacks
+                            if (!finalExt) {
+                                // Try to guess from URL
+                                const urlExt = path.extname(file.RutaAlmacenamiento || '').split('?')[0].toLowerCase();
+                                if (['.jpg', '.jpeg', '.png', '.pdf', '.tiff', '.tif'].includes(urlExt)) {
+                                    finalExt = urlExt;
+                                } else {
+                                    finalExt = '.pdf'; // Last resort
+                                }
+                            }
+                            if (finalExt === '.jpeg') finalExt = '.jpg';
+
+                        } catch (e) {
+                            if (!finalExt) finalExt = '.pdf';
+                        }
 
                         // Agregar extension al baseName si no la tiene (baseName puro no la tiene)
                         let fileNameWithExt = baseName;
@@ -202,9 +225,12 @@ exports.processOrderList = async (orderIds, io) => {
                         if (fs.existsSync(destPath)) try { fs.unlinkSync(destPath); } catch (e) { }
                         fs.renameSync(tempPath, destPath);
 
-                        // UPDATE RUTA LOCAL
-                        await pool.request().input('ID', sql.Int, file.ArchivoID).input('R', sql.VarChar(500), destPath)
-                            .query("UPDATE dbo.ArchivosOrden SET RutaLocal=@R WHERE ArchivoID=@ID");
+                        // UPDATE RUTA LOCAL Y NOMBRE ARCHIVO
+                        await pool.request()
+                            .input('ID', sql.Int, file.ArchivoID)
+                            .input('R', sql.VarChar(500), destPath)
+                            .input('N', sql.VarChar(255), fileNameWithExt)
+                            .query("UPDATE dbo.ArchivosOrden SET RutaLocal=@R, NombreArchivo=@N WHERE ArchivoID=@ID");
                     }
 
                     // Read for Measurement

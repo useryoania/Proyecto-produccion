@@ -64,5 +64,9 @@ export const rollsService = {
     magicAssignment: async (areaId) => {
         const response = await api.post('/rolls/magic', { areaId });
         return response.data;
+    },
+    downloadFilesByOrders: async (orderIds) => {
+        const response = await api.post('/measurements/process-batch-by-orders', { orderIds });
+        return response.data;
     }
 };

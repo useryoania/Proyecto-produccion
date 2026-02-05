@@ -22,7 +22,7 @@ exports.getBoardData = async (req, res) => {
         // A. TRAER ROLLOS ACTIVOS
         const rollsRes = await pool.request()
             .input('AreaID', sql.VarChar(20), area)
-            .query("SELECT * FROM dbo.Rollos WHERE AreaID = @AreaID AND Estado != 'Cerrado'");
+            .query("SELECT * FROM dbo.Rollos WHERE AreaID = @AreaID AND Estado NOT IN ('Cerrado', 'Cancelado')");
 
         // B. TRAER ÓRDENES (Consulta Completa con Conteo de Archivos)
         const ordersRes = await pool.request()
@@ -869,7 +869,7 @@ exports.getRollDetails = async (req, res) => {
                 SELECT 
                     o.OrdenID, o.CodigoOrden, o.Cliente, o.DescripcionTrabajo, 
                     o.Magnitud, o.Material, o.Variante, o.RolloID, 
-                    o.Prioridad, o.Estado, o.FechaIngreso, o.Secuencia, o.Tinta, o.NoDocERP, o.IdCabezalERP,
+                    o.Prioridad, o.Estado, o.FechaIngreso, o.Secuencia, o.Tinta, o.NoDocERP, o.IdCabezalERP, o.Nota,
                     (SELECT COUNT(*) FROM dbo.ArchivosOrden WHERE OrdenID = o.OrdenID) AS CantidadArchivos,
                     (SELECT COUNT(*) FROM dbo.ArchivosOrden WHERE OrdenID = o.OrdenID) AS fileCount,
                     -- ✅ SUBQUERY FOR GLOBAL STATUS (Sibling Orders via Root Match)
@@ -911,6 +911,7 @@ exports.getRollDetails = async (req, res) => {
                 sequence: o.Secuencia,
                 ink: o.Tinta,
                 fileCount: o.CantidadArchivos || o.fileCount || 0,
+                note: o.Nota,
                 services: o.RelatedStatus ? JSON.parse(o.RelatedStatus).map(s => ({ area: s.AreaID, status: s.Estado })) : []
             });
 
