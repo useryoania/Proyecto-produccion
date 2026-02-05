@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { PDFDocument } = require('pdf-lib');
+const archiver = require('archiver');
 
 // --- HELPERS ---
 const pointsToCm = (points) => (points / 72) * 2.54;
@@ -627,5 +628,135 @@ exports.saveMeasurements = async (req, res) => {
     } catch (err) {
         console.error("Error guardando medidas:", err);
         res.status(500).json({ error: err.message });
+    }
+};
+
+// --- 5. NUEVA FUNCIÓN: DESCARGAR ZIP AL CLIENTE ---
+exports.downloadOrdersZip = async (req, res) => {
+    const { orderIds } = req.body;
+
+    if (!orderIds || orderIds.length === 0) return res.status(400).send("No se recibieron IDs de órdenes");
+
+    try {
+        const pool = await getPool();
+
+        // 1. Obtener Metadatos de Archivos
+        const filesQuery = await pool.request().query(`
+            SELECT 
+                AO.ArchivoID, AO.RutaAlmacenamiento, AO.RutaLocal, AO.NombreArchivo, AO.Copias,
+                O.OrdenID, O.CodigoOrden, O.Cliente, O.DescripcionTrabajo, O.AreaID,
+                ISNULL(R.Nombre, 'Lote ' + CAST(O.RolloID as VARCHAR)) as RollName
+            FROM dbo.ArchivosOrden AO
+            INNER JOIN dbo.Ordenes O ON AO.OrdenID = O.OrdenID
+            LEFT JOIN dbo.Rollos R ON O.RolloID = R.RolloID
+            WHERE O.OrdenID IN (${orderIds.join(',')})
+        `);
+
+        if (filesQuery.recordset.length === 0) return res.status(404).send("No se encontraron archivos para las órdenes seleccionadas");
+
+        // Configurar Respuesta Zip
+        res.attachment('ordenes_descarga.zip');
+        const archive = archiver('zip', { zlib: { level: 9 } });
+
+        archive.on('error', function (err) {
+            console.error("Archiver Error:", err);
+            if (!res.headersSent) res.status(500).send({ error: err.message });
+        });
+
+        archive.pipe(res);
+
+        // Helper sanitizar
+        const sanitize = (str) => (str || '').replace(/\//g, '-').replace(/[<>:"\\|?*]/g, ' ').trim();
+
+        // Lógica de Descarga y Procesamiento (Idem processOrdersBatch pero en memoria para Zip)
+        // Pre-cálculo índices
+        const filesByOrder = {};
+        filesQuery.recordset.forEach(f => {
+            if (!filesByOrder[f.OrdenID]) filesByOrder[f.OrdenID] = [];
+            filesByOrder[f.OrdenID].push(f);
+        });
+        const filesToProcess = [];
+        for (const oId in filesByOrder) {
+            const group = filesByOrder[oId];
+            group.sort((a, b) => a.ArchivoID - b.ArchivoID);
+            group.forEach((f, idx) => {
+                f.idxInOrder = idx + 1;
+                f.totalInOrder = group.length;
+                filesToProcess.push(f);
+            });
+        }
+
+        for (const file of filesToProcess) {
+            try {
+                // A. Descargar Buffer
+                const sourcePath = file.RutaAlmacenamiento || '';
+                let tempBuffer = null;
+
+                if (sourcePath.includes('drive.google.com')) {
+                    const driveId = getDriveId(sourcePath);
+                    if (driveId) {
+                        const downloadUrl = `https://drive.google.com/uc?export=download&id=${driveId}`;
+                        const r = await fetch(downloadUrl, { signal: AbortSignal.timeout(30000) });
+                        if (r.ok) tempBuffer = Buffer.from(await r.arrayBuffer());
+                    }
+                } else if (sourcePath.startsWith('http')) {
+                    const r = await fetch(sourcePath, { signal: AbortSignal.timeout(30000) });
+                    if (r.ok) tempBuffer = Buffer.from(await r.arrayBuffer());
+                } else if (fs.existsSync(sourcePath)) {
+                    tempBuffer = fs.readFileSync(sourcePath);
+                }
+
+                if (!tempBuffer) {
+                    archive.append(`Error descargando archivo ID ${file.ArchivoID}: ${sourcePath}`, { name: `ERRORES/${file.ArchivoID}_error.txt` });
+                    continue;
+                }
+
+                // B. Validar HTML error
+                const header = tempBuffer.slice(0, 15).toString().trim().toLowerCase();
+                if (header.startsWith('<!doctype html') || header.startsWith('<html')) {
+                    archive.append(`Error: El archivo descargado parece ser HTML (Login Drive?). ID ${file.ArchivoID}`, { name: `ERRORES/${file.ArchivoID}_login_error.txt` });
+                    continue;
+                }
+
+                // C. Detectar Extensión Real (Magic Hex)
+                const origExt = path.extname(file.NombreArchivo || '').toLowerCase();
+                let finalExt = origExt;
+                const magicHex = tempBuffer.toString('hex', 0, 4).toUpperCase();
+
+                if (magicHex.startsWith('25504446')) finalExt = '.pdf';
+                else if (magicHex.startsWith('89504E47')) finalExt = '.png';
+                else if (magicHex.startsWith('FFD8FF')) finalExt = '.jpg';
+
+                if (!finalExt || finalExt === '.jpeg') {
+                    if (finalExt === '.jpeg') finalExt = '.jpg';
+                    else finalExt = '.pdf'; // Fallback
+                }
+
+                // D. Construir Nombre y Ruta en ZIP
+                // Estructura: Area / Rollo / Orden_Client_Trabajo_XdeY.ext
+                const safeArea = sanitize(file.AreaID || 'GENERAL');
+                const safeRoll = sanitize(file.RollName || 'Sin-Rollo');
+
+                let baseName = `${file.CodigoOrden}_${sanitize(file.Cliente)}_${sanitize(file.DescripcionTrabajo)}`;
+                if (file.totalInOrder > 1) {
+                    baseName += `_(${file.idxInOrder}-${file.totalInOrder})`;
+                }
+                if (!baseName.toLowerCase().endsWith(finalExt)) baseName += finalExt;
+
+                const zipPath = baseName;
+
+                archive.append(tempBuffer, { name: zipPath });
+
+            } catch (err) {
+                console.error("Error processing file for zip:", err);
+                archive.append(`Error procesando ID ${file.ArchivoID}: ${err.message}`, { name: `ERRORES/${file.ArchivoID}_ex.txt` });
+            }
+        }
+
+        archive.finalize();
+
+    } catch (err) {
+        console.error("Zip Error:", err);
+        res.status(500).send("Error del servidor creando el archivo ZIP");
     }
 };

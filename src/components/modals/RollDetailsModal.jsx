@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import { ordersService, rollsService, insumosService } from '../../services/api';
 import { printLabelsHelper } from '../../utils/printHelper';
+import JSZip from 'jszip';
 
 // --- SUB-COMPONENT: MODAL DE SELECCIÓN DE BOBINA ---
 const BobinaAssignmentModal = ({ isOpen, onClose, onSelect, currentMetros, areaCode = 'ECOUV' }) => {
@@ -394,31 +395,98 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
     const handleDownloadFiles = async () => {
         if (!selectedOrderIds.length) return;
 
-        if (!window.confirm(`¿Descargar archivos de las ${selectedOrderIds.length} órdenes seleccionadas?\n\nSe procesarán y guardarán en el SERVIDOR (C:\\ORDENES\\...).`)) {
-            return;
+        const supportsFileSystem = 'showDirectoryPicker' in window;
+        let dirHandle = null;
+
+        if (supportsFileSystem) {
+            try {
+                // 1. Pedir ruta INMEDIATAMENTE con permisos de ESCRITURA explícitos
+                dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                // Verificar permisos (opcional, pero readwrite debería ser suficiente)
+            } catch (err) {
+                // Usuario canceló el diálogo o error de permisos
+                return;
+            }
+        } else {
+            // Fallback para navegadores antiguos
+            if (!window.confirm(`Tu navegador no soporta descompresión automática.\n\nSe descargará un ZIP tradicional.`)) return;
         }
 
         try {
             setLoading(true);
-            const res = await rollsService.downloadFilesByOrders(selectedOrderIds);
+            toast.info("Descargando y procesando archivos...");
 
-            if (res.success) {
-                const errors = res.results.filter(r => r.status === 'ERROR');
-                if (errors.length > 0) {
-                    toast.warning(`Descarga finalizada con ${errors.length} errores. Revise consola.`);
-                    console.error("Errores de descarga:", errors);
-                } else {
-                    toast.success(`Archivos descargados y organizados correctamente en el servidor.`);
+            // 2. Descargar ZIP del servidor
+            const blob = await rollsService.downloadZip(selectedOrderIds);
+            console.log("DEBUG: Blob Size", blob.size);
+
+            if (supportsFileSystem && dirHandle) {
+                // 3. Descomprimir y guardar en la carpeta seleccionada
+                const zip = await JSZip.loadAsync(blob);
+                console.log("DEBUG: Zip Files", Object.keys(zip.files));
+
+                // A. Crear carpeta del Rollo dentro de la ruta elegida
+                const rollFolderName = freshRoll.name || `Lote ${freshRoll.id || 'Nuevo'}`;
+                // Sanitizar nombre de carpeta
+                const safeFolderName = rollFolderName.replace(/[<>:"/\\|?*]/g, '_').trim();
+
+                let rollHandle;
+                try {
+                    rollHandle = await dirHandle.getDirectoryHandle(safeFolderName, { create: true });
+                } catch (e) {
+                    console.error("Error creando carpeta del rollo, usando raíz:", e);
+                    rollHandle = dirHandle; // Fallback
+                    toast.warning(`No se pudo crear carpeta "${safeFolderName}", usando raíz.`);
                 }
+
+                let fileCount = 0;
+
+                for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+                    if (zipEntry.dir) continue;
+
+                    // Aplanar estructura: Usar solo el nombre del archivo final
+                    const fileName = relativePath.split('/').pop();
+
+                    try {
+                        const fileHandle = await rollHandle.getFileHandle(fileName, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        const content = await zipEntry.async('blob');
+                        await writable.write(content);
+                        await writable.close();
+                        fileCount++;
+                    } catch (writeErr) {
+                        console.error("❌ Error escribiendo:", fileName, writeErr);
+                        toast.error(`Error al guardar ${fileName}`);
+                    }
+                }
+                toast.success(`✅ Listo: ${fileCount} archivos en carpeta "${safeFolderName}".`);
             } else {
-                toast.error(res.message || "Error en la descarga/procesamiento.");
+                saveAsZip(blob);
             }
+
         } catch (error) {
-            console.error("Error bajando archivos:", error);
-            toast.error("Error al descargar archivos.");
+            console.error("Download Error:", error);
+            if (error.response && error.response.data instanceof Blob) {
+                const text = await error.response.data.text();
+                toast.error("Error: " + text);
+            } else {
+                toast.error("Error al procesar descarga.");
+            }
         } finally {
             setLoading(false);
         }
+    };
+
+    const saveAsZip = (blob) => {
+        const url = window.URL.createObjectURL(new Blob([blob]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `Ordenes_${freshRoll.name || 'Lote'}.zip`);
+        document.body.appendChild(link);
+        link.click();
+        link.parentNode.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        toast.success(`ZIP Descargado.`);
     };
 
     // Función de generación/impresión de etiquetas

@@ -68,5 +68,9 @@ export const rollsService = {
     downloadFilesByOrders: async (orderIds) => {
         const response = await api.post('/measurements/process-batch-by-orders', { orderIds });
         return response.data;
+    },
+    downloadZip: async (orderIds) => {
+        const response = await api.post('/measurements/download-zip', { orderIds }, { responseType: 'blob' });
+        return response.data;
     }
 };
