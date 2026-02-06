@@ -1,18 +1,20 @@
 import axios from 'axios';
 
-// Detecta URL de entorno (Vite) o construye dinámicamente usando el hostname actual
-// Esto permite acceder desde otras IPs en la red local sin hardcodear localhost
 const getBaseUrl = () => {
     if (import.meta.env.VITE_API_URL) {
         return import.meta.env.VITE_API_URL;
     }
-    const { protocol, hostname } = window.location;
-    return `${protocol}//${hostname}:5000/api`;
+    // En Producción con Proxy (Vite Preview), usamos ruta relativa
+    // para evitar problemas de HTTPS vs HTTP (Mixed Content).
+    return '/api';
 };
 
 export const API_URL = getBaseUrl();
-// Remove /api for Socket.io connection
-export const SOCKET_URL = API_URL.replace('/api', '');
+
+// Socket también relativo
+export const SOCKET_URL = import.meta.env.VITE_API_URL
+    ? import.meta.env.VITE_API_URL.replace('/api', '')
+    : '/';
 
 const api = axios.create({
     baseURL: API_URL,
@@ -21,7 +23,6 @@ const api = axios.create({
     }
 });
 
-// Interceptor para agregar token si existe (mejora de seguridad proactiva)
 api.interceptors.request.use(config => {
     const userStr = localStorage.getItem('user');
     if (userStr) {

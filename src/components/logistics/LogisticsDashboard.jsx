@@ -45,7 +45,7 @@ const LogisticsDashboard = () => {
             const userArea = user.areaKey || user.areaId;
 
             // If Admin/Supervisor, stay on TODOS (or last selection)
-            if (user.rol === 'ADMIN' || user.rol === 'SUPERVISOR') {
+            if (user.rol === 'ADMIN') {
                 // Keep default
             } else if (userArea) {
                 // For normal users, force their area
