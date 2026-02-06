@@ -15,11 +15,8 @@ const OrderRouteTracker = ({ steps = [], title = "Hoja de Ruta (Flujo de Áreas)
     // 1. DATA PREPARATION & MAPPING ROBUSTNESS
     const rawSteps = Array.isArray(steps) ? [...steps] : [];
 
-    // Ensure Deposito
-    const lastStep = rawSteps[rawSteps.length - 1];
-    if (!lastStep || (lastStep.AreaID !== 'DEPOSITO' && lastStep.area !== 'DEPOSITO')) {
-        rawSteps.push({ AreaID: 'DEPOSITO', Nombre: 'DEPÓSITO', Estado: 'Pendiente' });
-    }
+    // Ensure Deposito Logic Deleted - Now handled by Backend
+
 
     // HELPER: Extraer nombre de cualquier campo posible
     const getAreaName = (s) => {

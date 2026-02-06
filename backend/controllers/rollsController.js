@@ -39,6 +39,7 @@ exports.getBoardData = async (req, res) => {
                     o.RolloID, 
                     o.Prioridad, 
                     o.Estado, 
+                    o.EstadoenArea, -- ✅ AGREGADO PARA TABLERO
                     o.FechaIngreso, 
                     o.Secuencia,
                     o.Tinta, -- ✅ AGREGADO
@@ -57,7 +58,8 @@ exports.getBoardData = async (req, res) => {
         // Mapeo de Rollos
         const rolls = rollsRes.recordset.map(r => ({
             id: r.RolloID,
-            name: r.Nombre || `Lote ${r.RolloID}`,
+            name: `${r.Nombre || `Lote ${r.RolloID}`}`,
+            rawName: r.Nombre,
             capacity: r.CapacidadMaxima || 100,
             color: r.ColorHex || '#cbd5e1',
             status: r.Estado,
@@ -85,6 +87,7 @@ exports.getBoardData = async (req, res) => {
                 entryDate: o.FechaIngreso,
                 priority: o.Prioridad,
                 status: o.Estado,
+                areaStatus: o.EstadoenArea, // ✅ Mapeado
                 rollId: o.RolloID,
                 sequence: o.Secuencia,
                 ink: o.Tinta, // ✅ Mapeado
@@ -113,9 +116,16 @@ exports.getBoardData = async (req, res) => {
             const validMaterials = rawMaterials.filter(m => m && !ignored.includes(m.toUpperCase()));
             const uniqueMaterials = [...new Set(validMaterials)];
 
-            if (uniqueMaterials.length === 0) r.material = '-'; // Si no hay materiales validos
+            if (uniqueMaterials.length === 0) r.material = '-';
             else if (uniqueMaterials.length === 1) r.material = uniqueMaterials[0];
             else r.material = 'Varios Materiales';
+
+            // Actualizar nombre con material si es un nombre autogenerado o genérico
+            if (r.material !== '-') {
+                // Si el nombre no tiene el material ya incluido, se lo concatenamos visualmente
+                // Ojo: Esto es solo para el frontend, no cambia la DB
+                r.name = `${r.rawName || ('Lote ' + r.id)} - ${r.material}`;
+            }
 
             // DEBUG LOG for Roll 8
             if (String(r.id).includes('8') || r.name.includes('8')) {
@@ -201,7 +211,11 @@ exports.moveOrder = async (req, res) => {
                                         THEN 'Imprimiendo' 
                                         ELSE 'En Lote' 
                                     END
-                                END
+                                END,
+                            EstadoenArea = CASE 
+                                WHEN @RolloID IS NULL THEN 'Pendiente'
+                                ELSE 'En Lote'
+                            END
                         WHERE OrdenID = @OrdenID
                     `);
             }
@@ -735,8 +749,8 @@ exports.getRolloMetrics = async (req, res) => {
                     r.Estado, 
                     r.MaquinaID,
                     ce.Nombre as NombreMaquina
-                FROM dbo.Rollos r
-                LEFT JOIN dbo.ConfigEquipos ce ON r.MaquinaID = ce.EquipoID
+                FROM dbo.Rollos r WITH (NOLOCK)
+                LEFT JOIN dbo.ConfigEquipos ce WITH (NOLOCK) ON r.MaquinaID = ce.EquipoID
                 WHERE CAST(r.RolloID AS VARCHAR(50)) = @RolloID OR r.Nombre = @RolloID
             `);
 
@@ -766,14 +780,14 @@ exports.getRolloMetrics = async (req, res) => {
                     -- Suma de Metros REALES YA PRODUCIDOS (Status OK)
                     (
                         SELECT SUM(ISNULL(AO2.Metros, 0) * ISNULL(AO2.Copias, 1))
-                        FROM dbo.ArchivosOrden AO2
-                        INNER JOIN dbo.Ordenes O2 ON AO2.OrdenID = O2.OrdenID
+                        FROM dbo.ArchivosOrden AO2 WITH (NOLOCK)
+                        INNER JOIN dbo.Ordenes O2 WITH (NOLOCK) ON AO2.OrdenID = O2.OrdenID
                         WHERE CAST(O2.RolloID AS VARCHAR(50)) = CAST(@RID AS VARCHAR(50)) 
                         AND AO2.EstadoArchivo IN ('OK', 'Finalizado')
                     ) as MetrosProducidos
 
-                FROM dbo.Ordenes O
-                LEFT JOIN dbo.ArchivosOrden AO ON O.OrdenID = AO.OrdenID
+                FROM dbo.Ordenes O WITH (NOLOCK)
+                LEFT JOIN dbo.ArchivosOrden AO WITH (NOLOCK) ON O.OrdenID = AO.OrdenID
                 WHERE CAST(O.RolloID AS VARCHAR(50)) = CAST(@RID AS VARCHAR(50))
             `);
 
@@ -935,26 +949,40 @@ exports.getRollosActivos = async (req, res) => {
         if (areaId && areaId.toLowerCase().startsWith('planilla-')) {
             areaId = areaId.replace('planilla-', '').toUpperCase();
         }
-        console.log(`[getRollosActivos] Buscando rollos para AreaID: '${areaId}'`);
+
+        // DETECCIÓN DE CONTEXTO
+        // Si viene desde '/api/production-file-control', es la Vista de Control de Calidad
+        // y el usuario pidió explícitamente ver SOLO los finalizados.
+        const isControlView = req.baseUrl && req.baseUrl.includes('production-file-control');
+
+        console.log(`[getRollosActivos] Buscando rollos para AreaID: '${areaId}' (Contexto: ${isControlView ? 'CONTROL VIEW - FINALIZADOS' : 'GENERAL - ACTIVOS'})`);
 
         const pool = await getPool();
+
+        // Re-construcción limpia de la query con NOLOCK
+        const finalQuery = `
+            SELECT 
+                r.RolloID as id, 
+                r.Nombre as nombre, 
+                r.ColorHex as color, 
+                r.CapacidadMaxima as MetrosTotales,
+                r.Estado, 
+                r.MaquinaID,
+                ce.Nombre as NombreMaquina
+            FROM dbo.Rollos r WITH (NOLOCK)
+            LEFT JOIN dbo.ConfigEquipos ce WITH (NOLOCK) ON r.MaquinaID = ce.EquipoID
+            WHERE (@AreaID IS NULL OR r.AreaID = @AreaID)
+            AND (
+                (${isControlView ? 1 : 0} = 1 AND r.Estado = 'Finalizado')
+                OR
+                (${isControlView ? 0 : 1} = 1 AND r.Estado NOT IN ('Cerrado', 'Cancelado')) 
+            )
+            ORDER BY r.FechaCreacion DESC
+        `;
+
         const result = await pool.request()
             .input('AreaID', sql.VarChar(20), areaId || null)
-            .query(`
-                SELECT 
-                    r.RolloID as id, 
-                    r.Nombre as nombre, 
-                    r.ColorHex as color, 
-                    r.CapacidadMaxima as MetrosTotales,
-                    r.Estado, 
-                    r.MaquinaID,
-                    ce.Nombre as NombreMaquina
-                FROM dbo.Rollos r
-                LEFT JOIN dbo.ConfigEquipos ce ON r.MaquinaID = ce.EquipoID
-                WHERE r.Estado != 'Cerrado' 
-                AND (@AreaID IS NULL OR r.AreaID = @AreaID)
-                ORDER BY r.FechaCreacion DESC
-            `);
+            .query(finalQuery);
 
         res.json(result.recordset);
     } catch (err) {

@@ -8,6 +8,8 @@ exports.getOrdersByArea = async (req, res) => {
     let area = req.query.area || req.params.area;
     const { mode, q } = req.query;
 
+    console.log(`🔎 [getOrdersByArea] Request for Area: '${area}', Mode: '${mode}'`);
+
     try {
         // Limpieza de nombre de área (Tu lógica original)
         if (area && area.toLowerCase().startsWith('planilla-')) {
@@ -15,6 +17,10 @@ exports.getOrdersByArea = async (req, res) => {
         }
         if (area === 'SUBLIMACION') area = 'SUB';
         if (area === 'BORDADO') area = 'BORD';
+
+        // DEBUG: Force print final area
+        console.log(`🔎 [getOrdersByArea] Querying DB with AreaID = '${area}'`);
+
 
         const pool = await getPool();
 
@@ -27,6 +33,7 @@ exports.getOrdersByArea = async (req, res) => {
                 o.DescripcionTrabajo,
                 o.AreaID,
                 o.Estado,
+                o.EstadoenArea,     -- <--- NUEVO: Estado especifico del area
                 o.Prioridad,
                 o.FechaIngreso,
                 o.FechaHabilitacion,    -- <--- NUEVO: Fecha Real de Habilitación
@@ -99,6 +106,7 @@ exports.getOrdersByArea = async (req, res) => {
             desc: o.DescripcionTrabajo,
             area: o.AreaID,
             status: o.Estado,
+            areaStatus: o.EstadoenArea, // <--- Mapeamos EstadoenArea
             priority: o.Prioridad,
             entryDate: o.FechaIngreso,
 
@@ -298,7 +306,15 @@ exports.assignRoll = async (req, res) => {
                     .query(`
                         UPDATE dbo.Ordenes 
                         SET 
-                            RolloID = @RID
+                            RolloID = @RID,
+                            Estado = CASE 
+                                WHEN @RID IS NOT NULL THEN 'En Lote'
+                                ELSE 'Pendiente'
+                            END,
+                            EstadoenArea = CASE 
+                                WHEN @RID IS NOT NULL THEN 'En Lote'
+                                ELSE 'Pendiente'
+                            END
                         WHERE OrdenID = @OID
                     `);
 
@@ -687,61 +703,7 @@ exports.getIntegralPedidoDetailsV2 = async (req, res) => {
             ProximoServicio: o.ProximoServicio
         }));
 
-        // 3.5 Construir Ruta Visual (Step Tracker) - AGRUPADA POR ÁREA
-        // Si hay múltiples órdenes en una misma área, consolidamos el estado.
-        const areaSteps = new Map();
-
-        // Mantener orden de aparición
-        orders.forEach(o => {
-            if (!areaSteps.has(o.AreaID)) {
-                areaSteps.set(o.AreaID, {
-                    id: o.AreaID,
-                    label: o.AreaID,
-                    orders: [],
-                    date: o.FechaHabilitacion || o.FechaIngreso
-                });
-            }
-            areaSteps.get(o.AreaID).orders.push(o);
-        });
-
-        const ruta = Array.from(areaSteps.values()).map(step => {
-            const statuses = step.orders.map(o => (o.Estado || '').toUpperCase());
-
-            // Lógica de Prioridad: VIVO > CANCELADO
-            const isCancelled = (s) => ['CANCELADO', 'ANULADO', 'RECHAZADO'].includes(s);
-            const isCompleted = (s) => ['FINALIZADO', 'ENTREGADO', 'TERMINADO'].includes(s);
-            const isInProcess = (s) => ['PRODUCCION', 'IMPRIMIENDO', 'EN PROCESO', 'EN LOTE', 'CONTROL Y CALIDAD'].includes(s);
-
-            const allCancelled = statuses.every(s => isCancelled(s));
-            // Si hay alguna viva (no cancelada), el estado NO es cancelado.
-            const hasAlive = statuses.some(s => !isCancelled(s));
-
-            let stepStatus = 'PENDIENTE';
-
-            if (allCancelled) {
-                stepStatus = 'CANCELADO';
-            } else if (hasAlive) {
-                // Analizamos el estado de las vivas
-                const aliveStatuses = statuses.filter(s => !isCancelled(s));
-                const allAliveCompleted = aliveStatuses.every(s => isCompleted(s));
-                const anyAliveInProcess = aliveStatuses.some(s => isInProcess(s));
-
-                if (allAliveCompleted) stepStatus = 'COMPLETADO';
-                else if (anyAliveInProcess) stepStatus = 'EN PROCESO';
-                else stepStatus = 'PENDIENTE';
-            }
-
-            return {
-                id: step.id,
-                label: step.label,
-                status: stepStatus,
-                date: step.date,
-                count: step.orders.length // Info extra útil
-            };
-        });
-
-        // 4. Recuperar Historial y LOGÍSTICA (Bultos)
-        // Optimizamos en una sola consulta para todas las órdenes del pedido
+        // 4. Recuperar Historial y LOGÍSTICA (Moved up for Routing Logic)
         const orderIds = orders.map(o => o.OrdenID);
         let historialData = [];
         let bultosData = [];
@@ -774,7 +736,8 @@ exports.getIntegralPedidoDetailsV2 = async (req, res) => {
                     LB.Tipocontenido as Tipo, 
                     LB.UbicacionActual as Ubicacion, 
                     LB.Estado, 
-                    O.CodigoOrden
+                    O.CodigoOrden,
+                    LB.OrdenID
                 FROM Logistica_Bultos LB
                 INNER JOIN Ordenes O ON LB.OrdenID = O.OrdenID
                 WHERE LB.OrdenID IN (${safeIds})
@@ -783,6 +746,92 @@ exports.getIntegralPedidoDetailsV2 = async (req, res) => {
             const bResult = await pool.request().query(bQuery);
             bultosData = bResult.recordset;
         }
+
+        // 3.5 Construir Ruta Visual (Step Tracker) - AGRUPADA POR ÁREA
+        const areaSteps = new Map();
+
+        orders.forEach(o => {
+            if (!areaSteps.has(o.AreaID)) {
+                areaSteps.set(o.AreaID, {
+                    id: o.AreaID,
+                    label: o.AreaID,
+                    orders: [],
+                    date: o.FechaHabilitacion || o.FechaIngreso
+                });
+            }
+            areaSteps.get(o.AreaID).orders.push(o);
+        });
+
+        // WMS Logic Flags (Without Injection)
+        let hasDepoStock = false;
+        let hasDepoDelivered = false;
+        if (bultosData.length > 0) {
+            hasDepoStock = bultosData.some(b => b.Ubicacion === 'DEPOSITO');
+            hasDepoDelivered = bultosData.some(b => b.Ubicacion === 'CLIENTE' || b.Estado === 'ENTREGADO');
+
+            // INYECCIÓN SEGURA: Si hay actividad logística pero la orden no tiene área de depósito explícita
+            if (hasDepoStock || hasDepoDelivered) {
+                const existingKey = Array.from(areaSteps.keys()).find(k => /(DEPOSITO|DEPÓSITO|LOGISTICA|LOGÍSTICA)/i.test(k));
+                if (!existingKey) {
+                    areaSteps.set('DEPOSITO', {
+                        id: 'DEPOSITO',
+                        label: 'DEPOSITO',
+                        orders: [],
+                        date: new Date()
+                    });
+                }
+            }
+        }
+
+        const ruta = Array.from(areaSteps.values()).map(step => {
+            const statuses = step.orders.map(o => (o.Estado || '').toUpperCase());
+
+            // Lógica de Prioridad: VIVO > CANCELADO
+            const isCancelled = (s) => ['CANCELADO', 'ANULADO', 'RECHAZADO'].includes(s);
+            const isCompleted = (s) => ['FINALIZADO', 'ENTREGADO', 'TERMINADO', 'PRONTO', 'COMPLETADO', 'DESPACHADO'].includes(s);
+            const isInProcess = (s) => ['PRODUCCION', 'IMPRIMIENDO', 'EN PROCESO', 'EN LOTE', 'CONTROL Y CALIDAD', 'EN_PROCESO', 'DEPOSITO'].includes(s);
+
+            const allCancelled = statuses.every(s => isCancelled(s));
+            // Si hay alguna viva (no cancelada), el estado NO es cancelado.
+            const hasAlive = statuses.some(s => !isCancelled(s));
+
+            let stepStatus = 'PENDIENTE';
+
+            // Check robusto para detectar si es paso de Depósito (con o sin tilde, espacios, etc)
+            const isStorageStep = /(DEPOSITO|DEPÓSITO|LOGISTICA|LOGÍSTICA)/i.test(step.label || step.id);
+
+            if (isStorageStep) {
+                // Lógica Especial WMS para Depósito (Enganchada al nodo existente)
+                if (hasDepoDelivered && !hasDepoStock) stepStatus = 'COMPLETADO';
+                else if (hasDepoStock) stepStatus = 'EN PROCESO'; // Stock disponible
+                else if (hasAlive) {
+                    const aliveStatuses = statuses.filter(s => !isCancelled(s));
+                    if (aliveStatuses.every(s => isCompleted(s))) stepStatus = 'COMPLETADO';
+                    else if (aliveStatuses.some(s => isInProcess(s))) stepStatus = 'EN PROCESO';
+                }
+            } else {
+                // Lógica Standard
+                if (allCancelled && statuses.length > 0) {
+                    stepStatus = 'CANCELADO';
+                } else if (hasAlive) {
+                    // Analizamos el estado de las vivas
+                    const aliveStatuses = statuses.filter(s => !isCancelled(s));
+                    if (aliveStatuses.every(s => isCompleted(s))) stepStatus = 'COMPLETADO';
+                    else if (aliveStatuses.some(s => isInProcess(s))) stepStatus = 'EN PROCESO';
+                    else stepStatus = 'PENDIENTE';
+                }
+            }
+
+            return {
+                id: step.id,
+                label: step.label,
+                status: stepStatus,
+                date: step.date,
+                count: step.orders.length // Info extra útil
+            };
+        });
+
+
 
         // 5. Data Final
         const responseData = {

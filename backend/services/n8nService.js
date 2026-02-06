@@ -1,10 +1,12 @@
 const axios = require('axios');
 
 // URL del Webhook de n8n (Ajustar según configuración en n8n)
+const N8N_HOST = process.env.N8N_API_URL || 'http://localhost:5678';
+
 // "test" es para cuando ejecutas manualmente en el editor de n8n.
 // "production" es para cuando el flujo está activo.
-const N8N_WEBHOOK_URL_TEST = 'http://localhost:5678/webhook-test/chat-search';
-const N8N_WEBHOOK_URL_PROD = 'http://localhost:5678/webhook/chat-search';
+const N8N_WEBHOOK_URL_TEST = `${N8N_HOST}/webhook-test/chat-search`;
+const N8N_WEBHOOK_URL_PROD = `${N8N_HOST}/webhook/chat-search`;
 
 // Usamos la de TEST por defecto para desenvolvimento, o la que el usuario prefiera.
 const TARGET_URL = N8N_WEBHOOK_URL_TEST;

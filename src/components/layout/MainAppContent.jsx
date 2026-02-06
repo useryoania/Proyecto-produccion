@@ -344,8 +344,22 @@ const DynamicRouter = ({ menuItems }) => {
 
 
     const segments = menuItem.Ruta.split('/').filter(Boolean);
-    const lastSegment = segments[segments.length - 1];
-    const areaKeyFinal = (lastSegment && !['area', 'procesos'].includes(lastSegment.toLowerCase())) ? lastSegment : menuItem.Nombre;
+
+    // CORRECCIÓN: Si la ruta actual es más profunda (ej: /area/ecouv), usar ese segmento
+    let areaKeyFinal = '';
+
+    const pathSegments = currentPath.split('/').filter(Boolean);
+    const areaIndex = pathSegments.findIndex(s => s.toLowerCase() === 'area');
+
+    if (areaIndex !== -1 && pathSegments[areaIndex + 1]) {
+        areaKeyFinal = pathSegments[areaIndex + 1];
+    } else {
+        // Fallback lógica anterior
+        const lastSegment = segments[segments.length - 1];
+        areaKeyFinal = (lastSegment && !['area', 'procesos'].includes(lastSegment.toLowerCase())) ? lastSegment : menuItem.Nombre;
+    }
+
+    console.log(`[DynamicRouter] Path: ${currentPath}, Extracted Key: ${areaKeyFinal}`);
 
     let areaConfig = {};
     try {

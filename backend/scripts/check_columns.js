@@ -1,26 +1,31 @@
-const { getPool } = require('../config/db');
+const { sql, getPool } = require('../config/db');
 
-async function checkTables() {
+async function checkColumns() {
     try {
         const pool = await getPool();
+        console.log("--- COLUMNS IN Ordenes ---");
+        const resOrd = await pool.request().query(`
+            SELECT COLUMN_NAME 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = 'Ordenes'
+            ORDER BY COLUMN_NAME
+        `);
+        console.log(resOrd.recordset.map(r => r.COLUMN_NAME).join(', '));
 
-        console.log("--- ARCHIVOS REFERENCIA ---");
-        try {
-            const r1 = await pool.request().query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ArchivosReferencia'");
-            console.log(r1.recordset.map(x => x.COLUMN_NAME).join(', '));
-        } catch (e) { console.log("No existe ArchivosReferencia"); }
+        console.log("\n--- COLUMNS IN Etiquetas ---");
+        const resEti = await pool.request().query(`
+            SELECT COLUMN_NAME 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME = 'Etiquetas'
+            ORDER BY COLUMN_NAME
+        `);
+        console.log(resEti.recordset.map(r => r.COLUMN_NAME).join(', '));
 
-        console.log("--- SERVICIOS EXTRA ORDEN ---");
-        try {
-            const r2 = await pool.request().query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'ServiciosExtraOrden'");
-            console.log(r2.recordset.map(x => x.COLUMN_NAME).join(', '));
-        } catch (e) { console.log("No existe ServiciosExtraOrden"); }
-
-        process.exit(0);
-    } catch (e) {
-        console.error(e);
-        process.exit(1);
+    } catch (err) {
+        console.error("Error:", err.message);
+    } finally {
+        process.exit();
     }
 }
 
-checkTables();
+checkColumns();

@@ -71,7 +71,7 @@ exports.toggleRollStatus = async (req, res) => {
             // Adjust query to handle flexible ID types.
             const rollInfo = await request
                 .input('RID_GET', sql.VarChar(50), String(rollId))
-                .query(`SELECT r.RolloID, r.MaquinaID, r.BobinaID, c.EstadoProceso 
+                .query(`SELECT r.RolloID, r.MaquinaID, r.BobinaID, r.AreaID, c.EstadoProceso, c.Nombre as NombreEquipo
                     FROM dbo.Rollos r
                     LEFT JOIN dbo.ConfigEquipos c ON r.MaquinaID = c.EquipoID
                     WHERE CAST(r.RolloID AS VARCHAR(50)) = @RID_GET OR r.Nombre = @RID_GET`);
@@ -82,12 +82,17 @@ exports.toggleRollStatus = async (req, res) => {
             }
 
             const currentRoll = rollInfo.recordset[0];
-            let machineStatus = 'En Procesamiento';
-            if (currentRoll.EstadoProceso) {
-                machineStatus = currentRoll.EstadoProceso;
-            }
+            // "ponme a tomar de la base" - Usamos estrictamente lo que diga la configuración del equipo
+            // Si en la base dice 'Detenido' por error, usará 'Detenido' hasta que se corrija el dato maestro.
+            let machineStatus = currentRoll.EstadoProceso || 'Produccion';
 
             if (action === 'start') {
+                // === VALIDACIÓN MAQUINA ===
+                if (!currentRoll.MaquinaID) {
+                    await transaction.rollback();
+                    return res.status(400).json({ error: "No se puede iniciar un rollo que no está asignado a una máquina (está en mesa)." });
+                }
+
                 // === VALIDACIÓN DE BOBINA ===
                 // Es CRITICO que el rollo tenga bobina asignada para descontar inventario luego.
                 if (!currentRoll.BobinaID) {
@@ -225,7 +230,7 @@ exports.getRollAndFiles = async (req, res) => {
             SELECT R.Nombre as RollName, O.Cliente, A.* FROM dbo.ArchivosOrden A
             JOIN dbo.Ordenes O ON A.OrdenID = O.OrdenID
             JOIN dbo.Rollos R ON O.RolloID = R.RolloID
-            WHERE R.AreaID = @Area AND R.Estado = 'En maquina'
+            WHERE R.AreaID = @Area AND R.Estado = 'Finalizado'
         `);
         res.json(result.recordset);
     } catch (err) { res.status(500).json({ error: err.message }); }
@@ -313,27 +318,47 @@ exports.unassignRoll = async (req, res) => {
         await transaction.begin();
         const request = new sql.Request(transaction);
 
-        // 1. Desmontar Rollo
+        // 1. Validar Estado Actual
+        const checkRes = await request
+            .input('RID_Check', sql.VarChar(50), String(rollId))
+            .query("SELECT Estado, Nombre, MaquinaID FROM dbo.Rollos WHERE CAST(RolloID AS VARCHAR(50)) = @RID_Check OR Nombre = @RID_Check");
+
+        if (checkRes.recordset.length === 0) {
+            await transaction.rollback();
+            console.error(`[unassignRoll] ❌ Rollo no encontrado. ID buscado: ${rollId}`);
+            return res.status(404).json({ error: `No se encontró el rollo con ID: ${rollId}` });
+        }
+
+        const currentRoll = checkRes.recordset[0];
+        console.log(`[unassignRoll] Rollo encontrado: ${currentRoll.Nombre} (Estado: ${currentRoll.Estado}, MaquinaID: ${currentRoll.MaquinaID})`);
+
+        // Si está 'En maquina', está corriendo. Debe pausarse antes de devolver.
+        if (currentRoll.Estado === 'En maquina') {
+            await transaction.rollback();
+            return res.status(400).json({ error: `⛔ El rollo '${currentRoll.Nombre}' está CORRIENDO (Estado: ${currentRoll.Estado}). Debes pausarlo primero.` });
+        }
+
+        // 2. Desmontar Rollo
         console.log(`[unassignRoll] Unmounting Roll ${rollId}...`);
-        const rollRes = await request.input('RID', sql.Int, rollId)
+        const rollRes = await new sql.Request(transaction)
+            .input('RID', sql.VarChar(50), String(rollId))
             .query(`UPDATE dbo.Rollos 
                     SET MaquinaID = NULL, 
                     Estado = 'Abierto' 
-                    WHERE RolloID = @RID`);
-        console.log(`[unassignRoll] Roll updated. Rows affected: ${rollRes.rowsAffected}`);
+                    WHERE CAST(RolloID AS VARCHAR(50)) = @RID`);
 
-        // 2. Limpiar MaquinaID de Ordenes y Restaurar Estado
-        console.log(`[unassignRoll] Clearing MachineID from Orders for Roll ${rollId}...`);
+        // 3. Limpiar Órdenes
         const reqOrders = new sql.Request(transaction);
-        const orderRes = await reqOrders.input('RID', sql.Int, rollId)
+        await reqOrders
+            .input('RID', sql.VarChar(50), String(rollId))
             .query(`UPDATE dbo.Ordenes 
-                                     SET MaquinaID = NULL,
-                                         Estado = 'Produccion',
-                                         EstadoenArea = 'En Lote'
-                                     WHERE RolloID = @RID`);
-        console.log(`[unassignRoll] Orders updated. Rows affected: ${orderRes.rowsAffected}`);
+                    SET MaquinaID = NULL,
+                        Estado = 'Produccion',
+                        EstadoenArea = 'En Lote'
+                    WHERE CAST(RolloID AS VARCHAR(50)) = @RID`);
 
         await transaction.commit();
+        res.json({ success: true, message: `Rollo ${currentRoll.Nombre} desmontado correctamente.` });
         console.log(`[unassignRoll] Transaction committed successfully.`);
         res.json({ success: true });
     } catch (err) {

@@ -10,9 +10,6 @@ const getOrdenes = async (req, res) => {
         const { search, rolloId, area, mode } = req.query;
         const pool = await getPool();
 
-        // Debug Log
-        console.log(`Getting Ordenes: Search="${search}", Rollo="${rolloId}", Area="${area}", Mode="${mode}"`);
-
         // Limpieza de Parametros
         const cleanRoll = (!rolloId || rolloId === 'undefined' || rolloId === 'null' || rolloId === 'todo')
             ? ''
@@ -22,58 +19,82 @@ const getOrdenes = async (req, res) => {
             ? ''
             : area;
 
+        // DETECCIÓN DE CONTEXTO: VISTA DE CONTROL
+        const isControlView = req.baseUrl && req.baseUrl.includes('production-file-control');
+
+        // Si estamos en Control View y NO se seleccionó un rollo específico (Todos), 
+        // devolvemos VACÍO para obligar al usuario a seleccionar un rollo.
+        if (isControlView && cleanRoll === '') {
+            console.log("[getOrdenes] Control View 'Todos' selected -> Returning empty list to force selection.");
+            return res.json([]);
+        }
+
+        // Si estamos en Control View y NO se seleccionó un rollo específico (Todos), aplicamos filtro estricto.
+        const applyControlFilter = (isControlView && cleanRoll === '') ? 1 : 0; // Este flag ya no se usará si retornamos arriba, pero lo dejo por compatibilidad si quitamos el return.
+
         const searchTerm = (search && search !== 'undefined' && search.trim() !== '') ? `%${search.trim()}%` : null;
 
+        // Debug Log
+        console.log(`Getting Ordenes: Search="${searchTerm}", Rollo="${cleanRoll}", Area="${cleanArea}", CtxControl=${isControlView}, ApplyFilter=${applyControlFilter}`);
+
         const query = `
-            SELECT 
-                O.OrdenID, 
-                O.AreaID,
-                O.CodigoOrden, 
-                O.Cliente AS Cliente, 
-                O.Material, 
-                O.Estado, 
+        SELECT
+        O.OrdenID,
+            O.AreaID,
+            O.CodigoOrden,
+            O.Cliente AS Cliente,
+                O.Material,
+                O.Estado,
                 O.Prioridad,
                 O.ProximoServicio,
                 O.DescripcionTrabajo AS Descripcion,
-                O.FechaIngreso,
-                O.Secuencia,
-                (SELECT COUNT(*) FROM Etiquetas E WHERE E.OrdenID = O.OrdenID) as CantidadEtiquetas,
-                (SELECT COUNT(*) FROM ArchivosOrden AO WHERE AO.OrdenID = O.OrdenID AND AO.EstadoArchivo IN ('FALLA', 'Falla')) as CantidadFallas,
-                (SELECT COUNT(*) FROM ArchivosOrden AO WHERE AO.OrdenID = O.OrdenID AND AO.EstadoArchivo = 'CANCELADO') as CantidadCancelados,
-                (CASE WHEN (SELECT COUNT(*) FROM ArchivosOrden AO WHERE AO.OrdenID = O.OrdenID AND AO.EstadoArchivo = 'Pendiente') = 0 THEN 1 ELSE 0 END) as Controlada
-/* getOrdenes: RESTAURANDO FILTROS CORRECTOS */
-            FROM Ordenes O
-            WHERE 
-                (@RolloID = '' OR CAST(O.RolloID AS NVARCHAR(50)) = @RolloID OR @RolloID IS NULL)
-                /* Si tenemos un RolloID especifico, ignoramos el filtro de Area exacta para evitar problemas SB vs Sublimacion */
-                AND (
-                    (@RolloID IS NOT NULL AND @RolloID <> '' AND @RolloID <> 'todo') 
+                    O.FechaIngreso,
+                    O.Secuencia,
+                    (SELECT COUNT(*) FROM Etiquetas E WITH(NOLOCK) WHERE E.OrdenID = O.OrdenID) as CantidadEtiquetas,
+                        (SELECT COUNT(*) FROM ArchivosOrden AO WITH(NOLOCK) WHERE AO.OrdenID = O.OrdenID AND AO.EstadoArchivo IN('FALLA', 'Falla')) as CantidadFallas,
+                            (SELECT COUNT(*) FROM ArchivosOrden AO WITH(NOLOCK) WHERE AO.OrdenID = O.OrdenID AND AO.EstadoArchivo = 'CANCELADO') as CantidadCancelados,
+                                (CASE WHEN(SELECT COUNT(*) FROM ArchivosOrden AO WITH(NOLOCK) WHERE AO.OrdenID = O.OrdenID AND AO.EstadoArchivo = 'Pendiente') = 0 THEN 1 ELSE 0 END) as Controlada
+            FROM Ordenes O WITH(NOLOCK)
+        WHERE
+            (@RolloID = '' OR CAST(O.RolloID AS NVARCHAR(50)) = @RolloID OR @RolloID IS NULL)
+
+        /* Si tenemos un RolloID especifico, ignoramos el filtro de Area exacta para evitar problemas SB vs Sublimacion */
+        AND(
+            (@RolloID IS NOT NULL AND @RolloID <> '' AND @RolloID <> 'todo')
+        OR
+            (@Area = '' OR O.AreaID = @Area)
+                )
+
+/* FILTRO DE CONTEXTO CONTROL DE CALIDAD (SI NO HAY ROLLO SELECCIONADO) */
+AND(
+    @ApplyControlFilter = 0 
                     OR 
-                    (@Area = '' OR O.AreaID = @Area)
-                )
+                    O.RolloID IN(SELECT RolloID FROM Rollos WITH(NOLOCK) WHERE Estado = 'Finalizado')
+)
+
                 AND O.Estado != 'CANCELADO'
-                AND (
-                    @IsLabelMode = 1
-                    OR (
-                        LTRIM(RTRIM(O.Estado)) != 'PRONTO' 
-                        AND (
-                            EXISTS (SELECT 1 FROM ArchivosOrden AO WHERE AO.OrdenID = O.OrdenID AND (AO.EstadoArchivo = 'Pendiente' OR AO.EstadoArchivo IS NULL))
+AND(
+    @IsLabelMode = 1
+                    OR(
+        LTRIM(RTRIM(O.Estado)) != 'PRONTO' 
+                        AND(
+            EXISTS(SELECT 1 FROM ArchivosOrden AO WITH(NOLOCK) WHERE AO.OrdenID = O.OrdenID AND(AO.EstadoArchivo = 'Pendiente' OR AO.EstadoArchivo IS NULL))
                             OR 
-                            NOT EXISTS (SELECT 1 FROM ArchivosOrden AO WHERE AO.OrdenID = O.OrdenID)
-                        )
-                    )
-                )
-                AND (
-                    @Search IS NULL 
+                            NOT EXISTS(SELECT 1 FROM ArchivosOrden AO WITH(NOLOCK) WHERE AO.OrdenID = O.OrdenID)
+        )
+    )
+)
+AND(
+    @Search IS NULL 
                     OR O.NoDocERP LIKE @Search 
                     OR O.Cliente LIKE @Search 
                     OR O.Material LIKE @Search
                     OR O.CodigoOrden LIKE @Search
-                    OR EXISTS (SELECT 1 FROM ArchivosOrden AO WHERE AO.OrdenID = O.OrdenID AND AO.NombreArchivo LIKE @Search)
-                )
-            ORDER BY 
-                O.RolloID ASC,
-                O.Secuencia ASC
+                    OR EXISTS(SELECT 1 FROM ArchivosOrden AO WITH(NOLOCK) WHERE AO.OrdenID = O.OrdenID AND AO.NombreArchivo LIKE @Search)
+)
+            ORDER BY
+O.RolloID ASC,
+    O.Secuencia ASC
         `;
 
         const result = await pool.request()
@@ -81,6 +102,7 @@ const getOrdenes = async (req, res) => {
             .input('RolloID', sql.NVarChar, cleanRoll)
             .input('Area', sql.NVarChar, cleanArea)
             .input('IsLabelMode', sql.Bit, mode === 'labels' ? 1 : 0)
+            .input('ApplyControlFilter', sql.Bit, applyControlFilter)
             .query(query);
 
         res.json(result.recordset);
@@ -104,7 +126,7 @@ const getArchivosPorOrden = async (req, res) => {
 
         const pool = await getPool();
 
-        console.log(`Getting Archivos for OrdenID: ${ordenId}`);
+        console.log(`Getting Archivos for OrdenID: ${ordenId} `);
 
         // 1. Obtener Archivos del File System (Simulado desde DB Files)
         const archivosResult = await pool.request()
@@ -114,8 +136,8 @@ const getArchivosPorOrden = async (req, res) => {
                     AO.*,
                     O.Material as Material,
                     O.Cliente as Cliente
-                FROM ArchivosOrden AO
-                LEFT JOIN Ordenes O ON AO.OrdenID = O.OrdenID
+                FROM ArchivosOrden AO WITH (NOLOCK)
+                LEFT JOIN Ordenes O WITH (NOLOCK) ON AO.OrdenID = O.OrdenID
                 WHERE AO.OrdenID = @OrdenID
                 ORDER BY AO.NombreArchivo ASC
             `);
@@ -147,10 +169,10 @@ const postControlArchivo = async (req, res) => {
             .input('ArchivoID', sql.Int, archivoId)
             .query(`
                 SELECT AO.OrdenID, AO.NombreArchivo, O.AreaID, O.CodigoOrden, O.OrdenID as ExisteOrden, O.NoDocERP, O.ProximoServicio
-                FROM ArchivosOrden AO
-                LEFT JOIN Ordenes O ON AO.OrdenID = O.OrdenID
+                FROM ArchivosOrden AO WITH (NOLOCK)
+                LEFT JOIN Ordenes O WITH (NOLOCK) ON AO.OrdenID = O.OrdenID
                 WHERE AO.ArchivoID = @ArchivoID
-            `);
+    `);
 
         if (fileData.recordset.length === 0) {
             await transaction.rollback();
@@ -179,13 +201,13 @@ const postControlArchivo = async (req, res) => {
             .input('ArchivoID', sql.Int, archivoId)
             .query(`
                 UPDATE ArchivosOrden
-        SET
-        EstadoArchivo = @Estado,
-            FechaControl = GETDATE(),
-            UsuarioControl = @Usuario,
-            Observaciones = @Motivo
+SET
+EstadoArchivo = @Estado,
+    FechaControl = GETDATE(),
+    UsuarioControl = @Usuario,
+    Observaciones = @Motivo
                 WHERE ArchivoID = @ArchivoID
-            `);
+    `);
 
         // 3. Manejo de FALLA: Clonación de Orden
         if (estado === 'FALLA') {
@@ -214,16 +236,16 @@ const postControlArchivo = async (req, res) => {
                 .input('CantidadFalla', sql.Decimal(10, 2), metrosReponer)
                 .query(`
                     INSERT INTO dbo.Ordenes(
-                CodigoOrden, Cliente, FechaIngreso, FechaEstimadaEntrega,
-                Material, DescripcionTrabajo, Prioridad,
-                Estado, EstadoenArea, AreaID,
-                Magnitud, IdCabezalERP, ProximoServicio, Observaciones, NoDocERP
-            )
-        SELECT
-        @NewCode, Cliente, GETDATE(), FechaEstimadaEntrega,
-            Material, DescripcionTrabajo, 'ALTA',
-            'Pendiente', 'Pendiente', AreaID,
-            Magnitud, IdCabezalERP, ProximoServicio, 'Reposición por Falla', NoDocERP
+        CodigoOrden, Cliente, FechaIngreso, FechaEstimadaEntrega,
+        Material, DescripcionTrabajo, Prioridad,
+        Estado, EstadoenArea, AreaID,
+        Magnitud, IdCabezalERP, ProximoServicio, Observaciones, NoDocERP
+    )
+SELECT
+@NewCode, Cliente, GETDATE(), FechaEstimadaEntrega,
+    Material, DescripcionTrabajo, 'ALTA',
+    'Pendiente', 'Pendiente', AreaID,
+    Magnitud, IdCabezalERP, ProximoServicio, 'Reposición por Falla', NoDocERP
                     FROM dbo.Ordenes
                     WHERE OrdenID = @OldID;
                     
@@ -231,11 +253,11 @@ const postControlArchivo = async (req, res) => {
                     SET Observaciones = CONCAT(Observaciones, ' [Esperando Reposición]')
                     WHERE OrdenID = @OldID;
 
-        --Registrar Falla en tabla auxiliar
-        --FallaID es Autonumérico(IDENTITY) en la BD.No lo incluimos.
+--Registrar Falla en tabla auxiliar
+--FallaID es Autonumérico(IDENTITY) en la BD.No lo incluimos.
                     INSERT INTO FallasProduccion(OrdenID, ArchivoID, AreaID, FechaFalla, TipoFalla, CantidadFalla, EquipoID, Observaciones)
-        VALUES(@OldID, ${archivoId}, '${areaId}', GETDATE(), @TipoFallaID, @CantidadFalla, @EquipoID, @SafeMotivo);
-        `);
+VALUES(@OldID, ${archivoId}, '${areaId}', GETDATE(), @TipoFallaID, @CantidadFalla, @EquipoID, @SafeMotivo);
+`);
 
             // NOTA: Deberíamos clonar también los archivos? 
             // El requerimiento dice "generar otra orden identica". Una orden sin archivos no tiene sentido.
@@ -265,7 +287,7 @@ const postControlArchivo = async (req, res) => {
                     INSERT INTO dbo.ArchivosOrden(OrdenID, NombreArchivo, RutaAlmacenamiento, Metros, Copias, Observaciones)
                     SELECT @NewOrderID, NombreArchivo, RutaAlmacenamiento, ${metrosSQL}, Copias, 'Reposición por Falla'
                     FROM dbo.ArchivosOrden WHERE ArchivoID = @OldFileID
-            `);
+    `);
             }
         }
 
@@ -273,15 +295,15 @@ const postControlArchivo = async (req, res) => {
         // A. Local Stats (para la orden actual)
         const checkRequest = new sql.Request(transaction);
         const stats = await checkRequest.input('OID', sql.Int, ordenId).query(`
-        SELECT
-        COUNT(*) as Total,
-            SUM(CASE WHEN EstadoArchivo IN('OK', 'Finalizado', 'CANCELADO', 'FALLA') THEN 1 ELSE 0 END) as Controlados,
-            SUM(CASE WHEN EstadoArchivo IS NULL OR EstadoArchivo NOT IN('OK', 'Finalizado', 'CANCELADO', 'FALLA') THEN 1 ELSE 0 END) as Pendientes,
-            SUM(CASE WHEN EstadoArchivo = 'FALLA' THEN 1 ELSE 0 END) as Fallas,
-            SUM(CASE WHEN EstadoArchivo = 'CANCELADO' THEN 1 ELSE 0 END) as Cancelados
+SELECT
+COUNT(*) as Total,
+    SUM(CASE WHEN EstadoArchivo IN('OK', 'Finalizado', 'CANCELADO', 'FALLA') THEN 1 ELSE 0 END) as Controlados,
+    SUM(CASE WHEN EstadoArchivo IS NULL OR EstadoArchivo NOT IN('OK', 'Finalizado', 'CANCELADO', 'FALLA') THEN 1 ELSE 0 END) as Pendientes,
+    SUM(CASE WHEN EstadoArchivo = 'FALLA' THEN 1 ELSE 0 END) as Fallas,
+    SUM(CASE WHEN EstadoArchivo = 'CANCELADO' THEN 1 ELSE 0 END) as Cancelados
             FROM ArchivosOrden
             WHERE OrdenID = @OID
-            `);
+    `);
 
         const { Total, Controlados: rawControlados, Pendientes, Fallas, Cancelados } = stats.recordset[0];
 
@@ -306,8 +328,8 @@ const postControlArchivo = async (req, res) => {
                 INNER JOIN Ordenes O ON AO.OrdenID = O.OrdenID
                 WHERE O.NoDocERP = @NoDoc 
                   AND O.AreaID = @AreaID
-        AND(O.Estado IS NULL OR O.Estado != 'CANCELADO')
-        AND(AO.EstadoArchivo IS NULL OR AO.EstadoArchivo NOT IN('OK', 'Finalizado', 'CANCELADO', 'FALLA'))
+AND(O.Estado IS NULL OR O.Estado != 'CANCELADO')
+AND(AO.EstadoArchivo IS NULL OR AO.EstadoArchivo NOT IN('OK', 'Finalizado', 'CANCELADO', 'FALLA'))
              `);
             if ((gStats.recordset[0].Pendientes || 0) > 0) {
                 groupCompleted = false;
@@ -331,7 +353,7 @@ const postControlArchivo = async (req, res) => {
             }
 
             await new sql.Request(transaction).input('OID', sql.Int, ordenId)
-                .query(`UPDATE Ordenes SET Estado='Produccion', EstadoenArea='${nuevoEstadoArea}', EstadoLogistica='Canasto Incompletos' WHERE OrdenID = @OID`);
+                .query(`UPDATE Ordenes SET Estado = 'Produccion', EstadoenArea = '${nuevoEstadoArea}', EstadoLogistica = 'Canasto Incompletos' WHERE OrdenID = @OID`);
 
         } else if (!groupCompleted) {
             // B. ORDEN COMPLETA LOCALMENTE, PERO PEDIDO INCOMPLETO EN ÁREA -> Estado 'Produccion' (Espera)
@@ -390,7 +412,7 @@ const postControlArchivo = async (req, res) => {
                             reqMadre.input('CodeParent', sql.NVarChar, codigoMadre);
                             reqMadre.input('CurrentOrderID', sql.Int, ordenId);
                             await reqMadre.query(`
-        --1. Sanar Archivos de la Madre
+--1. Sanar Archivos de la Madre
                                 UPDATE ParentFiles
                                 SET EstadoArchivo = 'OK', Observaciones = CONCAT(ISNULL(ParentFiles.Observaciones, ''), ' [Repuesto]')
                                 FROM dbo.ArchivosOrden AS ParentFiles
@@ -399,158 +421,63 @@ const postControlArchivo = async (req, res) => {
                                   AND ParentFiles.EstadoArchivo = 'FALLA'
                                   AND ParentFiles.NombreArchivo IN(SELECT NombreArchivo FROM dbo.ArchivosOrden WHERE OrdenID = @CurrentOrderID);
 
-        --2. Liberar Orden Madre
+--2. Liberar Orden Madre
                                 IF NOT EXISTS(
-            SELECT 1 
+    SELECT 1 
                                     FROM dbo.ArchivosOrden AO
                                     INNER JOIN dbo.Ordenes O ON AO.OrdenID = O.OrdenID
                                     WHERE O.CodigoOrden = @CodeParent AND AO.EstadoArchivo = 'FALLA'
-        )
-        BEGIN
+)
+BEGIN
                                     UPDATE dbo.Ordenes
                                     SET Estado = 'Pronto', EstadoenArea = 'Pronto', EstadoLogistica = 'Canasto Produccion', Observaciones = CONCAT(Observaciones, ' [Reposición Completada]')
                                     WHERE CodigoOrden = @CodeParent AND Estado = 'Retenido';
-        END
-            `);
+END
+    `);
                         } catch (e) { console.error("Error liberando madre", e); }
                     }
                 }
             }
         }
-        // --- CALCULO DE BULTOS Y ETIQUETAS (SOLO SI ORDEN COMPLETA) ---
         if (orderCompleted) {
+            // Ya no calculamos bultos manualmente aquí dentro de la transacción.
+            // Delegamos todo al servicio post-commit.
+            console.log(`[postControlArchivo] Orden ${ordenId} COMPLETADA. Commiteando transacción principal y generando etiquetas...`);
+        }
 
-            // 1. Obtener Configuración de Metros por Bulto
-            const configRes = await new sql.Request(transaction)
-                .input('Clave', sql.VarChar(50), 'METROSBULTOS')
-                .input('AreaID', sql.VarChar(20), areaId)
-                .query(`
-                    SELECT TOP 1 Valor 
-                    FROM ConfiguracionGlobal 
-                    WHERE Clave = @Clave AND(AreaID = @AreaID OR AreaID = 'ADMIN') 
-                    ORDER BY CASE WHEN AreaID = @AreaID THEN 1 ELSE 2 END ASC
-            `);
+        await transaction.commit(); // COMMIT PRINCIPAL
 
-            let metrosPorBulto = 60;
-            if (configRes.recordset.length > 0) {
-                metrosPorBulto = parseFloat(configRes.recordset[0].Valor) || 60;
-            }
+        // --- GENERACIÓN DE ETIQUETAS POST-COMMIT (SI CORRESPONDE) ---
+        if (orderCompleted) {
+            try {
+                // Verificar magnitud de nuevo fuera de transacción (seguridad)
+                const checkMag = await pool.request().input('OID', sql.Int, ordenId).query("SELECT Magnitud FROM Ordenes WHERE OrdenID = @OID");
+                const magStr = checkMag.recordset[0]?.Magnitud;
 
-            // 2. Calcular Metros Totales de la Orden (SOLO OK)
-            const metrosRes = await new sql.Request(transaction)
-                .input('OID', sql.Int, ordenId)
-                .query(`
-                    SELECT SUM(ISNULL(Copias, 1) * ISNULL(Metros, 0)) as TotalMetos
-                    FROM ArchivosOrden
-                    WHERE OrdenID = @OID 
-                      AND EstadoArchivo IN('OK', 'Finalizado')
-        AND(RutaAlmacenamiento IS NOT NULL AND RTRIM(LTRIM(RutaAlmacenamiento)) != '')
-                `);
-
-            const totalMetros = metrosRes.recordset[0].TotalMetos || 0;
-
-            if (totalMetros > 0) {
-                totalBultos = Math.ceil(totalMetros / metrosPorBulto);
-            } else {
-                totalBultos = 0;
-            }
-
-            if (totalBultos > 0) {
-                // 4. Generar Etiquetas
-                await new sql.Request(transaction).input('OID', sql.Int, ordenId).query("DELETE FROM Etiquetas WHERE OrdenID = @OID");
-
-                // Datos adicionales para la etiqueta
-                const headerRes = await new sql.Request(transaction)
-                    .input('OID', sql.Int, ordenId)
-                    .query("SELECT IdCabezalERP, ProximoServicio, Cliente, Prioridad, DescripcionTrabajo, Material, Magnitud, CodigoOrden FROM Ordenes WHERE OrdenID = @OID");
-
-                const orderHead = headerRes.recordset[0];
-                const clientName = orderHead?.Cliente || 'Cliente';
-                const jobDesc = orderHead?.DescripcionTrabajo || '';
-                const prioridad = orderHead?.Prioridad || 'Normal';
-                const material = orderHead?.Material || '';
-                const magnitudStr = orderHead?.Magnitud || '';
-                const codigoOrdenReal = orderHead?.CodigoOrden || codigoOrden;
-                const proximoServicio = (orderHead?.ProximoServicio || 'DEPOSITO').trim().toUpperCase();
-
-                // VALIDACIÓN MAGNITUD: Condición necesaria > 0
-                // Parseamos magnitud (puede venir como string "100 mts" o numero)
-                let magnitudValor = 0;
-                if (typeof magnitudStr === 'number') magnitudValor = magnitudStr;
-                else if (magnitudStr) {
-                    const match = magnitudStr.toString().match(/[\d\.]+/);
-                    if (match) magnitudValor = parseFloat(match[0]);
+                // Validación Rápida antes de llamar al servicio (aunque el servicio valida tambien)
+                let magVal = 0;
+                if (typeof magStr === 'number') magVal = magStr;
+                else if (magStr) {
+                    const match = magStr.toString().match(/[\d\.]+/);
+                    if (match) magVal = parseFloat(match[0]);
                 }
 
-                if (magnitudValor <= 0) {
-                    console.log(`[postControlArchivo] Orden ${ordenId} completada. Magnitud detectada: ${magnitudValor}. NO se generan etiquetas por ser <= 0.`);
-                } else {
-                    const esUltimoServicio = proximoServicio.includes('DEPOSITO') || proximoServicio === '';
-
-                    // Determinar Tipo de Bulto según destino
-                    const tipoBulto = esUltimoServicio ? 'PROD_TERMINADO' : 'EN_PROCESO';
-                    const logMsg = esUltimoServicio
-                        ? `Orden ${ordenId} FINALIZADA (Va a Depósito). Generando Etiquetas FINAL (${totalBultos}).`
-                        : `Orden ${ordenId} INTERMEDIA (Va a ${proximoServicio}). Generando Etiquetas PROCESO (${totalBultos}).`;
-
-                    console.log(`[postControlArchivo] ${logMsg}`);
-
-                    for (let i = 1; i <= totalBultos; i++) {
-                        const safeDesc = (jobDesc || '').replace(/\$\*/g, ' ');
-                        const safeMat = (material || '').replace(/\$\*/g, ' ');
-
-                        // QR String
-                        const qrString = `${codigoOrdenReal} $ * ${i} $ * ${clientName} $ * ${safeDesc} $ * ${prioridad} $ * ${safeMat} $ * ${magnitudStr} `;
-
-                        // Usamos el servicio centralizado para generar etiquetas con el formato correcto v3
-                        // Nota: regenerateLabelsForOrder maneja su propia transacción, pero aquí estamos dentro de una transacción mayor.
-                        // Para evitar conflictos de transacciones anidadas (MSSQL no soporta nested real transactions easily here with the current pool setup),
-                        // DEBEMOS COMMITEAR la transacción actual (que finalizó la orden) ANTES de generar etiquetas.
-                        // O bien, pasar la transaccion al servicio (pero el servicio crea la suya propia).
-
-                        // Estrategia: Commiteamos lo hecho hasta ahora (Orden PRONTA) y luego llamamos al servicio.
-                        // Si el servicio falla, la orden ya quedó PRONTA, pero sin etiquetas (el usuario puede regenerarlas manualmente).
-                        // Esto es seguro y evita deadlocks.
-
-                        console.log(`[postControlArchivo] Orden ${ordenId} COMPLETADA. Commiteando transacción principal y generando etiquetas...`);
-                    }
-                }
-            }
-
-            await transaction.commit(); // COMMIT PRINCIPAL
-
-            // --- GENERACIÓN DE ETIQUETAS POST-COMMIT (SI CORRESPONDE) ---
-            if (orderCompleted) {
-                try {
-                    // Verificar magnitud de nuevo fuera de transacción (seguridad)
-                    const checkMag = await pool.request().input('OID', sql.Int, ordenId).query("SELECT Magnitud FROM Ordenes WHERE OrdenID = @OID");
-                    const magStr = checkMag.recordset[0]?.Magnitud;
-
-                    // Validación Rápida antes de llamar al servicio (aunque el servicio valida tambien)
-                    let magVal = 0;
-                    if (typeof magStr === 'number') magVal = magStr;
-                    else if (magStr) {
-                        const match = magStr.toString().match(/[\d\.]+/);
-                        if (match) magVal = parseFloat(match[0]);
-                    }
-
-                    if (magVal > 0) {
-                        console.log(`[postControlArchivo] Llamando LabelGenerationService para Orden ${ordenId}...`);
-                        const labelResult = await LabelGenerationService.regenerateLabelsForOrder(ordenId, (req.user?.id || 1), (req.user?.usuario || 'Sistema'));
-                        if (labelResult.success) {
-                            totalBultos = labelResult.totalBultos; // Para devolver en el JSON
-                            console.log(`[postControlArchivo] Etiquetas generadas OK: ${totalBultos}`);
-                        } else {
-                            console.warn(`[postControlArchivo] Fallo generación etiquetas: ${labelResult.error}`);
-                        }
+                if (magVal > 0) {
+                    console.log(`[postControlArchivo] Llamando LabelGenerationService para Orden ${ordenId}...`);
+                    const labelResult = await LabelGenerationService.regenerateLabelsForOrder(ordenId, (req.user?.id || 1), (req.user?.usuario || 'Sistema'));
+                    if (labelResult.success) {
+                        totalBultos = labelResult.totalBultos; // Para devolver en el JSON
+                        console.log(`[postControlArchivo] Etiquetas generadas OK: ${totalBultos}`);
                     } else {
-                        console.log(`[postControlArchivo] Magnitud 0, saltando etiquetas.`);
+                        console.warn(`[postControlArchivo] Fallo generación etiquetas: ${labelResult.error}`);
                     }
-                } catch (eLabels) {
-                    console.error(`[postControlArchivo] Error generando etiquetas post-control: ${eLabels.message}`);
+                } else {
+                    console.log(`[postControlArchivo] Magnitud 0, saltando etiquetas.`);
                 }
+            } catch (eLabels) {
+                console.error(`[postControlArchivo] Error generando etiquetas post-control: ${eLabels.message}`);
             }
-        } // This closing brace was missing for the first `if (orderCompleted)` block.
+        }
 
         // SOCKET EMIT
         if (req.app.get('socketio')) {

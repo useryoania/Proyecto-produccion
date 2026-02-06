@@ -21,7 +21,7 @@ const getPedidoMetrics = async (req, res) => {
         // 2. Obtener TODAS las órdenes del proyecto (Global) para Ruta y Progreso
         const globalQuery = `
             SELECT O.OrdenID, O.CodigoOrden, O.NoDocERP, O.Estado, O.AreaID
-            FROM Ordenes O
+            FROM Ordenes O WITH (NOLOCK)
             WHERE (O.NoDocERP LIKE @BaseRef + '%') OR (O.CodigoOrden LIKE @BaseRef + '%') OR (CAST(O.OrdenID AS VARCHAR) = @BaseRef)
         `;
 
@@ -69,9 +69,9 @@ const getPedidoMetrics = async (req, res) => {
                     OA.Metros,
                     ISNULL(O.MaquinaID, R.MaquinaID) as MaquinaID,
                     R.Nombre as NombreRollo
-                FROM ArchivosOrden OA
-                INNER JOIN Ordenes O ON OA.OrdenID = O.OrdenID
-                LEFT JOIN Rollos R ON O.RolloID = R.RolloID
+                FROM ArchivosOrden OA WITH (NOLOCK)
+                INNER JOIN Ordenes O WITH (NOLOCK) ON OA.OrdenID = O.OrdenID
+                LEFT JOIN Rollos R WITH (NOLOCK) ON O.RolloID = R.RolloID
                 WHERE OA.OrdenID IN (${itemsList})
             `;
             const filesRes = await pool.request().query(filesQuery);

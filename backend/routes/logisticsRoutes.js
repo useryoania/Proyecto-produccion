@@ -41,5 +41,6 @@ router.post('/recover', logisticsController.recoverItem);
 // Stock Deposito & Sync
 router.get('/deposit-stock', logisticsController.getDepositStock);
 router.post('/deposit-sync', logisticsController.syncDepositStock);
+router.post('/deposit-release', logisticsController.releaseDepositStock);
 
 module.exports = router;

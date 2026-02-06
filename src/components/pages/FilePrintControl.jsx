@@ -134,11 +134,11 @@ const FilePrintControl = ({ areaCode }) => {
   }, [areaCode]);
 
   useEffect(() => {
-    const rollId = activeRoll?.id || 'todo';
+    const rollId = activeRoll?.id || '';
 
     fetchOrdersOfRoll(rollId, searchTerm);
 
-    if (rollId && rollId !== 'todo') {
+    if (rollId) {
       fetchRollMetrics(rollId);
     } else {
       setActiveRollMetrics(null);
@@ -681,14 +681,14 @@ const FilePrintControl = ({ areaCode }) => {
           <div className="relative">
             <select
               className="w-full pl-3 pr-8 py-2.5 bg-white border border-slate-200 rounded-xl font-bold text-sm text-slate-700 shadow-sm outline-none focus:ring-2 focus:ring-cyan-300 appearance-none cursor-pointer hover:border-cyan-300 transition-colors"
-              value={activeRoll?.id || 'todo'}
+              value={activeRoll?.id || ''}
               onChange={(e) => {
                 const val = e.target.value;
-                if (val === 'todo') setActiveRoll({ id: 'todo', nombre: 'Todos' });
-                else setActiveRoll(rollos.find(x => x.id === parseInt(val))); // Asegurar tipo numero si ids son numeros
+                if (!val) setActiveRoll(null);
+                else setActiveRoll(rollos.find(x => x.id === parseInt(val)));
               }}
             >
-              <option value="todo">Todos los Lotes / Sin Lote</option>
+              <option value="">Seleccione un Lote...</option>
               {rollos.map(r => <option key={r.id} value={r.id}>{r.nombre || `Lote ${r.id}`} (ID: {r.id})</option>)}
             </select>
             <div className="absolute right-3 top-3 pointer-events-none text-slate-400 text-xs"><i className="fa-solid fa-chevron-down"></i></div>

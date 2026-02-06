@@ -100,7 +100,8 @@ exports.processBatch = async (req, res) => {
                     const driveId = getDriveId(sourcePath);
                     if (!driveId) throw new Error('Link de Drive inválido');
                     const downloadUrl = `https://drive.google.com/uc?export=download&id=${driveId}`;
-                    const res = await fetch(downloadUrl);
+                    // Increase timeout to 5 min
+                    const res = await fetch(downloadUrl, { signal: AbortSignal.timeout(300000) });
                     if (!res.ok) throw new Error(`Status ${res.status} al descargar de Drive`);
                     tempBuffer = Buffer.from(await res.arrayBuffer());
                 } else if (sourcePath.startsWith('http')) {
@@ -289,11 +290,11 @@ exports.processOrdersBatch = async (req, res) => {
                         const driveId = getDriveId(sourcePath);
                         if (!driveId) throw new Error('Link de Drive inválido');
                         const downloadUrl = `https://drive.google.com/uc?export=download&id=${driveId}`;
-                        const res = await fetch(downloadUrl, { signal: AbortSignal.timeout(30000) });
+                        const res = await fetch(downloadUrl, { signal: AbortSignal.timeout(300000) }); // 5 min
                         if (!res.ok) throw new Error(`Status ${res.status} al descargar de Drive`);
                         tempBuffer = Buffer.from(await res.arrayBuffer());
                     } else if (sourcePath.startsWith('http')) {
-                        const res = await fetch(sourcePath, { signal: AbortSignal.timeout(30000) });
+                        const res = await fetch(sourcePath, { signal: AbortSignal.timeout(300000) }); // 5 min
                         if (!res.ok) throw new Error(`Status ${res.status} al descargar de Web`);
                         tempBuffer = Buffer.from(await res.arrayBuffer());
                     } else if (fs.existsSync(sourcePath)) {
@@ -305,9 +306,42 @@ exports.processOrdersBatch = async (req, res) => {
 
                 // VALIDACIÓN BÁSICA
                 if (!tempBuffer || tempBuffer.length === 0) throw new Error("El archivo descargado está vacío (0 bytes)");
-                const header = tempBuffer.slice(0, 15).toString().trim().toLowerCase();
-                if (header.startsWith('<!doctype html') || header.startsWith('<html')) {
-                    throw new Error("El archivo descargado parece ser HTML (error Drive/Login).");
+                const header = tempBuffer.slice(0, 500).toString().trim();
+                if (header.toLowerCase().startsWith('<!doctype html') || header.toLowerCase().startsWith('<html')) {
+                    // Check for Virus Scan Warning
+                    const content = tempBuffer.toString('utf8');
+                    if (content.includes('Virus scan') || content.includes('virus') || content.includes('confirm=')) {
+                        console.log(`[Batch] Drive Virus Scan Warning detectado en archivo ${file.ArchivoID}. Intentando bypass...`);
+
+                        let confirmToken = null;
+                        const match = content.match(/confirm=([a-zA-Z0-9_\-]+)/);
+                        if (match) confirmToken = match[1];
+
+                        if (!confirmToken) {
+                            const matchForm = content.match(/action=".*?confirm=([a-zA-Z0-9_\-]+)/);
+                            if (matchForm) confirmToken = matchForm[1];
+                        }
+
+                        let bypassUrl = '';
+                        const driveId = getDriveId(sourcePath);
+
+                        if (confirmToken) {
+                            bypassUrl = `https://drive.google.com/uc?export=download&id=${driveId}&confirm=${confirmToken}`;
+                        } else {
+                            bypassUrl = `https://drive.google.com/uc?export=download&id=${driveId}&confirm=t`;
+                        }
+
+                        const r2 = await fetch(bypassUrl, { signal: AbortSignal.timeout(300000) });
+                        if (r2.ok) tempBuffer = Buffer.from(await r2.arrayBuffer());
+
+                        // Re-check header
+                        const headerRetry = tempBuffer.slice(0, 15).toString().trim().toLowerCase();
+                        if (headerRetry.startsWith('<!doctype html') || headerRetry.startsWith('<html')) {
+                            throw new Error("Falló bypass de Virus Scan (el archivo sigue siendo HTML).");
+                        }
+                    } else {
+                        throw new Error("El archivo descargado parece ser HTML (error Drive/Login).");
+                    }
                 }
 
                 // Sanitizar: Reemplazar slash / por guion - (para "1/1" -> "1-1") y borrar chars prohibidos
@@ -696,11 +730,11 @@ exports.downloadOrdersZip = async (req, res) => {
                     const driveId = getDriveId(sourcePath);
                     if (driveId) {
                         const downloadUrl = `https://drive.google.com/uc?export=download&id=${driveId}`;
-                        const r = await fetch(downloadUrl, { signal: AbortSignal.timeout(30000) });
+                        const r = await fetch(downloadUrl, { signal: AbortSignal.timeout(300000) }); // 5 min timeout
                         if (r.ok) tempBuffer = Buffer.from(await r.arrayBuffer());
                     }
                 } else if (sourcePath.startsWith('http')) {
-                    const r = await fetch(sourcePath, { signal: AbortSignal.timeout(30000) });
+                    const r = await fetch(sourcePath, { signal: AbortSignal.timeout(300000) }); // 5 min timeout
                     if (r.ok) tempBuffer = Buffer.from(await r.arrayBuffer());
                 } else if (fs.existsSync(sourcePath)) {
                     tempBuffer = fs.readFileSync(sourcePath);
@@ -711,11 +745,49 @@ exports.downloadOrdersZip = async (req, res) => {
                     continue;
                 }
 
-                // B. Validar HTML error
-                const header = tempBuffer.slice(0, 15).toString().trim().toLowerCase();
-                if (header.startsWith('<!doctype html') || header.startsWith('<html')) {
-                    archive.append(`Error: El archivo descargado parece ser HTML (Login Drive?). ID ${file.ArchivoID}`, { name: `ERRORES/${file.ArchivoID}_login_error.txt` });
-                    continue;
+                // B. Validar HTML error y Bypass Virus Scan
+                const header = tempBuffer.slice(0, 500).toString().trim(); // More context
+                if (header.toLowerCase().includes('<!doctype html') || header.toLowerCase().includes('<html')) {
+                    // Check for Virus Scan Warning
+                    const content = tempBuffer.toString('utf8');
+                    if (content.includes('Virus scan') || content.includes('virus') || content.includes('confirm=')) {
+                        console.log(`[ZIP] Drive Virus Scan Warning detectado en archivo ${file.ArchivoID}. Intentando bypass...`);
+
+                        let confirmToken = null;
+                        const match = content.match(/confirm=([a-zA-Z0-9_\-]+)/);
+                        if (match) confirmToken = match[1];
+
+                        if (!confirmToken) {
+                            const matchForm = content.match(/action=".*?confirm=([a-zA-Z0-9_\-]+)/);
+                            if (matchForm) confirmToken = matchForm[1];
+                        }
+
+                        if (confirmToken) {
+                            console.log(`[ZIP] Token encontrado: ${confirmToken}. Reintentando...`);
+                            const driveId = getDriveId(sourcePath);
+                            const bypassUrl = `https://drive.google.com/uc?export=download&id=${driveId}&confirm=${confirmToken}`;
+                            const r2 = await fetch(bypassUrl, { signal: AbortSignal.timeout(300000) });
+                            if (r2.ok) tempBuffer = Buffer.from(await r2.arrayBuffer());
+                        } else {
+                            // Try generic confirm
+                            console.log(`[ZIP] Token no encontrado. Probando confirm=t...`);
+                            const driveId = getDriveId(sourcePath);
+                            const bypassUrl = `https://drive.google.com/uc?export=download&id=${driveId}&confirm=t`;
+                            const r2 = await fetch(bypassUrl, { signal: AbortSignal.timeout(300000) });
+                            if (r2.ok) tempBuffer = Buffer.from(await r2.arrayBuffer());
+                        }
+
+                        // Re-check header after retry
+                        const headerRetry = tempBuffer.slice(0, 15).toString().trim().toLowerCase();
+                        if (headerRetry.startsWith('<!doctype html') || headerRetry.startsWith('<html')) {
+                            archive.append(`Error: Falló bypass de Virus Scan. ID ${file.ArchivoID}`, { name: `ERRORES/${file.ArchivoID}_virus_error.txt` });
+                            continue;
+                        }
+
+                    } else {
+                        archive.append(`Error: El archivo descargado parece ser HTML (Login Drive?). ID ${file.ArchivoID}`, { name: `ERRORES/${file.ArchivoID}_login_error.txt` });
+                        continue;
+                    }
                 }
 
                 // C. Detectar Extensión Real (Magic Hex)
@@ -737,13 +809,23 @@ exports.downloadOrdersZip = async (req, res) => {
                 const safeArea = sanitize(file.AreaID || 'GENERAL');
                 const safeRoll = sanitize(file.RollName || 'Sin-Rollo');
 
-                let baseName = `${file.CodigoOrden}_${sanitize(file.Cliente)}_${sanitize(file.DescripcionTrabajo)}`;
-                if (file.totalInOrder > 1) {
-                    baseName += `_(${file.idxInOrder}-${file.totalInOrder})`;
-                }
-                if (!baseName.toLowerCase().endsWith(finalExt)) baseName += finalExt;
+                let finalName = "";
 
-                const zipPath = baseName;
+                // Preferir Nombre Original Guardado si existe
+                if (file.NombreArchivo && file.NombreArchivo.length > 5) {
+                    finalName = sanitize(file.NombreArchivo);
+                } else {
+                    // Fallback a Generado
+                    finalName = `${file.CodigoOrden}_${sanitize(file.Cliente)}_${sanitize(file.DescripcionTrabajo)}`;
+                    if (file.totalInOrder > 1) {
+                        finalName += `_(${file.idxInOrder}-${file.totalInOrder})`;
+                    }
+                }
+
+                // Extension Check
+                if (!finalName.toLowerCase().endsWith(finalExt)) finalName += finalExt;
+
+                const zipPath = finalName;
 
                 archive.append(tempBuffer, { name: zipPath });
 

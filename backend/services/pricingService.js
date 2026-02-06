@@ -244,15 +244,32 @@ class PricingService {
 
         const txt = txtParts.join('\n');
 
+        // --- Recopilar Perfiles Aplicados ---
+        const appliedProfiles = new Set();
+
+        // 1. Regla Principal (Fija o Descuento)
+        if (bestFixedRule && optionB_Price < optionA_Price) {
+            if (bestFixedRule.NombrePerfil) appliedProfiles.add(bestFixedRule.NombrePerfil);
+        } else {
+            if (bestDiscountRule && bestDiscountRule.NombrePerfil) appliedProfiles.add(bestDiscountRule.NombrePerfil);
+        }
+
+        // 2. Recargos
+        if (surchargeRules && surchargeRules.length > 0) {
+            surchargeRules.forEach(r => {
+                if (r.NombrePerfil) appliedProfiles.add(r.NombrePerfil);
+            });
+        }
 
         return {
             codArticulo,
             cantidad,
             precioUnitario: precioFinal,
             precioTotal: precioFinal * cantidad,
-            moneda, // Asegurar que moneda existe en scope o usar 'UYU'
+            moneda: moneda || 'UYU',
             breakdown,
-            txt // El texto para observaciones
+            txt,
+            perfilesAplicados: [...appliedProfiles]
         };
     }
 

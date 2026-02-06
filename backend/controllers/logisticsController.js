@@ -1577,6 +1577,9 @@ exports.getDepositStock = async (req, res) => {
                 MAX(O.Cliente) as Cliente,
                 MAX(O.DescripcionTrabajo) as Descripcion,
                 MAX(O.FechaIngreso) as FechaIngreso,
+                MAX(O.CostoTotal) as Precio,
+                MAX(O.Magnitud) as Cantidad,
+                MAX(O.PerfilesPrecio) as PerfilesPrecio,
                 E.CodigoQR as V3String,
                 COUNT(DISTINCT LB.BultoID) as CantidadBultos
             FROM Logistica_Bultos LB
@@ -1594,39 +1597,112 @@ exports.getDepositStock = async (req, res) => {
     }
 };
 
-exports.syncDepositStock = async (req, res) => {
-    const { items } = req.body; // items: [{ qr: "...", count: N }]
-    const results = [];
-
+// Helper para Token Externo (copiado de syncClientsService para autonomia)
+async function getExternalToken() {
     try {
-        // Import axios dynamically just in case, or use fetch if available (Node 18+)
-        let axios;
-        try { axios = require('axios'); } catch (e) { }
+        const axios = require('axios');
+        const tokenRes = await axios.post('https://administracionuser.uy/api/apilogin/generate-token', {
+            apiKey: "api_key_google_123sadas12513_user"
+        });
+        return tokenRes.data.token || tokenRes.data.accessToken || tokenRes.data;
+    } catch (e) {
+        console.error("[SyncLogistics] Error Token:", e.message);
+        return null;
+    }
+}
+
+exports.syncDepositStock = async (req, res) => {
+    try {
+        const { items } = req.body; // Array de { qr, count, price, quantity, profile }
+        if (!items || !Array.isArray(items)) return res.status(400).json({ error: 'Formato incorrecto. Se espera array "items"' });
+
+        const results = [];
+        const axios = require('axios');
+        const pool = await getPool();
+
+        // 1. Obtener Token
+        const token = await getExternalToken();
+        if (!token) {
+            return res.status(500).json({ error: 'No se pudo autenticar con el sistema externo (Token Error)' });
+        }
 
         for (const item of items) {
             try {
-                // El usuario pide "lanzar a esta api con ese codigo qr"
-                // Payload con { qr: "..." }
+                // Reconstruir QR con valores actualizados (Magnitud, CostoTotal)
+                let newOrdenString = item.qr;
+                const parts = item.qr.split('$*');
+
+                // Formato V3 espera 7 partes: Pedido, Cliente, Trabajo, Urgencia, Producto, Cantidad, Importe
+                if (parts.length >= 5) {
+                    // Index 5: Cantidad (Magnitud)
+                    if (item.cantidad) parts[5] = item.cantidad.toString();
+                    // Index 6: Importe (CostoTotal)
+                    if (item.precio) parts[6] = parseFloat(item.precio).toFixed(2);
+                    newOrdenString = parts.join('$*');
+                }
+
+                // Payload según requerimiento API externa (Postman)
                 const payload = {
-                    qr: item.qr
+                    ordenString: newOrdenString,
+                    estado: "Ingresado",
+                    perfil: item.profile || "" // Extra, por si la API lo acepta/loguea
                 };
 
-                let responseData;
-                let status;
+                let responseData = null;
+                let status = 0;
 
                 if (axios) {
-                    const response = await axios.post('https://administracionuser.uy/api/apiordenes/data', payload);
-                    status = response.status;
-                    responseData = response.data;
+                    try {
+                        const response = await axios.post('https://administracionuser.uy/api/apiordenes/data', payload, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        });
+                        status = response.status;
+                        responseData = response.data;
+                    } catch (axiosErr) {
+                        // Capturar error detallado de axios
+                        status = axiosErr.response?.status || 500;
+                        responseData = axiosErr.response?.data || { error: axiosErr.message };
+                        console.error("[SyncLogistics] Axios Error:", status, JSON.stringify(responseData));
+                    }
                 } else {
                     // Fallback to fetch
                     const f = await fetch('https://administracionuser.uy/api/apiordenes/data', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
                         body: JSON.stringify(payload)
                     });
                     status = f.status;
                     responseData = await f.json();
+                }
+
+                // --- SAVE PROFILES LOCALLY ---
+                if (item.profile && (status === 200 || status === 201)) {
+                    try {
+                        const pool = await getPool();
+                        await pool.request()
+                            .input('QR', sql.NVarChar(4000), item.qr)
+                            .input('Perfil', sql.NVarChar(sql.MAX), item.profile)
+                            .query(`
+                                -- Update Etiquetas linked to this QR
+                                UPDATE E
+                                SET PerfilesPrecio = @Perfil
+                                FROM Etiquetas E
+                                WHERE E.CodigoQR = @QR;
+
+                                -- Update Orden linked to these Etiquetas
+                                UPDATE O
+                                SET PerfilesPrecio = @Perfil
+                                FROM Ordenes O
+                                INNER JOIN Etiquetas E ON O.OrdenID = E.OrdenID
+                                WHERE E.CodigoQR = @QR;
+                            `);
+                        // console.log("[Sync] Updated local profiles for QR:", item.qr);
+                    } catch (dbErr) {
+                        console.error("[Sync] Error saving local profile:", dbErr.message);
+                    }
                 }
 
                 results.push({
@@ -1644,6 +1720,85 @@ exports.syncDepositStock = async (req, res) => {
 
     } catch (err) {
         console.error("Error syncDepositStock:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.releaseDepositStock = async (req, res) => {
+    const { items } = req.body; // items: [{ qr: "..." }]
+    if (!items || items.length === 0) return res.json({ success: true, count: 0 });
+
+    let releasedCount = 0;
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+        const affectedOrderIds = new Set();
+
+        try {
+            for (const item of items) {
+                if (!item.qr) continue;
+
+                // 1. Identify Bultos by QR (The QR in 'items' is the V3 string from Etiquetas table)
+                // We need to find Bultos linked to Etiquetas linked to this QR
+
+                // First get the Etiqueta Codes for this QR
+                // IMPORTANT: The QR in 'Etiquetas' table is unique per row? Or multiple rows/bultos share same QR string?
+                // In DepositStockPage, we group by E.CodigoQR. So multiple bultos can form one "Pedido V3".
+
+                // Logic: Release ALL bultos associated with this QR string.
+
+                const updateRes = await new sql.Request(transaction)
+                    .input('QR', sql.NVarChar(4000), item.qr)
+                    .query(`
+                        UPDATE LB
+                        SET 
+                            LB.Estado = 'ENTREGADO', 
+                            LB.UbicacionActual = 'CLIENTE'
+                        OUTPUT INSERTED.CodigoEtiqueta, INSERTED.OrdenID
+                        FROM Logistica_Bultos LB
+                        INNER JOIN Etiquetas E ON LB.CodigoEtiqueta = E.CodigoEtiqueta
+                        WHERE E.CodigoQR = @QR 
+                          AND LB.UbicacionActual = 'DEPOSITO'
+                    `);
+
+                const updatedRows = updateRes.recordset;
+                updatedRows.forEach(r => affectedOrderIds.add(r.OrdenID));
+                releasedCount += updatedRows.length;
+
+                // Log Movements for each released bulto
+                for (const row of updatedRows) {
+                    const code = row.CodigoEtiqueta;
+                    await new sql.Request(transaction)
+                        .input('Cod', sql.VarChar, code)
+                        .input('User', sql.Int, req.user?.id || 1)
+                        .query(`
+                             INSERT INTO MovimientosLogistica (CodigoBulto, TipoMovimiento, AreaID, UsuarioID, FechaHora, Observaciones, EstadoAnterior, EstadoNuevo, EsRecepcion)
+                             VALUES (@Cod, 'SALIDA', 'DEPOSITO', @User, GETDATE(), 'Liberación por Sincronización', 'EN_STOCK', 'ENTREGADO', 0)
+                        `);
+                }
+            }
+
+            // Close Orders if fully delivered
+            for (const oid of affectedOrderIds) {
+                if (!oid) continue;
+                const pendingRes = await new sql.Request(transaction).input('OID', sql.Int, oid).query("SELECT COUNT(*) as C FROM Logistica_Bultos WHERE OrdenID = @OID AND Estado != 'ENTREGADO'");
+
+                if (pendingRes.recordset[0].C === 0) {
+                    await new sql.Request(transaction).input('OID', sql.Int, oid).query("UPDATE Ordenes SET Estado = 'Finalizado', EstadoLogistica = 'ENTREGADO', UbicacionActual = 'CLIENTE' WHERE OrdenID = @OID");
+                }
+            }
+
+            await transaction.commit();
+            res.json({ success: true, count: releasedCount });
+
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
+
+    } catch (err) {
+        console.error("Error releaseDepositStock:", err);
         res.status(500).json({ error: err.message });
     }
 };

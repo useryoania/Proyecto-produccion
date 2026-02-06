@@ -1,5 +1,6 @@
 const { sql, getPool } = require('../config/db');
 const PricingService = require('./pricingService');
+const ERPSyncService = require('./erpSyncService');
 
 class LabelGenerationService {
 
@@ -78,6 +79,7 @@ class LabelGenerationService {
 
             const siblings = siblingsRes.recordset;
             let totalPriceSum = 0;
+            let mainOrderProfiles = '';
 
             for (const sib of siblings) {
                 try {
@@ -110,13 +112,20 @@ class LabelGenerationService {
                     );
 
                     const costoCalculado = priceResult.precioTotal || 0;
+                    const perfilesStr = (priceResult.perfilesAplicados || []).join(', ');
+
+                    // Guardar perfiles específicos para la orden principal si corresponde
+                    if (sib.OrdenID == ordenId) {
+                        mainOrderProfiles = perfilesStr;
+                    }
 
                     // Update DB (Side effect OK)
                     // Hacemos update por querier directo
                     await pool.request()
                         .input('Cost', sql.Decimal(18, 2), costoCalculado)
+                        .input('Perfiles', sql.NVarChar(sql.MAX), perfilesStr)
                         .input('SibID', sql.Int, sib.OrdenID)
-                        .query("UPDATE Ordenes SET CostoTotal = @Cost WHERE OrdenID = @SibID");
+                        .query("UPDATE Ordenes SET CostoTotal = @Cost, PerfilesPrecio = @Perfiles WHERE OrdenID = @SibID");
 
                     totalPriceSum += costoCalculado;
 
@@ -176,7 +185,33 @@ class LabelGenerationService {
             transaction = new sql.Transaction(pool);
             await transaction.begin();
 
-            // 1. Borrar Viejas
+            // 1. Limpieza Profunda (Movimientos -> Bultos -> Etiquetas)
+
+            // A. Borrar Movimientos (Evitar errores FK y limpiar historial de orden re-generada)
+            try {
+                await new sql.Request(transaction).input('OID', sql.Int, ordenId).query(`
+                    DELETE M 
+                    FROM MovimientosLogistica M
+                    INNER JOIN Logistica_Bultos LB ON M.CodigoBulto = LB.CodigoEtiqueta
+                    INNER JOIN Etiquetas E ON LB.CodigoEtiqueta = E.CodigoEtiqueta
+                    WHERE E.OrdenID = @OID
+                `);
+            } catch (ign) {
+                console.warn("Advertencia borrando movimientos:", ign.message);
+            }
+
+            // B. Borrar Bultos (vía Etiqueta - atrapa OrdenID NULL)
+            await new sql.Request(transaction).input('OID', sql.Int, ordenId).query(`
+                DELETE LB 
+                FROM Logistica_Bultos LB
+                INNER JOIN Etiquetas E ON LB.CodigoEtiqueta = E.CodigoEtiqueta
+                WHERE E.OrdenID = @OID
+            `);
+
+            // C. Borrar Bultos (vía OrdenID directo - limpieza final)
+            await new sql.Request(transaction).input('OID', sql.Int, ordenId).query("DELETE FROM Logistica_Bultos WHERE OrdenID = @OID");
+
+            // D. Borrar Etiquetas
             await new sql.Request(transaction).input('OID', sql.Int, ordenId).query("DELETE FROM Etiquetas WHERE OrdenID = @OID");
 
             // 2. Insertar Nuevas
@@ -195,9 +230,10 @@ class LabelGenerationService {
                     .input('UID', sql.Int, userId)
                     .input('Job', sql.NVarChar(255), qrTrabajo)
                     .input('Tipo', sql.VarChar(50), tipoBulto)
+                    .input('Perfiles', sql.NVarChar(sql.MAX), mainOrderProfiles || '')
                     .query(`
-                        INSERT INTO Etiquetas(OrdenID, NumeroBulto, TotalBultos, CodigoQR, FechaGeneracion, Usuario)
-                        VALUES(@OID, @Num, @Tot, @QR, GETDATE(), @User);
+                        INSERT INTO Etiquetas(OrdenID, NumeroBulto, TotalBultos, CodigoQR, FechaGeneracion, Usuario, PerfilesPrecio)
+                        VALUES(@OID, @Num, @Tot, @QR, GETDATE(), @User, @Perfiles);
 
                         DECLARE @NewID INT = SCOPE_IDENTITY();
                         DECLARE @Code NVARCHAR(50) = @Area + FORMAT(GETDATE(), 'MMdd') + '-' + CAST(@NewID AS NVARCHAR);
@@ -220,6 +256,11 @@ class LabelGenerationService {
             }
 
             await transaction.commit();
+
+            // Actualizar ERP con Magnitudes Agrupadas
+            if (o.NoDocERP) {
+                await ERPSyncService.syncOrderToERP(o.NoDocERP);
+            }
 
             console.log(`[LabelService] Exito. ${totalBultos} etiquetas generadas para Orden ${ordenId}. QR: ${qrString}`);
 

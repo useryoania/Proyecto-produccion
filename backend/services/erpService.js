@@ -1,13 +1,14 @@
 const axios = require('axios');
 
 // 👇 AQUÍ ESTÁ EL CAMBIO: Nueva ruta confirmada
-const ERP_API_URL = 'http://localhost:3000/api/pedidos';
+// 👇 AQUÍ ESTÁ EL CAMBIO: Nueva ruta confirmada
+const ERP_API_URL = `${process.env.ERP_SECONDARY_API_URL || 'http://localhost:3000'}/api/pedidos`;
 
 exports.fetchErpOrders = async () => {
     try {
         console.log(`🔌 Conectando a: ${ERP_API_URL}`);
         const response = await axios.get(ERP_API_URL);
-        
+
         // Verificamos si la respuesta tiene la propiedad 'data'
         // (A veces axios devuelve data.data o solo data dependiendo del backend externo)
         if (response.data && Array.isArray(response.data.data)) {

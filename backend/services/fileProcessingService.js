@@ -157,15 +157,35 @@ exports.processOrderList = async (orderIds, io) => {
                             if (sourcePath.startsWith('http')) {
                                 await downloadStream(sourcePath, tempPath);
                                 // Check Drive Warning
+                                // Check Drive Warning (Virus Scan)
                                 if (isDrive) {
                                     const stats = fs.statSync(tempPath);
-                                    if (stats.size < 500000) {
+                                    // Si es pequeño (< 200KB) y es un HTML, probablemente es la advertencia de virus
+                                    if (stats.size < 200000) {
                                         const content = fs.readFileSync(tempPath, 'utf8');
-                                        if (content.includes('<html') || content.includes('<!doctype')) {
-                                            const match = content.match(/confirm=([a-zA-Z0-9_-]+)/);
-                                            if (match) {
-                                                console.log(`      🔄 Drive Large File Confirm. Retrying...`);
-                                                await downloadStream(`${sourcePath}&confirm=${match[1]}`, tempPath);
+                                        if (content.toLowerCase().includes('<!doctype html') || content.includes('Virus scan') || content.includes('virus')) {
+                                            console.log(`      🔄 Drive Virus Scan Warning detectado. Buscando bypass...`);
+
+                                            // Buscar token de confirmación
+                                            let confirmToken = null;
+                                            // Patrón 1: Link directo (&confirm=xxxx)
+                                            const match = content.match(/confirm=([a-zA-Z0-9_\-]+)/);
+                                            if (match) confirmToken = match[1];
+
+                                            // Patrón 2: Form action
+                                            if (!confirmToken) {
+                                                const matchForm = content.match(/action=".*?confirm=([a-zA-Z0-9_\-]+)/);
+                                                if (matchForm) confirmToken = matchForm[1];
+                                            }
+
+                                            if (confirmToken) {
+                                                console.log(`      🚀 Token encontrado: ${confirmToken}. Reintentando descarga...`);
+                                                // Descargar sobreescribiendo el archivo HTML temporal
+                                                await downloadStream(`${sourcePath}&confirm=${confirmToken}`, tempPath);
+                                            } else {
+                                                console.log(`      ⚠️ Token no encontrado explícitamente. Probando bypass genérico (confirm=t)...`);
+                                                // Fallback común
+                                                await downloadStream(`${sourcePath}&confirm=t`, tempPath);
                                             }
                                         }
                                     }

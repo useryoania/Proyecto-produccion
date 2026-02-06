@@ -127,8 +127,8 @@ const getOrdersForLabels = async (req, res) => {
                 O.ProximoServicio,
                 O.DescripcionTrabajo AS Descripcion,
                 O.Magnitud,
-                (SELECT COUNT(*) FROM Etiquetas E WHERE E.OrdenID = O.OrdenID) as CantidadEtiquetas
-            FROM Ordenes O
+                (SELECT COUNT(*) FROM Etiquetas E WITH (NOLOCK) WHERE E.OrdenID = O.OrdenID) as CantidadEtiquetas
+            FROM Ordenes O WITH (NOLOCK)
             WHERE 
                 O.Estado != 'CANCELADO'
                 AND (@Area = '' OR O.AreaID = @Area)

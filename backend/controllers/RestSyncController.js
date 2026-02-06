@@ -82,9 +82,9 @@ const syncOrdersLogic = async (io) => {
                 console.warn(`⚠️ Error detalle ${p.NroFact}. Usando cabecera.`);
             }
 
-            // Usar NroDoc para agrupar, o NroFact si no hay Doc. Y asegurar TRIM agresivo.
-            let nroDoc = detalle.NroDoc ? detalle.NroDoc.toString().trim() : "";
-            if (!nroDoc) nroDoc = p.NroFact.toString().trim(); // Fallback a Factura si no hay Doc
+            // Usar NroFact como prioridad por solicitud de usuario (72 en lugar de 75)
+            let nroDoc = p.NroFact ? p.NroFact.toString().trim() : "";
+            if (!nroDoc && detalle.NroDoc) nroDoc = detalle.NroDoc.toString().trim();
 
 
             if (!pedidosAgrupados[nroDoc]) {
@@ -96,7 +96,8 @@ const syncOrdersLogic = async (io) => {
                     nroDoc: nroDoc,
                     cliente: detalle.Nombre || "Cliente General",
                     codCliente: detalle.CodCliente || detalle.CodigoCliente || detalle.IdCliente || null,
-                    fecha: new Date(detalle.Fecha),
+                    // Priorizar campo Hora si trae fecha completa válida (para tener H:m), sino usar Fecha (que suele ser 00:00)
+                    fecha: (detalle.Hora && new Date(detalle.Hora).getFullYear() > 2000) ? new Date(detalle.Hora) : new Date(detalle.Fecha),
                     trabajo: idDesc,
                     prioridad: idPrioridad,
                     notaGeneral: detalle.Observaciones || "",
@@ -268,8 +269,8 @@ const syncOrdersLogic = async (io) => {
                             .query(`
                                 IF NOT EXISTS (SELECT 1 FROM Articulos WHERE CodArticulo = @Cod)
                                 BEGIN
-                                    INSERT INTO Articulos (CodArticulo, Descripcion, UM, SupFlia, Grupo, CodStock)
-                                    VALUES (@Cod, @Desc, @Uni, 'IMPORTADO', 'AUTO', @Cod)
+                                    INSERT INTO Articulos (CodArticulo, Descripcion, SupFlia, Grupo, CodStock)
+                                    VALUES (@Cod, @Desc, 'IMPORTADO', 'AUTO', @Cod)
                                 END
                             `);
 
