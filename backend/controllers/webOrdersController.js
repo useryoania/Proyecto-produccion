@@ -647,7 +647,7 @@ exports.createWebOrder = async (req, res) => {
                 .filter(e => e.items.length > 0)
                 .map((e, idx) => generatedOrders[idx]);
 
-            fileProcessingService.processOrderList(ordersToProcess, io).catch(console.error);
+            // fileProcessingService.processOrderList(ordersToProcess, io).catch(console.error);
         }
 
         res.json({ success: true, orderIds: generatedOrders });
