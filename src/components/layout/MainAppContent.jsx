@@ -30,6 +30,7 @@ import BasePrices from '../pages/BasePrices';
 import PriceProfiles from '../pages/PriceProfiles';
 import LabelGenerationPage from '../pages/LabelGenerationPage';
 import DepositStockPage from '../logistics/DepositStockPage';
+import CustomerReplacementPage from '../pages/customer-service/CustomerReplacementPage';
 
 // ============================================
 // 1. COMPONENTE NAVNODE (Mejorado)
@@ -274,6 +275,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                             <Route path="/production/machine/:area/:machineId" element={<MachineDetailView />} />
                             <Route path="/area/:areaId/*" element={<DynamicRouter menuItems={menuItems} />} />
                             <Route path="/atencion-cliente/despachos" element={<ActiveStockPage />} />
+                            <Route path="/atencion-cliente/reposiciones" element={<CustomerReplacementPage />} />
                             <Route path="/logistica/transporte" element={<TransportControlPage />} />
                             <Route path="/logistica/stock-deposito" element={<DepositStockPage />} />
                             <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
@@ -338,6 +340,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/atencion-cliente/recepcion') return <ReceptionPage />;
     if (menuItem.Ruta === '/atencion-cliente/control') return <LogisticsPage />;
     if (menuItem.Ruta === '/atencion-cliente/despachos') return <ActiveStockPage />;
+    if (menuItem.Ruta === '/atencion-cliente/reposiciones') return <CustomerReplacementPage />;
 
     if (currentPath === '/consultas/ordenes') return <OrdersQueryView />;
 

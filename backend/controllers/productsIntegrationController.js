@@ -10,9 +10,11 @@ const getLocalArticles = async (req, res) => {
         // Traemos más campos para poder armar el árbol (SupFlia, Grupo)
         const result = await pool.request().query(`
             SELECT TOP 5000 
-                SupFlia, Grupo, CodStock, CodArticulo, Descripcion, IDProdReact
-            FROM Articulos
-            ORDER BY SupFlia, Grupo, Descripcion
+                a.SupFlia, a.Grupo, a.CodStock, a.CodArticulo, a.Descripcion, a.IDProdReact, a.Mostrar, a.anchoimprimible, a.LLEVAPAPEL,
+                map.NombreReferencia as DescripcionGrupo
+            FROM Articulos a
+            LEFT JOIN ConfigMapeoERP map ON map.CodigoERP = a.Grupo COLLATE Database_Default
+            ORDER BY a.SupFlia, a.Grupo, a.Descripcion
         `);
         res.json(result.recordset);
     } catch (e) {
@@ -92,9 +94,48 @@ const unlinkProduct = async (req, res) => {
     }
 };
 
+// 5. Actualizar Producto Local
+const updateLocalProduct = async (req, res) => {
+    const { codArticulo, descripcion, codStock, grupo, supFlia, mostrar, anchoImprimible, llevaPapel } = req.body;
+
+    if (!codArticulo) return res.status(400).json({ error: "Falta CodArticulo" });
+
+    try {
+        const pool = await getPool();
+        await pool.request()
+            .input('Cod', sql.VarChar(50), codArticulo)
+            .input('Desc', sql.VarChar(255), descripcion || '')
+            .input('Stock', sql.VarChar(50), codStock || '')
+            .input('Grp', sql.VarChar(100), grupo || '')
+            .input('Sup', sql.VarChar(100), supFlia || '')
+            .input('Mos', sql.Bit, mostrar ? 1 : 0)
+            .input('Ancho', sql.Decimal(10, 2), anchoImprimible || 0)
+            .input('Papel', sql.Bit, llevaPapel ? 1 : 0)
+            .query(`
+                UPDATE Articulos 
+                SET Descripcion = @Desc, 
+                    CodStock = @Stock, 
+                    Grupo = @Grp, 
+                    SupFlia = @Sup, 
+                    Mostrar = @Mos, 
+                    anchoimprimible = @Ancho, 
+                    LLEVAPAPEL = @Papel
+                WHERE CodArticulo = @Cod
+            `);
+
+        logAlert('INFO', 'PRODUCTO', 'Producto local actualizado', codArticulo, { descripcion, codStock });
+
+        res.json({ success: true, message: "Producto actualizado correctamente" });
+    } catch (e) {
+        console.error("Error updateLocalProduct:", e);
+        res.status(500).json({ error: e.message });
+    }
+};
+
 module.exports = {
     getLocalArticles,
     getRemoteProducts,
     linkProduct,
-    unlinkProduct
+    unlinkProduct,
+    updateLocalProduct
 };

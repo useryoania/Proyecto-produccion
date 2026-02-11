@@ -3,7 +3,7 @@ import api from '../../services/api';
 import { toast } from 'sonner';
 
 // --- COMPONENTE TREENODE RECURSIVO ---
-const TreeNode = ({ node, level = 0, onSelect, selectedId, expanded, toggleExpand, isLinkedFn }) => {
+const TreeNode = ({ node, level = 0, onSelect, selectedId, expanded, toggleExpand, isLinkedFn, onDoubleClick }) => {
     const hasChildren = node.children && node.children.length > 0;
     const isExpanded = expanded[node.id];
 
@@ -21,6 +21,7 @@ const TreeNode = ({ node, level = 0, onSelect, selectedId, expanded, toggleExpan
                 `}
                 style={{ paddingLeft: `${level * 20 + 24}px` }}
                 onClick={(e) => { e.stopPropagation(); onSelect(node.data); }}
+                onDoubleClick={(e) => { e.stopPropagation(); if (onDoubleClick) onDoubleClick(node.data); }}
             >
                 <i className={`fa-solid ${isLinked ? 'fa-link' : 'fa-cube'} mr-2 text-xs ${isLinked ? 'text-green-500' : 'text-slate-400'}`}></i>
                 <span className="truncate">{node.label}</span>
@@ -56,10 +57,101 @@ const TreeNode = ({ node, level = 0, onSelect, selectedId, expanded, toggleExpan
                             expanded={expanded}
                             toggleExpand={toggleExpand}
                             isLinkedFn={isLinkedFn}
+                            onDoubleClick={onDoubleClick}
                         />
                     ))}
                 </div>
             )}
+        </div>
+    );
+};
+
+
+const EditDialog = ({ isOpen, onClose, product, onSave }) => {
+    const [formData, setFormData] = useState({});
+
+    useEffect(() => {
+        if (product) {
+            setFormData({
+                codArticulo: product.CodArticulo,
+                descripcion: product.Descripcion,
+                codStock: product.CodStock,
+                grupo: product.Grupo,
+                supFlia: product.SupFlia,
+                mostrar: product.Mostrar,
+                anchoImprimible: product.anchoimprimible,
+                llevaPapel: product.LLEVAPAPEL
+            });
+        }
+    }, [product]);
+
+    if (!isOpen) return null;
+
+    const handleChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        setFormData(prev => ({
+            ...prev,
+            [name]: type === 'checkbox' ? checked : value
+        }));
+    };
+
+    const handleSubmit = () => {
+        onSave(formData);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+            <div className="bg-white rounded-lg shadow-xl w-96 p-6">
+                <h3 className="text-lg font-bold text-slate-800 mb-4">Editar Artículo Local</h3>
+
+                <div className="space-y-3 text-sm">
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Código (No editable)</label>
+                        <input className="w-full p-2 bg-slate-100 border rounded text-slate-500" value={formData.codArticulo || ''} disabled />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-slate-500 mb-1">Descripción</label>
+                        <input className="w-full p-2 border rounded focus:border-indigo-500 outline-none" name="descripcion" value={formData.descripcion || ''} onChange={handleChange} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 mb-1">Cód. Stock</label>
+                            <input className="w-full p-2 border rounded focus:border-indigo-500 outline-none" name="codStock" value={formData.codStock || ''} onChange={handleChange} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 mb-1">Ancho Imp.</label>
+                            <input type="number" step="0.01" className="w-full p-2 border rounded focus:border-indigo-500 outline-none" name="anchoImprimible" value={formData.anchoImprimible || ''} onChange={handleChange} />
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 mb-1">Grupo</label>
+                            <input className="w-full p-2 border rounded focus:border-indigo-500 outline-none" name="grupo" value={formData.grupo || ''} onChange={handleChange} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-slate-500 mb-1">Sup. Familia</label>
+                            <input className="w-full p-2 border rounded focus:border-indigo-500 outline-none" name="supFlia" value={formData.supFlia || ''} onChange={handleChange} />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-4 pt-2">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" name="mostrar" checked={formData.mostrar || false} onChange={handleChange} className="accent-indigo-600" />
+                            <span className="text-slate-700">Mostrar</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" name="llevaPapel" checked={formData.llevaPapel || false} onChange={handleChange} className="accent-indigo-600" />
+                            <span className="text-slate-700">Lleva Papel</span>
+                        </label>
+                    </div>
+
+                </div>
+
+                <div className="flex justify-end gap-2 mt-6">
+                    <button onClick={onClose} className="px-3 py-1.5 text-slate-500 hover:bg-slate-50 rounded text-sm">Cancelar</button>
+                    <button onClick={handleSubmit} className="px-3 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 rounded text-sm">Guardar</button>
+                </div>
+            </div>
         </div>
     );
 };
@@ -81,6 +173,7 @@ const ProductsIntegration = () => {
     const [loadingLocal, setLoadingLocal] = useState(false);
     const [loadingRemote, setLoadingRemote] = useState(false);
     const [linking, setLinking] = useState(false);
+    const [editingLocal, setEditingLocal] = useState(null); // Producto siendo editado
 
     // Estado Árbol
     const [expandedLocal, setExpandedLocal] = useState({});
@@ -129,9 +222,10 @@ const ProductsIntegration = () => {
 
             // Nivel 1 (Antes 2): Grupo
             if (!mapGrp[grpName]) {
+                const groupDesc = (art.DescripcionGrupo && art.DescripcionGrupo.trim() !== '') ? ` | ${art.DescripcionGrupo}` : '';
                 mapGrp[grpName] = {
                     id: `grp-${grpName}`,
-                    label: grpName,
+                    label: grpName + groupDesc,
                     children: [],
                     data: null
                 };
@@ -141,8 +235,8 @@ const ProductsIntegration = () => {
             // Nivel 2: Hoja (Articulo)
             mapGrp[grpName].children.push({
                 id: `art-${art.CodArticulo}`,
-                // Formato Label: Codigo : X = Descripcion
-                label: `Codigo : ${art.CodArticulo} = ${art.Descripcion}`,
+                // Formato Label: Codigo = Descripcion
+                label: `${art.CodArticulo} = ${art.Descripcion}`,
                 children: [],
                 data: { ...art, id: art.CodArticulo }
             });
@@ -248,6 +342,38 @@ const ProductsIntegration = () => {
     const toggleLocal = (id) => setExpandedLocal(prev => ({ ...prev, [id]: !prev[id] }));
     const toggleRemote = (id) => setExpandedRemote(prev => ({ ...prev, [id]: !prev[id] }));
 
+    // Edit Handlers
+    const handleEdit = () => {
+        if (!selectedLocal) return;
+        setEditingLocal(selectedLocal);
+    };
+
+    const handleSaveEdit = async (data) => {
+        try {
+            await api.post('/products-integration/update', data);
+            toast.success("Producto actualizado");
+
+            // Actualizar estado local
+            setLocalArticles(prev => prev.map(a =>
+                a.CodArticulo === data.codArticulo
+                    ? { ...a, Descripcion: data.descripcion, CodStock: data.codStock, Grupo: data.grupo, SupFlia: data.supFlia, Mostrar: data.mostrar, anchoimprimible: data.anchoImprimible, LLEVAPAPEL: data.llevaPapel }
+                    : a
+            ));
+
+            // Actualizar seleccionado si es el mismo
+            if (selectedLocal?.CodArticulo === data.codArticulo) {
+                setSelectedLocal(prev => ({
+                    ...prev,
+                    Descripcion: data.descripcion, CodStock: data.codStock, Grupo: data.grupo, SupFlia: data.supFlia, Mostrar: data.mostrar, anchoimprimible: data.anchoImprimible, LLEVAPAPEL: data.llevaPapel
+                }));
+            }
+
+            setEditingLocal(null);
+        } catch (e) {
+            toast.error("Error al actualizar: " + e.message);
+        }
+    };
+
     // Expand All Helper
     const expandAll = (treeData, setter) => {
         const all = {};
@@ -310,6 +436,10 @@ const ProductsIntegration = () => {
                                     expanded={expandedLocal}
                                     toggleExpand={toggleLocal}
                                     onSelect={(data) => setSelectedLocal({ CodArticulo: data.CodArticulo, ...data })}
+                                    onDoubleClick={(data) => {
+                                        setSelectedLocal({ CodArticulo: data.CodArticulo, ...data });
+                                        setEditingLocal({ CodArticulo: data.CodArticulo, ...data });
+                                    }}
                                     selectedId={selectedLocal?.CodArticulo}
                                     isLinkedFn={(d) => !!d.IDProdReact}
                                 />
@@ -322,11 +452,16 @@ const ProductsIntegration = () => {
                         {selectedLocal ? (
                             <div className="flex justify-between w-full items-center">
                                 <span className="font-mono text-slate-600 truncate max-w-[70%]">{selectedLocal.CodArticulo}</span>
-                                {selectedLocal.IDProdReact && (
-                                    <button onClick={handleUnlink} className="text-red-500 hover:bg-red-50 px-2 py-1 rounded ml-auto">
-                                        <i className="fa-solid fa-unlink mr-1"></i>Desvincular
+                                <div className="flex gap-1 ml-auto">
+                                    <button onClick={handleEdit} className="text-slate-500 hover:bg-slate-100 px-2 py-1 rounded" title="Editar">
+                                        <i className="fa-solid fa-pen-to-square"></i>
                                     </button>
-                                )}
+                                    {selectedLocal.IDProdReact && (
+                                        <button onClick={handleUnlink} className="text-red-500 hover:bg-red-50 px-2 py-1 rounded">
+                                            <i className="fa-solid fa-unlink"></i>
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         ) : <span className="text-slate-400 italic">Selecciona un ítem...</span>}
                     </div>
@@ -395,6 +530,14 @@ const ProductsIntegration = () => {
                 </div>
 
             </div>
+
+            {/* Edit Modal */}
+            <EditDialog
+                isOpen={!!editingLocal}
+                onClose={() => setEditingLocal(null)}
+                product={editingLocal}
+                onSave={handleSaveEdit}
+            />
         </div>
     );
 };

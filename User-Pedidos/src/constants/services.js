@@ -16,9 +16,10 @@ export const SERVICES_LIST = [
         icon: Layers,
         // Removed hardcoded subtypes/materials to rely on DB
         subtypes: [],
-        materials: [],
+        materials: ['DTF Textil (Film)', 'DTF UV (Film)'],
         config: {
-            singleMaterial: true,
+            singleMaterial: false,
+            hideMaterial: true,
             disableItemNote: true,
             requiresProductionFiles: true,
         },

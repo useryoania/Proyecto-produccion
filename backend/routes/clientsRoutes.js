@@ -24,6 +24,9 @@ router.post('/', controller.createClient);
 // PUT /api/clients/:codCliente/link (Vincular con React)
 router.put('/:codCliente/link', controller.updateClientLink);
 
+// PUT /api/clients/:codCliente (Actualizar Datos Locales)
+router.put('/:codCliente', controller.updateClient);
+
 // POST /api/clients/import-react (Importar de React a Local)
 router.post('/import-react', controller.importReactClient);
 

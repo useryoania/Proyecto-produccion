@@ -4,6 +4,88 @@ import { toast } from 'sonner';
 import api from '../../services/apiClient';
 import axios from 'axios';
 
+const EditClientDialog = ({ isOpen, onClose, client, onSave }) => {
+    const [formData, setFormData] = useState({});
+
+    useEffect(() => {
+        if (client) {
+            setFormData({
+                Nombre: client.Nombre,
+                NombreFantasia: client.NombreFantasia,
+                CioRuc: client.CioRuc,
+                Email: client.Email,
+                TelefonoTrabajo: client.TelefonoTrabajo,
+                CliDireccion: client.CliDireccion || client.Direccion // Fallback for display
+            });
+        }
+    }, [client]);
+
+    if (!isOpen) return null;
+
+    const handleChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmit = () => {
+        onSave(formData);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+            <div className="bg-white rounded-lg shadow-xl w-[500px] p-6 animate-fade-in relative">
+                <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
+                    <i className="fa-solid fa-times"></i>
+                </button>
+
+                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <i className="fa-solid fa-pen-to-square text-indigo-600"></i>
+                    Editar Cliente Local
+                </h3>
+
+                <div className="space-y-3 text-sm">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Nombre Razón Social</label>
+                        <input className="w-full p-2 border rounded focus:border-indigo-500 outline-none" name="Nombre" value={formData.Nombre || ''} onChange={handleChange} />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Nombre Fantasía</label>
+                        <input className="w-full p-2 border rounded focus:border-indigo-500 outline-none" name="NombreFantasia" value={formData.NombreFantasia || ''} onChange={handleChange} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">RUC / CI</label>
+                            <input className="w-full p-2 border rounded focus:border-indigo-500 outline-none" name="CioRuc" value={formData.CioRuc || ''} onChange={handleChange} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Teléfono</label>
+                            <input className="w-full p-2 border rounded focus:border-indigo-500 outline-none" name="TelefonoTrabajo" value={formData.TelefonoTrabajo || ''} onChange={handleChange} />
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Email</label>
+                        <input className="w-full p-2 border rounded focus:border-indigo-500 outline-none" name="Email" value={formData.Email || ''} onChange={handleChange} />
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 mb-1">Dirección</label>
+                        <textarea rows="2" className="w-full p-2 border rounded focus:border-indigo-500 outline-none resize-none" name="CliDireccion" value={formData.CliDireccion || ''} onChange={handleChange} />
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-slate-100">
+                    <button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-50 rounded text-sm font-medium">Cancelar</button>
+                    <button onClick={handleSubmit} className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded text-sm font-bold shadow-sm">
+                        <i className="fa-solid fa-save mr-2"></i> Guardar Cambios
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const ClientsIntegration = () => {
     const [clients, setClients] = useState([]);
     // filteredClients removed - we now fetch exactly what we need
@@ -25,12 +107,13 @@ const ClientsIntegration = () => {
     // Filtros: 'all', 'linked', 'unlinked'
     const [filterMode, setFilterMode] = useState('all');
     const [selectedReactData, setSelectedReactData] = useState(null);
+    const [editingClient, setEditingClient] = useState(null);
 
 
     // Debounced Search Effect
     useEffect(() => {
         const timer = setTimeout(() => {
-            loadClients(searchTerm);
+            loadClients(searchTerm, filterMode);
         }, 400); // Wait 400ms after user stops typing
         return () => clearTimeout(timer);
     }, [searchTerm]);
@@ -78,11 +161,11 @@ const ClientsIntegration = () => {
         }
     };
 
-    const loadClients = async (query = '') => {
+    const loadClients = async (query = '', mode = filterMode) => {
         try {
             setLoading(true);
-            // Pass query to backend
-            const res = await api.get('/clients', { params: { q: query } });
+            // Pass query AND mode to backend
+            const res = await api.get('/clients', { params: { q: query, mode: mode } });
             setClients(res.data || []);
         } catch (error) {
             console.error(error);
@@ -145,6 +228,26 @@ const ClientsIntegration = () => {
             toast.error(`Error de búsqueda: ${msg}`);
         } finally {
             setLoadingExt(false);
+        }
+    };
+
+    const handleUpdateClient = async (formData) => {
+        try {
+            if (!editingClient) return;
+            await api.put(`/clients/${editingClient.CodCliente}`, formData);
+            toast.success("Cliente actualizado correctamente");
+
+            // Update local state
+            setClients(prev => prev.map(c =>
+                c.CodCliente === editingClient.CodCliente ? { ...c, ...formData } : c
+            ));
+
+            setSelectedClient(prev => ({ ...prev, ...formData }));
+            setEditingClient(null);
+
+        } catch (error) {
+            console.error(error);
+            toast.error("Error al actualizar cliente");
         }
     };
 
@@ -306,12 +409,13 @@ const ClientsIntegration = () => {
         );
     }).slice(0, 50); // Muestro hasta 50 para que sea útil
 
-    // Filtrado de clientes locales
-    const filteredClients = clients.filter(c => {
-        if (filterMode === 'linked') return c.CodigoReact; // Tiene código
-        if (filterMode === 'unlinked') return !c.CodigoReact; // No tiene código
-        return true; // 'all'
-    });
+    // Filtrado de clientes locales (Ahora es directo del backend, clients y filteredClients es lo mismo)
+    const filteredClients = clients;
+
+    const changeFilterMode = (mode) => {
+        setFilterMode(mode);
+        loadClients(searchTerm, mode);
+    };
 
     return (
         <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
@@ -347,19 +451,19 @@ const ClientsIntegration = () => {
                     {/* Tabs de Filtro */}
                     <div className="flex w-full bg-slate-100 p-1 rounded-lg mt-1 gap-1">
                         <button
-                            onClick={() => setFilterMode('all')}
+                            onClick={() => changeFilterMode('all')}
                             className={`flex-1 text-[10px] uppercase font-bold py-1 rounded ${filterMode === 'all' ? 'bg-white shadow text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
                         >
                             Todos
                         </button>
                         <button
-                            onClick={() => setFilterMode('linked')}
+                            onClick={() => changeFilterMode('linked')}
                             className={`flex-1 text-[10px] uppercase font-bold py-1 rounded ${filterMode === 'linked' ? 'bg-white shadow text-green-600' : 'text-slate-400 hover:text-slate-600'}`}
                         >
                             Vinc.
                         </button>
                         <button
-                            onClick={() => setFilterMode('unlinked')}
+                            onClick={() => changeFilterMode('unlinked')}
                             className={`flex-1 text-[10px] uppercase font-bold py-1 rounded ${filterMode === 'unlinked' ? 'bg-white shadow text-amber-600' : 'text-slate-400 hover:text-slate-600'}`}
                         >
                             Pend.
@@ -374,7 +478,7 @@ const ClientsIntegration = () => {
                         <div
                             key={c.CodCliente}
                             onClick={() => handleSelectClient(c)}
-                            className={`ci-card border-l-4 ${selectedClient?.CodCliente === c.CodCliente ? 'border-l-purple-500 bg-purple-50 ring-1 ring-purple-200' : (c.CodigoReact ? 'border-l-green-500' : 'border-l-amber-500')} hover:bg-gray-50`}
+                            className={`ci-card border-l-4 ${selectedClient?.CodCliente === c.CodCliente ? 'border-l-purple-500 bg-purple-50 ring-1 ring-purple-200' : (c.IDReact ? 'border-l-green-500' : 'border-l-amber-500')} hover:bg-gray-50`}
                         >
                             <h3 className="text-sm font-bold truncate leading-tight text-slate-800" title={c.Nombre}>{c.Nombre}</h3>
                             {c.NombreFantasia && <p className="text-xs text-slate-500 truncate">{c.NombreFantasia}</p>}
@@ -384,7 +488,7 @@ const ClientsIntegration = () => {
                                     <span className="text-[10px] font-mono bg-white border border-slate-200 px-1 rounded text-slate-500">ID: {c.CodCliente}</span>
                                     {c.CioRuc && <span className="text-[10px] font-mono bg-slate-100 px-1 rounded text-slate-500 truncate max-w-[80px]">{c.CioRuc}</span>}
                                 </div>
-                                {c.CodigoReact ? <i className="fa-solid fa-link text-green-500 text-xs" title="Vinculado"></i> : null}
+                                {c.IDReact ? <i className="fa-solid fa-link text-green-500 text-xs" title="Vinculado"></i> : null}
                             </div>
                         </div>
                     ))}
@@ -394,12 +498,12 @@ const ClientsIntegration = () => {
             {/* CENTER: Work Area */}
             <div className="ci-panel center bg-slate-50/50">
                 {/* Search Bar */}
-                <div className="mb-6 bg-white p-4 rounded-xl shadow-sm border border-slate-100 sticky top-0 z-10">
+                <div className="mb-2 bg-white p-2 rounded-xl shadow-sm border border-slate-100 sticky top-0 z-10">
                     <div className="relative">
                         <input
                             type="text"
                             placeholder="🔍 Buscar cliente por nombre o código..."
-                            className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all font-medium text-slate-700"
+                            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none transition-all font-medium text-slate-700"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                         />
@@ -411,7 +515,7 @@ const ClientsIntegration = () => {
                 {selectedClient ? (
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden animate-fade-in">
                         {/* Header */}
-                        <div className="p-6 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+                        <div className="p-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
                             <div className="flex items-start gap-4">
                                 <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 shadow-sm shadow-blue-100">
                                     <i className="fa-solid fa-user-tie text-xl"></i>
@@ -422,7 +526,15 @@ const ClientsIntegration = () => {
                                         <span className="text-xs font-bold px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full">ID: {selectedClient.CodCliente}</span>
                                         {selectedClient.CodReferencia && <span className="text-xs px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full">Ref: {selectedClient.CodReferencia}</span>}
 
-                                        {!selectedClient.CodigoReact && !selectedClient.isLegacyProvisional && (
+                                        <button
+                                            onClick={() => setEditingClient(selectedClient)}
+                                            className="ml-auto text-xs bg-white text-slate-500 hover:text-indigo-600 px-3 py-1 rounded-md shadow-sm border border-slate-200 hover:border-indigo-200 transition flex items-center gap-1"
+                                            title="Editar datos del cliente local"
+                                        >
+                                            <i className="fa-solid fa-pen-to-square"></i> Editar
+                                        </button>
+
+                                        {!selectedClient.IDReact && !selectedClient.isLegacyProvisional && (
                                             <button
                                                 onClick={handleCreateInReact}
                                                 className="ml-auto text-xs bg-indigo-600 text-white px-3 py-1 rounded-md shadow hover:bg-indigo-700 transition flex items-center gap-1 animate-pulse"
@@ -447,11 +559,11 @@ const ClientsIntegration = () => {
                         </div>
 
                         {/* Content Body */}
-                        <div className="p-6 overflow-y-auto max-h-[calc(100vh-300px)] custom-scrollbar">
+                        <div className="p-3 overflow-y-auto max-h-[calc(100vh-300px)] custom-scrollbar">
 
                             {/* 1. Linking Search & Form (Priority) */}
-                            <div className="p-6 bg-purple-50/50 mb-8 rounded-xl border border-purple-100 shadow-sm relative overflow-visible">
-                                <div className="flex justify-between items-center mb-4">
+                            <div className="p-3 bg-purple-50/50 mb-3 rounded-xl border border-purple-100 shadow-sm relative overflow-visible">
+                                <div className="flex justify-between items-center mb-2">
                                     <h3 className="text-xs font-black text-purple-600 uppercase tracking-widest flex items-center gap-2">
                                         <i className="fa-solid fa-link"></i> Vincular con Sistema React
                                     </h3>
@@ -461,7 +573,7 @@ const ClientsIntegration = () => {
                                 </div>
 
                                 {/* Quick Search React System */}
-                                <div className="mb-4 relative z-50">
+                                <div className="mb-2 relative z-50">
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Buscar en Sistema React</label>
                                     <input
                                         type="text"
@@ -520,44 +632,40 @@ const ClientsIntegration = () => {
 
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4 mb-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Código React</label>
+                                <div className="flex items-end gap-2 mb-2">
+                                    <div className="flex-1">
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Código React</label>
                                         <input
                                             type="text"
-                                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-200 outline-none text-slate-700 font-mono bg-white"
+                                            className="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-purple-200 outline-none text-slate-700 font-mono bg-white h-8"
                                             value={linkCode}
                                             onChange={e => setLinkCode(e.target.value)}
-                                            placeholder="Auto o Manual"
+                                            placeholder="Auto"
                                         />
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">ID Numérico</label>
+                                    <div className="flex-1">
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">ID Numérico</label>
                                         <input
                                             type="number"
-                                            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-200 outline-none text-slate-700 font-mono bg-white"
+                                            className="w-full border border-slate-200 rounded px-2 py-1 text-xs focus:ring-1 focus:ring-purple-200 outline-none text-slate-700 font-mono bg-white h-8"
                                             value={linkId}
                                             onChange={e => setLinkId(e.target.value)}
-                                            placeholder="Auto o Manual"
+                                            placeholder="Auto"
                                         />
                                     </div>
-                                </div>
-
-                                <div className="flex justify-end pt-2 border-t border-purple-100/50">
                                     <button
                                         onClick={handleSaveLink}
                                         disabled={!linkCode || !linkId}
-                                        className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-lg shadow-purple-200/50 disabled:opacity-50 disabled:shadow-none transition-all flex items-center gap-2 transform active:scale-95"
+                                        className="bg-purple-600 hover:bg-purple-700 text-white px-3 h-8 rounded text-xs font-bold shadow-sm disabled:opacity-50 transition-all flex items-center gap-1 active:scale-95 whitespace-nowrap"
                                     >
-                                        <i className="fa-solid fa-link"></i>
-                                        Guardar Vinculación
+                                        <i className="fa-solid fa-link"></i> Vincular
                                     </button>
                                 </div>
                             </div>
 
                             {/* 2. External Data View (Secondary Info) */}
                             {/* 2. Data Comparison View */}
-                            <div className="mt-8 pt-6 border-t border-slate-100">
+                            <div className="mt-4 pt-4 border-t border-slate-100">
                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
 
                                     {/* A. Legacy Data */}
@@ -565,7 +673,7 @@ const ClientsIntegration = () => {
                                     <div>
                                         <h3 className={`text-xs font-bold uppercase mb-4 flex items-center gap-2 ${externalData?.IdCliente ? 'text-blue-500' : 'text-slate-400'}`}>
                                             <i className={externalData?.IdCliente ? "fa-brands fa-react" : "fa-solid fa-server"}></i>
-                                            {externalData?.IdCliente ? " Datos API Externa (React)" : " Datos Legacy (API 6061)"}
+                                            {externalData?.IdCliente ? " Datos API Externa (React)" : " DATOS MACROSOFT"}
                                         </h3>
 
                                         {loadingExt ? (
@@ -660,6 +768,13 @@ const ClientsIntegration = () => {
                     ))}
                 </div>
             </div>
+            {/* Edit Client Modal */}
+            <EditClientDialog
+                isOpen={!!editingClient}
+                onClose={() => setEditingClient(null)}
+                client={editingClient}
+                onSave={handleUpdateClient}
+            />
         </div>
     );
 };

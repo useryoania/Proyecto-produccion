@@ -89,5 +89,33 @@ export const fileControlService = {
     deleteLabel: async (id) => {
         const response = await api.delete(`/production-file-control/etiqueta/${id}`);
         return response.data;
+    },
+
+    updateFileCopyCount: async (archivoId, count) => {
+        const response = await api.post('/production-file-control/update-copy-count', { archivoId, count });
+        return response.data;
+    },
+
+    getFallaTypes: async (areaId) => {
+        return fileControlService.getTiposFalla(areaId);
+    },
+
+    controlarArchivo: async (payload) => {
+        return fileControlService.postControl(payload);
+    },
+
+    searchDeliveredOrders: async (query) => {
+        const response = await api.get('/production-file-control/ordenes/entregadas', { params: { q: query } });
+        return response.data;
+    },
+
+    createReplacement: async (payload) => {
+        const response = await api.post('/production-file-control/ordenes/reposicion', payload);
+        return response.data;
+    },
+
+    getRelatedOrders: async (ordenId) => {
+        const response = await api.get(`/production-file-control/orden/${ordenId}/relacionadas`);
+        return response.data;
     }
 };

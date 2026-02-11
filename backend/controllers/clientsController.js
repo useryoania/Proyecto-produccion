@@ -184,13 +184,14 @@ exports.createClient = async (req, res) => {
 
 // Obtener todos los clientes (paginado o top) para gestión
 exports.getAllClients = async (req, res) => {
-    const { q } = req.query;
+    const { q, mode } = req.query; // mode: 'all', 'linked', 'unlinked'
     try {
         const pool = await getPool();
         let query = `
             SELECT TOP 500 
                 CodCliente, Nombre, NombreFantasia, CioRuc, CodigoReact, IDReact, Email, TelefonoTrabajo, CodReferencia
             FROM dbo.Clientes
+            WHERE 1=1
         `;
 
         const request = pool.request();
@@ -198,16 +199,28 @@ exports.getAllClients = async (req, res) => {
         if (q) {
             // Búsqueda en servidor sobre todos los campos relevantes
             query += ` 
-                WHERE Nombre LIKE @q 
+                AND (Nombre LIKE @q 
                    OR NombreFantasia LIKE @q 
                    OR CioRuc LIKE @q 
-                   OR CAST(CodCliente AS VARCHAR) LIKE @q
+                   OR CAST(CodCliente AS VARCHAR) LIKE @q)
             `;
             request.input('q', sql.NVarChar, `%${q}%`);
         }
 
-        // Priorizar vinculados
-        query += ` ORDER BY CASE WHEN CodigoReact IS NOT NULL AND CodigoReact <> '' THEN 0 ELSE 1 END, Nombre ASC`;
+        // Filtro por MODO (linked / unlinked)
+        // Usamos IDReact como criterio principal de "vinculado"
+        if (mode === 'linked') {
+            query += ` AND (IDReact IS NOT NULL AND IDReact <> '')`;
+        } else if (mode === 'unlinked') {
+            query += ` AND (IDReact IS NULL OR IDReact = '')`;
+        }
+
+        // Ordenamiento: 
+        // Si buscamos 'unlinked', ordenamos por nombre.
+        // Si buscamos 'all' o 'linked', priorizamos los que tienen IDReact para verlos primero (o consistencia).
+        // En este caso, si el usuario filtra, el orden debe ser consistente.
+
+        query += ` ORDER BY Nombre ASC`;
 
         const result = await request.query(query);
         res.json(result.recordset);
@@ -461,5 +474,42 @@ exports.searchClientUnified = async (req, res) => {
     } catch (error) {
         console.error("Error Unified Search:", error);
         res.status(500).json({ error: error.message });
+    }
+};
+
+// Actualizar Cliente Local
+exports.updateClient = async (req, res) => {
+    const { codCliente } = req.params;
+    const { Nombre, NombreFantasia, CioRuc, Email, TelefonoTrabajo, CliDireccion } = req.body;
+
+    if (!codCliente) return res.status(400).json({ error: "Falta CodCliente" });
+
+    try {
+        const pool = await getPool();
+        const safeString = (val) => (val !== undefined && val !== null) ? String(val) : null;
+
+        await pool.request()
+            .input('CC', sql.Int, codCliente)
+            .input('Nom', sql.NVarChar(200), safeString(Nombre))
+            .input('Fan', sql.NVarChar(200), safeString(NombreFantasia))
+            .input('Ruc', sql.NVarChar(50), safeString(CioRuc))
+            .input('Mail', sql.NVarChar(100), safeString(Email))
+            .input('Tel', sql.NVarChar(50), safeString(TelefonoTrabajo))
+            .input('Dir', sql.NVarChar(500), safeString(CliDireccion))
+            .query(`
+                UPDATE dbo.Clientes 
+                SET Nombre = @Nom,
+                    NombreFantasia = @Fan,
+                    CioRuc = @Ruc,
+                    Email = @Mail,
+                    TelefonoTrabajo = @Tel,
+                    CliDireccion = @Dir
+                WHERE CodCliente = @CC
+            `);
+
+        res.json({ success: true, message: "Cliente actualizado correctamente" });
+    } catch (e) {
+        console.error("Error updateClient:", e);
+        res.status(500).json({ error: e.message });
     }
 };

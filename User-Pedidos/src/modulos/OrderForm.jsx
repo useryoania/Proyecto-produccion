@@ -11,6 +11,33 @@ import { ArrowLeft, Save, Trash2, Plus, UploadCloud, AlertTriangle, Zap, Archive
 import { useAuth } from '../auth/AuthContext'; // Assuming AuthContext provides useAuth
 
 // --- Componente de Carga Tipo Google Drive (Fuera de OrderForm para evitar pérdida de foco) ---
+const ErrorModal = ({ isOpen, onClose, message }) => {
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full mx-4 border-2 border-red-100 animate-in zoom-in-95 duration-200">
+                <div className="flex flex-col items-center text-center gap-4">
+                    <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center text-red-500 mb-2">
+                        <AlertTriangle size={32} />
+                    </div>
+                    <h3 className="text-xl font-black text-zinc-800 uppercase tracking-tight">
+                        Error de Validación
+                    </h3>
+                    <p className="text-sm text-zinc-600 font-medium leading-relaxed">
+                        {message}
+                    </p>
+                    <button
+                        onClick={onClose}
+                        className="mt-4 w-full py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors shadow-lg hover:shadow-red-500/30"
+                    >
+                        ENTENDIDO
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: Icon = UploadCloud, color = "blue", multiple = false }) => {
     const [isOver, setIsOver] = useState(false);
     const uniqueId = `file-input-${id}-${label.replace(/\s+/g, '-')}`;
@@ -431,6 +458,10 @@ export const OrderForm = () => {
     const [embroideryMaterials, setEmbroideryMaterials] = useState([]);
     const [bordadoMaterial, setBordadoMaterial] = useState('');
     const [bordadoVariant, setBordadoVariant] = useState('');
+
+    // Error Modal State
+    const [errorModalOpen, setErrorModalOpen] = useState(false);
+    const [errorModalMessage, setErrorModalMessage] = useState('');
 
     // Lógica de visibilidad dinámica de procesos
     const isCorteActive = (config.hasCuttingWorkflow && enableCorte) || selectedComplementary['TWC'] || selectedComplementary['laser'];
@@ -1002,6 +1033,39 @@ export const OrderForm = () => {
 
         try {
             const result = await fileService.uploadFile(file);
+
+            // --- VALIDACION DE ANCHO IMPRIMIBLE ---
+            // Solo si tenemos medida y material configurado
+            if (result.width && !result.measurementError) {
+                let selectedMatName = globalMaterial;
+
+                // Si es configuración por ítem (ni single ni hidden), buscamos el material específico del ítem
+                if (!config.singleMaterial && !config.hideMaterial) {
+                    const currentItem = items.find(it => it.id === itemId);
+                    if (currentItem && currentItem.material) {
+                        selectedMatName = currentItem.material;
+                    }
+                }
+
+                // Buscamos el material en la lista dinámica para obtener su Ancho
+                const matObj = dynamicMaterials.find(m => m.Material === selectedMatName);
+
+                if (matObj && matObj.Ancho) {
+                    const fileWidthM = (result.width / 300) * 0.0254; // Convertir px(300dpi) a metros
+                    const maxWidth = parseFloat(matObj.Ancho);
+
+                    if (fileWidthM > maxWidth) {
+                        setErrorModalMessage(
+                            `El ancho del archivo (${fileWidthM.toFixed(3)}m) excede el ancho imprimible del material "${selectedMatName}" (${maxWidth}m). Por favor, ajuste el archivo o seleccione otro material.`
+                        );
+                        setErrorModalOpen(true);
+                        // Limpiamos el input file reseteando la referencia si fuera necesario, 
+                        // pero como updateItem no se llama, el estado del item no cambia.
+                        return;
+                    }
+                }
+            }
+            // --- FIN VALIDACION ---
 
             // Si hubo error de medida, lo agregamos a la nota del item automáticamente y DAMOS ALERTA
             if (result.measurementError) {
@@ -1640,6 +1704,12 @@ export const OrderForm = () => {
                 </div>
 
             </form>
+
+            <ErrorModal
+                isOpen={errorModalOpen}
+                onClose={() => setErrorModalOpen(false)}
+                message={errorModalMessage}
+            />
 
             {/* Modal de Éxito */}
             {

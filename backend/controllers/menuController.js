@@ -112,11 +112,38 @@ exports.remove = async (req, res) => {
     const { id } = req.params;
     try {
         const pool = await getPool();
-        await pool.request().input('Id', sql.Int, id).query(`DELETE FROM Modulos WHERE IdModulo = @Id`);
-        res.json({ success: true });
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. Eliminar referencias en PermisosRoles (Cascada Manual)
+            await new sql.Request(transaction)
+                .input('Id', sql.Int, id)
+                .query(`DELETE FROM PermisosRoles WHERE IdModulo = @Id`);
+
+            // 2. Intentar actualizar hijos para que no queden huérfanos (Opcional, o eliminarlos también)
+            // En este caso, si es carpeta y se borra, sus hijos quedarían sin padre o deberíamos borrarlos.
+            // Para ser seguros, borremos SOLO el item y dejemos que SQL se queje si tiene hijos de estructura (IdPadre).
+            // Si quieres borrar hijos recursivamente, es más complejo.
+            // Asumiremos que el borrado de arriba solucionó el tema de PERMISOS (Error 547 FK_PermisosRoles_Modulos).
+
+            // Si el error 547 venía por IdPadre (FK_Modulos_Modulos), entonces el usuario debe borrar los hijos primero manualmente
+            // O podríamos hacer update IdPadre = NULL
+
+            await new sql.Request(transaction)
+                .input('Id', sql.Int, id)
+                .query(`DELETE FROM Modulos WHERE IdModulo = @Id`);
+
+            await transaction.commit();
+            res.json({ success: true, message: 'Modulo y sus permisos eliminados' });
+        } catch (innerErr) {
+            await transaction.rollback();
+            throw innerErr;
+        }
+
     } catch (err) {
         if (err.number === 547) {
-            return res.status(400).json({ error: "No se puede eliminar: Tiene submódulos o permisos asociados." });
+            return res.status(400).json({ error: "No se puede eliminar: Tiene SUB-MÓDULOS (Hijos) asociados. Elimínelos primero." });
         }
         res.status(500).json({ error: err.message });
     }

@@ -83,7 +83,8 @@ router.get('/materials/:areaId/:variante', async (req, res) => {
                 SELECT 
                     dbo.articulos.CodArticulo, 
                     dbo.articulos.CodStock,
-                    dbo.articulos.Descripcion AS Material
+                    dbo.articulos.Descripcion AS Material,
+                    dbo.articulos.anchoimprimible AS Ancho
                 FROM dbo.ConfigMapeoERP 
                 INNER JOIN dbo.StockArt ON dbo.ConfigMapeoERP.CodigoERP = dbo.StockArt.Grupo 
                 INNER JOIN dbo.articulos ON dbo.StockArt.CodStock = dbo.articulos.CodStock

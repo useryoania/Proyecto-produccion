@@ -14,4 +14,7 @@ router.post('/link', controller.linkProduct);
 // 4. Desvincular
 router.post('/unlink', controller.unlinkProduct);
 
+// 5. Actualizar Producto Local
+router.post('/update', controller.updateLocalProduct);
+
 module.exports = router;

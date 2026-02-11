@@ -249,17 +249,22 @@ EstadoArchivo = @Estado,
                 .input('EquipoID', sql.Int, equipoId)
                 .input('CantidadFalla', sql.Decimal(10, 2), metrosReponer)
                 .query(`
+// Insertar la nueva Orden de Falla con todos los campos solicitados
                     INSERT INTO dbo.Ordenes(
-        CodigoOrden, Cliente, FechaIngreso, FechaEstimadaEntrega,
-        Material, DescripcionTrabajo, Prioridad,
-        Estado, EstadoenArea, AreaID,
-        Magnitud, IdCabezalERP, ProximoServicio, Observaciones, NoDocERP
-    )
-SELECT
-@NewCode, Cliente, GETDATE(), FechaEstimadaEntrega,
-    Material, DescripcionTrabajo, 'ALTA',
-    'Pendiente', 'Pendiente', AreaID,
-    Magnitud, IdCabezalERP, ProximoServicio, 'Reposición por Falla', NoDocERP
+                        CodigoOrden, Cliente, FechaIngreso, FechaEstimadaEntrega,
+                        Material, DescripcionTrabajo, Prioridad,
+                        Estado, EstadoenArea, AreaID,
+                        Magnitud, IdCabezalERP, ProximoServicio, Observaciones, NoDocERP,
+                        FechaEntradaSector, CantidadArchivos, Variante, UnidadMedida, 
+                        IDCliente, IDProducto, CodCliente, CodArticulo
+                    )
+                    SELECT
+                        @NewCode, Cliente, GETDATE(), FechaEstimadaEntrega,
+                        Material, DescripcionTrabajo, 'ALTA',
+                        'Pendiente', 'Pendiente', AreaID,
+                        Magnitud, IdCabezalERP, ProximoServicio, 'Reposición por Falla', NoDocERP,
+                        GETDATE(), 1, Variante, UnidadMedida,
+                        IDCliente, IDProducto, CodCliente, CodArticulo
                     FROM dbo.Ordenes
                     WHERE OrdenID = @OldID;
                     
@@ -298,8 +303,14 @@ VALUES(@OldID, ${archivoId}, '${areaId}', GETDATE(), @TipoFallaID, @CantidadFall
                 }
 
                 await insertRequest.query(`
-                    INSERT INTO dbo.ArchivosOrden(OrdenID, NombreArchivo, RutaAlmacenamiento, Metros, Copias, Observaciones)
-                    SELECT @NewOrderID, NombreArchivo, RutaAlmacenamiento, ${metrosSQL}, Copias, 'Reposición por Falla'
+// Insertar archivo asociado a la nueva orden (Clonando datos)
+                    INSERT INTO dbo.ArchivosOrden(
+                        OrdenID, NombreArchivo, RutaAlmacenamiento, Metros, Copias, Ancho, Alto, Material, Observaciones,
+                        TipoArchivo, FechaSubida, EstadoArchivo
+                    )
+                    SELECT 
+                        @NewOrderID, NombreArchivo, RutaAlmacenamiento, ${metrosSQL}, Copias, Ancho, Alto, Material, 'Reposición por Falla',
+                        TipoArchivo, GETDATE(), 'Pendiente'
                     FROM dbo.ArchivosOrden WHERE ArchivoID = @OldFileID
     `);
             }
@@ -633,12 +644,393 @@ const viewDriveFile = async (req, res) => {
     }
 };
 
+/**
+ * 6. Actualizar Contador de Copias (Control y Empaquetado)
+ */
+const updateFileCopyCount = async (req, res) => {
+    const { archivoId, count } = req.body;
+    let transaction;
+    try {
+        const pool = await getPool();
+        transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        if (!archivoId) return res.status(400).json({ error: 'Falta archivoId' });
+
+        // 1. Obtener estado actual y datos de la orden padre
+        const fileRes = await new sql.Request(transaction)
+            .input('ID', sql.Int, archivoId)
+            .query(`
+                SELECT AO.Copias, AO.Controlcopias, AO.EstadoArchivo, AO.OrdenID, AO.NombreArchivo, 
+                       O.CodigoOrden 
+                FROM ArchivosOrden AO WITH (UPDLOCK) 
+                INNER JOIN Ordenes O ON AO.OrdenID = O.OrdenID
+                WHERE AO.ArchivoID = @ID
+            `);
+
+        if (!fileRes.recordset.length) {
+            await transaction.rollback();
+            return res.status(404).json({ error: "Archivo no encontrado" });
+        }
+
+        const file = fileRes.recordset[0];
+        const ordenId = file.OrdenID;
+        const totalCopies = file.Copias || 1;
+        let newCount = parseInt(count);
+
+        // Validaciones
+        if (isNaN(newCount)) newCount = (file.Controlcopias || 0) + 1; // Default increment if not provided
+        if (newCount < 0) newCount = 0;
+        if (newCount > totalCopies) newCount = totalCopies;
+
+        // Determinar Nuevo Estado
+        let newStatus = file.EstadoArchivo;
+        let isCompletedNow = false;
+
+        if (newCount >= totalCopies) {
+            if (file.EstadoArchivo !== 'OK' && file.EstadoArchivo !== 'FINALIZADO') {
+                newStatus = 'OK';
+                isCompletedNow = true;
+
+                // LOGICA REPOSICIÓN: Si esta orden es una REPOSICIÓN (Codigo contiene -F<ID>), 
+                // buscar el archivo original y marcarlo tambien como OK/RESUELTO.
+                const codigoOrden = file.CodigoOrden || '';
+                const matchFalla = codigoOrden.match(/-F(\d+)\s*$/); // Regex para -F<digits> al final
+                if (matchFalla) {
+                    const originalArchivoID = parseInt(matchFalla[1]);
+                    if (originalArchivoID && !isNaN(originalArchivoID)) {
+                        // Buscar ID de orden original para verificar? No es estrictamente necesario si confiamos en el ID.
+                        // Actualizamos el archivo original si se llama igual (validación extra seguridad)
+                        await new sql.Request(transaction)
+                            .input('OrigID', sql.Int, originalArchivoID)
+                            .input('Nombre', sql.NVarChar, file.NombreArchivo)
+                            .query(`
+                                UPDATE ArchivosOrden 
+                                SET EstadoArchivo = 'OK', Observaciones = CONCAT(Observaciones, ' [Reposición OK]')
+                                WHERE ArchivoID = @OrigID AND NombreArchivo = @Nombre
+                            `);
+                    }
+                }
+            }
+        } else {
+            // Si reducimos la cuenta y estaba OK, volver a pendiente? (Opcional, por ahora solo sumamos)
+            if (file.EstadoArchivo === 'OK') {
+                newStatus = 'Pendiente'; // O el estado previo... asumimos Pendiente.
+            }
+        }
+
+        // Actualizar
+        await new sql.Request(transaction)
+            .input('ID', sql.Int, archivoId)
+            .input('Count', sql.Int, newCount)
+            .input('Status', sql.VarChar, newStatus)
+            .query(`
+                UPDATE ArchivosOrden 
+                SET Controlcopias = @Count, 
+                    EstadoArchivo = @Status,
+                    FechaControl = GETDATE()
+                WHERE ArchivoID = @ID
+            `);
+
+        // Si se completó el archivo, verificar si se completa la orden
+        let orderFullyCompleted = false;
+        if (isCompletedNow) {
+            const checkOrder = await new sql.Request(transaction)
+                .input('OID', sql.Int, ordenId)
+                .query(`
+                    SELECT 
+                        (SELECT COUNT(*) FROM ArchivosOrden WHERE OrdenID = @OID) as Total,
+                        (SELECT COUNT(*) FROM ArchivosOrden WHERE OrdenID = @OID AND EstadoArchivo IN ('OK', 'FINALIZADO')) as Completed
+                `);
+            const { Total, Completed } = checkOrder.recordset[0];
+            if (Total > 0 && Total === Completed) {
+                orderFullyCompleted = true;
+                // Actualizar orden a Pronto
+                await new sql.Request(transaction)
+                    .input('OID', sql.Int, ordenId)
+                    .query("UPDATE Ordenes SET Estado = 'Pronto', EstadoenArea = 'Pronto', EstadoLogistica = 'Canasto Produccion' WHERE OrdenID = @OID");
+            }
+        }
+
+        await transaction.commit();
+
+        res.json({
+            success: true,
+            newCount,
+            newStatus,
+            isCompletedNow,
+            orderFullyCompleted
+        });
+
+    } catch (err) {
+        if (transaction) await transaction.rollback();
+        console.error("Error updateFileCopyCount:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+/**
+ * 7. Buscar Órdenes Entregadas/Finalizadas para Reposición (Atención al Cliente)
+ */
+const getCompletedOrdersForReplacement = async (req, res) => {
+    try {
+        const { q } = req.query;
+        if (!q || q.length < 3) return res.json([]);
+
+        const pool = await getPool();
+        const request = pool.request();
+
+        let sqlQuery = `
+            SELECT TOP 20 
+                OrdenID, CodigoOrden, Cliente, FechaIngreso, FechaEstimadaEntrega, 
+                Estado, Material, DescripcionTrabajo, NoDocERP
+            FROM Ordenes WITH (NOLOCK)
+            WHERE Estado IN ('ENTREGADO', 'FINALIZADO', 'DESPACHADO', 'PRONTO')
+            AND (
+                CodigoOrden LIKE @Search 
+                OR Cliente LIKE @Search 
+                OR CAST(OrdenID AS VARCHAR) = @Exact
+                OR NoDocERP LIKE @Search
+            )
+            ORDER BY OrdenID DESC
+        `;
+
+        request.input('Search', sql.NVarChar, `%${q}%`);
+        request.input('Exact', sql.NVarChar, q);
+
+        const result = await request.query(sqlQuery);
+        res.json(result.recordset);
+
+    } catch (error) {
+        console.error("Error getCompletedOrdersForReplacement:", error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+/**
+ * 8. Crear Orden de Reposición (Batch)
+ * Recibe lista de archivos a reponer de una orden ya terminada.
+ */
+const createCustomerReplacementOrder = async (req, res) => {
+    const { originalOrderId, files, globalObservation, userId } = req.body;
+    let transaction;
+
+    try {
+        if (!originalOrderId || !files || files.length === 0) {
+            return res.status(400).json({ error: "Datos incompletos" });
+        }
+
+        const pool = await getPool();
+        transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        // 1. Obtener Datos Orden Original
+        const ordRes = await new sql.Request(transaction)
+            .input('ID', sql.Int, originalOrderId)
+            .query("SELECT * FROM Ordenes WHERE OrdenID = @ID");
+
+        if (ordRes.recordset.length === 0) throw new Error("Orden original no encontrada");
+        const originalOrder = ordRes.recordset[0];
+
+        // 1b. Preparar Observaciones Globales
+        // El usuario pide: "las observaciones que ponga en el registro de la falla, ponerselo a la orden nueva."
+        let finalGlobalObs = globalObservation || 'Reposición Cliente';
+        const fileObsList = [];
+
+        files.forEach(f => {
+            if (f.obs) {
+                // Buscar nombre archivo si es posible, o solo poner la obs. 
+                // Como f es solo {id, meters, obs}, no tengo el nombre aqui facil.
+                // Pero puedo poner "- [Obs]"
+                fileObsList.push(`- ${f.obs}`);
+            }
+        });
+
+        if (fileObsList.length > 0) {
+            finalGlobalObs += `\nDetalles:\n${fileObsList.join('\n')}`;
+        }
+
+        // 2. Crear Nueva Orden de Reposición
+        // Generar codigo: ORD-123 -R (Si ya existe -R, buscar -R2?)
+        const suffix = `-R${Math.floor(Math.random() * 1000)}`;
+        const newCode = `${originalOrder.CodigoOrden} ${suffix}`;
+
+        const insertOrderResult = await new sql.Request(transaction)
+            .input('NewCode', sql.NVarChar, newCode)
+            .input('OldID', sql.Int, originalOrderId)
+            .input('GlobalObs', sql.NVarChar, finalGlobalObs)
+            .query(`
+                INSERT INTO dbo.Ordenes(
+                    CodigoOrden, Cliente, FechaIngreso, FechaEstimadaEntrega,
+                    Material, DescripcionTrabajo, Prioridad,
+                    Estado, EstadoenArea, AreaID,
+                    Magnitud, IdCabezalERP, ProximoServicio, Observaciones, NoDocERP,
+                    FechaEntradaSector, ArchivosCount, Variante, UM, 
+                    IdClienteReact, IdProductoReact, CodCliente, CodArticulo
+                )
+                SELECT
+                    @NewCode, Cliente, GETDATE(), DATEADD(day, 2, GETDATE()), -- 2 dias default para reposición
+                    Material, DescripcionTrabajo, 'URGENTE', -- Prioridad Alta
+                    'Pendiente', 'Pendiente', AreaID,
+                    Magnitud, IdCabezalERP, ProximoServicio, @GlobalObs, NoDocERP,
+                    GETDATE(), 0, Variante, UM,
+                    IdClienteReact, IdProductoReact, CodCliente, CodArticulo
+                FROM dbo.Ordenes
+                WHERE OrdenID = @OldID;
+                
+                SELECT SCOPE_IDENTITY() as NewID;
+             `);
+
+        const newOrderId = insertOrderResult.recordset[0].NewID;
+
+        let totalFiles = 0;
+
+        // 3. Insertar Archivos Seleccionados
+        for (const file of files) {
+            // file: { id, meters, obs, copies }
+            const oldFileId = file.id;
+            const metersToReprint = file.meters;
+            const copiesToReprint = file.copies || 1;
+            const obs = file.obs || 'Reposición Cliente';
+
+            await new sql.Request(transaction)
+                .input('NewOrderID', sql.Int, newOrderId)
+                .input('OldFileID', sql.Int, oldFileId)
+                .input('Metros', sql.Decimal(10, 2), metersToReprint)
+                .input('Copias', sql.Int, copiesToReprint)
+                .input('Obs', sql.NVarChar, obs)
+                .query(`
+                    INSERT INTO dbo.ArchivosOrden(
+                        OrdenID, NombreArchivo, RutaAlmacenamiento, Metros, Copias, Ancho, Alto, Observaciones,
+                        FechaSubida, EstadoArchivo, TipoArchivo
+                    )
+                    SELECT 
+                        @NewOrderID, NombreArchivo, RutaAlmacenamiento, @Metros, @Copias, Ancho, Alto, @Obs,
+                        GETDATE(), 'Pendiente', TipoArchivo
+                    FROM dbo.ArchivosOrden WHERE ArchivoID = @OldFileID
+                `);
+
+            totalFiles++;
+
+            // Registrar en FallasProduccion (Safe Mode)
+            try {
+                await new sql.Request(transaction)
+                    .input('OldID', sql.Int, originalOrderId)
+                    .input('FileID', sql.Int, oldFileId)
+                    .input('AreaID', sql.VarChar, originalOrder.AreaID || 'General')
+                    .input('Metros', sql.Decimal(10, 2), metersToReprint)
+                    .input('Obs', sql.NVarChar, obs)
+                    .query(`
+                        INSERT INTO FallasProduccion(OrdenID, ArchivoID, AreaID, FechaFalla, TipoFalla, CantidadFalla, Observaciones)
+                        VALUES(@OldID, @FileID, @AreaID, GETDATE(), 1, @Metros, @Obs) 
+                    `);
+            } catch (e) { console.log('FallasProduccion insert failed (ignoring):', e.message); }
+        }
+
+        // Actualizar contador archivos orden nueva
+        try {
+            await new sql.Request(transaction)
+                .input('Total', sql.Int, totalFiles)
+                .input('ID', sql.Int, newOrderId)
+                .query("UPDATE Ordenes SET ArchivosCount = @Total WHERE OrdenID = @ID");
+        } catch (e) { console.log('Update ArchivosCount failed (ignoring):', e.message); }
+
+        // 4. Clonar Órdenes de Servicios Relacionados (Si existen)
+        const relatedOrderIds = req.body.relatedOrderIds || [];
+        if (relatedOrderIds.length > 0) {
+            for (const relId of relatedOrderIds) {
+                // Obtener datos orden relacionada
+                const relRes = await new sql.Request(transaction)
+                    .input('RID', sql.Int, relId)
+                    .query("SELECT * FROM Ordenes WHERE OrdenID = @RID");
+
+                if (relRes.recordset.length > 0) {
+                    const relOrder = relRes.recordset[0];
+                    const relNewCode = `${relOrder.CodigoOrden} ${suffix}`; // Mismo sufijo para consistencia
+
+                    await new sql.Request(transaction)
+                        .input('RelNewCode', sql.NVarChar, relNewCode)
+                        .input('RelOldID', sql.Int, relId)
+                        .input('GlobalObs', sql.NVarChar, globalObservation || 'Reposición Cliente (Servicio)')
+                        .query(`
+                            INSERT INTO dbo.Ordenes(
+                                CodigoOrden, Cliente, FechaIngreso, FechaEstimadaEntrega,
+                                Material, DescripcionTrabajo, Prioridad,
+                                Estado, EstadoenArea, AreaID,
+                                Magnitud, IdCabezalERP, ProximoServicio, Observaciones, NoDocERP,
+                                FechaEntradaSector, ArchivosCount, Variante, UM, 
+                                IdClienteReact, IdProductoReact, CodCliente, CodArticulo
+                            )
+                            SELECT
+                                @RelNewCode, Cliente, GETDATE(), DATEADD(day, 2, GETDATE()),
+                                Material, DescripcionTrabajo, 'URGENTE',
+                                'Pendiente', 'Pendiente', AreaID,
+                                Magnitud, IdCabezalERP, ProximoServicio, @GlobalObs, NoDocERP,
+                                GETDATE(), 0, Variante, UM,
+                                IdClienteReact, IdProductoReact, CodCliente, CodArticulo
+                            FROM dbo.Ordenes
+                            WHERE OrdenID = @RelOldID
+                        `);
+                }
+            }
+        }
+
+        await transaction.commit();
+        res.json({ success: true, newOrderId, newCode });
+
+    } catch (error) {
+        if (transaction) await transaction.rollback();
+        console.error("Error createCustomerReplacementOrder:", error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+/**
+ * 9. Obtener Órdenes Relacionadas (Mismo NoDocERP)
+ */
+const getRelatedOrders = async (req, res) => {
+    try {
+        const { ordenId } = req.params;
+        const pool = await getPool();
+
+        // Primero obtener el NoDocERP de la orden actual
+        const currentRes = await pool.request()
+            .input('ID', sql.Int, ordenId)
+            .query("SELECT NoDocERP FROM Ordenes WHERE OrdenID = @ID");
+
+        if (!currentRes.recordset.length || !currentRes.recordset[0].NoDocERP) {
+            return res.json([]); // No tiene NoDoc, no hay relacionadas
+        }
+
+        const noDoc = currentRes.recordset[0].NoDocERP;
+
+        const relatedRes = await pool.request()
+            .input('NoDoc', sql.VarChar, noDoc)
+            .input('ExcludeID', sql.Int, ordenId)
+            .query(`
+                SELECT OrdenID, CodigoOrden, AreaID, DescripcionTrabajo, Estado, Material
+                FROM Ordenes 
+                WHERE NoDocERP = @NoDoc AND OrdenID != @ExcludeID
+                ORDER BY OrdenID
+            `);
+
+        res.json(relatedRes.recordset);
+
+    } catch (error) {
+        console.error("Error getRelatedOrders:", error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
 module.exports = {
     getOrdenes,
     getArchivosPorOrden,
     viewDriveFile,
     postControlArchivo,
     getTiposFalla,
-    regenerateEtiquetas
-    // getRollosActivos y getRolloMetrics se movieron a rollosController.js
+    regenerateEtiquetas,
+    updateFileCopyCount,
+    getCompletedOrdersForReplacement,
+    createCustomerReplacementOrder,
+    getRelatedOrders
 };

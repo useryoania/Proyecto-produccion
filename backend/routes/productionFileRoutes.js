@@ -29,9 +29,15 @@ router.get('/orden/:ordenId/archivos', productionFileController.getArchivosPorOr
 router.get('/view-drive-file', productionFileController.viewDriveFile);
 router.get('/tipos-falla', productionFileController.getTiposFalla);
 router.post('/controlar', productionFileController.postControlArchivo);
+router.post('/update-copy-count', productionFileController.updateFileCopyCount);
 // --- ETIQUETAS y Vista Dividida ---
 router.get('/ordenes-labels', etiquetasController.getOrdersForLabels);
 router.post('/regen-labels/:ordenId', productionFileController.regenerateEtiquetas);
 router.get('/orden/:ordenId/etiquetas/print', etiquetasController.printEtiquetas);
+
+// --- REPOSICIONES (Atención al Cliente) ---
+router.get('/ordenes/entregadas', productionFileController.getCompletedOrdersForReplacement);
+router.get('/orden/:ordenId/relacionadas', productionFileController.getRelatedOrders);
+router.post('/ordenes/reposicion', productionFileController.createCustomerReplacementOrder);
 
 module.exports = router;

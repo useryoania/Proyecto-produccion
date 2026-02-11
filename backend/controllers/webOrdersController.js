@@ -486,10 +486,24 @@ exports.createWebOrder = async (req, res) => {
                 const newOID = resOrder.recordset[0].OrdenID;
                 generatedOrders.push(exec.codigoOrden);
 
+                // VARIABLE PARA ACUMULAR MAGNITUD TOTAL DE LA ORDEN
+                let totalMagnitud = 0;
+
                 // A. Archivos de Producción (Solo si tiene items)
                 let fileCount = 0;
                 for (const item of exec.items) {
                     if (item.file?.driveUrl) {
+                        // CALCULO DE METROS
+                        const wM = item.width ? (item.width / 300 * 0.0254) : 0;
+                        const hM = item.height ? (item.height / 300 * 0.0254) : 0;
+                        let valMetros = 0;
+                        if (wM > 0 && hM > 0) {
+                            valMetros = wM * hM;
+                        } else if (hM > 0) {
+                            valMetros = hM;
+                        }
+
+                        // Continuar chaining del request anterior
                         await new sql.Request(transaction)
                             .input('OID', sql.Int, newOID)
                             .input('Nom', sql.VarChar(200), item.file.finalName)
@@ -497,26 +511,41 @@ exports.createWebOrder = async (req, res) => {
                             .input('Tipo', sql.VarChar(50), 'Impresion')
                             .input('Cop', sql.Int, item.copies || 1)
                             .input('Obs', sql.NVarChar(sql.MAX), item.note || '')
-                            .input('W', sql.Decimal(10, 3), item.width ? (item.width / 300 * 0.0254) : null)
-                            .input('H', sql.Decimal(10, 3), item.height ? (item.height / 300 * 0.0254) : null)
-                            .query(`INSERT INTO ArchivosOrden (OrdenID, NombreArchivo, RutaAlmacenamiento, TipoArchivo, Copias, Metros, Ancho, Alto, FechaSubida, EstadoArchivo, Observaciones) VALUES (@OID, @Nom, @Ruta, @Tipo, @Cop, 0, @W, @H, GETDATE(), 'Pendiente', @Obs)`);
+                            .input('W', sql.Decimal(10, 3), wM || null)
+                            .input('H', sql.Decimal(10, 3), hM || null)
+                            .input('Met', sql.Decimal(10, 3), valMetros)
+                            .query(`INSERT INTO ArchivosOrden (OrdenID, NombreArchivo, RutaAlmacenamiento, TipoArchivo, Copias, Metros, Ancho, Alto, FechaSubida, EstadoArchivo, Observaciones) VALUES (@OID, @Nom, @Ruta, @Tipo, @Cop, @Met, @W, @H, GETDATE(), 'Pendiente', @Obs)`);
+
+
+                        totalMagnitud += (valMetros * (item.copies || 1));
                         fileCount++;
                     }
                     if (item.fileBack?.driveUrl) {
+                        const wMBack = item.widthBack ? (item.widthBack / 300 * 0.0254) : 0;
+                        const hMBack = item.heightBack ? (item.heightBack / 300 * 0.0254) : 0;
+                        let valMetrosBack = (wMBack > 0 && hMBack > 0) ? (wMBack * hMBack) : hMBack;
+
                         await new sql.Request(transaction)
                             .input('OID', sql.Int, newOID)
                             .input('Nom', sql.VarChar(200), item.fileBack.finalName)
                             .input('Ruta', sql.VarChar(500), item.fileBack.driveUrl)
                             .input('Cop', sql.Int, item.copies || 1)
                             .input('Obs', sql.NVarChar(sql.MAX), item.note || '')
-                            .input('W', sql.Decimal(10, 3), item.widthBack ? (item.widthBack / 300 * 0.0254) : null)
-                            .input('H', sql.Decimal(10, 3), item.heightBack ? (item.heightBack / 300 * 0.0254) : null)
-                            .query(`INSERT INTO ArchivosOrden (OrdenID, NombreArchivo, RutaAlmacenamiento, TipoArchivo, Copias, Metros, Ancho, Alto, FechaSubida, EstadoArchivo, Observaciones) VALUES (@OID, @Nom, @Ruta, 'Back', @Cop, 0, @W, @H, GETDATE(), 'Pendiente', @Obs)`);
+                            .input('W', sql.Decimal(10, 3), wMBack || null)
+                            .input('H', sql.Decimal(10, 3), hMBack || null)
+                            .input('Met', sql.Decimal(10, 3), valMetrosBack)
+                            .query(`INSERT INTO ArchivosOrden (OrdenID, NombreArchivo, RutaAlmacenamiento, TipoArchivo, Copias, Metros, Ancho, Alto, FechaSubida, EstadoArchivo, Observaciones) VALUES (@OID, @Nom, @Ruta, 'Back', @Cop, @Met, @W, @H, GETDATE(), 'Pendiente', @Obs)`);
+
+                        totalMagnitud += (valMetrosBack * (item.copies || 1));
                         fileCount++;
                     }
                 }
                 if (fileCount > 0) {
-                    await new sql.Request(transaction).input('OID', sql.Int, newOID).input('C', sql.Int, fileCount).query("UPDATE Ordenes SET ArchivosCount = @C WHERE OrdenID = @OID");
+                    await new sql.Request(transaction)
+                        .input('OID', sql.Int, newOID)
+                        .input('C', sql.Int, fileCount)
+                        .input('Mag', sql.Decimal(10, 2), totalMagnitud)
+                        .query("UPDATE Ordenes SET ArchivosCount = @C, Magnitud = CAST(@Mag AS VARCHAR) WHERE OrdenID = @OID");
                 }
 
                 // B. Archivos de Referencia y Especializados
