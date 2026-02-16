@@ -10,60 +10,6 @@ const CreateRollModal = ({ isOpen, onClose, areaCode, onSuccess }) => {
     });
     const [loading, setLoading] = useState(false);
 
-    // Inventory Logic
-    const [inventory, setInventory] = useState([]);
-    const [selectedMaterialId, setSelectedMaterialId] = useState('');
-    const [suggestedBobina, setSuggestedBobina] = useState(null);
-    const [useBobina, setUseBobina] = useState(false);
-
-    useEffect(() => {
-        if (isOpen && areaCode) {
-            // Load Inventory
-            insumosService.getInventoryByArea(areaCode)
-                .then(data => setInventory(data || []))
-                .catch(err => console.error("Error loading inventory:", err));
-        }
-    }, [isOpen, areaCode]);
-
-    // Handle Material Change
-    const handleMaterialChange = (insumoId) => {
-        setSelectedMaterialId(insumoId);
-        setUseBobina(false);
-        setSuggestedBobina(null);
-        setFormData(prev => ({ ...prev, bobinaId: null }));
-
-        if (!insumoId) return;
-
-        const insumo = inventory.find(i => String(i.InsumoID) === String(insumoId));
-        if (insumo && insumo.ActiveBatches) {
-            // Find FIFO available bobina (Allow En Uso if capacity exists)
-            const available = insumo.ActiveBatches
-                .filter(b => b.MetrosRestantes > 0 && (b.Estado === 'Disponible' || b.Estado === 'En Uso'))
-                .sort((a, b) => new Date(a.FechaIngreso) - new Date(b.FechaIngreso)); // Oldest first
-
-            if (available.length > 0) {
-                setSuggestedBobina({ ...available[0], MaterialName: insumo.Nombre });
-            }
-        }
-    };
-
-    // Toggle Bobina Usage
-    const handleToggleBobina = () => {
-        const newValue = !useBobina;
-        setUseBobina(newValue);
-
-        if (newValue && suggestedBobina) {
-            setFormData(prev => ({
-                ...prev,
-                bobinaId: suggestedBobina.BobinaID,
-                capacity: suggestedBobina.MetrosRestantes,
-                name: prev.name || `${suggestedBobina.MaterialName} - ${new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}`
-            }));
-        } else {
-            setFormData(prev => ({ ...prev, bobinaId: null }));
-        }
-    };
-
     if (!isOpen) return null;
 
     // Colores predefinidos
@@ -90,9 +36,6 @@ const CreateRollModal = ({ isOpen, onClose, areaCode, onSuccess }) => {
             onClose();
             // Reset
             setFormData({ name: '', capacity: 100, color: '#3b82f6', bobinaId: null });
-            setSelectedMaterialId('');
-            setSuggestedBobina(null);
-            setUseBobina(false);
         } catch (error) {
             alert("Error al crear el lote: " + (error.response?.data?.error || error.message));
         } finally {
@@ -120,60 +63,6 @@ const CreateRollModal = ({ isOpen, onClose, areaCode, onSuccess }) => {
                 {/* Content */}
                 <div className="p-6 flex flex-col gap-5">
 
-                    {/* MATERIAL SELECTION (NEW) */}
-                    <div className="flex flex-col gap-1.5 p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex justify-between">
-                            Asignar Material (Opcional)
-                            <i className="fa-solid fa-box-open text-slate-400"></i>
-                        </label>
-                        <select
-                            className="w-full p-2 text-sm border border-slate-300 rounded focus:border-blue-500 outline-none"
-                            value={selectedMaterialId}
-                            onChange={(e) => handleMaterialChange(e.target.value)}
-                        >
-                            <option value="">-- Sin asignar material --</option>
-                            {inventory
-                                .filter(i => i.ActiveBatches && i.ActiveBatches.some(b => b.MetrosRestantes > 0))
-                                .map(i => {
-                                    const totalMetros = i.ActiveBatches.reduce((acc, b) => (b.MetrosRestantes > 0 ? acc + b.MetrosRestantes : acc), 0);
-                                    return (
-                                        <option key={i.InsumoID} value={i.InsumoID}>
-                                            {i.Nombre} ({totalMetros}m disp.)
-                                        </option>
-                                    );
-                                })}
-                        </select>
-
-                        {/* SUGGESTION CARD */}
-                        {suggestedBobina && (
-                            <div className={`mt-2 p-2 rounded border transition-all ${useBobina ? 'bg-green-50 border-green-200' : 'bg-white border-dashed border-slate-300 opacity-80'}`}>
-                                <div className="flex items-start gap-3">
-                                    <input
-                                        type="checkbox"
-                                        checked={useBobina}
-                                        onChange={handleToggleBobina}
-                                        className="mt-1 w-4 h-4 text-green-600 rounded cursor-pointer"
-                                    />
-                                    <div className="flex-1">
-                                        <p className="text-xs font-bold text-slate-700">Usar Bobina Sugerida (FIFO)</p>
-                                        <div className="text-[11px] text-slate-500 flex flex-col mt-0.5">
-                                            <span><strong>ID:</strong> {suggestedBobina.CodigoEtiqueta || suggestedBobina.BobinaID}</span>
-                                            <span><strong>Disponible:</strong> {suggestedBobina.MetrosRestantes} m</span>
-                                            <span><strong>Ingreso:</strong> {new Date(suggestedBobina.FechaIngreso).toLocaleDateString()}</span>
-                                        </div>
-                                    </div>
-                                    {useBobina && <i className="fa-solid fa-check-circle text-green-500 text-lg"></i>}
-                                </div>
-                            </div>
-                        )}
-                        {/* INFO IF NO BOBINAS BUT MATERIAL SELECTED */}
-                        {selectedMaterialId && !suggestedBobina && (
-                            <p className="text-[10px] text-amber-600 mt-1 italic">
-                                <i className="fa-solid fa-triangle-exclamation mr-1"></i> No hay bobinas disponibles para este material.
-                            </p>
-                        )}
-                    </div>
-
                     {/* Nombre */}
                     <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Nombre del Lote</label>
@@ -192,14 +81,13 @@ const CreateRollModal = ({ isOpen, onClose, areaCode, onSuccess }) => {
                         <div className="flex items-center gap-2">
                             <input
                                 type="number"
-                                className={`w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 transition-all ${useBobina ? 'text-green-600 border-green-200 ring-green-500/20' : 'focus:border-blue-500 focus:ring-blue-500/20'}`}
+                                className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:border-blue-500 focus:ring-blue-500/20 transition-all"
                                 value={formData.capacity}
                                 onChange={e => setFormData({ ...formData, capacity: e.target.value })}
                             />
                             <span className="text-sm font-bold text-slate-400">Metros</span>
                         </div>
-                        {useBobina && <small className="text-[10px] text-green-600 font-bold">Sincronizado con bobina asignada</small>}
-                        {!useBobina && <small className="text-[10px] text-slate-400 font-medium">Esto define el 100% de la barra de progreso visual.</small>}
+                        <small className="text-[10px] text-slate-400 font-medium">Esto define el 100% de la barra de progreso visual.</small>
                     </div>
 
                     {/* Color Picker */}

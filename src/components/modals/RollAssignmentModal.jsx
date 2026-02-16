@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ordersService, rollsService, insumosService } from '../../services/api';
+import { ordersService, rollsService } from '../../services/api';
 
 const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders = [], areaCode, onSuccess }) => {
 
@@ -10,13 +10,6 @@ const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders
     const [activeRolls, setActiveRolls] = useState([]);
     const [loading, setLoading] = useState(false);
     const [loadingRolls, setLoadingRolls] = useState(false);
-
-    // Inventory States (New Logic)
-    const [inventory, setInventory] = useState([]);
-    const [selectedMaterialId, setSelectedMaterialId] = useState('');
-    const [suggestedBobina, setSuggestedBobina] = useState(null);
-    const [useBobina, setUseBobina] = useState(true); // Default true
-    const [bobinaError, setBobinaError] = useState(null);
 
     // Initial Load
     useEffect(() => {
@@ -36,102 +29,14 @@ const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders
 
             // 2. Default Name
             setRollName(`Lote ${new Date().toLocaleDateString('es-ES').replace(/\//g, '')}-${new Date().getHours()}${new Date().getMinutes()}`);
-
-            // 3. Load Inventory (for Smart Suggestion)
-            loadInventory();
         }
     }, [isOpen, areaCode]);
-
-    const loadInventory = async () => {
-        try {
-            let queryArea = areaCode;
-            // Hack para Sublimacion: Buscar también en General/Insumos por si el Papel está ahí
-            if (areaCode && areaCode.toLowerCase().includes('sublima')) {
-                queryArea = `${areaCode},General,Insumos,Bodega`;
-            }
-
-            const invData = await insumosService.getInventoryByArea(queryArea);
-            setInventory(invData || []);
-            // Reset selection on open
-            setSelectedMaterialId('');
-            setSuggestedBobina(null);
-            setUseBobina(true);
-            setBobinaError(null);
-        } catch (e) {
-            console.error("Error loading inventory:", e);
-        }
-    };
-
-    // Auto-Detect Material Effect
-    useEffect(() => {
-        if (mode === 'new' && inventory.length > 0 && selectedOrders.length > 0 && !selectedMaterialId) {
-            const normalize = s => s.toLowerCase().trim();
-            const isSublimation = areaCode && normalize(areaCode).includes('sublima');
-
-            if (isSublimation) {
-                // For Sublimation, default to "Papel" regardless of Fabric
-                const match = inventory.find(i => normalize(i.Nombre).includes('papel'));
-                if (match) {
-                    console.log("Auto-Detected Sublimation Paper:", match.Nombre);
-                    handleMaterialChange(match.InsumoID);
-                }
-            } else {
-                // Get material from first order (assuming homogeneity or taking dominant)
-                const matName = selectedOrders[0].material || '';
-                if (!matName) return;
-
-                const target = normalize(matName);
-                const match = inventory.find(i => normalize(i.Nombre).includes(target) || target.includes(normalize(i.Nombre)));
-
-                if (match) {
-                    console.log("Auto-Detected Material:", match.Nombre);
-                    handleMaterialChange(match.InsumoID);
-                }
-            }
-        }
-    }, [inventory, selectedOrders, mode, selectedMaterialId, areaCode]);
-
-    // Material Selection Handler
-    const handleMaterialChange = (insumoId) => {
-        setSelectedMaterialId(insumoId);
-        setUseBobina(true);
-        setSuggestedBobina(null);
-        setBobinaError(null);
-
-        if (!insumoId) return;
-
-        const insumo = inventory.find(i => String(i.InsumoID) === String(insumoId));
-        if (insumo && insumo.ActiveBatches) {
-            // FIFO Logic: Filter by MetrosRestantes > 0, allow 'En Uso'
-            const available = insumo.ActiveBatches
-                .filter(b => b.MetrosRestantes > 0 && (b.Estado === 'Disponible' || b.Estado === 'En Uso'))
-                .sort((a, b) => new Date(a.FechaIngreso) - new Date(b.FechaIngreso));
-
-            if (available.length > 0) {
-                setSuggestedBobina({ ...available[0], MaterialName: insumo.Nombre });
-                setUseBobina(true);
-                // Suggest Name
-                const dateStr = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' }).replace('/', '');
-                setRollName(`${insumo.Nombre} ${dateStr}`);
-            } else {
-                setBobinaError("No hay bobinas con capacidad disponible para este material.");
-            }
-        } else {
-            setBobinaError("No hay stock registrado para este material.");
-        }
-    };
 
     const handleAssign = async () => {
         if (mode === 'existing' && !selectedRollId) return alert("Selecciona un rollo existente");
 
         if (mode === 'new') {
             if (!rollName.trim()) return alert("Ingresa un nombre para el nuevo lote");
-
-            // STRICT VALIDATION
-            if (!selectedMaterialId) return alert("❌ Debe seleccionar el Material para asignar la bobina.");
-            if (bobinaError || !suggestedBobina) return alert("❌ No se puede crear el lote: No hay bobina disponible para el material seleccionado.");
-            // Force true for safety
-            if (!useBobina) return alert("❌ Debe confirmar el uso de la bobina asignada.");
         }
 
         setLoading(true);
@@ -143,9 +48,7 @@ const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders
                 rollName: mode === 'new' ? rollName : null,
                 isNew: mode === 'new',
                 areaCode: areaCode,
-                // Add Bobina properties if creating new
-                bobinaId: (mode === 'new' && suggestedBobina) ? suggestedBobina.BobinaID : null,
-                capacity: (mode === 'new' && suggestedBobina) ? suggestedBobina.MetrosRestantes : 100
+                capacity: 100 // Default placeholder capacity
             };
 
             await ordersService.assignRoll(payload);
@@ -201,80 +104,9 @@ const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders
                         </button>
                     </div>
 
-                    {/* Create New Roll Sections */}
-                    {mode === 'new' && (
-                        <div className="flex flex-col gap-3 mb-4 p-3 bg-slate-50 border border-slate-200 rounded-lg animate-in fade-in slide-in-from-top-2 duration-300">
-                            {/* Material Selector */}
-                            <div>
-                                <label className="text-[10px] font-bold text-slate-500 uppercase flex justify-between mb-1">
-                                    Material (Detectar Bobina)
-                                    <i className="fa-solid fa-wand-magic-sparkles text-purple-400"></i>
-                                </label>
-                                <select
-                                    className={`w-full text-xs p-2 border rounded focus:outline-none bg-white transition-colors ${!selectedMaterialId ? 'border-amber-300 ring-2 ring-amber-100' : 'border-slate-300 focus:border-blue-500'}`}
-                                    value={selectedMaterialId}
-                                    onChange={(e) => handleMaterialChange(e.target.value)}
-                                >
-                                    <option value="">-- Seleccionar Material --</option>
-                                    {inventory
-                                        .filter(i => {
-                                            const hasStock = i.ActiveBatches && i.ActiveBatches.some(b => b.MetrosRestantes > 0);
-                                            if (!hasStock) return false;
-
-                                            // Filter by Order Material (Strict Match)
-                                            // SKIP Strict Match for Sublimation (as Roll Material != Fabric Material)
-                                            const normalize = s => s.toLowerCase().trim();
-                                            const isSublimation = areaCode && normalize(areaCode).includes('sublima');
-
-                                            if (!isSublimation && selectedOrders.length > 0 && selectedOrders[0].material) {
-                                                const orderMat = normalize(selectedOrders[0].material);
-                                                const invMat = normalize(i.Nombre);
-                                                return invMat.includes(orderMat) || orderMat.includes(invMat);
-                                            }
-                                            return true;
-                                        })
-                                        .map(i => {
-                                            const totalMetros = i.ActiveBatches.reduce((acc, b) => acc + (b.MetrosRestantes || 0), 0);
-                                            return (
-                                                <option key={i.InsumoID} value={i.InsumoID}>
-                                                    {i.Nombre} ({totalMetros}m disp.)
-                                                </option>
-                                            );
-                                        })}
-                                </select>
-                            </div>
-
-                            {/* Suggested Bobina Card */}
-                            {suggestedBobina && (
-                                <div className={`p-2 rounded border transition-all ${useBobina ? 'bg-green-50 border-green-200 shadow-sm' : 'bg-white border-dashed border-slate-300 opacity-70'}`}>
-                                    <div className="flex items-start gap-2">
-                                        <div className="mt-1">
-                                            <i className="fa-solid fa-check-circle text-green-600"></i>
-                                        </div>
-                                        <div className="flex-1">
-                                            <p className="text-[11px] font-bold text-slate-800">Bobina Asignada: {suggestedBobina.CodigoEtiqueta}</p>
-                                            <div className="text-[10px] text-slate-500 mt-0.5 grid grid-cols-2 gap-x-2">
-                                                <span>Restan: <strong>{suggestedBobina.MetrosRestantes}m</strong></span>
-                                                <span>Ingreso: {new Date(suggestedBobina.FechaIngreso).toLocaleDateString()}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Error Message */}
-                            {bobinaError && (
-                                <div className="p-2 bg-red-50 border border-red-200 rounded text-[11px] text-red-600 font-bold flex items-center gap-2">
-                                    <i className="fa-solid fa-ban"></i>
-                                    {bobinaError}
-                                </div>
-                            )}
-                        </div>
-                    )}
-
                     <div className="flex flex-col gap-2">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                            {mode === 'new' ? 'Nombre del Nuevo Rollo' : 'Seleccionar Rollo (Por Nombre)'}
+                            {mode === 'new' ? 'Nombre del Nuevo Lote' : 'Seleccionar Rollo (Por Nombre)'}
                         </label>
                         <div className="relative">
                             <i className={`fa-solid ${mode === 'new' ? 'fa-pen' : 'fa-list'} absolute left-3 top-3 text-slate-400`}></i>
@@ -286,6 +118,7 @@ const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders
                                     value={rollName}
                                     onChange={(e) => setRollName(e.target.value)}
                                     placeholder="Nombre del Lote"
+                                    autoFocus
                                 />
                             ) : (
                                 <div className="relative">
@@ -326,7 +159,7 @@ const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders
                     <button
                         onClick={handleAssign}
                         className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-lg shadow-emerald-500/30 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={loading || (mode === 'new' && (bobinaError || !selectedMaterialId))}
+                        disabled={loading || (mode === 'new' && !rollName.trim())}
                     >
                         {loading ? 'Procesando...' : <><i className="fa-solid fa-check"></i> Asignar</>}
                     </button>

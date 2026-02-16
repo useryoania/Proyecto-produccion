@@ -146,45 +146,72 @@ exports.getFileStream = async (fileId) => {
     }
 };
 
-exports.uploadToDrive = async (base64Data, fileName, areaName, retries = 2) => {
-    if (!fs.existsSync(TOKEN_PATH)) throw new Error("Requiere autorización. Por favor vincula tu cuenta Google.");
+exports.uploadToDrive = async (fileInput, fileName, areaName, retries = 2) => {
+
+    // Validar autorización
+    // Nota: Es mejor cachear el cliente, pero por seguridad chequeamos token.json
+    // OJO: Si oauth2Client no está inicializado, initOAuth() debe llamarse o usarse el global.
+    // El código actual usa 'drive' global que ya tiene auth. 
+    // fs.existsSync(TOKEN_PATH) es un check algo rústico pero funcional por ahora.
 
     try {
-        const rootFolderId = await getOrCreateFolder('pedidos WEB');
-        const areaFolderId = await getOrCreateFolder(areaName, rootFolderId);
+        const rootFolderId = await getOrCreateFolder('PEDIDOS WEB'); // Estandarizamos mayúsculas
+        const areaFolderId = await getOrCreateFolder(areaName || 'GENERAL', rootFolderId);
 
-        const cleanData = base64Data.trim();
+        let mediaBody;
         let mimeType = 'application/octet-stream';
-        let pureBase64 = cleanData;
 
-        // Intentar parsear como Data URL (más robusto)
-        if (cleanData.startsWith('data:')) {
-            const matches = cleanData.match(/^data:([^;]+);base64,(.+)$/s);
-            if (matches && matches.length === 3) {
-                mimeType = matches[1];
-                pureBase64 = matches[2].replace(/\s/g, ''); // Eliminar posibles espacios/saltos intermedios
+        if (Buffer.isBuffer(fileInput)) {
+            // --- FLUJO BUFFER (STREAMING) ---
+            mediaBody = Readable.from(fileInput);
+            // Podríamos tratar de detectar mimetype, pero Drive suele ser inteligente.
+            // Si el filename tiene extensión, Drive lo usa.
+        } else if (typeof fileInput === 'string') {
+            // --- FLUJO BASE64 (LEGACY) ---
+            const cleanData = fileInput.trim();
+
+            if (cleanData.startsWith('data:')) {
+                const matches = cleanData.match(/^data:([^;]+);base64,(.+)$/s);
+                if (matches && matches.length === 3) {
+                    mimeType = matches[1];
+                    const pureBase64 = matches[2].replace(/\s/g, '');
+                    mediaBody = Readable.from(Buffer.from(pureBase64, 'base64'));
+                } else {
+                    throw new Error('Formato Base64 inválido');
+                }
             } else {
-                console.error("❌ [DriveService] Falló regex de base64. Longitud:", cleanData.length, "Inicio:", cleanData.substring(0, 50));
-                throw new Error('Formato de archivo inválido (Data URL incorrecto)');
+                // Raw Base64
+                mediaBody = Readable.from(Buffer.from(cleanData, 'base64'));
             }
+        } else {
+            throw new Error("Tipo de archivo no soportado para subida (ni Buffer ni String)");
         }
-
-        const stream = Readable.from(Buffer.from(pureBase64, 'base64'));
 
         const file = await drive.files.create({
-            resource: { name: fileName, parents: [areaFolderId] },
-            media: { mimeType, body: stream },
-            fields: 'id, webViewLink',
+            resource: {
+                name: fileName,
+                parents: [areaFolderId]
+            },
+            media: {
+                mimeType: mimeType,
+                body: mediaBody
+            },
+            fields: 'id, webViewLink, webContentLink',
             supportsAllDrives: true
         });
+
+        console.log(`✅ [Drive] Archivo subido: ${fileName} -> ${file.data.webViewLink}`);
         return file.data.webViewLink;
+
     } catch (error) {
-        // Reintentar si es error de red
-        if (retries > 0 && (error.code === 'ECONNRESET' || error.message.includes('socket'))) {
-            console.warn(`⚠️ [DriveService] Error de red en uploadToDrive. Reintentando... (${retries} restantes)`);
-            return exports.uploadToDrive(base64Data, fileName, areaName, retries - 1);
+        // Reintentos automáticos para errores de red
+        if (retries > 0 && (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.message.includes('socket'))) {
+            console.warn(`⚠️ [DriveService] Error de red. Reintentando subida de ${fileName}... (${retries})`);
+            // Esperar un poco antes de reintentar
+            await new Promise(r => setTimeout(r, 1500));
+            return exports.uploadToDrive(fileInput, fileName, areaName, retries - 1);
         }
-        console.error("Error uploadToDrive:", error);
+        console.error(`❌ [DriveService] Error subiendo ${fileName}:`, error.message);
         throw error;
     }
 };

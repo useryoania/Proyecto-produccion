@@ -85,11 +85,17 @@ router.get('/materials/:areaId/:variante', async (req, res) => {
                     dbo.articulos.CodStock,
                     dbo.articulos.Descripcion AS Material,
                     dbo.articulos.anchoimprimible AS Ancho
-                FROM dbo.ConfigMapeoERP 
-                INNER JOIN dbo.StockArt ON dbo.ConfigMapeoERP.CodigoERP = dbo.StockArt.Grupo 
+                FROM dbo.StockArt
                 INNER JOIN dbo.articulos ON dbo.StockArt.CodStock = dbo.articulos.CodStock
-                WHERE dbo.ConfigMapeoERP.AreaID_Interno = @AreaID
-                  AND LTRIM(RTRIM(dbo.StockArt.Articulo)) = LTRIM(RTRIM(@Variante))
+                LEFT JOIN dbo.ConfigMapeoERP ON dbo.ConfigMapeoERP.CodigoERP = dbo.StockArt.Grupo
+                WHERE 
+                  (
+                    -- Case 1: Search by Name and Area (Standard)
+                    (dbo.ConfigMapeoERP.AreaID_Interno = @AreaID AND LTRIM(RTRIM(dbo.StockArt.Articulo)) = LTRIM(RTRIM(@Variante)))
+                    OR
+                    -- Case 2: Search by Code (Direct, ignores Area/Group mismatch if Code is specific)
+                    (LTRIM(RTRIM(dbo.StockArt.CodStock)) = LTRIM(RTRIM(@Variante)))
+                  )
                   AND ISNULL(dbo.StockArt.mostrar, 1) = 1
                   AND ISNULL(dbo.articulos.mostrar, 1) = 1
                 ORDER BY dbo.articulos.Descripcion

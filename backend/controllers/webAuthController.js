@@ -14,18 +14,24 @@ exports.login = async (req, res) => {
         return res.status(400).json({ success: false, message: 'ID Cliente requerido' });
     }
 
+    console.log(`🔐 [LOGIN ATTEMPT] Identifier: '${identifier}' (Pattern: '${identifier.trim()}')`);
+
     try {
         const pool = await getPool();
 
-        // Busqueda estricta por IDCliente (Varchar)
+        // Busqueda estricta por IDCliente (Varchar) con tolerancia a espacios
         const result = await pool.request()
-            .input('Val', sql.NVarChar, identifier)
+            .input('Val', sql.NVarChar, identifier.trim())
             .query(`
-                SELECT * FROM Clientes
-                WHERE IDCliente = @Val
+                SELECT CodCliente, IDCliente, Nombre, WebPasswordHash, WebActive, Email, NombreFantasia, WebResetPassword 
+                FROM Clientes
+                WHERE LTRIM(RTRIM(IDCliente)) = @Val
             `);
 
+        console.log(`🔐 [LOGIN RESULT] Matches found: ${result.recordset.length}`);
+
         if (result.recordset.length === 0) {
+            console.warn(`❌ Login Failed: User not found for '${identifier}'`);
             return res.status(401).json({ success: false, message: 'Usuario incorrecto: No se encontró el cliente.' });
         }
 

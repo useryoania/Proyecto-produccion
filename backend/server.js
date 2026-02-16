@@ -69,6 +69,7 @@ const nomenclatorsRoutes = require('./routes/nomenclatorsRoutes');
 
 app.use('/api/web-auth', webAuthRoutes); // RUTAS AUTH CLIENTE WEB
 app.use('/api/web-orders', webOrdersRoutes); // RUTAS PEDIDOS CLIENTE WEB (DTF, Etc)
+app.use('/api/web-content', require('./routes/webContentRoutes')); // RUTAS CONTENIDO WEB (Sidebar/Popup)
 app.use('/api/nomenclators', nomenclatorsRoutes);
 app.use('/api/routes-config', require('./routes/routesConfigRoutes'));
 app.use('/api/delivery-times', require('./routes/deliveryTimesRoutes'));
@@ -82,6 +83,7 @@ app.use('/api/inventory', require('./routes/inventoryRoutes'));
 app.use('/api/production-kanban', require('./routes/productionKanbanRoutes'));
 app.use('/api/production-file-control', require('./routes/productionFileRoutes'));
 app.use('/api/production', require('./routes/productionRoutes'));
+app.use('/api/machine-control', require('./routes/machineControlRoutes')); // CONTROL PANEL INSUMOS
 try {
     app.use('/api/finishing', require('./routes/ecoUvFinishingRoutes'));
 } catch (e) { console.error("❌ Error loading finishing routes:", e); }
@@ -118,17 +120,27 @@ const { Server } = require('socket.io');
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*",
-        methods: ["GET", "POST"]
-    }
+        origin: "*", // En producción, restringir al dominio real
+        methods: ["GET", "POST", "OPTIONS"],
+        allowedHeaders: ["Content-Type", "Authorization"],
+        credentials: true
+    },
+    transports: ['websocket', 'polling'], // Forzar ambos transportes para compatibilidad
+    allowEIO3: true // Compatibilidad con versiones anteriores de clientes si fuera necesario
 });
 
 app.set('socketio', io);
 
 io.on('connection', (socket) => {
-    console.log('🔌 Nuevo cliente conectado:', socket.id);
-    socket.on('disconnect', () => {
-        console.log('❌ Cliente desconectado:', socket.id);
+    // Log nivel silly para no saturar, pero útil para debug inicial
+    // console.log('🔌 Socket Connect:', socket.id); 
+
+    socket.on('error', (err) => {
+        console.error("❌ Socket Error:", err);
+    });
+
+    socket.on('disconnect', (reason) => {
+        // console.log('❌ Socket Disconnect:', socket.id, reason);
     });
 });
 

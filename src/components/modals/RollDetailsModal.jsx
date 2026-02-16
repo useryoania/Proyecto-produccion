@@ -408,8 +408,14 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                 return;
             }
         } else {
-            // Fallback para navegadores antiguos
-            if (!window.confirm(`Tu navegador no soporta descompresión automática.\n\nSe descargará un ZIP tradicional.`)) return;
+            // Fallback para navegadores antiguos o Inseguros (HTTP)
+            const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+            const message = `⚠️ FUNCIÓN DE CARPETA AUTOMÁTICA NO DISPONIBLE\n\n` +
+                `El navegador bloquea la "Escritura en Carpeta" porque no estás en una conexión segura (HTTPS) ni en Localhost.\n\n` +
+                (isChrome ? `TIP: Puedes habilitarla en "chrome://flags/#unsafely-treat-insecure-origin-as-secure" agregando esta IP.\n\n` : ``) +
+                `¿Deseas descargar un ZIP tradicional con los archivos?`;
+
+            if (!window.confirm(message)) return;
         }
 
         try {

@@ -162,7 +162,19 @@ const syncOrdersLogic = async (io) => {
                 } catch (e) { }
 
                 const sublineas = l.Sublineas || [];
-                let allNotas = (l.Observaciones || "") + " | " + sublineas.map(sl => sl.Notas || "").join(" | ");
+
+                // Formato de Observaciones Legible (Tipo Lista)
+                let headerObs = (l.Observaciones || "").trim().replace(/^(OBSERVACIONES|NOTAS|OBS)\s*[:.]\s*/i, 'OBS: ');
+                let subObs = sublineas
+                    .map((sl, idx) => {
+                        const n = (sl.Notas || "").trim().replace(/^(OBSERVACIONES|NOTAS|OBS)\s*[:.]\s*/i, '');
+                        return n ? `• (Item ${idx + 1}): ${n}` : null;
+                    })
+                    .filter(Boolean)
+                    .join("\n");
+
+                let allNotas = [headerObs, subObs].filter(Boolean).join("\n");
+
 
                 const matchTinta = allNotas.match(/Tinta:\s*([^|]+)/i);
                 if (matchTinta) areaObj.tinta = matchTinta[1].trim();

@@ -151,9 +151,10 @@ exports.getOrdersByArea = async (req, res) => {
 // =====================================================================
 exports.createOrder = async (req, res) => {
     const {
-        areaId, cliente, descripcion, prioridad,
-        material, variante, // <--- Recibimos los nuevos campos
-        magnitud, nota, fechaEntrega, archivos
+        cliente, prioridad, fechaEntrega,
+        servicios, // <--- ARRAY UNIFICADO
+        notasGenerales,
+        nombreTrabajo
     } = req.body;
 
     const pool = await getPool();
@@ -162,75 +163,104 @@ exports.createOrder = async (req, res) => {
     try {
         await transaction.begin();
 
-        const requestOrder = new sql.Request(transaction);
-        const resultOrder = await requestOrder
-            .input('AreaID', sql.VarChar(20), areaId)
-            .input('Cliente', sql.NVarChar(200), cliente)
-            .input('Descripcion', sql.NVarChar(300), descripcion)
-            .input('Prioridad', sql.VarChar(20), prioridad)
+        // Generar un ID Agrupador Único para todo el "Pedido" (Header)
+        const commonUUID = require('crypto').randomUUID();
+        const createdIds = [];
 
-            // --- NUEVOS CAMPOS ---
-            .input('Material', sql.VarChar(255), material || '')
-            .input('Variante', sql.VarChar(100), variante || '')
+        // Validar que hay servicios
+        if (!servicios || !Array.isArray(servicios) || servicios.length === 0) {
+            throw new Error("El pedido no contiene servicios válidos.");
+        }
 
-            .input('Magnitud', sql.VarChar(50), magnitud)
-            .input('Nota', sql.NVarChar(sql.MAX), nota)
-            .input('FechaEstimada', sql.DateTime, fechaEntrega ? new Date(fechaEntrega) : null)
-            .input('ArchivosCount', sql.Int, archivos ? archivos.length : 0)
-            .query(`
-                INSERT INTO dbo.Ordenes (
-                    AreaID, Cliente, DescripcionTrabajo, Prioridad, 
-                    Material, Variante, -- Insertamos en las columnas correctas
-                    Magnitud, Nota, FechaEstimadaEntrega, ArchivosCount, Estado, FechaIngreso
-                )
-                OUTPUT INSERTED.OrdenID
-                VALUES (
-                    @AreaID, @Cliente, @Descripcion, @Prioridad, 
-                    @Material, @Variante,
-                    @Magnitud, @Nota, @FechaEstimada, @ArchivosCount, 'Pendiente', GETDATE()
-                )
-            `);
+        // Iterar y crear una Orden por cada servicio en la lista
+        for (let i = 0; i < servicios.length; i++) {
+            const srv = servicios[i];
 
-        const newOrderId = resultOrder.recordset[0].OrdenID;
-        const safeUser = String((req.body.usuario && (req.body.usuario.id || req.body.usuario.UsuarioID)) || req.body.usuario || 'Sistema');
+            // Datos del Servicio Especifico
+            const areaId = srv.areaId || 'PENDIENTE';
+            const material = srv.cabecera?.material || '';
+            const variante = srv.cabecera?.variante || '';
+            const codArt = srv.cabecera?.codArticulo || null; // <--- YA NO ES HARDCODED
 
-        // LOG HISTORIAL
-        await new sql.Request(transaction)
-            .input('OID', sql.Int, newOrderId)
-            .input('Est', sql.VarChar, 'Pendiente')
-            .input('User', sql.VarChar, safeUser)
-            .input('Det', sql.NVarChar, 'Orden Creada')
-            .query(`
-                INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
-                VALUES (@OID, @Est, GETDATE(), GETDATE(), @User, @Det)
-            `);
+            // Nota combinada: Nota del servicio + General (solo en el principal?)
+            // Decisión: Poner nota general en todos o solo en el principal. 
+            // Ponemos nota especifica + ref a general si es consultable.
+            const notaServicio = (srv.notas || '') + (i === 0 && notasGenerales ? `\n[GRAL]: ${notasGenerales}` : '');
 
-        if (archivos && archivos.length > 0) {
-            for (const file of archivos) {
-                const requestFile = new sql.Request(transaction);
-                await requestFile
-                    .input('OrdenID', sql.Int, newOrderId)
-                    .input('Nombre', sql.VarChar(200), file.nombre)
-                    .input('Ruta', sql.VarChar(500), file.link)
-                    .input('Tipo', sql.VarChar(50), file.tipo)
-                    .input('Copias', sql.Int, file.copias || 1)
-                    .input('Metros', sql.Decimal(10, 2), file.metros || 0)
-                    .query(`
-                        INSERT INTO dbo.ArchivosOrden (OrdenID, NombreArchivo, RutaAlmacenamiento, TipoArchivo, Copias, Metros, FechaSubida)
-                        VALUES (@OrdenID, @Nombre, @Ruta, @Tipo, @Copias, @Metros, GETDATE())
-                    `);
+            const requestOrder = new sql.Request(transaction);
+            const resultOrder = await requestOrder
+                .input('AreaID', sql.VarChar(20), areaId)
+                .input('Cliente', sql.NVarChar(200), cliente)
+                .input('Descripcion', sql.NVarChar(300), nombreTrabajo || `Pedido ${cliente}`)
+                .input('Prioridad', sql.VarChar(20), prioridad)
+                .input('Material', sql.VarChar(255), material)
+                .input('Variante', sql.VarChar(100), variante)
+                .input('CodArticulo', sql.VarChar(50), codArt)
+                .input('Nota', sql.NVarChar(sql.MAX), notaServicio)
+                .input('FechaEstimada', sql.DateTime, fechaEntrega ? new Date(fechaEntrega) : null)
+                .input('UUID', sql.VarChar(50), commonUUID) // <--- VINCULACIÓN
+                .input('ArchivosCount', sql.Int, (srv.archivos || []).length)
+                .query(`
+                    INSERT INTO dbo.Ordenes (
+                        AreaID, Cliente, DescripcionTrabajo, Prioridad, 
+                        Material, Variante, CodArticulo, 
+                        Nota, FechaEstimadaEntrega, ArchivosCount, 
+                        Estado, FechaIngreso, IdCabezalERP
+                    )
+                    OUTPUT INSERTED.OrdenID
+                    VALUES (
+                        @AreaID, @Cliente, @Descripcion, @Prioridad, 
+                        @Material, @Variante, @CodArticulo,
+                        @Nota, @FechaEstimada, @ArchivosCount, 
+                        'Pendiente', GETDATE(), @UUID
+                    )
+                `);
+
+            const newOrderId = resultOrder.recordset[0].OrdenID;
+            createdIds.push(newOrderId);
+
+            // Insertar Archivos del Servicio
+            if (srv.archivos && Array.isArray(srv.archivos)) {
+                for (const file of srv.archivos) {
+                    await new sql.Request(transaction)
+                        .input('OID', sql.Int, newOrderId)
+                        .input('Nom', sql.VarChar(255), file.name || 'Archivo')
+                        .input('Tipo', sql.VarChar(50), file.tipo || 'GENERAL')
+                        .input('Ruta', sql.VarChar(500), file.url || '') // Si ya tienes URL
+                        .query(`
+                            INSERT INTO ArchivosOrden (OrdenID, NombreArchivo, TipoArchivo, RutaAlmacenamiento, EstadoArchivo, FechaSubida)
+                            VALUES (@OID, @Nom, @Tipo, @Ruta, 'Pendiente', GETDATE())
+                        `);
+                }
             }
+
+            // LOG HISTORIAL
+            const safeUser = String((req.body.usuario && (req.body.usuario.id || req.body.usuario.UsuarioID)) || 'Sistema');
+            await new sql.Request(transaction)
+                .input('OID', sql.Int, newOrderId)
+                .input('Est', sql.VarChar, 'Pendiente')
+                .input('User', sql.VarChar, safeUser)
+                .input('Det', sql.NVarChar, `Orden Creada (Multi-Servicio). Parte de Grupo: ${commonUUID}`)
+                .query(`
+                    INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                    VALUES (@OID, @Est, GETDATE(), GETDATE(), @User, @Det)
+                 `);
         }
 
         await transaction.commit();
-        res.json({ success: true, orderId: newOrderId, message: 'Orden creada exitosamente' });
+
+        const io = req.app.get('socketio');
+        if (io) io.emit('server:ordersUpdated', { count: createdIds.length });
+
+        res.json({ success: true, orderIds: createdIds, groupId: commonUUID, message: "Pedido Multi-Servicio creado correctamente." });
 
     } catch (err) {
-        if (transaction) await transaction.rollback();
-        console.error("❌ Error creando orden:", err);
+        await transaction.rollback();
+        console.error("❌ Error creando pedido multi-servicio:", err);
         res.status(500).json({ error: err.message });
     }
 };
+
 
 // =====================================================================
 // 3. FUNCIONES ORIGINALES (Restauradas tal cual estaban)

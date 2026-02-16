@@ -23,4 +23,5 @@ export { routesConfigService } from './modules/routesConfigService';
 export { deliveryTimesService } from './modules/deliveryTimesService';
 export { insumosService } from './modules/insumosService';
 export { receptionService } from './modules/receptionService';
+export { machineControlService } from './modules/machineControlService';
 

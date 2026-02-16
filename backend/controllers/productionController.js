@@ -93,12 +93,27 @@ exports.toggleRollStatus = async (req, res) => {
                     return res.status(400).json({ error: "No se puede iniciar un rollo que no está asignado a una máquina (está en mesa)." });
                 }
 
-                // === VALIDACIÓN DE BOBINA ===
-                // Es CRITICO que el rollo tenga bobina asignada para descontar inventario luego.
-                if (!currentRoll.BobinaID) {
-                    console.warn(`[toggleRollStatus] Roll ${rollId} has no BobinaID. Blocking start.`);
-                    await transaction.rollback();
-                    return res.status(400).json({ error: "⚠️ Este rollo NO tiene Bobina asignada. Por favor, edita el rollo y selecciona un material del inventario antes de iniciar." });
+                // === VALIDACIÓN DE BOBINA (REMOVIDA/ADAPTADA A SLOTS) ===
+                // Ahora verificamos si la máquina tiene una bobina montada y la asignamos al rollo automáticamente.
+                // Si no tiene, PERMITIMOS INICIAR igual (usuario asume responsabilidad o es material sin control).
+
+                const slotRes = await new sql.Request(transaction)
+                    .input('EqID', sql.Int, currentRoll.MaquinaID)
+                    .query("SELECT TOP 1 BobinaMontadaID FROM SlotsMaquina WHERE EquipoID = @EqID AND Tipo = 'BOBINA' AND BobinaMontadaID IS NOT NULL ORDER BY OrdenVisual");
+
+                if (slotRes.recordset.length > 0) {
+                    const activeBobinaId = slotRes.recordset[0].BobinaMontadaID;
+                    console.log(`[toggleRollStatus] Auto-assigning Bobina ${activeBobinaId} from Machine Slot to Roll ${rollId}`);
+
+                    await new sql.Request(transaction)
+                        .input('NewBID', sql.Int, activeBobinaId)
+                        .input('RID_Upd', sql.VarChar(50), currentRoll.RolloID.toString())
+                        .query("UPDATE dbo.Rollos SET BobinaID = @NewBID WHERE CAST(RolloID AS VARCHAR(50)) = @RID_Upd");
+
+                    // Actualizamos currentRoll para que el resto de la lógica (si la hubiera) tenga el ID
+                    currentRoll.BobinaID = activeBobinaId;
+                } else {
+                    console.warn(`[toggleRollStatus] Warning: Machine ${currentRoll.MaquinaID} has no bobina mounted in slots. Starting Roll ${rollId} without specific BobinaID.`);
                 }
                 // ============================
 
