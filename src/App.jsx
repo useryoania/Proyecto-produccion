@@ -5,6 +5,7 @@ import { useAuth } from './context/AuthContext';
 import LoginPage from './components/pages/LoginPage';
 import MainAppContent from './components/layout/MainAppContent'; // ESTE ES EL IMPORT
 import { menuService } from './services/api';
+import { ClientPortalApp } from './client-portal/ClientPortalApp';
 
 function App() {
   const { user, loading: authLoading } = useAuth();
@@ -35,6 +36,7 @@ function App() {
     return (
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/portal/*" element={<ClientPortalApp />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -43,6 +45,7 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/portal/*" element={<ClientPortalApp />} />
       <Route path="*" element={<MainAppContent menuItems={menuItems} />} />
     </Routes>
   );
