@@ -190,8 +190,7 @@ export const LoginPage = () => {
             <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-lg border border-gray-100">
 
                 <div className="flex justify-center mb-6">
-                    <img src="/logo-user.png" alt="User Logo" className="h-16 object-contain" onError={(e) => e.target.style.display = 'none'} />
-                    <div className="text-3xl font-bold tracking-tighter text-black">user<span className="text-pink-500">.</span></div>
+                    <img src="/assets/images/logo.png" alt="User Logo" className="h-16 object-contain" onError={(e) => e.target.style.display = 'none'} />
                 </div>
 
                 <h2 className="text-2xl font-semibold text-center text-gray-800 mb-6">

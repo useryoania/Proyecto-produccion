@@ -45,9 +45,7 @@ const LoginPage = () => {
 
             <div className="bg-white p-10 rounded-3xl shadow-2xl shadow-slate-200/50 w-full max-w-md border border-slate-100 relative z-10 backdrop-blur-sm bg-white/90">
                 <div className="flex flex-col items-center mb-8">
-                    <img src="/logo_user.png" alt="User Logo" className="w-64 h-auto mb-4 object-contain" />
-                    {/* <h1 className="text-3xl font-black text-slate-800 tracking-tight">GRAVITY</h1> */}
-                    <p className="text-slate-500 font-bold text-lg mt-1 uppercase tracking-wider">user Producción</p>
+                    <img src="/assets/images/logo.png" alt="User Logo" className="w-64 h-auto mb-4 object-contain" />
                 </div>
 
                 <form onSubmit={handleSubmit} className="flex flex-col gap-5">
