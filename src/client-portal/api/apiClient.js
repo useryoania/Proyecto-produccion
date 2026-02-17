@@ -30,6 +30,7 @@ const handleResponse = async (response) => {
 
 const getHeaders = () => {
     const token = localStorage.getItem('auth_token');
+    // console.log("🔑 [ApiClient] Headers token:", token ? "Present" : "Missing");
     return {
         'Content-Type': 'application/json',
         ...(token ? { 'Authorization': `Bearer ${token}` } : {})

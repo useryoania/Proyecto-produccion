@@ -8,7 +8,7 @@ import { MainLayout } from './layout/MainLayout';
 import { Dashboard } from './modulos/Dashboard';
 import { ProfileView } from './modulos/ProfileView';
 import OrderForm from './modulos/OrderForm';
-import { LoginPage } from './modulos/LoginPage';
+
 import { FactoryView } from './modulos/FactoryView';
 import { PickupView } from './modulos/PickupView';
 import { ClubView } from './modulos/ClubView';
@@ -18,7 +18,6 @@ export const ClientPortalApp = () => {
         <AuthProvider>
             <ToastProvider>
                 <Routes>
-                    <Route path="/login" element={<LoginPage />} />
 
                     <Route path="/" element={
                         <ProtectedRoute>
