@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { PDFDocument } = require('pdf-lib');
+const fileProcessingService = require('../services/fileProcessingService');
 
 // --- HELPERS CONSTANTS ---
 const pointsToCm = (points) => (points / 72) * 2.54;
@@ -123,7 +124,7 @@ exports.toggleRollStatus = async (req, res) => {
                     .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
                     .query(`UPDATE dbo.Rollos 
                         SET Estado = 'En maquina', 
-                            FechaInicioProduccion = GETDATE() 
+                        FechaInicioProduccion = GETDATE() 
                         WHERE CAST(RolloID AS VARCHAR(50)) = @RID`);
 
                 // Bitacora Logic
@@ -377,8 +378,8 @@ exports.unassignRoll = async (req, res) => {
             .input('RID', sql.VarChar(50), String(rollId))
             .query(`UPDATE dbo.Ordenes 
                     SET MaquinaID = NULL,
-                        Estado = 'Produccion',
-                        EstadoenArea = 'En Lote'
+                    Estado = 'Produccion',
+                    EstadoenArea = 'En Lote'
                     WHERE CAST(RolloID AS VARCHAR(50)) = @RID`);
 
         await transaction.commit();
@@ -642,13 +643,6 @@ exports.magicSort = async (req, res) => {
             await registrarAuditoria(transaction, userId, 'MAGIC_SORT_SEQ', `Magic Sort Secuencial: ${createdRollsCount} lotes creados, ${assignedRollsCount} asignados.`, ip);
             await transaction.commit();
 
-            // ---------------------------------------------------------
-            // PASO 3: DESCARGA DE ARCHIVOS (Post-Commit)
-            // ---------------------------------------------------------
-            // ... (Lógica de descarga de archivos existente o simplificada) ...
-            // (Mantenemos la lógica de descarga original si es crítica, aunque ahora el usuario priorizó el flujo de estados)
-            // Para brevedad en esta refactorización crítica, asumimos que la descarga se puede disparar en segundo plano o el worker normal.
-
             res.json({
                 success: true,
                 message: `Proceso completado. ${createdRollsCount} lotes generados (${assignedRollsCount} asignados a máquina).`
@@ -665,3 +659,13 @@ exports.magicSort = async (req, res) => {
     }
 };
 exports.getGroupedOrderDetails = async (req, res) => { res.json([]); };
+
+exports.measureFiles = async (req, res) => {
+    const { fileIds } = req.body;
+    try {
+        await fileProcessingService.processFiles(fileIds, req.app.get('io'));
+        res.json({ success: true, message: 'Procesamiento iniciado.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};

@@ -1,30 +1,14 @@
-const { sql, getPool } = require('../config/db');
+const { getPool, sql } = require('../config/db');
 
 async function checkColumns() {
     try {
         const pool = await getPool();
-        console.log("--- COLUMNS IN Ordenes ---");
-        const resOrd = await pool.request().query(`
-            SELECT COLUMN_NAME 
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_NAME = 'Ordenes'
-            ORDER BY COLUMN_NAME
-        `);
-        console.log(resOrd.recordset.map(r => r.COLUMN_NAME).join(', '));
-
-        console.log("\n--- COLUMNS IN Etiquetas ---");
-        const resEti = await pool.request().query(`
-            SELECT COLUMN_NAME 
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_NAME = 'Etiquetas'
-            ORDER BY COLUMN_NAME
-        `);
-        console.log(resEti.recordset.map(r => r.COLUMN_NAME).join(', '));
-
+        const res = await pool.request().query("SELECT TOP 1 * FROM Ordenes");
+        console.log("Columnas en Ordenes:", Object.keys(res.recordset[0]));
+        process.exit(0);
     } catch (err) {
-        console.error("Error:", err.message);
-    } finally {
-        process.exit();
+        console.error("Error:", err);
+        process.exit(1);
     }
 }
 

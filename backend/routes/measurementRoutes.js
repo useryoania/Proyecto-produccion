@@ -5,16 +5,23 @@ const controller = require('../controllers/measurementController');
 // GET: Obtener lista de trabajo
 router.get('/', controller.getOrdersToMeasure);
 
-// POST: Analizar archivos (Medición Automática)
+// POST: Analizar archivos (Medición Automática en Memoria)
 router.post('/analyze', controller.measureFiles);
 
 // POST: Guardar cambios en base de datos
 router.post('/save', controller.saveMeasurements);
 
+// Legacy/Compat
 router.post('/auto-measure', controller.measureFiles);
+
+// ZIP Download
 router.post('/process-batch', controller.processBatch);
-router.post('/process-batch-by-orders', controller.processOrdersBatch);
 router.post('/download-zip', controller.downloadOrdersZip);
 
-module.exports = router;
+// Local Download Structure
+router.post('/process-batch-by-orders', controller.processOrdersBatch);
 
+// NEW: Server Side Full Process (Download + Measure + Update DB)
+router.post('/process-server', controller.processFilesServerSide);
+
+module.exports = router;

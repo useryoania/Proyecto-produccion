@@ -190,6 +190,67 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
         }
     };
 
+    const handleSync = async () => {
+        if (!loadedRemito) return;
+        setLoading(true);
+        try {
+            // Filtrar solo items escaneados/recibidos que NO han sido sincronizados aún
+            const scanneableItems = Object.values(itemMap).filter(i => i.scanned && !i.synced);
+
+            if (scanneableItems.length === 0) {
+                toast.info("No hay nuevos items recibidos para sincronizar.");
+                setLoading(false);
+                return;
+            }
+
+            // Lógica de Sincronización
+            const payload = scanneableItems.map(item => ({
+                qr: item.CodigoEtiqueta,
+                count: 1, // Bulto Individual
+                price: parseFloat(item.Precio || 0), // Usar campos del item del remito si están disponibles
+                quantity: parseFloat(item.Cantidad || 0),
+                profile: item.PerfilesPrecio || ''
+            }));
+
+            const res = await logisticsService.syncDepositItems(payload);
+            const successItems = res.results?.filter(r => r.success) || [];
+
+            if (successItems.length > 0) {
+                toast.success(`Sincronizados ${successItems.length} bultos correctamente.`);
+
+                // Actualizar estado local para evitar re-sincronización
+                setItemMap(prev => {
+                    const next = { ...prev };
+                    successItems.forEach(r => {
+                        if (next[r.qr]) {
+                            next[r.qr].synced = true;
+                        }
+                    });
+                    return next;
+                });
+
+                // Verificar si todos los items del remito fueron recibidos y sincronizados
+                const allItemsScanned = Object.values(itemMap).every(i => i.scanned);
+                const allItemsSynced = Object.values(itemMap).every(i => i.synced);
+
+                if (allItemsScanned && allItemsSynced) {
+                    toast.success("Todos los items del remito han sido procesados y sincronizados.");
+                    // Opcional: Cerrar automáticamente o dejar que el usuario 'Confirme' manualmente para cerrar el remito en UI
+                    // setStep(1);
+                    // setRemitoCode('');
+                    // setLoadedRemito(null);
+                }
+            } else {
+                toast.error("Error al sincronizar bultos. Verifique conexión.");
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error("Error de conexión al sincronizar: " + err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Metrics
     const totalItems = loadedRemito?.items?.length || 0;
     const scannedCount = Object.values(itemMap).filter(i => i.scanned).length;
@@ -356,7 +417,19 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
                                         })}
                                     </div>
                                     {/* ACTIONS FOOTER */}
-                                    <div className="p-3 border-t border-slate-100 bg-slate-50">
+                                    <div className="p-3 border-t border-slate-100 bg-slate-50 space-y-2">
+                                        {/* SYNC BUTTON FOR DEPOSITO */}
+                                        {currentArea === 'DEPOSITO' && scannedCount > 0 && (
+                                            <button
+                                                onClick={handleSync}
+                                                disabled={loading}
+                                                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-2 rounded-lg font-bold text-xs hover:from-purple-700 hover:to-indigo-700 transition-all uppercase flex items-center justify-center gap-2 shadow-sm"
+                                            >
+                                                {loading ? <i className="fa-solid fa-circle-notch fa-spin"></i> : <i className="fa-solid fa-paper-plane"></i>}
+                                                Sincronizar {scannedCount} Recibidos
+                                            </button>
+                                        )}
+
                                         {manualSelection.length > 0 ? (
                                             <button onClick={confirmManualSelection} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-xs hover:bg-indigo-700 transition-colors uppercase">
                                                 Confirmar Selección

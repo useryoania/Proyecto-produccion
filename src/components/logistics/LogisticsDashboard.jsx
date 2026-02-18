@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { areasService } from '../../services/modules/areasService';
 import LogisticsLayout from './LogisticsLayout';
@@ -8,6 +8,8 @@ import TransportView from './TransportView';
 import ReceptionView from './ReceptionView';
 import StockView from './StockView';
 import LostView from './LostView';
+// Dynamic Import for DepositStockPage to optimize chunk loading
+const DepositStockPage = React.lazy(() => import('./DepositStockPage'));
 
 const LogisticsDashboard = () => {
     const { user } = useAuth();
@@ -23,12 +25,34 @@ const LogisticsDashboard = () => {
             try {
                 const allAreas = await areasService.getAll();
                 // Filter areas that have Logistic capabilities enabled
-                const logisticsAreas = allAreas
+                let logisticsAreas = allAreas
                     .filter(a => a.TieneLogisticaBultos)
                     .map(a => a.code)
                     .sort();
 
-                setAreasList(['TODOS', ...logisticsAreas]);
+                // FILTER: Only ADMIN sees ALL/TODOS. Others see only their area.
+                const isAdmin = user?.rol === 'ADMIN' || user?.rol === 'admin';
+
+                if (!isAdmin && user) {
+                    const userArea = user.areaKey || user.areaId;
+                    if (userArea) {
+                        // Filter to match user area
+                        logisticsAreas = logisticsAreas.filter(a => a === userArea);
+                    } else {
+                        // No area assigned, maybe empty or default?
+                        logisticsAreas = [];
+                    }
+                    // For non-admins, DO NOT add 'TODOS'
+                    setAreasList(logisticsAreas);
+
+                    // Force selection
+                    if (logisticsAreas.length > 0) {
+                        setGlobalArea(logisticsAreas[0]);
+                    }
+                } else {
+                    // Admin sees TODOS + All Areas
+                    setAreasList(['TODOS', ...logisticsAreas]);
+                }
 
                 // Once loaded, validate if current globalFilter is still valid? 
                 // Not strictly necessary if we trust user.areaId
@@ -36,8 +60,8 @@ const LogisticsDashboard = () => {
                 console.error("Error loading areas:", err);
             }
         };
-        loadAreas();
-    }, []);
+        if (user) loadAreas(); // Only load if user is present to check role
+    }, [user]);
 
     // 2. Set Default Area based on User
     useEffect(() => {
@@ -69,6 +93,19 @@ const LogisticsDashboard = () => {
             case 'reception':
                 return <ReceptionView {...commonProps} />;
             case 'stock':
+                if (commonProps.areaFilter === 'DEPOSITO') {
+                    // Lazy load with Suspense fallback
+                    return (
+                        <Suspense fallback={
+                            <div className="flex flex-col items-center justify-center h-full p-10 text-gray-400">
+                                <i className="fa-solid fa-circle-notch fa-spin text-3xl mb-4 text-indigo-500"></i>
+                                <span className="text-sm font-bold animate-pulse">Cargando módulo de Depósito...</span>
+                            </div>
+                        }>
+                            <DepositStockPage />
+                        </Suspense>
+                    );
+                }
                 return <StockView {...commonProps} />;
             case 'lost':
                 return <LostView {...commonProps} />;

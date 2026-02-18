@@ -332,7 +332,10 @@ exports.assignRoll = async (req, res) => {
 
             if (targetOrderIds.length === 0) throw new Error("No se especificaron órdenes.");
 
-            // 2. ASIGNAR ÓRDENES
+            // 2. VINCULAR ÓRDENES (Primero las asignamos al rollo sin tocar secuencia aun)
+            // Esto es necesario para que luego al consultar "todas las ordenes del rollo"
+            // incluyan a las nuevas y podamos reordenar el conjunto completo.
+
             for (const oid of targetOrderIds) {
                 await new sql.Request(transaction)
                     .input('OID', sql.Int, oid)
@@ -349,7 +352,10 @@ exports.assignRoll = async (req, res) => {
                             EstadoenArea = CASE 
                                 WHEN @RID IS NOT NULL THEN 'En Lote'
                                 ELSE 'Pendiente'
-                            END
+                            END,
+                            -- Importante: Si la orden es 'Reposicion' o tiene 'falla' en true, aseguramos su marca.
+                            -- Pero aqui solo actualizamos la vinculacion.
+                            Observaciones = Observaciones -- No-op
                         WHERE OrdenID = @OID
                     `);
 
@@ -364,6 +370,49 @@ exports.assignRoll = async (req, res) => {
                         INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
                         VALUES (@OID, 'PREPARACION', GETDATE(), GETDATE(), @User, @Det)
                      `);
+            }
+
+            // 3. RECALCULAR SECUENCIA INTELIGENTE (Priority Rules)
+            // Obtenemos TODAS las órdenes del rollo para reordenarlas completas
+            const allOrdersInRoll = await new sql.Request(transaction)
+                .input('RID_ALL', typeof rollId === 'number' ? sql.Int : sql.VarChar(20), rollId)
+                .query(`
+                    SELECT OrdenID, Prioridad, falla, FechaEntradaSector, FechaIngreso 
+                    FROM Ordenes 
+                    WHERE RolloID = @RID_ALL
+                `);
+
+            let ordersToSort = allOrdersInRoll.recordset;
+
+            // Sorting Logic:
+            // 1. Fallas / Reposiciones (falla = 1) -> TOP
+            // 2. Prioridad = 'Urgente' -> SECOND
+            // 3. Fecha (FIFO) -> LAST
+            ordersToSort.sort((a, b) => {
+                // 1. Falla Check (Assume bit 1/0)
+                const isFallaA = a.falla ? 1 : 0;
+                const isFallaB = b.falla ? 1 : 0;
+                if (isFallaA !== isFallaB) return isFallaB - isFallaA; // 1 goes first
+
+                // 2. Priority Check
+                const isUrgenteA = (a.Prioridad === 'Urgente');
+                const isUrgenteB = (b.Prioridad === 'Urgente');
+                if (isUrgenteA !== isUrgenteB) return isUrgenteB - isUrgenteA; // True goes first
+
+                // 3. Date Check (FIFO)
+                // Usamos FechaEntradaSector (que arreglamos hace poco) o FechaIngreso como fallback
+                const dateA = new Date(a.FechaEntradaSector || a.FechaIngreso).getTime();
+                const dateB = new Date(b.FechaEntradaSector || b.FechaIngreso).getTime();
+                return dateA - dateB; // Ascending (older first)
+            });
+
+            // 4. Update Secuencia
+            for (let i = 0; i < ordersToSort.length; i++) {
+                const o = ordersToSort[i];
+                await new sql.Request(transaction)
+                    .input('OID_SEQ', sql.Int, o.OrdenID)
+                    .input('SEQ_VAL', sql.Int, i + 1)
+                    .query("UPDATE Ordenes SET Secuencia = @SEQ_VAL WHERE OrdenID = @OID_SEQ");
             }
 
             await transaction.commit();

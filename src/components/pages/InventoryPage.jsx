@@ -40,19 +40,32 @@ const InventoryPage = () => {
 
             // Mapper para adaptar al MultiAreaSelector que puede esperar {AreaID, Nombre} o {code, name}
             // areasService devuelve normalmente {AreaID, Nombre...}
-            const adaptedData = data.map(d => ({ ...d, code: d.AreaID, name: d.Nombre }));
+            let adaptedData = data.map(d => ({ ...d, code: d.AreaID, name: d.Nombre }));
+
+            // Initial Filter based on User Role
+            const isAdmin = user?.rol === 'admin' || user?.rol === 'ADMIN';
+
+            if (!isAdmin && user) {
+                const userArea = user.areaKey || user.areaId;
+                if (userArea) {
+                    adaptedData = adaptedData.filter(a => a.code === userArea);
+                } else {
+                    adaptedData = [];
+                }
+            }
+
             setAreasList(adaptedData);
 
             // Inicializar selección
             if (adaptedData.length > 0) {
                 // Si es admin o DEPOSITO -> Seleccionar TODAS por defecto (o permitir escoger, aqui seleccionamos todas para dar visión global)
-                const isAdminOrDeposito = user?.role === 'admin' || user?.areaKey === 'DEPOSITO' || !user?.areaKey;
+                // const isAdminOrDeposito = user?.role === 'admin' || user?.areaKey === 'DEPOSITO' || !user?.areaKey; // OLD LOGIC
 
-                if (isAdminOrDeposito) {
+                if (isAdmin) {
+                    // Admin selects all by default? Or first? usually all for overview.
                     setSelectedAreas(adaptedData.map(a => a.code));
-                } else if (user?.areaKey && adaptedData.some(a => a.code === user.areaKey)) {
-                    setSelectedAreas([user.areaKey]);
                 } else {
+                    // User selects their only area
                     setSelectedAreas([adaptedData[0].code]);
                 }
             }

@@ -172,6 +172,15 @@ server.listen(PORT, async () => {
         // startAutoSync(io).catch(err => console.error("❌ Scheduler Start Error:", err));
         // console.log(`⏱️ Sistema de sincronización automática activado.`);
         console.log(`ℹ️ [Sync] Sincronización con ERP desactivada (Pedidos vía WEB activos).`);
+
+        // ACTIVAR CRON PLANILLAS
+        try {
+            require('./cron/planillaSync');
+            console.log("⏱️ [CRON] Sincronización de Planillas ACTIVADA");
+        } catch (e) {
+            console.error("❌ [CRON] Error cargando PlanillaSync:", e.message);
+        }
+
     } catch (error) {
         console.error("❌ Error al iniciar el Scheduler:", error.message);
     }

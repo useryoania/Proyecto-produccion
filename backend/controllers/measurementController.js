@@ -5,6 +5,8 @@ const path = require('path');
 const sharp = require('sharp');
 const { PDFDocument } = require('pdf-lib');
 const archiver = require('archiver');
+const fileProcessingService = require('../services/fileProcessingService');
+const axios = require('axios');
 
 // --- HELPERS ---
 const pointsToCm = (points) => (points / 72) * 2.54;
@@ -18,7 +20,6 @@ const getDriveId = (url) => {
     return match ? match[1] : null;
 };
 
-// --- 1. OBTENER LISTA ---
 // --- 1. OBTENER LISTA ---
 exports.getOrdersToMeasure = async (req, res) => {
     const { area } = req.query;
@@ -62,9 +63,7 @@ exports.getOrdersToMeasure = async (req, res) => {
     }
 };
 
-// ... (measureFiles stays the same) ...
-
-// --- 4. PROCESAMIENTO POR LOTES (DESCARGAR + MEDIR) ---
+// --- 4. PROCESAMIENTO POR LOTES (DESCARGAR ZIP - OPTIMIZADO STREAMING) ---
 exports.processBatch = async (req, res) => {
     const { fileIds } = req.body;
 
@@ -76,8 +75,8 @@ exports.processBatch = async (req, res) => {
         // Obtener metadatos
         const filesQuery = await pool.request().query(`
             SELECT 
-                AO.ArchivoID, AO.RutaAlmacenamiento, AO.NombreArchivo, AO.Copias,
-                O.OrdenID, O.CodigoOrden, O.Cliente, O.DescripcionTrabajo
+                AO.ArchivoID, AO.RutaAlmacenamiento, AO.NombreArchivo, AO.Copias, AO.OrdenID,
+                O.CodigoOrden, O.Cliente, O.DescripcionTrabajo
             FROM dbo.ArchivosOrden AO
             INNER JOIN dbo.Ordenes O ON AO.OrdenID = O.OrdenID
             WHERE AO.ArchivoID IN (${fileIds.join(',')})
@@ -101,55 +100,53 @@ exports.processBatch = async (req, res) => {
         for (const file of filesQuery.recordset) {
             try {
                 const sourcePath = file.RutaAlmacenamiento || '';
-                let tempBuffer = null;
 
-                // 1. Descargar (Auth Drive / HTTP / Local)
-                if (sourcePath.includes('drive.google.com')) {
-                    const driveId = getDriveId(sourcePath);
-                    if (driveId) {
-                        const { stream } = await driveService.getFileStream(driveId);
-                        const chunks = [];
-                        for await (const chunk of stream) chunks.push(chunk);
-                        tempBuffer = Buffer.concat(chunks);
-                    }
-                } else if (sourcePath.startsWith('http')) {
-                    const r = await fetch(sourcePath, { signal: AbortSignal.timeout(300000) });
-                    if (r.ok) tempBuffer = Buffer.from(await r.arrayBuffer());
-                } else if (fs.existsSync(sourcePath)) {
-                    tempBuffer = fs.readFileSync(sourcePath);
+                // Determinar extensión (Sin leer magic bytes para permitir streaming)
+                let ext = path.extname(file.NombreArchivo || '').toLowerCase();
+                if (!ext || ext.length < 2) {
+                    try {
+                        const urlObj = new URL(sourcePath);
+                        ext = path.extname(urlObj.pathname).toLowerCase();
+                    } catch (e) { }
                 }
-
-                if (!tempBuffer) {
-                    archive.append(`Error descargando ID ${file.ArchivoID}`, { name: `ERRORES/${file.ArchivoID}_error.txt` });
-                    continue;
-                }
-
-                // 2. Detectar Extension y Nombre
-                const origExt = path.extname(file.NombreArchivo || '').toLowerCase();
-                let finalExt = origExt;
-                const magicHex = tempBuffer.toString('hex', 0, 4).toUpperCase();
-
-                if (magicHex.startsWith('25504446')) finalExt = '.pdf';
-                else if (magicHex.startsWith('89504E47')) finalExt = '.png';
-                else if (magicHex.startsWith('FFD8FF')) finalExt = '.jpg';
-
-                if (!finalExt) finalExt = '.pdf';
+                if (!ext) ext = '.pdf';
 
                 let baseName = file.NombreArchivo;
                 if (!baseName || baseName.length < 3) {
                     const pOrder = sanitize(file.CodigoOrden || file.OrdenID.toString());
                     const pClient = sanitize(file.Cliente);
                     const pJob = sanitize(file.DescripcionTrabajo || 'Trabajo');
-                    // Estimation for single batch process
                     baseName = `${pOrder}_${pClient}_${pJob} Archivo 1 de 1 (x${file.Copias || 1} COPIAS)`;
                 } else {
                     baseName = sanitize(baseName);
                 }
 
-                if (!baseName.toLowerCase().endsWith(finalExt)) baseName += finalExt;
+                if (!baseName.toLowerCase().endsWith(ext)) baseName += ext;
 
-                // 3. Agregar al ZIP
-                archive.append(tempBuffer, { name: baseName });
+                // STREAMING DIRECTO AL ZIP
+                if (sourcePath.includes('drive.google.com')) {
+                    const driveId = getDriveId(sourcePath);
+                    if (driveId) {
+                        try {
+                            const { stream } = await driveService.getFileStream(driveId);
+                            archive.append(stream, { name: baseName });
+                        } catch (driveErr) {
+                            archive.append(`Error Drive: ${driveErr.message}`, { name: `ERRORES/${file.ArchivoID}_error.txt` });
+                        }
+                    }
+                } else if (sourcePath.startsWith('http')) {
+                    const response = await axios({
+                        url: sourcePath,
+                        method: 'GET',
+                        responseType: 'stream',
+                        timeout: 600000 // 10 min
+                    });
+                    archive.append(response.data, { name: baseName });
+                } else if (fs.existsSync(sourcePath)) {
+                    archive.file(sourcePath, { name: baseName });
+                } else {
+                    archive.append(`Archivo no encontrado: ${sourcePath}`, { name: `ERRORES/${file.ArchivoID}_404.txt` });
+                }
 
             } catch (err) {
                 console.error(`Error processing file ${file.ArchivoID}:`, err);
@@ -165,7 +162,7 @@ exports.processBatch = async (req, res) => {
     }
 };
 
-// --- 5. PROCESAMIENTO POR ÓRDENES (DESCARGAR EN ESTRUCTURA DE CARPETAS) ---
+// --- 5. PROCESAMIENTO POR ÓRDENES (DESCARGAR EN ESTRUCTURA DE CARPETAS - OPTIMIZADO) ---
 exports.processOrdersBatch = async (req, res) => {
     const { orderIds } = req.body;
     const baseDir = 'C:\\ORDENES';
@@ -176,7 +173,7 @@ exports.processOrdersBatch = async (req, res) => {
     try {
         const pool = await getPool();
 
-        // Obtener archivos de las órdenes seleccionadas con info de Área y Rollo
+        // Obtener archivos
         const filesQuery = await pool.request().query(`
             SELECT 
                 AO.ArchivoID, AO.RutaAlmacenamiento, AO.RutaLocal, AO.NombreArchivo, AO.Copias,
@@ -189,11 +186,10 @@ exports.processOrdersBatch = async (req, res) => {
         `);
 
         if (filesQuery.recordset.length === 0) {
-            return res.json({ success: true, message: "No se encontraron archivos en las órdenes seleccionadas.", results: [] });
+            return res.json({ success: true, message: "No se encontraron archivos.", results: [] });
         }
 
-        // --- PRE-CALCULO DE INDICES (Igual que fileProcessingService) ---
-        // Agrupar archivos por OrdenID para calcular "Archivo X de Y"
+        // Agrupar
         const filesByOrder = {};
         filesQuery.recordset.forEach(f => {
             if (!filesByOrder[f.OrdenID]) filesByOrder[f.OrdenID] = [];
@@ -203,7 +199,6 @@ exports.processOrdersBatch = async (req, res) => {
         const filesToProcess = [];
         for (const oId in filesByOrder) {
             const group = filesByOrder[oId];
-            // Ordenar por ID para consistencia
             group.sort((a, b) => a.ArchivoID - b.ArchivoID);
             group.forEach((f, idx) => {
                 f.idxInOrder = idx + 1;
@@ -217,176 +212,86 @@ exports.processOrdersBatch = async (req, res) => {
         for (const file of filesToProcess) {
             let log = { id: file.ArchivoID, status: 'OK' };
             try {
-                // DEFINE TARGET DIRECTORY: C:\ORDENES\{AreaID}\{RollName}
                 const safeArea = sanitize(file.AreaID || 'GENERAL');
                 const safeRoll = sanitize(file.RollName || 'Sin-Rollo');
                 const targetDir = path.join(baseDir, safeArea, safeRoll);
 
-                // Asegurar directorio
                 if (!fs.existsSync(targetDir)) {
                     fs.mkdirSync(targetDir, { recursive: true });
                 }
 
-                // 1. ORIGEN (Descarga Robusta)
-                // 1. ORIGEN (Descarga Forzada - Usuario solicitó "Si existe borre y descargue")
+                // 1. ORIGEN (Descarga Robusta Streaming a Disco)
                 const sourcePath = file.RutaAlmacenamiento || '';
-                let tempBuffer = null;
 
-                // [REMOVED LOCAL CHECK TO FORCE DOWNLOAD]
-                // B. Download from URL matches logic in service
-                if (!tempBuffer) {
-                    if (sourcePath.includes('drive.google.com')) {
-                        const driveId = getDriveId(sourcePath);
-                        if (!driveId) throw new Error('Link de Drive inválido');
+                // Determinar Nombre Base Temporal
+                let ext = path.extname(file.NombreArchivo || '').toLowerCase() || '.pdf';
+                let baseName = `${file.CodigoOrden}_${sanitize(file.Cliente)}_${sanitize(file.DescripcionTrabajo)} Archivo ${file.idxInOrder} de ${file.totalInOrder}`;
+                let fileName = baseName + ext;
+                let destPath = path.join(targetDir, fileName);
 
-                        const { stream } = await driveService.getFileStream(driveId);
-                        const chunks = [];
-                        for await (const chunk of stream) chunks.push(chunk);
-                        tempBuffer = Buffer.concat(chunks);
-                    } else if (sourcePath.startsWith('http')) {
-                        const res = await fetch(sourcePath, { signal: AbortSignal.timeout(300000) }); // 5 min
-                        if (!res.ok) throw new Error(`Status ${res.status} al descargar de Web`);
-                        tempBuffer = Buffer.from(await res.arrayBuffer());
-                    } else if (fs.existsSync(sourcePath)) {
-                        tempBuffer = fs.readFileSync(sourcePath);
-                    } else {
-                        throw new Error('Archivo origen no encontrado en DB (RutaLocal ni RutaAlmacenamiento válidos)');
-                    }
+                // --- STREAMING DOWNLOAD TO DISK (Avoid RAM) ---
+                const writer = fs.createWriteStream(destPath);
+
+                if (sourcePath.includes('drive.google.com')) {
+                    const driveId = getDriveId(sourcePath);
+                    const { stream } = await driveService.getFileStream(driveId);
+                    stream.pipe(writer);
+                } else if (sourcePath.startsWith('http')) {
+                    const response = await axios({
+                        url: sourcePath,
+                        method: 'GET',
+                        responseType: 'stream',
+                        timeout: 300000
+                    });
+                    response.data.pipe(writer);
+                } else if (fs.existsSync(sourcePath)) {
+                    // Local Copy
+                    fs.copyFileSync(sourcePath, destPath);
+                    writer.close(); // Not used
                 }
 
-                // VALIDACIÓN BÁSICA
-                if (!tempBuffer || tempBuffer.length === 0) throw new Error("El archivo descargado está vacío (0 bytes)");
-                const header = tempBuffer.slice(0, 500).toString().trim();
-                if (header.toLowerCase().startsWith('<!doctype html') || header.toLowerCase().startsWith('<html')) {
-                    // Check for Virus Scan Warning
-                    const content = tempBuffer.toString('utf8');
-                    if (content.includes('Virus scan') || content.includes('virus') || content.includes('confirm=')) {
-                        console.log(`[Batch] Drive Virus Scan Warning detectado en archivo ${file.ArchivoID}. Intentando bypass...`);
-
-                        let confirmToken = null;
-                        const match = content.match(/confirm=([a-zA-Z0-9_\-]+)/);
-                        if (match) confirmToken = match[1];
-
-                        if (!confirmToken) {
-                            const matchForm = content.match(/action=".*?confirm=([a-zA-Z0-9_\-]+)/);
-                            if (matchForm) confirmToken = matchForm[1];
-                        }
-
-                        let bypassUrl = '';
-                        const driveId = getDriveId(sourcePath);
-
-                        if (confirmToken) {
-                            bypassUrl = `https://drive.google.com/uc?export=download&id=${driveId}&confirm=${confirmToken}`;
-                        } else {
-                            bypassUrl = `https://drive.google.com/uc?export=download&id=${driveId}&confirm=t`;
-                        }
-
-                        const r2 = await fetch(bypassUrl, { signal: AbortSignal.timeout(300000) });
-                        if (r2.ok) tempBuffer = Buffer.from(await r2.arrayBuffer());
-
-                        // Re-check header
-                        const headerRetry = tempBuffer.slice(0, 15).toString().trim().toLowerCase();
-                        if (headerRetry.startsWith('<!doctype html') || headerRetry.startsWith('<html')) {
-                            throw new Error("Falló bypass de Virus Scan (el archivo sigue siendo HTML).");
-                        }
-                    } else {
-                        throw new Error("El archivo descargado parece ser HTML (error Drive/Login).");
-                    }
+                // Wait for finish if stream
+                if (sourcePath.startsWith('http') || sourcePath.includes('drive')) {
+                    await new Promise((resolve, reject) => {
+                        writer.on('finish', resolve);
+                        writer.on('error', reject);
+                    });
                 }
 
-                // Sanitizar: Reemplazar slash / por guion - (para "1/1" -> "1-1") y borrar chars prohibidos
-                // const sanitize = (str) => (str || '').replace(/\//g, '-').replace(/[<>:"\\|?*]/g, ' ').trim();
-
-                // 2. DESTINO (RENOMBRADO) - Detectar extensión real
-                const origExt = path.extname(file.NombreArchivo || '').toLowerCase();
-                let finalExt = origExt;
-
-                // Inspeccionar Magic Numbers (HEX) para mayor precisión
-                // PDF: 25 50 44 46, PNG: 89 50 4E 47, JPG: FF D8 FF
-                const magicHex = tempBuffer.toString('hex', 0, 4).toUpperCase();
-                console.log(`[FileTypeDebug] FileID: ${file.ArchivoID}, Name: ${file.NombreArchivo}, OrigExt: ${origExt}, Magic: ${magicHex}`);
-
-                if (magicHex.startsWith('25504446')) {
-                    finalExt = '.pdf';
-                } else if (magicHex.startsWith('89504E47')) {
-                    finalExt = '.png';
-                } else if (magicHex.startsWith('FFD8FF')) {
-                    finalExt = '.jpg';
-                }
-
-                // Si no detectamos nada por contenido, confiamos en la extensión original si existe.
-                if (!finalExt) {
-                    // Si tampoco existe extensión original, intentamos adivinar por ruta o fallback a .pdf
-                    const urlExt = path.extname(file.RutaAlmacenamiento || '').split('?')[0].toLowerCase();
-                    if (['.jpg', '.jpeg', '.png', '.pdf', '.tiff', '.tif'].includes(urlExt)) {
-                        finalExt = urlExt;
-                    } else {
-                        finalExt = '.pdf'; // Último recurso
-                    }
-                }
-
-                if (finalExt === '.jpeg') finalExt = '.jpg';
-
-                // Naming Format: CODIGO (ORDEN)_CLIENTE_TRABAJO_Archivo X de Y (X n COPIAS)
-                const pCodigo = sanitize(file.CodigoOrden || file.OrdenID.toString());
-                const pCliente = sanitize(file.Cliente || 'Cliente');
-
-                let pTrabajo = sanitize(file.DescripcionTrabajo || 'Trabajo');
-                if (pTrabajo.length > 50) pTrabajo = pTrabajo.substring(0, 50); // Prevent path overflow
-
-                const pArchivo = `Archivo ${file.Copias || 1} de ${1}`; // Simplification primarily for single selections or where index isn't tracked globally here. 
-                // Better approach to match exactly: We need sequential index if processing multiple files for same order.
-                // However, in this loop we iterate a flat list. 
-
-                // Let's rely on baseName logic from fileProcessingService but we need idxInOrder.
-                // Since this is a manual download batch, the strict '1 of N' might be less critical than matching the pattern.
-                // But let's try to match exactly if possible.
-
-                const pCopias = sanitize((file.Copias || 1).toString());
-                // EJEMPLO: 61 (1-1)_GOAT_trabajo 2_Archivo 1 de 1 (X 1 COPIAS)
-                // Note: In fileProcessingService, it calculates idxInOrder. Here we don't have it easily without pre-grouping.
-                // For now, using a generic "Archivo" placeholder or file Name if available as priority.
-
-                // EJEMPLO: 61 (1-1)_GOAT_trabajo 2 Archivo 1 de 1 (x1 COPIAS)
-                // UNIFIED FORMAT: {ORDEN}_{CLIENTE}_{TRABAJO} Archivo {Idx} de {Total} (x{Copias} COPIAS)
-
-                // Recalculating index context for correct naming if multiple files per order
-                if (!file.idxInOrder) file.idxInOrder = 1;
-                if (!file.totalInOrder) file.totalInOrder = 1;
-
-                let baseName = `${pCodigo}_${pCliente}_${pTrabajo} Archivo ${file.idxInOrder} de ${file.totalInOrder} (x${file.Copias || 1} COPIAS)`;
-
-                if (!baseName.toLowerCase().endsWith(finalExt.toLowerCase())) {
-                    baseName += finalExt;
-                }
-
-                const destPath = path.join(targetDir, baseName);
-
-                // "Si existe borre y descargue"
-                if (fs.existsSync(destPath)) {
-                    try { fs.unlinkSync(destPath); } catch (e) {
-                        console.warn("Could not delete existing file:", e.message);
-                    }
-                }
-
-                fs.writeFileSync(destPath, tempBuffer);
                 log.savedTo = destPath;
 
-                // 3. MEDICIÓN AUTOMATICA
+                // 2. MEDICIÓN (Optimizada)
                 let widthM = 0;
                 let heightM = 0;
                 try {
-                    const isPdf = finalExt.toLowerCase() === '.pdf' || (tempBuffer.slice(0, 4).toString() === '%PDF');
+                    // Check magic bytes from Disk (Only 4 bytes)
+                    const fd = fs.openSync(destPath, 'r');
+                    const magicBuf = Buffer.alloc(4);
+                    fs.readSync(fd, magicBuf, 0, 4, 0);
+                    fs.closeSync(fd);
+                    const magic = magicBuf.toString('ascii');
+
+                    const isPdf = ext === '.pdf' || magic === '%PDF';
+
                     if (isPdf) {
-                        const pdfDoc = await PDFDocument.load(tempBuffer, { updateMetadata: false });
-                        const pages = pdfDoc.getPages();
-                        if (pages.length > 0) {
-                            const { width, height } = pages[0].getSize();
-                            widthM = cmToM(pointsToCm(width));
-                            heightM = cmToM(pointsToCm(height));
+                        // PDF requires loading, but we try-catch to avoid crash
+                        // If file > 500MB, skip measurement?
+                        const stats = fs.statSync(destPath);
+                        if (stats.size > 500 * 1024 * 1024) {
+                            console.warn("Skipping measurement for huge PDF:", stats.size);
+                        } else {
+                            const pdfBuf = fs.readFileSync(destPath);
+                            const pdfDoc = await PDFDocument.load(pdfBuf, { updateMetadata: false });
+                            const pages = pdfDoc.getPages();
+                            if (pages.length > 0) {
+                                const { width, height } = pages[0].getSize();
+                                widthM = cmToM(pointsToCm(width));
+                                heightM = cmToM(pointsToCm(height));
+                            }
                         }
                     } else {
-                        const metadata = await sharp(tempBuffer).metadata();
+                        // Image: Use Sharp with File Path (Streaming)
+                        const metadata = await sharp(destPath).metadata(); // Handles file path
                         const density = metadata.density || 72;
                         widthM = cmToM(pixelsToCm(metadata.width, density));
                         heightM = cmToM(pixelsToCm(metadata.height, density));
@@ -398,30 +303,27 @@ exports.processOrdersBatch = async (req, res) => {
                 log.width = parseFloat(widthM.toFixed(2));
                 log.height = parseFloat(heightM.toFixed(2));
 
-                // 4. GUARDAR EN BD
-                if (log.width > 0 && log.height > 0) {
+                // 3. UPDATE BD
+                // ... Update Logic Same as Before ...
+                if (log.width > 0) {
                     await new sql.Request(pool)
                         .input('ID', sql.Int, file.ArchivoID)
                         .input('M', sql.Decimal(10, 2), log.height)
                         .input('W', sql.Decimal(10, 2), log.width)
                         .input('H', sql.Decimal(10, 2), log.height)
-                        .input('RL', sql.VarChar(500), destPath) // Actualizar RutaLocal
-                        .input('NA', sql.VarChar(255), baseName) // Actualizar NombreArchivo
-                        .query(`
-                            UPDATE dbo.ArchivosOrden 
-                            SET MedidaConfirmada = @M, Ancho = @W, Alto = @H, RutaLocal = @RL, NombreArchivo = @NA
-                            WHERE ArchivoID = @ID
-                        `);
+                        .input('RL', sql.VarChar(500), destPath)
+                        .input('NA', sql.VarChar(255), fileName)
+                        .query(`UPDATE dbo.ArchivosOrden SET Metros=@M, Ancho=@W, Alto=@H, MedidaConfirmada=1, RutaLocal=@RL, NombreArchivo=@NA WHERE ArchivoID=@ID`);
                 } else {
-                    // Even if measure fail, save location
                     await new sql.Request(pool)
                         .input('ID', sql.Int, file.ArchivoID)
                         .input('RL', sql.VarChar(500), destPath)
-                        .input('NA', sql.VarChar(255), baseName)
-                        .query(`UPDATE dbo.ArchivosOrden SET RutaLocal = @RL, NombreArchivo = @NA WHERE ArchivoID = @ID`);
+                        .input('NA', sql.VarChar(255), fileName)
+                        .query(`UPDATE dbo.ArchivosOrden SET RutaLocal=@RL, NombreArchivo=@NA WHERE ArchivoID=@ID`);
                 }
+
             } catch (err) {
-                console.error(`ERROR PROCESSING FILE ${file.ArchivoID}:`, err);
+                console.error(`ERROR FILE ${file.ArchivoID}:`, err);
                 log.status = 'ERROR';
                 log.error = err.message;
             }
@@ -456,26 +358,20 @@ exports.measureFiles = async (req, res) => {
             let fileBuffer = null;
 
             try {
-                // CASO A: Es un Link de Google Drive
                 if (filePath.includes('drive.google.com')) {
                     const driveId = getDriveId(filePath);
                     if (!driveId) throw new Error('Link de Drive inválido');
 
-                    console.log(`⬇️ Descargando para medir (Auth): ${file.ArchivoID}`);
                     const { stream } = await driveService.getFileStream(driveId);
                     const chunks = [];
                     for await (const chunk of stream) chunks.push(chunk);
                     fileBuffer = Buffer.concat(chunks);
-                }
-                // CASO B: Es un Link Web normal (http...)
-                else if (filePath.startsWith('http')) {
+                } else if (filePath.startsWith('http')) {
                     const response = await fetch(filePath);
                     if (!response.ok) throw new Error('Falló descarga Web');
                     const arrayBuffer = await response.arrayBuffer();
                     fileBuffer = Buffer.from(arrayBuffer);
-                }
-                // CASO C: Es un archivo Local en el Servidor (C:\...)
-                else {
+                } else {
                     if (!fs.existsSync(filePath)) {
                         results.push({ id: file.ArchivoID, width: 0, height: 0, area: 0, error: 'No encontrado en disco local' });
                         continue;
@@ -483,11 +379,8 @@ exports.measureFiles = async (req, res) => {
                     fileBuffer = fs.readFileSync(filePath);
                 }
 
-                // --- LÓGICA DE MEDICIÓN (COMÚN) ---
                 let widthCm = 0;
                 let heightCm = 0;
-
-                // Detectar si es PDF por extensión o por tipo en DB
                 const isPdf = filePath.toLowerCase().endsWith('.pdf') || file.TipoArchivo === 'pdf' || (fileBuffer && fileBuffer.slice(0, 4).toString() === '%PDF');
 
                 if (isPdf) {
@@ -531,11 +424,6 @@ exports.measureFiles = async (req, res) => {
 // --- 3. GUARDAR RESULTADOS ---
 const { registrarAuditoria, registrarHistorialOrden } = require('../services/trackingService');
 
-// ... (rest of imports unchanged)
-
-// ... (previous functions unchanged)
-
-// --- 3. GUARDAR RESULTADOS ---
 exports.saveMeasurements = async (req, res) => {
     console.log("🛠️ SAVE MEASUREMENTS:", req.body);
     const { measurements, userId } = req.body;
@@ -548,18 +436,13 @@ exports.saveMeasurements = async (req, res) => {
         await transaction.begin();
         try {
             const affectedOrders = new Set();
-
             for (const m of measurements) {
-                // 1. Obtener OrdenID para historial
                 const fileInfo = await new sql.Request(transaction)
                     .input('FID', sql.Int, m.id)
                     .query("SELECT OrdenID FROM dbo.ArchivosOrden WHERE ArchivoID = @FID");
 
-                if (fileInfo.recordset[0]) {
-                    affectedOrders.add(fileInfo.recordset[0].OrdenID);
-                }
+                if (fileInfo.recordset[0]) affectedOrders.add(fileInfo.recordset[0].OrdenID);
 
-                // 2. Actualizar Medidas
                 await new sql.Request(transaction)
                     .input('ID', sql.Int, m.id)
                     .input('MetrosVal', sql.Decimal(10, 2), m.confirmed)
@@ -568,26 +451,17 @@ exports.saveMeasurements = async (req, res) => {
                     .query(`UPDATE dbo.ArchivosOrden SET Metros = @MetrosVal, Ancho = @W, Alto = @H, MedidaConfirmada = 1 WHERE ArchivoID = @ID`);
             }
 
-            // 3. Registrar Historial por Orden Afectada
             for (const orderId of affectedOrders) {
-                // Obtenemos estado actual para no cambiarlo
                 const orderData = await new sql.Request(transaction)
                     .input('OID', sql.Int, orderId)
                     .query("SELECT Estado FROM dbo.Ordenes WHERE OrdenID = @OID");
-
                 const currentStatus = orderData.recordset[0]?.Estado || 'Pendiente';
 
-                // RECALCULO AUTOMATICO DE MAGNITUD TOTAL DE LA ORDEN
                 const calcRes = await new sql.Request(transaction)
                     .input('OID', sql.Int, orderId)
-                    .query(`
-                        SELECT SUM(ISNULL(Copias, 1) * ISNULL(Metros, 0)) as Total 
-                        FROM dbo.ArchivosOrden 
-                        WHERE OrdenID = @OID
-                    `);
+                    .query(`SELECT SUM(ISNULL(Copias, 1) * ISNULL(Metros, 0)) as Total FROM dbo.ArchivosOrden WHERE OrdenID = @OID`);
                 const newTotal = calcRes.recordset[0].Total || 0;
 
-                // Actualizar Magnitud en la Orden
                 await new sql.Request(transaction)
                     .input('OID', sql.Int, orderId)
                     .input('Mag', sql.VarChar(50), newTotal.toFixed(2))
@@ -596,9 +470,7 @@ exports.saveMeasurements = async (req, res) => {
                 await registrarHistorialOrden(transaction, orderId, currentStatus, currentUserId, `Medición actualizada. Nueva Magnitud: ${newTotal.toFixed(2)}m`);
             }
 
-            // 4. Registrar Auditoría Global
             await registrarAuditoria(transaction, currentUserId, 'MEDICION_FILES', `Actualizados ${measurements.length} archivos`, userIp);
-
             await transaction.commit();
             res.json({ success: true });
         } catch (innerErr) {
@@ -611,7 +483,7 @@ exports.saveMeasurements = async (req, res) => {
     }
 };
 
-// --- 5. NUEVA FUNCIÓN: DESCARGAR ZIP AL CLIENTE ---
+// --- 5. NUEVA FUNCIÓN: DESCARGAR ZIP AL CLIENTE (STREAMING OPTIMIZED) ---
 exports.downloadOrdersZip = async (req, res) => {
     const { orderIds } = req.body;
 
@@ -648,8 +520,7 @@ exports.downloadOrdersZip = async (req, res) => {
         // Helper sanitizar
         const sanitize = (str) => (str || '').replace(/\//g, '-').replace(/[<>:"\\|?*]/g, ' ').trim();
 
-        // Lógica de Descarga y Procesamiento (Idem processOrdersBatch pero en memoria para Zip)
-        // Pre-cálculo índices
+        // Lógica de Descarga y Procesamiento
         const filesByOrder = {};
         filesQuery.recordset.forEach(f => {
             if (!filesByOrder[f.OrdenID]) filesByOrder[f.OrdenID] = [];
@@ -668,117 +539,42 @@ exports.downloadOrdersZip = async (req, res) => {
 
         for (const file of filesToProcess) {
             try {
-                // A. Descargar Buffer
+                // Determine Extension (Optimistic)
                 const sourcePath = file.RutaAlmacenamiento || '';
-                let tempBuffer = null;
+                let ext = path.extname(file.NombreArchivo || '').toLowerCase();
+                if (!ext) ext = path.extname(sourcePath).split('?')[0].toLowerCase();
+                if (!ext) ext = '.pdf';
 
+                let finalName = "";
+                if (file.NombreArchivo && file.NombreArchivo.length > 10) {
+                    finalName = sanitize(file.NombreArchivo);
+                } else {
+                    finalName = `${file.CodigoOrden}_${sanitize(file.Cliente)}_${sanitize(file.DescripcionTrabajo)} Archivo ${file.idxInOrder} de ${file.totalInOrder} (x${file.Copias || 1} COPIAS)`;
+                }
+                if (!finalName.toLowerCase().endsWith(ext)) finalName += ext;
+
+                // Streaming Download
                 if (sourcePath.includes('drive.google.com')) {
                     const driveId = getDriveId(sourcePath);
                     if (driveId) {
                         try {
                             const { stream } = await driveService.getFileStream(driveId);
-                            const chunks = [];
-                            for await (const chunk of stream) chunks.push(chunk);
-                            tempBuffer = Buffer.concat(chunks);
-                        } catch (driveErr) {
-                            console.error(`[ZIP] Error downloading from Drive ID ${driveId}:`, driveErr.message);
-                            archive.append(`Error Drive API: ${driveErr.message}`, { name: `ERRORES/${file.ArchivoID}_drive_error.txt` });
-                            continue;
+                            archive.append(stream, { name: finalName });
+                        } catch (e) {
+                            archive.append(`Error: ${e.message}`, { name: `ERRORES/${file.ArchivoID}_err.txt` });
                         }
                     }
                 } else if (sourcePath.startsWith('http')) {
-                    const r = await fetch(sourcePath, { signal: AbortSignal.timeout(300000) }); // 5 min timeout
-                    if (r.ok) tempBuffer = Buffer.from(await r.arrayBuffer());
+                    const response = await axios({
+                        url: sourcePath,
+                        method: 'GET',
+                        responseType: 'stream',
+                        timeout: 600000
+                    });
+                    archive.append(response.data, { name: finalName });
                 } else if (fs.existsSync(sourcePath)) {
-                    tempBuffer = fs.readFileSync(sourcePath);
+                    archive.file(sourcePath, { name: finalName });
                 }
-
-                if (!tempBuffer) {
-                    archive.append(`Error descargando archivo ID ${file.ArchivoID}: ${sourcePath}`, { name: `ERRORES/${file.ArchivoID}_error.txt` });
-                    continue;
-                }
-
-                // B. Validar HTML error y Bypass Virus Scan
-                const header = tempBuffer.slice(0, 500).toString().trim(); // More context
-                if (header.toLowerCase().includes('<!doctype html') || header.toLowerCase().includes('<html')) {
-                    // Check for Virus Scan Warning
-                    const content = tempBuffer.toString('utf8');
-                    if (content.includes('Virus scan') || content.includes('virus') || content.includes('confirm=')) {
-                        console.log(`[ZIP] Drive Virus Scan Warning detectado en archivo ${file.ArchivoID}. Intentando bypass...`);
-
-                        let confirmToken = null;
-                        const match = content.match(/confirm=([a-zA-Z0-9_\-]+)/);
-                        if (match) confirmToken = match[1];
-
-                        if (!confirmToken) {
-                            const matchForm = content.match(/action=".*?confirm=([a-zA-Z0-9_\-]+)/);
-                            if (matchForm) confirmToken = matchForm[1];
-                        }
-
-                        if (confirmToken) {
-                            console.log(`[ZIP] Token encontrado: ${confirmToken}. Reintentando...`);
-                            const driveId = getDriveId(sourcePath);
-                            const bypassUrl = `https://drive.google.com/uc?export=download&id=${driveId}&confirm=${confirmToken}`;
-                            const r2 = await fetch(bypassUrl, { signal: AbortSignal.timeout(300000) });
-                            if (r2.ok) tempBuffer = Buffer.from(await r2.arrayBuffer());
-                        } else {
-                            // Try generic confirm
-                            console.log(`[ZIP] Token no encontrado. Probando confirm=t...`);
-                            const driveId = getDriveId(sourcePath);
-                            const bypassUrl = `https://drive.google.com/uc?export=download&id=${driveId}&confirm=t`;
-                            const r2 = await fetch(bypassUrl, { signal: AbortSignal.timeout(300000) });
-                            if (r2.ok) tempBuffer = Buffer.from(await r2.arrayBuffer());
-                        }
-
-                        // Re-check header after retry
-                        const headerRetry = tempBuffer.slice(0, 15).toString().trim().toLowerCase();
-                        if (headerRetry.startsWith('<!doctype html') || headerRetry.startsWith('<html')) {
-                            archive.append(`Error: Falló bypass de Virus Scan. ID ${file.ArchivoID}`, { name: `ERRORES/${file.ArchivoID}_virus_error.txt` });
-                            continue;
-                        }
-
-                    } else {
-                        archive.append(`Error: El archivo descargado parece ser HTML (Login Drive?). ID ${file.ArchivoID}`, { name: `ERRORES/${file.ArchivoID}_login_error.txt` });
-                        continue;
-                    }
-                }
-
-                // C. Detectar Extensión Real (Magic Hex)
-                const origExt = path.extname(file.NombreArchivo || '').toLowerCase();
-                let finalExt = origExt;
-                const magicHex = tempBuffer.toString('hex', 0, 4).toUpperCase();
-
-                if (magicHex.startsWith('25504446')) finalExt = '.pdf';
-                else if (magicHex.startsWith('89504E47')) finalExt = '.png';
-                else if (magicHex.startsWith('FFD8FF')) finalExt = '.jpg';
-
-                if (!finalExt || finalExt === '.jpeg') {
-                    if (finalExt === '.jpeg') finalExt = '.jpg';
-                    else finalExt = '.pdf'; // Fallback
-                }
-
-                // D. Construir Nombre y Ruta en ZIP
-                // Estructura: Area / Rollo / Orden_Client_Trabajo_XdeY.ext
-                const safeArea = sanitize(file.AreaID || 'GENERAL');
-                const safeRoll = sanitize(file.RollName || 'Sin-Rollo');
-
-                let finalName = "";
-
-                // Preferir Nombre Original Guardado si existe y tiene longitud razonable
-                if (file.NombreArchivo && file.NombreArchivo.length > 10) {
-                    finalName = sanitize(file.NombreArchivo);
-                } else {
-                    // Fallback a Generado UNIFICADO
-                    // {ORDEN}_{CLIENTE}_{TRABAJO} Archivo {Idx} de {Total} (x{Copias} COPIAS)
-                    finalName = `${file.CodigoOrden}_${sanitize(file.Cliente)}_${sanitize(file.DescripcionTrabajo)} Archivo ${file.idxInOrder} de ${file.totalInOrder} (x${file.Copias || 1} COPIAS)`;
-                }
-
-                // Extension Check
-                if (!finalName.toLowerCase().endsWith(finalExt)) finalName += finalExt;
-
-                const zipPath = finalName;
-
-                archive.append(tempBuffer, { name: zipPath });
 
             } catch (err) {
                 console.error("Error processing file for zip:", err);
@@ -791,5 +587,16 @@ exports.downloadOrdersZip = async (req, res) => {
     } catch (err) {
         console.error("Zip Error:", err);
         res.status(500).send("Error del servidor creando el archivo ZIP");
+    }
+};
+
+// NEW: Server Side Process Wrapper
+exports.processFilesServerSide = async (req, res) => {
+    const { fileIds } = req.body;
+    try {
+        await fileProcessingService.processFiles(fileIds, req.app.get('io'));
+        res.json({ success: true, message: 'Procesamiento en servidor iniciado.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 };

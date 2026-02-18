@@ -234,6 +234,12 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
     const btnSecondaryClass = "bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:text-blue-500 hover:bg-slate-50";
     const btnPrimaryClass = "bg-blue-50 border border-blue-200 text-blue-600";
 
+    const [currentTime, setCurrentTime] = useState(new Date());
+
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+        return () => clearInterval(timer);
+    }, []);
 
     console.log("🔍 [AreaView] Render - Props:", { areaKey, areaConfigName: areaConfig?.name, isRollModalOpen });
 
@@ -272,6 +278,15 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
                     {/* RIGHT: Acciones Globales */}
                     <div className="flex items-center gap-2 shrink-0">
 
+                        {/* FECHA Y HORA */}
+                        <div className="hidden md:flex flex-col items-end justify-center mr-4 border-r border-slate-200 pr-4 h-8 shrink-0">
+                            <span className="text-xs font-black text-slate-700 leading-none">
+                                {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                                {currentTime.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}
+                            </span>
+                        </div>
 
                         {/* Selected Actions */}
                         {selectedIds.length > 0 && (

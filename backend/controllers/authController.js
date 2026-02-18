@@ -57,6 +57,7 @@ exports.login = async (req, res) => {
                     role: user.RoleName,
                     idRol: user.IdRol,
                     area: user.AreaUsuario,
+                    areaKey: user.AreaUsuario,
                     avatar: user.Avatar || null // Agregamos avatar si existe
                 },
                 token: token
@@ -154,7 +155,7 @@ exports.me = async (req, res) => {
         const pool = await getPool();
         const result = await pool.request()
             .input('ID', sql.Int, req.user.id)
-            .query("SELECT UserID, Username, Nombre, IdRol FROM Usuarios WHERE UserID = @ID");
+            .query("SELECT UserID, Username, Nombre, IdRol, AreaUsuario FROM Usuarios WHERE UserID = @ID"); // Added AreaUsuario
 
         if (result.recordset.length === 0) {
             return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
@@ -168,8 +169,10 @@ exports.me = async (req, res) => {
                 userId: user.UserID,
                 username: user.Username,
                 name: user.Nombre,
-                role: req.user.role, // Del token
-                idRol: user.IdRol
+                role: req.user.role, // Del token, o recalcular si IdRol cambio? Mejor dejar token por ahora.
+                idRol: user.IdRol,
+                area: user.AreaUsuario,
+                areaKey: user.AreaUsuario
             }
         });
     } catch (err) {

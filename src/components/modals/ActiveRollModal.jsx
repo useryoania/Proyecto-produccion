@@ -1,130 +1,64 @@
 import React, { useState } from 'react';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
-import QRCode from 'qrcode';
 import { ordersService, rollsService } from '../../services/api';
-import FabricAssignmentModal from './FabricAssignmentModal';
+
 
 const ActiveRollModal = ({ isOpen, onClose, roll, onSuccess }) => {
     const [loading, setLoading] = useState(false);
-
-    // FABRIC ASSIGNMENT STATE
-    const [showFabricModal, setShowFabricModal] = useState(false);
-    const [pendingOrderToProcess, setPendingOrderToProcess] = useState(null);
-    const [lastProcessedMaterial, setLastProcessedMaterial] = useState(null);
 
     if (!isOpen || !roll) return null;
 
     // 1. GENERAR PDF CON QR
     const generateManifest = async () => {
-        const doc = new jsPDF();
-
-        // Generar QR
-        const qrData = JSON.stringify({ id: roll.id, name: roll.name, orders: roll.orders.length });
-        const qrUrl = await QRCode.toDataURL(qrData);
-
-        // Encabezado
-        doc.setFontSize(18);
-        doc.text(`Manifiesto de Producción: ${roll.name} `, 14, 20);
-
-        doc.setFontSize(10);
-        doc.text(`ID Lote: ${roll.id} `, 14, 28);
-        doc.text(`Fecha Impresión: ${new Date().toLocaleString()} `, 14, 33);
-
-        // Pegar QR
-        doc.addImage(qrUrl, 'PNG', 150, 10, 40, 40);
-
-        // Tabla de Órdenes
-        const tableColumn = ["ID", "Cliente", "Trabajo", "Material", "Metros"];
-        const tableRows = roll.orders.map(o => [
-            o.id,
-            o.client,
-            o.desc,
-            o.variant || '-',
-            o.magnitude || '-'
-        ]);
-
-        doc.autoTable({
-            startY: 50,
-            head: [tableColumn],
-            body: tableRows,
-            theme: 'grid',
-            headStyles: { fillColor: [59, 130, 246] }
-        });
-
-        doc.save(`Manifiesto_${roll.id}.pdf`);
-    };
-
-    // 2. MOVER ORDEN INDIVIDUAL (A Calidad/Terminación)
-    // MODIFIED: Intercept with Fabric Check
-    const handleMoveOrderClick = (order) => {
-        // Verificar si cambió el material respecto a la última procesada (o es la primera)
-        // Nota: lastProcessedMaterial se resetea al cerrar modal. 
-        // Idealmente lo tomaríamos del estado global o de la orden "anterior" en la lista.
-        // Simplificación: Si tiene BobinaTelaID asignada, pasamos. Si no, preguntamos.
-        // Pero BobinaTelaID puede no venir en el objeto 'roll.orders' si no recargamos.
-
-        // Estrategia: "Just-in-Time" Check
-        // Si el material actual != material anterior (que guardamos en memoria local de sesión)
-        // Opcional: Podríamos chequear order.BobinaTelaID si se populó.
-
-        // Asumimos siempre chequeo si no hay memoria.
-        if (lastProcessedMaterial && lastProcessedMaterial === order.variant) {
-            // Mismo material, procesar directo (asume reutilizar bobina anterior implicita)
-            processOrderMove(order.id);
-        } else {
-            // Cambio de material o primer inicio
-            setPendingOrderToProcess(order);
-            setShowFabricModal(true);
-        }
-    };
-
-    const handleFabricApprove = async (bobinaId) => {
-        if (!pendingOrderToProcess) return;
-
-        // 1. Asignar Bobina en BD
-        try {
-            await ordersService.assignFabricBobbin(pendingOrderToProcess.id, bobinaId);
-
-            // 2. Recordar Material
-            setLastProcessedMaterial(pendingOrderToProcess.variant);
-
-            // 3. Procesar Movimiento
-            await processOrderMove(pendingOrderToProcess.id);
-
-            // 4. Limpiar
-            setShowFabricModal(false);
-            setPendingOrderToProcess(null);
-
-            // 5. Feedback visual (Opcional, processOrderMove ya recarga)
-        } catch (e) {
-            alert("Error al asignar bobina: " + e.message);
-        }
-    };
-
-    const processOrderMove = async (orderId) => {
-        if (!confirm("¿Marcar esta orden como impresa y pasar a Terminación?")) return;
-
         setLoading(true);
         try {
-            await ordersService.updateStatus(orderId, 'Terminación');
-            // alert("✅ Orden enviada a Terminación/Calidad"); // Feedback sutil mejor
-            if (onSuccess) onSuccess(); // Recargar datos del tablero
+            // Dynamic Imports
+            const { jsPDF } = await import("jspdf");
+            const autoTableModule = await import("jspdf-autotable");
+            const autoTable = autoTableModule.default || autoTableModule;
+            const QRCode = await import("qrcode");
+
+            const doc = new jsPDF();
+
+            // Generar QR
+            const qrData = JSON.stringify({ id: roll.id, name: roll.name, orders: roll.orders.length });
+            const qrUrl = await QRCode.toDataURL(qrData);
+
+            // Encabezado
+            doc.setFontSize(18);
+            doc.text(`Manifiesto de Producción: ${roll.name} `, 14, 20);
+
+            doc.setFontSize(10);
+            doc.text(`ID Lote: ${roll.id} `, 14, 28);
+            doc.text(`Fecha Impresión: ${new Date().toLocaleString()} `, 14, 33);
+
+            // Pegar QR
+            doc.addImage(qrUrl, 'PNG', 150, 10, 40, 40);
+
+            // Tabla de Órdenes
+            const tableColumn = ["ID", "Cliente", "Trabajo", "Material", "Metros"];
+            const tableRows = roll.orders.map(o => [
+                o.id,
+                o.client,
+                o.desc,
+                o.variant || '-',
+                o.magnitude || '-'
+            ]);
+
+            autoTable(doc, {
+                startY: 50,
+                head: [tableColumn],
+                body: tableRows,
+                theme: 'grid',
+                headStyles: { fillColor: [59, 130, 246] }
+            });
+
+            doc.save(`Manifiesto_${roll.id}.pdf`);
         } catch (e) {
-            alert("Error al mover orden");
+            console.error("Error generating manifest PDF:", e);
+            alert("Error al generar PDF: " + e.message);
         } finally {
             setLoading(false);
         }
-    };
-
-    // 3. FINALIZAR ROLLO COMPLETO
-    const handleFinishRoll = async () => {
-        if (!confirm("¿Cerrar Lote completo? Todas las órdenes restantes pasarán a Finalizado.")) return;
-        try {
-            await rollsService.closeRoll(roll.id);
-            if (onSuccess) onSuccess();
-            onClose();
-        } catch (e) { alert("Error al cerrar"); }
     };
 
     return (
@@ -166,8 +100,11 @@ const ActiveRollModal = ({ isOpen, onClose, roll, onSuccess }) => {
                                 >
                                     <i className="fa-solid fa-qrcode"></i> Imprimir QR / PDF
                                 </button>
-                                <button
-                                    onClick={handleFinishRoll}
+                                <button onClick={() => {
+                                    if (confirm("¿Cerrar Lote completo? Todas las órdenes restantes pasarán a Finalizado.")) {
+                                        rollsService.closeRoll(roll.id).then(() => { if (onSuccess) onSuccess(); onClose(); });
+                                    }
+                                }}
                                     className="px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg shadow hover:bg-emerald-700 hover:shadow-lg transition-all active:scale-95 flex items-center gap-2"
                                 >
                                     <i className="fa-solid fa-check-double"></i> Finalizar Todo
@@ -199,7 +136,7 @@ const ActiveRollModal = ({ isOpen, onClose, roll, onSuccess }) => {
                                         {roll.orders.map((order, idx) => (
                                             <tr key={order.id} className="hover:bg-slate-50 transition-colors">
                                                 <td className="px-4 py-3 font-mono font-bold text-slate-700 min-w-[120px]">
-                                                    Orden No.: {order.code || order.id}
+                                                    {order.code || order.id}
                                                 </td>
                                                 <td className="px-4 py-3 font-semibold text-slate-600 truncate max-w-[150px]">{order.client}</td>
                                                 <td className="px-4 py-3 text-slate-500 truncate max-w-[200px]">{order.desc}</td>
@@ -211,7 +148,15 @@ const ActiveRollModal = ({ isOpen, onClose, roll, onSuccess }) => {
                                                 <td className="px-4 py-3 font-bold text-slate-800">{order.magnitude}m</td>
                                                 <td className="px-4 py-3 text-center">
                                                     <button
-                                                        onClick={() => handleMoveOrderClick(order)}
+                                                        onClick={() => {
+                                                            if (confirm("¿Marcar esta orden como impresa y pasar a Terminación?")) {
+                                                                setLoading(true);
+                                                                ordersService.updateStatus(order.id, 'Terminación')
+                                                                    .then(() => { if (onSuccess) onSuccess(); })
+                                                                    .catch(() => alert("Error al mover orden"))
+                                                                    .finally(() => setLoading(false));
+                                                            }
+                                                        }}
                                                         title="Marcar como Impreso -> Enviar a Calidad"
                                                         className="w-full px-2 py-1.5 bg-white border border-emerald-200 text-emerald-600 text-[10px] font-bold rounded hover:bg-emerald-50 hover:border-emerald-300 transition-colors uppercase tracking-wide flex items-center justify-center gap-1.5"
                                                         disabled={loading}
@@ -236,15 +181,6 @@ const ActiveRollModal = ({ isOpen, onClose, roll, onSuccess }) => {
                     </div>
                 </div>
             </div>
-
-            {/* FABRIC ASSIGNMENT MODAL */}
-            <FabricAssignmentModal
-                isOpen={showFabricModal}
-                onClose={() => setShowFabricModal(false)}
-                materialName={pendingOrderToProcess?.variant || pendingOrderToProcess?.material || ''}
-                orderId={pendingOrderToProcess?.id}
-                onAssign={handleFabricApprove}
-            />
         </>
     );
 };

@@ -209,13 +209,34 @@ const MeasurementView = ({ areaCode }) => {
                 const zip = await JSZip.loadAsync(blob);
                 let count = 0;
 
+                // DETERMINAR CARPETA DESTINO (Si hay filtro de rollo activo y no es ALL)
+                let targetHandle = dirHandle;
+
+                if (filterRoll !== 'ALL') {
+                    // Buscar el nombre del rollo seleccionado
+                    const selectedRollObj = uniqueRolls.find(r => r.id.toString() === filterRoll.toString());
+
+                    if (selectedRollObj) {
+                        const rollFolderName = selectedRollObj.name || `Lote ${filterRoll}`;
+                        const safeFolderName = rollFolderName.replace(/[<>:"/\\|?*]/g, '_').trim();
+
+                        try {
+                            // Intentar crear/abrir subcarpeta con el nombre del rollo
+                            targetHandle = await dirHandle.getDirectoryHandle(safeFolderName, { create: true });
+                        } catch (e) {
+                            console.error("No se pudo crear subcarpeta, usando raíz:", e);
+                            // Fallback: usar carpeta raíz (dirHandle)
+                        }
+                    }
+                }
+
                 for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
                     if (zipEntry.dir) continue;
                     // Aplanar nombre (backend ya renombra, asi que usamos filename directo)
                     const fileName = relativePath.split('/').pop();
 
                     try {
-                        const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+                        const fileHandle = await targetHandle.getFileHandle(fileName, { create: true });
                         const writable = await fileHandle.createWritable();
                         const content = await zipEntry.async('blob');
                         await writable.write(content);
@@ -246,6 +267,31 @@ const MeasurementView = ({ areaCode }) => {
         }
     };
 
+    // NUEVA FUNCION: Procesar en Servidor (Download + Measure + DB)
+    const handleServerProcess = async () => {
+        if (selectedFiles.size === 0) {
+            alert("Por favor selecciona al menos un archivo.");
+            return;
+        }
+        if (!confirm(`¿Procesar ${selectedFiles.size} archivos en el Servidor? \nEsto descargará, medirá y actualizará los registros automáticamente.`)) return;
+
+        setProcessing(true);
+        try {
+            const fileIds = Array.from(selectedFiles);
+            const res = await api.post('/measurements/process-server', { fileIds });
+            if (res.data.success) {
+                alert("Procesamiento iniciado en el servidor. Los cambios se reflejarán pronto.");
+                setSelectedFiles(new Set());
+                fetchData();
+            }
+        } catch (e) {
+            console.error(e);
+            alert("Error: " + (e.response?.data?.error || e.message));
+        } finally {
+            setProcessing(false);
+        }
+    };
+
     if (loading) return (
         <div className="flex flex-col h-screen items-center justify-center gap-3 text-slate-500">
             <i className="fa-solid fa-spinner fa-spin text-2xl text-blue-500"></i>
@@ -262,6 +308,14 @@ const MeasurementView = ({ areaCode }) => {
                     <div className="flex justify-between items-center mb-3">
                         <h3 className="text-lg font-black text-slate-800 tracking-tight">Medición y Descarga</h3>
                         <div className="flex gap-2">
+                            <button
+                                onClick={handleServerProcess}
+                                disabled={processing || selectedFiles.size === 0}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white border-none py-1.5 px-4 rounded-lg text-xs font-bold shadow-md hover:shadow-lg transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {processing ? <i className="fa-solid fa-circle-notch fa-spin"></i> : <i className="fa-solid fa-robot"></i>}
+                                {selectedFiles.size > 0 ? `MEDIR AUTO (${selectedFiles.size})` : 'MEDIR AUTO'}
+                            </button>
                             <button
                                 onClick={handleBatchProcess}
                                 disabled={processing || selectedFiles.size === 0}

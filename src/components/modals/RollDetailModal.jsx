@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
 
 const RollDetailModal = ({ isOpen, onClose, roll }) => {
     const [realFiles, setRealFiles] = useState([]);
@@ -18,30 +16,43 @@ const RollDetailModal = ({ isOpen, onClose, roll }) => {
     if (!isOpen || !roll) return null;
 
     // --- 2. GENERAR PDF ---
-    const handlePrintPDF = () => {
-        const doc = new jsPDF();
+    const handlePrintPDF = async () => {
+        setLoading(true);
+        try {
+            // Dynamic imports to prevent bundle issues
+            const { jsPDF } = await import("jspdf");
+            const autoTableModule = await import("jspdf-autotable");
+            const autoTable = autoTableModule.default || autoTableModule;
 
-        doc.setFontSize(18);
-        doc.text(`LOTE: ${roll.rollCode || roll.id}`, 14, 20);
-        doc.setFontSize(12);
-        doc.text(`Progreso: ${roll.usage || 0} / ${roll.capacity || 100}m`, 14, 30);
+            const doc = new jsPDF();
 
-        const tableRows = (realFiles.length > 0 ? realFiles : roll.orders || []).map(order => [
-            order.code || order.id || '#',
-            order.client || 'Cliente',
-            order.fileName || order.desc || 'Detalle',
-            `${order.width || 0}m`
-        ]);
+            doc.setFontSize(18);
+            doc.text(`LOTE: ${roll.rollCode || roll.id}`, 14, 20);
+            doc.setFontSize(12);
+            doc.text(`Progreso: ${roll.usage || 0} / ${roll.capacity || 100}m`, 14, 30);
 
-        doc.autoTable({
-            startY: 40,
-            head: [['ID', 'Cliente', 'Detalle', 'Metros']],
-            body: tableRows,
-            theme: 'grid',
-            headStyles: { fillColor: [51, 65, 85] } // Slate-700
-        });
+            const tableRows = (realFiles.length > 0 ? realFiles : roll.orders || []).map(order => [
+                order.code || order.id || '#',
+                order.client || 'Cliente',
+                order.fileName || order.desc || 'Detalle',
+                `${order.width || 0}m`
+            ]);
 
-        doc.save(`Lote_${roll.rollCode || 'Detalle'}.pdf`);
+            autoTable(doc, {
+                startY: 40,
+                head: [['ID', 'Cliente', 'Detalle', 'Metros']],
+                body: tableRows,
+                theme: 'grid',
+                headStyles: { fillColor: [51, 65, 85] } // Slate-700
+            });
+
+            doc.save(`Lote_${roll.rollCode || 'Detalle'}.pdf`);
+        } catch (error) {
+            console.error("Error generating PDF", error);
+            alert("Error cargando librería de PDF");
+        } finally {
+            setLoading(false);
+        }
     };
 
     // --- 3. FINALIZAR TODO ---

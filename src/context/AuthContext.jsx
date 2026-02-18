@@ -49,8 +49,17 @@ export function AuthProvider({ children }) {
                     idRol: data.user.idRol || data.user.IdRol, // Explicitly store IdRol
                     usuario: data.user.username || data.user.Usuario,
                     token: receivedToken, // Store the found token
-                    areaKey: data.user.AreaKey // Store area key if available
+                    // FIX: Controller returns 'area', but DB might have 'AreaUsuario' or 'AreaKey'. Check all.
+                    areaKey: data.user.area || data.user.AreaUsuario || data.user.AreaKey
                 };
+
+                // Normalize Role for Frontend Checks
+                if (userData.idRol === 1 || userData.rol === 1) {
+                    userData.rol = 'ADMIN';
+                }
+
+                // Log what we mapped to debug
+                console.log("📍 [Auth] Mapped User Data:", userData);
                 console.log("💾 [LoginStep 3] Guardando en LocalStorage:", userData);
                 localStorage.setItem('user', JSON.stringify(userData));
                 setUser(userData);

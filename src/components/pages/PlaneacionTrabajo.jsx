@@ -478,32 +478,46 @@ const PlaneacionTrabajo = ({ AreaID }) => {
                                 if (selectedOrderIds.length > 0) {
                                     handleMagicSortCheck();
                                 } else {
-                                    setConfirmModal({
-                                        isOpen: true,
-                                        title: "Armado Mágico Global",
-                                        message: "🪄 ¿Ejecutar Armado Mágico GLOBAL?\n\nEsto agrupará TODAS las órdenes pendientes por Variante y Material, creando lotes individuales automáticamente.",
-                                        onConfirm: () => {
-                                            setMagicSortProgress({ step: 'Iniciando magia global...', status: 'loading' });
-                                            rollsService.magicAssignment(areaCode)
-                                                .then(res => {
-                                                    if (res.success) {
-                                                        setMagicSortProgress({ step: res.message, status: 'success' });
-                                                        toast.success(res.message);
-                                                        refreshBoard();
-                                                    } else {
-                                                        setMagicSortProgress({ step: "Error: " + res.message, status: 'error' });
-                                                        toast.error(res.message);
-                                                    }
-                                                    setTimeout(() => setMagicSortProgress(null), 4000);
-                                                })
-                                                .catch(err => {
-                                                    console.error(err);
-                                                    setMagicSortProgress({ step: "Error en magia", status: 'error' });
-                                                    toast.error("Error al ejecutar armado mágico global.");
-                                                    setTimeout(() => setMagicSortProgress(null), 4000);
-                                                });
-                                        }
-                                    });
+                                    // CHEQUEO INTELIGENTE: Si hay filtros activos, sugerir agrupar lo visible
+                                    if (filteredBacklogOrders.length < backlogOrders.length && filteredBacklogOrders.length > 0) {
+                                        setConfirmModal({
+                                            isOpen: true,
+                                            title: "Armado Mágico Filtrado",
+                                            message: `🎯 Tienes filtros activos.\n\n¿Deseas aplicar la varita mágica SOLAMENTE a las ${filteredBacklogOrders.length} órdenes visibles en este momento?`,
+                                            onConfirm: () => {
+                                                const visibleIds = filteredBacklogOrders.map(o => o.id);
+                                                executeMagicSort(visibleIds);
+                                            }
+                                        });
+                                    } else {
+                                        // SI NO HAY FILTROS, SUGERIR GLOBAL
+                                        setConfirmModal({
+                                            isOpen: true,
+                                            title: "Armado Mágico Global",
+                                            message: "🪄 No hay selección ni filtros.\n\n¿Ejecutar Armado Mágico GLOBAL?\n\nEsto agrupará TODAS las órdenes pendientes por Variante y Material, creando lotes individuales automáticamente.",
+                                            onConfirm: () => {
+                                                setMagicSortProgress({ step: 'Iniciando magia global...', status: 'loading' });
+                                                rollsService.magicAssignment(areaCode)
+                                                    .then(res => {
+                                                        if (res.success) {
+                                                            setMagicSortProgress({ step: res.message, status: 'success' });
+                                                            toast.success(res.message);
+                                                            refreshBoard();
+                                                        } else {
+                                                            setMagicSortProgress({ step: "Error: " + res.message, status: 'error' });
+                                                            toast.error(res.message);
+                                                        }
+                                                        setTimeout(() => setMagicSortProgress(null), 4000);
+                                                    })
+                                                    .catch(err => {
+                                                        console.error(err);
+                                                        setMagicSortProgress({ step: "Error en magia", status: 'error' });
+                                                        toast.error("Error al ejecutar armado mágico global.");
+                                                        setTimeout(() => setMagicSortProgress(null), 4000);
+                                                    });
+                                            }
+                                        });
+                                    }
                                 }
                             }}
                             className="px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-xs font-bold shadow-md hover:opacity-90 transition-all flex items-center gap-2"

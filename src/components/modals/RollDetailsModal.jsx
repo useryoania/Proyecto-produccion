@@ -1,9 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import * as XLSX from 'xlsx';
 import { ordersService, rollsService, insumosService } from '../../services/api';
 import { printLabelsHelper } from '../../utils/printHelper';
-import JSZip from 'jszip';
 
 // --- SUB-COMPONENT: MODAL DE SELECCIÓN DE BOBINA ---
 const BobinaAssignmentModal = ({ isOpen, onClose, onSelect, currentMetros, areaCode = 'ECOUV' }) => {
@@ -428,6 +426,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
 
             if (supportsFileSystem && dirHandle) {
                 // 3. Descomprimir y guardar en la carpeta seleccionada
+                const JSZip = (await import("jszip")).default;
                 const zip = await JSZip.loadAsync(blob);
                 console.log("DEBUG: Zip Files", Object.keys(zip.files));
 
@@ -522,22 +521,32 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
     };
 
     // Función de exportación
-    const handleExportExcel = () => {
-        const dataToExport = orders.map((o, index) => ({
-            '#': index + 1,
-            'Código Orden': o.code || o.CodigoOrden,
-            'Cliente': o.client || o.Cliente,
-            'Trabajo': o.desc || o.DescripcionTrabajo,
-            'Material': o.material || o.Material,
-            'Archivos': o.fileCount || 0,
-            'Metros': o.magnitude || 0,
-            'Prioridad': o.priority || o.Prioridad,
-            'Estado': o.status || o.Estado
-        }));
-        const worksheet = XLSX.utils.json_to_sheet(dataToExport);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Detalle Lote");
-        XLSX.writeFile(workbook, `Reporte_Lote_${freshRoll.name.replace(/\s+/g, '_')}.xlsx`);
+    const handleExportExcel = async () => {
+        try {
+            setLoading(true);
+            const XLSX = await import("xlsx");
+
+            const dataToExport = orders.map((o, index) => ({
+                '#': index + 1,
+                'Código Orden': o.code || o.CodigoOrden,
+                'Cliente': o.client || o.Cliente,
+                'Trabajo': o.desc || o.DescripcionTrabajo,
+                'Material': o.material || o.Material,
+                'Archivos': o.fileCount || 0,
+                'Metros': o.magnitude || 0,
+                'Prioridad': o.priority || o.Prioridad,
+                'Estado': o.status || o.Estado
+            }));
+            const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Detalle Lote");
+            XLSX.writeFile(workbook, `Reporte_Lote_${freshRoll.name.replace(/\s+/g, '_')}.xlsx`);
+        } catch (error) {
+            console.error("Error creating Excel:", error);
+            toast.error("Error al generar Excel.");
+        } finally {
+            setLoading(false);
+        }
     };
 
     // Estado Legacy (se mantiene por si acaso, aunque ya no se usa directamente en el nuevo flujo)

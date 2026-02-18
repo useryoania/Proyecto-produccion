@@ -26,17 +26,31 @@ const LabelGenerationPage = () => {
             const res = await api.get('/areas');
             if (Array.isArray(res.data)) {
                 // Filtrar solo áreas productivas: Usar flag Productiva (si existe) o Categoria
-                const productive = res.data.filter(a =>
+                let productive = res.data.filter(a =>
                     (a.Productiva === true || a.Productiva === 1 || (a.Categoria || '').toUpperCase().includes('PRODUCC'))
                     && a.Activa !== false
                 );
+
+                // FILTER: Only ADMIN sees ALL.
+                const isAdmin = user?.rol === 'ADMIN' || user?.rol === 'admin';
+                if (!isAdmin && user) {
+                    const userArea = user.areaKey || user.areaId;
+                    if (userArea) {
+                        productive = productive.filter(a => a.AreaID === userArea);
+                    } else {
+                        productive = [];
+                    }
+                }
+
                 setAreas(productive);
 
-                // Preseleccionar área del usuario si coincide
-                if (user && user.areaId) {
-                    const found = productive.find(a => a.AreaID === user.areaId);
-                    if (found) {
-                        setAreaFilter(found.AreaID);
+                // Preseleccionar área
+                if (productive.length > 0) {
+                    // If only one area (user case), select it.
+                    if (productive.length === 1) {
+                        setAreaFilter(productive[0].AreaID);
+                    } else if (user && user.areaId && productive.some(a => a.AreaID === user.areaId)) {
+                        setAreaFilter(user.areaId);
                     }
                 }
             }
@@ -83,9 +97,33 @@ const LabelGenerationPage = () => {
         });
     };
 
+    // Helper to check validity
+    const isOrderBlocked = (order) => {
+        let mag = 0;
+        if (typeof order.Magnitud === 'number') mag = order.Magnitud;
+        else if (order.Magnitud) {
+            const clean = order.Magnitud.toString().replace(/[^0-9.]/g, '');
+            mag = parseFloat(clean) || 0;
+        }
+        const isZero = mag <= 0;
+        const hasError = order.ValidacionOBS && order.ValidacionOBS.trim() !== '';
+        // Returning message logic moved here
+        return {
+            isBlocked: isZero || hasError,
+            isZero,
+            message: hasError ? (order.ValidacionOBS || 'Error de validación') : "Metros en 0"
+        };
+    };
+
     const toggleSelectAll = () => {
-        if (selection.length === orders.length) setSelection([]);
-        else setSelection(orders.map(o => o.OrdenID));
+        const validOrders = orders.filter(o => !isOrderBlocked(o).isBlocked);
+        const validIds = validOrders.map(o => o.OrdenID);
+
+        // If all VALID orders are selected, deselect all. Otherwise, select all VALID orders.
+        const allValidSelected = validIds.length > 0 && validIds.every(id => selection.includes(id));
+
+        if (allValidSelected) setSelection([]);
+        else setSelection(validIds);
     };
 
     const handleGenerateClick = () => {
@@ -206,7 +244,9 @@ const LabelGenerationPage = () => {
                                     <th className="p-3 border-b text-center w-10">
                                         <input
                                             type="checkbox"
-                                            checked={orders.length > 0 && selection.length === orders.length}
+                                            checked={orders.length > 0 && selection.length > 0 &&
+                                                orders.filter(o => !isOrderBlocked(o).isBlocked).every(o => selection.includes(o.OrdenID))
+                                            }
                                             onChange={toggleSelectAll}
                                             className="rounded cursor-pointer transform scale-125"
                                         />
@@ -221,19 +261,37 @@ const LabelGenerationPage = () => {
                                 {orders.map(order => {
                                     const isSelected = selection.includes(order.OrdenID);
                                     const hasLabels = order.CantidadEtiquetas > 0;
+                                    const { isBlocked, isZero, message } = isOrderBlocked(order);
+
                                     return (
                                         <tr
                                             key={order.OrdenID}
-                                            className={`hover:bg-indigo-50/50 transition cursor-pointer ${isSelected ? 'bg-indigo-50 border-l-4 border-l-indigo-500' : 'border-l-4 border-l-transparent'}`}
-                                            onClick={() => toggleSelect(order.OrdenID)}
+                                            className={`transition border-l-4 ${isBlocked ? 'bg-slate-50 cursor-not-allowed border-l-red-400 opacity-75' : 'hover:bg-indigo-50/50 cursor-pointer'} ${isSelected ? 'bg-indigo-50 border-l-indigo-500' : (isBlocked ? '' : 'border-l-transparent')}`}
+                                            onClick={() => {
+                                                if (isBlocked) return;
+                                                toggleSelect(order.OrdenID);
+                                            }}
                                         >
                                             <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={isSelected}
-                                                    onChange={() => toggleSelect(order.OrdenID)}
-                                                    className="rounded cursor-pointer text-indigo-600 focus:ring-indigo-500 transform scale-125"
-                                                />
+                                                {isBlocked ? (
+                                                    <div className="group relative flex justify-center">
+                                                        <i className="fa-solid fa-ban text-red-500 text-lg cursor-help"></i>
+                                                        <div className="absolute left-10 top-0 hidden group-hover:block bg-red-600 text-white text-xs font-bold rounded py-1 px-2 whitespace-nowrap z-[100] shadow-lg border border-red-700 pointer-events-none w-max max-w-[200px] text-left">
+                                                            <div className="flex items-center gap-1 border-b border-red-500 pb-1 mb-1">
+                                                                <i className="fa-solid fa-triangle-exclamation"></i>
+                                                                <span>No se puede procesar</span>
+                                                            </div>
+                                                            {message}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => toggleSelect(order.OrdenID)}
+                                                        className="rounded cursor-pointer text-indigo-600 focus:ring-indigo-500 transform scale-125"
+                                                    />
+                                                )}
                                             </td>
                                             <td className="p-3">
                                                 <div className="font-bold text-slate-700 font-mono">{order.CodigoOrden}</div>
@@ -255,8 +313,9 @@ const LabelGenerationPage = () => {
                                             <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
                                                 <button
                                                     onClick={() => openManualConfig(order)}
-                                                    className="p-1.5 hover:bg-slate-200 text-slate-500 rounded transition"
-                                                    title="Configuración Manual"
+                                                    disabled={isBlocked}
+                                                    className={`p-1.5 rounded transition ${isBlocked ? 'text-slate-300 cursor-not-allowed' : 'hover:bg-slate-200 text-slate-500'}`}
+                                                    title={isBlocked ? "Bloqueado por validación" : "Configuración Manual"}
                                                 >
                                                     <i className="fa-solid fa-cog"></i>
                                                 </button>

@@ -102,6 +102,12 @@ const logisticsService = {
         const response = await api.post('/logistics/recover', data);
         return response.data;
     },
+
+    // --- DEPOSITO SYNC ---
+    syncDepositItems: async (items) => {
+        const response = await api.post('/logistics/deposit-sync', { items });
+        return response.data;
+    },
 };
 
 export { logisticsService };

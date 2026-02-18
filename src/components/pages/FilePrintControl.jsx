@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from "../../context/AuthContext";
 import { fileControlService, ordersService } from "../../services/api";
 import KPICard from '../common/KPICard';
@@ -18,31 +18,40 @@ const SmallRollMetrics = ({ roll, metrics }) => {
   const metersText = metrics?.stats ? `${currentMeters}/${totalMeters}m` : `${totalMeters}m`;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 shadow-sm flex items-center gap-6 mb-4 w-full">
-      <div className="flex items-center gap-3">
-        <div className="text-right">
-          <div className="text-[10px] font-black text-slate-400 uppercase leading-none">LOTE</div>
-          <div className="font-black text-slate-700 text-lg">#{roll.id}</div>
+    <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 shadow-sm flex flex-col mb-4 w-full">
+      <div className="flex items-center gap-6 justify-between">
+        <div className="flex items-center gap-3">
+          <div className="text-right">
+            <div className="text-[10px] font-black text-slate-400 uppercase leading-none">LOTE</div>
+            <div className="font-black text-slate-700 text-lg">#{roll.id}</div>
+          </div>
+          <div className="h-8 w-px bg-slate-100"></div>
         </div>
-        <div className="h-8 w-px bg-slate-100"></div>
-      </div>
 
-      <div className="flex items-center gap-3">
-        <div className="relative w-10 h-10 shrink-0">
-          <svg className="w-full h-full transform -rotate-90">
-            <circle cx="20" cy="20" r="16" stroke="currentColor" strokeWidth="3" fill="transparent" className="text-slate-100" />
-            <circle cx="20" cy="20" r="16" stroke="currentColor" strokeWidth="3" fill="transparent"
-              strokeDasharray={100}
-              strokeDashoffset={100 - (100 * execution / 100)}
-              className="text-cyan-500 transition-all duration-1000 ease-out" />
-          </svg>
-          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-slate-700">{execution}%</span>
-        </div>
-        <div>
-          <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider leading-none mb-1">PROGRESO</div>
-          <div className="font-bold text-xs text-slate-700">{metersText}</div>
+        <div className="flex items-center gap-3">
+          <div className="relative w-10 h-10 shrink-0">
+            <svg className="w-full h-full transform -rotate-90">
+              <circle cx="20" cy="20" r="16" stroke="currentColor" strokeWidth="3" fill="transparent" className="text-slate-100" />
+              <circle cx="20" cy="20" r="16" stroke="currentColor" strokeWidth="3" fill="transparent"
+                strokeDasharray={100}
+                strokeDashoffset={100 - (100 * execution / 100)}
+                className="text-cyan-500 transition-all duration-1000 ease-out" />
+            </svg>
+            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-black text-slate-700">{execution}%</span>
+          </div>
+          <div>
+            <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider leading-none mb-1">PROGRESO</div>
+            <div className="font-bold text-xs text-slate-700">{metersText}</div>
+          </div>
         </div>
       </div>
+      {/* WARNING IF NOT FINALIZED */}
+      {roll.status && roll.status !== 'Finalizado' && (
+        <div className="mt-3 bg-amber-50 text-amber-600 text-[10px] px-2 py-1.5 rounded-lg border border-amber-100 font-bold text-center flex items-center justify-center gap-2">
+          <i className="fa-solid fa-triangle-exclamation animate-pulse"></i>
+          LOTE EN {String(roll.status).toUpperCase()} (NO FINALIZADO)
+        </div>
+      )}
     </div>
   );
 };
@@ -57,6 +66,12 @@ const FilePrintControl = ({ areaCode }) => {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [files, setFiles] = useState([]);
   const [pedidoMetrics, setPedidoMetrics] = useState(null); // For Stepper and Full details
+
+  const autoAdvanceTimerRef = useRef(null); // Timer Ref for auto-advance
+
+  // Sort & Auto-Advance
+  const [sortOrder, setSortOrder] = useState('asc'); // 'asc' | 'desc'
+  const [autoAdvance, setAutoAdvance] = useState(true);
 
   // Loading & Metrics
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -77,6 +92,16 @@ const FilePrintControl = ({ areaCode }) => {
   const [failureType, setFailureType] = useState('');
   const [metersToReprint, setMetersToReprint] = useState('');
   const [actionReason, setActionReason] = useState('');
+
+  // --- DERIVED STATE ---
+  const sortedOrders = useMemo(() => {
+    return [...orders].sort((a, b) => {
+      const seqA = a.sequence || 999999;
+      const seqB = b.sequence || 999999;
+      if (sortOrder === 'asc') return seqA - seqB;
+      return seqB - seqA;
+    });
+  }, [orders, sortOrder]);
 
   // --- EFFECTS ---
 
@@ -115,7 +140,9 @@ const FilePrintControl = ({ areaCode }) => {
           sequence: o.Secuencia || 0,
           failures: o.CantidadFallas || 0,
           hasLabels: o.CantidadEtiquetas || 0,
-          nextService: o.ProximoServicio
+
+          nextService: o.ProximoServicio,
+          meters: parseFloat(o.Magnitud) || 0
         }));
         setOrders(normalized);
       } catch (e) { console.error(e); }
@@ -133,6 +160,8 @@ const FilePrintControl = ({ areaCode }) => {
 
     fetchOrders();
     fetchMetrics();
+    // Reset selection when roll changes
+    if (activeRoll) setSelectedOrder(null);
   }, [activeRoll, searchTerm, areaCode]);
 
 
@@ -159,7 +188,7 @@ const FilePrintControl = ({ areaCode }) => {
     fetchDetails();
   }, [selectedOrder]);
 
-  // 4. Socket Listeners
+  // 4. Socket Listeners & Auto-Advance Logic
   useEffect(() => {
     const handleUpdate = (data) => {
       if (activeRoll) {
@@ -174,20 +203,66 @@ const FilePrintControl = ({ areaCode }) => {
             sequence: o.Secuencia || 0,
             failures: o.CantidadFallas || 0,
             hasLabels: o.CantidadEtiquetas || 0,
-            nextService: o.ProximoServicio
+
+            nextService: o.ProximoServicio,
+            meters: parseFloat(o.Magnitud) || 0
+
+
           }));
           setOrders(normalized);
 
           if (selectedOrder) {
             const fresh = normalized.find(o => o.id === selectedOrder.id);
             if (fresh) {
+              // Updarte current selection
               setSelectedOrder(prev => ({ ...prev, ...fresh }));
-              // Check if just completed to show modal
-              if (fresh.status === 'PRONTO' && prev.status !== 'PRONTO') {
+
+              // AUTO ADVANCE LOGIC
+              // Check if status changed to a completed state
+              const isCompleted = ['PRONTO', 'FINALIZADO', 'ENTREGADO'].includes(fresh.status?.toUpperCase());
+              const wasCompleted = ['PRONTO', 'FINALIZADO', 'ENTREGADO'].includes(selectedOrder.status?.toUpperCase());
+
+              if (isCompleted && !wasCompleted) {
+                // Show Completion Modal
                 setCompletedOrderData({
-                  destino: fresh.nextService || 'LOGÍSTICA', // Fallback logic
+                  destino: fresh.nextService || 'LOGÍSTICA',
                   proximoServicio: fresh.nextService
                 });
+
+                // If Auto-Advance enabled, switch after delay
+                if (autoAdvance) {
+                  if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
+
+                  autoAdvanceTimerRef.current = setTimeout(() => {
+                    setOrders(prevOrders => {
+                      // Re-sort current orders to find next index
+                      const currentSorted = [...prevOrders].sort((a, b) => {
+                        const seqA = a.sequence || 999999;
+                        const seqB = b.sequence || 999999;
+                        return sortOrder === 'asc' ? seqA - seqB : seqB - seqA;
+                      });
+
+                      const idx = currentSorted.findIndex(o => o.id === fresh.id);
+                      if (idx !== -1 && idx < currentSorted.length - 1) {
+                        // Find next VALID order (not blocked)
+                        let nextOrder = null;
+                        for (let i = idx + 1; i < currentSorted.length; i++) {
+                          if ((currentSorted[i].meters || 0) > 0) {
+                            nextOrder = currentSorted[i];
+                            break;
+                          }
+                        }
+
+                        if (nextOrder) {
+                          setSelectedOrder(nextOrder);
+                          setCompletedOrderData(null); // Auto-close modal
+                          setToast({ visible: true, message: `Auto-avanzando a orden #${nextOrder.code || nextOrder.id}...`, type: 'info' });
+                        }
+                      }
+                      return prevOrders;
+                    });
+                  }, 2000);
+                }
               }
             }
           }
@@ -199,8 +274,11 @@ const FilePrintControl = ({ areaCode }) => {
     };
 
     socket.on('server:order_updated', handleUpdate);
-    return () => socket.off('server:order_updated', handleUpdate);
-  }, [activeRoll, selectedOrder, searchTerm, areaCode]);
+    return () => {
+      socket.off('server:order_updated', handleUpdate);
+      if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
+    };
+  }, [activeRoll, selectedOrder, searchTerm, areaCode, autoAdvance, sortOrder]);
 
 
   // --- HELPERS ---
@@ -217,14 +295,30 @@ const FilePrintControl = ({ areaCode }) => {
     }
   };
 
+  const handleSelectOrder = (order) => {
+    if (!order) {
+      setSelectedOrder(null);
+      return;
+    }
+    if ((order.meters || 0) <= 0) {
+      setToast({ visible: true, message: `La orden ${order.code || order.id} tiene 0 metros. No se puede procesar.`, type: 'error' });
+      return;
+    }
+    setSelectedOrder(order);
+  };
+
   // --- ACTIONS HANDLERS ---
   const handlePrintLabels = async () => {
     if (!selectedOrder) return;
     try {
-      alert("Imprimiendo etiquetas... (Simulación)");
-      // Call backend to regenerate/print labels
-      // await fileControlService.regenerateLabels(selectedOrder.id);
-    } catch (e) { console.error(e); alert("Error imprimiendo"); }
+      // alert("Solicitando etiquetas al servidor...");
+      const res = await fileControlService.regenerateLabels(selectedOrder.id);
+      if (res.success) {
+        setToast({ visible: true, message: `Etiquetas generadas/impresas: ${res.totalBultos || 'OK'}`, type: 'success' });
+      } else {
+        alert("Error generando etiquetas: " + res.error);
+      }
+    } catch (e) { console.error(e); alert("Error imprimiendo: " + e.message); }
   };
 
   const openActionModal = (file, action) => {
@@ -294,7 +388,7 @@ const FilePrintControl = ({ areaCode }) => {
               onChange={(e) => {
                 const val = e.target.value;
                 if (!val) setActiveRoll(null);
-                else setActiveRoll(rollos.find(x => x.id === parseInt(val)));
+                else setActiveRoll(rollos.find(x => x.id === (val.startsWith('R') ? val : parseInt(val))) || rollos.find(x => x.id == val));
               }}
             >
               <option value="">Seleccione Lote...</option>
@@ -303,16 +397,41 @@ const FilePrintControl = ({ areaCode }) => {
             <i className="fa-solid fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-xs"></i>
           </div>
 
-          {/* Search */}
-          <div className="relative">
-            <i className="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-            <input
-              type="text"
-              placeholder="Buscar orden..."
-              className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 transition-all"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+          {/* Search and Sort */}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <i className="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+              <input
+                type="text"
+                placeholder="Buscar orden..."
+                className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-cyan-300 transition-all"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+              className="w-8 h-[34px] flex items-center justify-center bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-cyan-600 transition-colors"
+              title={`Ordenar por Secuencia (${sortOrder === 'asc' ? 'Ascendente' : 'Descendente'})`}
+            >
+              <i className={`fa-solid fa-sort-${sortOrder === 'asc' ? 'numeric-down' : 'numeric-up-alt'}`}></i>
+            </button>
+          </div>
+
+          {/* Auto Advance Toggle (Moved to Header) */}
+          <div className="mt-3 flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+            <div className="flex items-center gap-2">
+              <i className={`fa-solid fa-forward text-xs ${autoAdvance ? 'text-emerald-500' : 'text-slate-400'}`}></i>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Auto-Siguiente</span>
+            </div>
+
+            <div
+              onClick={() => setAutoAdvance(!autoAdvance)}
+              className={`w-8 h-4 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${autoAdvance ? 'bg-emerald-500' : 'bg-slate-300'}`}
+              title="Avanzar automáticamente al siguiente pedido cuando se completa el actual"
+            >
+              <div className={`bg-white w-3 h-3 rounded-full shadow-sm transform transition-transform duration-200 ${autoAdvance ? 'translate-x-4' : 'translate-x-0'}`}></div>
+            </div>
           </div>
         </div>
 
@@ -323,19 +442,28 @@ const FilePrintControl = ({ areaCode }) => {
         <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2 bg-slate-50/30">
           {loadingOrders ? (
             <div className="py-8 text-center text-cyan-500"><i className="fa-solid fa-circle-notch fa-spin"></i></div>
-          ) : orders.length === 0 ? (
+          ) : sortedOrders.length === 0 ? (
             <div className="py-8 text-center text-slate-400 italic text-xs">Sin órdenes</div>
           ) : (
-            orders.map(o => (
-              <OrderCard
-                key={o.id}
-                order={o}
-                isSelected={selectedOrder?.id === o.id}
-                onToggleSelect={() => setSelectedOrder(o)}
-                onViewDetails={() => setSelectedOrder(o)}
-                minimal={true}
-              />
-            ))
+            sortedOrders.map(o => {
+              const isBlocked = (o.meters || 0) <= 0;
+              return (
+                <div key={o.id} className={`relative transition-opacity ${isBlocked ? 'opacity-60 grayscale' : ''}`}>
+                  {isBlocked && (
+                    <div className="absolute top-2 right-2 z-20 text-red-500 bg-white/80 rounded-full px-2 py-0.5 text-[10px] font-bold border border-red-200 shadow-sm flex items-center gap-1">
+                      <i className="fa-solid fa-ban"></i> 0m
+                    </div>
+                  )}
+                  <OrderCard
+                    order={o}
+                    isSelected={selectedOrder?.id === o.id}
+                    onToggleSelect={() => handleSelectOrder(o)}
+                    onViewDetails={() => handleSelectOrder(o)}
+                    minimal={true}
+                  />
+                </div>
+              )
+            })
           )}
         </div>
       </aside>
@@ -358,6 +486,10 @@ const FilePrintControl = ({ areaCode }) => {
                       ORDEN
                     </span>
                     {selectedOrder.status === 'PRONTO' && <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-600 text-[10px] font-black uppercase tracking-widest">COMPLETA</span>}
+                    {/* Sequence Badge */}
+                    <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 text-[10px] font-black uppercase tracking-widest border border-blue-100">
+                      SEC: {selectedOrder.sequence || '-'}
+                    </span>
                   </div>
                   <h1 className="text-4xl font-black text-slate-800 tracking-tight leading-none mb-1">
                     {selectedOrder.code || selectedOrder.id}
@@ -589,9 +721,14 @@ const FilePrintControl = ({ areaCode }) => {
                 <button onClick={() => { setCompletedOrderData(null); handlePrintLabels(); }} className="w-full py-3 rounded-xl bg-emerald-500 text-white font-black text-lg shadow-lg shadow-emerald-200 hover:bg-emerald-600 hover:scale-[1.02] transition-all active:scale-95">
                   <i className="fa-solid fa-print mr-2"></i> IMPRIMIR ETIQUETAS
                 </button>
-                <button onClick={() => setCompletedOrderData(null)} className="w-full py-3 rounded-xl bg-white border-2 border-slate-200 text-slate-500 font-bold text-sm hover:bg-slate-50">
-                  Cerrar
-                </button>
+                <div className="flex gap-2">
+                  <button onClick={() => setCompletedOrderData(null)} className="flex-1 py-3 rounded-xl bg-white border-2 border-slate-200 text-slate-500 font-bold text-sm hover:bg-slate-50">
+                    Cerrar
+                  </button>
+                  {autoAdvance && <div className="flex items-center justify-center px-4 bg-slate-100 rounded-xl text-slate-400 text-xs font-bold">
+                    <i className="fa-solid fa-forward mr-2 animate-pulse"></i> Auto
+                  </div>}
+                </div>
               </div>
 
             </div>

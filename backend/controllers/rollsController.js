@@ -193,8 +193,11 @@ exports.moveOrder = async (req, res) => {
                         UPDATE dbo.Ordenes 
                         SET 
                             RolloID = @RolloID,
-                            -- Si se mueve a "Pendientes" (null), la secuencia se reinicia a NULL
-                            Secuencia = CASE WHEN @RolloID IS NULL THEN NULL ELSE Secuencia END,
+                            -- Si es a Pendientes (null), NULL. Si es a un Rollo, calculamos nueva secuencia al final
+                            Secuencia = CASE 
+                                WHEN @RolloID IS NULL THEN NULL 
+                                ELSE (SELECT ISNULL(MAX(Secuencia), 0) + 1 FROM dbo.Ordenes WHERE RolloID = @RolloID) 
+                            END,
                             
                             -- Heredar máquina del nuevo rollo
                             MaquinaID = CASE 
@@ -973,7 +976,7 @@ exports.getRollosActivos = async (req, res) => {
             LEFT JOIN dbo.ConfigEquipos ce WITH (NOLOCK) ON r.MaquinaID = ce.EquipoID
             WHERE (@AreaID IS NULL OR r.AreaID = @AreaID)
             AND (
-                (${isControlView ? 1 : 0} = 1 AND r.Estado = 'Finalizado')
+                (${isControlView ? 1 : 0} = 1 AND r.Estado IN ('Finalizado', 'En maquina', 'Produccion', 'Imprimiendo'))
                 OR
                 (${isControlView ? 0 : 1} = 1 AND r.Estado NOT IN ('Cerrado', 'Cancelado')) 
             )

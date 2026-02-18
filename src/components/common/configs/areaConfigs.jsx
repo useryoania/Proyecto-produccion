@@ -13,13 +13,14 @@ const s = {
   positionNumber: "positionNumber"
 };
 
-// Formateo de fecha DD/MM/AA
+// Formateo de fecha DD/MM/AA HH:mm
 const formatDate = (dateString) => {
   if (!dateString) return '-';
   const date = new Date(dateString);
-  return isNaN(date.getTime()) ? '-' : date.toLocaleDateString('es-ES', {
-    day: '2-digit', month: '2-digit', year: '2-digit'
-  });
+  return isNaN(date.getTime()) ? '-' : date.toLocaleString('es-ES', {
+    day: '2-digit', month: '2-digit', year: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  }).replace(',', ''); // Remove comma from "17/02/26, 10:30" => "17/02/26 10:30"
 };
 
 /* -------------------------------------------------------------------------- */
@@ -143,7 +144,7 @@ const renderCommonCells = (order, index, styles, handlers, extraCells = []) => {
 
 // DEFINICIÓN DE ANCHOS FLEXIBLES (TOTAL 12 COLUMNAS):
 // 1.  Check: 30px (Fijo)
-// 2.  Fecha: 60px (Fijo)
+// 2.  Fecha: 95px (Fijo -- AUMENTADO DE 60px)
 // 3.  Prio:  60px (Fijo)
 // 4.  Orden: 110px (Fijo)
 // 5.  Cliente: 1fr (Flexible)
@@ -155,7 +156,7 @@ const renderCommonCells = (order, index, styles, handlers, extraCells = []) => {
 // 11. Maq: 90px (Fijo)
 // 12. Nota: 40px (Fijo)
 
-const FLEXIBLE_GRID = "30px 60px 60px 110px 1fr 1.2fr 2fr 70px 50px 70px 90px 40px";
+const FLEXIBLE_GRID = "30px 95px 60px 110px 1fr 1.2fr 2fr 70px 50px 70px 90px 40px";
 const FLEXIBLE_HEADERS = ["", "Fecha", "Prio.", "Orden", "Cliente", "Trabajo", "Material", "Var.", "Arch.", "Lote", "Máq.", ""];
 
 export const areaConfigs = {
@@ -216,9 +217,10 @@ export const areaConfigs = {
   },
 
   // --- ÁREAS LEGACY ---
+  // Ajustado gridTemplate para columna Fecha (Index 3 - "Ingreso") de 80px a 95px
   'planilla-bord': {
     name: "Bordado Industrial",
-    gridTemplate: "40px 40px 70px 80px 180px 180px 80px 60px 80px 90px 100px 100px 50px",
+    gridTemplate: "40px 40px 70px 95px 180px 180px 80px 60px 80px 90px 100px 100px 50px",
     fileRequirements: [{ type: 'Boceto', label: 'Boceto', required: true }],
     headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Puntadas", "Col.", "Cant.", "Matriz", "Equipo", "Estado", ""],
     renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
@@ -230,7 +232,7 @@ export const areaConfigs = {
   },
   'planilla-bordado': {
     name: "Bordado Industrial",
-    gridTemplate: "40px 40px 70px 80px 180px 180px 80px 60px 80px 90px 100px 100px 50px",
+    gridTemplate: "40px 40px 70px 95px 180px 180px 80px 60px 80px 90px 100px 100px 50px",
     fileRequirements: [{ type: 'Boceto', label: 'Boceto', required: true }],
     headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Puntadas", "Col.", "Cant.", "Matriz", "Equipo", "Estado", ""],
     renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
@@ -242,7 +244,7 @@ export const areaConfigs = {
   },
   'planilla-laser': {
     name: "Corte Láser",
-    gridTemplate: "40px 40px 70px 80px 180px 180px 120px 80px 100px 100px 50px",
+    gridTemplate: "40px 40px 70px 95px 180px 180px 120px 80px 100px 100px 50px",
     headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Material", "Unid.", "Equipo", "Estado", ""],
     renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
       <div key="mat" className={styles.gridCell}>{o.variant || 'MDF'}</div>,
@@ -251,7 +253,7 @@ export const areaConfigs = {
   },
   'planilla-costura': {
     name: "Taller de Costura",
-    gridTemplate: "40px 40px 70px 80px 180px 180px 120px 80px 100px 100px 50px",
+    gridTemplate: "40px 40px 70px 95px 180px 180px 120px 80px 100px 100px 50px",
     headers: ["", "Pos", "ID", "Ingreso", "Cliente", "Trabajo", "Prenda", "Cant.", "Taller", "Estado", ""],
     renderRowCells: (o, i, styles, h) => renderCommonCells(o, i, styles, h, [
       <div key="typ" className={styles.gridCell}>{o.variant || 'Prenda'}</div>,

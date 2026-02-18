@@ -323,20 +323,7 @@ const LogisticsView = ({ areaCode }) => {
                 </div>
                 <div className="flex items-center gap-3">
                     {/* GLOBAL AREA SELECTOR */}
-                    <div className="relative">
-                        <select
-                            value={globalArea}
-                            onChange={(e) => setGlobalArea(e.target.value)}
-                            className="appearance-none pl-3 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:outline-none focus:border-indigo-500 shadow-sm cursor-pointer hover:border-slate-300 transition-colors uppercase"
-                        >
-                            {AREAS.map(area => (
-                                <option key={area} value={area}>{area}</option>
-                            ))}
-                        </select>
-                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
-                            <i className="fa-solid fa-chevron-down text-[10px]"></i>
-                        </div>
-                    </div>
+
 
                     <div className="relative">
                         <i className="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
@@ -354,12 +341,7 @@ const LogisticsView = ({ areaCode }) => {
                     >
                         <i className="fa-solid fa-clock-rotate-left mr-2"></i> Historial
                     </button>
-                    <button
-                        onClick={() => setViewMode('RECEPTION')}
-                        className="px-4 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold uppercase tracking-wide hover:bg-slate-900 transition-colors shadow-lg shadow-slate-200"
-                    >
-                        <i className="fa-solid fa-barcode mr-2"></i> Recepción WMS
-                    </button>
+
                 </div>
             </div>
 
@@ -398,14 +380,6 @@ const LogisticsView = ({ areaCode }) => {
                                 </div>
 
                                 <div className="flex gap-2">
-                                    {/* Select All Toggle */}
-                                    <button
-                                        onClick={handleSelectAll}
-                                        className="px-3 py-1.5 text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors border border-slate-200 rounded hover:bg-slate-50"
-                                    >
-                                        {selectedOrders.length > 0 && selectedOrders.length === selectedBasket.ordenes.length ? 'Ninguno' : 'Todos'}
-                                    </button>
-
                                     {/* Action Buttons */}
                                     {selectedBasket.tipo === 'logistica' && (
                                         <button
@@ -417,13 +391,7 @@ const LogisticsView = ({ areaCode }) => {
                                         </button>
                                     )}
 
-                                    <button
-                                        disabled={selectedOrders.length === 0}
-                                        onClick={printLabels}
-                                        className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold uppercase tracking-wide hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md shadow-blue-200 flex items-center"
-                                    >
-                                        <i className="fa-solid fa-print mr-2"></i> Etiquetas
-                                    </button>
+
                                 </div>
                             </div>
 

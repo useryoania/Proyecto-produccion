@@ -36,11 +36,12 @@ const getDriveId = (url) => {
  * Descarga archivos, mide dimensiones, actualiza DB y recalcula magnitud global.
  * @param {Array<number>} orderIds - Lista de IDs de órdenes a procesar
  * @param {Object} io - Instancia de Socket.io para notificaciones (opcional)
+ * @param {Array<number>} targetFileIds - (Opcional) IDs específicos de archivo a procesar
  */
-exports.processOrderList = async (orderIds, io) => {
+const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
     if (!orderIds || orderIds.length === 0) return;
 
-    console.log(`⚡ [FileProcessing] Iniciando procesamiento asíncrono para ${orderIds.length} órdenes...`);
+    console.log(`⚡ [FileProcessing] Iniciando procesamiento asíncrono para ${orderIds.length} órdenes...` + (targetFileIds ? ` (Target Files: ${targetFileIds.length})` : ''));
 
     setImmediate(async () => {
         try {
@@ -49,8 +50,7 @@ exports.processOrderList = async (orderIds, io) => {
             // 1. Obtener archivos de las órdenes indicadas
             const idsStr = orderIds.join(',');
 
-            console.log(`🔎 [FileProcessing] Consultando DB para OrdenIDs: ${idsStr}`);
-
+            // IMPORTANTE: Obtenemos TODOS los archivos de la orden para calcular los índices correctamente (Archivo 1 de N)
             const filesRes = await pool.request().query(`
                 SELECT AO.ArchivoID, AO.RutaAlmacenamiento, AO.RutaLocal, AO.NombreArchivo, AO.Copias,
                        O.OrdenID, O.CodigoOrden, O.Cliente, O.DescripcionTrabajo, O.Material, O.UM, O.AreaID
@@ -61,7 +61,7 @@ exports.processOrderList = async (orderIds, io) => {
             `);
 
             const files = filesRes.recordset;
-            console.log(`   📂[FileProcessing] Encontrados ${files.length} archivos para medir.`);
+            console.log(`   📂[FileProcessing] Encontrados ${files.length} archivos totales en las órdenes.`);
 
             if (files.length === 0) return;
 
@@ -80,9 +80,15 @@ exports.processOrderList = async (orderIds, io) => {
                 group.forEach((f, idx) => {
                     f.idxInOrder = idx + 1;
                     f.totalInOrder = group.length;
-                    processedFiles.push(f);
+
+                    // AHORA FILTRAMOS: Solo añadimos a la lista de procesamiento si es un targetFileId (o si no hay targets)
+                    if (!targetFileIds || targetFileIds.includes(f.ArchivoID)) {
+                        processedFiles.push(f);
+                    }
                 });
             }
+
+            console.log(`   🎯[FileProcessing] Archivos a procesar realmente: ${processedFiles.length}`);
 
             const rootDir = 'C:\\ORDENES';
 
@@ -116,18 +122,9 @@ exports.processOrderList = async (orderIds, io) => {
                     let destPath = '';
                     let needsDownload = true;
 
-                    // IMPORTANTE: Si cambiamos la convención de nombres, es probable que la RutaLocal antigua NO coincida
-                    // con el nuevo baseName que acabamos de generar.
-                    // Si queremos RENOMBRAR los existentes, tendríamos que detectar si existe archivo fisico en RutaLocal
-                    // y renombrarlo. Pero por simplicidad en reprocesos, si el nombre deseado no existe, forzamos re-descarga (o renombre si pudieramos).
-                    // Para evitar duplicados infinitos, asumimos que si RutaLocal existe, ES VALIDO. 
-                    // PERO el usuario pidió que el nombre coincida.
-                    // Entonces: Si RutaLocal existe pero NO termina con baseName (sin ext), entonces debemos moverlo/renombrarlo?
-                    // Riesgoso. Mejor lógica simple: Ignorar RutaLocal si queremos forzar nombre nuevo.
-                    // En este script asumimos que el usuario limpiará RutaLocal via reprocessing debug endpoint si quiere renombrar.
-
+                    // Forzamos descarga/renombre si el usuario lo pide explicitamente (implícito en la llamada individual)
+                    // Pero para ser eficientes, checkeamos existencia y nombre.
                     if (file.RutaLocal && fs.existsSync(file.RutaLocal)) {
-                        // Check si el nombre coincide con el formato nuevo?
                         const existingName = path.basename(file.RutaLocal, path.extname(file.RutaLocal));
                         if (existingName === baseName) {
                             destPath = file.RutaLocal;
@@ -135,8 +132,6 @@ exports.processOrderList = async (orderIds, io) => {
                             console.log(`      ✅ Usando copia local existente(Nombre correcto): ${destPath}`);
                         } else {
                             console.log(`      ⚠️ RutaLocal existe pero nombre difiere.Se generará nuevo con nombre correcto.`);
-                            // No usamos el viejo -> needsDownload = true. 
-                            // Si descargamos de nuevo, tendremos 2 archivos.
                         }
                     }
 
@@ -157,35 +152,25 @@ exports.processOrderList = async (orderIds, io) => {
                         try {
                             if (sourcePath.startsWith('http')) {
                                 await downloadStream(sourcePath, tempPath);
-                                // Check Drive Warning
                                 // Check Drive Warning (Virus Scan)
                                 if (isDrive) {
                                     const stats = fs.statSync(tempPath);
-                                    // Si es pequeño (< 200KB) y es un HTML, probablemente es la advertencia de virus
                                     if (stats.size < 200000) {
                                         const content = fs.readFileSync(tempPath, 'utf8');
                                         if (content.toLowerCase().includes('<!doctype html') || content.includes('Virus scan') || content.includes('virus')) {
                                             console.log(`      🔄 Drive Virus Scan Warning detectado. Buscando bypass...`);
-
-                                            // Buscar token de confirmación
                                             let confirmToken = null;
-                                            // Patrón 1: Link directo (&confirm=xxxx)
                                             const match = content.match(/confirm=([a-zA-Z0-9_\-]+)/);
                                             if (match) confirmToken = match[1];
-
-                                            // Patrón 2: Form action
                                             if (!confirmToken) {
                                                 const matchForm = content.match(/action=".*?confirm=([a-zA-Z0-9_\-]+)/);
                                                 if (matchForm) confirmToken = matchForm[1];
                                             }
-
                                             if (confirmToken) {
                                                 console.log(`      🚀 Token encontrado: ${confirmToken}. Reintentando descarga...`);
-                                                // Descargar sobreescribiendo el archivo HTML temporal
                                                 await downloadStream(`${sourcePath}&confirm=${confirmToken}`, tempPath);
                                             } else {
                                                 console.log(`      ⚠️ Token no encontrado explícitamente. Probando bypass genérico (confirm=t)...`);
-                                                // Fallback común
                                                 await downloadStream(`${sourcePath}&confirm=t`, tempPath);
                                             }
                                         }
@@ -203,7 +188,6 @@ exports.processOrderList = async (orderIds, io) => {
                         }
 
                         // ... Rename Logic ...
-                        // ... Rename Logic ...
                         let finalExt = path.extname(file.NombreArchivo || '').toLowerCase(); // Default to original extension
 
                         try {
@@ -220,16 +204,20 @@ exports.processOrderList = async (orderIds, io) => {
                                 finalExt = '.png';
                             } else if (magicHex.startsWith('FFD8FF')) {
                                 finalExt = '.jpg';
+                            } else if (magicHex.startsWith('504B0304')) {
+                                // ZIP or Office file, check further if needed, or assume zip
+                                // finalExt = '.zip'; 
+                            } else if (magicHex.startsWith('38425053')) {
+                                finalExt = '.psd';
                             }
 
                             // Fallbacks
-                            if (!finalExt) {
-                                // Try to guess from URL
+                            if (!finalExt || finalExt === '.dat') {
                                 const urlExt = path.extname(file.RutaAlmacenamiento || '').split('?')[0].toLowerCase();
-                                if (['.jpg', '.jpeg', '.png', '.pdf', '.tiff', '.tif'].includes(urlExt)) {
+                                if (['.jpg', '.jpeg', '.png', '.pdf', '.tiff', '.tif', '.psd', '.ai', '.eps'].includes(urlExt)) {
                                     finalExt = urlExt;
                                 } else {
-                                    finalExt = '.pdf'; // Last resort
+                                    finalExt = '.pdf'; // Last resort default
                                 }
                             }
                             if (finalExt === '.jpeg') finalExt = '.jpg';
@@ -238,7 +226,6 @@ exports.processOrderList = async (orderIds, io) => {
                             if (!finalExt) finalExt = '.pdf';
                         }
 
-                        // Agregar extension al baseName si no la tiene (baseName puro no la tiene)
                         let fileNameWithExt = baseName;
                         if (!fileNameWithExt.toLowerCase().endsWith(finalExt.toLowerCase())) fileNameWithExt += finalExt;
 
@@ -301,7 +288,6 @@ exports.processOrderList = async (orderIds, io) => {
                     if (widthM > 0 && heightM > 0) {
                         console.log(`      ✅ Medidas obtenidas: ${widthM.toFixed(2)}m x ${heightM.toFixed(2)}m`);
 
-                        // --- LOGICA DE CALCULO AUTOMATICO (Mimics Manual Logic) ---
                         let valorMetros = heightM; // Default ML
                         const matUpper = (file.Material || '').toUpperCase();
                         const umUpper = (file.UM || '').toUpperCase();
@@ -314,11 +300,9 @@ exports.processOrderList = async (orderIds, io) => {
                         } else if (isM2) {
                             valorMetros = widthM * heightM;
                         } else {
-                            // Textil / Default (Lineal)
                             valorMetros = heightM;
                         }
 
-                        // Actualizar Archivo con MedidaConfirmada = 1 (Path already updated)
                         await pool.request()
                             .input('ID', sql.Int, file.ArchivoID)
                             .input('M', sql.Decimal(10, 2), valorMetros)
@@ -332,23 +316,12 @@ exports.processOrderList = async (orderIds, io) => {
                             .query(`
                                 DECLARE @TotalProd DECIMAL(18,2) = 0;
                                 DECLARE @TotalServ DECIMAL(18,2) = 0;
-
-                                -- Suma de Producción (Metros * Copias)
                                 SELECT @TotalProd = SUM(ISNULL(Metros, 0) * ISNULL(Copias, 1))
-                                FROM ArchivosOrden 
-                                WHERE OrdenID = @OID AND EstadoArchivo != 'CANCELADO';
-
-                                -- Suma de Servicios (Cantidad Directa)
-                                SELECT @TotalServ = SUM(ISNULL(Cantidad, 0))
-                                FROM ServiciosExtraOrden 
-                                WHERE OrdenID = @OID;
-
-                                UPDATE dbo.Ordenes 
-                                SET Magnitud = CAST((ISNULL(@TotalProd, 0) + ISNULL(@TotalServ, 0)) AS NVARCHAR(50))
-                                WHERE OrdenID = @OID
+                                FROM ArchivosOrden WHERE OrdenID = @OID AND EstadoArchivo != 'CANCELADO';
+                                SELECT @TotalServ = SUM(ISNULL(Cantidad, 0)) FROM ServiciosExtraOrden WHERE OrdenID = @OID;
+                                UPDATE dbo.Ordenes SET Magnitud = CAST((ISNULL(@TotalProd, 0) + ISNULL(@TotalServ, 0)) AS NVARCHAR(50)) WHERE OrdenID = @OID
                             `);
 
-                        // F. Notificar UI de cambio en orden especifica
                         if (io) {
                             io.emit('server:order_updated', { orderId: file.OrdenID });
                         }
@@ -366,4 +339,28 @@ exports.processOrderList = async (orderIds, io) => {
             console.error("❌ [FileProcessing] Error general:", err);
         }
     });
+};
+
+exports.processOrderList = processOrderListInternal;
+
+/**
+ * Nueva función para procesar lista de ARCHIVOS específicos.
+ * Internamente resuelve las Órdenes y reutiliza processOrderList con filtro.
+ */
+exports.processFiles = async (fileIds, io) => {
+    if (!fileIds || fileIds.length === 0) return;
+    try {
+        const pool = await getPool();
+        // Obtener IDs de orden asociados
+        const fileIdsStr = fileIds.join(',');
+        const res = await pool.request().query(`SELECT DISTINCT OrdenID FROM dbo.ArchivosOrden WHERE ArchivoID IN (${fileIdsStr})`);
+
+        const orderIds = res.recordset.map(r => r.OrdenID);
+        if (orderIds.length > 0) {
+            // Llamar a processOrderListInternal pasando los fileIds como target
+            await processOrderListInternal(orderIds, io, fileIds);
+        }
+    } catch (err) {
+        console.error("Error processFiles:", err);
+    }
 };
