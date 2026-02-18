@@ -14,6 +14,9 @@ import { toast } from 'sonner';
 
 const InventoryPage = () => {
     const { user } = useAuth();
+    const isAdmin = user?.rol?.toLowerCase() === 'admin';
+    const isDeposito = user?.areaKey?.trim().toUpperCase() === 'DEPOSITO';
+    const hasFullAccess = isAdmin || isDeposito;
     // selectedAreas es un Array de strings
     const [selectedAreas, setSelectedAreas] = useState([]);
 
@@ -43,10 +46,10 @@ const InventoryPage = () => {
             let adaptedData = data.map(d => ({ ...d, code: d.AreaID, name: d.Nombre }));
 
             // Initial Filter based on User Role
-            const isAdmin = user?.rol?.toLowerCase() === 'admin';
+            const fullAccess = isAdmin || isDeposito;
 
-            if (!isAdmin && user) {
-                const userArea = user.areaKey || user.areaId;
+            if (!fullAccess && user) {
+                const userArea = (user.areaKey || user.areaId || '').trim();
                 if (userArea) {
                     adaptedData = adaptedData.filter(a => a.code === userArea);
                 } else {
@@ -60,7 +63,7 @@ const InventoryPage = () => {
                 // Si es admin o DEPOSITO -> Seleccionar TODAS por defecto (o permitir escoger, aqui seleccionamos todas para dar visión global)
                 // const isAdminOrDeposito = user?.role === 'admin' || user?.areaKey === 'DEPOSITO' || !user?.areaKey; // OLD LOGIC
 
-                if (isAdmin) {
+                if (fullAccess) {
                     // Admin selects all by default? Or first? usually all for overview.
                     setSelectedAreas(adaptedData.map(a => a.code));
                 } else {
@@ -234,6 +237,7 @@ const InventoryPage = () => {
                         areas={areasList}
                         selected={selectedAreas}
                         onChange={setSelectedAreas}
+                        disabled={!hasFullAccess}
                     />
 
                     {viewMode === 'list' && (

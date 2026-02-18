@@ -1,36 +1,36 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo, Suspense, lazy } from 'react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from './Navbar';
-import MachineDetailView from '../pages/MachineDetailView';
+const MachineDetailView = lazy(() => import('../pages/MachineDetailView'));
 import Dashboard from '../pages/Dashboard';
 import AreaView from '../production/areas/AreaView';
-import ConfigPage from '../pages/ConfigPage';
-import LogisticsDashboard from '../logistics/LogisticsDashboard';
-import OrdersQueryView from '../pages/OrdersQueryView';
-import RollHistory from '../pages/RollHistory';
-import MenuAdmin from '../pages/MenuAdmin';
-import RolesPage from '../pages/RolesPage';
-import UsersPage from '../pages/UsersPage';
-import AuditPage from '../pages/AuditPage';
-import InventoryPage from '../pages/InventoryPage';
-import InsumosCatalogPage from '../pages/InsumosCatalogPage';
-import StockRequestsPage from '../pages/StockRequestsPage';
-import ReceptionPage from '../pages/customer-service/ReceptionPage';
-import LogisticsPage from '../pages/customer-service/LogisticsPage'; // Import LogisticsPage
-import ActiveStockPage from '../pages/customer-service/ActiveStockPage';
-import TransportControlPage from '../pages/TransportControlPage';
-import EcoUvFinishing from '../pages/EcoUvFinishing';
-import ClientsIntegration from '../pages/ClientsIntegration';
+const ConfigPage = lazy(() => import('../pages/ConfigPage'));
+const LogisticsDashboard = lazy(() => import('../logistics/LogisticsDashboard'));
+const OrdersQueryView = lazy(() => import('../pages/OrdersQueryView'));
+const RollHistory = lazy(() => import('../pages/RollHistory'));
+const MenuAdmin = lazy(() => import('../pages/MenuAdmin'));
+const RolesPage = lazy(() => import('../pages/RolesPage'));
+const UsersPage = lazy(() => import('../pages/UsersPage'));
+const AuditPage = lazy(() => import('../pages/AuditPage'));
+const InventoryPage = lazy(() => import('../pages/InventoryPage'));
+const InsumosCatalogPage = lazy(() => import('../pages/InsumosCatalogPage'));
+const StockRequestsPage = lazy(() => import('../pages/StockRequestsPage'));
+const ReceptionPage = lazy(() => import('../pages/customer-service/ReceptionPage'));
+const LogisticsPage = lazy(() => import('../pages/customer-service/LogisticsPage'));
+const ActiveStockPage = lazy(() => import('../pages/customer-service/ActiveStockPage'));
+const TransportControlPage = lazy(() => import('../pages/TransportControlPage'));
+const EcoUvFinishing = lazy(() => import('../pages/EcoUvFinishing'));
+const ClientsIntegration = lazy(() => import('../pages/ClientsIntegration'));
 import ChatWidget from '../common/ChatWidget';
-import ProductsIntegration from '../pages/ProductsIntegration';
-import SpecialPrices from '../pages/SpecialPrices';
-import BasePrices from '../pages/BasePrices';
-import PriceProfiles from '../pages/PriceProfiles';
-import LabelGenerationPage from '../pages/LabelGenerationPage';
-import DepositStockPage from '../logistics/DepositStockPage';
-import CustomerReplacementPage from '../pages/customer-service/CustomerReplacementPage';
+const ProductsIntegration = lazy(() => import('../pages/ProductsIntegration'));
+const SpecialPrices = lazy(() => import('../pages/SpecialPrices'));
+const BasePrices = lazy(() => import('../pages/BasePrices'));
+const PriceProfiles = lazy(() => import('../pages/PriceProfiles'));
+const LabelGenerationPage = lazy(() => import('../pages/LabelGenerationPage'));
+const DepositStockPage = lazy(() => import('../logistics/DepositStockPage'));
+const CustomerReplacementPage = lazy(() => import('../pages/customer-service/CustomerReplacementPage'));
 
 // ============================================
 // 1. COMPONENTE NAVNODE (Mejorado)
@@ -268,24 +268,30 @@ const MainAppContent = ({ menuItems = [] }) => {
 
                 <main className="flex-1 overflow-hidden relative bg-slate-50/50 w-full">
                     <div className="absolute inset-0 overflow-y-auto p-6 scroll-smooth">
-                        <Routes>
-                            <Route path="/" element={<Dashboard />} />
-                            <Route path="/consultas/ordenes" element={<OrdersQueryView />} />
-                            <Route path="/consultas/rollos" element={<RollHistory />} />
-                            <Route path="/production/machine/:area/:machineId" element={<MachineDetailView />} />
-                            <Route path="/area/:areaId/*" element={<DynamicRouter menuItems={menuItems} />} />
-                            <Route path="/atencion-cliente/despachos" element={<ActiveStockPage />} />
-                            <Route path="/atencion-cliente/reposiciones" element={<CustomerReplacementPage />} />
-                            <Route path="/logistica/transporte" element={<TransportControlPage />} />
-                            <Route path="/logistica/stock-deposito" element={<DepositStockPage />} />
-                            <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
-                            <Route path="/admin/products-integration" element={<ProductsIntegration />} />
-                            <Route path="/admin/special-prices" element={<SpecialPrices />} />
-                            <Route path="/admin/base-prices" element={<BasePrices />} />
-                            <Route path="/admin/price-profiles" element={<PriceProfiles />} />
-                            <Route path="/produccion/etiquetas" element={<LabelGenerationPage />} />
-                            <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
-                        </Routes>
+                        <Suspense fallback={
+                            <div className="flex items-center justify-center h-full">
+                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+                            </div>
+                        }>
+                            <Routes>
+                                <Route path="/" element={<Dashboard />} />
+                                <Route path="/consultas/ordenes" element={<OrdersQueryView />} />
+                                <Route path="/consultas/rollos" element={<RollHistory />} />
+                                <Route path="/production/machine/:area/:machineId" element={<MachineDetailView />} />
+                                <Route path="/area/:areaId/*" element={<DynamicRouter menuItems={menuItems} />} />
+                                <Route path="/atencion-cliente/despachos" element={<ActiveStockPage />} />
+                                <Route path="/atencion-cliente/reposiciones" element={<CustomerReplacementPage />} />
+                                <Route path="/logistica/transporte" element={<TransportControlPage />} />
+                                <Route path="/logistica/stock-deposito" element={<DepositStockPage />} />
+                                <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
+                                <Route path="/admin/products-integration" element={<ProductsIntegration />} />
+                                <Route path="/admin/special-prices" element={<SpecialPrices />} />
+                                <Route path="/admin/base-prices" element={<BasePrices />} />
+                                <Route path="/admin/price-profiles" element={<PriceProfiles />} />
+                                <Route path="/produccion/etiquetas" element={<LabelGenerationPage />} />
+                                <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
+                            </Routes>
+                        </Suspense>
                     </div>
                 </main>
             </div>

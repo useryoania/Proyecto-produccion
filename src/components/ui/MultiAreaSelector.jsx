@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 
-export const MultiAreaSelector = ({ areas, selected, onChange, placeholder = 'Seleccionar Áreas' }) => {
+export const MultiAreaSelector = ({ areas, selected, onChange, placeholder = 'Seleccionar Áreas', disabled = false }) => {
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef(null);
 
@@ -37,16 +37,19 @@ export const MultiAreaSelector = ({ areas, selected, onChange, placeholder = 'Se
     return (
         <div className="relative inline-block text-left z-30 w-full" ref={wrapperRef}>
             <button
-                onClick={() => setIsOpen(!isOpen)}
-                className="bg-white border text-slate-700 border-slate-300 rounded p-2 w-full text-sm font-medium flex justify-between items-center shadow-sm hover:border-blue-400 transition-colors"
+                onClick={() => !disabled && setIsOpen(!isOpen)}
+                className={`bg-white border text-slate-700 border-slate-300 rounded p-2 w-full text-sm font-medium flex justify-between items-center shadow-sm transition-colors ${disabled ? 'opacity-70 cursor-not-allowed' : 'hover:border-blue-400'}`}
                 type="button"
+                disabled={disabled}
             >
                 <span className="truncate">
-                    {selected.length === 0 ? placeholder :
-                        selected.length === areas.length ? 'Todas las Áreas' :
-                            `${selected.length} Seleccionadas`}
+                    {disabled && areas.length > 0
+                        ? (areas.find(a => selected.includes(a.AreaID || a.code))?.Nombre || areas.find(a => selected.includes(a.AreaID || a.code))?.name || placeholder)
+                        : selected.length === 0 ? placeholder :
+                            selected.length === areas.length ? 'Todas las Áreas' :
+                                `${selected.length} Seleccionadas`}
                 </span>
-                <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                {!disabled && <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />}
             </button>
 
             {isOpen && (
