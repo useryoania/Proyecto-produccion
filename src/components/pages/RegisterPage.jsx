@@ -8,7 +8,7 @@ const inputClass = "w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 r
 const labelClass = "text-xs font-bold text-slate-500 uppercase tracking-wider ml-1";
 const iconClass = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-cyan-600 transition-colors";
 
-const Field = ({ label, icon: Icon, required, children }) => (
+const Field = ({ label, icon: Icon, required, error, children }) => (
     <div className="space-y-1">
         <label className={labelClass}>
             {label} {required && <span className="text-red-400">*</span>}
@@ -17,6 +17,7 @@ const Field = ({ label, icon: Icon, required, children }) => (
             <div className={iconClass}><Icon size={18} /></div>
             {children}
         </div>
+        {error && <p className="text-red-500 text-xs font-semibold ml-1 mt-0.5">{error}</p>}
     </div>
 );
 
@@ -26,33 +27,83 @@ const RegisterPage = () => {
         nombre: '', apellido: '', razonSocial: '', rut: '',
         direccion: '', telefono: '', documento: ''
     });
+    const [fieldErrors, setFieldErrors] = useState({});
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const navigate = useNavigate();
 
-    const set = (key) => (e) => setForm(f => ({ ...f, [key]: e.target.value }));
+    const set = (key) => (e) => {
+        setForm(f => ({ ...f, [key]: e.target.value }));
+        // Clear field error when user starts typing
+        if (fieldErrors[key]) {
+            setFieldErrors(fe => ({ ...fe, [key]: '' }));
+        }
+    };
+
+    const validateField = (key, value) => {
+        const v = value.trim();
+        const required = ['idCliente', 'email', 'password', 'confirmPassword', 'nombre', 'apellido', 'direccion', 'telefono'];
+
+        if (required.includes(key) && !v) {
+            return 'Este campo es obligatorio';
+        }
+
+        switch (key) {
+            case 'email':
+                if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))
+                    return 'Email inválido';
+                break;
+            case 'password':
+                if (v && v.length < 6)
+                    return 'Mínimo 6 caracteres';
+                if (v && !/[A-Z]/.test(v))
+                    return 'Debe contener al menos una mayúscula';
+                if (v && !/[0-9]/.test(v))
+                    return 'Debe contener al menos un número';
+                break;
+            case 'confirmPassword':
+                if (v && v !== form.password)
+                    return 'Las contraseñas no coinciden';
+                break;
+            case 'telefono':
+                if (v && !/^[+\d\s()-]{6,20}$/.test(v))
+                    return 'Teléfono inválido';
+                break;
+            case 'rut':
+                if (v && !/^\d{12}$/.test(v))
+                    return 'RUT debe ser 12 dígitos numéricos';
+                break;
+        }
+        return '';
+    };
+
+    const handleBlur = (key) => () => {
+        const err = validateField(key, form[key]);
+        setFieldErrors(fe => ({ ...fe, [key]: err }));
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
         setSuccess('');
 
-        const required = ['idCliente', 'email', 'password', 'confirmPassword', 'nombre', 'apellido', 'direccion', 'telefono'];
-        const labels = { idCliente: 'ID de Cliente', email: 'Email', password: 'Contraseña', confirmPassword: 'Confirmar Contraseña', nombre: 'Nombre', apellido: 'Apellido', direccion: 'Dirección', telefono: 'Teléfono' };
-        for (const key of required) {
-            if (!form[key].trim()) {
-                setError(`El campo "${labels[key]}" es obligatorio.`);
-                return;
+        // Validate all fields
+        const allKeys = Object.keys(form);
+        const errors = {};
+        let hasError = false;
+        for (const key of allKeys) {
+            const err = validateField(key, form[key]);
+            if (err) {
+                errors[key] = err;
+                hasError = true;
             }
         }
-        if (form.password !== form.confirmPassword) {
-            setError('Las contraseñas no coinciden.');
-            return;
-        }
-        if (form.password.length < 4) {
-            setError('La contraseña debe tener al menos 4 caracteres.');
+        setFieldErrors(errors);
+
+        if (hasError) {
+            setError('Corregí los errores marcados en el formulario.');
             return;
         }
 
@@ -109,13 +160,13 @@ const RegisterPage = () => {
 
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                     {/* ID de Cliente */}
-                    <Field label="ID de Cliente" icon={User} required>
-                        <input type="text" className={inputClass} placeholder="Ej: Kasak-1899" value={form.idCliente} onChange={set('idCliente')} />
+                    <Field label="ID de Cliente" icon={User} required error={fieldErrors.idCliente}>
+                        <input type="text" className={`${inputClass} ${fieldErrors.idCliente ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="Ej: Kasak-1899" value={form.idCliente} onChange={set('idCliente')} onBlur={handleBlur('idCliente')} />
                     </Field>
 
                     {/* Email */}
-                    <Field label="Email" icon={Mail} required>
-                        <input type="email" className={inputClass} placeholder="tu@email.com" value={form.email} onChange={set('email')} />
+                    <Field label="Email" icon={Mail} required error={fieldErrors.email}>
+                        <input type="email" className={`${inputClass} ${fieldErrors.email ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="tu@email.com" value={form.email} onChange={set('email')} onBlur={handleBlur('email')} />
                     </Field>
 
                     {/* Contraseña | Confirmar Contraseña */}
@@ -124,54 +175,56 @@ const RegisterPage = () => {
                             <label className={labelClass}>Contraseña <span className="text-red-400">*</span></label>
                             <div className="relative group">
                                 <div className={iconClass}><Lock size={18} /></div>
-                                <input type={showPassword ? "text" : "password"} className={inputClass} placeholder="••••••••" value={form.password} onChange={set('password')} />
+                                <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.password ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="••••••••" value={form.password} onChange={set('password')} onBlur={handleBlur('password')} />
                             </div>
+                            {fieldErrors.password && <p className="text-red-500 text-xs font-semibold ml-1 mt-0.5">{fieldErrors.password}</p>}
                         </div>
                         <div className="space-y-1">
                             <label className={labelClass}>Confirmar <span className="text-red-400">*</span></label>
                             <div className="relative group">
                                 <div className={iconClass}><Lock size={18} /></div>
-                                <input type={showPassword ? "text" : "password"} className={inputClass} placeholder="••••••••" value={form.confirmPassword} onChange={set('confirmPassword')} />
+                                <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.confirmPassword ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="••••••••" value={form.confirmPassword} onChange={set('confirmPassword')} onBlur={handleBlur('confirmPassword')} />
                                 <button type="button" className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer" onClick={() => setShowPassword(!showPassword)}>
                                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
                             </div>
+                            {fieldErrors.confirmPassword && <p className="text-red-500 text-xs font-semibold ml-1 mt-0.5">{fieldErrors.confirmPassword}</p>}
                         </div>
                     </div>
 
                     {/* Nombre | Apellido */}
                     <div className="grid grid-cols-2 gap-3">
-                        <Field label="Nombre" icon={User} required>
-                            <input type="text" className={inputClass} placeholder="Juan" value={form.nombre} onChange={set('nombre')} />
+                        <Field label="Nombre" icon={User} required error={fieldErrors.nombre}>
+                            <input type="text" className={`${inputClass} ${fieldErrors.nombre ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="Juan" value={form.nombre} onChange={set('nombre')} onBlur={handleBlur('nombre')} />
                         </Field>
-                        <Field label="Apellido" icon={User} required>
-                            <input type="text" className={inputClass} placeholder="Pérez" value={form.apellido} onChange={set('apellido')} />
+                        <Field label="Apellido" icon={User} required error={fieldErrors.apellido}>
+                            <input type="text" className={`${inputClass} ${fieldErrors.apellido ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="Pérez" value={form.apellido} onChange={set('apellido')} onBlur={handleBlur('apellido')} />
                         </Field>
                     </div>
 
                     {/* Razón Social */}
                     <Field label="Razón Social" icon={Building}>
-                        <input type="text" className={inputClass} placeholder="Opcional" value={form.razonSocial} onChange={set('razonSocial')} />
+                        <input type="text" className={inputClass} placeholder="Opcional" value={form.razonSocial} onChange={set('razonSocial')} onBlur={handleBlur('razonSocial')} />
                     </Field>
 
                     {/* RUT */}
-                    <Field label="RUT" icon={FileText}>
-                        <input type="text" className={inputClass} placeholder="Opcional" value={form.rut} onChange={set('rut')} />
+                    <Field label="RUT" icon={FileText} error={fieldErrors.rut}>
+                        <input type="text" className={`${inputClass} ${fieldErrors.rut ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="Opcional" value={form.rut} onChange={set('rut')} onBlur={handleBlur('rut')} />
                     </Field>
 
                     {/* Dirección */}
-                    <Field label="Dirección" icon={MapPin} required>
-                        <input type="text" className={inputClass} placeholder="Calle 123, Ciudad" value={form.direccion} onChange={set('direccion')} />
+                    <Field label="Dirección" icon={MapPin} required error={fieldErrors.direccion}>
+                        <input type="text" className={`${inputClass} ${fieldErrors.direccion ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="Calle 123, Ciudad" value={form.direccion} onChange={set('direccion')} onBlur={handleBlur('direccion')} />
                     </Field>
 
                     {/* Teléfono */}
-                    <Field label="Teléfono" icon={Phone} required>
-                        <input type="text" className={inputClass} placeholder="+598 99 123 456" value={form.telefono} onChange={set('telefono')} />
+                    <Field label="Teléfono" icon={Phone} required error={fieldErrors.telefono}>
+                        <input type="text" className={`${inputClass} ${fieldErrors.telefono ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="+598 99 123 456" value={form.telefono} onChange={set('telefono')} onBlur={handleBlur('telefono')} />
                     </Field>
 
                     {/* Documento de identidad */}
                     <Field label="Documento de identidad" icon={FileText}>
-                        <input type="text" className={inputClass} placeholder="Opcional" value={form.documento} onChange={set('documento')} />
+                        <input type="text" className={inputClass} placeholder="Opcional" value={form.documento} onChange={set('documento')} onBlur={handleBlur('documento')} />
                     </Field>
 
                     {error && (
