@@ -110,7 +110,8 @@ exports.register = async (req, res) => {
     const {
         idcliente,
         name, email, password, company, phone,
-        address, ruc, localidad, agencia, fantasyName
+        address, ruc, localidad, agencia, fantasyName, documento,
+        departamentoId, localidadId, agenciaId, formaEnvioId
     } = req.body;
 
     if (!idcliente || !password) {
@@ -141,6 +142,11 @@ exports.register = async (req, res) => {
                 .input('Dir', sql.NVarChar(500), address || existing.CliDireccion)
                 .input('Loc', sql.NVarChar(200), localidad || existing.Localidad)
                 .input('Age', sql.NVarChar(200), agencia || existing.Agencia)
+                .input('Ced', sql.NVarChar(50), documento || existing.Cedula)
+                .input('DepID', sql.Int, departamentoId || existing.DepartamentoID || null)
+                .input('LocID', sql.Int, localidadId || existing.LocalidadID || null)
+                .input('AgeID', sql.Int, agenciaId || existing.AgenciaID || null)
+                .input('FenvID', sql.Int, formaEnvioId || existing.FormaEnvioID || null)
                 .query(`
                     UPDATE Clientes 
                     SET WebPasswordHash = @Pass, 
@@ -150,7 +156,12 @@ exports.register = async (req, res) => {
                         TelefonoTrabajo = @Tel,
                         CliDireccion = @Dir,
                         Localidad = @Loc,
-                        Agencia = @Age
+                        Agencia = @Age,
+                        Cedula = @Ced,
+                        DepartamentoID = @DepID,
+                        LocalidadID = @LocID,
+                        AgenciaID = @AgeID,
+                        FormaEnvioID = @FenvID
                     WHERE CodCliente = @ID
                 `);
 
@@ -174,14 +185,21 @@ exports.register = async (req, res) => {
                 .input('Loc', sql.NVarChar(200), localidad || '')
                 .input('Age', sql.NVarChar(200), agencia || '')
                 .input('Pass', sql.NVarChar(255), password)
+                .input('Ced', sql.NVarChar(50), documento || '')
+                .input('DepID', sql.Int, departamentoId || null)
+                .input('LocID', sql.Int, localidadId || null)
+                .input('AgeID', sql.Int, agenciaId || null)
+                .input('FenvID', sql.Int, formaEnvioId || null)
                 .query(`
                     INSERT INTO Clientes (
                         CodCliente, IDCliente, Nombre, NombreFantasia, Email, TelefonoTrabajo, CliDireccion, CioRuc, 
-                        Localidad, Agencia, WebPasswordHash, WebActive, WebResetPassword
+                        Localidad, Agencia, WebPasswordHash, WebActive, WebResetPassword, Cedula,
+                        DepartamentoID, LocalidadID, AgenciaID, FormaEnvioID
                     )
                     VALUES (
                         @CC, @IDC, @Nom, @Fant, @Email, @Tel, @Dir, @Ruc, 
-                        @Loc, @Age, @Pass, 1, 0
+                        @Loc, @Age, @Pass, 1, 0, @Ced,
+                        @DepID, @LocID, @AgeID, @FenvID
                     )
                 `);
 
