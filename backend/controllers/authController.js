@@ -63,8 +63,8 @@ exports.login = async (req, res) => {
                     username: user.Username,
                     role: user.RoleName,
                     idRol: user.IdRol,
-                    area: user.AreaUsuario,
-                    areaKey: user.AreaUsuario,
+                    area: (user.AreaUsuario || '').trim(),
+                    areaKey: (user.AreaUsuario || '').trim(),
                     avatar: user.Avatar || null,
                     token: token // Enviamos token dentro de user por compatibilidad
                 },

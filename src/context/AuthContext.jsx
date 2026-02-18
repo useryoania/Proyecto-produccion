@@ -49,7 +49,7 @@ export function AuthProvider({ children }) {
                     usuario: data.user.username || data.user.Usuario || data.user.email,
                     token: receivedToken, // Store the found token
                     // FIX: Controller returns 'area', but DB might have 'AreaUsuario' or 'AreaKey'. Check all.
-                    areaKey: data.user.area || data.user.AreaUsuario || data.user.AreaKey,
+                    areaKey: (data.user.area || data.user.AreaUsuario || data.user.AreaKey || '').trim(),
                     userType: data.userType, // INTERNAL or CLIENT
                     redirectUrl: data.redirectUrl // Where to go
                 };
