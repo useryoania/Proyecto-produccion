@@ -1,12 +1,10 @@
-import { useState, useEffect } from 'react';
+// src/App.jsx
+import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './components/pages/LoginPage';
-import RegisterPage from './components/pages/RegisterPage';
-import ForgotPasswordPage from './components/pages/ForgotPasswordPage';
-import MainAppContent from './components/layout/MainAppContent';
+import MainAppContent from './components/layout/MainAppContent'; // ESTE ES EL IMPORT
 import { menuService } from './services/api';
-import { ClientPortalApp } from './client-portal/ClientPortalApp';
 
 function App() {
   const { user, loading: authLoading } = useAuth();
@@ -62,10 +60,10 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
-      <Route path="/portal/*" element={<ClientPortalApp />} />
       <Route path="*" element={<MainAppContent menuItems={menuItems} />} />
     </Routes>
   );
 }
 
+// 🚀 ESTA LÍNEA ES LA QUE TE FALTA Y CAUSA EL ERROR
 export default App;

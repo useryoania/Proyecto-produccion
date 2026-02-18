@@ -1156,9 +1156,8 @@ exports.getRollHistory = async (req, res) => {
             query += ` AND (r.Nombre LIKE @Search OR CAST(r.RolloID AS VARCHAR) LIKE @Search)`;
             request.input('Search', sql.NVarChar, `%${search}%`);
         } else {
-            // Si no hay búsqueda específica, solo mostrar finalizados/cerrados por defecto
-            // Si hay búsqueda, busca en todo el historial sin importar estado
-            query += ` AND r.Estado IN ('Finalizado', 'Cerrado')`;
+            // Si no hay búsqueda específica, solo mostrar finalizados/cerrados por defecto -> CAMBIO: Mostrar TODO para que el usuario vea algo
+            // query += ` AND r.Estado IN ('Finalizado', 'Cerrado')`;
         }
 
         query += ` ORDER BY r.FechaCreacion DESC`;

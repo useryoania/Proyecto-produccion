@@ -1,12 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { rollsService } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import RollDetailsModal from '../modals/RollDetailsModal';
 
 import { useLocation } from 'react-router-dom';
-
 const RollHistory = () => {
+    const { user } = useAuth();
     const location = useLocation();
-    const areaFilter = location.state?.areaFilter; // Obtener filtro de área si viene de una vista de área
+
+    // Prioridad: 1. Filtro por navegación (state), 2. Área del usuario (si no es admin)
+    const [areaFilter, setAreaFilter] = useState(location.state?.areaFilter || '');
+
+    useEffect(() => {
+        if (user) {
+            // Si NO es admin, forzamos su área
+            if (user.rol !== 'ADMIN') {
+                const userArea = user.areaKey || user.area || '';
+                // Solo seteamos si es diferente para evitar ciclos
+                if (userArea && areaFilter !== userArea) {
+                    setAreaFilter(userArea);
+                }
+            }
+        }
+    }, [user]);
 
     const [searchTerm, setSearchTerm] = useState('');
     const [rolls, setRolls] = useState([]);
@@ -16,22 +32,24 @@ const RollHistory = () => {
     const fetchHistory = async () => {
         setLoading(true);
         try {
-            // Pasar areaFilter al servicio
+            // Usamos el estado local areaFilter que ya tiene la lógica de usuario
             const data = await rollsService.getHistory(searchTerm, areaFilter);
             setRolls(data);
         } catch (error) {
             console.error("Error fetching history:", error);
-            alert("Error cargando historial");
+            // toast.error("Error cargando historial"); // Idealmente usar toast
         } finally {
             setLoading(false);
         }
     };
 
-    // Auto-fetch on mount
+    // Auto-fetch on mount and when areaFilter changes
     useEffect(() => {
-        fetchHistory();
+        if (user) { // Solo buscar cuando tengamos usuario cargado
+            fetchHistory();
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [areaFilter]); // Refetch si cambia el área (aunque mount es suficiente usualmente)
+    }, [areaFilter, user]); // Refetch si cambia el área o el usuario se termina de cargar
 
     const handleSearch = (e) => {
         e.preventDefault();

@@ -342,6 +342,9 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/atencion-cliente/despachos') return <ActiveStockPage />;
     if (menuItem.Ruta === '/atencion-cliente/reposiciones') return <CustomerReplacementPage />;
 
+    // NEW: Historial de Lotes
+    if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;
+
     if (currentPath === '/consultas/ordenes') return <OrdersQueryView />;
 
 

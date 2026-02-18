@@ -7,6 +7,9 @@ export default defineConfig({
     react(),
     basicSsl()
   ],
+  optimizeDeps: {
+    include: ['ag-grid-community', 'ag-grid-react', 'jspdf', 'jspdf-autotable']
+  },
   server: {
     port: 5173,
     https: true,

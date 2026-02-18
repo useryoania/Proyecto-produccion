@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { Button } from '../ui/Button.jsx';
-import { User, Lock, Eye, EyeOff } from 'lucide-react';
+// import { User, Lock, Eye, EyeOff } from 'lucide-react';
 
 const GOOGLE_CLIENT_ID = '731319806954-13nu06rau4pnvo1lu0fmai4f2inm7j6c.apps.googleusercontent.com';
 
@@ -105,7 +105,7 @@ const LoginPage = () => {
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Usuario</label>
                         <div className="relative group">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-cyan-600 transition-colors">
-                                <User size={18} />
+                                <i className="fa-solid fa-user text-lg"></i>
                             </div>
                             <input
                                 type="text"
@@ -121,7 +121,7 @@ const LoginPage = () => {
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Contraseña</label>
                         <div className="relative group">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-magenta-600 transition-colors">
-                                <Lock size={18} />
+                                <i className="fa-solid fa-lock text-lg"></i>
                             </div>
                             <input
                                 type={showPassword ? "text" : "password"}
@@ -135,7 +135,7 @@ const LoginPage = () => {
                                 className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
                                 onClick={() => setShowPassword(!showPassword)}
                             >
-                                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                <i className={`fa-solid ${showPassword ? 'fa-eye-slash' : 'fa-eye'} text-lg`}></i>
                             </button>
                         </div>
                     </div>
