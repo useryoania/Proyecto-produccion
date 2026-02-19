@@ -105,4 +105,21 @@ router.get('/materials/:areaId/:variante', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Get Vendedores by Department Zone
+router.get('/vendedores-by-department/:departamentoId', async (req, res) => {
+    try {
+        const pool = await getPool();
+        const r = await pool.request()
+            .input('DepID', sql.Int, req.params.departamentoId)
+            .query(`
+                SELECT t.ID, t.Nombre
+                FROM dbo.Trabajadores t
+                INNER JOIN dbo.Departamentos d ON t.Zona = d.Zona
+                WHERE d.ID = @DepID AND t.[Área] = 'Ventas'
+                ORDER BY t.Nombre
+            `);
+        res.json({ success: true, data: r.recordset });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 module.exports = router;

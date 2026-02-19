@@ -1,11 +1,13 @@
 import React from 'react';
 import { useAuth } from '../auth/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { GlassCard } from '../pautas/GlassCard';
-import { Crown, DollarSign, TrendingUp, CheckCircle, Smartphone, Mail } from 'lucide-react';
+import { Crown, DollarSign, TrendingUp, CheckCircle, Smartphone, Mail, MapPin, Pencil, UserCheck } from 'lucide-react';
 import { StatusBadge } from '../pautas/StatusBadge';
 
 export const ProfileView = () => {
     const { user } = useAuth();
+    const navigate = useNavigate();
 
     // Mock data for recent activity (could be moved to a service later)
     const recentActivity = [
@@ -33,7 +35,6 @@ export const ProfileView = () => {
                         <div className="p-2 bg-neutral-100 rounded-lg text-black"><DollarSign size={20} /></div>
                         <p className="text-neutral-500 text-sm font-medium">Gasto Mensual</p>
                     </div>
-                    {/* Fallback properties if user object doesn't have them yet */}
                     <h3 className="text-2xl font-bold text-neutral-800">${user.monthlySpend?.toLocaleString() || '0'}</h3>
                     <p className="text-xs text-green-600 flex items-center mt-2"><TrendingUp size={12} className="mr-1" /> +15% vs mes anterior</p>
                 </GlassCard>
@@ -65,7 +66,9 @@ export const ProfileView = () => {
                 <GlassCard className="!p-6 h-fit">
                     <div className="flex justify-between items-center mb-6">
                         <h3 className="font-bold text-lg text-neutral-800">Datos de Cuenta</h3>
-                        <button className="text-black text-sm font-medium hover:underline">Editar</button>
+                        <button onClick={() => navigate('/portal/profile/edit')} className="text-black text-sm font-medium hover:underline flex items-center gap-1">
+                            <Pencil size={13} /> Editar
+                        </button>
                     </div>
                     <div className="space-y-4">
                         <div className="flex items-center gap-3">
@@ -92,6 +95,31 @@ export const ProfileView = () => {
                                     <p className="text-neutral-700">{user.phone || 'No registrado'}</p>
                                 </div>
                             </div>
+                            <div className="flex items-start gap-3">
+                                <MapPin size={16} className="text-zinc-400 mt-0.5" />
+                                <div>
+                                    <p className="text-xs text-neutral-400 uppercase font-bold">Dirección</p>
+                                    <p className="text-neutral-700">{user.address || 'No registrada'}</p>
+                                </div>
+                            </div>
+                            {user.vendedorNombre && (
+                                <div className="flex items-start gap-3">
+                                    <UserCheck size={16} className="text-zinc-400 mt-0.5" />
+                                    <div className="flex-1">
+                                        <p className="text-xs text-neutral-400 uppercase font-bold">Asesor Asignado</p>
+                                        <div className="flex items-center justify-between">
+                                            <p className="text-neutral-700">{user.vendedorNombre}</p>
+                                            <button
+                                                type="button"
+                                                className="text-xs text-cyan-600 hover:text-cyan-700 font-semibold hover:underline transition-colors"
+                                                onClick={() => {/* TODO: implementar solicitud de cambio de asesor */ }}
+                                            >
+                                                Solicitar otro asesor
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </GlassCard>

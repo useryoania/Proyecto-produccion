@@ -1,32 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/Button.jsx';
-import { User, Lock, Mail, Eye, EyeOff, Phone, MapPin, FileText, Building, ChevronDown, Truck } from 'lucide-react';
+import { User, Lock, Mail, Eye, EyeOff, UserCheck, ChevronDown } from 'lucide-react';
 import { API_URL } from '../../services/apiClient';
-
-const inputClass = "w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-300 focus:border-cyan-400 focus:bg-white transition-all outline-none font-semibold text-slate-700 placeholder-slate-400";
-const selectClass = "w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-300 focus:border-cyan-400 focus:bg-white transition-all outline-none font-semibold text-slate-700 appearance-none cursor-pointer";
-const labelClass = "text-xs font-bold text-slate-500 uppercase tracking-wider ml-1";
-const iconClass = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-cyan-600 transition-colors";
-
-const Field = ({ label, icon: Icon, required, error, children }) => (
-    <div className="space-y-1">
-        <label className={labelClass}>
-            {label} {required && <span className="text-red-400">*</span>}
-        </label>
-        <div className="relative group">
-            <div className={iconClass}><Icon size={18} /></div>
-            {children}
-        </div>
-        {error && <p className="text-red-500 text-xs font-semibold ml-1 mt-0.5">{error}</p>}
-    </div>
-);
-
-const SelectArrow = () => (
-    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
-        <ChevronDown size={16} />
-    </div>
-);
+import { ClientFormFields, Field, useNomenclators, inputClass, iconClass } from '../shared/ClientFormFields';
 
 const RegisterPage = () => {
     const [form, setForm] = useState({
@@ -40,44 +17,21 @@ const RegisterPage = () => {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [hadVendedor, setHadVendedor] = useState(false);
+    const [vendedores, setVendedores] = useState([]);
+    const [selectedVendedorId, setSelectedVendedorId] = useState('');
     const navigate = useNavigate();
 
-    // Nomenclator data
-    const [departments, setDepartments] = useState([]);
-    const [localities, setLocalities] = useState([]);
-    const [agencies, setAgencies] = useState([]);
+    // Nomenclator data via shared hook
+    const fetchFn = async (url) => {
+        const r = await fetch(`${API_URL}${url}`);
+        return r.json();
+    };
+    const { departments, localities, agencies } = useNomenclators(form.departamentoId, fetchFn);
 
     // Determine if selected department is Montevideo
     const selectedDept = departments.find(d => String(d.ID) === String(form.departamentoId));
     const isMontevideo = selectedDept?.Nombre?.toLowerCase()?.includes('montevideo');
-
-    // Fetch departments on mount
-    useEffect(() => {
-        fetch(`${API_URL}/nomenclators/departments`)
-            .then(r => r.json())
-            .then(data => { if (data.success) setDepartments(data.data); })
-            .catch(() => { });
-    }, []);
-
-    // Fetch agencies on mount
-    useEffect(() => {
-        fetch(`${API_URL}/nomenclators/agencies`)
-            .then(r => r.json())
-            .then(data => { if (data.success) setAgencies(data.data); })
-            .catch(() => { });
-    }, []);
-
-    // Fetch localities when department changes
-    useEffect(() => {
-        if (!form.departamentoId) {
-            setLocalities([]);
-            return;
-        }
-        fetch(`${API_URL}/nomenclators/localities/${form.departamentoId}`)
-            .then(r => r.json())
-            .then(data => { if (data.success) setLocalities(data.data); })
-            .catch(() => { });
-    }, [form.departamentoId]);
 
     // Clear agencia when switching to Montevideo
     useEffect(() => {
@@ -86,11 +40,26 @@ const RegisterPage = () => {
         }
     }, [isMontevideo]);
 
+    // Fetch vendedores when department changes
+    useEffect(() => {
+        if (form.departamentoId) {
+            fetch(`${API_URL}/nomenclators/vendedores-by-department/${form.departamentoId}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) setVendedores(data.data);
+                    else setVendedores([]);
+                })
+                .catch(() => setVendedores([]));
+        } else {
+            setVendedores([]);
+        }
+        setSelectedVendedorId('');
+    }, [form.departamentoId]);
+
     const set = (key) => (e) => {
         const val = e.target.value;
         setForm(f => {
             const next = { ...f, [key]: val };
-            // Reset localidad when department changes
             if (key === 'departamentoId') {
                 next.localidadId = '';
                 next.agenciaId = '';
@@ -106,7 +75,6 @@ const RegisterPage = () => {
         const v = typeof value === 'string' ? value.trim() : String(value || '');
         const required = ['idCliente', 'email', 'password', 'confirmPassword', 'nombre', 'apellido', 'telefono', 'direccion', 'departamentoId', 'localidadId'];
 
-        // Agencia is required only when NOT Montevideo
         if (key === 'agenciaId' && !isMontevideo && !v) {
             return 'Seleccioná una agencia';
         }
@@ -146,7 +114,6 @@ const RegisterPage = () => {
         setError('');
         setSuccess('');
 
-        // Validate all fields
         const allKeys = Object.keys(form);
         const errors = {};
         let hasError = false;
@@ -164,8 +131,6 @@ const RegisterPage = () => {
             return;
         }
 
-        // Resolve names from IDs for text fields
-        const depName = selectedDept?.Nombre || '';
         const locName = localities.find(l => String(l.ID) === String(form.localidadId))?.Nombre || '';
         const ageName = agencies.find(a => String(a.ID) === String(form.agenciaId))?.Nombre || '';
 
@@ -190,7 +155,8 @@ const RegisterPage = () => {
                     agenciaId: form.agenciaId ? parseInt(form.agenciaId) : null,
                     localidad: locName,
                     agencia: ageName,
-                    formaEnvioId: isMontevideo ? 1 : 2
+                    formaEnvioId: isMontevideo ? 1 : 2,
+                    manualVendedorId: hadVendedor && selectedVendedorId ? selectedVendedorId : null
                 })
             });
 
@@ -240,7 +206,7 @@ const RegisterPage = () => {
                     {/* Contraseña | Confirmar Contraseña */}
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                            <label className={labelClass}>Contraseña <span className="text-red-400">*</span></label>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Contraseña <span className="text-red-400">*</span></label>
                             <div className="relative group">
                                 <div className={iconClass}><Lock size={18} /></div>
                                 <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.password ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="••••••••" value={form.password} onChange={set('password')} onBlur={handleBlur('password')} />
@@ -248,7 +214,7 @@ const RegisterPage = () => {
                             {fieldErrors.password && <p className="text-red-500 text-xs font-semibold ml-1 mt-0.5">{fieldErrors.password}</p>}
                         </div>
                         <div className="space-y-1">
-                            <label className={labelClass}>Confirmar <span className="text-red-400">*</span></label>
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Confirmar <span className="text-red-400">*</span></label>
                             <div className="relative group">
                                 <div className={iconClass}><Lock size={18} /></div>
                                 <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.confirmPassword ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="••••••••" value={form.confirmPassword} onChange={set('confirmPassword')} onBlur={handleBlur('confirmPassword')} />
@@ -260,91 +226,58 @@ const RegisterPage = () => {
                         </div>
                     </div>
 
-                    {/* Nombre | Apellido */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <Field label="Nombre" icon={User} required error={fieldErrors.nombre}>
-                            <input type="text" className={`${inputClass} ${fieldErrors.nombre ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="Juan" value={form.nombre} onChange={set('nombre')} onBlur={handleBlur('nombre')} />
-                        </Field>
-                        <Field label="Apellido" icon={User} required error={fieldErrors.apellido}>
-                            <input type="text" className={`${inputClass} ${fieldErrors.apellido ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="Pérez" value={form.apellido} onChange={set('apellido')} onBlur={handleBlur('apellido')} />
-                        </Field>
+                    {/* Shared client fields */}
+                    <ClientFormFields
+                        form={form}
+                        set={set}
+                        fieldErrors={fieldErrors}
+                        handleBlur={handleBlur}
+                        departments={departments}
+                        localities={localities}
+                        agencies={agencies}
+                        isMontevideo={isMontevideo}
+                    />
+
+                    {/* Vendedor checkbox + select */}
+                    <div className={`bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 ${!form.departamentoId || !form.localidadId ? 'opacity-50' : ''}`}>
+                        <label className={`flex items-center gap-3 select-none ${!form.departamentoId || !form.localidadId ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                            <input
+                                type="checkbox"
+                                checked={hadVendedor}
+                                disabled={!form.departamentoId || !form.localidadId}
+                                onChange={(e) => {
+                                    setHadVendedor(e.target.checked);
+                                    if (!e.target.checked) setSelectedVendedorId('');
+                                }}
+                                className="w-4 h-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-300 disabled:cursor-not-allowed"
+                            />
+                            <span className="text-sm font-semibold text-slate-600">¿Fuiste atendido por algún asesor?</span>
+                        </label>
+
+                        {hadVendedor && (
+                            <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                                    <UserCheck size={18} />
+                                </div>
+                                <select
+                                    className={`${inputClass} appearance-none`}
+                                    value={selectedVendedorId}
+                                    onChange={(e) => setSelectedVendedorId(e.target.value)}
+                                >
+                                    <option value="">Seleccionar asesor...</option>
+                                    {vendedores.map(v => (
+                                        <option key={v.ID} value={v.ID}>{v.Nombre}</option>
+                                    ))}
+                                </select>
+                                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
+                                    <ChevronDown size={16} />
+                                </div>
+                                {vendedores.length === 0 && form.departamentoId && (
+                                    <p className="text-xs text-slate-400 mt-1 ml-1">Seleccioná un departamento primero</p>
+                                )}
+                            </div>
+                        )}
                     </div>
-
-                    {/* Teléfono */}
-                    <Field label="Teléfono" icon={Phone} required error={fieldErrors.telefono}>
-                        <input type="text" className={`${inputClass} ${fieldErrors.telefono ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="099123456" value={form.telefono} onChange={set('telefono')} onBlur={handleBlur('telefono')} />
-                    </Field>
-
-                    {/* Razón Social */}
-                    <Field label="Razón Social" icon={Building}>
-                        <input type="text" className={inputClass} placeholder="Opcional" value={form.razonSocial} onChange={set('razonSocial')} />
-                    </Field>
-
-                    {/* RUT */}
-                    <Field label="RUT" icon={FileText}>
-                        <input type="text" className={inputClass} placeholder="Opcional" value={form.rut} maxLength={12} onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); setForm(f => ({ ...f, rut: v })); }} />
-                    </Field>
-
-                    {/* Documento de identidad */}
-                    <Field label="Documento de identidad" icon={FileText}>
-                        <input type="text" className={inputClass} placeholder="Sin puntos ni guiones" value={form.documento} maxLength={8} onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); setForm(f => ({ ...f, documento: v })); }} />
-                    </Field>
-
-                    {/* Dirección */}
-                    <Field label="Dirección" icon={MapPin} required error={fieldErrors.direccion}>
-                        <input type="text" className={`${inputClass} ${fieldErrors.direccion ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="Calle 123, Ciudad" value={form.direccion} onChange={set('direccion')} onBlur={handleBlur('direccion')} />
-                    </Field>
-
-                    {/* Departamento | Localidad */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <Field label="Departamento" icon={MapPin} required error={fieldErrors.departamentoId}>
-                            <select
-                                className={`${selectClass} ${!form.departamentoId ? 'text-slate-400' : ''} ${fieldErrors.departamentoId ? 'border-red-400 focus:ring-red-300' : ''}`}
-                                value={form.departamentoId}
-                                onChange={set('departamentoId')}
-                                onBlur={handleBlur('departamentoId')}
-                            >
-                                <option value="">Seleccionar...</option>
-                                {departments.map(d => (
-                                    <option key={d.ID} value={d.ID}>{d.Nombre}</option>
-                                ))}
-                            </select>
-                            <SelectArrow />
-                        </Field>
-                        <Field label="Localidad" icon={MapPin} required error={fieldErrors.localidadId}>
-                            <select
-                                className={`${selectClass} ${!form.localidadId ? 'text-slate-400' : ''} ${fieldErrors.localidadId ? 'border-red-400 focus:ring-red-300' : ''}`}
-                                value={form.localidadId}
-                                onChange={set('localidadId')}
-                                onBlur={handleBlur('localidadId')}
-                                disabled={!form.departamentoId}
-                            >
-                                <option value="">{form.departamentoId ? 'Seleccionar...' : 'Elegí depto. primero'}</option>
-                                {localities.map(l => (
-                                    <option key={l.ID} value={l.ID}>{l.Nombre}</option>
-                                ))}
-                            </select>
-                            <SelectArrow />
-                        </Field>
-                    </div>
-
-                    {/* Agencia - solo si NO es Montevideo */}
-                    {form.departamentoId && !isMontevideo && (
-                        <Field label="Agencia" icon={Truck} required error={fieldErrors.agenciaId}>
-                            <select
-                                className={`${selectClass} ${!form.agenciaId ? 'text-slate-400' : ''} ${fieldErrors.agenciaId ? 'border-red-400 focus:ring-red-300' : ''}`}
-                                value={form.agenciaId}
-                                onChange={set('agenciaId')}
-                                onBlur={handleBlur('agenciaId')}
-                            >
-                                <option value="">Seleccionar agencia...</option>
-                                {agencies.map(a => (
-                                    <option key={a.ID} value={a.ID}>{a.Nombre}</option>
-                                ))}
-                            </select>
-                            <SelectArrow />
-                        </Field>
-                    )}
 
                     {error && (
                         <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-red-100">

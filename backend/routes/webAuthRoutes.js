@@ -7,5 +7,6 @@ router.post('/login', webAuthController.login);
 router.post('/register', webAuthController.register);
 router.get('/me', verifyToken, webAuthController.me);
 router.post('/update-password', verifyToken, webAuthController.updatePassword);
+router.put('/profile', verifyToken, webAuthController.updateProfile);
 
 module.exports = router;
