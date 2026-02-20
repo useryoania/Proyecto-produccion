@@ -25,6 +25,8 @@ dist-ssr
 # --- SEGURIDAD: Archivos sensibles del proyecto ---
 .env
 backend/.env
+backend/oauth-credentials.json
+backend/token.json
 *.json
 !package.json
 !package-lock.json
