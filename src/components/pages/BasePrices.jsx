@@ -3,7 +3,7 @@ import api from '../../services/api';
 import { toast } from 'sonner';
 
 // Componente de Grupo Colapsable
-const PriceGroup = ({ label, items, pendingChanges, onPriceChange }) => {
+const PriceGroup = ({ label, items, pendingChanges, onPriceChange, onAddPrice }) => {
     const [expanded, setExpanded] = useState(false);
 
     return (
@@ -24,10 +24,11 @@ const PriceGroup = ({ label, items, pendingChanges, onPriceChange }) => {
                         <tbody className="divide-y divide-slate-100/50">
                             {items.map(item => (
                                 <PriceRow
-                                    key={item.CodArticulo}
+                                    key={item.ID || item._tempID}
                                     item={item}
-                                    pendingVal={pendingChanges[item.CodArticulo]}
+                                    changes={pendingChanges[item.ID || item._tempID]}
                                     onChange={onPriceChange}
+                                    onAdd={onAddPrice}
                                 />
                             ))}
                         </tbody>
@@ -39,15 +40,21 @@ const PriceGroup = ({ label, items, pendingChanges, onPriceChange }) => {
 };
 
 // Componente Fila Editable (Optimizado para Bulk)
-const PriceRow = ({ item, pendingVal, onChange }) => {
-    // Si pendingVal existe, es el valor mostrado. Si no, el valor original.
-    const displayVal = pendingVal !== undefined ? pendingVal : (item.Precio || 0);
-    const isDirty = pendingVal !== undefined && pendingVal !== item.Precio;
+const PriceRow = ({ item, changes, onChange, onAdd }) => {
+    const displayVal = changes?.precio !== undefined ? changes.precio : (item.Precio || 0);
+    const displayMoneda = changes?.moneda !== undefined ? changes.moneda : (item.Moneda || 'UYU');
+    const isDirty = changes !== undefined;
+
+    // Solo permitir cambiar moneda si es una fila nueva (para evitar conflictos de MERGE)
+    const canEditCurrency = !!item._isNew;
 
     return (
         <tr className="hover:bg-slate-50 group transition-colors">
             <td className="p-3 font-mono text-slate-600 font-medium w-32">{item.CodArticulo}</td>
-            <td className="p-3 text-slate-800">{item.Descripcion || <span className="text-slate-400 italic">Sin descripción</span>}</td>
+            <td className="p-3 text-slate-800">
+                {item.Descripcion || <span className="text-slate-400 italic">Sin descripción</span>}
+                {item._isNew && <span className="ml-2 text-[10px] bg-green-100 text-green-700 px-1 rounded font-bold">NUEVO</span>}
+            </td>
             <td className="p-3 text-right">
                 <input
                     type="number" step="0.01"
@@ -60,13 +67,32 @@ const PriceRow = ({ item, pendingVal, onChange }) => {
                     `}
                     placeholder="0.00"
                     value={displayVal}
-                    onChange={(e) => onChange(item.CodArticulo, e.target.value)}
+                    onChange={(e) => onChange(item.ID || item._tempID, { precio: e.target.value })}
                     onFocus={(e) => e.target.select()}
                 />
             </td>
-            <td className="p-3 text-center text-xs text-slate-500 w-24">{item.Moneda || 'UYU'}</td>
-            <td className="p-3 text-right w-12">
-                {isDirty && <span className="text-amber-500 animate-pulse">●</span>}
+            <td className="p-3 text-center w-24">
+                <select
+                    className={`text-xs border rounded p-1 outline-none ${canEditCurrency ? 'bg-white text-slate-700 border-slate-300' : 'bg-transparent border-transparent text-slate-500 appearance-none pointer-events-none'}`}
+                    value={displayMoneda}
+                    onChange={(e) => onChange(item.ID || item._tempID, { moneda: e.target.value })}
+                    disabled={!canEditCurrency}
+                >
+                    <option value="UYU">UYU</option>
+                    <option value="USD">USD</option>
+                </select>
+            </td>
+            <td className="p-3 text-right w-16">
+                <div className="flex justify-end items-center gap-2">
+                    {isDirty && <span className="text-amber-500 animate-pulse text-[10px]">●</span>}
+                    <button
+                        onClick={() => onAdd(item)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-indigo-600 p-1 rounded hover:bg-indigo-50"
+                        title="Agregar precio en otra moneda"
+                    >
+                        <i className="fa-solid fa-plus"></i>
+                    </button>
+                </div>
             </td>
         </tr>
     );
@@ -78,8 +104,8 @@ const BasePrices = () => {
     const [loading, setLoading] = useState(false);
     const [filter, setFilter] = useState('');
 
-    // Cambios Pendientes
-    const [pendingChanges, setPendingChanges] = useState({}); // { Cod: Val }
+    // Cambios Pendientes { ID: { precio, moneda } }
+    const [pendingChanges, setPendingChanges] = useState({});
 
     // Simulador
     const [simCode, setSimCode] = useState('');
@@ -98,25 +124,63 @@ const BasePrices = () => {
             .finally(() => setLoading(false));
     };
 
-    const handlePriceChange = (cod, valStr) => {
-        const val = valStr === '' ? 0 : parseFloat(valStr);
-        setPendingChanges(prev => ({ ...prev, [cod]: val }));
+    const handlePriceChange = (id, changes) => {
+        setPendingChanges(prev => {
+            const current = prev[id] || {};
+            // Si el precio viene vacío o negativo, tratarlo con cuidado (backend espera number)
+            // Aquí guardamos string para input, convertimos al guardar/renderizar
+            return { ...prev, [id]: { ...current, ...changes } };
+        });
+    };
+
+    const handleAddPrice = (sourceItem) => {
+        // Clonar item pero con nueva moneda (USD por defecto si es UYU, o viceversa)
+        const newMoneda = (sourceItem.Moneda === 'UYU') ? 'USD' : 'UYU';
+        const newItem = {
+            ...sourceItem,
+            ID: null,
+            _tempID: `new-${sourceItem.CodArticulo}-${Date.now()}`,
+            Moneda: newMoneda,
+            Precio: 0,
+            _isNew: true
+        };
+
+        // Insertar justo después del item origen
+        const index = prices.findIndex(p => p === sourceItem);
+        const newPrices = [...prices];
+        newPrices.splice(index + 1, 0, newItem);
+
+        setPrices(newPrices);
+
+        // Marcar cambio pendiente inicial
+        handlePriceChange(newItem._tempID, { precio: 0, moneda: newMoneda });
     };
 
     const handleSaveAll = async () => {
-        const itemsToSave = Object.entries(pendingChanges).map(([cod, val]) => ({
-            codArticulo: cod,
-            precio: val,
-            moneda: 'UYU'
-        }));
+        const itemIds = Object.keys(pendingChanges);
+        if (itemIds.length === 0) return;
+
+        const itemsToSave = [];
+        itemIds.forEach(id => {
+            const changes = pendingChanges[id];
+            // Buscar en estado actual (incluyendo items nuevos temporales)
+            const item = prices.find(p => String(p.ID) === id || p._tempID === id);
+            if (!item) return;
+
+            itemsToSave.push({
+                codArticulo: item.CodArticulo,
+                precio: changes.precio !== undefined ? parseFloat(changes.precio) : parseFloat(item.Precio || 0),
+                moneda: changes.moneda !== undefined ? changes.moneda : (item.Moneda || 'UYU')
+            });
+        });
 
         if (itemsToSave.length === 0) return;
 
         try {
             await api.post('/prices/base/bulk', { items: itemsToSave });
             toast.success(`${itemsToSave.length} precios actualizados correctamente`);
-            setPendingChanges({}); // Limpiar cambios
-            loadPrices(); // Recargar
+            setPendingChanges({});
+            loadPrices();
         } catch (e) {
             toast.error("Error guardando precios: " + e.message);
         }
@@ -142,7 +206,7 @@ const BasePrices = () => {
 
     // Agrupación
     const groupedItems = useMemo(() => {
-        if (filter) return null; // Si filtra, mostrar plano
+        if (filter) return null;
 
         const groups = {};
         prices.forEach(p => {
@@ -151,7 +215,6 @@ const BasePrices = () => {
             groups[key].push(p);
         });
 
-        // Ordenar claves
         const sortedKeys = Object.keys(groups).sort();
         const sortedGroups = {};
         sortedKeys.forEach(k => sortedGroups[k] = groups[k]);
@@ -164,7 +227,7 @@ const BasePrices = () => {
     return (
         <div className="h-full flex flex-col bg-slate-50 overflow-hidden p-6 gap-6 relative">
 
-            {/* FLOATING SAVE BAR (Si hay cambios) */}
+            {/* FLOATING SAVE BAR */}
             {changesCount > 0 && (
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-4 animate-in slide-in-from-top-4 fade-in duration-300">
                     <span className="font-bold text-amber-400">{changesCount}</span> cambios pendientes
@@ -175,7 +238,7 @@ const BasePrices = () => {
                         Guardar Todo
                     </button>
                     <button
-                        onClick={() => setPendingChanges({})}
+                        onClick={() => { setPendingChanges({}); loadPrices(); }}
                         className="text-slate-400 hover:text-white px-2"
                         title="Descartar cambios"
                     >
@@ -188,7 +251,7 @@ const BasePrices = () => {
             <div className="flex justify-between items-center">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800">Precios Base (Estándar)</h1>
-                    <p className="text-slate-500 text-sm">Define el precio de lista para todos los productos.</p>
+                    <p className="text-slate-500 text-sm">Define el precio de lista para todos los productos. Moneda editable para filas nuevas.</p>
                 </div>
                 <div className="bg-white p-3 rounded-lg shadow-sm border border-slate-200 flex gap-4 items-end">
                     {/* SIMULADOR */}
@@ -254,7 +317,7 @@ const BasePrices = () => {
                                         <tr>
                                             <th className="p-3 border-b">Código</th>
                                             <th className="p-3 border-b">Descripción</th>
-                                            <th className="p-3 border-b text-right">Precio Base ($)</th>
+                                            <th className="p-3 border-b text-right">Precio Base</th>
                                             <th className="p-3 border-b text-center">Moneda</th>
                                             <th className="p-3 border-b"></th>
                                         </tr>
@@ -262,10 +325,11 @@ const BasePrices = () => {
                                     <tbody className="divide-y divide-slate-100">
                                         {filtered.map(item => (
                                             <PriceRow
-                                                key={item.CodArticulo}
+                                                key={item.ID || item._tempID}
                                                 item={item}
-                                                pendingVal={pendingChanges[item.CodArticulo]}
+                                                changes={pendingChanges[item.ID || item._tempID]}
                                                 onChange={handlePriceChange}
+                                                onAdd={handleAddPrice}
                                             />
                                         ))}
                                     </tbody>
@@ -282,6 +346,7 @@ const BasePrices = () => {
                                             items={items}
                                             pendingChanges={pendingChanges}
                                             onPriceChange={handlePriceChange}
+                                            onAddPrice={handleAddPrice}
                                         />
                                     ))}
                                     {Object.keys(groupedItems).length === 0 && <div className="p-8 text-center text-slate-400">Sin datos.</div>}

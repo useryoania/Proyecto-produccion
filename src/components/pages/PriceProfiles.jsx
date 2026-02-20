@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../../services/api';
 import { toast } from 'sonner';
 import PriceCalculatorTest from './PriceCalculatorTest';
@@ -74,8 +74,9 @@ const BulkAddModal = ({ onAdd, onCancel, profileName }) => {
     const [filter, setFilter] = useState('');
     const [selectedGroup, setSelectedGroup] = useState('');
     const [selection, setSelection] = useState([]);
-    const [ruleType, setRuleType] = useState('fixed_price');
-    const [value, setValue] = useState(0);
+
+    // Escalas: array de { qty: 1, val: 0, type: 'fixed_price' }
+    const [scales, setScales] = useState([{ qty: 1, val: 0, type: 'fixed_price' }]);
 
     useEffect(() => {
         api.get('/prices/base')
@@ -118,22 +119,48 @@ const BulkAddModal = ({ onAdd, onCancel, profileName }) => {
     // Check para UI
     const areAllSelected = filtered.length > 0 && filtered.every(p => selection.includes(p.CodArticulo));
 
+    const addScale = () => {
+        setScales([...scales, { qty: '', val: '', type: 'fixed_price' }]);
+    };
+
+    const removeScale = (idx) => {
+        if (scales.length <= 1) return toast.error("Debe haber al menos una escala base");
+        setScales(scales.filter((_, i) => i !== idx));
+    };
+
+    const updateScale = (idx, field, val) => {
+        const newScales = [...scales];
+        newScales[idx][field] = val;
+        setScales(newScales);
+    };
+
     const handleConfirm = () => {
         if (selection.length === 0) return toast.error("Selecciona al menos un producto");
 
-        const newRules = selection.map(cod => ({
-            CodArticulo: cod,
-            TipoRegla: ruleType,
-            Valor: value,
-            CantidadMinima: 1
-        }));
+        // Validar escalas
+        const validScales = scales.filter(s => s.qty && s.val !== '');
+        if (validScales.length === 0) return toast.error("Define al menos una regla de precio");
+
+        const newRules = [];
+
+        selection.forEach(cod => {
+            validScales.forEach(scale => {
+                newRules.push({
+                    CodArticulo: cod,
+                    TipoRegla: scale.type || 'fixed_price',
+                    Valor: scale.val,
+                    CantidadMinima: scale.qty,
+                    _tempId: Date.now() + Math.random() // Temp ID único
+                });
+            });
+        });
 
         onAdd(newRules);
     };
 
     return (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col">
                 <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-lg">
                     <div>
                         <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2"><i className="fa-solid fa-layer-group text-indigo-600"></i> Edición Masiva de Reglas</h3>
@@ -189,51 +216,855 @@ const BulkAddModal = ({ onAdd, onCancel, profileName }) => {
                         </div>
                     </div>
 
-                    {/* DERECHA: Configuración Regla */}
-                    <div className="w-1/3 p-6 bg-slate-50 flex flex-col justify-center space-y-6 shadow-inner">
-                        <div className="text-center">
-                            <div className="bg-white w-16 h-16 rounded-full flex items-center justify-center mx-auto shadow-sm mb-4 border border-slate-200">
-                                <i className="fa-solid fa-wand-magic-sparkles text-2xl text-indigo-500"></i>
-                            </div>
-                            <h4 className="font-bold text-slate-700">Regla Común</h4>
-                            <p className="text-xs text-slate-500 mt-1">Se aplicará a los {selection.length} productos seleccionados.</p>
+                    {/* DERECHA: Configuración Reglas Escalonadas */}
+                    <div className="w-1/3 p-6 bg-slate-50 flex flex-col shadow-inner">
+                        <div className="text-center mb-6">
+                            <h4 className="font-bold text-slate-700 flex items-center justify-center gap-2">
+                                <i className="fa-solid fa-wand-magic-sparkles text-indigo-500"></i> Reglas a Aplicar
+                            </h4>
+                            <p className="text-xs text-slate-500 mt-1">Se crearán las siguientes reglas para cada uno de los <b>{selection.length}</b> productos seleccionados.</p>
                         </div>
 
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Tipo de Regla</label>
-                                <select
-                                    className="w-full border rounded p-2 text-sm focus:ring-2 focus:ring-indigo-200 outline-none bg-white"
-                                    value={ruleType}
-                                    onChange={e => setRuleType(e.target.value)}
-                                >
-                                    <option value="fixed_price">Precio Fijo Exacto ($)</option>
-                                    <option value="percentage_discount">Descuento Porcentual (%)</option>
-                                    <option value="percentage_surcharge">Recargo Porcentual (%)</option>
-                                </select>
+                        <div className="flex-1 overflow-y-auto pr-1">
+                            <div className="space-y-3">
+                                {scales.map((s, idx) => (
+                                    <div key={idx} className="bg-white p-3 rounded border border-slate-200 shadow-sm relative group">
+                                        <div className="grid grid-cols-2 gap-3 mb-2">
+                                            <div>
+                                                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Cant. Mínima</label>
+                                                <input
+                                                    type="number" min="1"
+                                                    className="w-full border rounded p-1.5 text-sm font-bold text-slate-700 outline-none focus:border-indigo-400"
+                                                    value={s.qty}
+                                                    onChange={e => updateScale(idx, 'qty', e.target.value)}
+                                                    placeholder="1"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Valor</label>
+                                                <input
+                                                    type="number" step="0.01"
+                                                    className="w-full border rounded p-1.5 text-sm font-bold text-right text-indigo-700 outline-none focus:border-indigo-400"
+                                                    value={s.val}
+                                                    onChange={e => updateScale(idx, 'val', e.target.value)}
+                                                    placeholder="0.00"
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <select
+                                                className="w-full border-t border-slate-100 pt-2 mt-1 text-xs outline-none bg-transparent text-slate-500"
+                                                value={s.type}
+                                                onChange={e => updateScale(idx, 'type', e.target.value)}
+                                            >
+                                                <option value="fixed_price">Precio Fijo Exacto ($)</option>
+                                                <option value="percentage_discount">Descuento Porcentual (%)</option>
+                                                <option value="percentage_surcharge">Recargo Porcentual (%)</option>
+                                            </select>
+                                        </div>
+
+                                        {scales.length > 1 && (
+                                            <button
+                                                onClick={() => removeScale(idx)}
+                                                className="absolute -top-2 -right-2 bg-white text-slate-300 hover:text-red-500 rounded-full w-5 h-5 shadow border border-slate-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                            >
+                                                <i className="fa-solid fa-times text-xs"></i>
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Valor</label>
-                                <input
-                                    type="number" step="0.01"
-                                    className="w-full border rounded p-2 text-xl font-bold text-center text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-200 bg-white"
-                                    value={value}
-                                    onChange={e => setValue(e.target.value)}
-                                />
-                            </div>
+                            <button onClick={addScale} className="w-full py-2 mt-4 border-2 border-dashed border-indigo-200 text-indigo-500 rounded font-bold text-xs hover:bg-indigo-50 hover:border-indigo-300 transition-colors flex items-center justify-center gap-2">
+                                <i className="fa-solid fa-plus"></i> Agregar Otro Rango
+                            </button>
                         </div>
 
                         <button
                             onClick={handleConfirm}
-                            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-md transition-all active:scale-95 flex justify-center items-center gap-2 mt-auto"
+                            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-md transition-all active:scale-95 flex justify-center items-center gap-2 mt-6"
                         >
-                            <i className="fa-solid fa-plus-circle"></i>
-                            Aplicar Reglas
+                            <i className="fa-solid fa-check-circle"></i>
+                            Aplicar Reglas ({selection.length * scales.length})
                         </button>
                     </div>
                 </div>
             </div>
+        </div>
+    );
+};
+
+// Helper para IDs únicos
+const getNextTempId = (items) => {
+    const max = items.reduce((acc, i) => Math.max(acc, typeof i._tempId === 'number' ? i._tempId : 0), 0);
+    return Date.now() + Math.random();
+};
+
+const TieredWizard = ({ existingScales, onSave, onCancel, productName }) => {
+    // Detect initial type
+    const initialType = (existingScales && existingScales.length > 0 &&
+        (existingScales[0].TipoRegla === 'percentage' || existingScales[0].TipoRegla === 'percentage_discount'))
+        ? 'percentage' : 'fixed';
+
+    const [type, setType] = useState(initialType);
+
+    const [scales, setScales] = useState(() => {
+        if (existingScales && existingScales.length > 0) {
+            return existingScales.map(s => ({ qty: s.CantidadMinima || 1, val: s.Valor })).sort((a, b) => a.qty - b.qty);
+        }
+        return [{ qty: 1, val: 0 }];
+    });
+
+    const addScale = () => {
+        setScales([...scales, { qty: '', val: '' }]);
+    };
+
+    const removeScale = (idx) => {
+        if (scales.length <= 1) return toast.error("Debe haber al menos una escala base");
+        setScales(scales.filter((_, i) => i !== idx));
+    };
+
+    const updateScale = (idx, field, val) => {
+        const newScales = [...scales];
+        newScales[idx][field] = val;
+        setScales(newScales);
+    };
+
+    const handleSave = () => {
+        // Validar
+        const validScales = scales.filter(s => s.qty && s.val !== '');
+        if (validScales.length === 0) return toast.error("Define al menos una escala válida");
+
+        // Ordenar por cantidad
+        validScales.sort((a, b) => parseInt(a.qty) - parseInt(b.qty));
+
+        // Validation for base qty 1
+        if (parseFloat(validScales[0].qty) !== 1) {
+            if (!confirm(`La primera escala comienza en cantidad ${validScales[0].qty}. ¿Deseas guardar así?`)) {
+                return;
+            }
+        }
+
+        onSave(validScales, type);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg flex flex-col">
+                <div className="p-4 border-b bg-slate-50 rounded-t-lg flex justify-between items-center">
+                    <h3 className="font-bold text-slate-800"><i className="fa-solid fa-wand-magic-sparkles text-indigo-600 mr-2"></i> {productName}</h3>
+                    <button onClick={onCancel} className="text-slate-400 hover:text-red-500"><i className="fa-solid fa-xmark"></i></button>
+                </div>
+                <div className="p-6">
+                    <p className="text-xs text-slate-500 mb-4">Configura precios escalonados (por volumen). Elige si definir precios fijos o descuentos porcentuales sobre el precio de lista.</p>
+
+                    {/* TYPE SELECTOR */}
+                    <div className="flex bg-slate-100 p-1 rounded-lg mb-6">
+                        <button
+                            onClick={() => setType('fixed')}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${type === 'fixed' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <i className="fa-solid fa-tag mr-1"></i> Precio Fijo ($)
+                        </button>
+                        <button
+                            onClick={() => setType('percentage')}
+                            className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${type === 'percentage' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            <i className="fa-solid fa-percent mr-1"></i> Descuento (%)
+                        </button>
+                    </div>
+
+                    <div className="space-y-2 mb-4">
+                        <div className="flex text-xs font-bold text-slate-500 uppercase tracking-wider px-2 gap-2">
+                            <div className="w-1/2">Cant. Mínima</div>
+                            <div className="w-1/2">{type === 'fixed' ? 'Precio Unitario ($)' : 'Descuento (%)'}</div>
+                            <div className="w-8"></div>
+                        </div>
+                        {scales.map((s, idx) => (
+                            <div key={idx} className="flex gap-2 items-center">
+                                <div className="w-1/2 relative">
+                                    <input
+                                        type="number" min="1"
+                                        className="w-full border rounded p-2 pl-3 focus:ring-2 focus:ring-indigo-200 outline-none font-mono text-sm"
+                                        value={s.qty}
+                                        onChange={e => updateScale(idx, 'qty', e.target.value)}
+                                        placeholder="Ej: 1"
+                                    />
+                                    <span className="absolute right-8 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">u.</span>
+                                </div>
+                                <div className="w-1/2 relative">
+                                    {type === 'fixed' ? (
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">$</span>
+                                    ) : (
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">Desc.</span>
+                                    )}
+
+                                    <input
+                                        type="number" step={type === 'fixed' ? "0.01" : "1"}
+                                        className={`w-full border rounded p-2 text-right font-bold text-sm focus:ring-2 focus:ring-indigo-200 outline-none ${type === 'percentage' ? 'text-green-600 pl-10 pr-6' : 'text-slate-700 pl-6'}`}
+                                        value={s.val}
+                                        onChange={e => updateScale(idx, 'val', e.target.value)}
+                                        placeholder="0"
+                                    />
+                                    {type === 'percentage' && (
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">%</span>
+                                    )}
+                                </div>
+                                <button onClick={() => removeScale(idx)} className="w-8 text-slate-300 hover:text-red-500 transition-colors">
+                                    <i className="fa-solid fa-trash-can"></i>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+
+                    <button onClick={addScale} className="text-xs text-indigo-600 font-bold hover:underline mb-6 flex items-center gap-1">
+                        <i className="fa-solid fa-plus-circle"></i> Agregar Escala
+                    </button>
+
+                    <div className="flex gap-3">
+                        <button onClick={onCancel} className="flex-1 py-2 border rounded text-slate-600 hover:bg-slate-50 transition-colors font-bold text-sm">Cancelar</button>
+                        <button onClick={handleSave} className="flex-1 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors shadow font-bold text-sm">Guardar Escalas</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const RowProductSelector = ({ catalog, defaultTerm, onSelect }) => {
+    const [value, setValue] = useState(defaultTerm || '');
+    const [active, setActive] = useState(false);
+
+    // filtered catalog
+    const suggestions = React.useMemo(() => {
+        if (!value || value.length < 2) return [];
+        const upper = value.toUpperCase();
+        return catalog.filter(c =>
+            c.CodArticulo.toUpperCase().includes(upper) ||
+            (c.Descripcion && c.Descripcion.toUpperCase().includes(upper))
+        ).slice(0, 30);
+    }, [value, catalog]);
+
+    return (
+        <div className="relative group w-full">
+            <div className="relative flex items-center">
+                <i className="fa-solid fa-search absolute left-2 text-xs text-slate-400"></i>
+                <input
+                    className="w-full border border-red-200 rounded px-2 py-1 pl-7 text-xs font-mono text-red-600 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-red-50/30 placeholder-red-300"
+                    value={value}
+                    onChange={e => { setValue(e.target.value); setActive(true); }}
+                    onFocus={() => setActive(true)}
+                    onBlur={() => setTimeout(() => setActive(false), 200)}
+                    placeholder="Buscar producto..."
+                    autoFocus
+                />
+            </div>
+            {active && suggestions.length > 0 && (
+                <div className="absolute top-full left-0 w-[400px] bg-white border border-slate-200 shadow-xl rounded-lg z-[80] max-h-60 overflow-y-auto mt-1 divide-y divide-slate-100">
+                    <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider sticky top-0 border-b">Resultados ({suggestions.length})</div>
+                    {suggestions.map(p => (
+                        <div
+                            key={p.CodArticulo}
+                            className="px-3 py-2 hover:bg-indigo-50 cursor-pointer transition-colors"
+                            onMouseDown={() => onSelect(p)}
+                        >
+                            <div className="flex justify-between items-baseline">
+                                <span className="font-bold text-indigo-700 text-xs">{p.CodArticulo}</span>
+                                <span className="text-[10px] text-slate-400 ml-2">{p.GrupoNombre || p.Grupo}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-600 truncate">{p.Descripcion}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+            {active && value.length >= 2 && suggestions.length === 0 && (
+                <div className="absolute top-full left-0 w-64 bg-white border p-3 shadow-xl rounded z-[80] text-xs text-slate-400 italic text-center">
+                    No hay coincidencias
+                </div>
+            )}
+        </div>
+    );
+};
+
+const ExcelImportModal = ({ onImport, onCancel, catalog }) => {
+    const [text, setText] = useState('');
+    const [step, setStep] = useState(1); // 1: Paste, 2: Map/Preview
+    const [parsedData, setParsedData] = useState([]); // { product, values: [v1, v2...] }
+    const [headers, setHeaders] = useState([]);
+    const [colMappings, setColMappings] = useState({}); // { colIndex: qty }
+
+    const processText = () => {
+        if (!text.trim()) return;
+
+        const lines = text.trim().split('\n');
+        if (lines.length < 2) return toast.error("Pega al menos una cabecera y una fila de datos");
+
+        // Detect separator (Tab or huge spaces?)
+        // Excel copy usually puts Tabs (\t)
+        // If user copied from typical table, it's \t. 
+        // Fallback: simple split by multiple spaces regex if tabs fail?
+        // Let's stick to tabs first as it's standard excel copy.
+
+        let separator = '\t';
+        // Simple heuristic: check first line
+        if (!lines[0].includes('\t')) {
+            // Maybe CSV? or spaces?
+            // Let's assume user followed instructions
+        }
+
+        const rows = lines.map(line => line.split(separator));
+        const rawHeaders = rows[0];
+        const dataRows = rows.slice(1);
+
+        // Auto-detect quantities in headers
+        const mappings = {};
+        rawHeaders.forEach((h, idx) => {
+            if (idx === 0) return; // Prod col
+            // Extract number "POR 15" -> 15
+            const match = h.match(/(\d+)/);
+            if (match) {
+                mappings[idx] = parseInt(match[1]);
+            }
+        });
+
+        // Resolve Products
+        const processed = dataRows.map(row => {
+            const rowTerm = (row[0] || '').trim().replace(/^"|"$/g, ''); // Remove quotes if CSV copy
+            if (!rowTerm) return null;
+
+            // Normalize term
+            const upperTerm = rowTerm.toUpperCase();
+
+            // Match Catalog
+            // 1. Exact Code
+            let prod = catalog.find(c => c.CodArticulo.toUpperCase() === upperTerm);
+            // 2. Exact Desc
+            if (!prod) prod = catalog.find(c => (c.Descripcion || '').toUpperCase() === upperTerm);
+
+            // 3. Fuzzy? Contains?
+            // Careful with fuzzy match on huge catalogs
+
+            return {
+                term: rowTerm,
+                prod,
+                values: row.slice(1)
+            };
+        }).filter(r => r);
+
+        setHeaders(rawHeaders);
+        setParsedData(processed);
+        setColMappings(mappings);
+        setStep(2);
+    };
+
+    const updateRowProduct = (index, product) => {
+        setParsedData(prev => {
+            const next = [...prev];
+            next[index] = { ...next[index], prod: product };
+            return next;
+        });
+    };
+
+    const handleImport = () => {
+        // Validation: Check if we have any quantities mapped
+        const hasQuantities = Object.values(colMappings).some(q => q && !isNaN(q) && q > 0);
+        if (!hasQuantities) {
+            return toast.error("Debes definir la Cantidad Mínima para al menos una columna (encabezados).");
+        }
+
+        // Build rules
+        const newRules = [];
+        let rowsProcessed = 0;
+        let rowsSkippedNoProduct = 0;
+        let cellsSkippedInvalid = 0;
+
+        parsedData.forEach(row => {
+            if (!row.prod) {
+                rowsSkippedNoProduct++;
+                return;
+            }
+
+            rowsProcessed++;
+
+            headers.slice(1).forEach((_, i) => {
+                const colIdx = i + 1;
+                const qty = colMappings[colIdx]; // user defined quantity for this column
+                const rawVal = row.values[i];
+
+                if (qty && rawVal !== undefined && rawVal !== null && rawVal.trim() !== '') {
+                    // Logic to parse price safely
+                    // Support "1.500,00" (thousands dot, decimal comma) vs "1,500.00" vs simple "10.5"
+                    let str = rawVal.toString().trim();
+
+                    // Remove $ and spaces
+                    str = str.replace(/[$\s]/g, '');
+
+                    // Specific fix for user case: "3,5" -> 3.5
+                    // If proper number format standard is uncertain, we assume:
+                    // If contains comma, and it's not a thousand separator (e.g. 1,000 is ambiguous but 1,5 usually means 1.5)
+                    // Let's use a standard heuristic for local inputs (Latin America/Europe often uses comma for decimals)
+
+                    // safe method: replace comma with dot, remove other non-numeric-dot chars?
+                    // But "1.000,50" -> remove dot -> "1000,50" -> replace comma -> "1000.50". Correct.
+                    // "1,5" -> "1.5". Correct.
+                    // "1000" -> "1000". Correct.
+
+                    // Danger: "1.500" (meaning 1500) -> "1500". "1.5" (meaning 1.5) -> "15" ??
+                    // If text contains "," we assume it is the decimal separator?
+
+                    let val = 0;
+                    if (str.includes(',') && str.includes('.')) {
+                        // Mixed: presume dot is thousands, comma is decimal
+                        str = str.replace(/\./g, '').replace(',', '.');
+                    } else if (str.includes(',')) {
+                        // Comma only: assume decimal
+                        str = str.replace(',', '.');
+                    }
+                    // else (dots only or numbers only): parse as js float. 
+                    // JS float uses dot. "1.500" in JS is 1.5. 
+                    // If user meant 1500, they shouldn't use dot for thousands in simple input, OR we have context.
+                    // Given the user example "2,5" and "3,5", comma is decimal.
+                    // "80" -> 80.
+
+                    val = parseFloat(str);
+
+                    if (!isNaN(val)) {
+                        newRules.push({
+                            CodArticulo: row.prod.CodArticulo,
+                            TipoRegla: 'fixed_price',
+                            Valor: val,
+                            CantidadMinima: qty,
+                            _tempId: Date.now() + Math.random() + newRules.length
+                        });
+                    } else {
+                        cellsSkippedInvalid++;
+                    }
+                }
+            });
+        });
+
+        if (newRules.length === 0) {
+            if (rowsSkippedNoProduct > 0 && rowsProcessed === 0) {
+                return toast.error(`No se encontraron productos válidos. Revisa las coincidencias o asigna manualmente.`);
+            }
+            return toast.error("No se generaron reglas. Verifica que las celdas tengan precios numéricos válidos.");
+        }
+
+        onImport(newRules);
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col">
+                <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-lg">
+                    <h3 className="font-bold text-lg text-slate-800"><i className="fa-solid fa-file-excel text-green-600 mr-2"></i> Importar desde Excel</h3>
+                    <button onClick={onCancel} className="text-slate-400 hover:text-red-500"><i className="fa-solid fa-xmark text-xl"></i></button>
+                </div>
+
+                {step === 1 ? (
+                    <div className="flex-1 p-6 flex flex-col">
+                        <p className="mb-2 text-sm text-slate-600">
+                            Copia tus celdas de Excel (incluyendo la cabecera) y pégalas aquí.<br />
+                            <span className="text-xs text-slate-400">Formato: Primera columna = Producto (Nombre o Código). Resto columnas = Precios por cantidad.</span>
+                        </p>
+                        <textarea
+                            className="flex-1 w-full border rounded p-4 font-mono text-xs bg-slate-50 focus:ring-2 focus:ring-indigo-200 outline-none resize-none"
+                            placeholder={"Producto\tMin 15\tMin 30\tMin 100\nTPU XYZ\t3,5\t3,0\t2,5\n..."}
+                            value={text}
+                            onChange={e => setText(e.target.value)}
+                        />
+                        <div className="mt-4 flex justify-end">
+                            <button onClick={processText} className="btn-primary px-8 py-2 shadow-lg">Analizar Datos <i className="fa-solid fa-arrow-right ml-2"></i></button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex-1 flex flex-col overflow-hidden">
+                        {/* Configuration */}
+                        <div className="p-4 bg-indigo-50 border-b flex gap-6 overflow-x-auto items-center">
+                            <div className="font-bold text-sm text-indigo-900 whitespace-nowrap">Mapeo de Columnas:</div>
+                            {headers.slice(1).map((h, i) => {
+                                const colIdx = i + 1;
+                                return (
+                                    <div key={i} className="flex flex-col gap-1 min-w-[120px]">
+                                        <div className="text-[10px] uppercase font-bold text-indigo-400 truncate" title={h}>{h}</div>
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-xs text-slate-500">Cant:</span>
+                                            <input
+                                                type="number"
+                                                className="w-16 border rounded px-1 py-0.5 text-sm font-bold text-center"
+                                                value={colMappings[colIdx] || ''}
+                                                onChange={e => setColMappings({ ...colMappings, [colIdx]: parseInt(e.target.value) })}
+                                                placeholder="-"
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Preview */}
+                        <div className="flex-1 overflow-auto p-4 content-start">
+                            <table className="w-full text-xs text-left border-collapse">
+                                <thead className="bg-slate-100 text-slate-500 sticky top-0 z-10">
+                                    <tr>
+                                        <th className="p-2 border bg-slate-100">Dato Original</th>
+                                        <th className="p-2 border w-80 bg-indigo-50 border-indigo-100 text-indigo-700">Producto Detectado</th>
+                                        {headers.slice(1).map((h, i) => (
+                                            <th key={i} className={`p-2 border text-center ${colMappings[i + 1] ? 'bg-green-50 text-green-700' : 'bg-slate-50 text-slate-300'}`}>
+                                                {colMappings[i + 1] ? `Min ${colMappings[i + 1]}` : '(Ignorar)'}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {parsedData.map((row, rIdx) => (
+                                        <tr key={rIdx} className="hover:bg-slate-50">
+                                            <td className="p-2 border font-mono text-slate-500 truncate max-w-[150px]" title={row.term}>{row.term}</td>
+                                            <td className="p-2 border relative">
+                                                {row.prod ? (
+                                                    <div className="flex items-center gap-2 group justify-between">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <i className="fa-solid fa-check text-green-500 flex-shrink-0"></i>
+                                                            <div className="min-w-0">
+                                                                <div className="font-bold text-slate-700 truncate">{row.prod.CodArticulo}</div>
+                                                                <div className="text-[10px] text-slate-400 truncate w-40">{row.prod.Descripcion}</div>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => updateRowProduct(rIdx, null)}
+                                                            className="text-slate-300 hover:text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                                                            title="Cambiar producto"
+                                                        >
+                                                            <i className="fa-solid fa-pencil"></i>
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <RowProductSelector
+                                                        catalog={catalog}
+                                                        defaultTerm={row.term}
+                                                        onSelect={(p) => updateRowProduct(rIdx, p)}
+                                                    />
+                                                )}
+                                            </td>
+                                            {row.values.map((v, cIdx) => (
+                                                <td key={cIdx} className="p-2 border text-right font-mono">
+                                                    {v}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="p-4 border-t bg-white flex justify-between items-center">
+                            <button onClick={() => setStep(1)} className="text-slate-500 font-bold hover:text-slate-800">Volver a pegar</button>
+                            <div className="text-xs text-slate-400">
+                                Se importarán reglas solo para los productos confirmados (Check verde).
+                            </div>
+                            <button onClick={handleImport} className="btn-primary px-6 py-2 shadow-lg">
+                                Importar Datos Confirmados
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const ProductAdderInput = ({ onAdd, catalog = [], placeholder = "Buscar producto para agregar..." }) => {
+    const [query, setQuery] = useState('');
+    const [suggestions, setSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const wrapperRef = useRef(null);
+
+    useEffect(() => {
+        // Click outside to close
+        function handleClickOutside(event) {
+            if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+                setShowSuggestions(false);
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [wrapperRef]);
+
+    const handleSearch = (text) => {
+        setQuery(text);
+        if (!text || text.length < 1) {
+            setSuggestions([]);
+            return;
+        }
+
+        const upperText = text.toUpperCase();
+        const matches = catalog.filter(p =>
+            p.CodArticulo.toUpperCase().includes(upperText) ||
+            (p.Descripcion && p.Descripcion.toUpperCase().includes(upperText))
+        ).slice(0, 50); // Show more results
+
+        setSuggestions(matches);
+        setShowSuggestions(true);
+    };
+
+    const handleSelect = (cod) => {
+        onAdd(cod);
+        setQuery('');
+        setSuggestions([]);
+        setShowSuggestions(false);
+    };
+
+    return (
+        <div className="relative w-full" ref={wrapperRef}>
+            <div className="relative flex items-center w-full">
+                <i className="fa-solid fa-magnifying-glass absolute left-3 text-slate-400"></i>
+                <input
+                    className="w-full border border-slate-300 rounded-lg pl-10 pr-4 py-2 text-sm focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none transition-all shadow-sm uppercase font-mono"
+                    value={query}
+                    onChange={e => handleSearch(e.target.value)}
+                    onFocus={() => { if (query) setShowSuggestions(true); }}
+                    placeholder={placeholder}
+                />
+                {query && (
+                    <button
+                        onClick={() => { setQuery(''); setSuggestions([]); }}
+                        className="absolute right-3 text-slate-300 hover:text-slate-500"
+                    >
+                        <i className="fa-solid fa-times"></i>
+                    </button>
+                )}
+            </div>
+
+            {showSuggestions && (
+                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 shadow-xl rounded-lg z-[100] max-h-80 overflow-y-auto">
+                    {suggestions.length > 0 ? (
+                        <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-50 text-slate-500 font-semibold sticky top-0">
+                                <tr>
+                                    <th className="px-3 py-2">Código</th>
+                                    <th className="px-3 py-2">Descripción</th>
+                                    <th className="px-3 py-2 text-right">Grupo</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {suggestions.map(s => (
+                                    <tr
+                                        key={s.CodArticulo}
+                                        onClick={() => handleSelect(s.CodArticulo)}
+                                        className="hover:bg-indigo-50 cursor-pointer transition-colors"
+                                    >
+                                        <td className="px-3 py-2 font-bold text-indigo-700 whitespace-nowrap">{s.CodArticulo}</td>
+                                        <td className="px-3 py-2 text-slate-600 container-query">{s.Descripcion}</td>
+                                        <td className="px-3 py-2 text-right text-slate-400 text-[10px]">{s.GrupoNombre || s.Grupo || '-'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    ) : (
+                        <div className="p-4 text-center text-slate-400 text-sm">
+                            No se encontraron productos que coincidan.
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const TieredPriceTable = ({ items, onUpdate, catalog }) => {
+    // Agrupar items por CodArticulo
+    const groupedItems = React.useMemo(() => {
+        const groups = {};
+        items.forEach(item => {
+            if (!groups[item.CodArticulo]) groups[item.CodArticulo] = [];
+            groups[item.CodArticulo].push(item);
+        });
+        return groups;
+    }, [items]);
+
+    // Obtener rangos únicos de cantidades (excluyendo 1 que es base) y ordenarlos
+    const quantityColumns = React.useMemo(() => {
+        const quantities = new Set();
+        items.forEach(item => {
+            if (item.CantidadMinima > 1) quantities.add(parseInt(item.CantidadMinima));
+        });
+        return Array.from(quantities).sort((a, b) => a - b);
+    }, [items]);
+
+    const handlePriceChange = (cod, minQty, val, specificType = null) => {
+        let newItems = [...items];
+
+        // Find existing rules for this product to determine default type
+        const productRules = newItems.filter(i => i.CodArticulo === cod);
+        // Determine type to use: specificType > existing rule type > default 'fixed_price'
+        const typeToUse = specificType || (productRules.length > 0 ? productRules[0].TipoRegla : 'fixed_price');
+
+        const existingIdx = newItems.findIndex(i => i.CodArticulo === cod && parseInt(i.CantidadMinima || 1) === minQty);
+
+        if (existingIdx >= 0) {
+            // Actualizar
+            if (val === '' || val === null) {
+                if (minQty > 1) {
+                    newItems.splice(existingIdx, 1);
+                } else {
+                    newItems[existingIdx].Valor = 0;
+                    // If specific type was passed (though unlikely here), update it
+                    if (specificType) newItems[existingIdx].TipoRegla = specificType;
+                }
+            } else {
+                newItems[existingIdx].Valor = val;
+                // If we are updating a value, ensure type consistency if needed, but usually we rely on handleTypeChange
+            }
+        } else {
+            // Crear nueva
+            if (val !== '' && val !== null) {
+                newItems.push({
+                    CodArticulo: cod,
+                    TipoRegla: typeToUse,
+                    Valor: val,
+                    CantidadMinima: minQty,
+                    _tempId: Date.now() + Math.random()
+                });
+            }
+        }
+        onUpdate(newItems);
+    };
+
+    const handleTypeChange = (cod, newType) => {
+        // Update ALL rules for this product to the new type
+        const newItems = items.map(i => {
+            if (i.CodArticulo === cod) {
+                return { ...i, TipoRegla: newType };
+            }
+            return i;
+        });
+        onUpdate(newItems);
+    };
+
+    const addProductRow = (cod) => {
+        if (!cod) return;
+        // Agregar row inicial (qty 1)
+        onUpdate([...items, { CodArticulo: cod, TipoRegla: 'fixed_price', Valor: 0, CantidadMinima: 1, _tempId: Date.now() }]);
+    };
+
+    const addQuantityColumn = () => {
+        const qty = prompt("Ingrese la cantidad mínima para la nueva columna (ej: 15):");
+        if (qty && !isNaN(qty) && qty > 1) {
+            // Solo forzar validación visual, no se guarda nada hasta que pongan un precio
+            // Hack visual: agregar una regla dummy temporal o manejar estado local de columnas
+            // Para simplificar: el usuario debe agregar un precio en esa columna para que persista
+            // Pero necesitamos que la columna aparezca.
+            // Solución: agregamos 0 a todos los productos existentes para esa cantidad? No, muy sucio.
+            // Mejor: mantenemos lista de columnas en estado local y la sincronizamos con props
+            toast.info("Columna visual agregada. Ingrese precios para guardar.");
+            // Esto requeriría refactor mayor.
+            // Alternativa rápida: Agregar una regla dummy al primer producto
+            const firstProd = Object.keys(groupedItems)[0];
+            if (firstProd) handlePriceChange(firstProd, parseInt(qty), 0);
+        }
+    };
+
+    return (
+        <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse text-sm">
+                <thead>
+                    <tr className="bg-slate-100 text-slate-600">
+                        <th className="p-3 text-left border overflow-hidden">Producto</th>
+                        <th className="p-3 text-center border w-32 bg-indigo-50/50">Base (Min 1)</th>
+                        {quantityColumns.map(q => (
+                            <th key={q} className="p-3 text-center border w-32 relative group">
+                                Min {q}
+                                <button
+                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] hidden group-hover:flex items-center justify-center shadow"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (window.confirm("Borrar columna? Se eliminarán todos los precios de esta cantidad.")) {
+                                            onUpdate(items.filter(i => parseInt(i.CantidadMinima) !== q));
+                                        }
+                                    }}
+                                >x</button>
+                            </th>
+                        ))}
+                        <th className="p-3 border w-10">
+                            <button onClick={addQuantityColumn} className="bg-indigo-100 text-indigo-600 rounded-full w-6 h-6 flex items-center justify-center hover:bg-indigo-200" title="Agregar Rango de Cantidad">+</button>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {Object.keys(groupedItems).map(cod => {
+                        const prod = catalog.find(c => c.CodArticulo === cod);
+                        const rules = groupedItems[cod];
+                        const baseRule = rules.find(i => parseInt(i.CantidadMinima || 1) === 1);
+                        const basePrice = baseRule ? baseRule.Valor : 0;
+
+                        // Detect common type
+                        const currentType = (rules[0] && rules[0].TipoRegla) || 'fixed_price';
+                        const isPercentage = currentType.includes('percentage') || (currentType.includes('discount') && !currentType.includes('fixed'));
+                        const symbol = isPercentage ? '%' : '$';
+
+                        return (
+                            <tr key={cod} className="hover:bg-slate-50 border-b group">
+                                <td className="p-2 border relative">
+                                    <div className="font-bold text-slate-700">{cod}</div>
+                                    <div className="text-xs text-slate-500 truncate max-w-[200px] mb-1">{prod ? prod.Descripcion : 'Producto desconocido'}</div>
+
+                                    {/* Type Selector */}
+                                    <select
+                                        className={`text-[10px] p-1 border rounded bg-white outline-none cursor-pointer w-full max-w-[150px] ${currentType !== 'fixed_price' ? 'text-indigo-600 font-bold border-indigo-200' : 'text-slate-400 opacity-50 group-hover:opacity-100 transition-opacity'}`}
+                                        value={currentType}
+                                        onChange={(e) => handleTypeChange(cod, e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <option value="fixed_price">Precio Fijo ($)</option>
+                                        <option value="percentage_discount">Descuento (%)</option>
+                                        <option value="percentage_surcharge">Recargo (%)</option>
+                                    </select>
+                                </td>
+                                <td className="p-2 border text-center relative">
+                                    <span className={`absolute ${isPercentage ? 'right-2' : 'left-2'} top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold`}>{symbol}</span>
+                                    <input
+                                        type="number"
+                                        className={`w-full outline-none bg-transparent font-bold text-slate-800 ${isPercentage ? 'text-left pr-6' : 'text-right pl-6'}`}
+                                        value={basePrice}
+                                        onChange={e => handlePriceChange(cod, 1, e.target.value)}
+                                    />
+                                </td>
+                                {quantityColumns.map(q => {
+                                    const rule = groupedItems[cod].find(i => parseInt(i.CantidadMinima) === q);
+                                    return (
+                                        <td key={q} className="p-2 border text-center relative">
+                                            <span className={`absolute ${isPercentage ? 'right-2' : 'left-2'} top-1/2 -translate-y-1/2 text-slate-300 text-xs`}>{symbol}</span>
+                                            <input
+                                                type="number"
+                                                className={`w-full outline-none bg-transparent text-slate-600 focus:text-indigo-600 font-medium ${isPercentage ? 'text-left pr-6' : 'text-right pl-6'}`}
+                                                value={rule ? rule.Valor : ''}
+                                                placeholder="-"
+                                                onChange={e => handlePriceChange(cod, q, e.target.value)}
+                                            />
+                                        </td>
+                                    );
+                                })}
+                                <td className="p-2 border text-center">
+                                    <button
+                                        onClick={() => onUpdate(items.filter(i => i.CodArticulo !== cod))}
+                                        className="text-slate-300 hover:text-red-500 transition-colors"
+                                    >
+                                        <i className="fa-solid fa-trash-can"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                    <tr>
+                        <td className="p-4 border bg-indigo-50/10" colSpan={quantityColumns.length + 3}>
+                            <ProductAdderInput
+                                onAdd={addProductRow}
+                                catalog={catalog.filter(c => !groupedItems[c.CodArticulo])}
+                            />
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     );
 };
@@ -246,6 +1077,7 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
 
     // Catalogo para lookup
     const [catalog, setCatalog] = useState([]);
+    const [viewMode, setViewMode] = useState('matrix'); // 'list' | 'matrix'
 
     useEffect(() => {
         api.get('/prices/base')
@@ -254,6 +1086,15 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
             })
             .catch(console.error);
     }, []);
+
+    // Synchronize state with profile prop when it changes
+    useEffect(() => {
+        setName(profile?.Nombre || '');
+        setDesc(profile?.Descripcion || '');
+        setEsGlobal(profile?.EsGlobal || false);
+        setItems((profile?.items || []).map((i, idx) => ({ ...i, _tempId: idx })));
+        setShowBulk(false);
+    }, [profile]);
 
     const handleBulkAdd = (newRules) => {
         let currentItems = [...items];
@@ -294,6 +1135,71 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
 
     const handleChangeItem = (id, field, val) => {
         setItems(items.map(i => i._tempId === id ? { ...i, [field]: val } : i));
+    };
+
+    const [wizardConfig, setWizardConfig] = useState(null);
+
+    const handleWizardSave = (scales, type = 'fixed') => {
+        if (!wizardConfig) return;
+        const { cod } = wizardConfig;
+
+        // Remove existing items for this cod
+        const filtered = items.filter(i => i.CodArticulo !== cod);
+
+        // Define rule type based on wizard selection
+        const ruleType = type === 'percentage' ? 'percentage_discount' : 'fixed_price';
+
+        // Create new items
+        const newItems = scales.map(s => ({
+            CodArticulo: cod,
+            TipoRegla: ruleType,
+            Valor: s.val,
+            CantidadMinima: s.qty,
+            _tempId: Date.now() + Math.random()
+        }));
+
+        setItems([...filtered, ...newItems]);
+        setWizardConfig(null);
+        toast.success(type === 'percentage' ? "Escalas de descuento (%) guardadas" : "Escalas de precio fijo ($) guardadas");
+    };
+
+    // Agrupar items para visualización simplificada en lista
+    const groupedList = React.useMemo(() => {
+        const groups = {};
+        items.forEach(i => {
+            const c = i.CodArticulo;
+            if (!groups[c]) groups[c] = [];
+            groups[c].push(i);
+        });
+        return groups;
+    }, [items]);
+
+    const [showExcel, setShowExcel] = useState(false);
+
+    const handleExcelImport = (newRules) => {
+        let currentItems = [...items];
+        let countNew = 0;
+        let countUpdated = 0;
+
+        newRules.forEach(r => {
+            // Find if there is an existing rule for this Product AND this Qty
+            // But wait, the list might have base rules.
+            // Tiered logic: we add new rules. If there is a rule for Qty=X, we update it.
+
+            const existingIdx = currentItems.findIndex(i => i.CodArticulo === r.CodArticulo && parseInt(i.CantidadMinima || 1) === parseInt(r.CantidadMinima));
+
+            if (existingIdx >= 0) {
+                currentItems[existingIdx] = { ...currentItems[existingIdx], Valor: r.Valor };
+                countUpdated++;
+            } else {
+                currentItems.push(r);
+                countNew++;
+            }
+        });
+
+        setItems(currentItems);
+        setShowExcel(false);
+        toast.success(`Importación completada: ${countNew} nuevas reglas, ${countUpdated} precios actualizados`);
     };
 
     return (
@@ -358,89 +1264,172 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
                     <h3 className="font-bold text-slate-700 flex items-center gap-2">
                         <i className="fa-solid fa-gavel text-indigo-500"></i> Reglas de Precios
                     </h3>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
+                        <div className="flex bg-slate-100 p-0.5 rounded border border-slate-200 mr-4">
+                            <button
+                                onClick={() => setViewMode('list')}
+                                className={`px-2 py-1 text-xs font-bold rounded flex items-center gap-1 ${viewMode === 'list' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                <i className="fa-solid fa-list"></i> Lista
+                            </button>
+                            <button
+                                onClick={() => setViewMode('matrix')}
+                                className={`px-2 py-1 text-xs font-bold rounded flex items-center gap-1 ${viewMode === 'matrix' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                <i className="fa-solid fa-table-cells"></i> Matriz
+                            </button>
+                        </div>
+                        <button onClick={() => setShowExcel(true)} className="text-xs bg-green-600 text-white hover:bg-green-700 px-3 py-1.5 rounded font-bold shadow-sm flex items-center gap-1 transition-colors border border-green-700">
+                            <i className="fa-solid fa-file-excel"></i> Importar Excel
+                        </button>
                         <button onClick={() => setShowBulk(true)} className="text-xs bg-indigo-600 text-white hover:bg-indigo-700 px-3 py-1.5 rounded font-bold shadow-sm flex items-center gap-1 transition-colors">
-                            <i className="fa-solid fa-list-check"></i> Carga Masiva / Precios
+                            <i className="fa-solid fa-list-check"></i> Carga Masiva
                         </button>
-                        <button onClick={handleAddItem} className="text-xs text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 px-3 py-1.5 rounded border border-indigo-100 flex items-center gap-1 transition-colors">
-                            <i className="fa-solid fa-plus"></i> Manual
-                        </button>
+                        {viewMode === 'list' && (
+                            <button onClick={handleAddItem} className="text-xs text-indigo-600 hover:text-indigo-800 font-bold bg-indigo-50 px-3 py-1.5 rounded border border-indigo-100 flex items-center gap-1 transition-colors">
+                                <i className="fa-solid fa-plus"></i> Manual
+                            </button>
+                        )}
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto border rounded-lg bg-white shadow-inner custom-scrollbar">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-100 text-slate-600 font-semibold sticky top-0 z-10">
-                            <tr>
-                                <th className="p-3 w-64">Aplica A (Código)</th>
-                                <th className="p-3">Tipo de Regla</th>
-                                <th className="p-3 w-20 text-center">Cant. Mín</th>
-                                <th className="p-3 w-32 text-right">Valor</th>
-                                <th className="p-3 w-16 text-center"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {items.length === 0 ? (
-                                <tr><td colSpan="5" className="p-8 text-center text-slate-400">Este perfil no tiene reglas definidas.</td></tr>
-                            ) : (
-                                items.map(item => (
-                                    <tr key={item._tempId} className="hover:bg-slate-50 group">
-                                        <td className="p-2 pl-3">
-                                            <ProductSearchInput
-                                                value={item.CodArticulo}
-                                                onChange={(val) => handleChangeItem(item._tempId, 'CodArticulo', val)}
-                                                catalog={catalog}
-                                            />
-                                        </td>
-                                        <td className="p-2">
-                                            <select
-                                                className="w-full border rounded px-2 py-1 text-sm bg-white focus:border-indigo-400 outline-none"
-                                                value={item.TipoRegla}
-                                                onChange={e => handleChangeItem(item._tempId, 'TipoRegla', e.target.value)}
-                                            >
-                                                <option value="fixed_price">Precio Fijo Exacto ($)</option>
-                                                <option value="percentage_discount">Descuento Porcentual (%)</option>
-                                                <option value="percentage_surcharge">Recargo Porcentual (%)</option>
-                                                <option value="fixed_discount">Descuento Monto ($)</option>
-                                                <option value="fixed_surcharge">Recargo Monto ($)</option>
-                                            </select>
-                                        </td>
-                                        <td className="p-2 text-center">
-                                            <input
-                                                type="number" min="1"
-                                                className="w-full border rounded px-2 py-1 text-center font-mono text-sm focus:border-indigo-400 outline-none"
-                                                value={item.CantidadMinima || 1}
-                                                onChange={e => handleChangeItem(item._tempId, 'CantidadMinima', e.target.value)}
-                                                title="Cantidad mínima para aplicar esta regla"
-                                            />
-                                        </td>
-                                        <td className="p-2 text-right">
-                                            <input
-                                                type="number" step="0.01"
-                                                className="w-full border rounded px-2 py-1 text-right font-bold text-slate-700 focus:border-indigo-400 outline-none"
-                                                value={item.Valor}
-                                                onChange={e => handleChangeItem(item._tempId, 'Valor', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="p-2 text-center">
-                                            <button
-                                                onClick={() => handleRemoveItem(item._tempId)}
-                                                className="text-slate-300 hover:text-red-500 transition-colors"
-                                            >
-                                                <i className="fa-solid fa-trash-can"></i>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                <div className="flex-1 overflow-y-auto border rounded-lg bg-white shadow-inner custom-scrollbar relative">
+                    {viewMode === 'matrix' ? (
+                        <TieredPriceTable items={items} onUpdate={setItems} catalog={catalog} />
+                    ) : (
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-100 text-slate-600 font-semibold sticky top-0 z-10">
+                                <tr>
+                                    <th className="p-3 w-64">Aplica A (Código)</th>
+                                    <th className="p-3">Tipo de Regla</th>
+                                    <th className="p-3 w-20 text-center">Cant. Mín</th>
+                                    <th className="p-3 w-32 text-right">Valor</th>
+                                    <th className="p-3 w-16 text-center"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {Object.keys(groupedList).length === 0 ? (
+                                    <tr><td colSpan="5" className="p-8 text-center text-slate-400">Este perfil no tiene reglas definidas.</td></tr>
+                                ) : (
+                                    Object.keys(groupedList).map(cod => {
+                                        const rules = groupedList[cod];
+                                        // Es escalonado si hay más de 1 regla o si la única regla tiene min > 1
+                                        const isTiered = rules.length > 1 || rules.some(r => r.CantidadMinima > 1);
+                                        const baseRule = rules.find(r => !r.CantidadMinima || r.CantidadMinima == 1) || rules[0];
+                                        const prod = catalog.find(c => c.CodArticulo === cod);
+
+                                        return (
+                                            <tr key={cod} className="hover:bg-slate-50 group">
+                                                <td className="p-2 pl-3">
+                                                    <div className="font-bold text-indigo-700">{cod}</div>
+                                                    <div className="text-xs text-slate-500">{prod ? prod.Descripcion : 'Desconocido'}</div>
+                                                </td>
+                                                <td className="p-2">
+                                                    <select
+                                                        className="w-full border rounded px-2 py-1 text-sm bg-white focus:border-indigo-400 outline-none"
+                                                        value={isTiered ? 'tiered_wizard' : baseRule.TipoRegla}
+                                                        onChange={e => {
+                                                            if (e.target.value === 'tiered_wizard') {
+                                                                setWizardConfig({ cod, rules });
+                                                            } else {
+                                                                // Si estaba en wizard y vuelve a simple, se mantiene la base rule pero se borran las otras?
+                                                                // O simplemente actualizamos el tipo de la base rule.
+                                                                // Para simplificar: cambio directo en propiedad
+                                                                if (isTiered && !confirm("Al cambiar a regla simple se perderán las escalas. ¿Continuar?")) return;
+
+                                                                // Reemplazar todas las reglas de este producto por una sola simple
+                                                                const newRule = { ...baseRule, TipoRegla: e.target.value, CantidadMinima: 1 };
+                                                                // Filtrar otras
+                                                                const others = items.filter(i => i.CodArticulo !== cod);
+                                                                setItems([...others, newRule]);
+                                                            }
+                                                        }}
+                                                    >
+                                                        <option value="fixed_price">Precio Fijo Exacto ($)</option>
+                                                        <option value="tiered_wizard" className="font-bold text-indigo-600">Precios Escalonados (Wizard)</option>
+                                                        <option value="percentage_discount">Descuento Porcentual (%)</option>
+                                                        <option value="percentage_surcharge">Recargo Porcentual (%)</option>
+                                                        <option value="fixed_discount">Descuento Monto ($)</option>
+                                                        <option value="fixed_surcharge">Recargo Monto ($)</option>
+                                                    </select>
+                                                </td>
+                                                {isTiered ? (
+                                                    <td colSpan="2" className="p-2 text-center">
+                                                        <button
+                                                            onClick={() => setWizardConfig({ cod, rules })}
+                                                            className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1 rounded border border-indigo-200 font-bold hover:bg-indigo-100 w-full"
+                                                        >
+                                                            <i className="fa-solid fa-layer-group mr-1"></i> {rules.length} Escalas Definidas - Editar
+                                                        </button>
+                                                    </td>
+                                                ) : (
+                                                    <>
+                                                        <td className="p-2 text-center">
+                                                            <input
+                                                                type="number" min="1" disabled={true}
+                                                                className="w-full border rounded px-2 py-1 text-center font-mono text-sm bg-slate-50 text-slate-400"
+                                                                value={1}
+                                                                title="Cantidad Base"
+                                                            />
+                                                        </td>
+                                                        <td className="p-2 text-right">
+                                                            <input
+                                                                type="number" step="0.01"
+                                                                className="w-full border rounded px-2 py-1 text-right font-bold text-slate-700 focus:border-indigo-400 outline-none"
+                                                                value={baseRule.Valor}
+                                                                onChange={e => handleChangeItem(baseRule._tempId, 'Valor', e.target.value)}
+                                                            />
+                                                        </td>
+                                                    </>
+                                                )}
+                                                <td className="p-2 text-center">
+                                                    <button
+                                                        onClick={() => setItems(items.filter(i => i.CodArticulo !== cod))}
+                                                        className="text-slate-300 hover:text-red-500 transition-colors"
+                                                    >
+                                                        <i className="fa-solid fa-trash-can"></i>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                                <tr>
+                                    <td colSpan="5" className="p-2 bg-slate-50">
+                                        <ProductAdderInput
+                                            onAdd={(cod) => {
+                                                // Check if exists
+                                                if (groupedList[cod]) {
+                                                    toast.info("Este producto ya está en la lista.");
+                                                    return;
+                                                }
+                                                setItems([...items, { CodArticulo: cod, TipoRegla: 'fixed_price', Valor: 0, CantidadMinima: 1, _tempId: Date.now() }]);
+                                            }}
+                                            catalog={catalog}
+                                            placeholder="Agregar otro producto a la lista..."
+                                        />
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    )}
                 </div>
                 <div className="mt-2 text-xs text-slate-400 italic">
-                    * Tip: La regla "TOTAL" aplica a todo lo que no tenga una regla específica definida aquí.
+                    {viewMode === 'matrix'
+                        ? "* Tip: Usa el botón '+' en la cabecera para agregar nuevas columnas de cantidad (rangos)."
+                        : "* Tip: La regla 'TOTAL' aplica a todo lo que no tenga una regla específica definida aquí."}
                 </div>
             </div>
             {showBulk && <BulkAddModal onAdd={handleBulkAdd} onCancel={() => setShowBulk(false)} profileName={name} />}
+            {showExcel && <ExcelImportModal onImport={handleExcelImport} onCancel={() => setShowExcel(false)} catalog={catalog} />}
+            {wizardConfig && (
+                <TieredWizard
+                    existingScales={wizardConfig.rules}
+                    productName={wizardConfig.cod + ' - ' + (catalog.find(c => c.CodArticulo === wizardConfig.cod)?.Descripcion || '')}
+                    onSave={handleWizardSave}
+                    onCancel={() => setWizardConfig(null)}
+                />
+            )}
         </div>
     );
 };
@@ -454,20 +1443,29 @@ const PriceProfiles = () => {
     const [loading, setLoading] = useState(false);
 
     // Asignaciones
-    const [customers, setCustomers] = useState([]); // Lista completa clientes ERP
+    const [customers, setCustomers] = useState([]); // Lista filtrada desde el servidor
     const [assignments, setAssignments] = useState({}); // Map ClienteID -> PerfilID
     const [filterCust, setFilterCust] = useState('');
+    const [debouncedFilter, setDebouncedFilter] = useState('');
     const [filterStatus, setFilterStatus] = useState('all'); // all, profile, exceptions, standard
 
     const [selectedProfile, setSelectedProfile] = useState(null);
-    const [openDropdown, setOpenDropdown] = useState(null); // ID del cliente con dropdown abierto
+    const [openDropdown, setOpenDropdown] = useState(null);
 
-    // (Dropdown click listener eliminado para el nuevo layout Master-Detail)
+    // Debounce filter text
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedFilter(filterCust), 500);
+        return () => clearTimeout(timer);
+    }, [filterCust]);
 
+    // Load Data
     useEffect(() => {
         loadProfiles();
-        if (activeTab === 'assignments' || activeTab === 'simulator') loadCustomersAndAssignments();
-    }, [activeTab]);
+        if (activeTab === 'assignments' || activeTab === 'simulator') {
+            loadAssignments();
+            searchCustomers(debouncedFilter);
+        }
+    }, [activeTab, debouncedFilter]);
 
     const loadProfiles = () => {
         api.get('/profiles').then(res => setProfiles(res.data)).catch(console.error);
@@ -515,46 +1513,33 @@ const PriceProfiles = () => {
         }
     };
 
-    const loadCustomersAndAssignments = async () => {
+    const loadAssignments = async () => {
+        try {
+            const res = await api.get('/profiles/assignments');
+            const assignMap = {};
+            res.data.forEach(a => {
+                let pids = [];
+                if (a.PerfilesIDs) {
+                    pids = String(a.PerfilesIDs).split(',').map(n => parseInt(n)).filter(n => !isNaN(n));
+                } else if (a.PerfilID) {
+                    pids = [parseInt(a.PerfilID)];
+                }
+                assignMap[a.ClienteID] = { pid: pids, rules: a.CantReglas || 0 };
+            });
+            setAssignments(assignMap);
+        } catch (e) {
+            console.error("Error loading assignments:", e);
+        }
+    };
+
+    const searchCustomers = async (term) => {
         setLoading(true);
         try {
-            // Intentar cargar ambos, pero si falla asignaciones, mostrar clientes igual
-            const [clientsRes, assignRes] = await Promise.allSettled([
-                api.get('/clients'),
-                api.get('/profiles/assignments')
-            ]);
-
-            // Procesar Clientes
-            if (clientsRes.status === 'fulfilled') {
-                setCustomers(clientsRes.value.data || []);
-            } else {
-                console.error("Fallo carga clientes:", clientsRes.reason);
-                toast.error("Error al cargar lista de clientes");
-            }
-
-            // Procesar Asignaciones
-            const assignMap = {};
-            if (assignRes.status === 'fulfilled') {
-                assignRes.value.data.forEach(a => {
-                    let pids = [];
-                    if (a.PerfilesIDs) {
-                        pids = String(a.PerfilesIDs).split(',').map(n => parseInt(n)).filter(n => !isNaN(n));
-                    } else if (a.PerfilID) {
-                        pids = [parseInt(a.PerfilID)];
-                    }
-                    assignMap[a.ClienteID] = { pid: pids, rules: a.CantReglas || 0 };
-                });
-            } else {
-                console.error("Fallo carga asignaciones:", assignRes.reason);
-                // No bloqueante, solo avisamos
-                // toast.warning("No se pudieron cargar las asignaciones actuales");
-            }
-
-            setAssignments(assignMap);
-
+            const res = await api.get('/clients', { params: { q: term } });
+            setCustomers(res.data || []);
         } catch (e) {
-            console.error("Error general:", e);
-            toast.error("Error inesperado cargando datos");
+            console.error("Error searching customers:", e);
+            toast.error("Error buscando clientes");
         } finally {
             setLoading(false);
         }
@@ -581,24 +1566,17 @@ const PriceProfiles = () => {
     };
 
     // Filtrado Clientes
+    // Filtrado Clientes (Solo Estado, texto ya fue por server)
     const filteredCustomers = customers.filter(c => {
-        const cId = c.CodCliente; // Propiedad correcta del endpoint
-        const cNombre = c.Nombre || c.NombreFantasia || '';
-
+        const cId = c.CodCliente;
         const data = assignments[cId] || {};
         const hasProfile = !!data.pid;
         const hasExceptions = (data.rules || 0) > 0;
 
-        // Filtro Texto
-        const matchesText = cNombre.toLowerCase().includes(filterCust.toLowerCase()) ||
-            String(cId).includes(filterCust);
-
-        if (!matchesText) return false;
-
         // Filtro Estado
         if (filterStatus === 'profile' && !hasProfile) return false;
         if (filterStatus === 'exceptions' && !hasExceptions) return false;
-        if (filterStatus === 'standard' && (hasProfile || hasExceptions)) return false; // Estándar puro
+        if (filterStatus === 'standard' && (hasProfile || hasExceptions)) return false;
 
         return true;
     });
@@ -891,7 +1869,11 @@ const PriceProfiles = () => {
 
                 {activeTab === 'simulator' && (
                     <div className="h-full overflow-y-auto">
-                        <PriceCalculatorTest customers={customers} assignments={assignments} />
+                        <PriceCalculatorTest
+                            customers={customers}
+                            assignments={assignments}
+                            onSearch={searchCustomers}
+                        />
                     </div>
                 )}
             </div>

@@ -269,7 +269,14 @@ class PricingService {
             moneda: moneda || 'UYU',
             breakdown,
             txt,
-            perfilesAplicados: [...appliedProfiles]
+            perfilesAplicados: [...appliedProfiles],
+            _debug: {
+                perfilesEvaluados: todosLosPerfiles,
+                reglasEncontradas: profileRules.length + adHocMapped.length,
+                globalIds,
+                sqlParams: { Cod: codArticulo, Qty: cantidad },
+                topRules: reglasFinales.map(r => ({ pid: r.PerfilID, val: r.Valor, min: r.CantidadMinima }))
+            }
         };
     }
 

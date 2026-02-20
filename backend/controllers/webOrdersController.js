@@ -363,6 +363,14 @@ exports.createWebOrder = async (req, res) => {
             return pA - pB;
         });
 
+        // --- LIMPIEZA DE DATOS (FIX IDPRODUCTOREACT) ---
+        // Asegurar que CodArticulo no tenga espacios antes de buscar IDReact
+        pendingOrderExecutions.forEach(exec => {
+            if (exec.codArticulo) {
+                exec.codArticulo = String(exec.codArticulo).trim();
+            }
+        });
+
         // --- NUEVO: LOOKUP DE IdProductoReact EN BASE A CodArticulo ---
         // Recolectar todos los códigos de artículo
         const codesToLookup = [...new Set(pendingOrderExecutions.map(e => e.codArticulo).filter(c => c))];

@@ -43,7 +43,7 @@ const InventoryPage = () => {
             let adaptedData = data.map(d => ({ ...d, code: d.AreaID, name: d.Nombre }));
 
             // Initial Filter based on User Role
-            const isAdmin = user?.rol === 'admin' || user?.rol === 'ADMIN';
+            const isAdmin = user?.rol === 'Admin';
 
             if (!isAdmin && user) {
                 const userArea = user.areaKey || user.areaId;

@@ -2,21 +2,22 @@ const { getPool, sql } = require('../config/db');
 const PricingService = require('../services/pricingService');
 
 // Obtener Precios Base (Lista Pagina o Filtrada)
+// Obtener Precios Base (Lista Pagina o Filtrada)
 const getBasePrices = async (req, res) => {
     try {
         const pool = await getPool();
         // Usamos LEFT JOIN con Articulos para mostrar Descripción si existe
-        // Asumimos 'Articulos' tiene 'Descripcion'
+        // PRECIO MULTI-MONEDA: Si un artículo tiene 2 precios, aparecerá 2 veces (deseado)
         const result = await pool.request().query(`
             SELECT A.CodArticulo, A.Descripcion, A.SupFlia, A.Grupo, 
                    LTRIM(RTRIM(SA.Articulo)) as GrupoNombre, 
-                   PB.Precio, PB.Moneda
+                   PB.ID, PB.Precio, PB.Moneda
             FROM Articulos A
             LEFT JOIN StockArt SA ON A.CodStock = SA.CodStock
             LEFT JOIN PreciosBase PB ON A.CodArticulo = PB.CodArticulo
-            ORDER BY A.SupFlia, A.Grupo, A.CodArticulo
+            ORDER BY A.SupFlia, A.Grupo, A.CodArticulo, PB.Moneda
         `);
-        console.log(`getBasePrices: Found ${result.recordset.length} articles.`);
+        console.log(`getBasePrices: Found ${result.recordset.length} rows.`);
         res.json(result.recordset);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -54,10 +55,10 @@ const saveBasePricesBulk = async (req, res) => {
                     .input('Moneda', sql.VarChar, item.moneda || 'UYU')
                     .query(`
                         MERGE PreciosBase AS target
-                        USING (SELECT @Cod AS CodArticulo) AS source
-                        ON (target.CodArticulo = source.CodArticulo)
+                        USING (SELECT @Cod AS CodArticulo, @Moneda AS Moneda) AS source
+                        ON (target.CodArticulo = source.CodArticulo AND target.Moneda = source.Moneda)
                         WHEN MATCHED THEN
-                            UPDATE SET Precio = @Precio, Moneda = @Moneda, UltimaActualizacion = GETDATE()
+                            UPDATE SET Precio = @Precio, UltimaActualizacion = GETDATE()
                         WHEN NOT MATCHED THEN
                             INSERT (CodArticulo, Precio, Moneda, UltimaActualizacion)
                             VALUES (@Cod, @Precio, @Moneda, GETDATE());
@@ -86,10 +87,17 @@ const calculatePriceEndpoint = async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 };
-
-const debugPriceEndpoint = async (req, res) => {
-    await PricingService.debugPrice(req, res);
+const calculatePriceEndpoint = async (req, res) => {
+    const { codArticulo, cantidad, clienteId } = req.body;
+    try {
+        const result = await PricingService.calculatePrice(codArticulo, cantidad, clienteId);
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 };
+
+
 
 module.exports = {
     getBasePrices,
@@ -98,3 +106,4 @@ module.exports = {
     calculatePriceEndpoint,
     debugPriceEndpoint
 };
+

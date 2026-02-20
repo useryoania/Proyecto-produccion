@@ -2,9 +2,70 @@ import React, { useState, useEffect } from 'react';
 import api from '../../services/api'; // Ajustar import según tu estructura
 import { toast } from 'react-hot-toast';
 
-const PriceCalculatorTest = ({ customers = [], assignments = {} }) => {
+const ProductSearchInput = ({ value, onChange, catalog = [] }) => {
+    const [suggestions, setSuggestions] = useState([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+
+    const handleSearch = (text) => {
+        onChange(text);
+        if (!text || text.length < 1) {
+            setSuggestions([]);
+            return;
+        }
+
+        const upperText = text.toUpperCase();
+        const matches = catalog.filter(p =>
+            p.CodArticulo.toUpperCase().includes(upperText) ||
+            (p.Descripcion && p.Descripcion.toUpperCase().includes(upperText))
+        ).slice(0, 10);
+
+        setSuggestions(matches);
+        setShowSuggestions(matches.length > 0);
+    };
+
+    const selectedProduct = catalog.find(p => p.CodArticulo === value);
+
+    return (
+        <div className="relative">
+            <input
+                className="w-full border border-slate-300 rounded p-2 font-mono text-sm focus:border-indigo-400 outline-none uppercase"
+                value={value}
+                onChange={e => handleSearch(e.target.value)}
+                placeholder="Busca un producto..."
+                onFocus={() => { if (value === '' && catalog.length > 0) { setSuggestions(catalog.slice(0, 10)); setShowSuggestions(true); } else if (value) { handleSearch(value); } }}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+            />
+            {selectedProduct && (
+                <div className="mt-1 ml-1 leading-tight">
+                    <div className="text-xs text-slate-600 font-bold">{selectedProduct.Descripcion}</div>
+                    <div className="text-[10px] text-slate-500">Precio Base: ${selectedProduct.Precio}</div>
+                </div>
+            )}
+            {showSuggestions && (
+                <div className="absolute top-full left-0 w-full bg-white border border-slate-200 shadow-lg rounded z-50 max-h-60 overflow-y-auto mt-1">
+                    {suggestions.map(s => (
+                        <div
+                            key={s.CodArticulo}
+                            className="p-2 hover:bg-indigo-50 cursor-pointer text-xs border-b last:border-0 flex justify-between items-center"
+                            onClick={() => { onChange(s.CodArticulo); setShowSuggestions(false); }}
+                        >
+                            <div className="flex flex-col overflow-hidden">
+                                <span className="font-bold text-indigo-700">{s.CodArticulo}</span>
+                                <span className="text-[10px] text-slate-400">{s.GrupoNombre || s.Grupo}</span>
+                            </div>
+                            <span className="text-slate-500 truncate max-w-[150px] text-right ml-2">{s.Descripcion}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+const PriceCalculatorTest = ({ customers = [], assignments = {}, onSearch }) => {
     const [products, setProducts] = useState([]);
     const [profiles, setProfiles] = useState([]);
+    const [showDebug, setShowDebug] = useState(false);
 
     // Formulario
     const [selectedProduct, setSelectedProduct] = useState('');
@@ -23,6 +84,16 @@ const PriceCalculatorTest = ({ customers = [], assignments = {} }) => {
     useEffect(() => {
         loadData();
     }, []);
+
+    // Effect to trigger server search when filter changes
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            if (onSearch) {
+                onSearch(clientFilter);
+            }
+        }, 500);
+        return () => clearTimeout(timeoutId);
+    }, [clientFilter]);
 
     const loadData = async () => {
         try {
@@ -59,7 +130,6 @@ const PriceCalculatorTest = ({ customers = [], assignments = {} }) => {
             if (Array.isArray(assigned)) ids = [...ids, ...assigned];
             else if (assigned) ids.push(assigned);
         }
-        return [...new Set(ids)];
         return [...new Set(ids)];
     }, [clientId, profiles, assignments]);
 
@@ -118,18 +188,11 @@ const PriceCalculatorTest = ({ customers = [], assignments = {} }) => {
                 <div className="space-y-5">
                     <div>
                         <label className="block text-sm font-bold text-slate-700 mb-1">Producto</label>
-                        <select
-                            className="w-full border border-slate-300 rounded p-2 focus:ring-2 focus:ring-indigo-100 outline-none"
+                        <ProductSearchInput
                             value={selectedProduct}
-                            onChange={e => setSelectedProduct(e.target.value)}
-                        >
-                            <option value="">-- Seleccionar --</option>
-                            {products.map(p => (
-                                <option key={p.CodArticulo} value={p.CodArticulo}>
-                                    {p.CodArticulo} - {p.Descripcion || p.Nombre || 'Sin nombre'} (${p.Precio})
-                                </option>
-                            ))}
-                        </select>
+                            onChange={setSelectedProduct}
+                            catalog={products}
+                        />
                     </div>
 
                     <div className="flex gap-4">
@@ -349,6 +412,23 @@ const PriceCalculatorTest = ({ customers = [], assignments = {} }) => {
                         </div>
                     )}
                 </div>
+            </div>
+
+            {/* DEBUG SECTION */}
+            <div className="mt-8 pt-4 border-t border-slate-200">
+                <button
+                    onClick={() => setShowDebug(!showDebug)}
+                    className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1"
+                >
+                    <i className={`fa-solid fa-bug ${showDebug ? 'text-indigo-500' : ''}`}></i>
+                    {showDebug ? 'Ocultar Info Técnica' : 'Ver Info Técnica (Debug)'}
+                </button>
+
+                {showDebug && result && result._debug && (
+                    <div className="mt-2 p-3 bg-slate-900 text-green-400 font-mono text-xs rounded overflow-x-auto">
+                        <pre>{JSON.stringify(result._debug, null, 2)}</pre>
+                    </div>
+                )}
             </div>
         </div>
     );
