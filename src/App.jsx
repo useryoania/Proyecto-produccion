@@ -45,7 +45,6 @@ function App() {
       </Routes>
     );
   }
-
   // CHECK USER TYPE FOR ROUTING
   const isClient = user?.userType === 'CLIENT' || user?.role === 'WEB_CLIENT';
 
@@ -58,7 +57,6 @@ function App() {
       </Routes>
     );
   }
-
   // ADMIN / INTERNAL ROUTING
   return (
     <Routes>
@@ -67,6 +65,5 @@ function App() {
     </Routes>
   );
 }
-
 // 🚀 ESTA LÍNEA ES LA QUE TE FALTA Y CAUSA EL ERROR
 export default App;
