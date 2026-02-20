@@ -7,6 +7,10 @@ export default defineConfig({
     react(),
     basicSsl()
   ],
+  build: {
+    outDir: 'backend/public',
+    emptyOutDir: true,
+  },
   optimizeDeps: {
     include: ['ag-grid-community', 'ag-grid-react', 'jspdf', 'jspdf-autotable']
   },
