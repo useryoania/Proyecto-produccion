@@ -45,7 +45,7 @@ export const AuthProvider = ({ children }) => {
         }
 
         if (token) {
-            // Fast path: if we have cached user_session, use it immediately
+            // Fast path: show cached session instantly (avoids loading flash)
             const cachedSession = localStorage.getItem('user_session');
             if (cachedSession) {
                 try {
@@ -53,23 +53,23 @@ export const AuthProvider = ({ children }) => {
                     if (cached.codCliente || cached.role === 'WEB_CLIENT') {
                         setUser(cached);
                         setIsLoggedIn(true);
-                        setLoading(false);
-                        return; // Skip API call - already have valid data
                     }
                 } catch (e) { /* ignore, will verify via API */ }
             }
 
-            // Slow path: verify with API
+            // Always refresh from API to get latest data from DB
             try {
                 const userData = await apiClient.get('/web-auth/me');
-                const user = userData.user || userData;
-                setUser(user);
+                const freshUser = userData.user || userData;
+                setUser(freshUser);
                 setIsLoggedIn(true);
+                localStorage.setItem('user_session', JSON.stringify(freshUser));
             } catch (err) {
                 console.error('❌ [PortalAuth] Session validation failed:', err);
                 setUser(null);
                 setIsLoggedIn(false);
                 localStorage.removeItem('auth_token');
+                localStorage.removeItem('user_session');
             }
         }
         setLoading(false);
@@ -130,8 +130,10 @@ export const AuthProvider = ({ children }) => {
 
     const updateProfile = async (updates) => {
         try {
-            const updatedUser = await apiClient.put('/users/profile', updates);
+            const response = await apiClient.put('/web-auth/profile', updates);
+            const updatedUser = response.user || response;
             setUser(prev => ({ ...prev, ...updatedUser }));
+            localStorage.setItem('user_session', JSON.stringify({ ...user, ...updatedUser }));
             return updatedUser;
         } catch (error) {
             console.error('Update profile failed', error);

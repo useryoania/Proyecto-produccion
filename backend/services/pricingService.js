@@ -9,8 +9,7 @@ class PricingService {
      * @param {number} clienteId - ID del cliente (opcional)
      * @param {Array} extraProfileIds - IDs de perfiles adicionales (ej: Urgencia)
      * @returns {Promise<object>} - { precioUnitario, precioTotal, desglose: [] }
-     */
-    static async calculatePrice(codArticulo, cantidad = 1, clienteId = null, extraProfileIds = []) {
+    static async calculatePrice(codArticulo, cantidad = 1, clienteId = null, extraProfileIds = [], variables = {}) {
         const pool = await getPool();
         const breakdown = [];
 
@@ -215,6 +214,44 @@ class PricingService {
             acumuladoRecargos += monto;
         });
 
+        // D. Fórmulas Especiales (Ej: Puntadas)
+        // Buscamos si hay alguna regla de tipo "formula_..." 
+        const formulaRules = reglasFinales.filter(r => r.TipoRegla.startsWith('formula_'));
+        formulaRules.forEach(r => {
+            const src = `[${r.NombrePerfil || 'Fórmula'}]`;
+            // Formato esperado de TipoRegla: 'formula_baseValor_baseMaximo_pasoValor_pasoCantidad'
+            // Ejemplo: 'formula_50_5000_10_1000'
+            const parts = r.TipoRegla.split('_');
+            if (parts.length >= 5) {
+                const fBase = parseFloat(parts[1]);     // 50
+                const fThreshold = parseFloat(parts[2]);// 5000
+                const fStepPrice = parseFloat(parts[3]);// 10
+                const fStepQty = parseFloat(parts[4]);  // 1000
+                
+                const puntadas = variables.puntadas || 0; // Se asume que viene el parametro
+                const limiteMaximo = parseFloat(parts[5] || Infinity); // Opcional maximo
+                
+                const puntadasEfectivas = Math.min(puntadas, limiteMaximo);
+
+                let testPrecioPorFormula = fBase;
+                if (puntadasEfectivas > fThreshold) {
+                    const extra = puntadasEfectivas - fThreshold;
+                    const steps = Math.ceil(extra / fStepQty);
+                    testPrecioPorFormula += steps * fStepPrice;
+                }
+
+                // La formula reemplaza el base actual
+                nuevoPrecioBase = testPrecioPorFormula;
+                breakdown.push({
+                    tipo: 'OVERRIDE',
+                    valor: nuevoPrecioBase,
+                    desc: `Cálculo por fórmula (${puntadasEfectivas} p.) ${src}`,
+                    profileId: r.PerfilID
+                });
+                acumuladoDescuentos = 0; // Reseteamos descuentos si aplica formula totalizadora
+            }
+        });
+
         let precioFinal = nuevoPrecioBase + acumuladoRecargos - acumuladoDescuentos;
         if (precioFinal < 0) precioFinal = 0;
 
@@ -285,9 +322,10 @@ class PricingService {
      */
     static async debugPrice(req, res) {
         try {
-            const { cod, qty, cid, extra } = req.query; // extra: "1,4" ids
+            const { cod, qty, cid, extra, puntadas } = req.query; // extra: "1,4" ids
             const extraIds = extra ? extra.split(',').map(Number) : [];
-            const result = await PricingService.calculatePrice(cod, qty || 1, cid, extraIds);
+            const vars = puntadas ? { puntadas: Number(puntadas) } : {};
+            const result = await PricingService.calculatePrice(cod, qty || 1, cid, extraIds, vars);
             res.json(result);
         } catch (e) {
             res.status(500).json({ error: e.message });

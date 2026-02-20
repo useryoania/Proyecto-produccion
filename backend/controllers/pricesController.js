@@ -79,25 +79,14 @@ const saveBasePricesBulk = async (req, res) => {
 
 // Endpoint de prueba para CALCULAR precio (Simulación)
 const calculatePriceEndpoint = async (req, res) => {
-    const { codArticulo, cantidad, clienteId } = req.body;
+    const { codArticulo, cantidad, clienteId, variables } = req.body;
     try {
-        const result = await PricingService.calculatePrice(codArticulo, cantidad, clienteId);
+        const result = await PricingService.calculatePrice(codArticulo, cantidad, clienteId, [], variables);
         res.json(result);
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
 };
-const calculatePriceEndpoint = async (req, res) => {
-    const { codArticulo, cantidad, clienteId } = req.body;
-    try {
-        const result = await PricingService.calculatePrice(codArticulo, cantidad, clienteId);
-        res.json(result);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-};
-
-
 
 module.exports = {
     getBasePrices,

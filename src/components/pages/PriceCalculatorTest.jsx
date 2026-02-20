@@ -72,6 +72,7 @@ const PriceCalculatorTest = ({ customers = [], assignments = {}, onSearch }) => 
     const [clientId, setClientId] = useState('');
     const [clientFilter, setClientFilter] = useState(''); // Nuevo filtro
     const [quantity, setQuantity] = useState(1);
+    const [puntadas, setPuntadas] = useState('');
 
     const [extraProfiles, setExtraProfiles] = useState([]); // IDs manuales
     const [activeProfiles, setActiveProfiles] = useState([]); // Todos los perfiles activos en la UI
@@ -147,7 +148,8 @@ const PriceCalculatorTest = ({ customers = [], assignments = {}, onSearch }) => 
                 cod: selectedProduct,
                 qty: quantity,
                 cid: clientId || null,
-                extra: extraProfiles.join(',')
+                extra: extraProfiles.join(','),
+                ...(puntadas && { puntadas })
             };
 
             const res = await api.get('/prices/calculate', { params });
@@ -231,6 +233,23 @@ const PriceCalculatorTest = ({ customers = [], assignments = {}, onSearch }) => 
                                 min="1"
                                 value={quantity}
                                 onChange={e => setQuantity(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-4">
+                        <div className="w-1/2">
+                            <label className="block text-sm font-bold text-slate-700 mb-1">
+                                <i className="fa-solid fa-calculator text-blue-500 mr-2"></i>Puntadas (Opcional)
+                            </label>
+                            <input
+                                type="number"
+                                placeholder="Ej: 7500"
+                                className="w-full border border-slate-300 rounded p-2 font-mono focus:ring-2 focus:ring-blue-100 outline-none text-slate-700"
+                                min="0"
+                                value={puntadas}
+                                onChange={e => setPuntadas(e.target.value)}
+                                title="Usado solo si el perfil tiene reglas matemáticas por puntadas"
                             />
                         </div>
                     </div>

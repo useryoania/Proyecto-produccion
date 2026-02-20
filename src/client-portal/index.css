@@ -20,6 +20,7 @@
   --color-amber-600: #d97706;
 
   --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-heading: 'DM Sans', sans-serif;
 
   --glass-bg: rgba(255, 255, 255, 0.7);
   --glass-border: rgba(255, 255, 255, 0.5);
@@ -34,6 +35,15 @@ body {
   color: var(--color-zinc-900);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
 }
 
 /* Glassmorphism Utility Class */

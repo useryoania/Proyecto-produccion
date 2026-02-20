@@ -1,6 +1,4 @@
-import React from 'react';
-
-const LogisticsLayout = ({ children, activeTab, setActiveTab, globalArea, setGlobalArea, areasList = [] }) => {
+const LogisticsLayout = ({ children, activeTab, setActiveTab, globalArea, setGlobalArea, areasList = [], disabled = false }) => {
     const tabs = [
         // { id: 'packing', label: 'Packing', icon: 'fa-box-open' }, // REMOVED as per request
         { id: 'dispatch', label: '1. Crear Remito', icon: 'fa-file-invoice' },
@@ -36,7 +34,8 @@ const LogisticsLayout = ({ children, activeTab, setActiveTab, globalArea, setGlo
                                 <select
                                     value={globalArea}
                                     onChange={(e) => setGlobalArea(e.target.value)}
-                                    className="appearance-none pl-3 pr-8 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold text-gray-700 focus:outline-none focus:border-indigo-500 focus:bg-white shadow-sm cursor-pointer hover:border-gray-300 transition-colors uppercase w-48"
+                                    disabled={disabled}
+                                    className={`appearance-none pl-3 pr-8 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold text-gray-700 focus:outline-none focus:border-indigo-500 focus:bg-white shadow-sm transition-colors uppercase w-48 ${disabled ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:border-gray-300'}`}
                                 >
                                     {areasList.map(area => (
                                         <option key={area} value={area}>{area}</option>

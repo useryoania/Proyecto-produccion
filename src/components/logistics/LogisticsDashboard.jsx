@@ -13,6 +13,9 @@ const DepositStockPage = React.lazy(() => import('./DepositStockPage'));
 
 const LogisticsDashboard = () => {
     const { user } = useAuth();
+    const isAdmin = user?.rol?.toLowerCase() === 'admin';
+    const isDeposito = user?.areaKey?.trim().toUpperCase() === 'DEPOSITO';
+    const hasFullAccess = isAdmin || isDeposito;
     const [activeTab, setActiveTab] = useState('dispatch');
 
     // Global Area Filter
@@ -30,19 +33,17 @@ const LogisticsDashboard = () => {
                     .map(a => a.code)
                     .sort();
 
-                // FILTER: Only ADMIN sees ALL/TODOS. Others see only their area.
-                const isAdmin = user?.rol === 'ADMIN' || user?.rol === 'admin';
-
-                if (!isAdmin && user) {
-                    const userArea = user.areaKey || user.areaId;
+                // FILTER: Only ADMIN or DEPOSITO sees ALL/TODOS. Others see only their area.
+                if (!hasFullAccess && user) {
+                    const userArea = (user.areaKey || user.areaId || '').trim();
                     if (userArea) {
                         // Filter to match user area
                         logisticsAreas = logisticsAreas.filter(a => a === userArea);
                     } else {
-                        // No area assigned, maybe empty or default?
+                        // No area assigned
                         logisticsAreas = [];
                     }
-                    // For non-admins, DO NOT add 'TODOS'
+                    // For non-full-access users, DO NOT add 'TODOS'
                     setAreasList(logisticsAreas);
 
                     // Force selection
@@ -50,7 +51,7 @@ const LogisticsDashboard = () => {
                         setGlobalArea(logisticsAreas[0]);
                     }
                 } else {
-                    // Admin sees TODOS + All Areas
+                    // Admin/DEPOSITO sees TODOS + All Areas
                     setAreasList(['TODOS', ...logisticsAreas]);
                 }
 
@@ -68,8 +69,8 @@ const LogisticsDashboard = () => {
         if (user) {
             const userArea = user.areaKey || user.areaId;
 
-            // If Admin/Supervisor, stay on TODOS (or last selection)
-            if (user.rol === 'ADMIN') {
+            // If Admin/DEPOSITO/Supervisor, stay on TODOS (or last selection)
+            if (hasFullAccess) {
                 // Keep default
             } else if (userArea) {
                 // For normal users, force their area
@@ -121,6 +122,7 @@ const LogisticsDashboard = () => {
             globalArea={globalArea}
             setGlobalArea={setGlobalArea}
             areasList={areasList}
+            disabled={!hasFullAccess}
         >
             {renderContent()}
         </LogisticsLayout>

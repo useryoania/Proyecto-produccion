@@ -7,6 +7,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute';
 import { MainLayout } from './layout/MainLayout';
 import { Dashboard } from './modulos/Dashboard';
 import { ProfileView } from './modulos/ProfileView';
+import { ProfileEdit } from './modulos/ProfileEdit';
 import OrderForm from './modulos/OrderForm';
 
 import { FactoryView } from './modulos/FactoryView';
@@ -31,6 +32,14 @@ export const ClientPortalApp = () => {
                         <ProtectedRoute>
                             <MainLayout>
                                 <ProfileView />
+                            </MainLayout>
+                        </ProtectedRoute>
+                    } />
+
+                    <Route path="/profile/edit" element={
+                        <ProtectedRoute>
+                            <MainLayout>
+                                <ProfileEdit />
                             </MainLayout>
                         </ProtectedRoute>
                     } />

@@ -163,6 +163,33 @@ if (require('fs').existsSync(publicPath)) {
     console.log('⚠️ No se encontró la carpeta "public". Ejecuta "npm run build" en el frontend y copia el contenido de "dist" a "backend/public".');
 }
 
+// ─── GLOBAL ERROR HANDLER ───
+app.use((err, req, res, next) => {
+    const status = err.status || 500;
+    const isProduction = process.env.NODE_ENV === 'production';
+
+    console.error(`💥 [ERROR] ${req.method} ${req.originalUrl}`, {
+        status,
+        message: err.message,
+        ...(isProduction ? {} : { stack: err.stack })
+    });
+
+    res.status(status).json({
+        success: false,
+        error: isProduction ? 'Error interno del servidor' : err.message
+    });
+});
+
+// ─── PROCESS-LEVEL ERROR HANDLERS ───
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('⚠️ [Unhandled Rejection]', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('💀 [Uncaught Exception]', err);
+    server.close(() => process.exit(1));
+});
+
 // --- INICIO DEL SERVIDOR Y SCHEDULER ---
 server.listen(PORT, async () => {
     console.log(`🚀 Servidor backend + Socket.io corriendo en puerto ${PORT}`);

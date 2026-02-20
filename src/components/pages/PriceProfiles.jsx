@@ -1331,6 +1331,18 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
                                                         onChange={e => {
                                                             if (e.target.value === 'tiered_wizard') {
                                                                 setWizardConfig({ cod, rules });
+                                                            } else if (e.target.value === 'formula_wizard') {
+                                                                // Open a simple prompt to generate the formula string
+                                                                const base = prompt("1. Ingrese el Precio Base (Ej: 50):", "50") || "50";
+                                                                const minLimit = prompt(`2. Ingrese hasta qué cantidad aplica el Base de $${base} (Ej: 5000):`, "5000") || "5000";
+                                                                const stepQty = prompt("3. Ingrese el tamaño de los bloques adicionales (Ej: 1000):", "1000") || "1000";
+                                                                const stepPrice = prompt(`4. Ingrese cuánto cobrar por cada ${stepQty} extra (Ej: 10):`, "10") || "10";
+
+                                                                const formulaStr = `formula_${base}_${minLimit}_${stepPrice}_${stepQty}`;
+                                                                const newRule = { ...baseRule, TipoRegla: formulaStr, CantidadMinima: 1 };
+                                                                const others = items.filter(i => i.CodArticulo !== cod);
+                                                                setItems([...others, newRule]);
+                                                                toast.success(`Fórmula configurada correctamente: Base $${base}, +$${stepPrice} cada ${stepQty}`);
                                                             } else {
                                                                 // Si estaba en wizard y vuelve a simple, se mantiene la base rule pero se borran las otras?
                                                                 // O simplemente actualizamos el tipo de la base rule.
@@ -1351,6 +1363,7 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
                                                         <option value="percentage_surcharge">Recargo Porcentual (%)</option>
                                                         <option value="fixed_discount">Descuento Monto ($)</option>
                                                         <option value="fixed_surcharge">Recargo Monto ($)</option>
+                                                        <option value="formula_wizard" className="font-bold text-blue-600">Fórmula por Bloques (Ej: Puntadas)</option>
                                                     </select>
                                                 </td>
                                                 {isTiered ? (
@@ -1361,6 +1374,10 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
                                                         >
                                                             <i className="fa-solid fa-layer-group mr-1"></i> {rules.length} Escalas Definidas - Editar
                                                         </button>
+                                                    </td>
+                                                ) : baseRule.TipoRegla.startsWith('formula_') ? (
+                                                    <td colSpan="2" className="p-2 text-center text-xs text-blue-600 font-medium">
+                                                        <i className="fa-solid fa-calculator"></i> Cálculo Dinámico Activado (Matemático)
                                                     </td>
                                                 ) : (
                                                     <>
