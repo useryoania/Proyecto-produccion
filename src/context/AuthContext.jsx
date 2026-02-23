@@ -14,6 +14,23 @@ export function AuthProvider({ children }) {
         if (savedUser && savedUser !== "undefined" && savedUser !== "null") {
             try {
                 const parsed = JSON.parse(savedUser);
+                if (parsed.token) {
+                    try {
+                        const payload = JSON.parse(atob(parsed.token.split('.')[1]));
+                        if (payload.exp * 1000 < Date.now()) {
+                            console.warn("Token expirado, cerrando sesión...");
+                            localStorage.removeItem("user");
+                            localStorage.removeItem("auth_token");
+                            localStorage.removeItem("user_session");
+                            setLoading(false);
+                            return;
+                        }
+                    } catch (e) {
+                        console.error("❌ [AuthError] Error parseando token:", e);
+                        localStorage.removeItem('user');
+                    }
+                }
+
                 console.log("✅ [AuthStep 2] Usuario recuperado:", parsed);
                 setUser(parsed);
             } catch (e) {
