@@ -40,4 +40,33 @@ api.interceptors.request.use(config => {
     return Promise.reject(error);
 });
 
+api.interceptors.response.use(
+    (response) => {
+        const newToken = response.headers['x-renewed-token'];
+        if (newToken) {
+            const userStr = localStorage.getItem('user');
+            if (userStr) {
+                try {
+                    const user = JSON.parse(userStr);
+                    user.token = newToken;
+                    localStorage.setItem('user', JSON.stringify(user));
+                    localStorage.setItem('auth_token', newToken);
+                } catch (e) {
+                    console.error("Error actualizando token", e);
+                }
+            }
+        }
+        return response;
+    },
+    (error) => {
+        if (error.response && error.response.status === 401) {
+            localStorage.removeItem('user');
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('user_session');
+            window.location.href = '/login';
+        }
+        return Promise.reject(error);
+    }
+)
+
 export default api;
