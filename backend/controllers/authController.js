@@ -85,6 +85,7 @@ exports.login = async (req, res) => {
 
         if (clientResult.recordset.length > 0) {
             const client = clientResult.recordset[0];
+
             let isValid = false;
             let isFirstTime = false;
 
@@ -104,12 +105,17 @@ exports.login = async (req, res) => {
                 return res.status(401).json({ success: false, message: 'Credenciales inválidas.' });
             }
 
+            // Verificar si el cliente está activo (después de validar contraseña)
+            if (!client.WebActive) {
+                return res.status(403).json({ success: false, message: 'Tu cuenta está pendiente de aprobación. Contactá al administrador.' });
+            }
+
             // Update Password if first time
             if (isFirstTime) {
                 await pool.request()
                     .input('ID', sql.Int, client.CodCliente)
                     .input('Pass', sql.NVarChar, password)
-                    .query("UPDATE Clientes SET WebPasswordHash = @Pass, WebResetPassword = 0, WebActive = 1 WHERE CodCliente = @ID");
+                    .query("UPDATE Clientes SET WebPasswordHash = @Pass, WebResetPassword = 0 WHERE CodCliente = @ID");
                 client.WebResetPassword = false;
             }
 
@@ -202,6 +208,11 @@ exports.googleLogin = async (req, res) => {
         if (clientResult.recordset.length > 0) {
             const cl = clientResult.recordset[0];
 
+            // Verificar si el cliente está activo
+            if (!cl.WebActive) {
+                return res.status(403).json({ success: false, message: 'Tu cuenta está pendiente de aprobación. Contactá al administrador.' });
+            }
+
             const token = jwt.sign(
                 {
                     id: cl.CodCliente,
@@ -217,7 +228,7 @@ exports.googleLogin = async (req, res) => {
 
             await pool.request()
                 .input('ID', sql.Int, cl.CodCliente)
-                .query("UPDATE Clientes SET WebLastLogin = GETDATE(), WebActive = 1 WHERE CodCliente = @ID");
+                .query("UPDATE Clientes SET WebLastLogin = GETDATE() WHERE CodCliente = @ID");
 
             return res.json({
                 success: true,

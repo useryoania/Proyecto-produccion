@@ -36,6 +36,7 @@ exports.login = asyncHandler(async (req, res) => {
     }
 
     const client = result.recordset[0];
+
     let isValid = false;
     let isFirstTime = false;
 
@@ -57,12 +58,17 @@ exports.login = asyncHandler(async (req, res) => {
         return res.status(401).json({ success: false, message: 'Contraseña incorrecta.' });
     }
 
+    // Verificar si el cliente está activo (después de validar contraseña)
+    if (!client.WebActive) {
+        return res.status(403).json({ success: false, message: 'Tu cuenta está pendiente de aprobación. Contactá al administrador.' });
+    }
+
     // Si es la primera vez, guardamos la contraseña
     if (isFirstTime) {
         await pool.request()
             .input('ID', sql.Int, client.CodCliente)
             .input('Pass', sql.NVarChar, password)
-            .query("UPDATE Clientes SET WebPasswordHash = @Pass, WebResetPassword = 0, WebActive = 1 WHERE CodCliente = @ID");
+            .query("UPDATE Clientes SET WebPasswordHash = @Pass, WebResetPassword = 0 WHERE CodCliente = @ID");
 
         // Actualizamos en memoria
         client.WebResetPassword = false;
@@ -236,7 +242,7 @@ exports.register = asyncHandler(async (req, res) => {
                 )
                 VALUES (
                     @CC, @IDC, @Nom, @Fant, @Email, @Tel, @Dir, @Ruc, 
-                    @Loc, @Age, @Pass, 1, 0, @Ced,
+                    @Loc, @Age, @Pass, 0, 0, @Ced,
                     @DepID, @LocID, @AgeID, @FenvID, @VenID, GETDATE()
                 )
             `);
@@ -244,28 +250,16 @@ exports.register = asyncHandler(async (req, res) => {
         createdOrUpdatedClient = { Nombre: company || name, Email: email };
     }
 
-    // Generate Token
-    const token = jwt.sign(
-        {
-            id: codClienteInterno,
-            email: email || createdOrUpdatedClient.Email,
-            name: createdOrUpdatedClient.Nombre,
-            role: 'WEB_CLIENT',
-            codCliente: codClienteInterno
-        },
-        JWT_SECRET, { expiresIn: '30d' }
-    );
+    const emailService = require('../services/emailService');
+    if (email) {
+        emailService.sendRegistrationMail(email, company || name).catch(console.error);
+    }
 
+    // NO auto-login: cuenta pendiente de aprobación
     res.json({
         success: true,
-        user: {
-            id: codClienteInterno,
-            email: email || createdOrUpdatedClient.Email,
-            name: createdOrUpdatedClient.Nombre,
-            role: 'WEB_CLIENT',
-            codCliente: codClienteInterno
-        },
-        token
+        pendingApproval: true,
+        message: 'Registro exitoso. Tu cuenta está pendiente de aprobación por un administrador.'
     });
 });
 

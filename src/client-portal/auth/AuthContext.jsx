@@ -101,13 +101,14 @@ export const AuthProvider = ({ children }) => {
 
     const register = async (data) => {
         try {
-            // Password validation relaxed as requested
-            // if (data.password.length < 6) { ... } REMOVED
-
             const response = await apiClient.post('/web-auth/register', data);
 
-            const { token, user } = response;
+            // Si la cuenta queda pendiente de aprobación, no logueamos
+            if (response.pendingApproval) {
+                return { pendingApproval: true, message: response.message };
+            }
 
+            const { token, user } = response;
             if (token) {
                 localStorage.setItem('auth_token', token);
                 setUser(user);

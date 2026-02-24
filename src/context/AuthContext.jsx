@@ -98,7 +98,10 @@ export function AuthProvider({ children }) {
 
                 return userData;
             } else {
-                throw new Error(data.message || 'Credenciales inválidas');
+                // Mostrar el mensaje exacto del servidor (ej: "pendiente de aprobación")
+                const errorMsg = data.message || 'Credenciales inválidas';
+                console.warn(`⚠️ [Login] Server response (${response.status}):`, errorMsg);
+                throw new Error(errorMsg);
             }
         } catch (error) {
             console.error("🔥 [LoginError]:", error);
