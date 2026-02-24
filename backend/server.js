@@ -14,6 +14,7 @@ console.log("---------------------------------------------------------");
 const { startAutoSync } = require('./scheduler'); // Asegúrate de crear este archivo
 
 const app = express();
+app.set('trust proxy', 1); // Necesario para funcionar detrás de Nginx (proxy reverso)
 
 // --- MIDDLEWARES DE SEGURIDAD ---
 const helmet = require('helmet');
@@ -148,6 +149,23 @@ const PORT = process.env.PORT || 5000;
 
 // FORCED RESTART TRIGGER: 2026-01-01 22:38
 
+// --- RUTAS TEMPORALES: Re-autorización de Google Drive ---
+// BORRAR DESPUÉS DE USARLAS
+const driveService = require('./services/driveService');
+app.get('/api/drive-reauth', (req, res) => {
+    const url = driveService.getAuthUrl();
+    if (!url) return res.status(500).send('Error generando URL de auth');
+    res.redirect(url);
+});
+app.get('/api/drive-callback', async (req, res) => {
+    const code = req.query.code;
+    if (!code) return res.status(400).send('Falta código');
+    const ok = await driveService.saveToken(code);
+    if (ok) res.send('✅ Token guardado exitosamente. Ya podés subir archivos. Reiniciá PM2: pm2 restart sistema-produccion');
+    else res.status(500).send('❌ Error guardando token');
+});
+// --- FIN RUTAS TEMPORALES ---
+
 // --- SERVIR FRONTEND EN PRODUCCIÓN ---
 const publicPath = path.join(__dirname, 'public');
 if (require('fs').existsSync(publicPath)) {
@@ -189,6 +207,7 @@ process.on('uncaughtException', (err) => {
     console.error('💀 [Uncaught Exception]', err);
     server.close(() => process.exit(1));
 });
+
 
 // --- INICIO DEL SERVIDOR Y SCHEDULER ---
 server.listen(PORT, async () => {

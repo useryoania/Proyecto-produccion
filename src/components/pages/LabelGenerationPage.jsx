@@ -87,7 +87,7 @@ const LabelGenerationPage = () => {
     const handlePrintSelected = () => {
         if (selection.length === 0) return;
         const ids = selection.join(',');
-        window.open(`http://localhost:5000/api/production-file-control/orden/batch/etiquetas/print?ids=${ids}`, '_blank');
+        window.open(`/api/production-file-control/orden/batch/etiquetas/print?ids=${ids}`, '_blank');
     };
 
     const toggleSelect = (orderId) => {
@@ -176,7 +176,7 @@ const LabelGenerationPage = () => {
 
     // Update preview URL to include timestamp for cache busting/refresh
     const previewUrl = selection.length > 0
-        ? `http://localhost:5000/api/production-file-control/orden/batch/etiquetas/print?ids=${selection.join(',')}&t=${previewTimestamp}`
+        ? `/api/production-file-control/orden/batch/etiquetas/print?ids=${selection.join(',')}&t=${previewTimestamp}`
         : null;
 
     return (

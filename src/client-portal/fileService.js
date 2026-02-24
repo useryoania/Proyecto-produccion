@@ -169,7 +169,7 @@ export const fileService = {
         formData.append('area', metadata.area);
 
         const token = localStorage.getItem('auth_token'); // CORREGIDO: key 'auth_token'
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+        const apiUrl = import.meta.env.VITE_API_URL || '/api';
 
         const response = await fetch(`${apiUrl}/web-orders/upload-stream`, {
             method: 'POST',

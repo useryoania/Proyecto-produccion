@@ -3,7 +3,7 @@ import api from '../../../services/apiClient';
 
 
 
-const BASE_URL = api.defaults.baseURL ? api.defaults.baseURL.replace(/\/api\/?$/, '') : 'http://localhost:5000';
+const BASE_URL = api.defaults.baseURL ? api.defaults.baseURL.replace(/\/api\/?$/, '') : '';
 
 const getImageUrl = (url) => {
     if (!url) return '';

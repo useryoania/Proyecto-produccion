@@ -50,7 +50,7 @@ export const PickupView = () => {
             const ordersToPrint = readyOrders.filter(o => selectedOrders.includes(o.id));
             const total = ordersToPrint.reduce((sum, o) => sum + o.amount, 0).toFixed(2);
 
-            const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+            const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
 
             const response = await fetch(`${API_URL}/web-orders/pickup-orders/pdf`, {
                 method: 'POST',
