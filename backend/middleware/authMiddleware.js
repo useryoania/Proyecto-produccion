@@ -25,6 +25,10 @@ exports.verifyToken = (req, res, next) => {
             }
             // Guardamos datos decodificados en req.user
             req.user = decoded;
+
+            const { iat, exp, ...userData } = decoded;
+            const newToken = jwt.sign(userData, JWT_SECRET, { expiresIn: '15m' });
+            res.setHeader('x-renewed-token', newToken)
             /* 
                decoded espera tener:
                { id, username, role, areaKey, ... }

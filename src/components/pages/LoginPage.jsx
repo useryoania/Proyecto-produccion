@@ -80,7 +80,7 @@ const LoginPage = () => {
                 navigate('/');
             }
         } catch (err) {
-            setError('Credenciales inválidas. Por favor, intentá de nuevo.');
+            setError(err.message || 'Credenciales inválidas. Por favor, intentá de nuevo.');
         } finally {
             setIsLoading(false);
         }

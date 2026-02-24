@@ -10,7 +10,7 @@ export const printLabelsHelper = (labels, orderInfo) => {
   }
 
   const orderId = orderInfo.id || orderInfo.OrdenID;
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const apiUrl = import.meta.env.VITE_API_URL || '/api';
 
   // Usamos el endpoint del backend para centralizar el diseño y la lógica
   const printUrl = `${apiUrl}/production-file-control/orden/${orderId}/etiquetas/print`;

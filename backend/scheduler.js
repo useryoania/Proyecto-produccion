@@ -1,5 +1,5 @@
 // 1. Cambia './controllers/tuControlador' por el nombre REAL de tu archivo
-const { syncOrdersLogic } = require('./controllers/restSyncController');
+const { syncOrdersLogic } = require('./controllers/RestSyncController');
 const { getPool } = require('./config/db');
 
 async function startAutoSync(io) {

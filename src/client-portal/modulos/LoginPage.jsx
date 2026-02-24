@@ -92,6 +92,7 @@ export const LoginPage = () => {
     const [methods, setMethods] = useState([]);
 
     const [error, setError] = useState('');
+    const [successMsg, setSuccessMsg] = useState('');
     const [loading, setLoading] = useState(false);
 
     // Initial Load of Nomenclators
@@ -142,7 +143,7 @@ export const LoginPage = () => {
                 const locName = locs.find(l => l.ID == formData.localidadId)?.Nombre || '';
                 const agencyName = agencies.find(a => a.ID == formData.agenciaId)?.Nombre || '';
 
-                await register({
+                const result = await register({
                     idcliente: formData.idcliente, // Send ID
                     name: formData.name,
                     email: formData.email,
@@ -163,6 +164,13 @@ export const LoginPage = () => {
                     localidad: locName,
                     agencia: agencyName
                 });
+
+                if (result?.pendingApproval) {
+                    setError('');
+                    setLoading(false);
+                    setSuccessMsg(result.message || 'Registro exitoso. Tu cuenta está pendiente de aprobación.');
+                    return;
+                }
             }
             navigate(from, { replace: true });
         } catch (err) {
@@ -272,6 +280,12 @@ export const LoginPage = () => {
 
                             <input type="password" name="password" placeholder="Contraseña" className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:border-black" value={formData.password} onChange={handleChange} required />
                             <input type="password" name="confirmPassword" placeholder="Repetir contraseña" className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:border-black" value={formData.confirmPassword} onChange={handleChange} required />
+                        </div>
+                    )}
+
+                    {successMsg && (
+                        <div className="p-3 bg-green-100 text-green-700 rounded text-sm text-center font-medium">
+                            ✅ {successMsg}
                         </div>
                     )}
 
