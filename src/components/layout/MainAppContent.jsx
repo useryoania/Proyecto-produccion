@@ -129,6 +129,8 @@ const MainAppContent = ({ menuItems = [] }) => {
     const [openMenus, setOpenMenus] = useState({});
     const [isCollapsed, setIsCollapsed] = useState(false);
 
+    console.log(`[MainAppContent] Render! Path: ${location.pathname}, Key: ${location.key}`);
+
     const toggleMenu = (id) => setOpenMenus(prev => ({ ...prev, [id]: !prev[id] }));
 
     const menuTree = useMemo(() => {

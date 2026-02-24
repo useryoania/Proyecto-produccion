@@ -21,12 +21,21 @@ class LabelGenerationService {
             // 1. Obtener Info Orden Actual
             const orderRes = await pool.request()
                 .input('OID', sql.Int, ordenId)
-                .query("SELECT * FROM Ordenes WHERE OrdenID = @OID");
+                .query(`SELECT * FROM Ordenes WHERE OrdenID = @OID`);
 
             if (orderRes.recordset.length === 0) {
                 return { success: false, error: 'Orden no encontrada' };
             }
             const o = orderRes.recordset[0];
+
+            // "si ya fue avisado en react y cargado al erp, no se puede refacturar"
+            // Comprobamos de la manera más segura posible si existen las flags en el row extraído (ignorando si la DB no las tiene)
+            const isAvisado = o.AvisadoReact === true || o.AvisadoReact === 1 || o.AvisadoReact === '1';
+            const isFacturado = o.FacturadoERP === true || o.FacturadoERP === 1 || o.FacturadoERP === '1';
+
+            if (isAvisado || isFacturado) {
+                return { success: false, error: 'La orden ya fue avisada en React y cargada al ERP. No se puede generar/modificar.' };
+            }
 
             // --- VALIDACIONES DE NEGOCIO ---
 
@@ -71,13 +80,23 @@ class LabelGenerationService {
             }
 
             // C. CALCULO DE PRECIO (Consolidado)
-            // Buscar todas las órdenes del mismo pedido para sumar precio
+            // Buscar todas las órdenes del mismo pedido para sumar precio y verificar moneda base
             const siblingsRes = await pool.request()
                 .input('BasePattern', sql.VarChar, `${baseOrderNum} (%`)
                 .input('BaseExact', sql.VarChar, baseOrderNum)
-                .query("SELECT * FROM Ordenes WHERE CodigoOrden = @BaseExact OR CodigoOrden LIKE @BasePattern");
+                .query(`
+                    SELECT O.*, PB.Moneda as MonedaBase
+                    FROM Ordenes O
+                    LEFT JOIN PreciosBase PB ON O.CodArticulo = PB.CodArticulo
+                    WHERE O.CodigoOrden = @BaseExact OR O.CodigoOrden LIKE @BasePattern
+                `);
 
             const siblings = siblingsRes.recordset;
+
+            // "en un pedido puedo tener articulos en usa y en uy, ahora si hay usd debe generarme en usd..."
+            const hasUSD = siblings.some(s => (s.MonedaBase || '').toUpperCase() === 'USD');
+            const targetCurrency = hasUSD ? 'USD' : 'UYU';
+
             let totalPriceSum = 0;
             let mainOrderProfiles = '';
 
@@ -103,12 +122,14 @@ class LabelGenerationService {
                         extraProfiles.push(3);
                     }
 
-                    // Calcular
+                    // Calcular Precio aplicando Moneda Destino
                     const priceResult = await PricingService.calculatePrice(
                         sib.CodArticulo || '',
                         sib.Magnitud || 1,
                         internalClientId,
-                        extraProfiles
+                        extraProfiles,
+                        {}, // variables empty obj
+                        targetCurrency // Forzamos UYU o USD 
                     );
 
                     const costoCalculado = priceResult.precioTotal || 0;
@@ -142,7 +163,10 @@ class LabelGenerationService {
             const qrTrabajo = (o.DescripcionTrabajo || '').replace(/\$\*/g, ' ').trim();
             const isUrgent = (o.Prioridad && (o.Prioridad.toLowerCase().includes('urgente') || o.Prioridad.toLowerCase().includes('alta')));
             const qrUrgencia = isUrgent ? '2' : '1';
-            const qrProducto = finalIdProdReact || '0';
+
+            // "ahora para geneerar el codigo qr, de acuerdo a la oneda vamos a utilizar estos articulos 82 si es uy y 150 si es usd"
+            const qrProducto = targetCurrency === 'USD' ? '150' : '82';
+            // Antiguo mapping: const qrProducto = finalIdProdReact || '0';
             const qrCantidad = o.Magnitud || '1';
             const qrImporte = totalPriceSum.toFixed(2);
 
@@ -185,7 +209,7 @@ class LabelGenerationService {
             transaction = new sql.Transaction(pool);
             await transaction.begin();
 
-            // 1. Limpieza Profunda (Movimientos -> Bultos -> Etiquetas)
+            // 1. Limpieza Profunda (Movimientos -> EnvioItems -> Bultos -> Etiquetas)
 
             // A. Borrar Movimientos (Evitar errores FK y limpiar historial de orden re-generada)
             try {
@@ -198,6 +222,25 @@ class LabelGenerationService {
                 `);
             } catch (ign) {
                 console.warn("Advertencia borrando movimientos:", ign.message);
+            }
+
+            // A.5 Borrar Items de Envio (Remitos) para no violar FK__Logistica__Bulto
+            try {
+                await new sql.Request(transaction).input('OID', sql.Int, ordenId).query(`
+                    DELETE LE
+                    FROM Logistica_EnvioItems LE
+                    INNER JOIN Logistica_Bultos LB ON LE.BultoID = LB.BultoID
+                    INNER JOIN Etiquetas E ON LB.CodigoEtiqueta = E.CodigoEtiqueta
+                    WHERE E.OrdenID = @OID
+                `);
+                await new sql.Request(transaction).input('OID', sql.Int, ordenId).query(`
+                    DELETE LE
+                    FROM Logistica_EnvioItems LE
+                    INNER JOIN Logistica_Bultos LB ON LE.BultoID = LB.BultoID
+                    WHERE LB.OrdenID = @OID
+                `);
+            } catch (ign) {
+                console.warn("Advertencia borrando EnvioItems:", ign.message);
             }
 
             // B. Borrar Bultos (vía Etiqueta - atrapa OrdenID NULL)

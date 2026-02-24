@@ -1,76 +1,94 @@
 const axios = require('axios');
 const cron = require('node-cron');
 const { getPool, sql } = require('../config/db');
+const { isProcessActive, updateProcessLog } = require('../controllers/configuracionesController');
 
 // --- CONFIGURACIÓN ---
 const PLANILLA_URL = process.env.PLANILLA_SCRIPT_URL;
 const RUN_EVERY_X_MINUTES = 5;
 
 // --- FUNCIÓN DE SINCRONIZACIÓN ---
-async function syncPlanilla() {
-    // 1. CHEQUEO GLOBAL (.ENV) - INTERRUPTOR MAESTRO
-    if (process.env.ENABLE_PLANILLA_SYNC !== 'true') {
+async function syncPlanillaArea(areaId, procesoID) {
+    // 1. CHEQUEO DINÁMICO DESDE BASE DE DATOS
+    const isActive = await isProcessActive(procesoID);
+    if (!isActive) {
         // Silencioso para no saturar logs si está desactivado a propósito
         return;
     }
 
-    console.log(`[PlanillaSync] Iniciando sincronización a las ${new Date().toLocaleTimeString()}...`);
+    console.log(`[PlanillaSync-${areaId}] Iniciando sincronización a las ${new Date().toLocaleTimeString()}...`);
 
     if (!PLANILLA_URL) {
-        console.warn("[PlanillaSync] No hay URL configurada en .env (PLANILLA_SCRIPT_URL). Omitiendo.");
+        console.warn(`[PlanillaSync-${areaId}] No hay URL configurada en .env (PLANILLA_SCRIPT_URL). Omitiendo.`);
         return;
     }
 
     try {
-        // 2. OBTENER FILAS NUEVAS APUNTANDO AL SCRIPT
-        const res = await axios.get(PLANILLA_URL);
+        // 2. OBTENER FILAS NUEVAS APUNTANDO AL SCRIPT, con parametro 'area' y un Timeout explícito de 30s
+        const res = await axios.get(`${PLANILLA_URL}?area=${areaId}`, { timeout: 60000 }); // 60 segundos
         const data = res.data;
 
         // DEBUG: VER QUÉ RESPONDE LA PLANILLA
-        console.log(`[PlanillaSync DEBUG] Respuesta:`, JSON.stringify(data).substring(0, 200) + "...");
+        // console.log(`[PlanillaSync-${areaId} DEBUG] Respuesta:`, JSON.stringify(data).substring(0, 200) + "...");
 
         if (data.status === "NO_NEW_DATA" || data.status === "NO_DATA") {
-            // console.log("[PlanillaSync] No hay nuevos datos.");
             return;
         }
 
         if (data.status === "OK" && data.data && data.data.length > 0) {
-            console.log(`[PlanillaSync] Recibidos ${data.data.length} pedidos nuevos.`);
+            console.log(`[PlanillaSync-${areaId}] Recibidos ${data.data.length} pedidos nuevos.`);
 
             // 3. PROCESAR CADA PEDIDO
             for (const pedido of data.data) {
                 try {
-                    // LLAMADA LOCAL A LA API DE INTEGRACIÓN
-                    // Usamos la KEY interna para autenticarnos como si fuéramos externos
+                    // LLAMADA LOCAL A LA API DE INTEGRACIÓN con Timeout de 30s
                     await axios.post('http://localhost:5000/api/web-orders/integration/create', pedido, {
-                        headers: { 'x-api-key': process.env.INTEGRATION_API_KEY || 'macrosoft-secret-key' }
+                        headers: { 'x-api-key': process.env.INTEGRATION_API_KEY || 'macrosoft-secret-key' },
+                        timeout: 30000
                     });
 
-                    console.log(`✅ [PlanillaSync] Pedido fila ${pedido.rowNumber} creado OK.`);
+                    console.log(`✅ [PlanillaSync-${areaId}] Pedido fila ${pedido.rowNumber} creado OK.`);
 
                 } catch (errPedido) {
-                    console.error(`❌ [PlanillaSync] Error fila ${pedido.rowNumber}:`, errPedido.message);
+                    console.error(`❌ [PlanillaSync-${areaId}] Error fila ${pedido.rowNumber}:`, errPedido.response?.data || errPedido.message);
                 }
             }
 
-            console.log(`[PlanillaSync] Lote procesado. Última fila: ${data.processedUntil}`);
+            console.log(`[PlanillaSync-${areaId}] Lote procesado. Última fila: ${data.processedUntil}`);
+            await updateProcessLog(procesoID, 'OK', `Recibidos y procesados ${data.data.length} pedidos. Última fila: ${data.processedUntil}`);
+        } else {
+            // Actializar la ultima ejecucion igual aunque no haya datos nuevos (Para saber que sí corrió)
+            await updateProcessLog(procesoID, 'OK', 'Planilla consultada. Sin datos nuevos.');
         }
 
     } catch (error) {
-        console.error("[PlanillaSync] Error de conexión:", error.message);
+        console.error(`[PlanillaSync-${areaId}] Error de conexión:`, error.message);
+        await updateProcessLog(procesoID, 'ERROR', `Error conexión: ${error.message}`);
     }
 }
 
+async function syncAllPlanillas() {
+    // Al usar Promise.all, Node dispara las dos tareas exactamente al mismo tiempo
+    await Promise.all([
+        syncPlanillaArea('DF', 'SYNC_PLANILLA_SHEETS_DF'),
+        syncPlanillaArea('SB', 'SYNC_PLANILLA_SHEETS_SUB')
+    ]);
+}
 // --- ACTIVAR CRON ---
 // Se ejecuta cada 5 minutos
-cron.schedule(`*/${RUN_EVERY_X_MINUTES} * * * *`, syncPlanilla);
+cron.schedule(`*/${RUN_EVERY_X_MINUTES} * * * *`, () => {
+    // Wrap in setImmediate to avoid blocking node-cron's internal timing loop
+    setImmediate(() => {
+        syncAllPlanillas().catch(err => console.error("Cron Error Error:", err));
+    });
+});
 
 // Ejecutar INMEDIATAMENTE al iniciar (tras 5s de espera para DB)
 setTimeout(() => {
     console.log("[PlanillaSync] Ejecutando sincronización inicial...");
-    syncPlanilla();
+    syncAllPlanillas().catch(err => console.error(err));
 }, 5000);
 
-console.log(`[PlanillaSync] Cron cargado (Intervalo: ${RUN_EVERY_X_MINUTES}m). Estado: ${process.env.ENABLE_PLANILLA_SYNC === 'true' ? 'ACTIVO ✅' : 'INACTIVO ❌'}`);
+console.log(`[PlanillaSync] Cron cargado (Intervalo: ${RUN_EVERY_X_MINUTES}m). La activación depende de ConfiguracionesSync en DB.`);
 
-module.exports = { syncPlanilla };
+module.exports = { syncAllPlanillas };

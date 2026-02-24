@@ -184,11 +184,17 @@ const LogisticsView = ({ areaCode }) => {
 
         // VALIDACIÓN PREVIA DE ESTADOS (Frontend)
         const selectedObjects = selectedBasket.ordenes.filter(o => selectedOrders.includes(o.id));
-        console.log("🔍 Validando despacho para:", selectedObjects.map(o => `${o.code} [${o.status}]`));
+
+        // Identificar cuáles órdenes son FINALES (requieren validación estricta)
+        // Las intermedias (tipoBulto = 'EN_PROCESO') pueden viajar parcial e independientemente.
+        const isFinal = (b) => !b.tipoBulto || b.tipoBulto.toUpperCase() === 'PROD_TERMINADO';
+        const finalObjects = selectedObjects.filter(o => (o.bultos || []).some(isFinal));
+
+        console.log("🔍 Validando despacho estricto para órdenes FINALES:", finalObjects.map(o => `${o.code} [${o.status}]`));
 
         const validStatuses = ['PRONTO', 'EN LOGISTICA', 'FINALIZADO', 'TERMINADO', 'ENTREGADA', 'ENVIADO'];
 
-        const invalidOrders = selectedObjects.filter(o => {
+        const invalidOrders = finalObjects.filter(o => {
             const st = (o.status || '').toUpperCase().trim();
             // Estado válido si está en la lista o contiene "PRONTO"
             return !validStatuses.includes(st) && !st.includes('PRONTO');
@@ -197,52 +203,52 @@ const LogisticsView = ({ areaCode }) => {
         if (invalidOrders.length > 0) {
             const list = invalidOrders.slice(0, 10).map(o => `- ${o.code} (Estado: ${o.status})`).join('\n');
             const more = invalidOrders.length > 10 ? `\n...y ${invalidOrders.length - 10} más.` : '';
-            alert(`⛔ ACCIÓN DENEGADA.\n\nNo se puede generar remito porque hay órdenes seleccionadas que no están finalizadas:\n\n${list}${more}\n\nPor favor, finalice el control de estas órdenes antes de despachar.`);
+            alert(`⛔ ACCIÓN DENEGADA.\n\nHay órdenes seleccionadas DE PRODUCTO FINAL que no están terminadas:\n\n${list}${more}\n\nPor favor, finalice el control antes de despacharlas. (Las intermedias no tienen este bloqueo).`);
             return;
         }
 
-        // VALIDACIÓN DE GRUPO COMPLETO (Debes llevarte todas las partes visibles de la orden)
+        // VALIDACIÓN DE GRUPO COMPLETO (Solo aplicable a órdenes finales)
         const allBasketOrders = selectedBasket.ordenes;
         const selectedIds = new Set(selectedOrders);
         const partialGroups = [];
 
         const getBaseCode = (code) => code.split('(')[0].trim();
 
-        // Mapa de grupos en el canasto actual
+        // Armamos los grupos, peros SOLO considerando partes finales de la orden
         const basketGroups = {};
         allBasketOrders.forEach(o => {
-            const base = getBaseCode(o.code);
-            if (!basketGroups[base]) basketGroups[base] = [];
-            basketGroups[base].push(o);
+            if ((o.bultos || []).some(isFinal)) {
+                const base = getBaseCode(o.code);
+                if (!basketGroups[base]) basketGroups[base] = [];
+                basketGroups[base].push(o);
+            }
         });
 
-        // Verificar que si tocamos un grupo, lo llevemos entero (de lo que hay disponible)
-        selectedObjects.forEach(sel => {
+        finalObjects.forEach(sel => {
             const base = getBaseCode(sel.code);
             const groupMembers = basketGroups[base];
-            // Buscar miembros no seleccionados
-            const unselectedMembers = groupMembers.filter(m => !selectedIds.has(m.id));
+            if (groupMembers) {
+                const unselectedMembers = groupMembers.filter(m => !selectedIds.has(m.id));
 
-            if (unselectedMembers.length > 0) {
-                if (!partialGroups.find(p => p.base === base)) {
-                    partialGroups.push({ base, missing: unselectedMembers.map(m => m.code) });
+                if (unselectedMembers.length > 0) {
+                    if (!partialGroups.find(p => p.base === base)) {
+                        partialGroups.push({ base, missing: unselectedMembers.map(m => m.code) });
+                    }
                 }
             }
         });
 
         if (partialGroups.length > 0) {
             const msg = partialGroups.map(g =>
-                `- Orden ${g.base}: Faltan agregar ${g.missing.join(', ')}`
+                `- Orden ${g.base}: Faltan ${g.missing.join(', ')}`
             ).join('\n');
-            alert(`⛔ SELECCIÓN INCOMPLETA.\n\nPara mantener la integridad, debe despachar TODAS las partes de la orden juntas:\n\n${msg}`);
+            alert(`⛔ INCOMPLETO (TIPO FINAL).\n\nLos productos FINALES exigen llevarse TODAS sus partes juntas:\n\n${msg}\n\nSelecciónelas también para continuar.`);
             return;
         }
 
-        // VALIDACIÓN SERVER-SIDE (Integridad Global)
+        // VALIDACIÓN SERVER-SIDE (Integridad Global) - Solo Finales físicos
         try {
-            // Filtrar solo bultos físicos reales para validar
-            // Los virtuales (nuevos) no se validan porque se crearán completos en este acto
-            const physicalBultosIds = selectedObjects
+            const physicalBultosIds = finalObjects
                 .flatMap(o => (o.bultos || []).map(b => b.id))
                 .filter(id => id); // Remove nulls/undefined
 
@@ -251,7 +257,7 @@ const LogisticsView = ({ areaCode }) => {
 
                 if (!validation.valid) {
                     const list = validation.errors.slice(0, 10).join('\n');
-                    alert(`⛔ INTEGRIDAD GLOBAL DE PEDIDO.\n\nAunque las órdenes seleccionadas están listas, existen OTRAS órdenes del mismo pedido en esta área que NO están terminadas:\n\n${list}\n\nDebe completar TODO el pedido antes de generar el remito.`);
+                    alert(`⛔ INTEGRIDAD GLOBAL DE PEDIDO.\n\nExisten OTRAS órdenes asociadas a este PRODUCTO FINAL en esta área que NO están terminadas:\n\n${list}\n\nDebe completar TODO el pedido antes de generar el remito.`);
                     return;
                 }
             }

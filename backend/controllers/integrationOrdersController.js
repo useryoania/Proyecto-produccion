@@ -9,6 +9,8 @@ const SERVICE_TO_AREA_MAP = {
     'dtf': 'DF',
     'DF': 'DF',
     'sublimacion': 'SB',
+    'SB': 'SB',
+    'SUB': 'SB',
     'ecouv': 'ECOUV',
     'directa_320': 'DIRECTA',
     'directa_algodon': 'DIRECTA',
@@ -23,6 +25,12 @@ const SERVICE_TO_AREA_MAP = {
 exports.createPlanillaOrder = async (req, res) => {
     console.log("📥 [IntegrationOrder] Iniciando proceso de creación desde Planilla...");
     // console.log("Payload recibido:", JSON.stringify(req.body, null, 2));
+
+    // --- DEBUG SOLICITADO POR EL USUARIO ---
+    console.log("=========================================================");
+    console.log("🚨 NUEVO PEDIDO LLEGANDO DESDE GOOGLE SHEETS / WEB:");
+    console.log(JSON.stringify(req.body, null, 2));
+    console.log("=========================================================");
 
     // --- 1. DATOS BÁSICOS & ADAPTACIÓN DE FORMATO ---
     const {
@@ -87,16 +95,18 @@ exports.createPlanillaOrder = async (req, res) => {
                 esValido = false;
                 observacionesValidacion.push(`Cliente '${clienteInfo.id}' no encontrado en BD.`);
 
-                // REQUERIDO: Usar el ID proporcionado aunque no exista en base de datos
-                idClienteReact = clienteInfo.id;
+                // REQUERIDO: Usar el ID en nombre para no perderlo, pero anular idClienteReact para evitar varchar-to-numeric SQL Crash
                 if (!nombreCliente) nombreCliente = `Cliente ${clienteInfo.id}`;
+                idClienteReact = null;
             }
         } catch (errSearch) {
             console.error("Error buscando cliente:", errSearch);
             esValido = false;
             observacionesValidacion.push("Error interno al buscar cliente.");
-            // Fallback
-            idClienteReact = clienteInfo.id;
+
+            // Fallback (solo ponerlo en nombre, NO inyectar texto puro en IDReact para evitar crash SQL)
+            if (!nombreCliente) nombreCliente = `Cliente ${clienteInfo.id}`;
+            idClienteReact = null;
         }
     }
 
@@ -173,12 +183,18 @@ exports.createPlanillaOrder = async (req, res) => {
         }
 
         if (!idClienteReact && codCliente) {
-            const clientRes = await pool.request().input('cod', sql.Int, codCliente).query("SELECT IDReact FROM Clientes WHERE CodCliente = @cod");
-            if (clientRes.recordset.length > 0) idClienteReact = clientRes.recordset[0].IDReact;
+            const parsedCod = parseInt(codCliente);
+            if (!isNaN(parsedCod)) {
+                const clientRes = await pool.request().input('cod', sql.Int, parsedCod).query("SELECT IDReact FROM Clientes WHERE CodCliente = @cod");
+                if (clientRes.recordset.length > 0) idClienteReact = clientRes.recordset[0].IDReact;
 
-            if (!idClienteReact) {
-                // NO invalidamos. Permitimos con CodCliente.
-                observacionesValidacion.push(`IDReact no enccontrado para CodCliente ${codCliente}`);
+                if (!idClienteReact) {
+                    // NO invalidamos. Permitimos con CodCliente.
+                    observacionesValidacion.push(`IDReact no enccontrado para CodCliente ${parsedCod}`);
+                }
+            } else {
+                observacionesValidacion.push(`CodCliente inválido omitido: ${codCliente}`);
+                codCliente = null; // Wipe invalid value so it won't crash later
             }
         }
 
@@ -220,12 +236,35 @@ exports.createPlanillaOrder = async (req, res) => {
                     };
                 });
 
+                let localMaterial = cabecera.material || 'Estándar';
+                let localVariante = cabecera.variante || 'N/A';
+                let localCodArticulo = cabecera.codArticulo;
+                let localCodStock = cabecera.codStock;
+
+                // --- HARCODEO DE EXTRAS (BORDADO, CORTE LASER, COSTURA) ---
+                if (localCodArticulo === 'SERV-CORTE') {
+                    localCodArticulo = '112';
+                    localCodStock = '1.1.6.1';
+                    localMaterial = 'Corte Laser personalizado';
+                    localVariante = 'Corte Laser';
+                } else if (localCodArticulo === 'SERV-COSTURA') {
+                    localCodArticulo = '115';
+                    localCodStock = '1.1.7.1';
+                    localMaterial = 'Costura';
+                    localVariante = 'Costura';
+                } else if (localCodArticulo === 'SERV-BORDADO') {
+                    localCodArticulo = '109';
+                    localCodStock = '1.1.4.1';
+                    localMaterial = 'Bordado personalizado';
+                    localVariante = 'Bordado';
+                }
+
                 pendingOrderExecutions.push({
                     areaID: areaID,
-                    material: cabecera.material || 'Estándar',
-                    variante: cabecera.variante || 'N/A',
-                    codArticulo: cabecera.codArticulo,
-                    codStock: cabecera.codStock,
+                    material: localMaterial,
+                    variante: localVariante,
+                    codArticulo: localCodArticulo,
+                    codStock: localCodStock,
                     items: ordenItems,
                     isExtra: !srv.esPrincipal,
                     notaAdicional: srv.notas || ''
@@ -237,11 +276,13 @@ exports.createPlanillaOrder = async (req, res) => {
                 areaID: mainAreaID,
                 material: 'Estándar',
                 items: items.map(sl => ({
-                    fileName: sl.fileName || sl.archivoPrincipal?.name,
-                    copies: sl.cantidad,
-                    note: sl.nota,
-                    width: sl.width,
-                    height: sl.height
+                    fileName: sl.fileName || sl.archivoPrincipal?.name || 'SinNombre.dat',
+                    originalUrl: sl.fileName || sl.archivoPrincipal?.name,
+                    copies: sl.copies || sl.cantidad || 1,
+                    note: sl.nota || '',
+                    width: sl.width || 0,
+                    height: sl.height || 0,
+                    observaciones: sl.printSettings?.observation || (sl.configuracion?.mode && sl.configuracion.mode !== 'normal' ? `Modo: ${sl.configuracion.mode}` : '')
                 })),
                 isExtra: false
             });
@@ -337,24 +378,34 @@ exports.createPlanillaOrder = async (req, res) => {
 
                 const areaUM = mapaAreasUM[exec.areaID] || 'u';
 
+                const parsedCodValid = codCliente ? parseInt(codCliente) : null;
+                const safeCodCliente = isNaN(parsedCodValid) ? null : parsedCodValid;
+
+                // Prevenir texto cayendo en IDs si por algun motivo llegaron sucios
+                let safeIdClientReact = null;
+                if (idClienteReact) {
+                    // Si idClienteReact viene directo del query, lo pasamos a string o lo limpiamos
+                    safeIdClientReact = idClienteReact.toString();
+                }
+
                 const resOrder = await new sql.Request(transaction)
-                    .input('AreaID', sql.VarChar(20), exec.areaID)
+                    .input('AreaID', sql.VarChar(20), exec.areaID || 'GENE')
                     .input('Cliente', sql.NVarChar(200), nombreCliente)
-                    .input('CodCliente', sql.Int, codCliente) // Puede ser null
-                    .input('IdClienteReact', sql.VarChar(50), idClienteReact ? idClienteReact.toString() : null)
+                    .input('CodCliente', sql.Int, safeCodCliente)
+                    .input('IdClienteReact', sql.VarChar(50), safeIdClientReact)
                     .input('Desc', sql.NVarChar(300), jobName)
                     .input('Prio', sql.VarChar(20), urgency)
                     .input('Mat', sql.VarChar(255), exec.material)
                     .input('Var', sql.VarChar(100), exec.variante)
                     .input('Cod', sql.VarChar(50), exec.codigoOrden)
-                    .input('ERP', sql.VarChar(50), erpDocNumber) // "Fila: X - Orden: Y"
-                    .input('Nota', sql.NVarChar(sql.MAX), finalNote) // Solo nota cliente
+                    .input('ERP', sql.VarChar(50), erpDocNumber)
+                    .input('Nota', sql.NVarChar(sql.MAX), finalNote)
                     .input('Mag', sql.VarChar(50), '0')
                     .input('Prox', sql.VarChar(50), proximoServicio)
                     .input('Estado', sql.VarChar(50), 'Pendiente')
                     .input('UM', sql.VarChar(20), areaUM)
                     .input('CArt', sql.VarChar(50), exec.codArticulo ? String(exec.codArticulo) : null)
-                    .input('IdProdReact', sql.Int, exec.idProductoReact || null)
+                    .input('IdProdReact', sql.Int, !isNaN(parseInt(exec.idProductoReact)) ? parseInt(exec.idProductoReact) : null)
                     .input('Val', sql.Bit, esValido)
                     .input('ValObs', sql.NVarChar(sql.MAX), validacionObsStr)
                     .query(`
@@ -380,10 +431,33 @@ exports.createPlanillaOrder = async (req, res) => {
                 let totalMagnitud = 0;
                 let fileCount = 0;
 
+                // --- NUEVO: CREAR LINEA DE SERVICIO EXTRA PARA FACTURACIÓN ---
+                if (exec.isExtra) {
+                    let qtyFact = 0;
+                    if (exec.items && exec.items.length > 0) {
+                        qtyFact = exec.items.reduce((sum, it) => sum + (parseInt(it.copies) || 1), 0);
+                    }
+                    if (qtyFact === 0) qtyFact = 1;
+
+                    await new sql.Request(transaction)
+                        .input('OID', sql.Int, newOID)
+                        .input('Cod', sql.VarChar(50), exec.codArticulo || exec.areaID)
+                        .input('Stk', sql.VarChar(50), exec.codStock || '')
+                        .input('Des', sql.NVarChar(255), `${exec.variante} - ${exec.material}`)
+                        .input('Cnt', sql.Decimal(18, 2), qtyFact)
+                        .input('Obs', sql.NVarChar(sql.MAX), exec.notaAdicional || 'Generado desde Planilla')
+                        .query(`
+                            INSERT INTO ServiciosExtraOrden 
+                            (OrdenID, CodArt, CodStock, Descripcion, Cantidad, PrecioUnitario, TotalLinea, Observacion, FechaRegistro) 
+                            VALUES (@OID, @Cod, @Stk, @Des, @Cnt, 0, 0, @Obs, GETDATE())
+                        `);
+                }
+
                 for (let i = 0; i < exec.items.length; i++) {
                     const item = exec.items[i];
                     const wM = parseFloat(item.width) || 0;
                     const hM = parseFloat(item.height) || 0;
+                    const safeCopies = parseInt(item.copies) || 1; // Parse explicitly to avoid text values
 
                     let valMetros = 0;
                     if (areaUM.toLowerCase() === 'm2') valMetros = (wM * hM);
@@ -398,40 +472,62 @@ exports.createPlanillaOrder = async (req, res) => {
                         }
                     }
 
-                    const finalName = `${exec.codigoOrden.replace(/\//g, '-')}_${sanitize(nombreCliente)}_${sanitize(jobName)}_Archivo ${i + 1} de ${exec.items.length} (x${item.copies || 1})${ext}`;
+                    const finalName = `${exec.codigoOrden.replace(/\//g, '-')}_${sanitize(nombreCliente)}_${sanitize(jobName)}_Archivo ${i + 1} de ${exec.items.length} (x${safeCopies})${ext}`;
 
                     let obsFile = item.observaciones || '';
-                    if (item.originalUrl && item.originalUrl.startsWith('http')) {
+                    if (item.originalUrl && typeof item.originalUrl === 'string' && item.originalUrl.startsWith('http')) {
                         obsFile += ` [LINK: ${item.originalUrl}]`;
                     }
 
-                    const resFile = await new sql.Request(transaction)
-                        .input('OID', sql.Int, newOID)
-                        .input('Nom', sql.VarChar(200), finalName)
-                        .input('Tipo', sql.VarChar(50), 'Impresion')
-                        .input('Cop', sql.Int, item.copies || 1)
-                        .input('Met', sql.Decimal(10, 3), valMetros)
-                        .input('Ancho', sql.Decimal(10, 2), wM)
-                        .input('Alto', sql.Decimal(10, 2), hM)
-                        .input('Obs', sql.NVarChar(sql.MAX), obsFile)
-                        .input('Ruta', sql.NVarChar(sql.MAX), item.originalUrl)
-                        .query(`
-                            INSERT INTO ArchivosOrden (
-                                OrdenID, NombreArchivo, TipoArchivo, Copias, Metros, EstadoArchivo, FechaSubida, 
-                                Ancho, Alto, Observaciones, RutaAlmacenamiento
-                            ) 
-                            OUTPUT INSERTED.ArchivoID 
-                            VALUES (
-                                @OID, @Nom, @Tipo, @Cop, @Met, 'Pendiente', GETDATE(), 
-                                @Ancho, @Alto, @Obs, @Ruta
-                            )
-                        `);
+                    if (exec.isExtra) {
+                        // SI ES EXTRA, ARCHIVO VA A REFERENCIA
+                        await new sql.Request(transaction)
+                            .input('OID', sql.Int, newOID)
+                            .input('Tipo', sql.VarChar(50), 'BOCETO_EXTRA')
+                            .input('Nom', sql.VarChar(200), finalName)
+                            .input('Not', sql.NVarChar(sql.MAX), obsFile)
+                            .input('Ubi', sql.NVarChar(sql.MAX), item.originalUrl)
+                            .query(`
+                                INSERT INTO ArchivosReferencia (
+                                    OrdenID, TipoArchivo, NombreOriginal, NotasAdicionales, FechaSubida, UbicacionStorage
+                                ) 
+                                VALUES (
+                                    @OID, @Tipo, @Nom, @Not, GETDATE(), @Ubi
+                                )
+                            `);
 
-                    filesToUpload.push({ dbId: resFile.recordset[0].ArchivoID, originalName: item.fileName });
+                        totalMagnitud += safeCopies;
+                        fileCount++;
+                    } else {
+                        // SI ES PRINCIPAL, ARCHIVO VA A PRODUCCION
+                        const resFile = await new sql.Request(transaction)
+                            .input('OID', sql.Int, newOID)
+                            .input('Nom', sql.VarChar(200), finalName)
+                            .input('Tipo', sql.VarChar(50), 'Impresion')
+                            .input('Cop', sql.Int, safeCopies)
+                            .input('Met', sql.Decimal(10, 3), valMetros)
+                            .input('Ancho', sql.Decimal(10, 2), wM)
+                            .input('Alto', sql.Decimal(10, 2), hM)
+                            .input('Obs', sql.NVarChar(sql.MAX), obsFile)
+                            .input('Ruta', sql.NVarChar(sql.MAX), item.originalUrl)
+                            .query(`
+                                INSERT INTO ArchivosOrden (
+                                    OrdenID, NombreArchivo, TipoArchivo, Copias, Metros, EstadoArchivo, FechaSubida, 
+                                    Ancho, Alto, Observaciones, RutaAlmacenamiento
+                                ) 
+                                OUTPUT INSERTED.ArchivoID 
+                                VALUES (
+                                    @OID, @Nom, @Tipo, @Cop, @Met, 'Pendiente', GETDATE(), 
+                                    @Ancho, @Alto, @Obs, @Ruta
+                                )
+                            `);
 
-                    if (areaUM === 'u') totalMagnitud += (item.copies || 1);
-                    else totalMagnitud += (valMetros * (item.copies || 1));
-                    fileCount++;
+                        filesToUpload.push({ dbId: resFile.recordset[0].ArchivoID, originalName: item.fileName });
+
+                        if (areaUM === 'u') totalMagnitud += safeCopies;
+                        else totalMagnitud += (valMetros * safeCopies);
+                        fileCount++;
+                    }
                 }
 
                 if (fileCount > 0) {

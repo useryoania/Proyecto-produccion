@@ -9,6 +9,10 @@ const LabelGenerationPage = () => {
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(false);
     const [areaFilter, setAreaFilter] = useState('');
+    const [searchFilter, setSearchFilter] = useState('');
+    const [batchFilter, setBatchFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all'); // all, generable, blocked
+
     const [selection, setSelection] = useState([]);
     const [generating, setGenerating] = useState(false);
     const [areas, setAreas] = useState([]);
@@ -34,9 +38,9 @@ const LabelGenerationPage = () => {
                 // FILTER: Only ADMIN sees ALL.
                 const isAdmin = user?.rol === 'ADMIN' || user?.rol === 'admin';
                 if (!isAdmin && user) {
-                    const userArea = user.areaKey || user.areaId;
+                    const userArea = (user.areaKey || user.areaId || '').trim();
                     if (userArea) {
-                        productive = productive.filter(a => a.AreaID === userArea);
+                        productive = productive.filter(a => (a.AreaID || '').trim() === userArea);
                     } else {
                         productive = [];
                     }
@@ -46,11 +50,13 @@ const LabelGenerationPage = () => {
 
                 // Preseleccionar área
                 if (productive.length > 0) {
-                    // If only one area (user case), select it.
                     if (productive.length === 1) {
-                        setAreaFilter(productive[0].AreaID);
-                    } else if (user && user.areaId && productive.some(a => a.AreaID === user.areaId)) {
-                        setAreaFilter(user.areaId);
+                        setAreaFilter(productive[0].AreaID.trim());
+                    } else if (user) {
+                        const userArea = (user.areaId || user.areaKey || '').trim();
+                        if (userArea && productive.some(a => (a.AreaID || '').trim() === userArea)) {
+                            setAreaFilter(userArea);
+                        }
                     }
                 }
             }
@@ -115,20 +121,57 @@ const LabelGenerationPage = () => {
         };
     };
 
+    // Aplicar Filtros Locales
+    const visibleOrders = orders.filter(o => {
+        // Orden/Cliente search
+        if (searchFilter) {
+            const term = searchFilter.toLowerCase();
+            const matchCod = o.CodigoOrden && o.CodigoOrden.toLowerCase().includes(term);
+            const matchCli = o.Cliente && o.Cliente.toLowerCase().includes(term);
+            const matchMat = o.Material && o.Material.toLowerCase().includes(term);
+            if (!matchCod && !matchCli && !matchMat) return false;
+        }
+
+        // Lotes / Batches match (Using CodigoOrden prefix normally as lot logic or order text description logic)
+        if (batchFilter) {
+            const batchTerm = batchFilter.toLowerCase();
+            const codText = (o.CodigoOrden || '').toLowerCase();
+            const descText = (o.Descripcion || '').toLowerCase();
+            if (!codText.includes(batchTerm) && !descText.includes(batchTerm)) return false;
+        }
+
+        // statusFilter
+        if (statusFilter !== 'all') {
+            const { isBlocked } = isOrderBlocked(o);
+            if (statusFilter === 'generable' && isBlocked) return false;
+            if (statusFilter === 'blocked' && !isBlocked) return false;
+        }
+
+        return true;
+    });
+
     const toggleSelectAll = () => {
-        const validOrders = orders.filter(o => !isOrderBlocked(o).isBlocked);
+        const validOrders = visibleOrders.filter(o => !isOrderBlocked(o).isBlocked);
         const validIds = validOrders.map(o => o.OrdenID);
 
-        // If all VALID orders are selected, deselect all. Otherwise, select all VALID orders.
+        // If all VALID visible orders are selected, deselect all. Otherwise, select all VALID visible orders.
         const allValidSelected = validIds.length > 0 && validIds.every(id => selection.includes(id));
 
-        if (allValidSelected) setSelection([]);
-        else setSelection(validIds);
+        if (allValidSelected) setSelection(selection.filter(id => !validIds.includes(id)));
+        else setSelection([...new Set([...selection, ...validIds])]);
     };
 
     const handleGenerateClick = () => {
         if (selection.length === 0) return;
-        if (confirm(`¿Generar etiquetas para ${selection.length} órdenes seleccionadas?\nSe usarán valores automáticos.`)) {
+
+        const alreadyFacturadas = visibleOrders.filter(o => selection.includes(o.OrdenID) && o.CantidadEtiquetas > 0);
+
+        let confirmMsg = `¿Generar etiquetas para ${selection.length} órdenes seleccionadas?\nSe usarán valores automáticos.`;
+        if (alreadyFacturadas.length > 0) {
+            confirmMsg = `⚠️ ATENCIÓN: ${alreadyFacturadas.length} órdenes seleccionadas YA tienen etiquetas/facturación.\n\n¿Desea REFACTURAR y sobrescribir las etiquetas existentes?`;
+        }
+
+        if (confirm(confirmMsg)) {
             processGenerationBatch(selection, null);
         }
     };
@@ -148,6 +191,7 @@ const LabelGenerationPage = () => {
         setGenerating(true);
         let successCount = 0;
         let failCount = 0;
+        let specificError = "";
 
         for (const orderId of ids) {
             try {
@@ -156,13 +200,21 @@ const LabelGenerationPage = () => {
                 successCount++;
             } catch (error) {
                 console.error(`Error order ${orderId}:`, error);
+                if (error.response?.data?.error) {
+                    specificError = error.response.data.error; // Keep last or concatenate
+                }
                 failCount++;
             }
         }
 
         setGenerating(false);
         setConfigOrder(null);
-        toast.success(`Proceso finalizado.\nGeneradas: ${successCount}\nFallos: ${failCount}`);
+
+        if (failCount === 0) {
+            toast.success(`Proceso finalizado.\nGeneradas: ${successCount}`);
+        } else {
+            toast.error(`Finalizado con errores.\nÉxito: ${successCount} | Fallos: ${failCount}\nÚltimo error: ${specificError || 'Error de validación.'}`, { duration: 5000 });
+        }
         // Removed setSelection([]) to keep items selected for preview
 
         // Force refresh of preview
@@ -208,6 +260,34 @@ const LabelGenerationPage = () => {
                         </div>
                     </div>
 
+                    <div className="flex justify-between items-center gap-2 mb-2">
+                        <div className="flex-1 flex gap-2">
+                            <input
+                                type="text"
+                                placeholder="🔍 Buscar Orden/Cliente..."
+                                className="w-1/3 p-2 text-sm border-b-2 border-slate-200 outline-none focus:border-indigo-500 bg-transparent"
+                                value={searchFilter}
+                                onChange={(e) => setSearchFilter(e.target.value)}
+                            />
+                            <input
+                                type="text"
+                                placeholder="Lote (ej: 82232)..."
+                                className="w-1/4 p-2 text-sm border-b-2 border-slate-200 outline-none focus:border-indigo-500 bg-transparent"
+                                value={batchFilter}
+                                onChange={(e) => setBatchFilter(e.target.value)}
+                            />
+                            <select
+                                className="w-1/4 p-2 text-sm border-b-2 border-slate-200 outline-none focus:border-indigo-500 bg-transparent text-slate-600"
+                                value={statusFilter}
+                                onChange={(e) => setStatusFilter(e.target.value)}
+                            >
+                                <option value="all">Ver Todas</option>
+                                <option value="generable">✅ Generables</option>
+                                <option value="blocked">🚫 Bloqueadas</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div className="flex gap-2">
                         <button
                             onClick={handleGenerateClick}
@@ -244,8 +324,8 @@ const LabelGenerationPage = () => {
                                     <th className="p-3 border-b text-center w-10">
                                         <input
                                             type="checkbox"
-                                            checked={orders.length > 0 && selection.length > 0 &&
-                                                orders.filter(o => !isOrderBlocked(o).isBlocked).every(o => selection.includes(o.OrdenID))
+                                            checked={visibleOrders.length > 0 && selection.length > 0 &&
+                                                visibleOrders.filter(o => !isOrderBlocked(o).isBlocked).every(o => selection.includes(o.OrdenID))
                                             }
                                             onChange={toggleSelectAll}
                                             className="rounded cursor-pointer transform scale-125"
@@ -258,7 +338,7 @@ const LabelGenerationPage = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 text-sm">
-                                {orders.map(order => {
+                                {visibleOrders.map(order => {
                                     const isSelected = selection.includes(order.OrdenID);
                                     const hasLabels = order.CantidadEtiquetas > 0;
                                     const { isBlocked, isZero, message } = isOrderBlocked(order);

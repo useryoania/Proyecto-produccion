@@ -36,13 +36,26 @@ export const PickupView = () => {
         if (selectedOrders.includes(orderId)) {
             setSelectedOrders(selectedOrders.filter(id => id !== orderId));
         } else {
+            // Verificar que no se mezclen monedas
+            const orderToAdd = readyOrders.find(o => o.id === orderId);
+            if (orderToAdd && selectedOrders.length > 0) {
+                const firstSelected = readyOrders.find(o => o.id === selectedOrders[0]);
+                if (firstSelected && orderToAdd.currency !== firstSelected.currency) {
+                    alert("⚠️ No es posible mezclar pagos en Dólares y Pesos Uruguayos en una misma transacción.\n\nPor favor, selecciona únicamente órdenes que compartan la misma moneda (ej: solo Dólares o solo Pesos) para poder redirigirte a la pasarela.");
+                    return; // Bloquea la selección mixta
+                }
+            }
             setSelectedOrders([...selectedOrders, orderId]);
         }
     };
 
     const totalAmount = readyOrders
         .filter(o => selectedOrders.includes(o.id))
-        .reduce((sum, o) => sum + o.amount, 0);
+        .reduce((sum, o) => sum + (o.isPaid ? 0 : o.amount), 0);
+
+    const activeCurrency = selectedOrders.length > 0
+        ? readyOrders.find(o => o.id === selectedOrders[0])?.currency || '$'
+        : '$';
 
     const downloadReceipt = async (code) => {
         try {
@@ -94,16 +107,27 @@ export const PickupView = () => {
                 // Usar el ID visible (ej: "TWD-6253" o "67") en lugar del ID interno
                 const orderNum = order.id.replace('#', '');
                 return {
+                    OrdIdOrden: order.rawId,
                     orderNumber: orderNum,
-                    meters: order.quantity,
-                    costWithCurrency: `${order.currency} ${typeof order.amount === 'number' ? order.amount.toFixed(2) : '0.00'}`,
-                    estado: order.originalStatus
+                    ordNombreTrabajo: order.desc.split(' - ').pop() || order.desc, // Extraemos el nombre si está concatenado
+                    meters: String(order.quantityStr || ""),
+                    MonSimbolo: order.currency === 'USD' ? 'USD' : '$',
+                    costo: Number(Number(order.amount || 0).toFixed(2)),
+                    estado: order.originalStatus,
+                    tipodecliente: order.clientType || "Comun",
+                    pago: order.isPaid ? 'Pagado' : 'No realizado',
+                    checked: true,
+                    clientId: order.clientId || 'N/A',
+                    contact: order.contact || '',
+                    // Keep old fields for backward compatibility just in case
+                    costWithCurrency: `${order.currency === 'USD' ? 'USD' : '$'} ${typeof order.amount === 'number' ? order.amount.toFixed(2) : '0.00'}`
                 };
             }).filter(Boolean);
 
             const payload = {
-                lugarRetiro: "5",
-                orders: ordersPayload
+                orders: ordersPayload,
+                totalCost: Number((totalAmount || 0).toFixed(2)),
+                lugarRetiro: 5
             };
 
             const res = await apiClient.post('/web-orders/pickup-orders/create', payload);
@@ -126,11 +150,47 @@ export const PickupView = () => {
         }
     };
 
-    const handleProceed = () => {
-        if (user?.hasCredit) {
+    const handleProceed = async () => {
+        if (user?.hasCredit || totalAmount === 0) {
             handleCreatePickup();
         } else {
-            setStep('payment');
+            // Flujo Handy
+            setLoading(true);
+            try {
+                // Reconstruir los detalles de los pedidos tal cual necesita el backend
+                const ordersPayload = selectedOrders.map(selId => {
+                    const order = readyOrders.find(o => o.id === selId);
+                    if (!order) return null;
+                    const orderNum = order.id.replace('#', '');
+                    return {
+                        id: order.id,
+                        rawId: order.rawId,
+                        orderNumber: orderNum,
+                        desc: order.desc,
+                        amount: order.amount,
+                    };
+                }).filter(Boolean);
+
+                const payload = {
+                    orders: ordersPayload,
+                    totalAmount: totalAmount,
+                    activeCurrency: activeCurrency
+                };
+
+                const res = await apiClient.post('/web-orders/pickup-orders/handy-payment', payload);
+
+                if (res.success && res.url) {
+                    // Redirigir al cliente a la ventana de pago de Handy
+                    window.location.href = res.url;
+                } else {
+                    alert(res.error || "No se pudo generar el link de pago.");
+                }
+            } catch (err) {
+                console.error("Error al ir a pagar:", err);
+                alert("Ocurrió un error al contactar la pasarela de pagos.");
+            } finally {
+                setLoading(false);
+            }
         }
     };
 
@@ -275,10 +335,18 @@ export const PickupView = () => {
                                     <td className="p-4 font-mono font-medium text-zinc-700">{order.id}</td>
                                     <td className="p-4 text-zinc-600">{order.desc}</td>
                                     <td className="p-4 text-zinc-500 text-sm">{order.date}</td>
-                                    <td className="p-4 text-right font-medium text-zinc-800">${order.amount}</td>
+                                    <td className="p-4 text-right font-medium text-zinc-800">
+                                        {order.isPaid ? (
+                                            <span className="text-green-600 flex items-center justify-end gap-1">
+                                                <CheckCircle size={14} /> Pagado
+                                            </span>
+                                        ) : (
+                                            `${order.currency === 'USD' ? 'US$' : '$'} ${(order.amount || 0).toFixed(2)}`
+                                        )}
+                                    </td>
                                     <td className="p-4 text-center">
-                                        <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-bold border border-green-200">
-                                            LISTO
+                                        <span className={`text-xs px-2 py-1 rounded-full font-bold border ${order.isPaid ? 'bg-green-100 text-green-700 border-green-200' : 'bg-green-100 text-green-700 border-green-200'}`}>
+                                            {order.status}
                                         </span>
                                     </td>
                                 </tr>
@@ -295,7 +363,9 @@ export const PickupView = () => {
                     <div className="flex items-center gap-6">
                         <div className="text-right">
                             <p className="text-xs text-zinc-500 uppercase font-bold">Total a Pagar</p>
-                            <p className="text-2xl font-bold text-zinc-800">${totalAmount}</p>
+                            <p className="text-2xl font-bold text-zinc-800">
+                                {activeCurrency === 'USD' ? 'US$' : '$'} {(totalAmount || 0).toFixed(2)}
+                            </p>
                         </div>
                         <CustomButton
                             onClick={handleProceed}
@@ -304,7 +374,7 @@ export const PickupView = () => {
                             icon={ChevronRight}
                             className="py-3 px-6"
                         >
-                            {user?.hasCredit ? 'Confirmar Retiro' : 'Ir a Pagar'}
+                            {user?.hasCredit || totalAmount === 0 ? 'Confirmar Retiro' : 'Ir a Pagar'}
                         </CustomButton>
 
                         <CustomButton

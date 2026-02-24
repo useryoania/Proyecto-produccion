@@ -64,7 +64,12 @@ const ProductionTable = ({ rowData, onRowSelected, onRowClick, columnDefs: propC
     const DateRenderer = (params) => {
         if (!params.value) return '-';
         const date = new Date(params.value);
-        return <span className="text-xs font-mono text-slate-500">{date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>;
+        return (
+            <div className="flex flex-col justify-center h-full leading-tight">
+                <span className="text-xs font-mono text-slate-700">{date.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                <span className="text-[10px] text-slate-400 font-medium">{date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+        );
     };
 
     // --- CONFIGURACIÓN DE SELECCIÓN ---

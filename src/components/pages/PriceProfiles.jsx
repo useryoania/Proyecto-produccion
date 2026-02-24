@@ -941,24 +941,27 @@ const TieredPriceTable = ({ items, onUpdate, catalog }) => {
         onUpdate(newItems);
     };
 
+    const handleCurrencyChange = (cod, newCurrency) => {
+        // Update ALL rules for this product to the new currency
+        const newItems = items.map(i => {
+            if (i.CodArticulo === cod) {
+                return { ...i, Moneda: newCurrency };
+            }
+            return i;
+        });
+        onUpdate(newItems);
+    };
+
     const addProductRow = (cod) => {
         if (!cod) return;
         // Agregar row inicial (qty 1)
-        onUpdate([...items, { CodArticulo: cod, TipoRegla: 'fixed_price', Valor: 0, CantidadMinima: 1, _tempId: Date.now() }]);
+        onUpdate([...items, { CodArticulo: cod, TipoRegla: 'fixed_price', Valor: 0, CantidadMinima: 1, Moneda: 'UYU', _tempId: Date.now() }]);
     };
 
     const addQuantityColumn = () => {
         const qty = prompt("Ingrese la cantidad mínima para la nueva columna (ej: 15):");
         if (qty && !isNaN(qty) && qty > 1) {
-            // Solo forzar validación visual, no se guarda nada hasta que pongan un precio
-            // Hack visual: agregar una regla dummy temporal o manejar estado local de columnas
-            // Para simplificar: el usuario debe agregar un precio en esa columna para que persista
-            // Pero necesitamos que la columna aparezca.
-            // Solución: agregamos 0 a todos los productos existentes para esa cantidad? No, muy sucio.
-            // Mejor: mantenemos lista de columnas en estado local y la sincronizamos con props
             toast.info("Columna visual agregada. Ingrese precios para guardar.");
-            // Esto requeriría refactor mayor.
-            // Alternativa rápida: Agregar una regla dummy al primer producto
             const firstProd = Object.keys(groupedItems)[0];
             if (firstProd) handlePriceChange(firstProd, parseInt(qty), 0);
         }
@@ -975,14 +978,17 @@ const TieredPriceTable = ({ items, onUpdate, catalog }) => {
                             <th key={q} className="p-3 text-center border w-32 relative group">
                                 Min {q}
                                 <button
-                                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] hidden group-hover:flex items-center justify-center shadow"
+                                    type="button"
+                                    className="absolute top-1/2 -translate-y-1/2 right-1 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-colors shadow-sm"
+                                    title="Quitar este Rango"
                                     onClick={(e) => {
+                                        e.preventDefault();
                                         e.stopPropagation();
-                                        if (window.confirm("Borrar columna? Se eliminarán todos los precios de esta cantidad.")) {
+                                        if (window.confirm(`¿Quitar rango Min ${q}? Se borrarán los precios de esta columna en todos los productos de este perfil.`)) {
                                             onUpdate(items.filter(i => parseInt(i.CantidadMinima) !== q));
                                         }
                                     }}
-                                >x</button>
+                                ><i className="fa-solid fa-trash-can text-xs"></i></button>
                             </th>
                         ))}
                         <th className="p-3 border w-10">
@@ -999,8 +1005,9 @@ const TieredPriceTable = ({ items, onUpdate, catalog }) => {
 
                         // Detect common type
                         const currentType = (rules[0] && rules[0].TipoRegla) || 'fixed_price';
+                        const currentCurrency = (rules[0] && rules[0].Moneda) || 'UYU';
                         const isPercentage = currentType.includes('percentage') || (currentType.includes('discount') && !currentType.includes('fixed'));
-                        const symbol = isPercentage ? '%' : '$';
+                        const symbol = isPercentage ? '%' : (currentCurrency === 'USD' ? 'U$S' : '$');
 
                         return (
                             <tr key={cod} className="hover:bg-slate-50 border-b group">
@@ -1015,10 +1022,22 @@ const TieredPriceTable = ({ items, onUpdate, catalog }) => {
                                         onChange={(e) => handleTypeChange(cod, e.target.value)}
                                         onClick={(e) => e.stopPropagation()}
                                     >
-                                        <option value="fixed_price">Precio Fijo ($)</option>
+                                        <option value="fixed_price">Precio Fijo</option>
                                         <option value="percentage_discount">Descuento (%)</option>
                                         <option value="percentage_surcharge">Recargo (%)</option>
                                     </select>
+
+                                    {!isPercentage && (
+                                        <select
+                                            className="text-[10px] p-1 border rounded bg-white outline-none cursor-pointer w-full max-w-[150px] mt-1 text-slate-600 font-bold border-slate-200 opacity-50 group-hover:opacity-100 transition-opacity"
+                                            value={currentCurrency}
+                                            onChange={(e) => handleCurrencyChange(cod, e.target.value)}
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <option value="UYU">UYU (Pesos)</option>
+                                            <option value="USD">USD (Dólares)</option>
+                                        </select>
+                                    )}
                                 </td>
                                 <td className="p-2 border text-center relative">
                                     <span className={`absolute ${isPercentage ? 'right-2' : 'left-2'} top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold`}>{symbol}</span>

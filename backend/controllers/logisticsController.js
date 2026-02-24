@@ -1,4 +1,6 @@
 const { getPool, sql } = require('../config/db');
+const PricingService = require('../services/pricingService');
+const axios = require('axios');
 
 // Helper para registrar movimientos históricos
 const registrarMovimiento = async (transaction, { codigoBulto, tipo, area, usuario, obs, estAnt, estNew, esRecep }) => {
@@ -865,9 +867,9 @@ exports.getDashboard = async (req, res) => {
         const r = await pool.request().input('A', sql.VarChar, areaId)
             .query(`
                 SELECT 
-                    b.BultoID, b.CodigoEtiqueta, b.Descripcion, b.Estado, b.UbicacionActual,
+                    b.BultoID, b.CodigoEtiqueta, b.Descripcion, b.Estado, b.UbicacionActual, b.Tipocontenido,
                     b.OrdenID,
-                    o.CodigoOrden, o.Cliente, o.DescripcionTrabajo,
+                    o.CodigoOrden, o.Cliente, o.DescripcionTrabajo, o.ProximoServicio,
                     (SELECT COUNT(*) FROM Logistica_Bultos WHERE OrdenID = b.OrdenID) as TotalBultosOrden
                 FROM Logistica_Bultos b
                 LEFT JOIN Ordenes o ON b.OrdenID = o.OrdenID
@@ -920,6 +922,8 @@ exports.getDashboard = async (req, res) => {
                 code: row.CodigoEtiqueta,
                 status: row.Estado,
                 desc: row.Descripcion,
+                tipoBulto: row.Tipocontenido || 'PROD_TERMINADO',
+                proximoServicio: row.ProximoServicio,
                 num: ordersMap[oid].bultos.length + 1,
                 total: row.TotalBultosOrden || 1
             });
@@ -1581,10 +1585,16 @@ exports.getDepositStock = async (req, res) => {
                 MAX(O.Magnitud) as Cantidad,
                 MAX(O.PerfilesPrecio) as PerfilesPrecio,
                 E.CodigoQR as V3String,
-                COUNT(DISTINCT LB.BultoID) as CantidadBultos
+                COUNT(DISTINCT LB.BultoID) as CantidadBultos,
+                MAX(PC.EstadoSyncReact) as EstadoSyncReact,
+                MAX(PC.ObsReact) as ObsReact,
+                MAX(PC.EstadoSyncERP) as EstadoSyncERP,
+                MAX(PC.ObsERP) as ObsERP
             FROM Logistica_Bultos LB
             JOIN Etiquetas E ON LB.CodigoEtiqueta = E.CodigoEtiqueta
             LEFT JOIN Ordenes O ON LB.OrdenID = O.OrdenID
+            LEFT JOIN PedidosCobranzaDetalle PCD ON O.OrdenID = PCD.OrdenID
+            LEFT JOIN PedidosCobranza PC ON PCD.PedidoCobranzaID = PC.ID
             WHERE (LB.UbicacionActual = 'DEPOSITO' OR LB.UbicacionActual = 'LOGISTICA')
               AND LB.Estado = 'EN_STOCK'
             GROUP BY E.CodigoQR
@@ -1705,10 +1715,16 @@ exports.syncDepositStock = async (req, res) => {
                     }
                 }
 
+                let errorMessage = null;
+                if (status !== 200 && status !== 201) {
+                    errorMessage = responseData?.error || responseData?.message || JSON.stringify(responseData);
+                }
+
                 results.push({
                     qr: item.qr,
                     success: (status === 200 || status === 201),
-                    data: responseData
+                    data: responseData,
+                    error: errorMessage
                 });
 
             } catch (apiErr) {
@@ -1716,6 +1732,208 @@ exports.syncDepositStock = async (req, res) => {
                 results.push({ qr: item.qr, success: false, error: apiErr.message });
             }
         }
+
+        // ---- NUEVO SINC AL ERP DEV MACROSOFT ----
+        try {
+            // Buscamos procesar TODOS los QRs analizados, para sentar el estado de React y de ERP juntos.
+            const qrsToSyncErp = results.map(r => r.qr);
+            if (qrsToSyncErp.length > 0) {
+                // Obtener token para ERP
+                const erpTokenRes = await axios.post('https://api-user.devmacrosoft.com/authenticate', {
+                    username: "user",
+                    password: "1234"
+                });
+                const erpToken = erpTokenRes.data?.token || erpTokenRes.data?.accessToken || erpTokenRes.data;
+
+                // Armar consulta a DB para agrupar por NoDocERP
+                const requestErp = pool.request();
+                const conditions = qrsToSyncErp.map((qr, i) => {
+                    requestErp.input(`qr_erp_${i}`, sql.NVarChar(4000), qr);
+                    return `@qr_erp_${i}`;
+                }).join(',');
+
+                const ordenesErpInfo = await requestErp.query(`
+                    SELECT 
+                        O.NoDocERP, 
+                        O.CodCliente,
+                        O.OrdenID,
+                        O.CodArticulo,
+                        TRY_CAST(O.Magnitud AS DECIMAL(18,2)) as Cantidad,
+                        PB.Moneda as MonedaBase,
+                        E.CodigoQR
+                    FROM Etiquetas E
+                    JOIN Ordenes O ON E.OrdenID = O.OrdenID
+                    LEFT JOIN PreciosBase PB ON O.CodArticulo = PB.CodArticulo
+                    WHERE E.CodigoQR IN (${conditions})
+                      AND O.NoDocERP IS NOT NULL
+                      AND O.NoDocERP <> ''
+                      AND O.CodArticulo IS NOT NULL
+                `);
+
+                // Agrupar Resultados por NoDocERP en memoria para mantener el Detalle
+                const pedidosMap = {};
+                ordenesErpInfo.recordset.forEach(row => {
+                    const doc = row.NoDocERP.toString().trim();
+                    if (!pedidosMap[doc]) {
+                        pedidosMap[doc] = {
+                            CodCliente: row.CodCliente,
+                            OrderLines: [],
+                            HasUSD: false,
+                            ReactStatus: 'Enviado_OK',
+                            ReactObs: 'OK'
+                        };
+                    }
+                    if ((row.MonedaBase || '').toUpperCase() === 'USD') {
+                        pedidosMap[doc].HasUSD = true;
+                    }
+
+                    // Buscar en el array original de la API de React qué pasó con este QR
+                    const qrResult = results.find(r => r.qr === row.CodigoQR);
+                    if (qrResult && !qrResult.success) {
+                        pedidosMap[doc].ReactStatus = 'Error';
+                        pedidosMap[doc].ReactObs = qrResult.error ? String(qrResult.error) : 'Error React';
+                    }
+
+                    pedidosMap[doc].OrderLines.push({
+                        OrdenID: row.OrdenID,
+                        CodArticuloReal: row.CodArticulo.trim(),
+                        Cantidad: row.Cantidad || 0
+                    });
+                });
+
+                // Para cada NoDocERP, calcular precios, guardar en BD y Enviar a ERP
+                for (const [noDoc, data] of Object.entries(pedidosMap)) {
+                    let totalMonto = 0;
+                    // Lógica idéntica a LabelGenerationService: si hay algún producto en USD, el pedido entero se factura en USD.
+                    const targetCurrency = data.HasUSD ? 'USD' : 'UYU';
+                    const mappedErpArticle = targetCurrency === 'USD' ? '150' : '82'; // Regla de negocio solicitada
+
+                    const detallesCobranza = [];
+
+                    // 1. Calcular Precio para cada línea/orden
+                    for (const line of data.OrderLines) {
+                        try {
+                            // Aplicamos targetCurrency al PricingService para que use la misma moneda que la etiqueta
+                            const priceRes = await PricingService.calculatePrice(line.CodArticuloReal, line.Cantidad, data.CodCliente, [], {}, targetCurrency);
+                            const subtotal = priceRes.precioTotal || 0;
+                            totalMonto += subtotal;
+
+                            detallesCobranza.push({
+                                OrdenID: line.OrdenID,
+                                CodArticulo: line.CodArticuloReal, // Enviamos el artículo real (Ej. 55) al ERP porque es detallado
+                                Cantidad: line.Cantidad,
+                                PrecioUnitario: priceRes.precioUnitario || 0,
+                                Subtotal: subtotal,
+                                LogPrecioAplicado: priceRes.txt || ''
+                            });
+                        } catch (priceE) {
+                            console.error(`[Cobranza] Error calculando precio para ${line.CodArticuloReal}:`, priceE.message);
+                        }
+                    }
+
+                    // 2. Guardar o Actualizar Cabecera y Detalle en la BD interna
+                    let pedidoCobranzaId;
+                    try {
+                        const chkRes = await pool.request().input('NoDoc', sql.VarChar, noDoc).query("SELECT ID FROM PedidosCobranza WHERE NoDocERP = @NoDoc");
+                        if (chkRes.recordset.length > 0) {
+                            pedidoCobranzaId = chkRes.recordset[0].ID;
+                            // Actualiza Monto por si hubo más órdenes adjuntadas, y actualiza los log de react
+                            await pool.request()
+                                .input('ID', sql.Int, pedidoCobranzaId)
+                                .input('Monto', sql.Decimal(18, 2), totalMonto)
+                                .input('EstReact', sql.VarChar, data.ReactStatus)
+                                .input('ObsReact', sql.NVarChar(50), data.ReactObs ? data.ReactObs.substring(0, 50) : '')
+                                .query("UPDATE PedidosCobranza SET MontoTotal = @Monto, FechaGeneracion = GETDATE(), EstadoSyncReact = @EstReact, ObsReact = @ObsReact WHERE ID = @ID");
+
+                            // Borrar detalles viejos para reconstruir
+                            await pool.request().input('ID', sql.Int, pedidoCobranzaId).query("DELETE FROM PedidosCobranzaDetalle WHERE PedidoCobranzaID = @ID");
+                        } else {
+                            const insRes = await pool.request()
+                                .input('NoDoc', sql.VarChar, noDoc)
+                                .input('Cli', sql.Int, data.CodCliente || 1)
+                                .input('Monto', sql.Decimal(18, 2), totalMonto)
+                                .input('Moneda', sql.VarChar, targetCurrency) // Guardar moneda correcta
+                                .input('EstReact', sql.VarChar, data.ReactStatus)
+                                .input('ObsReact', sql.NVarChar(50), data.ReactObs ? data.ReactObs.substring(0, 50) : '')
+                                .query(`
+                                    INSERT INTO PedidosCobranza (NoDocERP, ClienteID, MontoTotal, Moneda, EstadoSyncReact, ObsReact) 
+                                    OUTPUT INSERTED.ID
+                                    VALUES (@NoDoc, @Cli, @Monto, @Moneda, @EstReact, @ObsReact)
+                                `);
+                            pedidoCobranzaId = insRes.recordset[0].ID;
+                        }
+
+                        // Insertar Detalles
+                        for (const det of detallesCobranza) {
+                            await pool.request()
+                                .input('Pid', sql.Int, pedidoCobranzaId)
+                                .input('OID', sql.Int, det.OrdenID)
+                                .input('Cod', sql.NVarChar, det.CodArticulo)
+                                .input('Cant', sql.Decimal(18, 2), det.Cantidad)
+                                .input('PU', sql.Decimal(18, 2), det.PrecioUnitario)
+                                .input('ST', sql.Decimal(18, 2), det.Subtotal)
+                                .input('Log', sql.NVarChar, det.LogPrecioAplicado)
+                                .query(`
+                                    INSERT INTO PedidosCobranzaDetalle (PedidoCobranzaID, OrdenID, CodArticulo, Cantidad, PrecioUnitario, Subtotal, LogPrecioAplicado)
+                                    VALUES (@Pid, @OID, @Cod, @Cant, @PU, @ST, @Log)
+                                `);
+                        }
+                    } catch (dbErr) {
+                        console.error("[Cobranza] Error guardando pedido cobranza DB:", dbErr.message);
+                    }
+
+                    // 3. Agrupar por CodArticulo para el PUSH al ERP
+                    const lineasAgrupadasParaERP = {};
+                    detallesCobranza.forEach(d => {
+                        if (!lineasAgrupadasParaERP[d.CodArticulo]) {
+                            lineasAgrupadasParaERP[d.CodArticulo] = 0;
+                        }
+                        lineasAgrupadasParaERP[d.CodArticulo] += parseFloat(d.Cantidad);
+                    });
+
+                    const payloadErp = {
+                        CodCliente: data.CodCliente ? data.CodCliente.toString().trim() : "100101",
+                        Documento: "11",
+                        Lineas: Object.keys(lineasAgrupadasParaERP).map(cod => ({
+                            CodArticulo: cod,
+                            Cantidad: lineasAgrupadasParaERP[cod].toString()
+                        }))
+                    };
+
+                    // 4. Enviar a Dev Macrosoft
+                    try {
+                        console.log(`[ERPSync Macrosoft] Enviando pedido NoDocERP: ${noDoc}`, JSON.stringify(payloadErp));
+                        const erpRes = await axios.post('https://api-user.devmacrosoft.com/pedido', payloadErp, {
+                            headers: {
+                                'Authorization': `Bearer ${erpToken}`,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        console.log(`[ERPSync Macrosoft] OK Pedido ERP ${noDoc}: status ${erpRes.status}`);
+                        if (pedidoCobranzaId) {
+                            await pool.request()
+                                .input('ID', sql.Int, pedidoCobranzaId)
+                                .input('Obs', sql.NVarChar(50), 'OK')
+                                .query("UPDATE PedidosCobranza SET EstadoSyncERP = 'Enviado_OK', ObsERP = @Obs WHERE ID = @ID");
+                        }
+                    } catch (erpE) {
+                        const rawError = erpE.response?.data ? JSON.stringify(erpE.response.data) : erpE.message;
+                        const truncError = rawError ? rawError.substring(0, 50) : 'Error';
+                        console.error(`[ERPSync Macrosoft] Error enviando pedido ERP ${noDoc}:`, rawError);
+                        if (pedidoCobranzaId) {
+                            await pool.request()
+                                .input('ID', sql.Int, pedidoCobranzaId)
+                                .input('Obs', sql.NVarChar(50), truncError)
+                                .query("UPDATE PedidosCobranza SET EstadoSyncERP = 'Error', ObsERP = @Obs WHERE ID = @ID");
+                        }
+                    }
+                }
+            }
+        } catch (erpFatal) {
+            console.error("[ERPSync Macrosoft] Error General:", erpFatal.message);
+        }
+        // ---- FIN NUEVO SINC AL ERP DEV MACROSOFT ----
+
         res.json({ results });
 
     } catch (err) {

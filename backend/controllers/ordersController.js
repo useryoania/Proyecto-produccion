@@ -8,7 +8,7 @@ exports.getOrdersByArea = async (req, res) => {
     let area = req.query.area || req.params.area;
     const { mode, q } = req.query;
 
-    console.log(`🔎 [getOrdersByArea] Request for Area: '${area}', Mode: '${mode}'`);
+    // console.log(`🔎 [getOrdersByArea] Request for Area: '${area}', Mode: '${mode}'`);
 
     try {
         // Limpieza de nombre de área (Tu lógica original)
@@ -19,7 +19,7 @@ exports.getOrdersByArea = async (req, res) => {
         if (area === 'BORDADO') area = 'BORD';
 
         // DEBUG: Force print final area
-        console.log(`🔎 [getOrdersByArea] Querying DB with AreaID = '${area}'`);
+        // console.log(`🔎 [getOrdersByArea] Querying DB with AreaID = '${area}'`);
 
 
         const pool = await getPool();

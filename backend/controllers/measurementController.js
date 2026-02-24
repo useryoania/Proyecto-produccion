@@ -600,3 +600,24 @@ exports.processFilesServerSide = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+// NEW: Server Side Process Wrapper for Orders
+exports.processOrdersServerSide = async (req, res) => {
+    const { orderIds } = req.body;
+    try {
+        if (!orderIds || orderIds.length === 0) return res.status(400).json({ error: "No orders provided" });
+        const pool = await getPool();
+        const filesQuery = await pool.request().query(`
+            SELECT ArchivoID 
+            FROM dbo.ArchivosOrden 
+            WHERE OrdenID IN (${orderIds.join(',')})
+        `);
+        const fileIds = filesQuery.recordset.map(r => r.ArchivoID);
+        if (fileIds.length === 0) return res.status(404).json({ error: "No hay archivos asociados a estas órdenes" });
+
+        await fileProcessingService.processFiles(fileIds, req.app.get('io'));
+        res.json({ success: true, message: 'Procesamiento en servidor iniciado para ' + fileIds.length + ' archivos.' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};

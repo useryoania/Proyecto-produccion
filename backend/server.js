@@ -36,9 +36,9 @@ app.use(limiter);
 app.use(cors());
 app.use(express.json({ limit: '200mb' }));
 
-// 🔍 DEBUG: LOG REQUESTS
+// 🔍 DEBUG: LOG REQUESTS (Silenced to reduce noise)
 app.use((req, res, next) => {
-    console.log(`📡 INCOMING: ${req.method} ${req.url}`);
+    // console.log(`📡 INCOMING: ${req.method} ${req.url}`);
     next();
 });
 
@@ -78,6 +78,7 @@ app.use('/api/insumos', require('./routes/insumosRoutes'));
 app.use('/api/reception', require('./routes/receptionRoutes'));
 app.use('/api/logistics', require('./routes/logisticsRoutes'));
 app.use('/api/inventory', require('./routes/inventoryRoutes'));
+app.use('/api/configuraciones', require('./routes/configuracionesRoutes'));
 
 // SECCIÓN DE PRODUCCIÓN
 app.use('/api/production-kanban', require('./routes/productionKanbanRoutes'));
@@ -113,6 +114,9 @@ try {
 } catch (e) { console.error("❌ Error loading clients routes:", e); }
 
 app.use('/api/chat', require('./routes/chatRoutes'));
+try {
+    app.use('/api/checkout', require('./routes/checkoutRoutes'));
+} catch (e) { console.error("❌ Error loading checkout routes:", e); }
 
 const http = require('http');
 const { Server } = require('socket.io');

@@ -11,9 +11,11 @@ const getBasePrices = async (req, res) => {
         const result = await pool.request().query(`
             SELECT A.CodArticulo, A.Descripcion, A.SupFlia, A.Grupo, 
                    LTRIM(RTRIM(SA.Articulo)) as GrupoNombre, 
+                   MAP.NombreReferencia as NombreReferenciaGrupo,
                    PB.ID, PB.Precio, PB.Moneda
             FROM Articulos A
             LEFT JOIN StockArt SA ON A.CodStock = SA.CodStock
+            LEFT JOIN ConfigMapeoERP MAP ON MAP.CodigoERP = A.Grupo COLLATE Database_Default
             LEFT JOIN PreciosBase PB ON A.CodArticulo = PB.CodArticulo
             ORDER BY A.SupFlia, A.Grupo, A.CodArticulo, PB.Moneda
         `);
@@ -47,22 +49,34 @@ const saveBasePricesBulk = async (req, res) => {
 
         try {
             for (const item of items) {
-                // Upsert logic in-line or via service (simplified here for speed)
                 const request = new sql.Request(transaction);
-                await request
-                    .input('Cod', sql.NVarChar, item.codArticulo)
-                    .input('Precio', sql.Decimal(18, 4), item.precio)
-                    .input('Moneda', sql.VarChar, item.moneda || 'UYU')
-                    .query(`
-                        MERGE PreciosBase AS target
-                        USING (SELECT @Cod AS CodArticulo, @Moneda AS Moneda) AS source
-                        ON (target.CodArticulo = source.CodArticulo AND target.Moneda = source.Moneda)
-                        WHEN MATCHED THEN
-                            UPDATE SET Precio = @Precio, UltimaActualizacion = GETDATE()
-                        WHEN NOT MATCHED THEN
-                            INSERT (CodArticulo, Precio, Moneda, UltimaActualizacion)
-                            VALUES (@Cod, @Precio, @Moneda, GETDATE());
-                    `);
+
+                if (item.id) {
+                    await request
+                        .input('Id', sql.Int, item.id)
+                        .input('Precio', sql.Decimal(18, 4), item.precio)
+                        .input('Moneda', sql.VarChar, item.moneda || 'UYU')
+                        .query(`
+                            UPDATE PreciosBase 
+                            SET Precio = @Precio, Moneda = @Moneda, UltimaActualizacion = GETDATE()
+                            WHERE ID = @Id
+                        `);
+                } else {
+                    await request
+                        .input('Cod', sql.NVarChar, item.codArticulo)
+                        .input('Precio', sql.Decimal(18, 4), item.precio)
+                        .input('Moneda', sql.VarChar, item.moneda || 'UYU')
+                        .query(`
+                            MERGE PreciosBase AS target
+                            USING (SELECT @Cod AS CodArticulo, @Moneda AS Moneda) AS source
+                            ON (target.CodArticulo = source.CodArticulo AND target.Moneda = source.Moneda)
+                            WHEN MATCHED THEN
+                                UPDATE SET Precio = @Precio, UltimaActualizacion = GETDATE()
+                            WHEN NOT MATCHED THEN
+                                INSERT (CodArticulo, Precio, Moneda, UltimaActualizacion)
+                                VALUES (@Cod, @Precio, @Moneda, GETDATE());
+                        `);
+                }
             }
 
             await transaction.commit();
@@ -79,9 +93,10 @@ const saveBasePricesBulk = async (req, res) => {
 
 // Endpoint de prueba para CALCULAR precio (Simulación)
 const calculatePriceEndpoint = async (req, res) => {
-    const { codArticulo, cantidad, clienteId, variables } = req.body;
+    const { codArticulo, cantidad, clienteId, variables, targetCurrency } = req.body;
     try {
-        const result = await PricingService.calculatePrice(codArticulo, cantidad, clienteId, [], variables);
+        const fallbackCurrency = targetCurrency || 'UYU';
+        const result = await PricingService.calculatePrice(codArticulo, cantidad, clienteId, [], variables, fallbackCurrency, null);
         res.json(result);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -92,7 +107,6 @@ module.exports = {
     getBasePrices,
     saveBasePrice,
     saveBasePricesBulk,
-    calculatePriceEndpoint,
-    debugPriceEndpoint
+    calculatePriceEndpoint
 };
 

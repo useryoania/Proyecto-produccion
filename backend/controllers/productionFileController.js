@@ -128,7 +128,7 @@ const getArchivosPorOrden = async (req, res) => {
 
         const pool = await getPool();
 
-        console.log(`Getting Archivos for OrdenID: ${ordenId} `);
+        // console.log(`Getting Archivos for OrdenID: ${ordenId} `);
 
         // 1. Obtener Archivos del File System (Simulado desde DB Files)
         const archivosResult = await pool.request()

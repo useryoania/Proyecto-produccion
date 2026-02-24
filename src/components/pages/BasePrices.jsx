@@ -73,10 +73,9 @@ const PriceRow = ({ item, changes, onChange, onAdd }) => {
             </td>
             <td className="p-3 text-center w-24">
                 <select
-                    className={`text-xs border rounded p-1 outline-none ${canEditCurrency ? 'bg-white text-slate-700 border-slate-300' : 'bg-transparent border-transparent text-slate-500 appearance-none pointer-events-none'}`}
+                    className="text-xs border rounded p-1 outline-none bg-white text-slate-700 border-slate-300 hover:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-colors"
                     value={displayMoneda}
                     onChange={(e) => onChange(item.ID || item._tempID, { moneda: e.target.value })}
-                    disabled={!canEditCurrency}
                 >
                     <option value="UYU">UYU</option>
                     <option value="USD">USD</option>
@@ -168,6 +167,7 @@ const BasePrices = () => {
             if (!item) return;
 
             itemsToSave.push({
+                id: item.ID, // Incluir ID para saber si es actualización
                 codArticulo: item.CodArticulo,
                 precio: changes.precio !== undefined ? parseFloat(changes.precio) : parseFloat(item.Precio || 0),
                 moneda: changes.moneda !== undefined ? changes.moneda : (item.Moneda || 'UYU')
@@ -210,7 +210,10 @@ const BasePrices = () => {
 
         const groups = {};
         prices.forEach(p => {
-            const key = p.SupFlia ? `${p.SupFlia} ${p.Grupo ? '- ' + p.Grupo : ''}` : 'Otros / Sin Familia';
+            let key = p.SupFlia ? `${p.SupFlia} ${p.Grupo ? '- ' + p.Grupo : ''}` : 'Otros / Sin Familia';
+            if (p.NombreReferenciaGrupo) {
+                key += ` (${p.NombreReferenciaGrupo})`;
+            }
             if (!groups[key]) groups[key] = [];
             groups[key].push(p);
         });

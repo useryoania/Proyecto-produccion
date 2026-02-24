@@ -273,14 +273,79 @@ const MeasurementView = ({ areaCode }) => {
             alert("Por favor selecciona al menos un archivo.");
             return;
         }
-        if (!confirm(`¿Procesar ${selectedFiles.size} archivos en el Servidor? \nEsto descargará, medirá y actualizará los registros automáticamente.`)) return;
+
+        // 1. Selector de Carpeta (Si soporta)
+        const supportsFileSystem = 'showDirectoryPicker' in window;
+        let dirHandle = null;
+
+        if (supportsFileSystem) {
+            try {
+                dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            } catch (err) {
+                return; // Usuario canceló
+            }
+        } else {
+            if (!confirm("Tu navegador no soporta guardar en carpeta, se descargará un ZIP tradicional. ¿Deseas continuar?")) return;
+        }
+
+        if (!confirm(`¿Descargar y Medir ${selectedFiles.size} archivos? \nEsto descargará los archivos en tu equipo dentro de una subcarpeta, y los medirá automáticamente en el servidor.`)) return;
 
         setProcessing(true);
         try {
             const fileIds = Array.from(selectedFiles);
+
+            // --- FASE 1: DESCARGA LOCAL (Igual que handleBatchProcess) ---
+            const resZip = await api.post('/measurements/process-batch', { fileIds }, { responseType: 'blob' });
+            const blob = resZip.data;
+
+            if (supportsFileSystem && dirHandle) {
+                const zip = await JSZip.loadAsync(blob);
+                let count = 0;
+                let targetHandle = dirHandle;
+
+                if (filterRoll !== 'ALL') {
+                    const selectedRollObj = uniqueRolls.find(r => r.id.toString() === filterRoll.toString());
+                    if (selectedRollObj) {
+                        const rollFolderName = selectedRollObj.name || `Lote ${filterRoll}`;
+                        const safeFolderName = rollFolderName.replace(/[<>:"/\\|?*]/g, '_').trim();
+                        try {
+                            targetHandle = await dirHandle.getDirectoryHandle(safeFolderName, { create: true });
+                        } catch (e) {
+                            console.error("No se pudo crear subcarpeta:", e);
+                        }
+                    }
+                }
+
+                for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+                    if (zipEntry.dir) continue;
+                    const fileName = relativePath.split('/').pop();
+                    try {
+                        const fileHandle = await targetHandle.getFileHandle(fileName, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        const content = await zipEntry.async('blob');
+                        await writable.write(content);
+                        await writable.close();
+                        count++;
+                    } catch (err) {
+                        console.error("Error escribiendo archivo:", fileName, err);
+                    }
+                }
+            } else {
+                // Fallback ZIP
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = "Ordenes_Descarga_Medicion.zip";
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+            }
+
+            // --- FASE 2: PROCESAMIENTO LOCAL/SERVIDOR (MEDICIÓN) ---
             const res = await api.post('/measurements/process-server', { fileIds });
             if (res.data.success) {
-                alert("Procesamiento iniciado en el servidor. Los cambios se reflejarán pronto.");
+                alert("¡Archivos guardados en tu equipo!\nLa medición automática ha iniciado en el servidor y se reflejará pronto.");
                 setSelectedFiles(new Set());
                 fetchData();
             }

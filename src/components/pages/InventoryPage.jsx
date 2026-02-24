@@ -46,13 +46,7 @@ const InventoryPage = () => {
             let adaptedData = data.map(d => ({ ...d, code: d.AreaID, name: d.Nombre }));
 
             // Initial Filter based on User Role
-<<<<<<< HEAD
-            const isAdmin = user?.rol === 'Admin';
-=======
-            const fullAccess = isAdmin || isDeposito;
->>>>>>> 64dcc3f456d7e5031a7fcd985953eb31842092b4
-
-            if (!fullAccess && user) {
+            if (!hasFullAccess && user) {
                 const userArea = (user.areaKey || user.areaId || '').trim();
                 if (userArea) {
                     adaptedData = adaptedData.filter(a => a.code === userArea);
@@ -67,7 +61,7 @@ const InventoryPage = () => {
                 // Si es admin o DEPOSITO -> Seleccionar TODAS por defecto (o permitir escoger, aqui seleccionamos todas para dar visión global)
                 // const isAdminOrDeposito = user?.role === 'admin' || user?.areaKey === 'DEPOSITO' || !user?.areaKey; // OLD LOGIC
 
-                if (fullAccess) {
+                if (hasFullAccess) {
                     // Admin selects all by default? Or first? usually all for overview.
                     setSelectedAreas(adaptedData.map(a => a.code));
                 } else {

@@ -32,6 +32,12 @@ router.post('/pickup-orders/create', verifyToken, webOrdersController.createPick
 // POST /api/web-orders/pickup-orders/pdf (Generar PDF)
 router.post('/pickup-orders/pdf', verifyToken, webOrdersController.generatePickupReceipt);
 
+// POST /api/web-orders/pickup-orders/handy-payment (Generar Link de Pago Handy)
+router.post('/pickup-orders/handy-payment', verifyToken, webOrdersController.createHandyPaymentLink);
+
+// POST /api/web-orders/handy-webhook (Webhook Callback desde Handy)
+router.post('/handy-webhook', webOrdersController.handyWebhook);
+
 // PUT /api/web-orders/area-mapping/:codOrden (Toggle Visibility)
 router.put('/area-mapping/:codOrden', verifyToken, webOrdersController.updateAreaVisibility);
 

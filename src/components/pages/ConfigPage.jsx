@@ -14,6 +14,7 @@ import ConfigStatusesModal from '../modals/config/ConfigStatusesModal';
 import ConfigRouteRulesModal from '../modals/config/ConfigRouteRulesModal';
 import ConfigDeliveryTimesModal from '../modals/config/ConfigDeliveryTimesModal';
 import ConfigWebServicesModal from '../modals/config/ConfigWebServicesModal';
+import ConfigSyncModal from '../modals/config/ConfigSyncModal';
 
 export default function ConfigPage({ onBack }) {
     const navigate = useNavigate();
@@ -248,6 +249,13 @@ export default function ConfigPage({ onBack }) {
                             colorClass="from-emerald-400 to-teal-600"
                             onClick={() => setActiveModal('webservices')}
                         />
+                        <ConfigCard
+                            title="Procesos Automáticos"
+                            subtitle="Cronjobs y Planillas"
+                            icon="fa-power-off"
+                            colorClass="from-rose-500 to-red-600"
+                            onClick={() => setActiveModal('syncs')}
+                        />
                     </div>
                 </div>
             )}
@@ -303,6 +311,7 @@ export default function ConfigPage({ onBack }) {
             {activeModal === 'times' && <ConfigDeliveryTimesModal isOpen={true} onClose={() => setActiveModal(null)} />}
             {activeModal === 'statuses' && <ConfigStatusesModal isOpen={true} onClose={() => { setActiveModal(null); loadAreaDetails(selectedAreaId); }} areaCode={selectedAreaId} initialStatuses={details.estados} />}
             {activeModal === 'webservices' && <ConfigWebServicesModal isOpen={true} onClose={() => setActiveModal(null)} />}
+            {activeModal === 'syncs' && <ConfigSyncModal isOpen={true} onClose={() => setActiveModal(null)} />}
 
             <ImportLogModal
                 isOpen={isLogModalOpen}

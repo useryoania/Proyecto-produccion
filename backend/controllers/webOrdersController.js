@@ -1220,6 +1220,30 @@ exports.getPickupOrders = async (req, res) => {
         const response = await axios.get(url);
         const externalOrders = response.data;
 
+        if (!Array.isArray(externalOrders) || externalOrders.length === 0) {
+            return res.json({ success: true, data: [] });
+        }
+
+        // Cruzar con nuestros precios congelados y estado de pago en PedidosCobranza
+        const codigosList = externalOrders.map(o => o.CodigoOrden).filter(Boolean);
+        let cobranzasMap = {};
+        if (codigosList.length > 0) {
+            try {
+                const request = pool.request();
+                const params = codigosList.map((c, i) => {
+                    request.input(`doc_${i}`, sql.VarChar(50), c);
+                    return `@doc_${i}`;
+                }).join(',');
+
+                const cobRes = await request.query(`SELECT NoDocERP, MontoTotal, Moneda, EstadoCobro FROM PedidosCobranza WHERE NoDocERP IN (${params})`);
+                cobRes.recordset.forEach(row => {
+                    cobranzasMap[row.NoDocERP] = row;
+                });
+            } catch (sqle) {
+                console.error("Error consultando PedidosCobranza en getPickupOrders:", sqle.message);
+            }
+        }
+
         // Helper para quantity
         const parseQuantity = (qtyStr) => {
             if (!qtyStr) return 1;
@@ -1229,18 +1253,31 @@ exports.getPickupOrders = async (req, res) => {
         };
 
         // 3. Mapear respuesta al formato frontend
-        const pickupOrders = Array.isArray(externalOrders) ? externalOrders.map(o => ({
-            id: o.CodigoOrden || `#${o.IdOrden}`,
-            rawId: o.IdOrden, // ID numérico puro para operaciones posteriores
-            desc: `${o.Producto} - ${o.NombreTrabajo}`,
-            amount: o.PrecioUnitario || o.CostoFinal || 0,
-            date: o.FechaEstado ? new Date(o.FechaEstado).toLocaleDateString('es-UY') : 'N/A',
-            status: 'LISTO',
-            originalStatus: o.Estado,
-            currency: o.MonSimbolo || '$',
-            quantity: parseQuantity(o.Cantidad),
-            quantityStr: o.Cantidad || '1'
-        })) : [];
+        const pickupOrders = externalOrders.map(o => {
+            const docId = o.CodigoOrden || `#${o.IdOrden}`;
+            const cob = cobranzasMap[docId];
+
+            // Si está congelado en la BD interna toma ese Monto, si no, primero el CostoFinal total (en vez de PrecioUnitario)
+            let finalAmount = cob ? parseFloat(cob.MontoTotal) : (parseFloat(o.CostoFinal) || parseFloat(o.PrecioUnitario) || 0);
+            let isPaid = cob ? cob.EstadoCobro === 'Pagado' : false;
+
+            return {
+                id: docId,
+                rawId: o.IdOrden, // ID numérico puro para operaciones posteriores
+                desc: `${o.Producto} - ${o.NombreTrabajo}`,
+                amount: finalAmount,
+                date: o.FechaEstado ? new Date(o.FechaEstado).toLocaleDateString('es-UY') : 'N/A',
+                status: isPaid ? 'PAGADO' : 'LISTO',
+                originalStatus: o.Estado,
+                isPaid: isPaid,
+                currency: cob ? cob.Moneda : (o.MonSimbolo || '$'),
+                quantity: parseQuantity(o.Cantidad),
+                quantityStr: o.Cantidad || '1',
+                clientId: o.IdCliente || 'N/A',
+                contact: o.Celular || '',
+                clientType: o.TipoCliente || 'Comun'
+            };
+        });
 
         res.json({ success: true, data: pickupOrders });
 
@@ -1260,7 +1297,7 @@ const parseAmount = (amt) => {
 
 // --- NUEVO: CREAR ORDEN DE RETIRO (API EXTERNA) ---
 exports.createPickupOrder = async (req, res) => {
-    const { selectedOrderIds, orders } = req.body; // orders desde frontend (opcional)
+    const { selectedOrderIds, orders, totalCost } = req.body; // orders desde frontend (opcional)
     let payload = null;
 
     // Si no hay orders ni IDs, error.
@@ -1273,14 +1310,18 @@ exports.createPickupOrder = async (req, res) => {
         const codCliente = user ? user.codCliente : null;
         if (!codCliente) return res.status(401).json({ error: "Usuario no identificado." });
 
-        // 5. POST to External API with Token (y construcción de payload)
-        const token = await getExternalToken();
+        // 5. POST to External API with Token
+        const tokenRes = await axios.post('https://administracionuser.uy/api/apilogin/generate-token', {
+            apiKey: "api_key_google_123sadas12513_user"
+        });
+        const token = tokenRes.data.token;
         const createUrl = 'https://administracionuser.uy/api/apiordenesRetiro/crear';
 
         // Si el frontend ya envió las 'orders' formateadas
         if (orders && Array.isArray(orders) && orders.length > 0) {
             payload = {
-                lugarRetiro: "5",
+                lugarRetiro: req.body.lugarRetiro || 5, // Debe ser NUMERO obligatoriamente
+                totalCost: req.body.totalCost || 0,     // Total a nivel de raiz
                 orders: orders
             };
         } else {
@@ -1336,12 +1377,17 @@ exports.createPickupOrder = async (req, res) => {
             headers: { 'Authorization': `Bearer ${token}` }
         });
 
+        // The external API responds with a nested object or direct property (OReIdOrdenRetiro)
         res.json({ success: true, data: createRes.data });
 
     } catch (error) {
         console.error("Error creating pickup order:", error);
-        const detail = error.response?.data ? JSON.stringify(error.response.data) : error.message;
-        res.status(500).json({ error: "Error al generar la orden de retiro: " + detail + " | Payload enviado: " + JSON.stringify(payload) });
+        // The external API returns text/HTML on error sometimes, or a JSON snippet
+        let detail = error.message;
+        if (error.response && error.response.data) {
+            detail = typeof error.response.data === 'object' ? JSON.stringify(error.response.data) : error.response.data;
+        }
+        res.status(500).json({ error: "Error al generar la orden de retiro externa. Detalle: " + detail });
     }
 };
 
@@ -1412,5 +1458,95 @@ exports.generatePickupReceipt = async (req, res) => {
     } catch (error) {
         console.error("PDF Generate Error:", error);
         res.status(500).json({ error: "Error generando PDF" });
+    }
+};
+
+// --- NUEVO: HANDY PAYMENT ---
+exports.createHandyPaymentLink = async (req, res) => {
+    try {
+        const { orders, totalAmount, activeCurrency } = req.body;
+
+        if (!orders || orders.length === 0) {
+            return res.status(400).json({ error: "No orders provided for payment." });
+        }
+
+        // Determinar si es USD (840) o Pesos (858)
+        let currencyCode = 858; // Pesos por defecto
+        if (activeCurrency === 'USD') {
+            currencyCode = 840;
+        }
+
+        // Construir la lista de productos para Handy
+        const products = orders.map(o => ({
+            name: o.desc ? o.desc.substring(0, 50) : o.id,
+            quantity: 1,
+            amount: Number(Number(o.amount || 0).toFixed(2)),
+            taxedAmount: 0
+        }));
+
+        // Transaction ID único
+        const { v4: uuidv4 } = require('uuid');
+        const transactionId = uuidv4();
+        const invoiceNumber = Math.floor(Math.random() * 90000) + 10000;
+
+        const handyPayload = {
+            cart: {
+                currency: currencyCode,
+                totalAmount: Number(Number(totalAmount).toFixed(2)),
+                taxedAmount: 0,
+                products: products,
+                invoiceNumber: invoiceNumber,
+                linkImageUrl: "https://via.placeholder.com/300x150.png?text=Pagos+USER",
+                transactionExternalId: transactionId
+            },
+            client: {
+                commerceName: "USER",
+                siteUrl: "http://localhost:5173"
+            },
+            callbackUrl: "https://webhook.site/72ee5914-012a-478d-a2fd-3801d3561230", // <--- CRÍTICO: Debe ser público (ngrok o webhook.site)
+            responseType: "Json"
+        };
+
+        const handySecret = 'c80c2dca-ee4f-4cec-ace0-850747a5dcfa'; // Testing Secret
+        const handyUrl = 'https://api.payments.arriba.uy/api/v2/payments';
+
+        console.log("[HANDY] Creando link de pago...", JSON.stringify(handyPayload));
+
+        const response = await axios.post(handyUrl, handyPayload, {
+            headers: {
+                'merchant-secret-key': handySecret
+            }
+        });
+
+        // Response should contain the 
+        const paymentUrl = response.data.url;
+        res.json({ success: true, url: paymentUrl, transactionId });
+
+    } catch (error) {
+        console.error("[HANDY ERROR] Fallo al crear link de pago:", error.message);
+        if (error.response) {
+            console.error("[HANDY DATA]", error.response.data);
+            return res.status(500).json({ error: "Error desde Handy", details: error.response.data });
+        }
+        res.status(500).json({ error: "Error interno al intentar generar pago." });
+    }
+};
+
+// --- HANDY WEBHOOK ---
+exports.handyWebhook = async (req, res) => {
+    try {
+        console.log("------------------------------------------");
+        console.log("🔔 [HANDY WEBHOOK INCOMING EVENT] 🔔");
+        console.log(JSON.stringify(req.body, null, 2));
+        console.log("------------------------------------------");
+
+        // Aquí en el futuro se extraerá el TransactionExternalId = req.body.TransactionExternalId 
+        // y se actualizará el estado de los pedidos a PAGADO en tu base de datos mediante axios o SQL
+
+        // Siempre hay que responder 200 OK rápido a los webhooks
+        res.status(200).send("OK");
+    } catch (e) {
+        console.error("Webhook Error:", e);
+        res.status(500).send("ERROR");
     }
 };

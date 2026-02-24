@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { ordersService, rollsService, insumosService } from '../../services/api';
+import api, { ordersService, rollsService, insumosService } from '../../services/api';
 import { printLabelsHelper } from '../../utils/printHelper';
 
 // --- SUB-COMPONENT: MODAL DE SELECCIÓN DE BOBINA ---
@@ -385,6 +385,83 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
         } catch (error) {
             console.error("Error desasignando multiple:", error);
             toast.error("Error al desasignar órdenes seleccionadas.");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleServerProcess = async () => {
+        if (!selectedOrderIds.length) return;
+
+        const supportsFileSystem = 'showDirectoryPicker' in window;
+        let dirHandle = null;
+
+        if (supportsFileSystem) {
+            try {
+                dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+            } catch (err) {
+                return;
+            }
+        } else {
+            const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+            const message = `⚠️ FUNCIÓN DE CARPETA AUTOMÁTICA NO DISPONIBLE\n\n` +
+                `¿Deseas descargar un ZIP tradicional y enviar la orden de medir al servidor?`;
+            if (!window.confirm(message)) return;
+        }
+
+        if (!window.confirm(`¿Descargar y medir ${selectedOrderIds.length} órdenes seleccionadas?\nEsto descargará sus archivos en tu PC (creando una subcarpeta para el Rollo) y luego actualizará sus medidas.`)) return;
+
+        try {
+            setLoading(true);
+            toast.info("Descargando y preparando medición...");
+
+            // 1. DESCARGA ZIP (Igual que handleDownloadFiles)
+            const blob = await rollsService.downloadZip(selectedOrderIds);
+
+            if (supportsFileSystem && dirHandle) {
+                const JSZip = (await import("jszip")).default;
+                const zip = await JSZip.loadAsync(blob);
+
+                const rollFolderName = freshRoll.name || `Lote ${freshRoll.id || 'Nuevo'}`;
+                const safeFolderName = rollFolderName.replace(/[<>:"/\\|?*]/g, '_').trim();
+
+                let rollHandle;
+                try {
+                    rollHandle = await dirHandle.getDirectoryHandle(safeFolderName, { create: true });
+                } catch (e) {
+                    rollHandle = dirHandle;
+                    toast.warning(`No se pudo crear carpeta "${safeFolderName}", usando raíz.`);
+                }
+
+                let fileCount = 0;
+                for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+                    if (zipEntry.dir) continue;
+                    const fileName = relativePath.split('/').pop();
+                    try {
+                        const fileHandle = await rollHandle.getFileHandle(fileName, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        const content = await zipEntry.async('blob');
+                        await writable.write(content);
+                        await writable.close();
+                        fileCount++;
+                    } catch (writeErr) {
+                        toast.error(`Error al guardar ${fileName}`);
+                    }
+                }
+                toast.success(`✅ Archivos guardados localmente: ${fileCount} en carpeta "${safeFolderName}"`);
+            } else {
+                saveAsZip(blob);
+            }
+
+            // 2. MEDICIÓN SERVIDOR
+            const res = await api.post('/measurements/process-server-orders', { orderIds: selectedOrderIds });
+            if (res.data.success) {
+                toast.success("Medición iniciada en el servidor.");
+                setSelectedOrderIds([]);
+            }
+        } catch (error) {
+            console.error("Error process server:", error);
+            toast.error("Error: " + (error.response?.data?.error || error.message));
         } finally {
             setLoading(false);
         }
@@ -846,6 +923,15 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                                 onClick={handleUnassignMultiple}
                             >
                                 <i className="fa-solid fa-rotate-left"></i> Sacar ({selectedOrderIds.length})
+                            </button>
+                        )}
+
+                        {selectedOrderIds.length > 0 && (
+                            <button
+                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-md shadow-indigo-500/20 active:scale-95 animate-in fade-in"
+                                onClick={handleServerProcess}
+                            >
+                                <i className="fa-solid fa-robot"></i> Descargar y Medir ({selectedOrderIds.length})
                             </button>
                         )}
 

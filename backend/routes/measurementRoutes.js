@@ -24,4 +24,7 @@ router.post('/process-batch-by-orders', controller.processOrdersBatch);
 // NEW: Server Side Full Process (Download + Measure + Update DB)
 router.post('/process-server', controller.processFilesServerSide);
 
+// NEW: Server Side Full Process by OrderIds
+router.post('/process-server-orders', controller.processOrdersServerSide);
+
 module.exports = router;

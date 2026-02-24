@@ -64,15 +64,15 @@ const saveProfile = async (req, res) => {
 
         // 3. Insert Items
         if (items && items.length > 0) {
-            // Bulk insert o loop. Loop es ok para configs.
             for (const item of items) {
                 await new sql.Request(transaction)
                     .input('pid', sql.Int, profileId)
                     .input('cod', sql.NVarChar, item.CodArticulo || 'TOTAL')
                     .input('tipo', sql.NVarChar, item.TipoRegla || 'percentage_discount')
                     .input('val', sql.Decimal(18, 4), item.Valor)
-                    .input('min', sql.Int, item.CantidadMinima || 1) // Nuevo campo
-                    .query("INSERT INTO PerfilesItems (PerfilID, CodArticulo, TipoRegla, Valor, CantidadMinima) VALUES (@pid, @cod, @tipo, @val, @min)");
+                    .input('mon', sql.VarChar, item.Moneda || 'UYU') // Guardar Moneda
+                    .input('min', sql.Int, item.CantidadMinima || 1)
+                    .query("INSERT INTO PerfilesItems (PerfilID, CodArticulo, TipoRegla, Valor, Moneda, CantidadMinima) VALUES (@pid, @cod, @tipo, @val, @mon, @min)");
             }
         }
 

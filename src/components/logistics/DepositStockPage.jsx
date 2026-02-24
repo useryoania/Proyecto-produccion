@@ -104,10 +104,13 @@ const DepositStockPage = () => {
 
             const okCount = resData.filter(r => r.success).length;
             if (okCount > 0) {
-                toast.success(`Sincronizados ${okCount} de ${resData.length} pedidos`);
+                toast.success(`Sincronizados ${okCount} de ${resData.length} pedidos. Refrescando...`);
             } else {
-                toast.error("Fallo general en sincronización");
+                toast.error("Fallo general u ocurrencias de error en sincronización");
             }
+
+            // Refrescar para traer los estados (Enviado_OK, Error) y Observaciones grabadas de la BD
+            await fetchStock();
 
         } catch (err) {
             console.error(err);
@@ -119,15 +122,21 @@ const DepositStockPage = () => {
 
     // 3. Release Logic (Liberar Stock)
     const handleRelease = async () => {
-        if (!results) return;
-        const successfulQRs = results.filter(r => r.success).map(r => r.qr);
+        // En lugar de usar results temporal, ahora basamos la liberación 100% en la base de datos robusta
+        const successfulQRs = stock
+            .filter(item => selectedQRs.has(item.V3String) && item.EstadoSyncReact === 'Enviado_OK' && item.EstadoSyncERP === 'Enviado_OK')
+            .map(item => item.V3String);
 
         if (successfulQRs.length === 0) {
-            toast.info("No hay sincronizaciones exitosas para liberar");
+            toast.error("Ninguno de los pedidos seleccionados está sincronizado con éxito (React y ERP) en la Base de Datos. No se permite la liberación.");
             return;
         }
 
-        if (!confirm(`¿Desea liberar del stock los ${successfulQRs.length} pedidos sincronizados exitosamente?`)) return;
+        if (successfulQRs.length !== selectedQRs.size) {
+            if (!confirm(`CUIDADO: Solo ${successfulQRs.length} de los ${selectedQRs.size} pedidos seleccionados están OK en React y ERP.\n\n¿Desea liberar ÚNICAMENTE los ${successfulQRs.length} exitosos e ignorar los erróneos?`)) return;
+        } else {
+            if (!confirm(`¿Desea despachar / liberar del repositorio los ${successfulQRs.length} pedidos sincronizados exitosamente?`)) return;
+        }
 
         setReleasing(true);
         try {
@@ -176,7 +185,15 @@ const DepositStockPage = () => {
                             disabled={loading || syncing || releasing || selectedQRs.size === 0}
                             className="px-6 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 font-medium flex items-center gap-2 shadow-lg"
                         >
-                            {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sincronizar Seleccionados"} <Send className="w-4 h-4" />
+                            {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sincronizar"} <Send className="w-4 h-4" />
+                        </button>
+                        <button
+                            onClick={handleRelease}
+                            disabled={loading || syncing || releasing || selectedQRs.size === 0}
+                            className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 font-medium flex items-center gap-2 shadow-lg"
+                        >
+                            {releasing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
+                            Liberar Seleccionados
                         </button>
                     </div>
                 </div>
@@ -185,21 +202,8 @@ const DepositStockPage = () => {
                 {results && (
                     <div className="mb-8 bg-white p-4 rounded-xl shadow border border-gray-100 animate-in fade-in slide-in-from-top-2">
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold flex items-center gap-2">Resultados Sincronización</h3>
-
-                            {/* NEW RELEASE BUTTON */}
-                            {results.some(r => r.success) && (
-                                <button
-                                    onClick={handleRelease}
-                                    disabled={releasing}
-                                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-bold flex items-center gap-2 shadow-sm animate-pulse"
-                                >
-                                    {releasing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
-                                    Liberar Stock Exitoso
-                                </button>
-                            )}
+                            <h3 className="text-lg font-bold flex items-center gap-2">Resultados Inmediatos (Última Sincronización)</h3>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                             {results.map((r, i) => {
                                 const originalItem = stock.find(s => s.V3String === r.qr);
@@ -249,7 +253,8 @@ const DepositStockPage = () => {
                                         <th className="p-4 w-24 text-right">Importe</th>
                                         <th className="p-4 w-20 text-center">Perfiles Aplicados</th>
                                         <th className="p-4 text-center">Bultos</th>
-                                        <th className="p-4 text-center">Estado Sync</th>
+                                        <th className="p-4 text-center">React</th>
+                                        <th className="p-4 text-center">ERP</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 text-sm">
@@ -305,10 +310,19 @@ const DepositStockPage = () => {
 
                                                 <td className="p-4 text-center font-bold text-gray-600">{item.CantidadBultos}</td>
                                                 <td className="p-4 text-center">
-                                                    {syncResult ? (
-                                                        syncResult.success
-                                                            ? <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-xs font-bold">OK</span>
-                                                            : <span className="inline-flex items-center px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-bold" title={syncResult.error}>ERR</span>
+                                                    {item.EstadoSyncReact === 'Enviado_OK' ? (
+                                                        <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-[10px] font-bold cursor-help" title={item.ObsReact}>OK</span>
+                                                    ) : item.EstadoSyncReact === 'Error' ? (
+                                                        <span className="inline-flex items-center px-2 py-1 rounded bg-red-100 text-red-700 text-[10px] font-bold cursor-help" title={item.ObsReact}>ERROR</span>
+                                                    ) : (
+                                                        <span className="text-gray-300">—</span>
+                                                    )}
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    {item.EstadoSyncERP === 'Enviado_OK' ? (
+                                                        <span className="inline-flex items-center px-2 py-1 rounded bg-green-100 text-green-700 text-[10px] font-bold cursor-help" title={item.ObsERP}>OK</span>
+                                                    ) : item.EstadoSyncERP === 'Error' ? (
+                                                        <span className="inline-flex items-center px-2 py-1 rounded bg-red-100 text-red-700 text-[10px] font-bold cursor-help" title={item.ObsERP}>ERROR</span>
                                                     ) : (
                                                         <span className="text-gray-300">—</span>
                                                     )}
