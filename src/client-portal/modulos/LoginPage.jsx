@@ -64,7 +64,7 @@ export const LoginPage = () => {
     const { login, register } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
-    const from = location.state?.from?.pathname || '/portal';
+    const from = location.state?.from?.pathname || '/portal/pickup';
 
     const [isLogin, setIsLogin] = useState(true);
     const [requireReset, setRequireReset] = useState(false);

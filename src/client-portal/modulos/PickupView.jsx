@@ -307,7 +307,8 @@ export const PickupView = () => {
             </div>
 
             <GlassCard noPadding className="overflow-hidden">
-                <div className="overflow-x-auto">
+                {/* Desktop: Tabla */}
+                <div className="hidden md:block">
                     <table className="w-full text-left">
                         <thead className="bg-zinc-50/50 border-b border-zinc-200">
                             <tr>
@@ -353,6 +354,45 @@ export const PickupView = () => {
                             ))}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Mobile: Cards */}
+                <div className="md:hidden divide-y divide-zinc-100">
+                    {readyOrders.map((order, idx) => (
+                        <div
+                            key={`mobile-${order.id}-${idx}`}
+                            onClick={() => handleToggleOrder(order.id)}
+                            className={`p-4 flex items-start gap-3 cursor-pointer transition-colors ${selectedOrders.includes(order.id) ? 'bg-zinc-50' : ''}`}
+                        >
+                            <input
+                                type="checkbox"
+                                className="w-5 h-5 mt-0.5 rounded border-zinc-300 text-black focus:ring-black cursor-pointer accent-black"
+                                checked={selectedOrders.includes(order.id)}
+                                readOnly
+                            />
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between gap-2 mb-1">
+                                    <span className="font-mono font-bold text-sm text-zinc-800">{order.id}</span>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${order.isPaid ? 'bg-green-100 text-green-700 border-green-200' : 'bg-green-100 text-green-700 border-green-200'}`}>
+                                        {order.status}
+                                    </span>
+                                </div>
+                                <p className="text-sm text-zinc-600 truncate">{order.desc}</p>
+                                <div className="flex items-center justify-between mt-2 text-xs text-zinc-500">
+                                    <span>{order.date}</span>
+                                    <span className="font-medium text-zinc-800">
+                                        {order.isPaid ? (
+                                            <span className="text-green-600 flex items-center gap-1">
+                                                <CheckCircle size={12} /> Pagado
+                                            </span>
+                                        ) : (
+                                            `${order.currency === 'USD' ? 'US$' : '$'} ${(order.amount || 0).toFixed(2)}`
+                                        )}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
 
                 <div className="p-6 bg-zinc-50/50 border-t border-zinc-200 flex flex-col md:flex-row justify-between items-center gap-4">
