@@ -109,10 +109,10 @@ export const MainLayout = ({ children }) => {
 
                 <nav className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-hide">
                     {/* 1. Mi Perfil (Primero según maqueta) */}
-                    <NavItem to="/portal/profile" icon={User} label="Mi Perfil" />
+                    {/*<NavItem to="/portal/profile" icon={User} label="Mi Perfil" />*/}
 
                     {/* 2. Servicios (Collapsible) */}
-                    <div className="space-y-1">
+                    {/*<div className="space-y-1">
                         <button
                             onClick={() => setIsServicesOpen(!isServicesOpen)}
                             className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${location.pathname.includes('/order') || location.pathname === '/'
@@ -171,7 +171,7 @@ export const MainLayout = ({ children }) => {
                         </AnimatePresence>
                     </div>
 
-                    <NavItem to="/portal/factory" icon={Factory} label="Fábrica / Estado" />
+                    {/* <NavItem to="/portal/factory" icon={Factory} label="Fábrica / Estado" /> */}
                     <NavItem to="/portal/pickup" icon={Truck} label="Retiro de Pedidos" />
 
                     <div className="pt-4 mt-4 border-t border-zinc-800">

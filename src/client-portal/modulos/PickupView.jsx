@@ -322,8 +322,8 @@ export const PickupView = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            {readyOrders.map((order) => (
-                                <tr key={order.id} className={`border-b border-zinc-100 hover:bg-zinc-50/50 transition-colors ${selectedOrders.includes(order.id) ? 'bg-zinc-50' : ''}`}>
+                            {readyOrders.map((order, idx) => (
+                                <tr key={`${order.id}-${idx}`} className={`border-b border-zinc-100 hover:bg-zinc-50/50 transition-colors ${selectedOrders.includes(order.id) ? 'bg-zinc-50' : ''}`}>
                                     <td className="p-4 text-center">
                                         <input
                                             type="checkbox"

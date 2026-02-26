@@ -1,3 +1,9 @@
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
+// Worker configurado para Vite
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+
 export const STORAGE_TYPE = 'BASE64';
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
@@ -34,6 +40,80 @@ const getImageDimensions = (base64) => {
     });
 };
 
+// Leer DPI real desde los bytes del archivo (PNG pHYs / JPEG JFIF/EXIF)
+const getImageDPI = (file) => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        // Leemos los primeros 64KB (suficiente para headers)
+        reader.readAsArrayBuffer(file.slice(0, 65536));
+        reader.onload = (e) => {
+            try {
+                const buf = new Uint8Array(e.target.result);
+
+                // --- PNG: buscar chunk pHYs ---
+                if (buf[0] === 0x89 && buf[1] === 0x50) { // PNG signature
+                    for (let i = 8; i < buf.length - 12; i++) {
+                        // Buscar "pHYs" (70 48 59 73)
+                        if (buf[i + 4] === 0x70 && buf[i + 5] === 0x48 && buf[i + 6] === 0x59 && buf[i + 7] === 0x73) {
+                            const dataStart = i + 8;
+                            const ppuX = (buf[dataStart] << 24) | (buf[dataStart + 1] << 16) | (buf[dataStart + 2] << 8) | buf[dataStart + 3];
+                            const ppuY = (buf[dataStart + 4] << 24) | (buf[dataStart + 5] << 16) | (buf[dataStart + 6] << 8) | buf[dataStart + 7];
+                            const unit = buf[dataStart + 8]; // 1 = metros
+                            if (unit === 1 && ppuX > 0 && ppuY > 0) {
+                                // pHYs da pixels por metro directamente
+                                const dpiX = Math.round(ppuX / 39.3701); // px/m → px/inch
+                                const dpiY = Math.round(ppuY / 39.3701);
+                                console.log(`[DPI] PNG pHYs: ${dpiX}x${dpiY} DPI`);
+                                resolve({ dpiX, dpiY });
+                                return;
+                            }
+                            break;
+                        }
+                        // Saltar al siguiente chunk
+                        const chunkLen = (buf[i] << 24) | (buf[i + 1] << 16) | (buf[i + 2] << 8) | buf[i + 3];
+                        i += chunkLen + 11; // length(4) + type(4) + data + crc(4) - 1
+                    }
+                }
+
+                // --- JPEG: buscar JFIF APP0 ---
+                if (buf[0] === 0xFF && buf[1] === 0xD8) { // JPEG SOI
+                    for (let i = 2; i < buf.length - 20; i++) {
+                        // APP0 JFIF marker
+                        if (buf[i] === 0xFF && buf[i + 1] === 0xE0) {
+                            const jfif = String.fromCharCode(buf[i + 4], buf[i + 5], buf[i + 6], buf[i + 7], buf[i + 8]);
+                            if (jfif === 'JFIF\x00') {
+                                const densityUnit = buf[i + 9];
+                                const xDensity = (buf[i + 10] << 8) | buf[i + 11];
+                                const yDensity = (buf[i + 12] << 8) | buf[i + 13];
+                                if (densityUnit === 1 && xDensity > 0) { // DPI
+                                    console.log(`[DPI] JPEG JFIF: ${xDensity}x${yDensity} DPI`);
+                                    resolve({ dpiX: xDensity, dpiY: yDensity });
+                                    return;
+                                } else if (densityUnit === 2 && xDensity > 0) { // dots/cm
+                                    const dpiX = Math.round(xDensity * 2.54);
+                                    const dpiY = Math.round(yDensity * 2.54);
+                                    console.log(`[DPI] JPEG JFIF (cm): ${dpiX}x${dpiY} DPI`);
+                                    resolve({ dpiX, dpiY });
+                                    return;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                // No se encontró DPI → default 300
+                console.log('[DPI] No se detectó DPI, usando 300 por defecto');
+                resolve({ dpiX: 300, dpiY: 300 });
+            } catch (err) {
+                console.warn('[DPI] Error leyendo DPI:', err);
+                resolve({ dpiX: 300, dpiY: 300 });
+            }
+        };
+        reader.onerror = () => resolve({ dpiX: 300, dpiY: 300 });
+    });
+};
+
 const getMimeTypeFromMagic = (base64) => {
     const header = base64.split(',')[1]?.substring(0, 20) || '';
     if (header.startsWith('iVBORw0KGgo')) return 'image/png';
@@ -44,65 +124,100 @@ const getMimeTypeFromMagic = (base64) => {
 
 const getPdfDimensionsFromFile = (file) => {
     return new Promise((resolve) => {
-        const reader = new FileReader();
-        // Leemos los primeros 50KB (suficiente para la mayoría de headers PDF)
-        const blob = file.slice(0, 50000);
-        reader.readAsText(blob, 'latin1'); // 'latin1' mapea bytes 0-255 a caracteres 1:1
+        const headSize = Math.min(file.size, 500000);
+        const tailSize = file.size > 1000000 ? Math.min(3000000, file.size - headSize) : 0;
 
-        reader.onload = (e) => {
-            try {
-                const data = e.target.result;
-
-                // Buscar MediaBox o CropBox
-                // Ejemplo: /MediaBox [0 0 595.28 841.89]
-                // Soporta saltos de línea y espacios múltiples
-                const boxRegex = /\/(MediaBox|CropBox)\s*\[\s*(-?[\d\.]+)\s+(-?[\d\.]+)\s+(-?[\d\.]+)\s+(-?[\d\.]+)\s*\]/;
-                const match = data.match(boxRegex);
-
-                if (match) {
-                    const x1 = parseFloat(match[2]);
-                    const y1 = parseFloat(match[3]);
-                    const x2 = parseFloat(match[4]);
-                    const y2 = parseFloat(match[5]);
-
-                    let widthInPoints = Math.abs(x2 - x1);
-                    let heightInPoints = Math.abs(y2 - y1);
-
-                    // Detectar rotación (/Rotate 90)
-                    const rotateMatch = data.match(/\/Rotate\s+(\d+)/);
-                    if (rotateMatch) {
-                        const rotation = parseInt(rotateMatch[1]);
-                        if (rotation === 90 || rotation === 270) {
-                            [widthInPoints, heightInPoints] = [heightInPoints, widthInPoints];
-                        }
+        const searchMediaBox = (text) => {
+            const data = text.replace(/\r\n?/g, ' ').replace(/\n/g, ' ');
+            const boxRegex = /\/(MediaBox|CropBox)\s*\[\s*(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\s*\]/g;
+            let largestMediaBox = null;
+            let fallback = null;
+            let match;
+            while ((match = boxRegex.exec(data)) !== null) {
+                const boxType = match[1];
+                const w = Math.abs(parseFloat(match[4]) - parseFloat(match[2]));
+                const h = Math.abs(parseFloat(match[5]) - parseFloat(match[3]));
+                if (w < 1 || h < 1) continue;
+                if (boxType === 'MediaBox') {
+                    // Quedarnos con el MediaBox más grande (página de impresión)
+                    if (!largestMediaBox || (w * h) > (largestMediaBox.w * largestMediaBox.h)) {
+                        largestMediaBox = { type: boxType, w, h, data };
                     }
+                } else if (!fallback) {
+                    fallback = { type: boxType, w, h, data };
+                }
+            }
+            return largestMediaBox || fallback;
+        };
 
-                    // --- CONVERSIÓN CRÍTICA A METROS ---
-                    // 72 puntos = 1 pulgada
-                    // 1 pulgada = 0.0254 metros
-                    const widthInMeters = (widthInPoints / 72) * 0.0254;
-                    const heightInMeters = (heightInPoints / 72) * 0.0254;
+        const finalize = (result) => {
+            if (!result) {
+                console.warn(`[PDF PARSER] No se encontró MediaBox/CropBox en el PDF.`);
+                resolve(null);
+                return;
+            }
+            let widthInPoints = result.w;
+            let heightInPoints = result.h;
+            const rotateMatch = result.data.match(/\/Rotate\s+(\d+)/);
+            if (rotateMatch) {
+                const rotation = parseInt(rotateMatch[1]);
+                if (rotation === 90 || rotation === 270) {
+                    [widthInPoints, heightInPoints] = [heightInPoints, widthInPoints];
+                }
+            }
+            const widthInMeters = (widthInPoints / 72) * 0.0254;
+            const heightInMeters = (heightInPoints / 72) * 0.0254;
+            console.log(`[PDF PARSER] ${result.type}: ${widthInPoints.toFixed(1)}x${heightInPoints.toFixed(1)}pt → ${widthInMeters.toFixed(3)}x${heightInMeters.toFixed(3)}m`);
+            resolve({
+                width: parseFloat(widthInMeters.toFixed(3)),
+                height: parseFloat(heightInMeters.toFixed(3)),
+                unit: 'meters'
+            });
+        };
 
-                    console.log(`[PDF PARSER] Puntos: ${widthInPoints}x${heightInPoints} -> Metros: ${widthInMeters.toFixed(3)}x${heightInMeters.toFixed(3)}`);
-
-                    resolve({
-                        width: parseFloat(widthInMeters.toFixed(3)),
-                        height: parseFloat(heightInMeters.toFixed(3)),
-                        unit: 'meters'
-                    });
+        // Leer el inicio del PDF
+        const headReader = new FileReader();
+        headReader.onload = (e) => {
+            try {
+                const headResult = searchMediaBox(e.target.result);
+                // Si encontramos MediaBox en el inicio, listo
+                if (headResult && headResult.type === 'MediaBox') {
+                    finalize(headResult);
                     return;
                 }
-                console.warn("[PDF PARSER] No se encontró MediaBox en los primeros 50KB.");
-                resolve(null);
+
+                // Si el archivo es grande, leer también el final
+                if (tailSize > 0) {
+                    const tailReader = new FileReader();
+                    tailReader.onload = (e2) => {
+                        try {
+                            const tailResult = searchMediaBox(e2.target.result);
+                            // Priorizar MediaBox del tail, sino lo que tengamos
+                            if (tailResult && tailResult.type === 'MediaBox') {
+                                finalize(tailResult);
+                            } else {
+                                finalize(headResult || tailResult);
+                            }
+                        } catch (err) {
+                            console.error("[PDF PARSER] Error leyendo tail:", err);
+                            finalize(headResult);
+                        }
+                    };
+                    tailReader.onerror = () => finalize(headResult);
+                    tailReader.readAsText(file.slice(file.size - tailSize), 'latin1');
+                } else {
+                    finalize(headResult);
+                }
             } catch (err) {
                 console.error("[PDF PARSER] Error analizando contenido:", err);
                 resolve(null);
             }
         };
-        reader.onerror = () => {
+        headReader.onerror = () => {
             console.error("[PDF PARSER] Error leyendo archivo");
             resolve(null);
         };
+        headReader.readAsText(file.slice(0, headSize), 'latin1');
     });
 };
 
@@ -126,17 +241,75 @@ export const fileService = {
             if (detectedType.startsWith('image/')) {
                 const dims = await getImageDimensions(base64Data);
                 if (dims) {
-                    dimensions = { ...dims, unit: 'px' };
+                    // Leer DPI real del archivo (no asumir 300)
+                    const { dpiX, dpiY } = await getImageDPI(file);
+                    const widthM = (dims.width / dpiX) * 0.0254;
+                    const heightM = (dims.height / dpiY) * 0.0254;
+                    console.log(`[IMG] ${dims.width}x${dims.height}px @ ${dpiX}DPI → ${widthM.toFixed(3)}x${heightM.toFixed(3)}m`);
+                    dimensions = {
+                        width: parseFloat(widthM.toFixed(3)),
+                        height: parseFloat(heightM.toFixed(3)),
+                        unit: 'meters'
+                    };
                 } else {
                     measurementError = "Formato de imagen no procesable para medida";
                 }
             } else if (detectedType === 'application/pdf') {
-                // USAR NUEVA FUNCIÓN ROBUSTA
-                const dims = await getPdfDimensionsFromFile(file);
+                // 1. Intentar parser rápido (regex sobre texto plano)
+                let dims = await getPdfDimensionsFromFile(file);
+
+                // 2. Fallback: usar pdf.js para PDFs con streams comprimidos
+                if (!dims) {
+                    try {
+                        console.log('[PDF PARSER] Regex falló, usando pdf.js...');
+                        const arrayBuffer = await file.arrayBuffer();
+                        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                        const page = await pdf.getPage(1);
+
+                        // Usar MediaBox directamente en vez de getViewport (que usa CropBox)
+                        let widthPt, heightPt;
+                        const mediaBox = page._pageInfo?.view || page.view;
+                        if (mediaBox && mediaBox.length === 4) {
+                            widthPt = Math.abs(mediaBox[2] - mediaBox[0]);
+                            heightPt = Math.abs(mediaBox[3] - mediaBox[1]);
+                        }
+
+                        // Si no tenemos mediaBox, intentar desde la referencia interna
+                        if (!widthPt || !heightPt) {
+                            try {
+                                const dict = page._pageInfo?.rawDict || page.pageDict;
+                                const mb = dict?.get?.('MediaBox');
+                                if (mb && mb.length === 4) {
+                                    widthPt = Math.abs(mb[2] - mb[0]);
+                                    heightPt = Math.abs(mb[3] - mb[1]);
+                                }
+                            } catch (e) { }
+                        }
+
+                        // Último fallback: viewport
+                        if (!widthPt || !heightPt) {
+                            const viewport = page.getViewport({ scale: 1 });
+                            widthPt = viewport.width;
+                            heightPt = viewport.height;
+                        }
+
+                        const widthM = (widthPt / 72) * 0.0254;
+                        const heightM = (heightPt / 72) * 0.0254;
+                        console.log(`[PDF PARSER] pdf.js: ${widthPt.toFixed(1)}x${heightPt.toFixed(1)}pt → ${widthM.toFixed(3)}x${heightM.toFixed(3)}m`);
+                        dims = {
+                            width: parseFloat(widthM.toFixed(3)),
+                            height: parseFloat(heightM.toFixed(3)),
+                            unit: 'meters'
+                        };
+                    } catch (pdfErr) {
+                        console.error('[PDF PARSER] pdf.js también falló:', pdfErr.message);
+                    }
+                }
+
                 if (dims) {
                     dimensions = dims;
                 } else {
-                    measurementError = "No se pudo extraer dimensiones vectoriales (MediaBox) del PDF";
+                    measurementError = "No se pudo extraer dimensiones del PDF";
                 }
             } else {
                 measurementError = `Tipo de archivo (${detectedType}) no soportado para medida automática`;
