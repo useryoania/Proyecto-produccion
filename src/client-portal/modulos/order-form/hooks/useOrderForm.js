@@ -151,7 +151,7 @@ export const useOrderForm = (serviceId, overrides = {}) => {
     const { addToast } = useToast();
     const [state, dispatch] = useReducer(orderFormReducer, initialState);
 
-    const serviceInfo = SERVICES_LIST.find(s => s.id === serviceId);
+    const serviceInfo = SERVICES_LIST.find(s => s.id.toLowerCase() === serviceId?.toLowerCase());
     const config = serviceInfo?.config || {};
 
     // --- Computed Visibility Logic ---

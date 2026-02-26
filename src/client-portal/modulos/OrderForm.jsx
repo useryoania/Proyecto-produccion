@@ -195,7 +195,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                 }
 
                 // Validación de alto máximo para DTF (2.50m)
-                if (serviceId === 'DF') {
+                if (serviceId?.toUpperCase() === 'DF') {
                     const fileHeightM = result.unit === 'meters' ? result.height : (result.height / 300) * 0.0254;
                     if (fileHeightM > 2.50) {
                         actions.setErrorModalMessage(
@@ -991,7 +991,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                                                 values={item.printSettings || {}} copies={item.copies}
                                                                 onCopiesChange={(v) => actions.updateItem(item.id, 'copies', v)}
                                                                 onChange={(s) => actions.updateItem(item.id, 'printSettings', s)}
-                                                                disableScaling={serviceId === 'tpu' || serviceId === 'DF'}
+                                                                disableScaling={serviceId === 'tpu' || serviceId?.toUpperCase() === 'DF'}
                                                             />
                                                         )}
                                                     </div>
