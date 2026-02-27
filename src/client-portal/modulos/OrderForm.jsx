@@ -207,6 +207,15 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                 }
             }
 
+            // Validación de páginas para DTF (máximo 1 página)
+            if (serviceId?.toUpperCase() === 'DF' && result.pageCount && result.pageCount > 1) {
+                actions.setErrorModalMessage(
+                    `El archivo tiene ${result.pageCount} páginas. Para DTF solo se permite 1 página por archivo.`
+                );
+                actions.setErrorModalOpen(true);
+                return false;
+            }
+
             if (result.measurementError) {
                 addToast(`ALERTA TÉCNICA: El archivo se cargó pero no pudo ser medido automáticamente. (${result.measurementError})`, 'warning');
 

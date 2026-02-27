@@ -36,7 +36,7 @@ const Navbar = ({ onSwitchTab, currentView }) => {
         onClick={() => onSwitchTab?.('dashboard')}
       >
         <h1 className="font-black text-slate-800 tracking-tighter text-lg leading-none group-hover:text-cyan-600 transition-colors uppercase">
-          USER PRODUCCION--MACROSOFT /  {user?.nombre || user?.usuario || 'INVITADO'}
+          GESTIÓN DE PRODUCCIÓN / <span className="text-cyan-600">{user?.nombre || user?.usuario}</span>
         </h1>
         <span className="text-[10px] uppercase font-bold text-blue-500 tracking-widest mt-1">
           {getBreadcrumb()}
@@ -45,7 +45,7 @@ const Navbar = ({ onSwitchTab, currentView }) => {
 
       {/* CENTRO: Botones de navegación (Estilo Pestañas Modernas) */}
       <div className="hidden md:flex items-center bg-slate-100 p-1 rounded-xl">
-        {[
+        {/*{[
           { id: 'metrics', label: 'Métricas', icon: 'fa-chart-line' },
           { id: 'production', label: 'Planillas', icon: 'fa-layer-group' },
           { id: 'chat', label: 'Chat', icon: 'fa-comments' }
@@ -67,7 +67,7 @@ const Navbar = ({ onSwitchTab, currentView }) => {
               <span>{tab.label}</span>
             </button>
           )
-        })}
+        })}*/}
         {/* LUPA DE BÚSQUEDA GLOBAL */}
         <button
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-300 text-slate-500 hover:text-blue-600 hover:bg-blue-50"

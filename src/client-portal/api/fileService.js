@@ -237,6 +237,7 @@ export const fileService = {
 
             let dimensions = { width: null, height: null, unit: null };
             let measurementError = null;
+            let pageCount = null;
 
             if (detectedType.startsWith('image/')) {
                 const dims = await getImageDimensions(base64Data);
@@ -264,6 +265,7 @@ export const fileService = {
                         console.log('[PDF PARSER] Regex falló, usando pdf.js...');
                         const arrayBuffer = await file.arrayBuffer();
                         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                        pageCount = pdf.numPages;
                         const page = await pdf.getPage(1);
 
                         // Usar MediaBox directamente en vez de getViewport (que usa CropBox)
@@ -308,6 +310,14 @@ export const fileService = {
 
                 if (dims) {
                     dimensions = dims;
+                    // Si todavía no tenemos pageCount (regex parser), obtenerlo con pdf.js
+                    if (!pageCount) {
+                        try {
+                            const arrayBuffer = await file.arrayBuffer();
+                            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                            pageCount = pdf.numPages;
+                        } catch (e) { }
+                    }
                 } else {
                     measurementError = "No se pudo extraer dimensiones del PDF";
                 }
@@ -324,6 +334,7 @@ export const fileService = {
                 width: dimensions.width,
                 height: dimensions.height,
                 unit: dimensions.unit,
+                pageCount: pageCount,
                 measurementError: measurementError
             };
         } catch (error) {
