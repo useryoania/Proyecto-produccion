@@ -81,6 +81,18 @@ app.use('/api/logistics', require('./routes/logisticsRoutes'));
 app.use('/api/inventory', require('./routes/inventoryRoutes'));
 app.use('/api/configuraciones', require('./routes/configuracionesRoutes'));
 
+// HEALTH CHECK (lightweight, no auth)
+app.get('/api/health', async (req, res) => {
+    try {
+        const { getPool } = require('./config/db');
+        const pool = await getPool();
+        await pool.request().query('SELECT 1');
+        res.json({ status: 'ok' });
+    } catch {
+        res.status(500).json({ status: 'error' });
+    }
+});
+
 // SECCIÓN DE PRODUCCIÓN
 app.use('/api/production-kanban', require('./routes/productionKanbanRoutes'));
 app.use('/api/production-file-control', require('./routes/productionFileRoutes'));

@@ -31,6 +31,7 @@ const PriceProfiles = lazy(() => import('../pages/PriceProfiles'));
 const LabelGenerationPage = lazy(() => import('../pages/LabelGenerationPage'));
 const DepositStockPage = lazy(() => import('../logistics/DepositStockPage'));
 const CustomerReplacementPage = lazy(() => import('../pages/customer-service/CustomerReplacementPage'));
+const IntegralOrderView = lazy(() => import('../pages/IntegralOrderView'));
 
 // ============================================
 // 1. COMPONENTE NAVNODE (Mejorado)
@@ -40,7 +41,7 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
     const isOpen = openMenus[item.IdModulo];
     const isSelected = location.pathname === item.Ruta;
 
-    const baseClasses = "flex items-center mx-2 mb-1 rounded-lg cursor-pointer select-none transition-all duration-200 group relative";
+    const baseClasses = "flex items-center mx-2 mb-2 rounded-lg cursor-pointer select-none transition-all duration-200 group relative";
     const paddingLeft = isCollapsed ? '12px' : `${12 + (level * 12)}px`;
 
     return (
@@ -49,8 +50,8 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                 className={`
                     ${baseClasses}
                     ${isSelected
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-blue-600"
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-500/30"
+                        : "text-slate-100 opacity-70 hover:opacity-100 hover:bg-zinc-800 hover:text-white hover:scale-[1.05]"
                     }
                     ${!isCollapsed ? 'py-2.5' : 'py-3 justify-center'}
                 `}
@@ -70,34 +71,29 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                 `}>
                     <i className={`
                         fa-solid ${item.Icono || (hasChildren ? 'fa-folder' : 'fa-circle')} 
-                        ${isSelected ? "text-white" : "text-slate-400 group-hover:text-blue-500"}
+                        ${isSelected ? "text-white" : "text-slate-300 group-hover:text-blue-500"}
                     `}></i>
                 </div>
 
                 {!isCollapsed && (
                     <>
-                        <span className={`flex-1 text-sm font-medium tracking-wide truncate ${isSelected ? 'text-white' : ''}`}>
+                        <span className={`flex-1 text-xs font-medium tracking-wide truncate ${isSelected ? 'text-white' : 'text-slate-100'}`}>
                             {item.Nombre}
                         </span>
 
                         {hasChildren && (
                             <i className={`
-                                fa-solid fa-chevron-right text-[10px] ml-2 transition-transform duration-300
+                                fa-solid fa-chevron-right text-[10px] mr-2 transition-transform duration-300
                                 ${isOpen ? "rotate-90" : ""}
-                                ${isSelected ? "text-blue-200" : "text-slate-300"}
+                                ${isSelected ? "text-blue-500" : "text-slate-100"}
                             `}></i>
                         )}
                     </>
                 )}
 
-                {isCollapsed && (
-                    <div className="absolute left-full ml-2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity shadow-lg">
-                        {item.Nombre}
-                    </div>
-                )}
             </div>
 
-            <div className={`overflow-hidden transition-all duration-300 ease-in-out ${hasChildren && isOpen && !isCollapsed ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+            <div className={`overflow-hidden ${hasChildren && isOpen && !isCollapsed ? '' : 'hidden'}`}>
                 {hasChildren && (
                     <div className="mt-1">
                         {item.children.map(child => (
@@ -204,50 +200,40 @@ const MainAppContent = ({ menuItems = [] }) => {
             <div className="flex flex-1 overflow-hidden">
                 <aside
                     className={`
-                        flex flex-col bg-white border-r border-slate-200 shadow-xl z-20
+                        flex flex-col bg-zinc-900 border-r border-zinc-700 shadow-xl z-20
                         transition-all duration-300 ease-in-out h-full
                         ${isCollapsed ? "w-20" : "w-[280px]"}
                     `}
                 >
-                    <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-white min-h-[64px]">
+                    <div className="flex items-center justify-around px-4 border-b border-zinc-700 bg-zinc-900 min-h-[64px]">
                         {!isCollapsed && (
-                            <div className="flex-1 overflow-hidden animate-fade-in">
-                                <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-0.5">Sistema</h2>
-                                <p className="text-sm font-bold text-slate-800 truncate leading-tight capitalize">
-                                    {user?.nombre?.toLowerCase() || user?.usuario || 'Admin'}
-                                </p>
+                            <div className="flex px-2 items-center justify-between">
+                                <button
+                                    onClick={() => Object.keys(openMenus).length > 0 ? collapseAll() : expandAll()}
+                                    className="rounded-md text-slate-100 hover:text-blue-500 transition-colors"
+                                    title={Object.keys(openMenus).length > 0 ? "Colapsar todo" : "Expandir todo"}
+                                >
+                                    <i className={`fa-solid ${Object.keys(openMenus).length > 0 ? 'fa-angles-up' : 'fa-angles-down'} `}></i>
+                                </button>
                             </div>
-                        )}
 
+                        )}
                         <button
                             className={`
-                                flex items-center justify-center rounded-xl
-                                w-8 h-8 
-                                ${isCollapsed ? 'mx-auto bg-blue-50 text-blue-600 shadow-sm' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}
-                                transition-all duration-200 border border-transparent hover:border-slate-200 hover:shadow-sm
+                                flex items-center justify-center 
+                                hover:text-blue-500 transition-colors
+                                ${isCollapsed ? 'mx-auto text-slate-100' : 'text-slate-100'}
                             `}
                             onClick={() => setIsCollapsed(!isCollapsed)}
                             title={isCollapsed ? "Expandir Panel" : "Colapsar Panel"}
                         >
-                            <i className={`fa-solid ${isCollapsed ? 'fa-angles-right' : 'fa-angles-left'} text-xs`}></i>
+                            <i className={`fa-solid ${isCollapsed ? 'fa-angles-right' : 'fa-angles-left'}`}></i>
                         </button>
                     </div>
 
-                    {!isCollapsed && (
-                        <div className="flex items-center justify-between px-4 py-2 bg-slate-50/50 border-b border-slate-100 mb-2">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Navegación</span>
-                            <div className="flex gap-1">
-                                <button onClick={expandAll} className="p-1.5 rounded-md hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors" title="Expandir todo">
-                                    <i className="fa-solid fa-folder-open text-xs"></i>
-                                </button>
-                                <button onClick={collapseAll} className="p-1.5 rounded-md hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors" title="Colapsar todo">
-                                    <i className="fa-solid fa-folder-closed text-xs"></i>
-                                </button>
-                            </div>
-                        </div>
-                    )}
 
-                    <nav className="flex-1 overflow-y-auto p-3 custom-scrollbar space-y-1">
+
+                    <nav className="flex-1 overflow-y-auto p-3 custom-scrollbar space-y-2 uppercase">
                         {menuTree.map(node => (
                             <NavNode
                                 key={node.IdModulo}
@@ -262,7 +248,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                     </nav>
 
                     {!isCollapsed && (
-                        <div className="p-3 border-t border-slate-100 text-center bg-white">
+                        <div className="p-3 border-t border-zinc-700 text-center bg-zinc-900">
                             <p className="text-[10px] text-slate-300 font-mono">v1.0.5 Producción</p>
                         </div>
                     )}
@@ -271,13 +257,14 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <main className="flex-1 overflow-hidden relative bg-slate-50/50 w-full">
                     <div className="absolute inset-0 overflow-y-auto p-6 scroll-smooth">
                         <Suspense fallback={
-                            <div className="flex items-center justify-center h-full">
+                            <div className="flex items-center justify-center h-full ">
                                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                             </div>
                         }>
                             <Routes>
                                 <Route path="/" element={<Dashboard />} />
                                 <Route path="/consultas/ordenes" element={<OrdersQueryView />} />
+                                <Route path="/consultas/integral" element={<IntegralOrderView />} />
                                 <Route path="/consultas/rollos" element={<RollHistory />} />
                                 <Route path="/production/machine/:area/:machineId" element={<MachineDetailView />} />
                                 <Route path="/area/:areaId/*" element={<DynamicRouter menuItems={menuItems} />} />
