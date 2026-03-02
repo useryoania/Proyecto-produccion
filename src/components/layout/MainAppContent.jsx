@@ -32,11 +32,8 @@ const PriceProfiles = lazy(() => import('../pages/PriceProfiles'));
 const LabelGenerationPage = lazy(() => import('../pages/LabelGenerationPage'));
 const DepositStockPage = lazy(() => import('../logistics/DepositStockPage'));
 const CustomerReplacementPage = lazy(() => import('../pages/customer-service/CustomerReplacementPage'));
-<<<<<<< HEAD
 const CustomerPriceCatalogPage = lazy(() => import('../pages/CustomerPriceCatalogPage'));
-=======
 const IntegralOrderView = lazy(() => import('../pages/IntegralOrderView'));
->>>>>>> b0d8bb27fdf92145d0f0ed7519ada0d1e7571001
 
 // ============================================
 // 1. COMPONENTE NAVNODE (Mejorado)

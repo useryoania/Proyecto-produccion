@@ -230,12 +230,8 @@ export const MainLayout = ({ children }) => {
                             {/*<NavItem to="/portal/profile" icon={User} label="Mi Perfil" />*/}
                             {/*<NavItem to="/portal/factory" icon={Factory} label="Fábrica / Estado" />*/}
                             <NavItem to="/portal/pickup" icon={Truck} label="Retiro de Pedidos" />
-<<<<<<< HEAD
                             <NavItem to="/portal/payments" icon={CreditCard} label="Pagos Pendientes" />
-                            <NavItem to="/portal/club" icon={Crown} label="Club Member" />
-=======
                             {/*<NavItem to="/portal/club" icon={Crown} label="Club Member" />*/}
->>>>>>> b0d8bb27fdf92145d0f0ed7519ada0d1e7571001
 
                             <button onClick={logout} className="mt-8 flex items-center gap-3 px-4 py-3 text-red-400">
                                 <LogOut size={20} /> Cerrar Sesión
