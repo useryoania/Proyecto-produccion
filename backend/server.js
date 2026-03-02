@@ -66,10 +66,12 @@ app.use('/api/auth', require('./routes/authRoutes'));
 
 const webAuthRoutes = require('./routes/webAuthRoutes');
 const webOrdersRoutes = require('./routes/webOrdersRoutes'); // Nueva ruta Pedidos Web
+const webRetirosRoutes = require('./routes/webRetirosRoutes');
 const nomenclatorsRoutes = require('./routes/nomenclatorsRoutes');
 
 app.use('/api/web-auth', webAuthRoutes); // RUTAS AUTH CLIENTE WEB
 app.use('/api/web-orders', webOrdersRoutes); // RUTAS PEDIDOS CLIENTE WEB (DTF, Etc)
+app.use('/api/web-retiros', webRetirosRoutes); 
 app.use('/api/web-content', require('./routes/webContentRoutes')); // RUTAS CONTENIDO WEB (Sidebar/Popup)
 app.use('/api/nomenclators', nomenclatorsRoutes);
 app.use('/api/routes-config', require('./routes/routesConfigRoutes'));

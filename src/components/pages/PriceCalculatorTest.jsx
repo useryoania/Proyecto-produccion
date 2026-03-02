@@ -144,15 +144,16 @@ const PriceCalculatorTest = ({ customers = [], assignments = {}, onSearch }) => 
 
         setLoading(true);
         try {
-            const params = {
-                cod: selectedProduct,
-                qty: quantity,
-                cid: clientId || null,
-                extra: extraProfiles.join(','),
-                ...(puntadas && { puntadas })
+            const payload = {
+                codArticulo: selectedProduct,
+                cantidad: quantity,
+                clienteId: clientId || null,
+                extraProfileIds: extraProfiles,
+                variables: puntadas ? { puntadas } : {},
+                targetCurrency: 'USD'
             };
 
-            const res = await api.get('/prices/calculate', { params });
+            const res = await api.post('/prices/calculate', payload);
             setResult(res.data);
             setIgnoredSurcharges([]); // Reset manual toggles on new calculation
 

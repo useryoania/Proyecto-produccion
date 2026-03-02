@@ -105,6 +105,41 @@ router.get('/materials/:areaId/:variante', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Get All Articles for Combobox
+router.get('/all-articles', async (req, res) => {
+    try {
+        const pool = await getPool();
+        const r = await pool.request().query(`
+            SELECT TOP 2000 
+                CodArticulo, 
+                Descripcion 
+            FROM dbo.articulos
+            WHERE ISNULL(mostrar, 1) = 1
+            ORDER BY Descripcion
+        `);
+        res.json({ success: true, data: r.recordset });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get Articles by Area
+router.get('/articles-by-area/:areaId', async (req, res) => {
+    try {
+        const pool = await getPool();
+        const r = await pool.request()
+            .input('AreaID', sql.VarChar, req.params.areaId)
+            .query(`
+                SELECT 
+                    a.CodArticulo, 
+                    a.Descripcion 
+                FROM dbo.articulos a
+                INNER JOIN dbo.ConfigMapeoERP c ON a.Grupo = c.CodigoERP COLLATE Database_Default
+                WHERE c.AreaID_Interno = @AreaID
+                ORDER BY a.Descripcion
+            `);
+        res.json({ success: true, data: r.recordset });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Get Vendedores by Department Zone
 router.get('/vendedores-by-department/:departamentoId', async (req, res) => {
     try {

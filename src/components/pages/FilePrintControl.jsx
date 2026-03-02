@@ -343,7 +343,8 @@ const FilePrintControl = ({ areaCode }) => {
       motivo: actionReason,
       tipoFalla: failureType,
       metrosReponer: metersToReprint, // Correct field
-      usuario: user?.usuario || user?.username || 'Sistema' // String username
+      usuario: user?.usuario || user?.username || 'Sistema', // String username
+      isService: selectedFileForAction.isService
     };
 
     try {
@@ -584,7 +585,7 @@ const FilePrintControl = ({ areaCode }) => {
 
                   {files.map(file => (
                     <FileControlCard
-                      key={file.ArchivoID || file.id}
+                      key={file.isService ? `service-${file.ArchivoID}` : `file-${file.ArchivoID}`}
                       file={file}
                       refreshOrder={refreshCurrentOrder}
                       onAction={openActionModal}

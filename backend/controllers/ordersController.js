@@ -1,5 +1,34 @@
 const { getPool, sql } = require('../config/db');
 
+// HELPER: Recalcular Magnitud de la Orden (Suma de piezas de Archivos + Servicios)
+// Se usa en add, update, delete y cancel para mantener la coherencia.
+const recalculateOrderMagnitude = async (transaction, ordenId) => {
+    if (!ordenId) return;
+    try {
+        await new sql.Request(transaction)
+            .input('OID', sql.Int, ordenId)
+            .query(`
+                DECLARE @Total FLOAT = 0;
+                
+                -- Suma de Copias en ArchivosOrden (ignorando cancelados)
+                SELECT @Total = @Total + ISNULL(SUM(CAST(ISNULL(Copias, 0) AS FLOAT)), 0)
+                FROM dbo.ArchivosOrden 
+                WHERE OrdenID = @OID AND ISNULL(EstadoArchivo, '') != 'CANCELADO';
+                
+                -- Suma de Cantidad en ServiciosExtraOrden
+                SELECT @Total = @Total + ISNULL(SUM(CAST(ISNULL(Cantidad, 0) AS FLOAT)), 0)
+                FROM dbo.ServiciosExtraOrden 
+                WHERE OrdenID = @OID;
+                
+                UPDATE dbo.Ordenes 
+                SET Magnitud = CAST(FORMAT(@Total, '0.##') AS NVARCHAR(20)) + ' u'
+                WHERE OrdenID = @OID;
+            `);
+    } catch (e) {
+        console.error("❌ Error recalculateOrderMagnitude:", e.message);
+    }
+};
+
 // =====================================================================
 // 1. OBTENER ÓRDENES (ACTUALIZADO: Lee Material, Variante y CodigoOrden)
 // =====================================================================
@@ -119,7 +148,7 @@ exports.getOrdersByArea = async (req, res) => {
             printer: o.NombreMaquina,
             rollId: o.RolloID,
             magnitude: o.Magnitud,
-            unit: o.UM,                 // <--- Mapeamos Unidad
+            unit: o.UM,                 // <--- Mapeo para el frontend
 
             material: o.Material,       // Descripción
             variantCode: o.Variante,    // CodStock
@@ -227,12 +256,34 @@ exports.createOrder = async (req, res) => {
                         .input('Nom', sql.VarChar(255), file.name || 'Archivo')
                         .input('Tipo', sql.VarChar(50), file.tipo || 'GENERAL')
                         .input('Ruta', sql.VarChar(500), file.url || '') // Si ya tienes URL
+                        .input('Copias', sql.Int, file.copias || 1) // Asegurar que copias se inserta
                         .query(`
-                            INSERT INTO ArchivosOrden (OrdenID, NombreArchivo, TipoArchivo, RutaAlmacenamiento, EstadoArchivo, FechaSubida)
-                            VALUES (@OID, @Nom, @Tipo, @Ruta, 'Pendiente', GETDATE())
+                            INSERT INTO ArchivosOrden (OrdenID, NombreArchivo, TipoArchivo, RutaAlmacenamiento, EstadoArchivo, FechaSubida, Copias)
+                            VALUES (@OID, @Nom, @Tipo, @Ruta, 'Pendiente', GETDATE(), @Copias)
                         `);
                 }
             }
+
+            // Insertar Servicios Extra
+            if (srv.serviciosExtra && Array.isArray(srv.serviciosExtra)) {
+                for (const service of srv.serviciosExtra) {
+                    await new sql.Request(transaction)
+                        .input('OID', sql.Int, newOrderId)
+                        .input('Desc', sql.NVarChar(255), service.descripcion || 'Servicio Extra')
+                        .input('Cant', sql.Decimal(18, 2), service.cantidad || 0)
+                        .input('Obs', sql.NVarChar(sql.MAX), service.observacion || '')
+                        .input('Puntadas', sql.Int, service.puntadas || null)
+                        .input('Bajadas', sql.Int, service.bajadas || null)
+                        .input('BajadasAdicionales', sql.Int, service.bajadasAdicionales || null)
+                        .query(`
+                            INSERT INTO ServiciosExtraOrden (OrdenID, Descripcion, Cantidad, Observacion, FechaRegistro, Puntadas, Bajadas, BajadasAdicionales)
+                            VALUES (@OID, @Desc, @Cant, @Obs, GETDATE(), @Puntadas, @Bajadas, @BajadasAdicionales)
+                        `);
+                }
+            }
+
+            // Recalcular magnitud inicial de la orden
+            await recalculateOrderMagnitude(transaction, newOrderId);
 
             // LOG HISTORIAL
             const safeUser = String((req.body.usuario && (req.body.usuario.id || req.body.usuario.UsuarioID)) || 'Sistema');
@@ -428,8 +479,8 @@ exports.assignRoll = async (req, res) => {
 };
 
 exports.updateFile = async (req, res) => {
-    const { fileId, copias, metros, link, ancho, alto } = req.body;
-    console.log(`📝 UpdateFile: ID=${fileId}, Copias=${copias}, Metros=${metros}, Ancho=${ancho}, Alto=${alto}`);
+    const { fileId, copias, metros, link, ancho, alto, nombre } = req.body;
+    console.log(`📝 UpdateFile: ID=${fileId}, Copias=${copias}, Metros=${metros}, Ancho=${ancho}, Alto=${alto}, Nombre=${nombre}`);
 
     try {
         const pool = await getPool();
@@ -438,14 +489,23 @@ exports.updateFile = async (req, res) => {
 
         try {
             // 1. Actualizar el Archivo
-            await new sql.Request(transaction)
+            const reqUpdate = new sql.Request(transaction)
                 .input('ID', sql.Int, fileId)
                 .input('Copias', sql.Int, copias)
                 .input('Metros', sql.Decimal(10, 2), metros)
                 .input('Ancho', sql.Decimal(10, 2), ancho || 0)
                 .input('Alto', sql.Decimal(10, 2), alto || 0)
-                .input('Ruta', sql.VarChar(500), link)
-                .query("UPDATE dbo.ArchivosOrden SET Copias = @Copias, Metros = @Metros, Ancho = @Ancho, Alto = @Alto, RutaAlmacenamiento = @Ruta WHERE ArchivoID = @ID");
+                .input('Ruta', sql.VarChar(500), link);
+
+            let queryUpdate = "UPDATE dbo.ArchivosOrden SET Copias = @Copias, Metros = @Metros, Ancho = @Ancho, Alto = @Alto, RutaAlmacenamiento = @Ruta";
+
+            if (nombre) {
+                reqUpdate.input('Nom', sql.VarChar(255), nombre);
+                queryUpdate += ", NombreArchivo = @Nom";
+            }
+
+            queryUpdate += " WHERE ArchivoID = @ID";
+            await reqUpdate.query(queryUpdate);
 
             // 2. Obtener OrdenID (Crucial: Verificar que obtenemos un ID)
             const orderRes = await new sql.Request(transaction)
@@ -455,29 +515,7 @@ exports.updateFile = async (req, res) => {
             const ordenId = orderRes.recordset[0]?.OrdenID;
 
             if (ordenId) {
-                console.log(`🔄 Recalculando Magnitud para OrdenID: ${ordenId}`);
-
-                // 3. Recalcular Magnitud Total de la Orden
-                // Usamos una lógica más simple y directa para evitar problemas de tipos
-                await new sql.Request(transaction)
-                    .input('OID', sql.Int, ordenId)
-                    .query(`
-                        DECLARE @TotalMetros DECIMAL(10,2);
-                        DECLARE @TotalCopias INT;
-
-                        SELECT 
-                            @TotalMetros = SUM(ISNULL(Metros, 0) * ISNULL(Copias, 1)),
-                            @TotalCopias = SUM(ISNULL(Copias, 1))
-                        FROM ArchivosOrden 
-                        WHERE OrdenID = @OID AND EstadoArchivo != 'CANCELADO'; -- Ignoramos cancelados
-
-                        UPDATE Ordenes 
-                        SET Magnitud = CASE 
-                            WHEN @TotalMetros > 0 THEN CAST(FORMAT(@TotalMetros, '0.##') AS NVARCHAR(20)) + ' m'
-                            ELSE CAST(@TotalCopias AS NVARCHAR(20)) + ' u'
-                        END
-                        WHERE OrdenID = @OID;
-                    `);
+                await recalculateOrderMagnitude(transaction, ordenId);
             } else {
                 console.warn(`⚠️ No se encontró OrdenID para el archivo ${fileId}`);
             }
@@ -520,28 +558,59 @@ exports.addFile = async (req, res) => {
     const { ordenId, nombre, link, tipo, copias, metros } = req.body;
     try {
         const pool = await getPool();
-        await pool.request()
-            .input('OrdenID', sql.Int, ordenId)
-            .input('Nombre', sql.VarChar(200), nombre)
-            .input('Ruta', sql.VarChar(500), link)
-            .input('Tipo', sql.VarChar(50), tipo)
-            .input('Copias', sql.Int, copias)
-            .input('Metros', sql.Decimal(10, 2), metros)
-            .query("INSERT INTO dbo.ArchivosOrden (OrdenID, NombreArchivo, RutaAlmacenamiento, TipoArchivo, Copias, Metros, FechaSubida) VALUES (@OrdenID, @Nombre, @Ruta, @Tipo, @Copias, @Metros, GETDATE())");
+        const transaction = new sql.Transaction(pool); // Add transaction for consistency
+        await transaction.begin();
 
-        // LOG HISTORIAL
-        const safeUser = String((req.body.userId || req.body.usuario || 'Sistema'));
-        await pool.request()
-            .input('OID', sql.Int, ordenId)
-            .input('Est', sql.VarChar, 'Nuevo Archivo')
-            .input('User', sql.VarChar, safeUser)
-            .input('Det', sql.NVarChar, `Archivo agregado: ${nombre}`)
-            .query(`
-                INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
-                VALUES (@OID, 'EN PROCESO', GETDATE(), GETDATE(), @User, @Det)
-             `).catch(e => console.error("Log Error:", e));
+        try {
+            if (tipo?.toLowerCase() === 'servicio') {
+                // INSERTAR EN TABLA DE SERVICIOS
+                const { puntadas, bajadas, bajadasAdicionales } = req.body;
+                await new sql.Request(transaction)
+                    .input('OrdenID', sql.Int, ordenId)
+                    .input('Desc', sql.NVarChar(255), nombre || 'Servicio Extra')
+                    .input('Cant', sql.Decimal(18, 2), copias || 1)
+                    .input('Obs', sql.NVarChar(sql.MAX), '')
+                    .input('Puntadas', sql.Int, puntadas || null)
+                    .input('Bajadas', sql.Int, bajadas || null)
+                    .input('BajadasAdicionales', sql.Int, bajadasAdicionales || null)
+                    .query(`
+                        INSERT INTO dbo.ServiciosExtraOrden 
+                        (OrdenID, Descripcion, Cantidad, Observacion, FechaRegistro, Puntadas, Bajadas, BajadasAdicionales) 
+                        VALUES (@OrdenID, @Desc, @Cant, @Obs, GETDATE(), @Puntadas, @Bajadas, @BajadasAdicionales)
+                    `);
+            } else {
+                // INSERTAR EN TABLA DE ARCHIVOS
+                await new sql.Request(transaction)
+                    .input('OrdenID', sql.Int, ordenId)
+                    .input('Nombre', sql.VarChar(200), nombre)
+                    .input('Ruta', sql.VarChar(500), link)
+                    .input('Tipo', sql.VarChar(50), tipo)
+                    .input('Copias', sql.Int, copias)
+                    .input('Metros', sql.Decimal(10, 2), metros)
+                    .query("INSERT INTO dbo.ArchivosOrden (OrdenID, NombreArchivo, RutaAlmacenamiento, TipoArchivo, Copias, Metros, FechaSubida) VALUES (@OrdenID, @Nombre, @Ruta, @Tipo, @Copias, @Metros, GETDATE())");
+            }
 
-        res.json({ success: true });
+            // Recalcular magnitud tras agregar item
+            await recalculateOrderMagnitude(transaction, ordenId);
+
+            // LOG HISTORIAL
+            const safeUser = String((req.body.userId || req.body.usuario || 'Sistema'));
+            await new sql.Request(transaction)
+                .input('OID', sql.Int, ordenId)
+                .input('Est', sql.VarChar, 'Nuevo Archivo')
+                .input('User', sql.VarChar, safeUser)
+                .input('Det', sql.NVarChar, `Archivo agregado: ${nombre}`)
+                .query(`
+                    INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                    VALUES (@OID, 'EN PROCESO', GETDATE(), GETDATE(), @User, @Det)
+                 `);
+
+            await transaction.commit();
+            res.json({ success: true });
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
     } catch (e) { res.status(500).json({ error: e.message }); }
 };
 
@@ -549,9 +618,42 @@ exports.deleteFile = async (req, res) => {
     const { id } = req.params;
     try {
         const pool = await getPool();
-        await pool.request().input('ID', sql.Int, id).query("DELETE FROM dbo.ArchivosOrden WHERE ArchivoID = @ID");
-        res.json({ success: true });
-    } catch (e) { res.status(500).json({ error: e.message }); }
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // Buscamos el OrdenID antes de borrar para poder recalcular
+            const findRes = await new sql.Request(transaction)
+                .input('ID', sql.Int, id)
+                .query(`
+                    SELECT OrdenID FROM dbo.ArchivosOrden WHERE ArchivoID = @ID
+                    UNION
+                    SELECT OrdenID FROM dbo.ServiciosExtraOrden WHERE ServicioID = @ID
+                `);
+            const ordenId = findRes.recordset[0]?.OrdenID;
+
+            // Intentamos borrar de ambas tablas ya que el frontend los unifica
+            await new sql.Request(transaction)
+                .input('ID', sql.Int, id)
+                .query(`
+                    DELETE FROM dbo.ArchivosOrden WHERE ArchivoID = @ID;
+                    DELETE FROM dbo.ServiciosExtraOrden WHERE ServicioID = @ID;
+                `);
+
+            if (ordenId) {
+                await recalculateOrderMagnitude(transaction, ordenId);
+            }
+
+            await transaction.commit();
+            res.json({ success: true });
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
+    } catch (e) {
+        console.error("❌ Error deleteFile:", e);
+        res.status(500).json({ error: e.message });
+    }
 };
 
 exports.updateStatus = async (req, res) => {
@@ -612,6 +714,53 @@ exports.updateStatus = async (req, res) => {
         }
     } catch (e) {
         console.error("Error updateStatus:", e);
+        res.status(500).json({ error: e.message });
+    }
+};
+
+exports.updateAreaStatus = async (req, res) => {
+    const { id } = req.params;
+    const { areaStatus, usuario } = req.body;
+
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            await new sql.Request(transaction)
+                .input('OrdenID', sql.Int, id)
+                .input('NuevoEstadoArea', sql.VarChar(50), areaStatus)
+                .query("UPDATE dbo.Ordenes SET EstadoenArea = @NuevoEstadoArea WHERE OrdenID = @OrdenID");
+
+            const rawUser = (usuario && typeof usuario === 'object') ? (usuario.UsuarioID || usuario.id || 'Sistema') : usuario;
+            const safeUser = String(rawUser || 'Sistema').substring(0, 99);
+
+            await new sql.Request(transaction)
+                .input('OID', sql.Int, id)
+                .input('User', sql.VarChar, safeUser)
+                .input('Det', sql.NVarChar, `Cambio de estado en area a ${areaStatus}`)
+                .query(`
+                   INSERT INTO HistorialOrdenes (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                   VALUES (@OID, 'CAMBIO_ESTADO_AREA', GETDATE(), GETDATE(), @User, @Det)
+               `);
+
+            await transaction.commit();
+
+            const io = req.app.get('socketio');
+            if (io) {
+                io.emit('server:order_updated', { orderId: id, timestamp: new Date() });
+                io.emit('server:ordersUpdated', { count: 1 });
+            }
+
+            res.json({ success: true });
+
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
+    } catch (e) {
+        console.error("Error updateAreaStatus:", e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -1252,7 +1401,7 @@ exports.cancelOrder = async (req, res) => {
 };
 
 exports.updateService = async (req, res) => {
-    const { serviceId, cantidad, obs } = req.body;
+    const { serviceId, cantidad, obs, nombre } = req.body;
     try {
         const pool = await getPool();
         const transaction = new sql.Transaction(pool);
@@ -1260,31 +1409,32 @@ exports.updateService = async (req, res) => {
 
         try {
             // 1. Actualizar el Servicio
-            await new sql.Request(transaction)
+            const { puntadas, bajadas, bajadasAdicionales } = req.body;
+
+            const reqUpdate = new sql.Request(transaction)
                 .input('ID', sql.Int, serviceId)
                 .input('Cant', sql.Decimal(18, 2), cantidad) // Cantidad decimal
-                .input('Obs', sql.NVarChar, obs || '')       // Obs opcional
-                .query("UPDATE dbo.ServiciosExtraOrden SET Cantidad = @Cant, Observacion = @Obs WHERE ServicioID = @ID");
+                .input('Obs', sql.NVarChar, obs || '')      // Obs opcional
+                .input('Puntadas', sql.Int, puntadas || null)
+                .input('Bajadas', sql.Int, bajadas || null)
+                .input('BajadasAdicionales', sql.Int, bajadasAdicionales || null);
 
-            // LOG HISTORIAL
-            // Obtenemos OrdenID
-            const oRes = await new sql.Request(transaction)
-                .input('ID', sql.Int, serviceId)
-                .query("SELECT OrdenID FROM ServiciosExtraOrden WHERE ServicioID = @ID");
+            let queryUpdate = `
+                UPDATE dbo.ServiciosExtraOrden 
+                SET Cantidad = @Cant, 
+                    Observacion = @Obs,
+                    Puntadas = @Puntadas,
+                    Bajadas = @Bajadas,
+                    BajadasAdicionales = @BajadasAdicionales
+            `;
 
-            const oId = oRes.recordset[0]?.OrdenID;
-            if (oId) {
-                const safeUser = String((req.body.usuario || 'Sistema'));
-                await new sql.Request(transaction)
-                    .input('OID', sql.Int, oId)
-                    .input('Est', sql.VarChar, 'Servicio Modif.')
-                    .input('User', sql.VarChar, safeUser)
-                    .input('Det', sql.NVarChar, `Servicio Extra Actualizado ID: ${serviceId}`)
-                    .query(`
-                        INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
-                        VALUES (@OID, 'EN PROCESO', GETDATE(), GETDATE(), @User, @Det)
-                    `);
+            if (nombre) {
+                reqUpdate.input('Nom', sql.VarChar(255), nombre);
+                queryUpdate += ", Descripcion = @Nom";
             }
+
+            queryUpdate += " WHERE ServicioID = @ID";
+            await reqUpdate.query(queryUpdate);
 
             // 2. Obtener OrdenID
             const serviceRes = await new sql.Request(transaction)
@@ -1297,26 +1447,17 @@ exports.updateService = async (req, res) => {
                 console.log(`🔄 Recalculando Magnitud Global (Producción + Servicios) para OrdenID: ${ordenId}`);
 
                 // 3. Recálculo Unificado (Producción + Servicios)
+                await recalculateOrderMagnitude(transaction, ordenId);
+
+                const safeUser = String((req.body.usuario || 'Sistema'));
                 await new sql.Request(transaction)
                     .input('OID', sql.Int, ordenId)
+                    .input('Est', sql.VarChar, 'Servicio Modif.')
+                    .input('User', sql.VarChar, safeUser)
+                    .input('Det', sql.NVarChar, `Servicio Extra Actualizado ID: ${serviceId}`)
                     .query(`
-                        DECLARE @TotalProd DECIMAL(18,2) = 0;
-                        DECLARE @TotalServ DECIMAL(18,2) = 0;
-
-                        -- Suma de Producción (Metros * Copias)
-                        SELECT @TotalProd = SUM(ISNULL(Metros, 0) * ISNULL(Copias, 1))
-                        FROM ArchivosOrden 
-                        WHERE OrdenID = @OID AND EstadoArchivo != 'CANCELADO';
-
-                        -- Suma de Servicios (Cantidad Directa)
-                        SELECT @TotalServ = SUM(ISNULL(Cantidad, 0))
-                        FROM ServiciosExtraOrden 
-                        WHERE OrdenID = @OID;
-
-                        -- Actualizar Magnitud Global
-                        UPDATE Ordenes 
-                        SET Magnitud = CAST((ISNULL(@TotalProd, 0) + ISNULL(@TotalServ, 0)) AS NVARCHAR(50))
-                        WHERE OrdenID = @OID;
+                        INSERT INTO [SecureAppDB].[dbo].[HistorialOrdenes] (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                        VALUES (@OID, 'EN PROCESO', GETDATE(), GETDATE(), @User, @Det)
                     `);
             }
 
@@ -1346,12 +1487,46 @@ exports.getOrderReferences = async (req, res) => {
     const { id } = req.params;
     try {
         const pool = await getPool();
-        const result = await pool.request().input('ID', sql.Int, id).query(`
-            SELECT RefID as id, NombreOriginal as nombre, UbicacionStorage as link, 
-                   ISNULL(TipoArchivo, 'Referencia') as tipo, NotasAdicionales as notas
-            FROM dbo.ArchivosReferencia WHERE OrdenID = @ID
+        
+        // 1. Obtener NoDocERP
+        const orderRes = await pool.request().input('ID', sql.Int, id).query(`
+            SELECT NoDocERP FROM dbo.Ordenes WHERE OrdenID = @ID
         `);
-        const mappedData = result.recordset.map(f => ({
+        const noDocERP = orderRes.recordset[0]?.NoDocERP;
+
+        let result;
+        if (noDocERP) {
+            // 2a. Traer referencias de todo el pedido
+            result = await pool.request().input('NoDoc', sql.VarChar, noDocERP).query(`
+                SELECT r.RefID as id, r.NombreOriginal as nombre, r.UbicacionStorage as link, 
+                       ISNULL(r.TipoArchivo, 'Referencia') as tipo, r.NotasAdicionales as notas
+                FROM dbo.ArchivosReferencia r
+                INNER JOIN dbo.Ordenes o ON r.OrdenID = o.OrdenID
+                WHERE o.NoDocERP = @NoDoc
+            `);
+        } else {
+            // 2b. Fallback por orden individual
+            result = await pool.request().input('ID', sql.Int, id).query(`
+                SELECT RefID as id, NombreOriginal as nombre, UbicacionStorage as link, 
+                       ISNULL(TipoArchivo, 'Referencia') as tipo, NotasAdicionales as notas
+                FROM dbo.ArchivosReferencia WHERE OrdenID = @ID
+            `);
+        }
+
+        // Agrupar visualmente por link (archivo) para evitar que el mismo archivo 
+        // aparezca repetido si fue subido a varias órdenes del mismo carrito
+        const uniqueRefs = new Map();
+        result.recordset.forEach(f => {
+            // Usamos el link como clave única para que no se muestre 3 veces el mismo logo
+            if (f.link && !uniqueRefs.has(f.link)) {
+                uniqueRefs.set(f.link, f);
+            } else if (!f.link && !uniqueRefs.has(f.id)) {
+                // Fallback si no hay link (raro), agrupamos por ID
+                uniqueRefs.set(f.id, f);
+            }
+        });
+
+        const mappedData = Array.from(uniqueRefs.values()).map(f => ({
             ...f,
             urlProxy: (f.link && f.link.includes('drive.google.com'))
                 ? `/api/production-file-control/view-drive-file?url=${encodeURIComponent(f.link)}`
@@ -1359,7 +1534,6 @@ exports.getOrderReferences = async (req, res) => {
         }));
         res.json(mappedData);
     } catch (e) {
-        // Si la tabla no existe o hay error, devolvemos array vacío para no romper el front
         console.warn("⚠️ Error leyendo Referencias:", e.message);
         res.json([]);
     }
@@ -1370,8 +1544,21 @@ exports.getOrderServices = async (req, res) => {
     try {
         const pool = await getPool();
         const result = await pool.request().input('ID', sql.Int, id).query(`
-            SELECT ServicioID as id, Descripcion as nombre, Cantidad as copias, Observacion as notas, 'Servicio' as tipo
-            FROM dbo.ServiciosExtraOrden WHERE OrdenID = @ID
+            SELECT 
+                ServicioID as id, 
+                Descripcion as nombre, 
+                Cantidad as copias, 
+                Observacion as notas, 
+                'Servicio' as tipo,
+                ISNULL(Estado, 'PENDIENTE') as Estado,
+                Observaciones as ObservacionesControl,
+                UsuarioControl,
+                FechaControl,
+                Puntadas,
+                Bajadas,
+                BajadasAdicionales
+            FROM dbo.ServiciosExtraOrden 
+            WHERE OrdenID = @ID
         `);
         res.json(result.recordset);
     } catch (e) {
@@ -1533,34 +1720,18 @@ exports.cancelFile = async (req, res) => {
             let orderCancelled = false;
 
             if (ordenId) {
-                // 3. Obtener sumas para recálculo (Lógica en JS para evitar errores SQL)
-                const sumRes = await new sql.Request(transaction)
+                // 3. Recalcular Magnitud Total (Unificado)
+                await recalculateOrderMagnitude(transaction, ordenId);
+
+                // Obtener datos extras para el resto de la lógica de cancelación
+                const statsRes = await new sql.Request(transaction)
                     .input('OID', sql.Int, ordenId)
                     .query(`
-                        SELECT 
-                            SUM(ISNULL(Metros, 0) * ISNULL(Copias, 1)) as TotalMetros,
-                            SUM(ISNULL(Copias, 1)) as TotalCopias,
-                            COUNT(*) as Activos
+                        SELECT COUNT(*) as Activos
                         FROM ArchivosOrden 
                         WHERE OrdenID = @OID AND (EstadoArchivo IS NULL OR EstadoArchivo != 'CANCELADO')
                     `);
-
-                const totalMetros = sumRes.recordset[0]?.TotalMetros || 0;
-                const totalCopias = sumRes.recordset[0]?.TotalCopias || 0;
-                const activos = sumRes.recordset[0]?.Activos || 0;
-
-                let nuevaMagnitud = '0 u';
-                if (totalMetros > 0) {
-                    nuevaMagnitud = parseFloat(totalMetros).toFixed(2) + ' m';
-                } else if (totalCopias > 0) {
-                    nuevaMagnitud = totalCopias + ' u';
-                }
-
-                // 4. Actualizar Magnitud en Orden
-                await new sql.Request(transaction)
-                    .input('OID', sql.Int, ordenId)
-                    .input('Mag', sql.VarChar(20), nuevaMagnitud)
-                    .query("UPDATE Ordenes SET Magnitud = @Mag WHERE OrdenID = @OID");
+                const activos = statsRes.recordset[0]?.Activos || 0;
 
                 // 5. Verificar si hay que cancelar la orden completa
                 if (activos === 0) {

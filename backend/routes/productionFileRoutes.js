@@ -34,6 +34,8 @@ router.post('/update-copy-count', productionFileController.updateFileCopyCount);
 router.get('/ordenes-labels', etiquetasController.getOrdersForLabels);
 router.post('/regen-labels/:ordenId', productionFileController.regenerateEtiquetas);
 router.get('/orden/:ordenId/etiquetas/print', etiquetasController.printEtiquetas);
+router.get('/orden/:id/pending-services', etiquetasController.getPendingServices);
+router.post('/orden/:id/next-service', etiquetasController.updateOrderNextService);
 
 // --- REPOSICIONES (Atención al Cliente) ---
 router.get('/ordenes/entregadas', productionFileController.getCompletedOrdersForReplacement);

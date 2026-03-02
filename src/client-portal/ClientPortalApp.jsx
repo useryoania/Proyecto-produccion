@@ -12,6 +12,7 @@ import OrderForm from './modulos/OrderForm';
 
 import { FactoryView } from './modulos/FactoryView';
 import { PickupView } from './modulos/PickupView';
+import { UnpaidPickupsView } from './modulos/UnpaidPickupsView';
 import { ClubView } from './modulos/ClubView';
 
 export const ClientPortalApp = () => {
@@ -64,6 +65,14 @@ export const ClientPortalApp = () => {
                         <ProtectedRoute>
                             <MainLayout>
                                 <PickupView />
+                            </MainLayout>
+                        </ProtectedRoute>
+                    } />
+
+                    <Route path="/payments" element={
+                        <ProtectedRoute>
+                            <MainLayout>
+                                <UnpaidPickupsView />
                             </MainLayout>
                         </ProtectedRoute>
                     } />

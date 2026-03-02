@@ -22,6 +22,7 @@ const LogisticsPage = lazy(() => import('../pages/customer-service/LogisticsPage
 const ActiveStockPage = lazy(() => import('../pages/customer-service/ActiveStockPage'));
 const TransportControlPage = lazy(() => import('../pages/TransportControlPage'));
 const EcoUvFinishing = lazy(() => import('../pages/EcoUvFinishing'));
+const WebRetirosPage = lazy(() => import('../logistics/WebRetirosPage'));
 const ClientsIntegration = lazy(() => import('../pages/ClientsIntegration'));
 import ChatWidget from '../common/ChatWidget';
 const ProductsIntegration = lazy(() => import('../pages/ProductsIntegration'));
@@ -31,6 +32,7 @@ const PriceProfiles = lazy(() => import('../pages/PriceProfiles'));
 const LabelGenerationPage = lazy(() => import('../pages/LabelGenerationPage'));
 const DepositStockPage = lazy(() => import('../logistics/DepositStockPage'));
 const CustomerReplacementPage = lazy(() => import('../pages/customer-service/CustomerReplacementPage'));
+const CustomerPriceCatalogPage = lazy(() => import('../pages/CustomerPriceCatalogPage'));
 
 // ============================================
 // 1. COMPONENTE NAVNODE (Mejorado)
@@ -285,11 +287,13 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/atencion-cliente/reposiciones" element={<CustomerReplacementPage />} />
                                 <Route path="/logistica/transporte" element={<TransportControlPage />} />
                                 <Route path="/logistica/stock-deposito" element={<DepositStockPage />} />
+                                <Route path="/logistica/retiros-web" element={<WebRetirosPage />} />
                                 <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
                                 <Route path="/admin/products-integration" element={<ProductsIntegration />} />
                                 <Route path="/admin/special-prices" element={<SpecialPrices />} />
                                 <Route path="/admin/base-prices" element={<BasePrices />} />
                                 <Route path="/admin/price-profiles" element={<PriceProfiles />} />
+                                <Route path="/admin/price-catalog" element={<CustomerPriceCatalogPage />} />
                                 <Route path="/produccion/etiquetas" element={<LabelGenerationPage />} />
                                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
                             </Routes>
@@ -339,6 +343,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/produccion/etiquetas') return <LabelGenerationPage />;
     if (menuItem.Ruta === '/admin/clientes-integration') return <ClientsIntegration />;
     if (menuItem.Ruta === '/admin/products-integration') return <ProductsIntegration />;
+    if (menuItem.Ruta === '/admin/price-catalog') return <CustomerPriceCatalogPage />;
     if (menuItem.Ruta === '/produccion/terminaciones' || menuItem.Ruta === '/area/ecouv/terminaciones') return <EcoUvFinishing />;
     if (menuItem.Ruta === '/logistica' || menuItem.Ruta.toLowerCase() === '/logistica/') return <LogisticsDashboard />;
     if (menuItem.Ruta === '/ops/inventory') return <LogisticsDashboard />;
@@ -349,6 +354,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/atencion-cliente/control') return <LogisticsPage />;
     if (menuItem.Ruta === '/atencion-cliente/despachos') return <ActiveStockPage />;
     if (menuItem.Ruta === '/atencion-cliente/reposiciones') return <CustomerReplacementPage />;
+    if (menuItem.Ruta === '/logistica/retiros-web') return <WebRetirosPage />;
 
     // NEW: Historial de Lotes
     if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;

@@ -12,46 +12,91 @@ class PricingService {
         return 40.0; // Fallback
     }
 
+    static async getGlobalConfigs(pool) {
+        try {
+            const res = await pool.request().query("SELECT Clave, Valor FROM ConfiguracionGlobal");
+            const configs = {};
+            res.recordset.forEach(r => { configs[r.Clave] = r.Valor; });
+            return configs;
+        } catch (e) {
+            console.error("Error al obtener configuracion global:", e.message);
+            return {};
+        }
+    }
+
     /**
      * Calcula el precio final de un artículo para un cliente dado.
-     * @param {string} codArticulo - Código del artículo
-     * @param {number} cantidad - Cantidad solicitada (default 1)
-     * @param {number} clienteId - ID del cliente (opcional)
-     * @param {Array} extraProfileIds - IDs de perfiles adicionales (ej: Urgencia)
-     * @returns {Promise<object>} - { precioUnitario, precioTotal, desglose: [] }
      */
-    static async calculatePrice(codArticulo, cantidad = 1, clienteId = null, extraProfileIds = [], variables = {}, targetCurrency = 'UYU', exchangeRate = null) {
+    static async calculatePrice(codArticulo, cantidad = 1, clienteId = null, extraProfileIds = [], variables = {}, targetCurrency = 'UYU', exchangeRate = null, areaId = null) {
         const pool = await getPool();
+        const globalConfigs = await PricingService.getGlobalConfigs(pool);
+
+        const cleanCod = (codArticulo || '').toString().trim();
+        const cleanArea = (areaId || '').toString().trim().toUpperCase();
+        const cleanCurrency = (targetCurrency || 'UYU').toString().trim().toUpperCase();
 
         let actualExchangeRate = exchangeRate;
         if (!actualExchangeRate) {
-            actualExchangeRate = await PricingService.getExchangeRate(pool);
+            actualExchangeRate = parseFloat(globalConfigs['TIPO_CAMBIO_USD']) || 40.0;
         }
 
         const breakdown = [];
 
         // Helper para homogenizar monedas
-        // Si la moneda origen es distinta a la destino, aplicamos o dividimos por la tasa.
         const toTarget = (amount, fromCurrency) => {
-            const cFrom = (fromCurrency || 'UYU').toUpperCase().trim();
-            const cTo = targetCurrency.toUpperCase().trim();
+            const cFrom = (fromCurrency || 'UYU').toString().trim().toUpperCase();
+            const cTo = cleanCurrency;
             if (cFrom === cTo) return parseFloat(amount);
-
             if (cFrom === 'USD' && cTo === 'UYU') return parseFloat(amount) * actualExchangeRate;
             if (cFrom === 'UYU' && cTo === 'USD') return parseFloat(amount) / actualExchangeRate;
-
-            return parseFloat(amount); // Fallback
+            return parseFloat(amount);
         };
 
-        // 1. Obtener Precio Base (Priorizamos la moneda solicitada si existe, sino tomamos la que haya)
+        // 1. Obtener AreaID si no viene
+        let resolvedAreaId = cleanArea;
+        if (!resolvedAreaId && cleanCod && cleanCod !== '') {
+            try {
+                const areaRes = await pool.request()
+                    .input('Cod', sql.NVarChar, cleanCod)
+                    .query("SELECT TOP 1 AreaID FROM Ordenes WHERE LTRIM(RTRIM(CodArticulo)) = @Cod");
+                if (areaRes.recordset.length > 0) resolvedAreaId = areaRes.recordset[0].AreaID?.toString().trim().toUpperCase();
+            } catch (e) {
+                console.warn("[PricingService] Error fetching AreaID for " + cleanCod);
+            }
+        }
+
+        // 2. Obtener Precio Base (Priorizamos la moneda solicitada si existe)
         const baseRes = await pool.request()
-            .input('Cod', sql.NVarChar, codArticulo)
-            .query("SELECT Precio, Moneda FROM PreciosBase WHERE CodArticulo = @Cod ORDER BY CASE WHEN Moneda = '" + targetCurrency + "' THEN 1 ELSE 2 END");
+            .input('Cod', sql.NVarChar, cleanCod)
+            .input('Currency', sql.NVarChar, cleanCurrency)
+            .query("SELECT Precio, Moneda FROM PreciosBase WHERE LTRIM(RTRIM(CodArticulo)) = @Cod ORDER BY CASE WHEN Moneda = @Currency THEN 1 ELSE 2 END");
 
         let precioBase = 0;
         let monedaBaseOriginal = 'UYU';
 
-        if (baseRes.recordset.length > 0) {
+        // --- ESPECIAL: TARIFA BORDADO POR PUNTADAS ---
+        const areasBordado = (globalConfigs['AREAS_BORDADO_PUNTADAS'] || 'BOR,EMB').split(',').map(s => s.trim().toUpperCase());
+        const isBordadoByDesc = variables._desc && variables._desc.toLowerCase().includes('bordado');
+
+        if (areasBordado.includes(resolvedAreaId) || cleanCod === '109' || isBordadoByDesc) {
+            const baseStitches = parseFloat(globalConfigs['BORDADO_PUNTADAS_BASE']) || 5000;
+            const basePriceStitchesUYU = parseFloat(globalConfigs['BORDADO_PRECIO_BASE_UYU']) || 50;
+            const stepStitches = parseFloat(globalConfigs['BORDADO_PUNTADAS_INTERVALO']) || 1000;
+            const stepPriceUYU = parseFloat(globalConfigs['BORDADO_PRECIO_INTERVALO_UYU']) || 10;
+            const totalPuntadas = variables.puntadas || 0;
+
+            let priceBordadoUYU = basePriceStitchesUYU;
+            if (totalPuntadas > baseStitches) {
+                const extra = totalPuntadas - baseStitches;
+                const steps = Math.ceil(extra / stepStitches);
+                priceBordadoUYU += steps * stepPriceUYU;
+            }
+
+            precioBase = toTarget(priceBordadoUYU, 'UYU');
+            monedaBaseOriginal = 'UYU';
+            breakdown.push({ tipo: 'OVERRIDE', valor: precioBase, desc: `Bordado por Puntadas (${totalPuntadas} p.)` });
+        }
+        else if (baseRes.recordset.length > 0) {
             monedaBaseOriginal = baseRes.recordset[0].Moneda || 'UYU';
             const precioRaw = baseRes.recordset[0].Precio;
             precioBase = toTarget(precioRaw, monedaBaseOriginal);
@@ -61,314 +106,194 @@ class PricingService {
         }
 
         let nuevoPrecioBase = precioBase;
-        let acumuladoDescuentos = 0;
-        let acumuladoRecargos = 0;
 
-        // 2. Obtener IDs de Perfiles
-        let perfilesIds = [];
+        // --- ESPECIAL: TARIFA MÍNIMA ESTAMPADO ---
+        const areasCalculoBajadas = (globalConfigs['AREAS_CALCULO_BAJADAS'] || 'EST,COR,DF').split(',').map(s => s.trim().toUpperCase());
+        const isEstampadoByDesc = variables._desc && variables._desc.toLowerCase().includes('estampado');
 
-        // Del Cliente
-        if (clienteId) {
-            const clientConfig = await pool.request()
-                .input('CID', sql.Int, clienteId)
-                .query("SELECT PerfilID, PerfilesIDs FROM PreciosEspeciales WHERE ClienteID = @CID");
-
-            if (clientConfig.recordset.length > 0) {
-                const row = clientConfig.recordset[0];
-                if (row.PerfilesIDs) {
-                    perfilesIds = String(row.PerfilesIDs).split(',').map(Number).filter(n => !isNaN(n));
-                } else if (row.PerfilID) {
-                    perfilesIds = [row.PerfilID];
-                }
+        if (areasCalculoBajadas.includes(resolvedAreaId) || ['110', '113'].includes(cleanCod) || isEstampadoByDesc) {
+            const minMontoListaUYU = parseFloat(globalConfigs['ESTAMPADO_MINIMO_UYU']) || 150;
+            const minMontoTarget = toTarget(minMontoListaUYU, 'UYU');
+            if (precioBase * cantidad < minMontoTarget && cantidad > 0) {
+                nuevoPrecioBase = minMontoTarget / cantidad;
+                breakdown.push({ tipo: 'OVERRIDE', valor: nuevoPrecioBase, desc: `Cargo Mínimo de Estampado (${cleanCurrency} ${minMontoTarget.toFixed(2)} total)` });
             }
         }
 
-        // Obtener Perfiles Globales (Por defecto para todos)
-        const globalProfilesRes = await pool.request().query("SELECT ID FROM PerfilesPrecios WHERE EsGlobal = 1");
-        const globalIds = globalProfilesRes.recordset.map(r => r.ID);
+        // 3. Obtener Reglas Aplicables
+        const cleanedProfiles = extraProfileIds.map(Number).filter(n => !isNaN(n));
+        const rulesRes = await pool.request()
+            .input('Pid', sql.Int, clienteId)
+            .input('Cod', sql.NVarChar, cleanCod)
+            .input('Qty', sql.Int, cantidad)
+            .query(`
+                -- Reglas por Perfil (Cliente, Globales y Extras)
+                SELECT DISTINCT PI.ID as PerfilItemID, PI.PerfilID, PI.CodArticulo, PI.Valor, PI.Moneda, PI.TipoRegla, PI.CantidadMinima, 
+                       PP.Nombre as NombrePerfil, 0 as PrioridadPerfil
+                FROM PerfilesItems PI
+                INNER JOIN PerfilesPrecios PP ON PI.PerfilID = PP.ID
+                LEFT JOIN PreciosEspeciales PE ON (
+                    PP.ID = PE.PerfilID OR 
+                    EXISTS (SELECT 1 FROM STRING_SPLIT(CAST(PE.PerfilesIDs AS VARCHAR(MAX)), ',') WHERE value = CAST(PP.ID AS VARCHAR(10)))
+                )
+                WHERE (PE.ClienteID = @Pid OR PP.EsGlobal = 1 OR PP.ID IN (${cleanedProfiles.length > 0 ? cleanedProfiles.join(',') : '0'}))
+                  AND (LTRIM(RTRIM(PI.CodArticulo)) = @Cod OR PI.CodArticulo = '' OR PI.CodArticulo IS NULL OR LTRIM(RTRIM(PI.CodArticulo)) = 'TOTAL')
+                  AND (PI.CantidadMinima <= CEILING(@Qty) OR PI.CantidadMinima = 1)
 
-        // Combinar: Cliente + Globales + Extra (Flags)
-        const todosLosPerfiles = [...new Set([...perfilesIds, ...globalIds, ...extraProfileIds.map(Number)])];
+                UNION ALL
 
+                -- Reglas Directas (Excepciones) por Cliente
+                SELECT ItemID as PerfilItemID, ClienteID as PerfilID, CodArticulo, Valor, Moneda, TipoRegla, MinCantidad as CantidadMinima, 
+                       'Excepción Cliente' as NombrePerfil, 999 as PrioridadPerfil
+                FROM PreciosEspecialesItems
+                WHERE ClienteID = @Pid
+                  AND (LTRIM(RTRIM(CodArticulo)) = @Cod OR CodArticulo = 'TOTAL')
+                  AND (MinCantidad <= CEILING(@Qty) OR MinCantidad = 1)
+                
+                ORDER BY PrioridadPerfil DESC, CantidadMinima DESC
+            `);
 
-        // 3. Buscar Reglas (AdHoc + Perfiles)
+        // Filtro: Mejor regla por PerfilID
+        const todasLasReglas = rulesRes.recordset;
+        let traceDecision = `\n--- ANALISIS DE PRECIOS PARA ${cleanCod} (Cant: ${cantidad}) ---\n`;
+        traceDecision += `Perfiles Activos: ${(extraProfileIds || []).join(',')} | Area: ${resolvedAreaId}\n`;
+        traceDecision += `Reglas encontradas en BD: ${todasLasReglas.length}\n`;
+        todasLasReglas.forEach(r => {
+            traceDecision += `  - Encontrada: [${r.NombrePerfil}] Tipo: ${r.TipoRegla} | Art: ${r.CodArticulo} | Val: ${r.Valor} | MinQty: ${r.CantidadMinima}\n`;
+        });
 
-        // Ad-Hoc (Solo si hay cliente)
-        let adHocRes = { recordset: [] };
-        if (clienteId) {
-            adHocRes = await pool.request()
-                .input('CID', sql.Int, clienteId)
-                .input('Cod', sql.NVarChar, codArticulo)
-                .query(`SELECT TipoRegla, Valor, Moneda, CodArticulo FROM PreciosEspecialesItems WHERE ClienteID = @CID AND (CodArticulo = @Cod OR CodArticulo = 'TOTAL')`);
-        }
-
-        // Perfiles (Si hay IDs)
-        let profileRules = [];
-        if (todosLosPerfiles.length > 0) {
-            const idsStr = todosLosPerfiles.join(',');
-            const perfilesRes = await pool.request()
-                .input('Cod', sql.NVarChar, codArticulo)
-                .input('Qty', sql.Decimal(18, 2), cantidad)
-                .query(`
-                    SELECT TipoRegla, Valor, Moneda, CodArticulo, CantidadMinima, PerfilID,
-                           (SELECT Nombre FROM PerfilesPrecios WHERE ID = PerfilesItems.PerfilID) as NombrePerfil
-                    FROM PerfilesItems
-                    WHERE PerfilID IN (${idsStr})
-                      AND (CodArticulo = @Cod OR CodArticulo = 'TOTAL')
-                      AND (CantidadMinima IS NULL OR CantidadMinima <= @Qty)
-                `);
-            profileRules = perfilesRes.recordset;
-        }
-
-        // 4. Seleccionar MEJOR regla de CADA perfil
         const reglasFinales = [];
-
-        const procesarReglas = (lista, nombreDefault = 'Regla') => {
-            const grouped = {};
-            lista.forEach(r => {
-                const pid = r.PerfilID || 'ADHOC';
-                if (!grouped[pid]) grouped[pid] = [];
-                grouped[pid].push(r);
+        const grouped = {};
+        todasLasReglas.forEach(r => {
+            if (!grouped[r.PerfilID]) grouped[r.PerfilID] = [];
+            grouped[r.PerfilID].push(r);
+        });
+        Object.values(grouped).forEach(rules => {
+            rules.sort((a, b) => {
+                const aExact = (a.CodArticulo || '').toString().trim() === cleanCod ? 1 : 0;
+                const bExact = (b.CodArticulo || '').toString().trim() === cleanCod ? 1 : 0;
+                if (aExact !== bExact) return bExact - aExact;
+                return (b.CantidadMinima || 0) - (a.CantidadMinima || 0);
             });
+            reglasFinales.push(rules[0]);
+            traceDecision += `  > GANADORA para Perfil ${rules[0].NombrePerfil}: Art=${rules[0].CodArticulo} [Min=${rules[0].CantidadMinima}] (Se descartan las demás del mismo perfil si las hubiera)\n`;
+        });
+        traceDecision += `\n* Fase Competencia (Desc vs Precio Fijo):\n`;
 
-            Object.values(grouped).forEach(rules => {
-                // Prioridad: 1. Producto Exacto, 2. Mayor Cantidad Minima (Tramo superior)
-                rules.sort((a, b) => {
-                    const aExact = a.CodArticulo === codArticulo ? 1 : 0;
-                    const bExact = b.CodArticulo === codArticulo ? 1 : 0;
-                    if (aExact !== bExact) return bExact - aExact;
-                    return (b.CantidadMinima || 0) - (a.CantidadMinima || 0);
-                });
-                if (rules.length > 0) reglasFinales.push({ ...rules[0], NombrePerfil: rules[0].NombrePerfil || nombreDefault });
-            });
-        };
+        // 4. Competencia: Descuento vs Precio Fijo
+        const discountRules = reglasFinales.filter(r => r.TipoRegla.includes('discount') || r.TipoRegla === 'percentage' || r.TipoRegla === 'subtract');
+        let optionA_Price = nuevoPrecioBase;
+        let optionA_DiscVal = 0;
+        let bestDisc = null;
 
-        const adHocMapped = adHocRes.recordset.map(r => ({ ...r, PerfilID: 'ADHOC' }));
-        procesarReglas(adHocMapped, 'Excepción Cliente');
-        procesarReglas(profileRules, 'Perfil');
+        discountRules.forEach(r => {
+            let val = 0;
+            if (r.TipoRegla.includes('percentage') || r.TipoRegla === 'percentage') val = nuevoPrecioBase * (parseFloat(r.Valor) / 100);
+            else val = toTarget(r.Valor, r.Moneda);
+            traceDecision += `  - Opción Desc Evaluada [${r.NombrePerfil}]: Ahorro de ${val.toFixed(2)}\n`;
+            if (val > optionA_DiscVal) { optionA_DiscVal = val; bestDisc = r; }
+        });
+        if (bestDisc) traceDecision += `  -> MEJOR DESCUENTO: [${bestDisc.NombrePerfil}] Ahorra ${optionA_DiscVal.toFixed(2)}\n`;
+        optionA_Price = Math.max(0, nuevoPrecioBase - optionA_DiscVal);
 
-
-        // 5. Aplicar Matemáticas: Competencia entre (Lista - Descuento) vs (Precio Fijo)
-
-        // Opción A: Precio de Lista con Mejor Descuento
-        const discountRules = reglasFinales.filter(r => r.TipoRegla.includes('discount') || r.TipoRegla === 'percentage' || r.TipoRegla === 'percentage_discount' || r.TipoRegla === 'subtract');
-        let optionA_Price = precioBase;
-        let optionA_DiscountVal = 0;
-        let bestDiscountRule = null;
-
-        if (discountRules.length > 0) {
-            // Buscamos el mejor descuento aplicable al precio LISTA
-            let maxMontoTarget = 0;
-            discountRules.forEach(r => {
-                let montoTarget = 0;
-
-                // Si es porcentaje, la moneda de la regla es irrelevante, el % aplica sobre el target.
-                if (r.TipoRegla.includes('percentage') || r.TipoRegla === 'percentage') {
-                    const percVal = parseFloat(r.Valor);
-                    montoTarget = precioBase * (percVal / 100);
-                } else {
-                    // Si es fijo a restar (subtract), debemos convertir ese monto a la moneda destino.
-                    montoTarget = toTarget(r.Valor, r.Moneda);
-                }
-
-                if (montoTarget > maxMontoTarget) {
-                    maxMontoTarget = montoTarget;
-                    bestDiscountRule = { ...r, convertedValue: montoTarget };
-                }
-            });
-            optionA_DiscountVal = maxMontoTarget;
-            optionA_Price = Math.max(0, precioBase - maxMontoTarget);
-        }
-
-        // Opción B: Mejor Precio Fijo
         const fixedRules = reglasFinales.filter(r => r.TipoRegla === 'fixed' || r.TipoRegla === 'fixed_price');
         let optionB_Price = Infinity;
-        let bestFixedRule = null;
+        let bestFixed = null;
+        fixedRules.forEach(r => {
+            let val = toTarget(r.Valor, r.Moneda);
+            traceDecision += `  - Opción Fija Evaluada [${r.NombrePerfil}]: Queda en ${val.toFixed(2)}\n`;
+            if (val < optionB_Price) { optionB_Price = val; bestFixed = r; }
+        });
+        if (bestFixed) traceDecision += `  -> MEJOR PRECIO FIJO: [${bestFixed.NombrePerfil}] Queda en ${optionB_Price.toFixed(2)}\n`;
 
-        if (fixedRules.length > 0) {
-            // Evaluamos el mejor precio Fijo convertido a TARGET
-            const mappedFixedRules = fixedRules.map(r => ({
-                ...r,
-                TargetPrice: toTarget(r.Valor, r.Moneda)
-            }));
-            mappedFixedRules.sort((a, b) => a.TargetPrice - b.TargetPrice);
+        let precioFinalBase = optionA_Price;
+        let discFinalVal = optionA_DiscVal;
+        let appliedFixed = false;
 
-            bestFixedRule = mappedFixedRules[0];
-            optionB_Price = bestFixedRule.TargetPrice;
-        }
-
-        // Decisión: ¿Quién gana? (Menor precio para el cliente)
-        // Por defecto gana A (Lista + Descuentos). Si B existe y es menor, gana B.
-        if (bestFixedRule && optionB_Price < optionA_Price) {
-            // GANA PRECIO FIJO
-            nuevoPrecioBase = optionB_Price;
+        if (bestFixed && optionB_Price < optionA_Price) {
+            traceDecision += `  => RESULTADO COMPETENCIA: GANA PRECIO FIJO porque (${optionB_Price.toFixed(2)}) es mejor (más bajo) que aplicar dto (${optionA_Price.toFixed(2)})\n`;
+            precioFinalBase = optionB_Price;
+            discFinalVal = 0;
+            appliedFixed = true;
+            breakdown.push({ tipo: 'OVERRIDE', valor: precioFinalBase, desc: `Precio Fijo [${bestFixed.NombrePerfil}]`, profileId: bestFixed.PerfilID });
+        } else if (bestDisc) {
+            traceDecision += `  => RESULTADO COMPETENCIA: GANA DESCUENTO porque (${optionA_Price.toFixed(2)}) es mejor o igual a precio fijo.\n`;
             breakdown.push({
-                tipo: 'OVERRIDE',
-                valor: nuevoPrecioBase,
-                desc: `Precio Fijo [${bestFixedRule.NombrePerfil}] (Mejor que lista con desc.)`,
-                profileId: bestFixedRule.PerfilID
+                tipo: 'DISCOUNT',
+                valor: -discFinalVal,
+                desc: `Desc. ${Math.round(parseFloat(bestDisc.Valor))}${bestDisc.TipoRegla.includes('percentage') ? '%' : ''} [${bestDisc.NombrePerfil}]`,
+                profileId: bestDisc.PerfilID
             });
-            // No aplicamos descuentos porcentuales extras a la base fija
-            acumuladoDescuentos = 0;
-
-            // Info opcional: Avisar que ganó al descuento
-            if (bestDiscountRule) {
-                breakdown.push({ tipo: 'INFO', valor: 0, desc: `(Se ignoró descuento por ser mayor el precio resultante)` });
-            }
-
-        } else {
-            // GANA LISTA + DESCUENTO
-            nuevoPrecioBase = precioBase; // Mantenemos base original para recargos
-            // Solo logueamos el descuento si existió
-            if (bestDiscountRule) {
-                const r = bestDiscountRule;
-                const val = parseFloat(r.Valor);
-                const isPerc = r.TipoRegla.includes('percentage') || r.TipoRegla === 'percentage';
-                breakdown.push({
-                    tipo: 'DISCOUNT',
-                    valor: -optionA_DiscountVal,
-                    desc: `Mejor Desc. ${Math.round(val)}${isPerc ? '%' : ''} [${r.NombrePerfil || 'Regla'}]`,
-                    profileId: r.PerfilID
-                });
-                acumuladoDescuentos = optionA_DiscountVal;
-
-                if (discountRules.length > 1) {
-                    breakdown.push({ tipo: 'INFO', valor: 0, desc: `(Se ignoraron ${discountRules.length - 1} descuentos menores)` });
-                }
-            }
         }
 
-        // C. Recargos: Estos SÍ se acumulan (Urgencia + Zona, etc.)
-        const surchargeRules = reglasFinales.filter(r => r.TipoRegla.includes('surcharge'));
+        traceDecision += `\n* Fase Recargos (Acumulativos):\n`;
+        // 5. Recargos (Acumulativos)
+        let surchargeRules = reglasFinales.filter(r => r.TipoRegla.includes('surcharge'));
+        const idUrgencia = parseInt(globalConfigs['ID_PERFIL_URGENCIA']) || 2;
+        const areasNoUrg = (globalConfigs['AREAS_SIN_URGENCIA'] || 'BOR,EMB,COR,TWC,COS,TWT').split(',').map(s => s.trim().toUpperCase());
+        if (areasNoUrg.includes(resolvedAreaId)) {
+            surchargeRules = surchargeRules.filter(r => r.PerfilID !== idUrgencia && r.NombrePerfil?.toLowerCase() !== 'urgente');
+        }
+
+        let totalRecargos = 0;
         surchargeRules.forEach(r => {
-            let montoTarget = 0;
-            const src = `[${r.NombrePerfil || 'Regla'}]`;
-
-            if (r.TipoRegla.includes('percentage')) {
-                const percVal = parseFloat(r.Valor);
-                montoTarget = nuevoPrecioBase * (percVal / 100);
-                breakdown.push({ tipo: 'SURCHARGE', valor: montoTarget, desc: `Recargo ${percVal}% ${src}`, profileId: r.PerfilID });
-            } else {
-                montoTarget = toTarget(r.Valor, r.Moneda);
-                breakdown.push({ tipo: 'SURCHARGE', valor: montoTarget, desc: `Recargo Fijo ${src}`, profileId: r.PerfilID });
-            }
-            acumuladoRecargos += montoTarget;
+            let val = r.TipoRegla.includes('percentage') ? nuevoPrecioBase * (parseFloat(r.Valor) / 100) : toTarget(r.Valor, r.Moneda);
+            traceDecision += `  - SUMA RECARGO [${r.NombrePerfil}]: +${val.toFixed(2)}\n`;
+            totalRecargos += val;
+            breakdown.push({ tipo: 'SURCHARGE', valor: val, desc: `Recargo ${r.TipoRegla.includes('percentage') ? r.Valor + '%' : ''} [${r.NombrePerfil}]`, profileId: r.PerfilID });
         });
 
-        // D. Fórmulas Especiales (Ej: Puntadas)
-        const formulaRules = reglasFinales.filter(r => r.TipoRegla.startsWith('formula_'));
-        formulaRules.forEach(r => {
-            const src = `[${r.NombrePerfil || 'Fórmula'}]`;
-            // Las formulas asumen montos, los convertimos a target
-            const parts = r.TipoRegla.split('_');
-            if (parts.length >= 5) {
-                const fBaseRaw = parseFloat(parts[1]);
-                const fThreshold = parseFloat(parts[2]);
-                const fStepPriceRaw = parseFloat(parts[3]);
-                const fStepQty = parseFloat(parts[4]);
+        const finalPU = precioFinalBase + totalRecargos;
+        traceDecision += `\n= PRECIO FINAL CALCULADO: ${finalPU.toFixed(2)}\n`;
+        console.log(traceDecision);
 
-                const fBase = toTarget(fBaseRaw, r.Moneda);
-                const fStepPrice = toTarget(fStepPriceRaw, r.Moneda);
-
-                const puntadas = variables.puntadas || 0;
-                const limiteMaximo = parseFloat(parts[5] || Infinity);
-
-                const puntadasEfectivas = Math.min(puntadas, limiteMaximo);
-
-                let testPrecioPorFormula = fBase;
-                if (puntadasEfectivas > fThreshold) {
-                    const extra = puntadasEfectivas - fThreshold;
-                    const steps = Math.ceil(extra / fStepQty);
-                    testPrecioPorFormula += steps * fStepPrice;
-                }
-
-                nuevoPrecioBase = testPrecioPorFormula;
-                breakdown.push({
-                    tipo: 'OVERRIDE',
-                    valor: nuevoPrecioBase,
-                    desc: `Cálculo por fórmula (${puntadasEfectivas} p.) ${src}`,
-                    profileId: r.PerfilID
-                });
-                acumuladoDescuentos = 0;
+        // --- Generar resumen textual ---
+        let txt = `Base: ${cleanCurrency} ${precioBase.toFixed(2)}`;
+        breakdown.forEach(b => {
+            // Si el breakdown es un override, informamos que la base cambió
+            if (b.tipo === 'OVERRIDE') {
+                txt += `\nOverride: ${cleanCurrency} ${b.valor.toFixed(2)} (${b.desc})`;
+            } else if (b.tipo === 'DISCOUNT') {
+                txt += `\nDescuento: -${cleanCurrency} ${Math.abs(b.valor).toFixed(2)} (${b.desc})`;
+            } else if (b.tipo === 'SURCHARGE') {
+                txt += `\nRecargo: +${cleanCurrency} ${Math.abs(b.valor).toFixed(2)} (${b.desc})`;
             }
         });
+        txt += `\nTotal Unit.: ${cleanCurrency} ${finalPU.toFixed(2)}`;
 
-        let precioFinal = nuevoPrecioBase + acumuladoRecargos - acumuladoDescuentos;
-        if (precioFinal < 0) precioFinal = 0;
+        // --- Recopilar Nombres de Perfiles SÓLO los que aplicaron ---
+        const appliedSet = new Set();
+        if (appliedFixed && bestFixed) appliedSet.add(bestFixed.NombrePerfil);
+        else if (bestDisc) appliedSet.add(bestDisc.NombrePerfil);
 
-        // Generar TXT para Observaciones (Simil Simulador)
-        let txtParts = [];
-
-        // 1. Base
-        const override = breakdown.find(b => b.tipo === 'OVERRIDE');
-        if (override) {
-            txtParts.push(`Base: ${targetCurrency} ${override.valor.toFixed(2)} (${override.desc})`);
-        } else {
-            txtParts.push(`Base: ${targetCurrency} ${precioBase.toFixed(2)}`);
-        }
-
-        // 2. Descuentos
-        breakdown.filter(b => b.tipo === 'DISCOUNT').forEach(d => {
-            txtParts.push(`${d.desc}: -${targetCurrency} ${Math.abs(d.valor).toFixed(2)}`);
-        });
-
-        // 3. Recargos
-        breakdown.filter(b => b.tipo === 'SURCHARGE').forEach(s => {
-            txtParts.push(`${s.desc}: +${targetCurrency} ${s.valor.toFixed(2)}`);
-        });
-
-        // 4. Final
-        txtParts.push(`Total Unit.: ${targetCurrency} ${precioFinal.toFixed(2)}`);
-
-        const txt = txtParts.join('\n');
-
-        // --- Recopilar Perfiles Aplicados ---
-        const appliedProfiles = new Set();
-
-        if (bestFixedRule && optionB_Price < optionA_Price) {
-            if (bestFixedRule.NombrePerfil) appliedProfiles.add(bestFixedRule.NombrePerfil);
-        } else {
-            if (bestDiscountRule && bestDiscountRule.NombrePerfil) appliedProfiles.add(bestDiscountRule.NombrePerfil);
-        }
-
-        if (surchargeRules && surchargeRules.length > 0) {
-            surchargeRules.forEach(r => {
-                if (r.NombrePerfil) appliedProfiles.add(r.NombrePerfil);
-            });
-        }
+        surchargeRules.forEach(r => appliedSet.add(r.NombrePerfil));
 
         return {
-            codArticulo,
+            codArticulo: cleanCod,
             cantidad,
-            precioUnitario: precioFinal,
-            precioTotal: precioFinal * cantidad,
-            moneda: targetCurrency.toUpperCase(), // Asegurar que sale la moneda correcta output
+            precioUnitario: finalPU,
+            precioTotal: finalPU * cantidad,
+            moneda: cleanCurrency,
             breakdown,
             txt,
-            perfilesAplicados: [...appliedProfiles],
-            _debug: {
-                perfilesEvaluados: todosLosPerfiles,
-                reglasEncontradas: profileRules.length + adHocMapped.length,
-                globalIds,
-                sqlParams: { Cod: codArticulo, Qty: cantidad, Target: targetCurrency },
-                topRules: reglasFinales.map(r => ({ pid: r.PerfilID, val: r.Valor, min: r.CantidadMinima }))
-            }
+            perfilesAplicados: [...appliedSet].filter(Boolean),
+            _debug: { resolvedAreaId, cleanCod, cleanCurrency }
         };
     }
 
-    /**
-     * Endpoint Debug actualizado
-     */
-    static async debugPrice(req, res) {
-        try {
-            const { cod, qty, cid, extra, puntadas } = req.query; // extra: "1,4" ids
-            const extraIds = extra ? extra.split(',').map(Number) : [];
-            const vars = puntadas ? { puntadas: Number(puntadas) } : {};
-            const result = await PricingService.calculatePrice(cod, qty || 1, cid, extraIds, vars);
-            res.json(result);
-        } catch (e) {
-            res.status(500).json({ error: e.message });
-        }
+    static async setBasePrice(codArticulo, precio, moneda = 'UYU') {
+        const pool = await getPool();
+        await pool.request()
+            .input('Cod', sql.NVarChar, codArticulo.trim())
+            .input('Pre', sql.Decimal(18, 4), precio)
+            .input('Mon', sql.VarChar, moneda.toUpperCase())
+            .query(`
+                MERGE PreciosBase AS target
+                USING (SELECT @Cod AS CodArticulo, @Mon AS Moneda) AS source
+                ON (target.CodArticulo = source.CodArticulo AND target.Moneda = source.Moneda)
+                WHEN MATCHED THEN UPDATE SET Precio = @Pre, UltimaActualizacion = GETDATE()
+                WHEN NOT MATCHED THEN INSERT (CodArticulo, Precio, Moneda, UltimaActualizacion) VALUES (@Cod, @Pre, @Mon, GETDATE());
+            `);
     }
 }
 

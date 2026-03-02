@@ -11,7 +11,8 @@ import {
     X,
     Truck,
     Crown,
-    ChevronDown
+    ChevronDown,
+    CreditCard
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SERVICES_LIST } from '../constants/services';
@@ -173,6 +174,7 @@ export const MainLayout = ({ children }) => {
 
                     <NavItem to="/portal/factory" icon={Factory} label="Fábrica / Estado" />
                     <NavItem to="/portal/pickup" icon={Truck} label="Retiro de Pedidos" />
+                    <NavItem to="/portal/payments" icon={CreditCard} label="Pagos Pendientes" />
 
                     <div className="pt-4 mt-4 border-t border-zinc-800">
                         <Link to="/portal/club">
@@ -228,6 +230,7 @@ export const MainLayout = ({ children }) => {
                             <NavItem to="/portal/profile" icon={User} label="Mi Perfil" />
                             <NavItem to="/portal/factory" icon={Factory} label="Fábrica / Estado" />
                             <NavItem to="/portal/pickup" icon={Truck} label="Retiro de Pedidos" />
+                            <NavItem to="/portal/payments" icon={CreditCard} label="Pagos Pendientes" />
                             <NavItem to="/portal/club" icon={Crown} label="Club Member" />
 
                             <button onClick={logout} className="mt-8 flex items-center gap-3 px-4 py-3 text-red-400">

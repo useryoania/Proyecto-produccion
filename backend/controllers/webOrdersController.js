@@ -570,7 +570,6 @@ exports.createWebOrder = async (req, res) => {
                     }
 
                     // ARCHIVO DORSO (Back)
-                    // ARCHIVO DORSO (Back)
                     if (item.fileBackName) {
                         // Calcular Metros Dorso
                         let valMetrosBack = 0;
@@ -1297,7 +1296,7 @@ const parseAmount = (amt) => {
 
 // --- NUEVO: CREAR ORDEN DE RETIRO (API EXTERNA) ---
 exports.createPickupOrder = async (req, res) => {
-    const { selectedOrderIds, orders, totalCost } = req.body; // orders desde frontend (opcional)
+    const { selectedOrderIds, orders, totalCost, clientName, moneda } = req.body; // orders desde frontend (opcional)
     let payload = null;
 
     // Si no hay orders ni IDs, error.
@@ -1307,7 +1306,7 @@ exports.createPickupOrder = async (req, res) => {
 
     try {
         const user = req.user;
-        const codCliente = user ? user.codCliente : null;
+        const codCliente = clientName || (user ? user.codCliente : null); // Usamos el nombre real del cliente si viene
         if (!codCliente) return res.status(401).json({ error: "Usuario no identificado." });
 
         // 5. POST to External API with Token
@@ -1328,7 +1327,7 @@ exports.createPickupOrder = async (req, res) => {
             // Lógica anterior: Fetch datafilter
             const pool = await getPool();
             const clientRes = await pool.request()
-                .input('cod', sql.Int, codCliente)
+                .input('cod', sql.Int, user ? user.codCliente : 0)
                 .query("SELECT IDCliente FROM Clientes WHERE CodCliente = @cod");
 
             if (!clientRes.recordset.length) return res.status(404).json({ error: "Cliente no encontrado" });
@@ -1378,7 +1377,49 @@ exports.createPickupOrder = async (req, res) => {
         });
 
         // The external API responds with a nested object or direct property (OReIdOrdenRetiro)
-        res.json({ success: true, data: createRes.data });
+        const responseData = createRes.data;
+        
+        // Extraemos el identificador generado externamente
+        let ordIdRetiro = responseData?.data?.OrdIdOrdenRetiro || responseData?.OReIdOrdenRetiro || responseData?.OrdIdRetiro || responseData?.id;
+        
+        // Formateador: Asegurar que siempre inicie con 'R-' para la base local
+        if (ordIdRetiro && !String(ordIdRetiro).startsWith('R-')) {
+            ordIdRetiro = `R-${ordIdRetiro}`;
+        }
+
+        // 6. NUEVO: Insertar en la tabla local (RetirosWeb)
+        if (ordIdRetiro) {
+            try {
+                // Determinar moneda provista o por defecto "UYU"
+                let targetCurrency = "UYU";
+                if (moneda) {
+                    targetCurrency = moneda;
+                } else if (payload.orders && payload.orders.length > 0) {
+                     // Try to infer from first order if not explicitly sent
+                     const firstCost = payload.orders[0].costWithCurrency || '';
+                     if (firstCost.includes('USD') || firstCost.includes('U$S')) targetCurrency = 'USD';
+                }
+
+                const pool = await getPool();
+                await pool.request()
+                    .input('Ord', sql.NVarChar, String(ordIdRetiro))
+                    .input('Monto', sql.Decimal(18,2), payload.totalCost || 0)
+                    .input('Moneda', sql.NVarChar, targetCurrency) 
+                    .input('Ref', sql.NVarChar, null)     // Sin pago inicial
+                    .input('Est', sql.Int, 1)             // 1 = Ingresado
+                    .input('CodCliente', sql.VarChar, String(codCliente)) // clientName se pasa aquí
+                    .input('BultosJSON', sql.NVarChar, JSON.stringify(payload.orders || []))
+                    .query(`
+                        INSERT INTO RetirosWeb (OrdIdRetiro, Monto, Moneda, ReferenciaPago, Estado, CodCliente, BultosJSON)
+                        VALUES (@Ord, @Monto, @Moneda, @Ref, @Est, @CodCliente, @BultosJSON)
+                    `);
+            } catch (dbErr) {
+                console.error("Advertencia: No se pudo replicar localmente en RetirosWeb:", dbErr.message);
+                // No hacemos 'throw' para no deshacer la compra que ya se procesó en el proveedor.
+            }
+        }
+
+        res.json({ success: true, data: responseData, ordIdGenerada: ordIdRetiro });
 
     } catch (error) {
         console.error("Error creating pickup order:", error);

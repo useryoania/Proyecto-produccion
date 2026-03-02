@@ -116,7 +116,7 @@ const FileItem = ({ file, readOnly = false, onAction, extraInfo, actions, editin
                     {isImage ? (
                         <img src={fileUrl} alt="prev" className="w-full h-full object-cover opacity-80" />
                     ) : (
-                        <i className={`fa-regular ${isPdf ? 'fa-file-pdf text-red-400' : 'fa-file-image'} text-lg`}></i>
+                        <i className={`fa-solid ${extraInfo?.isProduct ? 'fa-box-open text-amber-500' : isPdf ? 'fa-file-pdf text-red-400' : 'fa-file-image'} text-lg`}></i>
                     )}
 
                     {/* Badge Copias */}
@@ -177,7 +177,12 @@ const FileItem = ({ file, readOnly = false, onAction, extraInfo, actions, editin
             <div className="min-w-0 flex-1 pr-2">
                 <div className="flex items-center justify-between">
                     <div className={`font-bold text-sm truncate ${styles.text}`} title={file.NombreArchivo}>
-                        {file.NombreArchivo || file.name}
+                        {file.NombreArchivo || file.name || file.nombre || (extraInfo?.isProduct ? 'Producto/Servicio' : 'Sin Nombre')}
+                        {extraInfo?.isProduct && (
+                            <span className="ml-2 bg-amber-100 text-amber-700 text-[9px] px-1.5 py-0.5 rounded border border-amber-200 uppercase font-black tracking-tighter align-middle shadow-sm">
+                                Producto
+                            </span>
+                        )}
                     </div>
                 </div>
 

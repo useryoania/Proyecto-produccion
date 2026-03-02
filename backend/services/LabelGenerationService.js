@@ -1,17 +1,11 @@
 const { sql, getPool } = require('../config/db');
-const PricingService = require('./pricingService');
-const ERPSyncService = require('./erpSyncService');
 
 class LabelGenerationService {
 
     /**
      * Valida y regenera etiquetas para una orden.
-     * Centraliza:
-     * 1. Validaciones (Magnitud > 0, datos completos).
-     * 2. Recálculo de Precio (Con PricingService, Perfiles Extra).
-     * 3. Búsqueda inteligente de datos (Articulos, Clientes).
-     * 4. Formato QR ($*).
-     * 5. Transacción DB (Delete + Insert).
+     * SIMPLIFICADO: Ahora solo se encarga de crear los bultos para logística.
+     * La cotización y sincronización se movieron al flujo de ERPSyncService.
      */
     static async regenerateLabelsForOrder(ordenId, userId, userName, cantidadManual = null) {
         let transaction;
@@ -28,18 +22,7 @@ class LabelGenerationService {
             }
             const o = orderRes.recordset[0];
 
-            // "si ya fue avisado en react y cargado al erp, no se puede refacturar"
-            // Comprobamos de la manera más segura posible si existen las flags en el row extraído (ignorando si la DB no las tiene)
-            const isAvisado = o.AvisadoReact === true || o.AvisadoReact === 1 || o.AvisadoReact === '1';
-            const isFacturado = o.FacturadoERP === true || o.FacturadoERP === 1 || o.FacturadoERP === '1';
-
-            if (isAvisado || isFacturado) {
-                return { success: false, error: 'La orden ya fue avisada en React y cargada al ERP. No se puede generar/modificar.' };
-            }
-
-            // --- VALIDACIONES DE NEGOCIO ---
-
-            // Validar Magnitud
+            // --- VALIDACIÓN DE MAGNITUD ---
             const magnitudStr = o.Magnitud || '';
             let magnitudValor = 0;
             if (typeof magnitudStr === 'number') magnitudValor = magnitudStr;
@@ -52,135 +35,10 @@ class LabelGenerationService {
                 return { success: false, error: `No se pueden generar etiquetas: La magnitud es 0 o inválida (${magnitudStr}).` };
             }
 
-            // --- PREPARACIÓN DE DATOS INTELIGENTE ---
+            // --- CÁLCULO CANTIDAD BULTOS (Lógica Metros/Bulto) ---
+            let totalBultos = cantidadManual;
 
-            // A. Identificar Pedido Base (ej: "69" de "69 (1/1)")
-            const baseOrderMatch = o.CodigoOrden ? o.CodigoOrden.match(/^(\d+)/) : null;
-            const baseOrderNum = baseOrderMatch ? baseOrderMatch[1] : o.CodigoOrden;
-
-            // B. Recuperar/Validar ID Producto React
-            let finalIdProdReact = o.IdProductoReact || 0;
-            if ((!finalIdProdReact || finalIdProdReact == 0) && o.CodArticulo) {
-                try {
-                    const safeCod = o.CodArticulo.toString().trim();
-                    const artRes = await pool.request()
-                        .input('Cod', sql.VarChar, safeCod)
-                        .query("SELECT TOP 1 IDProdReact FROM Articulos WHERE LTRIM(RTRIM(CodArticulo)) = LTRIM(RTRIM(@Cod))");
-
-                    if (artRes.recordset.length > 0 && artRes.recordset[0].IDProdReact) {
-                        finalIdProdReact = artRes.recordset[0].IDProdReact;
-                        // Auto-fix DB
-                        await pool.request()
-                            .input('IDP', sql.Int, finalIdProdReact)
-                            .input('OID', sql.Int, ordenId)
-                            .query("UPDATE Ordenes SET IdProductoReact = @IDP WHERE OrdenID = @OID");
-                        console.log(`[LabelService] IDProdReact recuperado: ${finalIdProdReact}`);
-                    }
-                } catch (e) { console.error("[LabelService] Error looking up Article:", e.message); }
-            }
-
-            // C. CALCULO DE PRECIO (Consolidado)
-            // Buscar todas las órdenes del mismo pedido para sumar precio y verificar moneda base
-            const siblingsRes = await pool.request()
-                .input('BasePattern', sql.VarChar, `${baseOrderNum} (%`)
-                .input('BaseExact', sql.VarChar, baseOrderNum)
-                .query(`
-                    SELECT O.*, PB.Moneda as MonedaBase
-                    FROM Ordenes O
-                    LEFT JOIN PreciosBase PB ON O.CodArticulo = PB.CodArticulo
-                    WHERE O.CodigoOrden = @BaseExact OR O.CodigoOrden LIKE @BasePattern
-                `);
-
-            const siblings = siblingsRes.recordset;
-
-            // "en un pedido puedo tener articulos en usa y en uy, ahora si hay usd debe generarme en usd..."
-            const hasUSD = siblings.some(s => (s.MonedaBase || '').toUpperCase() === 'USD');
-            const targetCurrency = hasUSD ? 'USD' : 'UYU';
-
-            let totalPriceSum = 0;
-            let mainOrderProfiles = '';
-
-            for (const sib of siblings) {
-                try {
-                    // Resolver ID Cliente
-                    let internalClientId = null;
-                    if (sib.Cliente) {
-                        const clientRes = await pool.request()
-                            .input('NombreCliente', sql.NVarChar, sib.Cliente)
-                            .query("SELECT TOP 1 CodCliente FROM Clientes WHERE LTRIM(RTRIM(Nombre)) = LTRIM(RTRIM(@NombreCliente))");
-                        if (clientRes.recordset.length > 0) internalClientId = clientRes.recordset[0].CodCliente;
-                    }
-
-                    // Perfiles Extra
-                    const extraProfiles = [];
-                    // Urgencia -> ID 2
-                    if (sib.Prioridad && sib.Prioridad.toLowerCase().includes('urgente')) {
-                        extraProfiles.push(2);
-                    }
-                    // Tinta -> ID 3 (Solo si explicitamente hay tinta especial, asumimos UV/Latex por ahora, logic ajustable)
-                    if (sib.Tinta && (sib.Tinta.toUpperCase().includes('UV') || sib.Tinta.toUpperCase().includes('LATEX'))) {
-                        extraProfiles.push(3);
-                    }
-
-                    // Calcular Precio aplicando Moneda Destino
-                    const priceResult = await PricingService.calculatePrice(
-                        sib.CodArticulo || '',
-                        sib.Magnitud || 1,
-                        internalClientId,
-                        extraProfiles,
-                        {}, // variables empty obj
-                        targetCurrency // Forzamos UYU o USD 
-                    );
-
-                    const costoCalculado = priceResult.precioTotal || 0;
-                    const perfilesStr = (priceResult.perfilesAplicados || []).join(', ');
-
-                    // Guardar perfiles específicos para la orden principal si corresponde
-                    if (sib.OrdenID == ordenId) {
-                        mainOrderProfiles = perfilesStr;
-                    }
-
-                    // Update DB (Side effect OK)
-                    // Hacemos update por querier directo
-                    await pool.request()
-                        .input('Cost', sql.Decimal(18, 2), costoCalculado)
-                        .input('Perfiles', sql.NVarChar(sql.MAX), perfilesStr)
-                        .input('SibID', sql.Int, sib.OrdenID)
-                        .query("UPDATE Ordenes SET CostoTotal = @Cost, PerfilesPrecio = @Perfiles WHERE OrdenID = @SibID");
-
-                    totalPriceSum += costoCalculado;
-
-                } catch (errCalc) {
-                    console.error(`[LabelService] Error precio Orden ${sib.OrdenID}:`, errCalc.message);
-                    totalPriceSum += (sib.CostoTotal || 0); // Fallback
-                }
-            }
-
-            // --- GENERACIÓN DEL STRING QR ($*) ---
-            // PEDIDO$*IDCLIENTEREACT$*TRABAJO$*URGENCIA$*IDPRODUCTOREACT$*CANTIDAD$*IMPORTE
-            const qrPedido = baseOrderNum;
-            const qrCliente = o.IdClienteReact || '0';
-            const qrTrabajo = (o.DescripcionTrabajo || '').replace(/\$\*/g, ' ').trim();
-            const isUrgent = (o.Prioridad && (o.Prioridad.toLowerCase().includes('urgente') || o.Prioridad.toLowerCase().includes('alta')));
-            const qrUrgencia = isUrgent ? '2' : '1';
-
-            // "ahora para geneerar el codigo qr, de acuerdo a la oneda vamos a utilizar estos articulos 82 si es uy y 150 si es usd"
-            const qrProducto = targetCurrency === 'USD' ? '150' : '82';
-            // Antiguo mapping: const qrProducto = finalIdProdReact || '0';
-            const qrCantidad = o.Magnitud || '1';
-            const qrImporte = totalPriceSum.toFixed(2);
-
-            const SEP = '$*';
-            const qrString = `${qrPedido}${SEP}${qrCliente}${SEP}${qrTrabajo}${SEP}${qrUrgencia}${SEP}${qrProducto}${SEP}${qrCantidad}${SEP}${qrImporte}`;
-
-            // Validar integridad basica del QR antes de guardar
-            if (!qrPedido || qrPedido === '0') console.warn("[LabelService] Advertencia: Pedido es 0");
-
-            // --- CALCULO CANTIDAD ETIQUETAS ---
-            let cantidad = cantidadManual;
-
-            if (!cantidad || cantidad < 1) {
-                // Lógica Metros/Bulto
+            if (!totalBultos || totalBultos < 1) {
                 try {
                     const configRes = await pool.request()
                         .input('Clave', sql.VarChar(50), 'METROSBULTOS')
@@ -190,74 +48,50 @@ class LabelGenerationService {
                     let metrosPorBulto = 60;
                     if (configRes.recordset.length > 0) metrosPorBulto = parseFloat(configRes.recordset[0].Valor) || 60;
 
-                    // Sumar metros archivos OK
                     const metrosRes = await pool.request()
                         .input('OID', sql.Int, ordenId)
                         .query(`SELECT SUM(ISNULL(Copias, 1) * ISNULL(Metros, 0)) as TotalMetos FROM ArchivosOrden WHERE OrdenID = @OID AND EstadoArchivo IN ('OK', 'Finalizado')`);
 
                     const totalMetros = metrosRes.recordset[0].TotalMetos || 0;
-                    if (totalMetros > 0) cantidad = Math.ceil(totalMetros / metrosPorBulto);
-                    else cantidad = 1;
+                    if (totalMetros > 0) totalBultos = Math.ceil(totalMetros / metrosPorBulto);
+                    else totalBultos = 1;
                 } catch (e) {
-                    cantidad = 1; // Fallback seguro
+                    totalBultos = 1;
                 }
             }
 
-            const totalBultos = parseInt(cantidad);
+            // QR Simplificado para Control Interno
+            const qrSimple = `ORD-${o.OrdenID}`;
 
             // --- TRANSACCION DB ---
             transaction = new sql.Transaction(pool);
             await transaction.begin();
 
-            // 1. Limpieza Profunda (Movimientos -> EnvioItems -> Bultos -> Etiquetas)
+            // --- VALIDACION: NoDocERP (Requisito para Logística/React) ---
+            if (!o.NoDocERP) {
+                await transaction.rollback();
+                return { success: false, error: 'No se pueden generar etiquetas: El pedido no tiene asignado un NoDocERP. Sincronice con el ERP primero.' };
+            }
 
-            // A. Borrar Movimientos (Evitar errores FK y limpiar historial de orden re-generada)
+            // Limpieza de datos logísticos previos
             try {
                 await new sql.Request(transaction).input('OID', sql.Int, ordenId).query(`
-                    DELETE M 
-                    FROM MovimientosLogistica M
+                    DELETE M FROM MovimientosLogistica M
                     INNER JOIN Logistica_Bultos LB ON M.CodigoBulto = LB.CodigoEtiqueta
                     INNER JOIN Etiquetas E ON LB.CodigoEtiqueta = E.CodigoEtiqueta
                     WHERE E.OrdenID = @OID
                 `);
-            } catch (ign) {
-                console.warn("Advertencia borrando movimientos:", ign.message);
-            }
-
-            // A.5 Borrar Items de Envio (Remitos) para no violar FK__Logistica__Bulto
-            try {
                 await new sql.Request(transaction).input('OID', sql.Int, ordenId).query(`
-                    DELETE LE
-                    FROM Logistica_EnvioItems LE
-                    INNER JOIN Logistica_Bultos LB ON LE.BultoID = LB.BultoID
-                    INNER JOIN Etiquetas E ON LB.CodigoEtiqueta = E.CodigoEtiqueta
-                    WHERE E.OrdenID = @OID
-                `);
-                await new sql.Request(transaction).input('OID', sql.Int, ordenId).query(`
-                    DELETE LE
-                    FROM Logistica_EnvioItems LE
+                    DELETE LE FROM Logistica_EnvioItems LE
                     INNER JOIN Logistica_Bultos LB ON LE.BultoID = LB.BultoID
                     WHERE LB.OrdenID = @OID
                 `);
-            } catch (ign) {
-                console.warn("Advertencia borrando EnvioItems:", ign.message);
-            }
+            } catch (ign) { }
 
-            // B. Borrar Bultos (vía Etiqueta - atrapa OrdenID NULL)
-            await new sql.Request(transaction).input('OID', sql.Int, ordenId).query(`
-                DELETE LB 
-                FROM Logistica_Bultos LB
-                INNER JOIN Etiquetas E ON LB.CodigoEtiqueta = E.CodigoEtiqueta
-                WHERE E.OrdenID = @OID
-            `);
-
-            // C. Borrar Bultos (vía OrdenID directo - limpieza final)
             await new sql.Request(transaction).input('OID', sql.Int, ordenId).query("DELETE FROM Logistica_Bultos WHERE OrdenID = @OID");
-
-            // D. Borrar Etiquetas
             await new sql.Request(transaction).input('OID', sql.Int, ordenId).query("DELETE FROM Etiquetas WHERE OrdenID = @OID");
 
-            // 2. Insertar Nuevas
+            // Insertar Nuevos Bultos/Etiquetas
             const proximoServicio = (o.ProximoServicio || 'DEPOSITO').trim().toUpperCase();
             const esUltimoServicio = proximoServicio.includes('DEPOSITO') || proximoServicio === '';
             const tipoBulto = esUltimoServicio ? 'PROD_TERMINADO' : 'EN_PROCESO';
@@ -267,47 +101,30 @@ class LabelGenerationService {
                     .input('OID', sql.Int, ordenId)
                     .input('Num', sql.Int, i)
                     .input('Tot', sql.Int, totalBultos)
-                    .input('QR', sql.NVarChar(sql.MAX), qrString) // v3 String
+                    .input('QR', sql.NVarChar(sql.MAX), qrSimple)
                     .input('User', sql.VarChar(100), userName)
                     .input('Area', sql.VarChar(20), o.AreaID || 'GEN')
                     .input('UID', sql.Int, userId)
-                    .input('Job', sql.NVarChar(255), qrTrabajo)
+                    .input('Job', sql.NVarChar(255), (o.DescripcionTrabajo || '').substring(0, 255))
                     .input('Tipo', sql.VarChar(50), tipoBulto)
-                    .input('Perfiles', sql.NVarChar(sql.MAX), mainOrderProfiles || '')
                     .query(`
-                        INSERT INTO Etiquetas(OrdenID, NumeroBulto, TotalBultos, CodigoQR, FechaGeneracion, Usuario, PerfilesPrecio)
-                        VALUES(@OID, @Num, @Tot, @QR, GETDATE(), @User, @Perfiles);
+                        INSERT INTO Etiquetas(OrdenID, NumeroBulto, TotalBultos, CodigoQR, FechaGeneracion, Usuario)
+                        VALUES(@OID, @Num, @Tot, @QR, GETDATE(), @User);
 
                         DECLARE @NewID INT = SCOPE_IDENTITY();
-                        DECLARE @Code NVARCHAR(50) = @Area + FORMAT(GETDATE(), 'MMdd') + '-' + CAST(@NewID AS NVARCHAR);
+                        DECLARE @Code NVARCHAR(50) = 'B' + CAST(@NewID AS NVARCHAR) + '-' + @Area + FORMAT(GETDATE(), 'MMdd');
                         
-                        -- Update cod visual
                         UPDATE Etiquetas SET CodigoEtiqueta = @Code WHERE EtiquetaID = @NewID;
 
-                        -- Validar que Logistica_Bultos se mantenga sincronizado
-                        IF NOT EXISTS (SELECT 1 FROM Logistica_Bultos WHERE CodigoEtiqueta = @Code)
-                            BEGIN
-                                 INSERT INTO Logistica_Bultos (CodigoEtiqueta, Tipocontenido, OrdenID, Descripcion, UbicacionActual, Estado, UsuarioCreador)
-                                 VALUES (@Code, @Tipo, @OID, @Job, @Area, 'EN_STOCK', @UID);
-                            END
-                            ELSE
-                            BEGIN
-                                -- Si por alguna razón reusamos codigo (raro con identidad), aseguramos tipo actualizado
-                                UPDATE Logistica_Bultos SET Tipocontenido = @Tipo, Descripcion = @Job WHERE CodigoEtiqueta = @Code;
-                            END
+                        INSERT INTO Logistica_Bultos (CodigoEtiqueta, Tipocontenido, OrdenID, Descripcion, UbicacionActual, Estado, UsuarioCreador)
+                        VALUES (@Code, @Tipo, @OID, @Job, @Area, 'EN_STOCK', @UID);
                     `);
             }
 
             await transaction.commit();
+            console.log(`[LabelService] Exito. ${totalBultos} bultos generados para Orden ${ordenId}.`);
 
-            // Actualizar ERP con Magnitudes Agrupadas
-            if (o.NoDocERP) {
-                await ERPSyncService.syncOrderToERP(o.NoDocERP);
-            }
-
-            console.log(`[LabelService] Exito. ${totalBultos} etiquetas generadas para Orden ${ordenId}. QR: ${qrString}`);
-
-            return { success: true, totalBultos, qrString };
+            return { success: true, totalBultos };
 
         } catch (err) {
             if (transaction) await transaction.rollback();

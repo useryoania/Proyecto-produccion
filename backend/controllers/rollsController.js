@@ -265,9 +265,6 @@ exports.createRoll = async (req, res) => {
         await transaction.begin();
 
         try {
-            // Generar ID único tipo "R-987654"
-            const rollId = `R-${Date.now().toString().slice(-6)}`;
-
             // 1. Si viene BobinaID, la gestionamos
             if (bobinaId) {
                 // Verificar y reservar
@@ -290,20 +287,29 @@ exports.createRoll = async (req, res) => {
                 }
             }
 
-            // 2. Crear Rollo
-            await new sql.Request(transaction)
-                .input('RolloID', sql.VarChar(20), rollId)
-                .input('Nombre', sql.NVarChar(100), name || `Lote ${rollId}`)
+            // 2. Crear Rollo (Dejamos que IDENTITY genere el ID)
+            const insertResult = await new sql.Request(transaction)
+                .input('Nombre', sql.NVarChar(100), name || '') // Vacío si no hay manual para asignar después
                 .input('AreaID', sql.VarChar(20), areaId)
                 .input('Capacidad', sql.Decimal(10, 2), capacity || 100)
                 .input('Color', sql.VarChar(10), color || '#3b82f6')
                 .input('BobinaID', sql.Int, bobinaId || null)
                 .query(`
-                    SET IDENTITY_INSERT dbo.Rollos ON;
-                    INSERT INTO dbo.Rollos (RolloID, Nombre, AreaID, CapacidadMaxima, ColorHex, Estado, MaquinaID, FechaCreacion, BobinaID)
-                    VALUES (@RolloID, @Nombre, @AreaID, @Capacidad, @Color, 'Abierto', NULL, GETDATE(), @BobinaID);
-                    SET IDENTITY_INSERT dbo.Rollos OFF;
+                    INSERT INTO dbo.Rollos (Nombre, AreaID, CapacidadMaxima, ColorHex, Estado, MaquinaID, FechaCreacion, BobinaID)
+                    OUTPUT INSERTED.RolloID
+                    VALUES (NULLIF(@Nombre, ''), @AreaID, @Capacidad, @Color, 'Abierto', NULL, GETDATE(), @BobinaID);
                 `);
+
+            const rollId = insertResult.recordset[0].RolloID;
+
+            // 3. Generar Código L-Lote si no venía nombre manual
+            if (!name) {
+                const autoName = `L-Lote ${areaId} ${rollId}`;
+                await new sql.Request(transaction)
+                    .input('RID', sql.Int, rollId)
+                    .input('AutoName', sql.NVarChar(100), autoName)
+                    .query("UPDATE dbo.Rollos SET Nombre = @AutoName WHERE RolloID = @RID");
+            }
 
             await transaction.commit();
             res.json({ success: true, rollId, message: 'Rollo creado exitosamente' });
@@ -654,8 +660,6 @@ exports.splitRoll = async (req, res) => {
             const oldRoll = rollRes.recordset[0];
 
             // 2. CREAR NUEVO ROLLO (Clonando datos básicos)
-            // Generar nuevo ID
-            const newRollId = `R-${Date.now().toString().slice(-6)}-B`;
             const newRollName = `${oldRoll.Nombre} (Parte 2)`;
 
             // Si hay nueva bobina, la marcamos en uso
@@ -666,17 +670,19 @@ exports.splitRoll = async (req, res) => {
             }
 
             // Insertar Nuevo Rollo
-            await new sql.Request(transaction)
-                .input('ID', sql.VarChar(20), newRollId)
+            const splitResult = await new sql.Request(transaction)
                 .input('Nom', sql.NVarChar(100), newRollName)
                 .input('Area', sql.VarChar(20), oldRoll.AreaID)
                 .input('Cap', sql.Decimal(10, 2), oldRoll.CapacidadMaxima)
                 .input('Col', sql.VarChar(10), oldRoll.ColorHex || '#cbd5e1')
-                .input('BID', sql.Int, newBobinaId || null) // Nueva bobina o null
+                .input('BID', sql.Int, newBobinaId || null)
                 .query(`
-                    INSERT INTO Rollos (RolloID, Nombre, AreaID, CapacidadMaxima, ColorHex, Estado, FechaCreacion, BobinaID)
-                    VALUES (@ID, @Nom, @Area, @Cap, @Col, 'Abierto', GETDATE(), @BID)
+                    INSERT INTO dbo.Rollos (Nombre, AreaID, CapacidadMaxima, ColorHex, Estado, FechaCreacion, BobinaID)
+                    OUTPUT INSERTED.RolloID
+                    VALUES (@Nom, @Area, @Cap, @Col, 'Abierto', GETDATE(), @BID)
                 `);
+
+            const newRollId = splitResult.recordset[0].RolloID;
 
             // 3. MOVER ÓRDENES RESTANTES AL NUEVO ROLLO
             // Seleccionamos las ordenes del rollo actual cuya secuencia sea MAYOR a la de lastOrderId
@@ -1239,21 +1245,29 @@ exports.magicRollAssignment = async (req, res) => {
                 // A. Ordenar por prioridad dentro del grupo
                 groupOrders.sort((a, b) => getPrioVal(a.Prioridad) - getPrioVal(b.Prioridad));
 
-                // B. Crear Rollo
-                const rollId = `R-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 1000)}`;
-                const rollName = `Lote ${varianteName} - ${materialName.split(' ').slice(0, 3).join(' ')}`; // Nombre corto material
-                const capacity = 1000; // Capacidad alta por defecto para mágico
+                // B. Crear Rollo (Sin ID manual, dejamos que la BD asigne el consecutivo)
+                const materialSuffix = materialName.split(' ').slice(0, 3).join(' ');
+                const tempName = `L-Lote ${cleanArea} - ${materialSuffix}`;
 
-                await new sql.Request(transaction)
-                    .input('RolloID', sql.VarChar(20), rollId)
-                    .input('Nombre', sql.NVarChar(100), rollName)
+                const insertRollResult = await new sql.Request(transaction)
+                    .input('Nombre', sql.NVarChar(100), tempName)
                     .input('AreaID', sql.VarChar(20), cleanArea)
-                    .input('Capacidad', sql.Decimal(10, 2), capacity)
+                    .input('Capacidad', sql.Decimal(10, 2), 1000)
                     .input('Color', sql.VarChar(10), '#8b5cf6') // Violeta mágico
                     .query(`
-                        INSERT INTO dbo.Rollos (RolloID, Nombre, AreaID, CapacidadMaxima, ColorHex, Estado, FechaCreacion)
-                        VALUES (@RolloID, @Nombre, @AreaID, @Capacidad, @Color, 'Abierto', GETDATE())
+                        INSERT INTO dbo.Rollos (Nombre, AreaID, CapacidadMaxima, ColorHex, Estado, FechaCreacion)
+                        OUTPUT INSERTED.RolloID
+                        VALUES (@Nombre, @AreaID, @Capacidad, @Color, 'Abierto', GETDATE())
                     `);
+
+                const rollId = insertRollResult.recordset[0].RolloID;
+
+                // Actualizar el nombre final incluyendo el ID real
+                const finalName = `L-Lote ${cleanArea} ${rollId} - ${materialSuffix}`;
+                await new sql.Request(transaction)
+                    .input('RID', sql.Int, rollId)
+                    .input('FinalName', sql.NVarChar(100), finalName)
+                    .query("UPDATE dbo.Rollos SET Nombre = @FinalName WHERE RolloID = @RID");
 
                 rollsCreated++;
 

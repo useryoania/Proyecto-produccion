@@ -91,8 +91,8 @@ export const fileControlService = {
         return response.data;
     },
 
-    updateFileCopyCount: async (archivoId, count) => {
-        const response = await api.post('/production-file-control/update-copy-count', { archivoId, count });
+    updateFileCopyCount: async (archivoId, count, isService) => {
+        const response = await api.post('/production-file-control/update-copy-count', { archivoId, count, isService });
         return response.data;
     },
 

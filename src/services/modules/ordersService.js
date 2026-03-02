@@ -28,6 +28,10 @@ export const ordersService = {
         const response = await api.put(`/orders/${orderId}/status`, { status: newStatus });
         return response.data;
     },
+    updateAreaStatus: async (orderId, newAreaStatus) => {
+        const response = await api.put(`/orders/${orderId}/area-status`, { areaStatus: newAreaStatus });
+        return response.data;
+    },
     getPriorities: async (areaCode) => {
         const response = await api.get(`/orders/priorities?area=${areaCode}`);
         return response.data;

@@ -60,20 +60,24 @@ const getPedidoMetrics = async (req, res) => {
             const itemsList = targetOrderIds.join(',');
             const filesQuery = `
                 SELECT 
-                    OA.OrdenID, 
-                    O.Material, 
-                    O.AreaID,
-                    OA.NombreArchivo,
-                    OA.EstadoArchivo as Estado,
-                    OA.Copias,
-                    OA.Metros,
-                    OA.RutaAlmacenamiento as link,
-                    ISNULL(O.MaquinaID, R.MaquinaID) as MaquinaID,
-                    R.Nombre as NombreRollo
+                    OA.OrdenID, O.Material, O.AreaID, OA.NombreArchivo, OA.EstadoArchivo as Estado,
+                    OA.Copias, OA.Metros, OA.RutaAlmacenamiento as link,
+                    ISNULL(O.MaquinaID, R.MaquinaID) as MaquinaID, R.Nombre as NombreRollo, 0 as isService
                 FROM ArchivosOrden OA WITH (NOLOCK)
                 INNER JOIN Ordenes O WITH (NOLOCK) ON OA.OrdenID = O.OrdenID
                 LEFT JOIN Rollos R WITH (NOLOCK) ON O.RolloID = R.RolloID
                 WHERE OA.OrdenID IN (${itemsList})
+
+                UNION ALL
+
+                SELECT 
+                    SEO.OrdenID, O.Material, O.AreaID, SEO.Descripcion as NombreArchivo, SEO.Estado as Estado,
+                    SEO.Cantidad as Copias, NULL as Metros, NULL as link,
+                    ISNULL(O.MaquinaID, R.MaquinaID) as MaquinaID, R.Nombre as NombreRollo, 1 as isService
+                FROM ServiciosExtraOrden SEO WITH (NOLOCK)
+                INNER JOIN Ordenes O WITH (NOLOCK) ON SEO.OrdenID = O.OrdenID
+                LEFT JOIN Rollos R WITH (NOLOCK) ON O.RolloID = R.RolloID
+                WHERE SEO.OrdenID IN (${itemsList})
             `;
             const filesRes = await pool.request().query(filesQuery);
             allFiles = filesRes.recordset.map(f => ({

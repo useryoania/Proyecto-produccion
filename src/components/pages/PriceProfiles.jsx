@@ -1474,7 +1474,7 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
 // --- PANTALLA PRINCIPAL ---
 
 const PriceProfiles = () => {
-    const [activeTab, setActiveTab] = useState('profiles'); // profiles | assignments
+    const [activeTab, setActiveTab] = useState('profiles'); // profiles | assignments | simulator
     const [profiles, setProfiles] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -1584,7 +1584,7 @@ const PriceProfiles = () => {
     const handleAssign = (clienteId, perfilId) => {
         // Buscar cliente usando CodCliente (o IDReact si fuera el caso, pero backend usa CodCliente)
         const cliente = customers.find(c => c.CodCliente === clienteId);
-        const pidVal = parseInt(perfilId) || null;
+        const pidVal = Array.isArray(perfilId) ? perfilId : (parseInt(perfilId) || null);
 
         api.post('/profiles/assign', {
             clienteId,

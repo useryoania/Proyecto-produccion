@@ -38,6 +38,7 @@ router.post('/cancel-roll', verifyToken, ordersController.cancelRoll);
 // Rutas con :id (DEBEN IR AL FINAL de los GET/PUT/DELETE específicos)
 router.delete('/:id', verifyToken, ordersController.deleteOrder);
 router.put('/:id/status', verifyToken, ordersController.updateStatus);
+router.put('/:id/area-status', verifyToken, ordersController.updateAreaStatus);
 router.get('/history/:id', verifyToken, ordersController.getOrderHistory);
 
 // 2. GESTIÓN DE ARCHIVOS

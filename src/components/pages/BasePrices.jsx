@@ -45,8 +45,9 @@ const PriceRow = ({ item, changes, onChange, onAdd }) => {
     const displayMoneda = changes?.moneda !== undefined ? changes.moneda : (item.Moneda || 'UYU');
     const isDirty = changes !== undefined;
 
-    // Solo permitir cambiar moneda si es una fila nueva (para evitar conflictos de MERGE)
-    const canEditCurrency = !!item._isNew;
+    // Se puede editar moneda si es un ítem nuevo (no tiene ID en BD) o fue agregado manualmente (_isNew)
+    const canEditCurrency = !item.ID || !!item._isNew;
+    const rowId = item.ID || item._tempID;
 
     return (
         <tr className="hover:bg-slate-50 group transition-colors">
@@ -67,15 +68,16 @@ const PriceRow = ({ item, changes, onChange, onAdd }) => {
                     `}
                     placeholder="0.00"
                     value={displayVal}
-                    onChange={(e) => onChange(item.ID || item._tempID, { precio: e.target.value })}
+                    onChange={(e) => onChange(rowId, { precio: e.target.value })}
                     onFocus={(e) => e.target.select()}
                 />
             </td>
             <td className="p-3 text-center w-24">
                 <select
-                    className="text-xs border rounded p-1 outline-none bg-white text-slate-700 border-slate-300 hover:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition-colors"
+                    className={`text-xs border rounded p-1 outline-none transition-colors ${!canEditCurrency ? 'bg-slate-50 text-slate-400 cursor-not-allowed border-slate-200' : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
                     value={displayMoneda}
-                    onChange={(e) => onChange(item.ID || item._tempID, { moneda: e.target.value })}
+                    onChange={(e) => onChange(rowId, { moneda: e.target.value })}
+                    disabled={!canEditCurrency}
                 >
                     <option value="UYU">UYU</option>
                     <option value="USD">USD</option>
@@ -118,16 +120,29 @@ const BasePrices = () => {
     const loadPrices = () => {
         setLoading(true);
         api.get('/prices/base')
-            .then(res => setPrices(res.data))
-            .catch(e => toast.error("Error al cargar precios base"))
+            .then(res => {
+                // ASEGURAR IDENTIFICADORES ÚNICOS: 
+                // Si un artículo no tiene precio en la DB (ID null por LEFT JOIN), 
+                // le asignamos un _tempID único basado en su CodArticulo para el estado pendingChanges.
+                const data = res.data.map(item => ({
+                    ...item,
+                    Precio: item.Precio ?? 0,
+                    Moneda: item.Moneda || 'UYU',
+                    _tempID: item.ID ? null : `init-${item.CodArticulo}`
+                }));
+                setPrices(data);
+            })
+            .catch(e => {
+                console.error("Error loadPrices:", e);
+                toast.error("Error al cargar precios base");
+            })
             .finally(() => setLoading(false));
     };
 
     const handlePriceChange = (id, changes) => {
+        if (!id) return;
         setPendingChanges(prev => {
             const current = prev[id] || {};
-            // Si el precio viene vacío o negativo, tratarlo con cuidado (backend espera number)
-            // Aquí guardamos string para input, convertimos al guardar/renderizar
             return { ...prev, [id]: { ...current, ...changes } };
         });
     };

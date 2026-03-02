@@ -11,23 +11,26 @@ import { API_URL } from '../../../services/apiClient';
  */
 const ReferenceItem = ({ file }) => {
 
-    // Render-time URL (Best effort)
     const getBaseFileUrl = () => {
-        if (file.urlProxy) {
-            const base = API_URL.endsWith('/api') ? API_URL.replace('/api', '') : API_URL;
-            return `${base}${file.urlProxy}`;
-        }
-        return file.link || file.url || file.RutaAlmacenamiento || '#';
+        if (file.urlProxy) return file.urlProxy; // Proxy en la misma URL base
+        if (file.link && file.link !== '#') return file.link;
+        if (file.url && file.url !== '#') return file.url;
+        if (file.RutaAlmacenamiento && file.RutaAlmacenamiento !== '#') return file.RutaAlmacenamiento;
+        return null;
     };
 
     const fileUrl = getBaseFileUrl();
-    const isImage = fileUrl.match(/\.(jpeg|jpg|gif|png|webp|bmp)$/i);
-    const isPdf = fileUrl.match(/\.(pdf)$/i);
+    const isImage = fileUrl && fileUrl.match(/\.(jpeg|jpg|gif|png|webp|bmp)$/i);
+    const isPdf = fileUrl && fileUrl.match(/\.(pdf)$/i);
     const fileName = file.nombre || file.NombreArchivo || 'Referencia';
 
     // Helper de descarga
     const triggerDownload = (e) => {
         e.stopPropagation();
+        if (!fileUrl) {
+            alert('Este archivo no tiene un enlace adjunto válido.');
+            return;
+        }
         const link = document.createElement('a');
         link.href = fileUrl;
         link.download = fileName;
@@ -58,7 +61,14 @@ const ReferenceItem = ({ file }) => {
 
             {/* 2. Info Principal */}
             <div className="flex-1 min-w-0">
-                <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="font-bold text-sm text-slate-700 hover:text-blue-600 truncate block transition-colors" title={fileName}>
+                <a
+                    href={fileUrl || '#'}
+                    onClick={(e) => { if (!fileUrl) { e.preventDefault(); alert("Este archivo no tiene enlace válido."); } }}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-bold text-sm text-slate-700 hover:text-blue-600 truncate block transition-colors"
+                    title={fileName}
+                >
                     {fileName}
                 </a>
                 <div className="flex items-center gap-2 mt-0.5">

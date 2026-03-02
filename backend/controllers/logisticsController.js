@@ -1589,7 +1589,10 @@ exports.getDepositStock = async (req, res) => {
                 MAX(PC.EstadoSyncReact) as EstadoSyncReact,
                 MAX(PC.ObsReact) as ObsReact,
                 MAX(PC.EstadoSyncERP) as EstadoSyncERP,
-                MAX(PC.ObsERP) as ObsERP
+                MAX(PC.ObsERP) as ObsERP,
+                MAX(PC.Moneda) as Moneda,
+                MAX(PCD.LogPrecioAplicado) as LogFacturacion,
+                STRING_AGG(LB.CodigoEtiqueta, ', ') as BultosList
             FROM Logistica_Bultos LB
             JOIN Etiquetas E ON LB.CodigoEtiqueta = E.CodigoEtiqueta
             LEFT JOIN Ordenes O ON LB.OrdenID = O.OrdenID
@@ -1621,323 +1624,198 @@ async function getExternalToken() {
     }
 }
 
+const ERPSyncService = require('../services/erpSyncService');
+
 exports.syncDepositStock = async (req, res) => {
     try {
-        const { items } = req.body; // Array de { qr, count, price, quantity, profile }
+        const { items } = req.body; // Array de { qr, ... }
         if (!items || !Array.isArray(items)) return res.status(400).json({ error: 'Formato incorrecto. Se espera array "items"' });
 
-        const results = [];
-        const axios = require('axios');
         const pool = await getPool();
+        const { isProcessActive } = require('./configuracionesController');
 
-        // 1. Obtener Token
-        const token = await getExternalToken();
-        if (!token) {
-            return res.status(500).json({ error: 'No se pudo autenticar con el sistema externo (Token Error)' });
-        }
+        const isReactGlobalActive = await isProcessActive('SYNC_REACT_CORE');
+        const isErpGlobalActive = await isProcessActive('SYNC_ERP_MACROSOFT');
+
+        const results = [];
+
+        // 1. Identificar NoDocERP únicos y mapear Bultos / Notas
+        const docsToSync = new Map(); // Map de noDocERP -> { bultoCode, notes }
 
         for (const item of items) {
-            try {
-                // Reconstruir QR con valores actualizados (Magnitud, CostoTotal)
-                let newOrdenString = item.qr;
-                const parts = item.qr.split('$*');
+            let code = null;
+            let bultoRef = null;
 
-                // Formato V3 espera 7 partes: Pedido, Cliente, Trabajo, Urgencia, Producto, Cantidad, Importe
-                if (parts.length >= 5) {
-                    // Index 5: Cantidad (Magnitud)
-                    if (item.cantidad) parts[5] = item.cantidad.toString();
-                    // Index 6: Importe (CostoTotal)
-                    if (item.precio) parts[6] = parseFloat(item.precio).toFixed(2);
-                    newOrdenString = parts.join('$*');
+            if (item.qr) {
+                // Soportar formato tradicional $[ID]$*...
+                const parts = item.qr.split('$*');
+                code = parts[0].trim();
+
+                // Si el código trae el prefijo $, lo quitamos para la consulta DB
+                if (code.startsWith('$')) {
+                    code = code.substring(1);
                 }
 
-                // Payload según requerimiento API externa (Postman)
-                const payload = {
-                    ordenString: newOrdenString,
-                    estado: "Ingresado",
-                    perfil: item.profile || "" // Extra, por si la API lo acepta/loguea
-                };
+                if (code.startsWith('B')) bultoRef = code;
+                console.log(`[SyncLogistics] Procesando item con código: ${code} (Bulto: ${bultoRef || 'No'})`);
+            } else if (item.noDocERP) {
+                const docId = item.noDocERP.toString().trim();
+                console.log(`[SyncLogistics] Procesando por NoDocERP directo: ${docId}`);
+                if (!docsToSync.has(docId)) docsToSync.set(docId, { bultoCode: null, notes: '', price: null, quantity: null, profile: null, reactPayload: null, erpPayload: null });
+                continue;
+            }
 
-                let responseData = null;
-                let status = 0;
+            if (code) {
+                const isBulto = code.startsWith('B');
+                let query = "";
+                let queryParam = code;
 
-                if (axios) {
-                    try {
-                        const response = await axios.post('https://administracionuser.uy/api/apiordenes/data', payload, {
-                            headers: { Authorization: `Bearer ${token}` }
-                        });
-                        status = response.status;
-                        responseData = response.data;
-                    } catch (axiosErr) {
-                        // Capturar error detallado de axios
-                        status = axiosErr.response?.status || 500;
-                        responseData = axiosErr.response?.data || { error: axiosErr.message };
-                        console.error("[SyncLogistics] Axios Error:", status, JSON.stringify(responseData));
+                if (isBulto) {
+                    query = "SELECT TOP 1 O.NoDocERP FROM Ordenes O JOIN Etiquetas E ON O.OrdenID = E.OrdenID WHERE E.CodigoEtiqueta = @Code";
+                } else if (code.startsWith('ORD-')) {
+                    // Si viene como ORD-12345, intentamos buscar por OrdenID directamente
+                    const idPart = code.replace('ORD-', '');
+                    if (!isNaN(idPart)) {
+                        query = "SELECT TOP 1 NoDocERP FROM Ordenes WHERE OrdenID = @ID OR CodigoOrden = @Code";
+                        queryParam = idPart;
+                    } else {
+                        query = "SELECT TOP 1 NoDocERP FROM Ordenes WHERE CodigoOrden = @Code OR CodigoOrden LIKE @Code + ' (%)' OR NoDocERP = @Code";
                     }
                 } else {
-                    // Fallback to fetch
-                    const f = await fetch('https://administracionuser.uy/api/apiordenes/data', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify(payload)
-                    });
-                    status = f.status;
-                    responseData = await f.json();
+                    query = "SELECT TOP 1 NoDocERP FROM Ordenes WHERE CodigoOrden = @Code OR CodigoOrden LIKE @Code + ' (%)' OR NoDocERP = @Code OR REPLACE(NoDocERP, 'RE-', '') = @Code";
                 }
 
-                // --- SAVE PROFILES LOCALLY ---
-                if (item.profile && (status === 200 || status === 201)) {
-                    try {
-                        const pool = await getPool();
-                        await pool.request()
-                            .input('QR', sql.NVarChar(4000), item.qr)
-                            .input('Perfil', sql.NVarChar(sql.MAX), item.profile)
-                            .query(`
-                                -- Update Etiquetas linked to this QR
-                                UPDATE E
-                                SET PerfilesPrecio = @Perfil
-                                FROM Etiquetas E
-                                WHERE E.CodigoQR = @QR;
+                const orderInfo = await pool.request()
+                    .input('Code', sql.VarChar, code)
+                    .input('ID', sql.Int, isNaN(queryParam) ? 0 : parseInt(queryParam))
+                    .query(query);
 
-                                -- Update Orden linked to these Etiquetas
-                                UPDATE O
-                                SET PerfilesPrecio = @Perfil
-                                FROM Ordenes O
-                                INNER JOIN Etiquetas E ON O.OrdenID = E.OrdenID
-                                WHERE E.CodigoQR = @QR;
-                            `);
-                        // console.log("[Sync] Updated local profiles for QR:", item.qr);
-                    } catch (dbErr) {
-                        console.error("[Sync] Error saving local profile:", dbErr.message);
+                // Fallback: Si no se encontró por QR, intentar por CodigoOrden explícito si existe
+                if (orderInfo.recordset.length === 0 && item.CodigoOrden) {
+                    console.log(`[SyncLogistics] Fallback: Buscando por CodigoOrden explícito: ${item.CodigoOrden}`);
+                    const fallbackInfo = await pool.request()
+                        .input('C', sql.VarChar, item.CodigoOrden)
+                        .query("SELECT TOP 1 NoDocERP FROM Ordenes WHERE CodigoOrden = @C OR CodigoOrden LIKE @C + ' (%)'");
+                    if (fallbackInfo.recordset.length > 0) {
+                        orderInfo.recordset = fallbackInfo.recordset;
                     }
                 }
 
-                let errorMessage = null;
-                if (status !== 200 && status !== 201) {
-                    errorMessage = responseData?.error || responseData?.message || JSON.stringify(responseData);
+                if (orderInfo.recordset.length > 0 && orderInfo.recordset[0].NoDocERP) {
+                    const docId = orderInfo.recordset[0].NoDocERP.toString().trim();
+                    console.log(`[SyncLogistics] Documento encontrado: ${docId} para código: ${code}`);
+                    const existing = docsToSync.get(docId) || { bultoCode: null, notes: '', price: null, quantity: null, profile: null, reactPayload: null, erpPayload: null };
+                    
+                    docsToSync.set(docId, { 
+                        bultoCode: bultoRef || existing.bultoCode,
+                        notes: item.notes || existing.notes,
+                        price: item.price !== undefined ? item.price : existing.price,
+                        quantity: item.quantity !== undefined ? item.quantity : existing.quantity,
+                        profile: item.profile !== undefined ? item.profile : existing.profile,
+                        reactPayload: item.reactPayload || existing.reactPayload,
+                        erpPayload: item.erpPayload || existing.erpPayload
+                    });
+                } else {
+                    console.log(`[SyncLogistics] NO se encontró NoDocERP en la base de datos para: ${code}`);
                 }
+            }
+        }
+
+        console.log(`[SyncLogistics] Total de documentos únicos a sincronizar: ${docsToSync.size}`, Array.from(docsToSync.keys()));
+
+        // 2. Ejecutar Sincronización Integral por Documento
+        for (const [doc, data] of docsToSync.entries()) {
+            try {
+                console.log(`[SyncLogistics] Ejecutando Sync Integral para Doc: ${doc} ${data.bultoCode ? '(Bulto: ' + data.bultoCode + ')' : ''}`);
+                
+                const syncRes = await ERPSyncService.syncFinalOrderIntegration(doc, req.user?.id || 1, req.user?.usuario || 'Sistema', data.bultoCode, { 
+                    userNotes: data.notes,
+                    priceOverride: data.price,
+                    quantityOverride: data.quantity,
+                    profileOverride: data.profile,
+                    syncTarget: req.body.target,
+                    forcedReactPayload: data.reactPayload,
+                    forcedErpPayload: data.erpPayload,
+                    isReactEnabledGlobal: isReactGlobalActive,
+                    isErpEnabledGlobal: isErpGlobalActive
+                });
 
                 results.push({
-                    qr: item.qr,
-                    success: (status === 200 || status === 201),
-                    data: responseData,
-                    error: errorMessage
+                    document: doc,
+                    success: syncRes.success,
+                    total: syncRes.totalPriceSum,
+                    react: syncRes.reactSuccess ? 'OK' : 'Error',
+                    erp: syncRes.erpSuccess ? 'OK' : 'Error'
                 });
-
-            } catch (apiErr) {
-                console.error("Error syncing item:", item.qr, apiErr.message);
-                results.push({ qr: item.qr, success: false, error: apiErr.message });
+            } catch (docErr) {
+                console.error(`[SyncLogistics] Error en documento ${doc}:`, docErr.message);
+                results.push({
+                    document: doc,
+                    success: false,
+                    error: docErr.message
+                });
             }
         }
 
-        // ---- NUEVO SINC AL ERP DEV MACROSOFT ----
-        try {
-            // Buscamos procesar TODOS los QRs analizados, para sentar el estado de React y de ERP juntos.
-            const qrsToSyncErp = results.map(r => r.qr);
-            if (qrsToSyncErp.length > 0) {
-                // Obtener token para ERP
-                const erpTokenRes = await axios.post('https://api-user.devmacrosoft.com/authenticate', {
-                    username: "user",
-                    password: "1234"
-                });
-                const erpToken = erpTokenRes.data?.token || erpTokenRes.data?.accessToken || erpTokenRes.data;
-
-                // Armar consulta a DB para agrupar por NoDocERP
-                const requestErp = pool.request();
-                const conditions = qrsToSyncErp.map((qr, i) => {
-                    requestErp.input(`qr_erp_${i}`, sql.NVarChar(4000), qr);
-                    return `@qr_erp_${i}`;
-                }).join(',');
-
-                const ordenesErpInfo = await requestErp.query(`
-                    SELECT 
-                        O.NoDocERP, 
-                        O.CodCliente,
-                        O.OrdenID,
-                        O.CodArticulo,
-                        TRY_CAST(O.Magnitud AS DECIMAL(18,2)) as Cantidad,
-                        PB.Moneda as MonedaBase,
-                        E.CodigoQR
-                    FROM Etiquetas E
-                    JOIN Ordenes O ON E.OrdenID = O.OrdenID
-                    LEFT JOIN PreciosBase PB ON O.CodArticulo = PB.CodArticulo
-                    WHERE E.CodigoQR IN (${conditions})
-                      AND O.NoDocERP IS NOT NULL
-                      AND O.NoDocERP <> ''
-                      AND O.CodArticulo IS NOT NULL
-                `);
-
-                // Agrupar Resultados por NoDocERP en memoria para mantener el Detalle
-                const pedidosMap = {};
-                ordenesErpInfo.recordset.forEach(row => {
-                    const doc = row.NoDocERP.toString().trim();
-                    if (!pedidosMap[doc]) {
-                        pedidosMap[doc] = {
-                            CodCliente: row.CodCliente,
-                            OrderLines: [],
-                            HasUSD: false,
-                            ReactStatus: 'Enviado_OK',
-                            ReactObs: 'OK'
-                        };
-                    }
-                    if ((row.MonedaBase || '').toUpperCase() === 'USD') {
-                        pedidosMap[doc].HasUSD = true;
-                    }
-
-                    // Buscar en el array original de la API de React qué pasó con este QR
-                    const qrResult = results.find(r => r.qr === row.CodigoQR);
-                    if (qrResult && !qrResult.success) {
-                        pedidosMap[doc].ReactStatus = 'Error';
-                        pedidosMap[doc].ReactObs = qrResult.error ? String(qrResult.error) : 'Error React';
-                    }
-
-                    pedidosMap[doc].OrderLines.push({
-                        OrdenID: row.OrdenID,
-                        CodArticuloReal: row.CodArticulo.trim(),
-                        Cantidad: row.Cantidad || 0
-                    });
-                });
-
-                // Para cada NoDocERP, calcular precios, guardar en BD y Enviar a ERP
-                for (const [noDoc, data] of Object.entries(pedidosMap)) {
-                    let totalMonto = 0;
-                    // Lógica idéntica a LabelGenerationService: si hay algún producto en USD, el pedido entero se factura en USD.
-                    const targetCurrency = data.HasUSD ? 'USD' : 'UYU';
-                    const mappedErpArticle = targetCurrency === 'USD' ? '150' : '82'; // Regla de negocio solicitada
-
-                    const detallesCobranza = [];
-
-                    // 1. Calcular Precio para cada línea/orden
-                    for (const line of data.OrderLines) {
-                        try {
-                            // Aplicamos targetCurrency al PricingService para que use la misma moneda que la etiqueta
-                            const priceRes = await PricingService.calculatePrice(line.CodArticuloReal, line.Cantidad, data.CodCliente, [], {}, targetCurrency);
-                            const subtotal = priceRes.precioTotal || 0;
-                            totalMonto += subtotal;
-
-                            detallesCobranza.push({
-                                OrdenID: line.OrdenID,
-                                CodArticulo: line.CodArticuloReal, // Enviamos el artículo real (Ej. 55) al ERP porque es detallado
-                                Cantidad: line.Cantidad,
-                                PrecioUnitario: priceRes.precioUnitario || 0,
-                                Subtotal: subtotal,
-                                LogPrecioAplicado: priceRes.txt || ''
-                            });
-                        } catch (priceE) {
-                            console.error(`[Cobranza] Error calculando precio para ${line.CodArticuloReal}:`, priceE.message);
-                        }
-                    }
-
-                    // 2. Guardar o Actualizar Cabecera y Detalle en la BD interna
-                    let pedidoCobranzaId;
-                    try {
-                        const chkRes = await pool.request().input('NoDoc', sql.VarChar, noDoc).query("SELECT ID FROM PedidosCobranza WHERE NoDocERP = @NoDoc");
-                        if (chkRes.recordset.length > 0) {
-                            pedidoCobranzaId = chkRes.recordset[0].ID;
-                            // Actualiza Monto por si hubo más órdenes adjuntadas, y actualiza los log de react
-                            await pool.request()
-                                .input('ID', sql.Int, pedidoCobranzaId)
-                                .input('Monto', sql.Decimal(18, 2), totalMonto)
-                                .input('EstReact', sql.VarChar, data.ReactStatus)
-                                .input('ObsReact', sql.NVarChar(50), data.ReactObs ? data.ReactObs.substring(0, 50) : '')
-                                .query("UPDATE PedidosCobranza SET MontoTotal = @Monto, FechaGeneracion = GETDATE(), EstadoSyncReact = @EstReact, ObsReact = @ObsReact WHERE ID = @ID");
-
-                            // Borrar detalles viejos para reconstruir
-                            await pool.request().input('ID', sql.Int, pedidoCobranzaId).query("DELETE FROM PedidosCobranzaDetalle WHERE PedidoCobranzaID = @ID");
-                        } else {
-                            const insRes = await pool.request()
-                                .input('NoDoc', sql.VarChar, noDoc)
-                                .input('Cli', sql.Int, data.CodCliente || 1)
-                                .input('Monto', sql.Decimal(18, 2), totalMonto)
-                                .input('Moneda', sql.VarChar, targetCurrency) // Guardar moneda correcta
-                                .input('EstReact', sql.VarChar, data.ReactStatus)
-                                .input('ObsReact', sql.NVarChar(50), data.ReactObs ? data.ReactObs.substring(0, 50) : '')
-                                .query(`
-                                    INSERT INTO PedidosCobranza (NoDocERP, ClienteID, MontoTotal, Moneda, EstadoSyncReact, ObsReact) 
-                                    OUTPUT INSERTED.ID
-                                    VALUES (@NoDoc, @Cli, @Monto, @Moneda, @EstReact, @ObsReact)
-                                `);
-                            pedidoCobranzaId = insRes.recordset[0].ID;
-                        }
-
-                        // Insertar Detalles
-                        for (const det of detallesCobranza) {
-                            await pool.request()
-                                .input('Pid', sql.Int, pedidoCobranzaId)
-                                .input('OID', sql.Int, det.OrdenID)
-                                .input('Cod', sql.NVarChar, det.CodArticulo)
-                                .input('Cant', sql.Decimal(18, 2), det.Cantidad)
-                                .input('PU', sql.Decimal(18, 2), det.PrecioUnitario)
-                                .input('ST', sql.Decimal(18, 2), det.Subtotal)
-                                .input('Log', sql.NVarChar, det.LogPrecioAplicado)
-                                .query(`
-                                    INSERT INTO PedidosCobranzaDetalle (PedidoCobranzaID, OrdenID, CodArticulo, Cantidad, PrecioUnitario, Subtotal, LogPrecioAplicado)
-                                    VALUES (@Pid, @OID, @Cod, @Cant, @PU, @ST, @Log)
-                                `);
-                        }
-                    } catch (dbErr) {
-                        console.error("[Cobranza] Error guardando pedido cobranza DB:", dbErr.message);
-                    }
-
-                    // 3. Agrupar por CodArticulo para el PUSH al ERP
-                    const lineasAgrupadasParaERP = {};
-                    detallesCobranza.forEach(d => {
-                        if (!lineasAgrupadasParaERP[d.CodArticulo]) {
-                            lineasAgrupadasParaERP[d.CodArticulo] = 0;
-                        }
-                        lineasAgrupadasParaERP[d.CodArticulo] += parseFloat(d.Cantidad);
-                    });
-
-                    const payloadErp = {
-                        CodCliente: data.CodCliente ? data.CodCliente.toString().trim() : "100101",
-                        Documento: "11",
-                        Lineas: Object.keys(lineasAgrupadasParaERP).map(cod => ({
-                            CodArticulo: cod,
-                            Cantidad: lineasAgrupadasParaERP[cod].toString()
-                        }))
-                    };
-
-                    // 4. Enviar a Dev Macrosoft
-                    try {
-                        console.log(`[ERPSync Macrosoft] Enviando pedido NoDocERP: ${noDoc}`, JSON.stringify(payloadErp));
-                        const erpRes = await axios.post('https://api-user.devmacrosoft.com/pedido', payloadErp, {
-                            headers: {
-                                'Authorization': `Bearer ${erpToken}`,
-                                'Content-Type': 'application/json'
-                            }
-                        });
-                        console.log(`[ERPSync Macrosoft] OK Pedido ERP ${noDoc}: status ${erpRes.status}`);
-                        if (pedidoCobranzaId) {
-                            await pool.request()
-                                .input('ID', sql.Int, pedidoCobranzaId)
-                                .input('Obs', sql.NVarChar(50), 'OK')
-                                .query("UPDATE PedidosCobranza SET EstadoSyncERP = 'Enviado_OK', ObsERP = @Obs WHERE ID = @ID");
-                        }
-                    } catch (erpE) {
-                        const rawError = erpE.response?.data ? JSON.stringify(erpE.response.data) : erpE.message;
-                        const truncError = rawError ? rawError.substring(0, 50) : 'Error';
-                        console.error(`[ERPSync Macrosoft] Error enviando pedido ERP ${noDoc}:`, rawError);
-                        if (pedidoCobranzaId) {
-                            await pool.request()
-                                .input('ID', sql.Int, pedidoCobranzaId)
-                                .input('Obs', sql.NVarChar(50), truncError)
-                                .query("UPDATE PedidosCobranza SET EstadoSyncERP = 'Error', ObsERP = @Obs WHERE ID = @ID");
-                        }
-                    }
-                }
-            }
-        } catch (erpFatal) {
-            console.error("[ERPSync Macrosoft] Error General:", erpFatal.message);
-        }
-        // ---- FIN NUEVO SINC AL ERP DEV MACROSOFT ----
-
-        res.json({ results });
+        res.json({ success: true, results });
 
     } catch (err) {
         console.error("Error syncDepositStock:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.recalculateDepositStockPrices = async (req, res) => {
+    try {
+        const { items } = req.body;
+        if (!items || !Array.isArray(items)) return res.status(400).json({ error: 'Array "items" requerido' });
+
+        const pool = await getPool();
+        const results = [];
+        const processedDocs = new Set();
+
+        for (const item of items) {
+            if (!item.qr) continue;
+
+            const qrString = item.qr.startsWith('$') ? item.qr.substring(1) : item.qr;
+            const cleanQR = qrString.split('$*')[0].trim();
+
+            const docQuery = `
+                SELECT TOP 1 O.NoDocERP 
+                FROM Ordenes O
+                LEFT JOIN Etiquetas E ON O.OrdenID = E.OrdenID
+                WHERE E.CodigoQR = @QR 
+                   OR E.CodigoEtiqueta = @QR
+                   OR O.CodigoOrden = @QR
+                   OR O.CodigoOrden LIKE @QR + ' (%)'
+            `;
+
+            const orderInfo = await pool.request().input('QR', sql.VarChar, cleanQR).query(docQuery);
+
+            if (orderInfo.recordset.length > 0 && orderInfo.recordset[0].NoDocERP) {
+                const docId = orderInfo.recordset[0].NoDocERP.toString().trim();
+                const syncRes = await ERPSyncService.syncFinalOrderIntegration(docId, req.user?.id || 1, req.user?.usuario || 'Sistema', null, { 
+                    onlyCalculate: true,
+                    priceOverride: item.price,
+                    quantityOverride: item.quantity,
+                    profileOverride: item.profile
+                });
+
+                results.push({ 
+                    qr: item.qr,
+                    document: docId, 
+                    success: syncRes.success, 
+                    total: syncRes.totalPriceSum, 
+                    currency: syncRes.targetCurrency,
+                    reactPayload: syncRes.reactPayload,
+                    erpPayload: syncRes.erpPayload
+                });
+            }
+        }
+
+        res.json(results);
+    } catch (err) {
+        console.error("Error recalculateDepositStockPrices:", err);
         res.status(500).json({ error: err.message });
     }
 };

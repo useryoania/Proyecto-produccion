@@ -28,7 +28,7 @@ const FileControlCard = ({ file, refreshOrder, onAction }) => {
             const nextCount = controlCount + 1;
             setControlCount(nextCount); // Optimistic
 
-            const res = await fileControlService.updateFileCopyCount(file.ArchivoID, nextCount);
+            const res = await fileControlService.updateFileCopyCount(file.ArchivoID, nextCount, file.isService);
             if (res.success) {
                 setControlCount(res.newCount);
                 setStatus(res.newStatus);
@@ -97,8 +97,8 @@ const FileControlCard = ({ file, refreshOrder, onAction }) => {
                         <img src={fileUrl} alt="Preview" className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500" />
                     ) : (
                         <div className="w-full h-full flex flex-col items-center justify-center text-slate-400">
-                            <i className={`fa-regular ${isPdf ? 'fa-file-pdf' : 'fa-file'} text-xl mb-1`}></i>
-                            <span className="text-[8px] font-bold">{ext}</span>
+                            <i className={`fa-solid ${file.isService ? 'fa-screwdriver-wrench' : (isPdf ? 'fa-regular fa-file-pdf' : 'fa-regular fa-file')} text-xl mb-1`}></i>
+                            <span className="text-[8px] font-bold">{file.isService ? 'SERVICIO' : ext}</span>
                         </div>
                     )}
                     {/* Badge Copies on Thumb */}

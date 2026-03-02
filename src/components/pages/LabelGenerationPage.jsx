@@ -20,6 +20,8 @@ const LabelGenerationPage = () => {
     // Modal State
     const [configOrder, setConfigOrder] = useState(null);
     const [bultosInput, setBultosInput] = useState(1);
+    const [pendingServices, setPendingServices] = useState([]);
+    const [selectedNextService, setSelectedNextService] = useState('');
 
     useEffect(() => {
         loadProductiveAreas();
@@ -80,7 +82,6 @@ const LabelGenerationPage = () => {
                     search: ''
                 }
             });
-            console.log("Orders received (Labels Mode):", response.data.length);
             setOrders(response.data);
         } catch (error) {
             console.error("Error fetching orders:", error);
@@ -111,13 +112,19 @@ const LabelGenerationPage = () => {
             const clean = order.Magnitud.toString().replace(/[^0-9.]/g, '');
             mag = parseFloat(clean) || 0;
         }
+
         const isZero = mag <= 0;
         const hasError = order.ValidacionOBS && order.ValidacionOBS.trim() !== '';
-        // Returning message logic moved here
+
+        // REGLA: No en producción o cancelada
+        const lowerState = (order.Estado || '').toLowerCase();
+        const notInProd = lowerState.includes('presupuesto') || lowerState.includes('pendiente') || lowerState.includes('cargando') || lowerState.includes('cancelada');
+
         return {
-            isBlocked: isZero || hasError,
+            isBlocked: isZero || hasError || notInProd,
             isZero,
-            message: hasError ? (order.ValidacionOBS || 'Error de validación') : "Metros en 0"
+            notInProd,
+            message: notInProd ? `Orden en estado: ${(order.Estado || 'Desconocido').toUpperCase()}` : (hasError ? (order.ValidacionOBS || 'Error de validación') : "Metros en 0")
         };
     };
 
@@ -132,12 +139,10 @@ const LabelGenerationPage = () => {
             if (!matchCod && !matchCli && !matchMat) return false;
         }
 
-        // Lotes / Batches match (Using CodigoOrden prefix normally as lot logic or order text description logic)
+        // Filtro por Rollo (Lotes)
         if (batchFilter) {
-            const batchTerm = batchFilter.toLowerCase();
-            const codText = (o.CodigoOrden || '').toLowerCase();
-            const descText = (o.Descripcion || '').toLowerCase();
-            if (!codText.includes(batchTerm) && !descText.includes(batchTerm)) return false;
+            const rollInfo = (o.NombreRollo || o.RolloID || '').toLowerCase();
+            if (!rollInfo.includes(batchFilter.toLowerCase())) return false;
         }
 
         // statusFilter
@@ -149,6 +154,17 @@ const LabelGenerationPage = () => {
 
         return true;
     });
+
+    // Obtener lotes únicos de la vista para el combo basados en el ROLLO
+    const availableBatches = [...new Set(orders.map(o => {
+        return o.NombreRollo || o.RolloID || null;
+    }).filter(Boolean))].sort();
+
+    // Helper to extract a short version if name is too long, or just use the name
+    const formatBatchLabel = (b) => {
+        if (b.length > 20) return b.substring(0, 18) + '...';
+        return b;
+    };
 
     const toggleSelectAll = () => {
         const validOrders = visibleOrders.filter(o => !isOrderBlocked(o).isBlocked);
@@ -166,9 +182,9 @@ const LabelGenerationPage = () => {
 
         const alreadyFacturadas = visibleOrders.filter(o => selection.includes(o.OrdenID) && o.CantidadEtiquetas > 0);
 
-        let confirmMsg = `¿Generar etiquetas para ${selection.length} órdenes seleccionadas?\nSe usarán valores automáticos.`;
+        let confirmMsg = `¿Generar bultos para ${selection.length} órdenes seleccionadas?\nSe usarán valores automáticos.`;
         if (alreadyFacturadas.length > 0) {
-            confirmMsg = `⚠️ ATENCIÓN: ${alreadyFacturadas.length} órdenes seleccionadas YA tienen etiquetas/facturación.\n\n¿Desea REFACTURAR y sobrescribir las etiquetas existentes?`;
+            confirmMsg = `⚠️ ATENCIÓN: ${alreadyFacturadas.length} órdenes seleccionadas YA tienen etiquetas.\n\n¿Desea REGENERAR y sobrescribir los bultos existentes?`;
         }
 
         if (confirm(confirmMsg)) {
@@ -176,7 +192,7 @@ const LabelGenerationPage = () => {
         }
     };
 
-    const openManualConfig = (order) => {
+    const openManualConfig = async (order) => {
         let magVal = 0;
         if (order.Magnitud) {
             const m = order.Magnitud.toString().match(/[\d\.]+/);
@@ -185,6 +201,15 @@ const LabelGenerationPage = () => {
         const propuesto = magVal > 0 ? Math.ceil(magVal / 60) : 1;
         setBultosInput(propuesto);
         setConfigOrder(order);
+        setSelectedNextService(order.ProximoServicio || '');
+
+        // Cargar servicios pendientes para reordenar
+        try {
+            const res = await api.get(`/production-file-control/orden/${order.OrdenID}/pending-services`);
+            setPendingServices(res.data || []);
+        } catch (e) {
+            console.warn("No se pudieron cargar servicios pendientes");
+        }
     };
 
     const processGenerationBatch = async (ids, fixedQty = null) => {
@@ -192,6 +217,15 @@ const LabelGenerationPage = () => {
         let successCount = 0;
         let failCount = 0;
         let specificError = "";
+
+        // Si es una sola orden desde el modal, aplicamos el cambio de ProximoServicio si existe
+        if (ids.length === 1 && configOrder) {
+            try {
+                await api.post(`/production-file-control/orden/${ids[0]}/next-service`, {
+                    nextService: selectedNextService
+                });
+            } catch (e) { console.warn("Error actualizando próximo servicio"); }
+        }
 
         for (const orderId of ids) {
             try {
@@ -213,13 +247,11 @@ const LabelGenerationPage = () => {
         if (failCount === 0) {
             toast.success(`Proceso finalizado.\nGeneradas: ${successCount}`);
         } else {
-            toast.error(`Finalizado con errores.\nÉxito: ${successCount} | Fallos: ${failCount}\nÚltimo error: ${specificError || 'Error de validación.'}`, { duration: 5000 });
+            toast.error(`Error en generación.\nÉxito: ${successCount} | Fallos: ${failCount}\n${specificError}`, { duration: 5000 });
         }
-        // Removed setSelection([]) to keep items selected for preview
 
         // Force refresh of preview
         setPreviewTimestamp(Date.now());
-
         fetchOrders(); // Reload to update label counts
     };
 
@@ -240,7 +272,7 @@ const LabelGenerationPage = () => {
                 <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col gap-4">
                     <div className="flex justify-between items-center">
                         <div>
-                            <h1 className="text-xl font-bold text-slate-800">Órdenes de Producción</h1>
+                            <h1 className="text-xl font-bold text-slate-800">Ordenes de Producción</h1>
                             <p className="text-xs text-slate-500">Gestión de Etiquetas</p>
                         </div>
                         <div className="flex gap-2">
@@ -260,22 +292,25 @@ const LabelGenerationPage = () => {
                         </div>
                     </div>
 
-                    <div className="flex justify-between items-center gap-2 mb-2">
+                    <div className="flex justify-between items-center gap-2 mb-1">
                         <div className="flex-1 flex gap-2">
                             <input
                                 type="text"
                                 placeholder="🔍 Buscar Orden/Cliente..."
-                                className="w-1/3 p-2 text-sm border-b-2 border-slate-200 outline-none focus:border-indigo-500 bg-transparent"
+                                className="w-1/2 p-2 text-sm border-b-2 border-slate-200 outline-none focus:border-indigo-500 bg-transparent"
                                 value={searchFilter}
                                 onChange={(e) => setSearchFilter(e.target.value)}
                             />
-                            <input
-                                type="text"
-                                placeholder="Lote (ej: 82232)..."
-                                className="w-1/4 p-2 text-sm border-b-2 border-slate-200 outline-none focus:border-indigo-500 bg-transparent"
+                            <select
                                 value={batchFilter}
                                 onChange={(e) => setBatchFilter(e.target.value)}
-                            />
+                                className="w-1/4 p-2 text-sm border-b-2 border-slate-200 outline-none focus:border-indigo-500 bg-transparent text-slate-600 cursor-pointer"
+                            >
+                                <option value="">Filtro Lotes</option>
+                                {availableBatches.map(b => (
+                                    <option key={b} value={b}>{formatBatchLabel(b)}</option>
+                                ))}
+                            </select>
                             <select
                                 className="w-1/4 p-2 text-sm border-b-2 border-slate-200 outline-none focus:border-indigo-500 bg-transparent text-slate-600"
                                 value={statusFilter}
@@ -332,8 +367,9 @@ const LabelGenerationPage = () => {
                                         />
                                     </th>
                                     <th className="p-3 border-b">Orden</th>
+                                    <th className="p-3 border-b">Rollo</th>
                                     <th className="p-3 border-b">Detalle</th>
-                                    <th className="p-3 border-b text-center">Cant.</th>
+                                    <th className="p-3 border-b text-center">Bultos</th>
                                     <th className="p-3 border-b text-center">Acción</th>
                                 </tr>
                             </thead>
@@ -341,7 +377,7 @@ const LabelGenerationPage = () => {
                                 {visibleOrders.map(order => {
                                     const isSelected = selection.includes(order.OrdenID);
                                     const hasLabels = order.CantidadEtiquetas > 0;
-                                    const { isBlocked, isZero, message } = isOrderBlocked(order);
+                                    const { isBlocked, message, notInProd } = isOrderBlocked(order);
 
                                     return (
                                         <tr
@@ -355,11 +391,11 @@ const LabelGenerationPage = () => {
                                             <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
                                                 {isBlocked ? (
                                                     <div className="group relative flex justify-center">
-                                                        <i className="fa-solid fa-ban text-red-500 text-lg cursor-help"></i>
+                                                        <i className={`fa-solid ${notInProd ? 'fa-ban' : 'fa-triangle-exclamation'} text-red-500 text-lg cursor-help`}></i>
                                                         <div className="absolute left-10 top-0 hidden group-hover:block bg-red-600 text-white text-xs font-bold rounded py-1 px-2 whitespace-nowrap z-[100] shadow-lg border border-red-700 pointer-events-none w-max max-w-[200px] text-left">
                                                             <div className="flex items-center gap-1 border-b border-red-500 pb-1 mb-1">
-                                                                <i className="fa-solid fa-triangle-exclamation"></i>
-                                                                <span>No se puede procesar</span>
+                                                                <i className="fa-solid fa-circle-info"></i>
+                                                                <span>Acción bloqueada</span>
                                                             </div>
                                                             {message}
                                                         </div>
@@ -375,8 +411,13 @@ const LabelGenerationPage = () => {
                                             </td>
                                             <td className="p-3">
                                                 <div className="font-bold text-slate-700 font-mono">{order.CodigoOrden}</div>
-                                                <div className={`text-[10px] px-1.5 py-0.5 rounded inline-block font-bold mt-1 ${order.Estado === 'Pronto' ? 'bg-green-100 text-green-700' : 'bg-blue-50 text-blue-600'}`}>
+                                                <div className={`text-[10px] px-1.5 py-0.5 rounded inline-block font-bold mt-1 ${order.Estado === 'Pronto' ? 'bg-green-100 text-green-700' : (notInProd ? 'bg-red-100 text-red-700' : 'bg-blue-50 text-blue-600')}`}>
                                                     {order.Estado}
+                                                </div>
+                                            </td>
+                                            <td className="p-3">
+                                                <div className="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded inline-block">
+                                                    {order.NombreRollo || order.RolloID || 'N/A'}
                                                 </div>
                                             </td>
                                             <td className="p-3 max-w-[180px]">
@@ -391,14 +432,16 @@ const LabelGenerationPage = () => {
                                                 }
                                             </td>
                                             <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                                                <button
-                                                    onClick={() => openManualConfig(order)}
-                                                    disabled={isBlocked}
-                                                    className={`p-1.5 rounded transition ${isBlocked ? 'text-slate-300 cursor-not-allowed' : 'hover:bg-slate-200 text-slate-500'}`}
-                                                    title={isBlocked ? "Bloqueado por validación" : "Configuración Manual"}
-                                                >
-                                                    <i className="fa-solid fa-cog"></i>
-                                                </button>
+                                                <div className="flex justify-center gap-1">
+                                                    <button
+                                                        onClick={() => openManualConfig(order)}
+                                                        disabled={isBlocked}
+                                                        className={`p-1.5 rounded transition ${isBlocked ? 'text-slate-300 cursor-not-allowed' : 'hover:bg-slate-200 text-slate-500'}`}
+                                                        title={isBlocked ? "Bloqueado por validación" : "Configuración Manual"}
+                                                    >
+                                                        <i className="fa-solid fa-cog"></i>
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -441,9 +484,12 @@ const LabelGenerationPage = () => {
             {/* Configuration Modal */}
             {configOrder && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden animate-fade-in-up">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden animate-fade-in-up">
                         <div className="bg-indigo-600 p-4 flex justify-between items-center text-white">
-                            <h3 className="font-bold text-lg">Configurar Etiquetas</h3>
+                            <div className="flex items-center gap-2">
+                                <i className="fa-solid fa-sliders"></i>
+                                <h3 className="font-bold text-lg">Configurar Etiquetas</h3>
+                            </div>
                             <button onClick={() => setConfigOrder(null)} className="hover:bg-indigo-700 p-1 rounded transition">
                                 <i className="fa-solid fa-times"></i>
                             </button>
@@ -451,10 +497,14 @@ const LabelGenerationPage = () => {
 
                         <div className="p-6">
                             <div className="mb-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
-                                <div className="text-xs text-slate-400 uppercase tracking-wide font-bold mb-1">Orden Seleccionada</div>
+                                <div className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-1">Orden</div>
                                 <div className="text-xl font-bold text-slate-800 mb-1">{configOrder.CodigoOrden}</div>
-                                <div className="text-sm text-slate-600 mb-2">{configOrder.Cliente}</div>
-                                <div className="flex gap-4 mt-3">
+                                <div className="text-sm text-slate-600">{configOrder.Cliente}</div>
+                                <div className="flex gap-4 mt-3 pt-3 border-t border-slate-200">
+                                    <div>
+                                        <div className="text-xs text-slate-400">Rollo</div>
+                                        <div className="font-bold text-slate-700">{configOrder.NombreRollo || configOrder.RolloID || 'N/A'}</div>
+                                    </div>
                                     <div>
                                         <div className="text-xs text-slate-400">Magnitud Detectada</div>
                                         <div className="font-mono font-bold text-indigo-600">{configOrder.Magnitud || '0'}</div>
@@ -467,11 +517,11 @@ const LabelGenerationPage = () => {
                             </div>
 
                             <div className="mb-6">
-                                <label className="block text-sm font-bold text-slate-700 mb-2">Cantidad de Bultos a Generar</label>
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Bultos a Generar</label>
                                 <div className="flex items-center gap-3">
                                     <button
                                         onClick={() => setBultosInput(Math.max(1, bultosInput - 1))}
-                                        className="w-10 h-10 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition"
+                                        className="w-10 h-10 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition border"
                                     >-</button>
                                     <input
                                         type="number"
@@ -482,12 +532,53 @@ const LabelGenerationPage = () => {
                                     />
                                     <button
                                         onClick={() => setBultosInput(bultosInput + 1)}
-                                        className="w-10 h-10 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition"
+                                        className="w-10 h-10 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold transition border"
                                     >+</button>
                                 </div>
-                                <p className="text-xs text-slate-400 mt-2 text-center">
-                                    Se generarán {bultosInput} etiquetas QR secuenciales.
-                                </p>
+                            </div>
+
+                            {/* REORDENAR SERVICES */}
+                            <div className="mb-8">
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Próximo Punto de Producción</label>
+                                <p className="text-[10px] text-slate-400 mb-3">Define a qué área viajará el bulto después de esta descarga.</p>
+
+                                {pendingServices.length > 0 ? (
+                                    <div className="space-y-2">
+                                        {pendingServices.map(srv => {
+                                            const isSelected = selectedNextService === srv.nombre;
+                                            return (
+                                                <button
+                                                    key={srv.id}
+                                                    onClick={() => setSelectedNextService(srv.nombre)}
+                                                    className={`w-full p-3 rounded-lg border text-left text-sm font-bold transition flex items-center justify-between
+                                                        ${isSelected
+                                                            ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                                                            : 'border-slate-200 hover:bg-slate-50 text-slate-600'}
+                                                    `}
+                                                >
+                                                    <span>{srv.nombre}</span>
+                                                    {isSelected && <i className="fa-solid fa-check-circle"></i>}
+                                                </button>
+                                            )
+                                        })}
+                                        <button
+                                            onClick={() => setSelectedNextService('DEPOSITO')}
+                                            className={`w-full p-3 rounded-lg border text-left text-sm font-bold transition flex items-center justify-between
+                                                ${selectedNextService === 'DEPOSITO'
+                                                    ? 'border-slate-600 bg-slate-100 text-slate-800'
+                                                    : 'border-slate-200 hover:bg-slate-50 text-slate-600'}
+                                            `}
+                                        >
+                                            <span>DEPOSITO (Finalizar)</span>
+                                            {selectedNextService === 'DEPOSITO' && <i className="fa-solid fa-check-circle"></i>}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="p-3 bg-amber-50 border border-amber-200 text-amber-700 text-xs rounded-lg flex items-center gap-2 font-medium">
+                                        <i className="fa-solid fa-info-circle"></i>
+                                        Sin servicios adicionales. El destino predeterminado es DEPOSITO.
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex gap-3">
@@ -503,7 +594,7 @@ const LabelGenerationPage = () => {
                                     className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition flex justify-center items-center gap-2"
                                 >
                                     {generating ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-check"></i>}
-                                    Generar
+                                    Generar Etiquetas
                                 </button>
                             </div>
                         </div>

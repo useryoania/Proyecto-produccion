@@ -91,12 +91,12 @@ const saveBasePricesBulk = async (req, res) => {
     }
 };
 
-// Endpoint de prueba para CALCULAR precio (Simulación)
+// Endpoint de prueba para CALCULAR precio (Simulador)
 const calculatePriceEndpoint = async (req, res) => {
-    const { codArticulo, cantidad, clienteId, variables, targetCurrency } = req.body;
+    const { codArticulo, cantidad, clienteId, variables, targetCurrency, extraProfileIds } = req.body;
     try {
-        const fallbackCurrency = targetCurrency || 'UYU';
-        const result = await PricingService.calculatePrice(codArticulo, cantidad, clienteId, [], variables, fallbackCurrency, null);
+        const fallbackCurrency = targetCurrency || 'USD';
+        const result = await PricingService.calculatePrice(codArticulo, parseFloat(cantidad) || 1, clienteId, extraProfileIds || [], variables || {}, fallbackCurrency, null);
         res.json(result);
     } catch (e) {
         res.status(500).json({ error: e.message });

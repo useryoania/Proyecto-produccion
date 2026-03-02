@@ -418,17 +418,6 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
                                     </div>
                                     {/* ACTIONS FOOTER */}
                                     <div className="p-3 border-t border-slate-100 bg-slate-50 space-y-2">
-                                        {/* SYNC BUTTON FOR DEPOSITO */}
-                                        {currentArea === 'DEPOSITO' && scannedCount > 0 && (
-                                            <button
-                                                onClick={handleSync}
-                                                disabled={loading}
-                                                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-2 rounded-lg font-bold text-xs hover:from-purple-700 hover:to-indigo-700 transition-all uppercase flex items-center justify-center gap-2 shadow-sm"
-                                            >
-                                                {loading ? <i className="fa-solid fa-circle-notch fa-spin"></i> : <i className="fa-solid fa-paper-plane"></i>}
-                                                Sincronizar {scannedCount} Recibidos
-                                            </button>
-                                        )}
 
                                         {manualSelection.length > 0 ? (
                                             <button onClick={confirmManualSelection} className="w-full bg-indigo-600 text-white py-2 rounded-lg font-bold text-xs hover:bg-indigo-700 transition-colors uppercase">
