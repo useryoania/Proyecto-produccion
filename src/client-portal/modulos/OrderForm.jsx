@@ -156,7 +156,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
 
     // Main Item File Upload Handler (with Validation)
     const handleFileUpload = async (itemId, field, file) => {
-        if (!file) return;
+        if (!file) return false;
 
         // Validation
         const allowed = ['image/png', 'image/jpeg', 'application/pdf'];
@@ -164,7 +164,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
 
         if (!isAllowed) {
             addToast('Formato de archivo inválido, debe ajustarse a los formatos establecidos.', 'error');
-            return;
+            return false;
         }
 
         try {
@@ -185,14 +185,35 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                     const fileWidthM = result.unit === 'meters' ? result.width : (result.width / 300) * 0.0254;
                     const maxWidth = parseFloat(matObj.Ancho);
 
-                    if (fileWidthM > maxWidth) {
+                    if (fileWidthM > maxWidth + 0.001) {
                         actions.setErrorModalMessage(
                             `El ancho del archivo(${fileWidthM.toFixed(3)}m) excede el ancho imprimible del material "${selectedMatName}"(${maxWidth}m).Por favor, ajuste el archivo o seleccione otro material.`
                         );
                         actions.setErrorModalOpen(true);
-                        return;
+                        return false;
                     }
                 }
+
+                // Validación de alto máximo para DTF (2.50m)
+                if (serviceId?.toUpperCase() === 'DF') {
+                    const fileHeightM = result.unit === 'meters' ? result.height : (result.height / 300) * 0.0254;
+                    if (fileHeightM > 2.50) {
+                        actions.setErrorModalMessage(
+                            `El alto del archivo (${fileHeightM.toFixed(2)}m) excede el máximo permitido para DTF (2.50m). Por favor, ajuste el archivo.`
+                        );
+                        actions.setErrorModalOpen(true);
+                        return false;
+                    }
+                }
+            }
+
+            // Validación de páginas para DTF (máximo 1 página)
+            if (serviceId?.toUpperCase() === 'DF' && result.pageCount && result.pageCount > 1) {
+                actions.setErrorModalMessage(
+                    `El archivo tiene ${result.pageCount} páginas. Para DTF solo se permite 1 página por archivo.`
+                );
+                actions.setErrorModalOpen(true);
+                return false;
             }
 
             if (result.measurementError) {
@@ -215,9 +236,12 @@ const OrderForm = ({ serviceId: propServiceId }) => {
             } else {
                 actions.updateItem(itemId, field, result);
                 addToast('Archivo listo (Medida Detectada)', 'success');
+                return true;
             }
+            return true;
         } catch (err) {
             addToast(err.message, 'error');
+            return false;
         }
     };
 
@@ -928,7 +952,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                             <div key={item.id} className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
                                                 <div className="flex justify-between items-center mb-4 pb-2 border-b border-zinc-50">
                                                     <span className="text-[10px] font-black bg-zinc-100 text-zinc-600 py-1 px-3 rounded-full">ARCHIVO {index + 1}</span>
-                                                    {items.length > 1 && <button type="button" onClick={() => actions.removeItem(item.id)}><Trash2 size={16} className="text-zinc-300 hover:text-red-500 transition-colors" /></button>}
+                                                    <button type="button" onClick={() => actions.removeItem(item.id)}><Trash2 size={16} className="text-zinc-300 hover:text-red-500 transition-colors" /></button>
                                                 </div>
                                                 {/* File Uploads for Item */}
                                                 {/* Item Material Override (moved up) */}
@@ -976,7 +1000,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                                                 values={item.printSettings || {}} copies={item.copies}
                                                                 onCopiesChange={(v) => actions.updateItem(item.id, 'copies', v)}
                                                                 onChange={(s) => actions.updateItem(item.id, 'printSettings', s)}
-                                                                disableScaling={serviceId === 'tpu'}
+                                                                disableScaling={serviceId === 'tpu' || serviceId?.toUpperCase() === 'DF'}
                                                             />
                                                         )}
                                                     </div>
@@ -984,10 +1008,34 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                             </div>
                                         ))}
 
+                                        {/* Hidden file input for direct dialog */}
+                                        <input
+                                            type="file"
+                                            id="add-item-file-input"
+                                            className="hidden"
+                                            accept=".jpg,.jpeg,.png,.pdf"
+                                            onChange={async (e) => {
+                                                const file = e.target.files[0];
+                                                if (!file) return;
+                                                e.target.value = ''; // Reset para poder elegir el mismo archivo
+                                                const newId = Date.now();
+                                                const lastItem = items[items.length - 1];
+                                                const newMaterial = lastItem ? lastItem.material : globalMaterial;
+                                                const newItem = { id: newId, file: null, fileBack: null, copies: 1, material: newMaterial, note: '', doubleSided: false, printSettings: {} };
+                                                actions.setItems([...items, newItem]);
+                                                const success = await handleFileUpload(newId, 'file', file);
+                                                if (!success) {
+                                                    actions.removeItem(newId);
+                                                }
+                                            }}
+                                        />
                                         {/* Add Item Button at Bottom */}
                                         <button
                                             type="button"
-                                            onClick={actions.addItem}
+                                            onClick={() => {
+                                                if (items.length >= 15) return;
+                                                document.getElementById('add-item-file-input').click();
+                                            }}
                                             disabled={items.length >= 15}
                                             className={`w-full py-3 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 transition-all ${items.length >= 15 ? 'border-zinc-200 text-zinc-300 cursor-not-allowed' : 'border-zinc-300 text-zinc-500 hover:border-black hover:text-black hover:bg-zinc-50'}`}
                                         >

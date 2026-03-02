@@ -1278,7 +1278,15 @@ exports.getPickupOrders = async (req, res) => {
             };
         });
 
-        res.json({ success: true, data: pickupOrders });
+        // Eliminar duplicados por ID de orden
+        const seen = new Set();
+        const uniqueOrders = pickupOrders.filter(o => {
+            if (seen.has(o.id)) return false;
+            seen.add(o.id);
+            return true;
+        });
+
+        res.json({ success: true, data: uniqueOrders });
 
     } catch (error) {
         console.error("Error fetching pickup orders:", error);
@@ -1502,7 +1510,7 @@ exports.generatePickupReceipt = async (req, res) => {
     }
 };
 
-// --- NUEVO: HANDY PAYMENT ---
+// --- HANDY PAYMENT ---
 exports.createHandyPaymentLink = async (req, res) => {
     try {
         const { orders, totalAmount, activeCurrency } = req.body;
@@ -1511,47 +1519,59 @@ exports.createHandyPaymentLink = async (req, res) => {
             return res.status(400).json({ error: "No orders provided for payment." });
         }
 
-        // Determinar si es USD (840) o Pesos (858)
-        let currencyCode = 858; // Pesos por defecto
+        // Moneda ISO 4217: 840 = USD, 858 = UYU
+        let currencyCode = 858;
         if (activeCurrency === 'USD') {
             currencyCode = 840;
         }
 
-        // Construir la lista de productos para Handy
-        const products = orders.map(o => ({
-            name: o.desc ? o.desc.substring(0, 50) : o.id,
-            quantity: 1,
-            amount: Number(Number(o.amount || 0).toFixed(2)),
-            taxedAmount: 0
-        }));
+        // URLs dinámicas según entorno
+        const isProduction = process.env.HANDY_ENVIRONMENT === 'production';
+        const handySecret = process.env.HANDY_MERCHANT_SECRET;
+        const handyUrl = isProduction
+            ? 'https://api.payments.handy.uy/api/v2/payments'
+            : 'https://api.payments.arriba.uy/api/v2/payments';
+        const siteUrl = process.env.SITE_URL || 'https://user.com.uy';
+        const callbackUrl = `${siteUrl}/api/web-orders/handy-webhook`;
 
-        // Transaction ID único
+        // Construir la lista de productos para Handy (PascalCase según documentación oficial)
+        const products = orders.map(o => {
+            const amt = Number(Number(o.amount || 0).toFixed(2));
+            const taxed = Number((amt / 1.22).toFixed(2)); // Base gravada sin IVA 22%
+            return {
+                Name: o.desc ? o.desc.substring(0, 50) : o.id,
+                Quantity: 1,
+                Amount: amt,
+                TaxedAmount: taxed
+            };
+        });
+
+        // Transaction ID único (GUID)
         const { v4: uuidv4 } = require('uuid');
         const transactionId = uuidv4();
         const invoiceNumber = Math.floor(Math.random() * 90000) + 10000;
 
+        // PascalCase — según documentación oficial de Handy API V2.0
         const handyPayload = {
-            cart: {
-                currency: currencyCode,
-                totalAmount: Number(Number(totalAmount).toFixed(2)),
-                taxedAmount: 0,
-                products: products,
-                invoiceNumber: invoiceNumber,
-                linkImageUrl: "https://via.placeholder.com/300x150.png?text=Pagos+USER",
-                transactionExternalId: transactionId
+            Cart: {
+                Currency: currencyCode,
+                TotalAmount: Number(Number(totalAmount).toFixed(2)),
+                TaxedAmount: Number((Number(totalAmount) / 1.22).toFixed(2)),
+                Products: products,
+                InvoiceNumber: invoiceNumber,
+                LinkImageUrl: "https://user.com.uy/assets/images/logo.png",
+                TransactionExternalId: transactionId
             },
-            client: {
-                commerceName: "USER",
-                siteUrl: "http://localhost:5173"
+            Client: {
+                CommerceName: "USER",
+                SiteUrl: siteUrl
             },
-            callbackUrl: "https://webhook.site/72ee5914-012a-478d-a2fd-3801d3561230", // <--- CRÍTICO: Debe ser público (ngrok o webhook.site)
-            responseType: "Json"
+            CallbackURL: callbackUrl,
+            ResponseType: "Json"
         };
 
-        const handySecret = 'c80c2dca-ee4f-4cec-ace0-850747a5dcfa'; // Testing Secret
-        const handyUrl = 'https://api.payments.arriba.uy/api/v2/payments';
-
-        console.log("[HANDY] Creando link de pago...", JSON.stringify(handyPayload));
+        console.log(`[HANDY] Creando link de pago (${isProduction ? 'PRODUCCIÓN' : 'TESTING'})...`);
+        console.log("[HANDY] Payload:", JSON.stringify(handyPayload));
 
         const response = await axios.post(handyUrl, handyPayload, {
             headers: {
@@ -1559,8 +1579,30 @@ exports.createHandyPaymentLink = async (req, res) => {
             }
         });
 
-        // Response should contain the 
         const paymentUrl = response.data.url;
+        console.log("[HANDY] Link generado:", paymentUrl);
+
+        // Guardar transactionId en la BD para reconciliar con el webhook
+        try {
+            const pool = await getPool();
+            const orderIdsJson = JSON.stringify(orders.map(o => ({ id: o.id, rawId: o.rawId, desc: o.desc, amount: o.amount })));
+            await pool.request()
+                .input('txId', sql.VarChar(100), transactionId)
+                .input('payUrl', sql.VarChar(500), paymentUrl)
+                .input('amount', sql.Decimal(18, 2), totalAmount)
+                .input('currency', sql.Int, currencyCode)
+                .input('ordersJson', sql.NVarChar(sql.MAX), orderIdsJson)
+                .input('codCliente', sql.Int, req.user?.codCliente || 0)
+                .query(`
+                    INSERT INTO HandyTransactions (TransactionId, PaymentUrl, TotalAmount, Currency, OrdersJson, CodCliente, Status, CreatedAt)
+                    VALUES (@txId, @payUrl, @amount, @currency, @ordersJson, @codCliente, 'Creado', GETDATE())
+                `);
+            console.log(`[HANDY] TransactionId ${transactionId} guardado en HandyTransactions.`);
+        } catch (dbErr) {
+            // No falla el pago si no puede guardar el ID, solo loguea
+            console.warn("[HANDY] No se pudo guardar TransactionId en BD:", dbErr.message);
+        }
+
         res.json({ success: true, url: paymentUrl, transactionId });
 
     } catch (error) {
@@ -1574,20 +1616,189 @@ exports.createHandyPaymentLink = async (req, res) => {
 };
 
 // --- HANDY WEBHOOK ---
+// Recibe notificaciones automáticas de Handy cuando un cobro cambia de estado
+// Docs V2.0: PurchaseData.Status → 0=Iniciado, 1=Exitoso, 2=Fallido, 3=Pendiente
 exports.handyWebhook = async (req, res) => {
+    const payload = req.body;
+
+    console.log("------------------------------------------");
+    console.log("🔔 [HANDY WEBHOOK] Evento recibido:");
+    console.log(JSON.stringify(payload, null, 2));
+    console.log("------------------------------------------");
+
+    // Responder 200 inmediatamente (best practice para webhooks)
+    res.status(200).send("OK");
+
     try {
-        console.log("------------------------------------------");
-        console.log("🔔 [HANDY WEBHOOK INCOMING EVENT] 🔔");
-        console.log(JSON.stringify(req.body, null, 2));
-        console.log("------------------------------------------");
+        const transactionId = payload.TransactionExternalId;
+        const status = payload.PurchaseData?.Status;
+        const totalAmount = payload.PurchaseData?.TotalAmount;
+        const currency = payload.PurchaseData?.Currency;
+        const issuerName = payload.InstrumentData?.IssuerName || 'N/A';
 
-        // Aquí en el futuro se extraerá el TransactionExternalId = req.body.TransactionExternalId 
-        // y se actualizará el estado de los pedidos a PAGADO en tu base de datos mediante axios o SQL
+        if (!transactionId) {
+            console.warn("[HANDY WEBHOOK] Evento sin TransactionExternalId, ignorado.");
+            return;
+        }
 
-        // Siempre hay que responder 200 OK rápido a los webhooks
-        res.status(200).send("OK");
+        console.log(`[HANDY WEBHOOK] TxID: ${transactionId}, Status: ${status}, Monto: ${totalAmount}, Moneda: ${currency}, Medio: ${issuerName}`);
+
+        const pool = await getPool();
+
+        const statusMap = { 0: 'Iniciado', 1: 'Pagado', 2: 'Fallido', 3: 'Pendiente' };
+        const statusLabel = statusMap[status] || `Desconocido(${status})`;
+
+        const result = await pool.request()
+            .input('txId', sql.VarChar(100), transactionId)
+            .input('status', sql.VarChar(20), statusLabel)
+            .input('issuer', sql.VarChar(100), issuerName)
+            .query(`
+                UPDATE HandyTransactions
+                SET Status = @status,
+                    IssuerName = @issuer,
+                    PaidAt = CASE WHEN @status = 'Pagado' THEN GETDATE() ELSE PaidAt END,
+                    WebhookReceivedAt = GETDATE()
+                WHERE TransactionId = @txId
+            `);
+
+        const emoji = { 0: '🔄', 1: '✅', 2: '❌', 3: '⏳' };
+        console.log(`[HANDY WEBHOOK] ${emoji[status] || '❓'} ${statusLabel} — ${result.rowsAffected[0]} fila(s) actualizadas.`);
+
     } catch (e) {
-        console.error("Webhook Error:", e);
-        res.status(500).send("ERROR");
+        console.error("[HANDY WEBHOOK] Error procesando evento:", e.message);
+    }
+};
+
+// --- HANDY REFUND ---
+// Solicita una devolución a Handy usando DELETE con el TransactionExternalId original
+// Restricciones: Solo tarjetas, 1 devolución por transacción, max $10,000 UYU / $250 USD
+exports.createHandyRefund = async (req, res) => {
+    try {
+        const { transactionId } = req.body;
+
+        if (!transactionId) {
+            return res.status(400).json({ error: "Se requiere el transactionId de la transacción original." });
+        }
+
+        const pool = await getPool();
+
+        // Verificar que la transacción existe y está pagada
+        const txResult = await pool.request()
+            .input('txId', sql.VarChar(100), transactionId)
+            .query(`SELECT * FROM HandyTransactions WHERE TransactionId = @txId`);
+
+        if (txResult.recordset.length === 0) {
+            return res.status(404).json({ error: "Transacción no encontrada." });
+        }
+
+        const tx = txResult.recordset[0];
+        if (tx.Status !== 'Pagado') {
+            return res.status(400).json({ error: `No se puede devolver una transacción con estado "${tx.Status}". Solo se pueden devolver transacciones pagadas.` });
+        }
+
+        if (tx.RefundStatus === 'Devuelto') {
+            return res.status(400).json({ error: "Esta transacción ya fue devuelta anteriormente." });
+        }
+
+        // URLs dinámicas según entorno
+        const isProduction = process.env.HANDY_ENVIRONMENT === 'production';
+        const handySecret = process.env.HANDY_MERCHANT_SECRET;
+        const handyUrl = isProduction
+            ? 'https://api.payments.handy.uy/api/v2/payments'
+            : 'https://api.payments.arriba.uy/api/v2/payments';
+        const siteUrl = process.env.SITE_URL || 'https://user.com.uy';
+        const callbackUrl = `${siteUrl}/api/web-orders/handy-refund-webhook`;
+
+        const refundPayload = {
+            TransactionExternalId: transactionId,
+            CallbackUrl: callbackUrl
+        };
+
+        console.log(`[HANDY REFUND] Solicitando devolución (${isProduction ? 'PRODUCCIÓN' : 'TESTING'})...`);
+        console.log("[HANDY REFUND] Payload:", JSON.stringify(refundPayload));
+
+        const response = await axios.delete(handyUrl, {
+            headers: {
+                'merchant-secret-key': handySecret,
+                'Content-Type': 'application/json'
+            },
+            data: refundPayload
+        });
+
+        console.log("[HANDY REFUND] Respuesta:", JSON.stringify(response.data));
+
+        // Marcar en BD como devolución solicitada
+        await pool.request()
+            .input('txId', sql.VarChar(100), transactionId)
+            .query(`
+                UPDATE HandyTransactions
+                SET RefundStatus = 'Solicitado', RefundRequestedAt = GETDATE()
+                WHERE TransactionId = @txId
+            `);
+
+        res.json({ success: true, message: "Devolución solicitada. Recibirás la confirmación por webhook.", data: response.data });
+
+    } catch (error) {
+        console.error("[HANDY REFUND ERROR]", error.message);
+        if (error.response) {
+            console.error("[HANDY REFUND DATA]", error.response.data);
+            return res.status(500).json({ error: "Error desde Handy al solicitar devolución", details: error.response.data });
+        }
+        res.status(500).json({ error: "Error interno al solicitar devolución." });
+    }
+};
+
+// --- HANDY REFUND WEBHOOK ---
+// Recibe notificaciones de Handy sobre el resultado de una devolución
+// Status 4 = Devolución exitosa, Status 5 = Devolución fallida
+exports.handyRefundWebhook = async (req, res) => {
+    const payload = req.body;
+
+    console.log("------------------------------------------");
+    console.log("🔔 [HANDY REFUND WEBHOOK] Evento recibido:");
+    console.log(JSON.stringify(payload, null, 2));
+    console.log("------------------------------------------");
+
+    // Responder 200 inmediatamente
+    res.status(200).send("OK");
+
+    try {
+        const transactionId = payload.TransactionExternalId;
+
+        if (!transactionId) {
+            console.warn("[HANDY REFUND WEBHOOK] Evento sin TransactionExternalId, ignorado.");
+            return;
+        }
+
+        // Handy envía { Success: true/false, Message: "...", TransactionExternalId: "..." }
+        // O podría enviar PurchaseData.Status (4=devuelto, 5=fallido) según documentación
+        let statusLabel;
+        if (payload.Success === true) {
+            statusLabel = 'Devuelto';
+        } else if (payload.Success === false) {
+            statusLabel = 'DevolucionFallida';
+        } else {
+            const status = payload.PurchaseData?.Status;
+            const refundStatusMap = { 4: 'Devuelto', 5: 'Fallida' };
+            statusLabel = refundStatusMap[status] || 'Desconocido';
+        }
+
+        const pool = await getPool();
+
+        const result = await pool.request()
+            .input('txId', sql.VarChar(100), transactionId)
+            .input('refundStatus', sql.VarChar(20), statusLabel)
+            .query(`
+                UPDATE HandyTransactions
+                SET RefundStatus = @refundStatus,
+                    RefundCompletedAt = CASE WHEN @refundStatus = 'Devuelto' THEN GETDATE() ELSE RefundCompletedAt END
+                WHERE TransactionId = @txId
+            `);
+
+        const emoji = statusLabel === 'Devuelto' ? '✅' : '❌';
+        console.log(`[HANDY REFUND WEBHOOK] ${emoji} ${statusLabel} — ${result.rowsAffected[0]} fila(s) actualizadas.`);
+
+    } catch (e) {
+        console.error("[HANDY REFUND WEBHOOK] Error procesando evento:", e.message);
     }
 };

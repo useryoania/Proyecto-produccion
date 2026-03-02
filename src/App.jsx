@@ -53,7 +53,7 @@ function App() {
       <Routes>
         <Route path="/portal/*" element={<ClientPortalApp />} />
         {/* Redirect any other route to portal */}
-        <Route path="*" element={<Navigate to="/portal" replace />} />
+        <Route path="*" element={<Navigate to="/portal/pickup" replace />} />
       </Routes>
     );
   }

@@ -151,7 +151,7 @@ export const useOrderForm = (serviceId, overrides = {}) => {
     const { addToast } = useToast();
     const [state, dispatch] = useReducer(orderFormReducer, initialState);
 
-    const serviceInfo = SERVICES_LIST.find(s => s.id === serviceId);
+    const serviceInfo = SERVICES_LIST.find(s => s.id.toLowerCase() === serviceId?.toLowerCase());
     const config = serviceInfo?.config || {};
 
     // --- Computed Visibility Logic ---
@@ -348,7 +348,7 @@ export const useOrderForm = (serviceId, overrides = {}) => {
             enableCorte: true,
             enableCostura: serviceId === 'corte-confeccion' ? true : false,
             // Reset Arrays
-            items: [{ id: Date.now(), file: null, fileBack: null, copies: 1, material: '', note: '', doubleSided: false, printSettings: {} }],
+            items: [],
             // Data clearing
             uniqueVariants: [],
             dynamicMaterials: [],
@@ -375,7 +375,7 @@ export const useOrderForm = (serviceId, overrides = {}) => {
                         data: { dynamicMaterials: mRes.data, globalMaterial: firstMat }
                     });
                     // Update Initial Item
-                    setItems([{ id: Date.now(), file: null, fileBack: null, copies: 1, material: firstMat, note: '', doubleSided: false, printSettings: {} }]);
+                    setItems([]);
                 } else {
                     dispatch({ type: actionTypes.SET_DATA, data: { dynamicMaterials: [], globalMaterial: '' } });
                 }

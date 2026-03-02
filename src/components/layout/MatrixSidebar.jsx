@@ -1,5 +1,3 @@
-import React from 'react';
-
 const MatrixSidebar = ({ orders, currentFilter, onFilterChange }) => {
   // Agrupar por estado de matriz (específico de Bordado)
   const matrixGroups = orders.reduce((acc, order) => {
@@ -47,8 +45,8 @@ const MatrixSidebar = ({ orders, currentFilter, onFilterChange }) => {
         {/* Filtro Todos */}
         <button
           className={`w-full text-left px-3 py-3 rounded-lg flex justify-between items-center transition-all group ${currentFilter === 'ALL'
-              ? 'bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-200'
-              : 'text-slate-600 hover:bg-slate-50'
+            ? 'bg-blue-50 text-blue-700 shadow-sm ring-1 ring-blue-200'
+            : 'text-slate-600 hover:bg-slate-50'
             }`}
           onClick={() => onFilterChange('ALL')}
         >
@@ -68,8 +66,8 @@ const MatrixSidebar = ({ orders, currentFilter, onFilterChange }) => {
             <button
               key={group.status}
               className={`w-full text-left px-3 py-3 rounded-lg flex justify-between items-center transition-all group relative overflow-hidden ${isActive
-                  ? 'bg-white shadow-md ring-1 ring-slate-200 z-10'
-                  : 'text-slate-600 hover:bg-slate-50'
+                ? 'bg-white shadow-md ring-1 ring-slate-200 z-10'
+                : 'text-slate-600 hover:bg-slate-50'
                 }`}
               onClick={() => onFilterChange(group.status)}
             >

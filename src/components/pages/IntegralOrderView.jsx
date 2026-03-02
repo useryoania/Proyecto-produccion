@@ -1,25 +1,33 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ordersService } from '../../services/modules/ordersService';
 import OrderRouteTracker from '../orders/OrderRouteTracker';
 import OrderDetailModal from '../production/components/OrderDetailModal'; // Importar Modal
 
 const IntegralOrderView = () => {
+    const [searchParams] = useSearchParams();
     const [searchRef, setSearchRef] = useState('');
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [selectedOrder, setSelectedOrder] = useState(null); // Estado para Modal
 
-    const handleSearch = async (e) => {
-        e?.preventDefault();
-        if (!searchRef.trim()) return;
+    // Auto-search if ?ref= is in the URL
+    useEffect(() => {
+        const ref = searchParams.get('ref');
+        if (ref) {
+            setSearchRef(ref);
+            doSearch(ref);
+        }
+    }, []);
 
+    const doSearch = async (ref) => {
+        if (!ref?.trim()) return;
         setLoading(true);
         setError(null);
         setData(null);
-
         try {
-            const res = await ordersService.getIntegralDetails(searchRef);
+            const res = await ordersService.getIntegralDetails(ref);
             setData(res);
         } catch (err) {
             console.error(err);
@@ -27,6 +35,11 @@ const IntegralOrderView = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleSearch = async (e) => {
+        e?.preventDefault();
+        doSearch(searchRef);
     };
 
     return (

@@ -23,7 +23,7 @@ const LoginPage = () => {
         try {
             const result = await googleLogin(response.credential);
             if (result.userType === 'CLIENT') {
-                navigate('/portal');
+                navigate('/portal/pickup');
             } else {
                 navigate('/');
             }
@@ -75,7 +75,7 @@ const LoginPage = () => {
         try {
             const result = await login(username, password);
             if (result.userType === 'CLIENT') {
-                navigate('/portal');
+                navigate('/portal/pickup');
             } else {
                 navigate('/');
             }

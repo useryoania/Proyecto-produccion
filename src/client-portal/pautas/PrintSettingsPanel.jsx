@@ -24,7 +24,8 @@ export const PrintSettingsPanel = ({
     copies = 1,
     onCopiesChange,
     onChange,
-    disableScaling = false
+    disableScaling = false,
+    hideHeader = false
 }) => {
     // ... (rest of vars)
     const mode = values.mode || 'normal';
@@ -52,7 +53,7 @@ export const PrintSettingsPanel = ({
         const max = parseFloat(maxM) || 0;
 
         if (vals.mode === 'normal') {
-            if (w > max) {
+            if (w > max + 0.001) {
                 res.isValid = false;
                 res.error = `El archivo (${w.toFixed(2)}m) excede el ancho máximo (${max.toFixed(2)}m).`;
             }
@@ -76,7 +77,7 @@ export const PrintSettingsPanel = ({
                 res.finalWidthM = finalW;
                 res.finalHeightM = finalH;
 
-                if (finalW > max) {
+                if (finalW > max + 0.001) {
                     res.isValid = false;
                     res.error = `Ancho final (${finalW.toFixed(2)}m) excede máximo (${max.toFixed(2)}m).`;
                 }
@@ -94,10 +95,10 @@ export const PrintSettingsPanel = ({
 
             if (rw <= 0 || rh <= 0) {
                 res.isValid = false;
-            } else if (rw > max) {
+            } else if (rw > max + 0.001) {
                 res.isValid = false;
                 res.error = `Ancho raport (${rw.toFixed(2)}m) excede máximo (${max.toFixed(2)}m).`;
-            } else if (w > max) {
+            } else if (w > max + 0.001) {
                 res.isValid = false;
                 res.error = `Patrón original (${w.toFixed(2)}m) ancho > material.`;
             }
@@ -146,11 +147,13 @@ export const PrintSettingsPanel = ({
 
     return (
         <div className="bg-white rounded-xl shadow-sm border border-zinc-100 overflow-hidden">
-            <div className="bg-zinc-50 px-4 py-3 border-b border-zinc-100 flex items-center gap-2">
-                <AlertCircle size={14} className="text-zinc-400" />
-                <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Configuración de Impresión</h4>
-                <div className="h-px bg-zinc-200 flex-1"></div>
-            </div>
+            {!hideHeader && (
+                <div className="bg-zinc-50 px-4 py-3 border-b border-zinc-100 flex items-center gap-2">
+                    <AlertCircle size={14} className="text-zinc-400" />
+                    <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Configuración de Impresión</h4>
+                    <div className="h-px bg-zinc-200 flex-1"></div>
+                </div>
+            )}
 
             {/* Selector de Modo */}
             {!disableScaling && (
@@ -194,6 +197,7 @@ export const PrintSettingsPanel = ({
                                 type="number"
                                 min="1"
                                 value={copies}
+                                onFocus={(e) => e.target.select()}
                                 onChange={(e) => onCopiesChange && onCopiesChange(parseInt(e.target.value) || 1)}
                                 className="w-24 text-center p-2 border border-zinc-300 rounded-lg text-lg font-bold text-zinc-800 focus:ring-2 focus:ring-indigo-500 outline-none"
                             />
@@ -223,6 +227,7 @@ export const PrintSettingsPanel = ({
                                         type="number"
                                         min="1"
                                         value={copies}
+                                        onFocus={(e) => e.target.select()}
                                         onChange={(e) => onCopiesChange && onCopiesChange(parseInt(e.target.value) || 1)}
                                         className="w-16 text-center p-1 border border-zinc-300 rounded font-bold text-zinc-800 focus:ring-2 focus:ring-indigo-500 outline-none h-8"
                                     />

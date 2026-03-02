@@ -154,112 +154,69 @@ exports.register = asyncHandler(async (req, res) => {
         }
     }
 
-    // 1. Verificar si existe por IDCliente
-    const check = await pool.request()
+    // 1. Verificar si IDCliente ya existe
+    const checkId = await pool.request()
         .input('Val', sql.NVarChar, idcliente)
-        .query("SELECT * FROM Clientes WHERE IDCliente = @Val");
+        .query("SELECT CodCliente FROM Clientes WHERE IDCliente = @Val");
 
-    let codClienteInterno;
-    let createdOrUpdatedClient;
-
-    console.log('📋 [REGISTRO] Datos a guardar:', {
-        idcliente, name, email, company, phone, address, ruc,
-        localidad, agencia, fantasyName, documento,
-        departamentoId, localidadId, agenciaId, formaEnvioId,
-        vendedorId
-    });
-
-    if (check.recordset.length > 0) {
-        // Cliente Exists -> Update / Claim
-        const existing = check.recordset[0];
-        codClienteInterno = existing.CodCliente;
-
-        const req2 = pool.request()
-            .input('ID', sql.Int, codClienteInterno)
-            .input('Pass', sql.NVarChar(255), password)
-            .input('Email', sql.NVarChar(200), email || existing.Email)
-            .input('Tel', sql.NVarChar(50), phone || existing.TelefonoTrabajo)
-            .input('Dir', sql.NVarChar(500), address || existing.CliDireccion)
-            .input('Loc', sql.NVarChar(200), localidad || existing.Localidad)
-            .input('Age', sql.NVarChar(200), agencia || existing.Agencia)
-            .input('Ced', sql.NVarChar(50), documento || existing.Cedula)
-            .input('DepID', sql.Int, departamentoId || existing.DepartamentoID || null)
-            .input('LocID', sql.Int, localidadId || existing.LocalidadID || null)
-            .input('AgeID', sql.Int, agenciaId || existing.AgenciaID || null)
-            .input('FenvID', sql.Int, formaEnvioId || existing.FormaEnvioID || null)
-            .input('VenID', sql.NVarChar(20), vendedorId || existing.VendedorID || null);
-
-        await req2.query(`
-                UPDATE Clientes 
-                SET WebPasswordHash = @Pass, 
-                    WebActive = 1, 
-                    WebResetPassword = 0,
-                    Email = @Email,
-                    TelefonoTrabajo = @Tel,
-                    CliDireccion = @Dir,
-                    Localidad = @Loc,
-                    Agencia = @Age,
-                    Cedula = @Ced,
-                    DepartamentoID = @DepID,
-                    LocalidadID = @LocID,
-                    AgenciaID = @AgeID,
-                    FormaEnvioID = @FenvID,
-                    VendedorID = @VenID
-                WHERE CodCliente = @ID
-            `);
-
-        createdOrUpdatedClient = { ...existing, Nombre: existing.Nombre };
-    } else {
-        // Cliente NO existe -> Crear Nuevo
-
-        // Generar CodCliente si no es Identity (asumimos lógica anterior de MAX+1)
-        const idQuery = await pool.request().query("SELECT ISNULL(MAX(CodCliente), 0) + 1 as NextID FROM Clientes");
-        codClienteInterno = idQuery.recordset[0].NextID;
-
-        await pool.request()
-            .input('CC', sql.Int, codClienteInterno)
-            .input('IDC', sql.NVarChar(50), idcliente) // Guardamos el ID alfanumérico
-            .input('Nom', sql.NVarChar(200), company || name || 'Nuevo Cliente')
-            .input('Fant', sql.NVarChar(200), fantasyName || name || '')
-            .input('Email', sql.NVarChar(200), email)
-            .input('Tel', sql.NVarChar(50), phone || '')
-            .input('Dir', sql.NVarChar(500), address || '')
-            .input('Ruc', sql.NVarChar(50), ruc || '')
-            .input('Loc', sql.NVarChar(200), localidad || '')
-            .input('Age', sql.NVarChar(200), agencia || '')
-            .input('Pass', sql.NVarChar(255), password)
-            .input('Ced', sql.NVarChar(50), documento || '')
-            .input('DepID', sql.Int, departamentoId || null)
-            .input('LocID', sql.Int, localidadId || null)
-            .input('AgeID', sql.Int, agenciaId || null)
-            .input('FenvID', sql.Int, formaEnvioId || null)
-            .input('VenID', sql.NVarChar(20), vendedorId)
-            .query(`
-                INSERT INTO Clientes (
-                    CodCliente, IDCliente, Nombre, NombreFantasia, Email, TelefonoTrabajo, CliDireccion, CioRuc, 
-                    Localidad, Agencia, WebPasswordHash, WebActive, WebResetPassword, Cedula,
-                    DepartamentoID, LocalidadID, AgenciaID, FormaEnvioID, VendedorID, FechaRegistro
-                )
-                VALUES (
-                    @CC, @IDC, @Nom, @Fant, @Email, @Tel, @Dir, @Ruc, 
-                    @Loc, @Age, @Pass, 0, 0, @Ced,
-                    @DepID, @LocID, @AgeID, @FenvID, @VenID, GETDATE()
-                )
-            `);
-
-        createdOrUpdatedClient = { Nombre: company || name, Email: email };
+    if (checkId.recordset.length > 0) {
+        return res.status(409).json({ success: false, message: 'Este ID de cliente ya está en uso. Elegí otro.' });
     }
+
+    // 2. Verificar si el email ya existe
+    if (email) {
+        const checkEmail = await pool.request()
+            .input('Email', sql.NVarChar, email.trim().toLowerCase())
+            .query("SELECT CodCliente FROM Clientes WHERE LOWER(LTRIM(RTRIM(Email))) = @Email AND Email IS NOT NULL AND Email != ''");
+
+        if (checkEmail.recordset.length > 0) {
+            return res.status(409).json({ success: false, message: 'Este correo electrónico ya está registrado.' });
+        }
+    }
+    // Crear cliente nuevo (ya validamos que IDCliente y Email no existen)
+    const idQuery = await pool.request().query("SELECT ISNULL(MAX(CodCliente), 0) + 1 as NextID FROM Clientes");
+    let codClienteInterno = idQuery.recordset[0].NextID;
+
+    await pool.request()
+        .input('CC', sql.Int, codClienteInterno)
+        .input('IDC', sql.NVarChar(50), idcliente)
+        .input('Nom', sql.NVarChar(200), company || name || 'Nuevo Cliente')
+        .input('Fant', sql.NVarChar(200), fantasyName || name || '')
+        .input('Email', sql.NVarChar(200), email)
+        .input('Tel', sql.NVarChar(50), phone || '')
+        .input('Dir', sql.NVarChar(500), address || '')
+        .input('Ruc', sql.NVarChar(50), ruc || '')
+        .input('Loc', sql.NVarChar(200), localidad || '')
+        .input('Age', sql.NVarChar(200), agencia || '')
+        .input('Pass', sql.NVarChar(255), password)
+        .input('Ced', sql.NVarChar(50), documento || '')
+        .input('DepID', sql.Int, departamentoId || null)
+        .input('LocID', sql.Int, localidadId || null)
+        .input('AgeID', sql.Int, agenciaId || null)
+        .input('FenvID', sql.Int, formaEnvioId || null)
+        .input('VenID', sql.NVarChar(20), vendedorId)
+        .query(`
+            INSERT INTO Clientes (
+                CodCliente, IDCliente, Nombre, NombreFantasia, Email, TelefonoTrabajo, CliDireccion, CioRuc, 
+                Localidad, Agencia, WebPasswordHash, WebActive, WebResetPassword, Cedula,
+                DepartamentoID, LocalidadID, AgenciaID, FormaEnvioID, VendedorID, FechaRegistro
+            )
+            VALUES (
+                @CC, @IDC, @Nom, @Fant, @Email, @Tel, @Dir, @Ruc, 
+                @Loc, @Age, @Pass, 0, 0, @Ced,
+                @DepID, @LocID, @AgeID, @FenvID, @VenID, GETDATE()
+            )
+        `);
 
     const emailService = require('../services/emailService');
     if (email) {
-        emailService.sendRegistrationMail(email, company || name).catch(console.error);
+        emailService.sendRegistrationMail(email, company || name, codClienteInterno).catch(console.error);
     }
 
-    // NO auto-login: cuenta pendiente de aprobación
     res.json({
         success: true,
         pendingApproval: true,
-        message: 'Registro exitoso. Tu cuenta está pendiente de aprobación por un administrador.'
+        message: 'Registro exitoso. Revisá tu correo electrónico para activar tu cuenta.'
     });
 });
 
@@ -403,3 +360,63 @@ exports.updateProfile = asyncHandler(async (req, res) => {
         res.status(404).json({ error: "Cliente no encontrado" });
     }
 });
+
+// ===================================
+// ACTIVATE ACCOUNT (EMAIL VERIFICATION)
+// ===================================
+exports.activate = asyncHandler(async (req, res) => {
+    const { token } = req.query;
+
+    if (!token) {
+        return res.status(400).send(activationPage('Token inválido o faltante.', false));
+    }
+
+    try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const pool = await getPool();
+
+        // Verificar que el cliente existe
+        const result = await pool.request()
+            .input('ID', sql.Int, decoded.codCliente)
+            .query('SELECT CodCliente, WebActive, Nombre FROM Clientes WHERE CodCliente = @ID');
+
+        if (result.recordset.length === 0) {
+            return res.status(404).send(activationPage('Cliente no encontrado.', false));
+        }
+
+        const client = result.recordset[0];
+
+        if (client.WebActive) {
+            return res.send(activationPage('Tu cuenta ya estaba activada. Podés iniciar sesión.', true));
+        }
+
+        // Activar la cuenta
+        await pool.request()
+            .input('ID', sql.Int, decoded.codCliente)
+            .query('UPDATE Clientes SET WebActive = 1 WHERE CodCliente = @ID');
+
+        return res.send(activationPage('¡Tu cuenta fue activada exitosamente! Ya podés iniciar sesión.', true));
+    } catch (err) {
+        if (err.name === 'TokenExpiredError') {
+            return res.status(400).send(activationPage('El enlace de activación expiró. Registrate nuevamente.', false));
+        }
+        return res.status(400).send(activationPage('Token inválido.', false));
+    }
+});
+
+// HTML page shown after clicking activation link
+function activationPage(message, success) {
+    return `
+    <!DOCTYPE html>
+    <html lang="es">
+    <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Activación de Cuenta</title></head>
+    <body style="font-family:Arial,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f5f5f5;">
+        <div style="background:white;padding:40px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.1);text-align:center;max-width:400px;">
+            <div style="font-size:48px;margin-bottom:16px;">${success ? '✅' : '❌'}</div>
+            <h2 style="color:${success ? '#1a1a1a' : '#dc2626'};margin-bottom:12px;">${success ? 'Cuenta Activada' : 'Error'}</h2>
+            <p style="color:#666;margin-bottom:24px;">${message}</p>
+            <a href="/login" style="display:inline-block;padding:12px 32px;background:#0f172a;color:white;text-decoration:none;border-radius:8px;font-weight:bold;">Ir al Login</a>
+        </div>
+    </body>
+    </html>`;
+}
