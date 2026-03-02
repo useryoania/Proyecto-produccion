@@ -118,7 +118,7 @@ const Navbar = ({ onSwitchTab, currentView }) => {
             <div className="flex text-md font-bold leading-none align-center justify-center text-white">{user?.nombre || user?.usuario}</div>
             <div className="w-full h-px bg-zinc-800 my-1"></div>
             <div className="flex items-center justify-center gap-1">
-              <span className={`w-2 h-2 rounded-full ${serverStatus === 'ok' ? 'bg-emerald-500' : serverStatus === 'slow' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`}></span>
+              <span className={`w-2 h-2 rounded-full ${serverStatus === 'ok' ? 'bg-emerald-500 animate-pulse' : serverStatus === 'slow' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
               <span className={`text-[11px] font-bold uppercase tracking-wider leading-none text-slate-100`}>
                 {user?.rol || user?.role || user?.userType || 'Usuario'}
               </span>

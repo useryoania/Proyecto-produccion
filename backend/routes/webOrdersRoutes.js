@@ -38,6 +38,12 @@ router.post('/pickup-orders/handy-payment', verifyToken, webOrdersController.cre
 // POST /api/web-orders/handy-webhook (Webhook Callback desde Handy)
 router.post('/handy-webhook', webOrdersController.handyWebhook);
 
+// POST /api/web-orders/handy-refund (Solicitar Devolución a Handy)
+router.post('/handy-refund', verifyToken, webOrdersController.createHandyRefund);
+
+// POST /api/web-orders/handy-refund-webhook (Webhook Callback de Devolución)
+router.post('/handy-refund-webhook', webOrdersController.handyRefundWebhook);
+
 // PUT /api/web-orders/area-mapping/:codOrden (Toggle Visibility)
 router.put('/area-mapping/:codOrden', verifyToken, webOrdersController.updateAreaVisibility);
 
