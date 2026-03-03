@@ -349,7 +349,7 @@ const WebRetirosPage = () => {
                           className={`h-24 rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-1.5 ${data ? 'bg-indigo-600 border-indigo-700 cursor-not-allowed opacity-90' : 'bg-white border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 group shadow-sm'}`}
                         >
                           <span className={`text-[10px] font-bold ${data ? 'text-indigo-200' : 'text-slate-400 uppercase group-hover:text-blue-600'}`}>{id}</span>
-                          {data && <span className="text-[11px] font-black text-white px-2 py-0.5 rounded border border-indigo-500 truncate max-w-[90%]">{data.OrdenRetiro}</span>}
+                          {data && <span className="text-[11px] font-black text-white px-2 py-0.5 rounded border border-indigo-500 truncate max-w-[90%]">{data.Pagado ? data.OrdenRetiro.replace('R-', 'PW-') : data.OrdenRetiro}</span>}
                           {data && <span className="text-[9px] font-bold text-indigo-100 px-1 truncate max-w-[90%]">{data.CodigoCliente || 'Cliente'}</span>}
                           {!data && <div className="w-1.5 h-1.5 rounded-full bg-slate-200 group-hover:bg-blue-400 mt-1 transition-colors" />}
                         </button>
@@ -548,7 +548,7 @@ const WebRetirosPage = () => {
                                   {data ? (
                                     <>
                                       <span className={`font-black tracking-widest ${isMatched ? 'text-white text-xl drop-shadow-md bg-green-700/50 px-3 py-1 rounded-lg mb-1' : 'text-indigo-200 text-[10px]'}`}>{id}</span>
-                                      <span className={`text-sm font-black italic uppercase truncate px-2 ${isMatched ? 'text-white' : 'text-white'}`}>{data.OrdenRetiro}</span>
+                                      <span className={`text-sm font-black italic uppercase truncate px-2 ${isMatched ? 'text-white' : 'text-white'}`}>{data.Pagado ? data.OrdenRetiro.replace('R-', 'PW-') : data.OrdenRetiro}</span>
                                       <span className={`text-[10px] font-bold truncate px-2 max-w-[90%] bg-black/20 rounded-md py-0.5 mt-0.5 ${isMatched ? 'text-green-100' : 'text-indigo-100'}`}>
                                         {data.ClientName || data.CodigoCliente || 'Cliente'}
                                       </span>
