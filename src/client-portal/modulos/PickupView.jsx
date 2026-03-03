@@ -197,6 +197,7 @@ export const PickupView = () => {
                 console.log('[PickupView] Retiro creado:', ordenRetiro, 'OrderNumbers:', reactOrderNumbers);
 
                 // 2. Crear link de pago Handy con datos del retiro
+                // Usa el mismo endpoint que UnpaidPickupsView para consistencia
                 const ordersPayload = selectedOrders.map(selId => {
                     const order = readyOrders.find(o => o.id === selId);
                     if (!order) return null;
@@ -210,14 +211,13 @@ export const PickupView = () => {
                 }).filter(Boolean);
 
                 const payload = {
-                    orders: ordersPayload,
+                    ordenRetiro: ordenRetiro,
                     totalAmount: totalAmount,
                     activeCurrency: activeCurrency,
-                    ordenRetiro: ordenRetiro,
-                    orderNumbers: reactOrderNumbers
+                    bultosJSON: JSON.stringify(ordersPayload)
                 };
 
-                const res = await apiClient.post('/web-orders/pickup-orders/handy-payment', payload);
+                const res = await apiClient.post('/web-retiros/payment', payload);
 
                 if (res.success && res.url) {
                     // Abrir Handy en nueva pestaña y redirigir esta pestaña a payment-status

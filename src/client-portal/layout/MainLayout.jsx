@@ -29,7 +29,7 @@ export const MainLayout = ({ children }) => {
     const { user, logout } = useAuth();
     const location = useLocation();
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-    const [isServicesOpen, setIsServicesOpen] = useState(true);
+    const [isServicesOpen, setIsServicesOpen] = useState(false);
     const [visibleConfig, setVisibleConfig] = useState(null);
     const [webContent, setWebContent] = useState({ sidebar: [], popup: [] });
     const [showPopup, setShowPopup] = useState(false);

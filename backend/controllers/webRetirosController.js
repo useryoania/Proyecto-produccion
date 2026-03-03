@@ -203,7 +203,7 @@ exports.getMyRetirosPendientes = async (req, res) => {
         // Sincronizar en background para asegurarnos de que la base local tiene el estado fresco
         // Así los retiros que acaban de ser abonados en otra ventana desaparecen de la tabla de pagos pendientes
         try {
-            await runSyncRetirosCore();
+            runSyncRetirosCore();
         } catch (syncErr) {
             console.error("Warning: Podría no estar súper fresco el dato (falló sync interno):", syncErr.message);
         }
@@ -212,6 +212,7 @@ exports.getMyRetirosPendientes = async (req, res) => {
         const query = `
             SELECT r.*
             FROM RetirosWeb r
+            WITH (NOLOCK)
             WHERE CAST(r.CodCliente AS VARCHAR) = CAST(@codCliente AS VARCHAR)
               AND r.Estado IN (1, 7)
             ORDER BY r.Fecha DESC
@@ -306,7 +307,7 @@ exports.createHandyPaymentLinkForRetiro = async (req, res) => {
         try {
             const pool = await getPool();
             await pool.request()
-                .input('Ord', sql.VarChar, ordenRetiro)
+                .input('Ord', sql.VarChar, String(ordenRetiro))
                 .input('Ref', sql.VarChar, result.transactionId)
                 .query(`UPDATE RetirosWeb SET ReferenciaPago = @Ref WHERE OrdIdRetiro = @Ord`);
         } catch (dbErr) {

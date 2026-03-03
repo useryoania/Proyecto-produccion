@@ -43,7 +43,7 @@ export const UnpaidPickupsView = () => {
                 bultosJSON: retiro.BultosJSON
             };
 
-            const res = await apiClient.post('/web-retiros/pay-link', payload);
+            const res = await apiClient.post('/web-retiros/payment', payload);
             const url = res?.url || res?.data?.url;
             const txId = res?.transactionId || res?.data?.transactionId;
 
