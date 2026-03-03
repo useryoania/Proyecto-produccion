@@ -48,8 +48,11 @@ export const UnpaidPickupsView = () => {
             const txId = res?.transactionId || res?.data?.transactionId;
 
             if (url) {
-                // Redirigir a Handy — el ReturnURL trae de vuelta a /payment-status
-                window.location.href = url;
+                // Abrir Handy en nueva pestaña y redirigir esta a payment-status
+                window.open(url, '_blank');
+                if (txId) {
+                    window.location.href = `/payment-status?txId=${txId}`;
+                }
             } else {
                 alert("No se pudo obtener el link de pago.");
             }

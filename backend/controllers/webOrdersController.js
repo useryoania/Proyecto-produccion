@@ -1630,37 +1630,39 @@ exports.handyWebhook = async (req, res) => {
 
                     // Extraer datos: formato nuevo (con ordenRetiro) o legacy (array plano)
                     const storedOrdenRetiro = storedData.ordenRetiro;
+                    const orders = storedData.orders || (Array.isArray(storedData) ? storedData : []);
 
-                    // Solo notificar a React si hay un retiro asociado
-                    if (!storedOrdenRetiro) {
-                        console.log('[HANDY WEBHOOK] Pago sin retiro asociado — no se llama a realizarPago.');
-                    } else {
-                        // Extraer el número del retiro (R-60174 → 60174)
+                    // Moneda: 858 = UYU (monedaId 1), 840 = USD (monedaId 2)
+                    const monedaId = tx.Currency === 840 ? 2 : 1;
+
+                    // orderNumbers: si hay retiro → número del retiro, si no → IDs de órdenes
+                    let orderNumbers = [];
+                    if (storedOrdenRetiro) {
                         const retiroNum = Number(String(storedOrdenRetiro).replace(/\D/g, ''));
+                        if (retiroNum) orderNumbers = [retiroNum];
+                    } else {
+                        orderNumbers = orders.map(o => o.rawId || o.id).filter(Boolean);
+                    }
 
-                        // Moneda: 858 = UYU (monedaId 1), 840 = USD (monedaId 2)
-                        const monedaId = tx.Currency === 840 ? 2 : 1;
+                    const payloadPago = {
+                        metodoPagoId: 9,
+                        monedaId: monedaId,
+                        monto: tx.TotalAmount,
+                        ordenRetiro: storedOrdenRetiro ? String(storedOrdenRetiro) : (orders[0]?.id || transactionId),
+                        orderNumbers: orderNumbers
+                    };
 
-                        const payloadPago = {
-                            metodoPagoId: 9,
-                            monedaId: monedaId,
-                            monto: tx.TotalAmount,
-                            ordenRetiro: String(storedOrdenRetiro),
-                            orderNumbers: retiroNum ? [retiroNum] : []
-                        };
+                    console.log('[HANDY WEBHOOK] Notificando pago a API React...', JSON.stringify(payloadPago));
 
-                        console.log('[HANDY WEBHOOK] Notificando pago a API React...', JSON.stringify(payloadPago));
-
-                        const token = await getExternalToken();
-                        if (token) {
-                            const reactRes = await axios.post(`${REACT_API_URL}/apipagos/realizarPago`, payloadPago, {
-                                headers: { Authorization: `Bearer ${token}` }
-                            });
-                            console.log('[HANDY WEBHOOK] ✅ API React notificada:', reactRes.data);
-                        } else {
-                            console.error('[HANDY WEBHOOK] No se pudo obtener token para notificar a React');
-                        }
-                    } // end if storedOrdenRetiro
+                    const token = await getExternalToken();
+                    if (token) {
+                        const reactRes = await axios.post(`${REACT_API_URL}/apipagos/realizarPago`, payloadPago, {
+                            headers: { Authorization: `Bearer ${token}` }
+                        });
+                        console.log('[HANDY WEBHOOK] ✅ API React notificada:', reactRes.data);
+                    } else {
+                        console.error('[HANDY WEBHOOK] No se pudo obtener token para notificar a React');
+                    }
                 } else {
                     console.warn(`[HANDY WEBHOOK] No se encontró transacción ${transactionId} en HandyTransactions`);
                 }

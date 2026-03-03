@@ -425,7 +425,7 @@ const WebRetirosPage = () => {
                     ) : apiOrders.filter(o => o.pagorealizado === 1 && (o.ordenDeRetiro.toLowerCase().includes(searchTerm.toLowerCase()) || o.idcliente.toLowerCase().includes(searchTerm.toLowerCase()))).map(o => (
                       <button key={o.ordenDeRetiro} onClick={() => handleSelectRetiro(o)} className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200 text-left hover:border-blue-400 hover:bg-white hover:shadow-md transition-all flex items-center justify-between group">
                         <div className="flex-1">
-                          <div className="text-lg font-black text-slate-800">{o.ordenDeRetiro}</div>
+                          <div className="text-lg font-black text-slate-800">{o.ordenDeRetiro.replace('R-', 'PW-')}</div>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded text-xs font-bold uppercase">{o.idcliente}</span>
                             <span className="text-sm font-black text-emerald-600">{o.moneda} {o.monto.toFixed(2)}</span>
