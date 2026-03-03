@@ -171,7 +171,8 @@ export default function PaymentResult() {
                         {/* Details Grid */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
                             {txData.ordenRetiro && (
-                                <InfoCard icon={<Receipt size={14} />} label="Orden de Retiro" value={txData.ordenRetiro} />
+                                <InfoCard icon={<Receipt size={14} />} label="Código de Retiro"
+                                    value={txData.status === 'Pagado' ? txData.ordenRetiro.replace('R-', 'PW-') : txData.ordenRetiro} />
                             )}
                             {txData.paymentMethod && (
                                 <InfoCard icon={<CreditCard size={14} />} label="Medio de pago" value={txData.paymentMethod} />

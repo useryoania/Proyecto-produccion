@@ -220,9 +220,8 @@ export const PickupView = () => {
                 const res = await apiClient.post('/web-orders/pickup-orders/handy-payment', payload);
 
                 if (res.success && res.url) {
-                    // Abrir Handy en nueva pestaña y redirigir esta pestaña a payment-status
-                    window.open(res.url, '_blank');
-                    window.location.href = `/payment-status?txId=${res.transactionId}`;
+                    // Redirigir a Handy — el ReturnURL trae de vuelta a /payment-status
+                    window.location.href = res.url;
                 } else {
                     // Retiro ya creado pero falló Handy — mostrar éxito del retiro
                     setPickupCode(ordenRetiro || 'ERROR');
