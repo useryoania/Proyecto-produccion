@@ -143,6 +143,11 @@ exports.reportarPagoRetiro = async (req, res) => {
     const { ordenRetiro, monto, monedaId, metodoPagoId, orderNumbers } = req.body;
 
     try {
+        console.log(`[REPORTAR PAGO] Solicitando token a la central...`);
+        const tokenRes = await axios.post(`${API_BASE_URL}/apilogin/generate-token`, {
+            apiKey: "api_key_google_123sadas12513_user"
+        });
+
         const pool = await getPool();
 
         const payloadPago = {
@@ -153,16 +158,25 @@ exports.reportarPagoRetiro = async (req, res) => {
             orderNumbers
         };
 
-        const responseApi = await axios.post(`${API_BASE_URL}/apipagos/realizarPago`, payloadPago);
+        console.log(`[REPORTAR PAGO] Ejecutando apipagos/realizarPago para ${ordenRetiro}`);
+        const responseApi = await axios.post(`${API_BASE_URL}/apipagos/realizarPago`, payloadPago, {
+            headers: { 'Authorization': `Bearer ${tokenRes.data.token}` }
+        });
 
-        if (responseApi.status === 200 || responseApi.data.success || responseApi.data.exitoso) {
-            await pool.request()
-                .input('Ord', sql.NVarChar, ordenRetiro)
-                .input('Est', sql.Int, 3) // 3 = Abonado
-                .query(`UPDATE RetirosWeb SET Estado = @Est WHERE OrdIdRetiro = @Ord`);
+        if (responseApi.status === 200 || responseApi.data?.success || responseApi.data?.exitoso) {
+            try {
+                // Actualizar DB local (opcional/silencioso si falla)
+                await pool.request()
+                    .input('Ord', sql.NVarChar, ordenRetiro)
+                    .input('Est', sql.Int, 3) // 3 = Abonado
+                    .query(`UPDATE RetirosWeb SET Estado = @Est WHERE OrdIdRetiro = @Ord`);
+            } catch (errDb) {
+                console.error("Aviso: no se pudo actualizar bbdd local:", errDb);
+            }
 
-            res.json({ success: true, message: 'Pago registrado correctamente en destino y local.' });
+            res.json({ success: true, message: 'Pago registrado correctamente en destino.', data: responseApi.data });
         } else {
+            console.error("Respuesta no satisfactoria realizarPago:", responseApi.data);
             throw new Error("Respuesta no satisfactoria de la API de Pagos");
         }
 
@@ -539,5 +553,86 @@ exports.marcarRetiroEntregado = async (req, res) => {
     } catch (err) {
         console.error("Error al entregar:", err);
         res.status(500).json({ error: "Fallo en la entrega general", details: err.message });
+    }
+};
+
+/**
+ * Traer lista de métodos de pago desde la API central
+ */
+exports.getPaymentMethods = async (req, res) => {
+    try {
+        console.log(`[PAYMENT METHODS] Solicitando token a la central...`);
+        const tokenRes = await axios.post(`${API_BASE_URL}/apilogin/generate-token`, {
+            apiKey: "api_key_google_123sadas12513_user"
+        });
+
+        console.log(`[PAYMENT METHODS] Solicitando métodos de pago a la central...`);
+        const response = await axios.get(`${API_BASE_URL}/apipagos/metodos`, {
+            headers: { 'Authorization': `Bearer ${tokenRes.data.token}` }
+        });
+
+        res.json(response.data);
+    } catch (err) {
+        console.error("[PAYMENT METHODS] Error al obtener métodos de pago:", err.response?.data || err.message);
+        res.status(500).json({ error: "Fallo al obtener métodos de pago desde la API central", details: err.message });
+    }
+};
+
+/**
+ * Traer órdenes para Caja
+ */
+exports.getCajaOrdenes = async (req, res) => {
+    try {
+        const tokenRes = await axios.post(`${API_BASE_URL}/apilogin/generate-token`, {
+            apiKey: "api_key_google_123sadas12513_user"
+        });
+
+        const response = await axios.get(`${API_BASE_URL}/apiordenesretiro/caja`, {
+            headers: { 'Authorization': `Bearer ${tokenRes.data.token}` }
+        });
+        res.json(response.data);
+    } catch (err) {
+        console.error("[CAJA ORDENES] Error al obtener órdenes de caja:", err.response?.data || err.message);
+        res.status(500).json({ error: "Fallo al obtener órdenes de caja", details: err.message });
+    }
+};
+
+/**
+ * Obtener cotización
+ */
+exports.getCotizacion = async (req, res) => {
+    try {
+        const response = await axios.get(`${API_BASE_URL}/apicotizaciones/hoy`);
+        res.json(response.data);
+    } catch (err) {
+        console.error("[COTIZACION] Error al obtener cotización:", err.response?.data || err.message);
+        res.status(500).json({ error: "Fallo al obtener cotización", details: err.message });
+    }
+};
+
+/**
+ * Marcar pasar por caja
+ */
+exports.marcarPasarPorCaja = async (req, res) => {
+    try {
+        const { ordenDeRetiro } = req.body;
+        if (!ordenDeRetiro) return res.status(400).json({ error: "No se proporcionó orden de retiro" });
+
+        const tokenRes = await axios.post(`${API_BASE_URL}/apilogin/generate-token`, {
+            apiKey: "api_key_google_123sadas12513_user"
+        });
+
+        const payload = { ordenDeRetiro };
+
+        // Asumiendo que el ID de usuario es 1 para Caja en la URL
+        // o quizás el endpoint no exige un ID dinámico (el usuario dijo /marcarpasarporcaja/1)
+        const response = await axios.post(`${API_BASE_URL}/apiordenesretiro/marcarpasarporcaja/1`, payload, {
+            headers: { 'Authorization': `Bearer ${tokenRes.data.token}` }
+        });
+
+        res.json({ success: true, data: response.data });
+    } catch (err) {
+        console.error("[MARCAR CAJA] Error al marcar por caja:", err.response?.data || err.message);
+        res.status(500).json({ error: "Fallo al marcar pasar por caja", details: err.message });
     }
 };

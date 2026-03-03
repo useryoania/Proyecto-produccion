@@ -12,6 +12,10 @@ router.post('/pagar', verifyToken, webRetirosController.reportarPagoRetiro);
 router.post('/pay-link', verifyToken, webRetirosController.createHandyPaymentLinkForRetiro);
 router.get('/locales', verifyToken, webRetirosController.getAllLocalRetiros);
 router.get('/mis-retiros', verifyToken, webRetirosController.getMyRetirosPendientes);
+router.get('/metodos-pago', verifyToken, webRetirosController.getPaymentMethods);
+router.get('/caja-ordenes', verifyToken, webRetirosController.getCajaOrdenes);
+router.get('/cotizacion', verifyToken, webRetirosController.getCotizacion);
+router.post('/marcar-caja', verifyToken, webRetirosController.marcarPasarPorCaja);
 
 // RUTAS API PARA ESTANTES FÍSICOS
 router.get('/estantes', verifyToken, webRetirosController.obtenerMapaEstantes);

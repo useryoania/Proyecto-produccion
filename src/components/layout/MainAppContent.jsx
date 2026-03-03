@@ -34,6 +34,7 @@ const DepositStockPage = lazy(() => import('../logistics/DepositStockPage'));
 const CustomerReplacementPage = lazy(() => import('../pages/customer-service/CustomerReplacementPage'));
 const CustomerPriceCatalogPage = lazy(() => import('../pages/CustomerPriceCatalogPage'));
 const IntegralOrderView = lazy(() => import('../pages/IntegralOrderView'));
+const CargaPagosView = lazy(() => import('../pages/CargaPagosView'));
 
 // ============================================
 // 1. COMPONENTE NAVNODE (Mejorado)
@@ -293,6 +294,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/admin/price-profiles" element={<PriceProfiles />} />
                                 <Route path="/admin/price-catalog" element={<CustomerPriceCatalogPage />} />
                                 <Route path="/produccion/etiquetas" element={<LabelGenerationPage />} />
+                                <Route path="/caja/pagos" element={<CargaPagosView />} />
                                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
                             </Routes>
                         </Suspense>
@@ -353,6 +355,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/atencion-cliente/despachos') return <ActiveStockPage />;
     if (menuItem.Ruta === '/atencion-cliente/reposiciones') return <CustomerReplacementPage />;
     if (menuItem.Ruta === '/logistica/retiros-web') return <WebRetirosPage />;
+    if (menuItem.Ruta === '/caja/pagos' || menuItem.Ruta.toLowerCase() === '/caja/pagos/') return <CargaPagosView />;
 
     // NEW: Historial de Lotes
     if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;
