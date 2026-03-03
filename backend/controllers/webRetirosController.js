@@ -422,7 +422,7 @@ exports.asignarRetiroAEstante = async (req, res) => {
                 // Sacamos la R- del ordenRetiro
                 const ordenLimpia = ordenRetiro.startsWith('R-') ? ordenRetiro.substring(2) : ordenRetiro;
 
-                console.log(`[MARCAR PRONTO] Preparando llamado para orden: ${ordenRetiro} (limpia: ${ordenLimpia})`);
+                console.log(`[PRONTO] ${ordenRetiro} -> ${ordenLimpia}`);
                 const tokenRes = await axios.post(`${REACT_API_URL}/apilogin/generate-token`, {
                     apiKey: REACT_API_KEY
                 });
@@ -443,20 +443,14 @@ exports.asignarRetiroAEstante = async (req, res) => {
                     ordenDeRetiro: String(ordenLimpia), // Enviar SIEMPRE como string para evitar crash de .replace
                     scannedValues: bultosPadded
                 };
-                console.log(`[MARCAR PRONTO] Payload a enviar:`, JSON.stringify(payloadPronto, null, 2));
+
 
                 const responsePronto = await axios.post(`${REACT_API_URL}/apiordenesRetiro/marcarpronto`, payloadPronto, {
                     headers: { 'Authorization': `Bearer ${tokenRes.data.token}` }
                 });
-                console.log(`[MARCAR PRONTO] Respuesta de central exitosa:`, responsePronto.data);
+                console.log(`[PRONTO] OK`, responsePronto.data?.message || '');
             } catch (extErr) {
-                console.error(`[MARCAR PRONTO] ERROR de central para orden ${ordenRetiro}:`);
-                if (extErr.response) {
-                    console.error("Status:", extErr.response.status);
-                    console.error("Data:", JSON.stringify(extErr.response.data, null, 2));
-                } else {
-                    console.error("Mensaje:", extErr.message);
-                }
+                console.error(`[PRONTO] ERROR ${ordenRetiro}:`, extErr.response?.status || '', extErr.response?.data?.message || extErr.message);
                 // No abortamos la transacción local porque ya se guardó correctamente.
             }
 
@@ -515,7 +509,7 @@ exports.marcarRetiroEntregado = async (req, res) => {
                 // Removemos la "R-" si la API central lo necesita sin prefijo
                 const ordenLimpia = ordenDeRetiro.startsWith('R-') ? ordenDeRetiro.substring(2) : ordenDeRetiro;
 
-                console.log(`[MARCAR ENTREGADO] Preparando llamado para orden: ${ordenDeRetiro} (limpia: ${ordenLimpia})`);
+                console.log(`[ENTREGADO] ${ordenDeRetiro} -> ${ordenLimpia}`);
                 const tokenRes = await axios.post(`${REACT_API_URL}/apilogin/generate-token`, {
                     apiKey: REACT_API_KEY
                 });
@@ -523,7 +517,7 @@ exports.marcarRetiroEntregado = async (req, res) => {
                 const payloadEntregado = {
                     ordenDeRetiro: String(ordenLimpia) // MANDAMOS LA LIMPIA SIN R- Y COMO STRING
                 };
-                console.log(`[MARCAR ENTREGADO] Payload a enviar:`, JSON.stringify(payloadEntregado, null, 2));
+
 
                 const responseEntregada = await axios.post(`${REACT_API_URL}/apiordenesRetiro/marcarOrdenEntregada`, payloadEntregado, {
                     headers: { 'Authorization': `Bearer ${tokenRes.data.token}` }
