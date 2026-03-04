@@ -793,10 +793,14 @@ exports.getCajaOtros = async (req, res) => {
  */
 exports.marcarExcepcional = async (req, res) => {
     try {
-        const { ordenRetiro, codigoCliente, monto, password } = req.body;
+        const { ordenRetiro, codigoCliente, monto, password, explicacion } = req.body;
 
         if (!password || password.trim() === '') {
             return res.status(401).json({ error: "Contraseña requerida para autorizar este retiro." });
+        }
+
+        if (!explicacion || explicacion.trim() === '') {
+            return res.status(400).json({ error: "Debe ingresar una justificación/explicación obligatoria." });
         }
 
         if (password !== process.env.CONTRAAUTORIZO) {
@@ -809,11 +813,56 @@ exports.marcarExcepcional = async (req, res) => {
             .input('cliente', sql.VarChar, codigoCliente)
             .input('monto', sql.VarChar, String(monto))
             .input('pwd', sql.VarChar, password)
-            .query(`INSERT INTO RetirosConDeuda (OrdenRetiro, CodigoCliente, Monto, UsuarioAutorizador) VALUES (@orden, @cliente, @monto, @pwd)`);
+            .input('expl', sql.NVarChar, explicacion)
+            .query(`INSERT INTO RetirosConDeuda (OrdenRetiro, CodigoCliente, Monto, UsuarioAutorizador, Explicacion) VALUES (@orden, @cliente, @monto, @pwd, @expl)`);
 
         res.json({ message: "Retiro registrado como deuda y autorizado exitosamente." });
     } catch (err) {
         console.error("[EXCEPCIONAL] Error al guardar retiro excepcional:", err);
         res.status(500).json({ error: "Fallo al registrar retiro excepcional", details: err.message });
+    }
+};
+
+/**
+ * Obtener todos los retiros excepcionales con deuda
+ */
+exports.getExcepciones = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const result = await pool.request().query(`
+            SELECT e.*, c.Nombre as NombreCliente 
+            FROM RetirosConDeuda e
+            LEFT JOIN Clientes c ON CAST(e.CodigoCliente AS VARCHAR) = CAST(c.CodCliente AS VARCHAR)
+            ORDER BY e.Fecha DESC
+        `);
+        res.json(result.recordset);
+    } catch (err) {
+        console.error("[EXCEPCIONES] Error al obtener excepciones de deuda:", err);
+        res.status(500).json({ error: "Fallo al obtener retiros excepcionales", details: err.message });
+    }
+};
+
+/**
+ * Marcar una excepcion de deuda como gestionada/pagada
+ */
+exports.gestionarExcepcion = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { gestionado } = req.body;
+
+        const pool = await getPool();
+        await pool.request()
+            .input('id', sql.Int, id)
+            .input('gestionado', sql.Bit, gestionado ? 1 : 0)
+            .query(`
+                UPDATE RetirosConDeuda 
+                SET Gestionado = @gestionado, FechaGestion = GETDATE()
+                WHERE Id = @id
+            `);
+
+        res.json({ success: true, message: "Actualizado exitosamente." });
+    } catch (err) {
+        console.error("[EXCEPCION GESTION] Error al actualizar estado:", err);
+        res.status(500).json({ error: "Fallo al actualizar la excepción", details: err.message });
     }
 };

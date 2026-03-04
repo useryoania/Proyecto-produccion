@@ -1,0 +1,138 @@
+/* CajaRegistradoraComponent.css */
+
+body {
+    font-family: 'Arial', sans-serif;
+    background-color: #f0f8ff;
+    color: #333;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+  }
+  
+  .container {
+    max-width: 600px;
+    width: 100%;
+    padding: 20px;
+    background-color: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  }
+  
+  h1 {
+    text-align: center;
+    color: #007bff;
+    margin-bottom: 20px;
+  }
+  
+  label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+  
+  input[type="number"], select {
+    width: calc(100% - 20px);
+    padding: 10px;
+    margin-bottom: 15px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+  }
+  
+  button {
+    width: calc(100% - 20px);
+    margin: 10px auto;
+    padding: 6px;
+    background-color: #007bff;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+  }
+  
+  button:hover {
+    background-color: #0056b3;
+  }
+  
+  button:focus {
+    outline: none;
+  }
+  
+  .movimientos-list {
+    max-height: 150px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+  }
+  
+  .movimientos-list li {
+    background-color: #e6f7ff;
+    padding: 10px;
+    margin-bottom: 8px;
+    border-radius: 5px;
+  }
+  
+  .historial-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%;
+    max-width: 500px;
+    background-color: #ffffff;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+  }
+  
+  .historial-popup h3 {
+    text-align: center;
+    color: #007bff;
+  }
+  
+  .historial-popup ul {
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  
+  .overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+  }
+  
+  .close-button {
+    display: block;
+    margin: 0 auto 20px auto;
+    padding: 6px;
+    background-color: #007bff;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+  }
+  
+  .close-button:hover {
+    background-color: #0056b3;
+  }
+  
+  @media (max-width: 600px) {
+    .container {
+      padding: 15px;
+    }
+    button {
+      width: calc(100% - 10px);
+    }
+    input[type="number"], select {
+      width: calc(100% - 10px);
+    }
+  }
+  

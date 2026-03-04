@@ -1,0 +1,290 @@
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #e5ddd5;
+}
+
+.avisos-container {
+  display: flex;
+  width: 80vw; /* Cambiado para hacer el contenedor más angosto */
+  max-width: 1200px; /* Limitar el ancho máximo del contenedor */
+  height: 90vh; /* Ajustado para que no ocupe todo el alto de la pantalla */
+  border-radius: 15px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+  overflow: auto; /* Cambiado a 'auto' para permitir el desplazamiento dentro del contenedor principal */
+  background: #ffffff;
+  position: relative;
+}
+
+.avisoc1 {
+  height: 100%;
+  padding: 20px;
+  background: #f0f0f0;
+  border-right: 2px solid #d3d3d3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  position: relative;
+  margin-right: 10px;
+}
+
+.avisoc1 h2 {
+  font-size: 1.5em;
+  font-weight: bold;
+  color: #075e54;
+  margin-bottom: 20px;
+}
+
+.avisos-client-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.avisos-client-button {
+  padding: 15px;
+  background-color: #d3d3d3;
+  color: #333;
+  border: none;
+  border-radius: 8px;
+  font-size: 1em;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.3s, transform 0.3s;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  margin: 5px;
+}
+
+.avisos-client-button:hover {
+  background-color: #b0b0b0;
+  transform: translateY(-2px);
+}
+
+.avisos-message-list {
+  list-style-type: none;
+  padding: 0;
+  width: 100%;
+  overflow-y: auto;
+  flex-grow: 1;
+}
+
+.avisos-message-item {
+  background: #ffffff;
+  margin-bottom: 10px;
+  padding: 15px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-left: 5px solid #25d366;
+}
+
+.avisos-message-item:hover {
+  background: #f0f0f0;
+  transform: translateY(-2px);
+}
+
+.avisoc2 {
+  height: 100%;
+  padding: 20px;
+  background: #dcf8c6;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  margin-left: 10px;
+}
+
+.avisos-client-info {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  font-size: 1.1em;
+  color: #075e54;
+  border-bottom: 2px solid #d3d3d3;
+  padding-bottom: 10px;
+}
+
+.avisos-message-box-container {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  flex-grow: 1;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.avisos-message-box {
+  background: #fff;
+  border: 2px solid #ccc;
+  border-radius: 10px;
+  padding: 20px;
+  width: 560px;
+  height: 300px;
+  overflow-y: auto;
+  box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.1);
+  color: #333;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 1em;
+  line-height: 1.5;
+}
+
+.avisos-send-button {
+  padding: 6px;
+  margin-bottom: 10px;
+  background-color: #25d366;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: normal;
+  font-size: 0.7em;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: 90px;
+  height: 30px;
+  text-align: center;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+}
+
+.avisos-send-button:hover {
+  background-color: #1ebe57;
+  transform: scale(1.05);
+}
+
+.avisos-copy-button {
+  padding: 6px;
+  margin-top: 10px;
+  background-color: #ffa500;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: normal;
+  font-size: 0.6em;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: 90px;
+  height: 30px;
+  text-align: center;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+}
+
+.avisos-copy-button:hover {
+  background-color: #e59400;
+  transform: scale(1.05);
+}
+
+.avisos-edit-button {
+  padding: 6px;
+  background-color: #0096f4;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: normal;
+  font-size: 0.6em;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: 90px;
+  height: 40px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+  max-width: 100%;
+  margin-top: 10px;
+  margin-left: auto;
+}
+
+.avisos-edit-button:hover {
+  background-color: #0274bc;
+  transform: scale(1.05);
+}
+
+.avisos-avisado-button {
+  padding: 6px;
+  background-color: #0096f4;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: normal;
+  font-size: 0.7em;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  width: 90px;
+  height: 30px;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 10px;
+  max-width: 100%;
+}
+
+.avisos-avisado-button:hover {
+  background-color: #0274bc;
+  transform: scale(1.05);
+}
+
+.avisos-edit-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+  align-items: center;
+}
+
+.avisos-edit-input {
+  padding: 10px;
+  border: 2px solid #ccc;
+  border-radius: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.footer-edit-container {
+  margin-top: 20px;
+  background: #ffffff;
+  padding: 10px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.footer-buttons-container {
+  display: flex;
+  gap: 10px;
+}
+
+.footer-edit-input {
+  width: 100%;
+  padding: 10px;
+  border: 2px solid #ccc;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+
+.footer-buttons-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}

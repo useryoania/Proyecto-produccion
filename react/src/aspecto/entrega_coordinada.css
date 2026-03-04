@@ -1,0 +1,36 @@
+/* ======================= */
+/* Botones Modernos en .section-modern        */
+/* ======================= */
+.section-modern button {
+  padding: 10px 15px;
+  margin: 5px;
+  background: linear-gradient(45deg, #007BFF, #00aaff);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+
+.section-modern button:hover:not(:disabled) {
+  background: linear-gradient(45deg, #0056b3, #0088cc);
+  transform: translateY(-2px);
+}
+
+.section-modern button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+/* ======================= */
+/* Botones Seleccionados   */
+/* ======================= */
+.section-modern button.selected {
+  background: linear-gradient(45deg, #1e7e34, #28a745);
+  transform: scale(1.05);
+}
+
+.section-modern button.selected:hover {
+  background: linear-gradient(45deg, #155d27, #1e7e34);
+}

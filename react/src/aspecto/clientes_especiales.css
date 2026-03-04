@@ -1,0 +1,299 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap');
+
+:root {
+    --clientes-primary-color: #333;
+    --clientes-secondary-color: #2ecc71;
+    --clientes-background-color: #ffffff;
+    --clientes-text-color: #4d4d4d;
+    --clientes-card-bg-color: #ffffff;
+    --clientes-shadow-color: rgba(0, 0, 0, 0.1);
+    --clientes-error-color: #e74c3c;
+    --clientes-load-discount-btn-color: #00d78c;
+    --clientes-register-client-btn-color: #0294ce;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    font-family: 'Roboto', sans-serif;
+    background-color: var(--clientes-background-color);
+}
+
+.clientes-container {
+    max-width: 100%;
+    overflow: auto;
+    padding: 40px;
+    flex-grow: 1;
+    animation: fadeIn 1s ease-in-out;
+    margin-top: 20px;
+    max-height: calc(100vh - 40px); /* Ajuste para evitar sobrepasar la pantalla */
+}
+
+h1, h2 {
+    color: var(--clientes-primary-color);
+    margin-bottom: 20px;
+    font-weight: 700;
+    font-size: 2.5em;
+    text-align: center;
+    transition: transform 0.3s;
+}
+
+h1:hover, h2:hover {
+    transform: scale(1.05);
+}
+
+.clientes-card {
+    background-color: var(--clientes-card-bg-color);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px var(--clientes-shadow-color);
+    padding: 30px;
+    margin-bottom: 20px;
+    transition: transform 0.3s, box-shadow 0.3s;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.clientes-card:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+}
+
+.clientes-product-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+    padding: 10px;
+    overflow: hidden;
+}
+
+/* Diseño del producto con más flexibilidad y claridad */
+.clientes-product-item {
+    max-width: 100%;
+    margin-bottom: 20px;
+    overflow: hidden;
+    background-color: var(--clientes-card-bg-color);
+    border-radius: 12px;
+    box-shadow: 0 4px 15px var(--clientes-shadow-color);
+    padding: 20px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.clientes-product-item:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+}
+
+/* Etiqueta de descuento en la esquina superior izquierda */
+.clientes-discount-tag {
+    background-color: var(--clientes-secondary-color);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-size: 10px;
+    font-weight: bold;
+    z-index: 2;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.clientes-product-content {
+    margin-top: 10px;
+    font-size: 14px;
+    color: var(--clientes-text-color);
+    flex-grow: 1;
+    text-align: center;
+    overflow: hidden;
+}
+
+/* Título del producto */
+.clientes-product-item h3 {
+    font-size: 16px;
+    color: var(--clientes-primary-color);
+    margin-bottom: 5px;
+    transition: color 0.3s;
+}
+
+.clientes-product-item h3:hover {
+    color: var(--clientes-secondary-color);
+}
+
+/* Botón de eliminar */
+.clientes-remove-btn {
+    background-color: var(--clientes-error-color);
+    color: white;
+    border: none;
+    padding: 5px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    align-self: flex-start;
+    transition: background-color 0.3s;
+    margin-top: 10px;
+    width: fit-content;
+    overflow: hidden;
+    position: absolute;
+    top: 10px;
+    right: 10px;
+}
+
+.clientes-remove-btn:hover {
+    background-color: darkred;
+}
+
+/* Contenedor individual para cada cliente registrado */
+.clientes-registered-item {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--clientes-shadow-color);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
+    background-color: var(--clientes-card-bg-color);
+    position: relative;
+}
+
+/* Modal */
+.clientes-modal {
+    display: block;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0, 0, 0, 0.5);
+    animation: fadeIn 0.5s ease;
+}
+
+.clientes-modal-content {
+    max-width: 800px;
+    padding: 40px;
+    margin: 5% auto;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    animation: slideIn 0.5s ease;
+    background-color: #ffffff;
+    border-radius: 12px;
+}
+
+.clientes-close {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.3s ease;
+}
+
+.clientes-close:hover, .clientes-close:focus {
+    color: var(--clientes-primary-color);
+}
+
+/* Botón general */
+.clientes-btn {
+    background-color: var(--clientes-primary-color);
+    color: white;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+    margin-top: 10px;
+    width: fit-content;
+    transition: background-color 0.3s, transform 0.3s;
+    overflow: hidden;
+}
+
+.clientes-btn:hover {
+    background-color: #28c2ff;
+    transform: scale(1.05);
+}
+
+.clientes-add-discounts-btn {
+    background-color: var(--clientes-secondary-color);
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+    margin-top: 10px;
+    width: fit-content;
+    color: white;
+    border: none;
+    transition: background-color 0.3s, transform 0.3s;
+    overflow: hidden;
+}
+
+.clientes-add-discounts-btn:hover {
+    background-color: #27ae60;
+    transform: scale(1.05);
+}
+
+/* Botón de cargar descuento */
+.clientes-load-discount-btn {
+    background-color: var(--clientes-load-discount-btn-color);
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+    margin-top: 10px;
+    width: fit-content;
+    color: white;
+    border: none;
+    transition: background-color 0.3s, transform 0.3s;
+    display: inline-block;
+    overflow: hidden;
+}
+
+.clientes-load-discount-btn:hover {
+    background-color: #00af77;
+    transform: scale(1.05);
+}
+
+/* Botón de registrar cliente */
+.clientes-register-client-btn {
+    background-color: var(--clientes-register-client-btn-color);
+    padding: 10px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+    margin-top: 10px;
+    width: fit-content;
+    color: white;
+    border: none;
+    transition: background-color 0.3s, transform 0.3s;
+    display: inline-block;
+    overflow: hidden;
+}
+
+.clientes-register-client-btn:hover {
+    background-color: #28ffc2;
+    transform: scale(1.05);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from { transform: translateY(-50px); }
+    to { transform: translateY(0); }
+}

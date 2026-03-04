@@ -1,0 +1,77 @@
+/* Evita que la ventana de etiqueta corte contenido y permite scroll si es necesario */
+#EtiquetaDeImpresionModal {
+    width: 10cm;
+    min-height: 15cm;
+    max-height: 90vh; /* Para evitar que se salga de la pantalla */
+    background: #f9f9f9;
+    border: 2px dashed #007BFF;
+    border-radius: 10px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow-y: auto; /* Habilita scroll si el contenido es largo */
+  }
+  
+  /* Contenedor de botones */
+  .modal-buttons {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+  }
+  
+  /* Estilo del botón Volver */
+  .close-btn {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  
+  .close-btn:hover {
+    background: #c82333;
+  }
+  
+  /* Estilo del botón Imprimir */
+  .print-btn {
+    background: #007BFF;
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  
+  .print-btn:hover {
+    background: #0056b3;
+  }
+  
+  /* Asegurar que el botón no desaparezca antes de imprimir */
+  .no-print {
+    display: block !important;
+  }
+  
+  /* Solo se imprime la etiqueta */
+  @media print {
+    body * {
+      visibility: hidden;
+    }
+    #EtiquetaDeImpresionModal, #EtiquetaDeImpresionModal * {
+      visibility: visible;
+    }
+    #EtiquetaDeImpresionModal {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white !important;
+      border: none !important;
+      box-shadow: none !important;
+    }
+    .no-print {
+      display: none !important;
+    }
+  }
+  

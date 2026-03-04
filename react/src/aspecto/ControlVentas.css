@@ -1,0 +1,331 @@
+  html, body {
+    font-family: 'Poppins', sans-serif;
+    background-color: #f0f2f5;
+    color: #333;
+    height: auto;  /* 🔹 Permite que el cuerpo crezca con el contenido */
+    min-height: 100vh;  /* 🔹 Garantiza que siempre cubra la pantalla */
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;  /* 🔹 Evita el desplazamiento horizontal innecesario */
+    overflow-y: visible;  /* 🔹 Permite desplazamiento libre */
+  }
+
+  .CONTBDDPRINCIP {
+    width: 90%;
+    max-width: 1200px;
+    margin: 40px auto;
+    padding: 30px;
+    height: auto;  /* 🔹 Permite que crezca dinámicamente */
+    overflow: visible;  /* 🔹 Evita bloqueos en el desplazamiento */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 15px;
+    background: #ffffff;
+    box-sizing: border-box;
+  } 
+  
+  .CONTBDDEP2 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  
+  .CONTBDDEP3 {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    flex-direction: row;
+  }
+  
+  .filter-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .filter-label {
+    font-size: 8px;
+    color: #666;
+    margin-bottom: 3px;
+    font-weight: bold;
+    text-align: left;
+  }
+  
+  .filter-date-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  
+  .filter-status-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  
+  .filter-label {
+    font-size: 10px;
+    color: #666;
+    margin-bottom: 3px;
+  }
+  
+  .filter-date-wrapper, .filter-status-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    margin-right: 15px;
+    margin-bottom: 10px;
+  }
+  
+  .button-update-state {
+    background-color: #9fa728;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.3s, box-shadow 0.3s;
+  }
+  
+  .button-add-order {
+    background-color: #28a745;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.3s, box-shadow 0.3s;
+  }
+  
+  .button-add-order:hover {
+    background-color: #218838;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+  }
+  
+  .button-delete-order {
+    background-color: #e74c3c;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.3s, box-shadow 0.3s;
+  }
+  
+  .button-delete-order:hover {
+    background-color: #d9534f;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+  }
+  
+  .button-download-excel {
+    background-color: #3498db;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.3s, box-shadow 0.3s;
+  }
+  
+  .button-download-excel:hover {
+    background-color: #2980b9;
+    box-shadow: 0 3px 6px rgba(0, 0, 0, 0.1);
+  }
+  
+  .CONTBDDEP10 {
+    overflow-x: auto;
+    max-height: calc(100vh - 300px);
+    margin-top: 20px;
+  }
+  
+  .CONTBDDEP11 {
+    width: 100%;
+    table-layout: auto;
+    border-collapse: collapse;
+    box-sizing: border-box;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  
+  .CONTBDDEP11 th {
+    font-weight: 600;
+    text-transform: uppercase;
+    background-color: #3b3b3b;
+    color: #fff;
+    padding: 15px;
+    text-align: left;
+    box-sizing: border-box;
+    min-width: 150px;
+    border-bottom: none;
+  }
+  
+  .CONTBDDEP11 td {
+    padding: 12px;
+    text-align: left;
+    box-sizing: border-box;
+    min-width: 150px;
+    border-bottom: none;
+  }
+  
+  .CONTBDDEP11 tbody tr {
+    transition: background-color 0.3s;
+  }
+  
+  .CONTBDDEP11 tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+  }
+  
+  .CONTBDDEP11 tbody tr:hover {
+    background-color: #f1f1f1;
+    transform: scale(1.01);
+  }
+  
+  .CONTBDDEP9 {
+    text-align: center;
+    padding: 40px;
+    font-style: italic;
+    color: #aaa;
+    font-size: 18px;
+  }
+  
+  .checkbox-cell {
+    cursor: pointer;
+    width: 20px;
+    height: 20px;
+  }
+  
+  .editable-cell {
+    width: 100%;
+    padding: 4px;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    transition: border-color 0.3s;
+  }
+  
+  .CONTBDDEP15:focus {
+    border-color: #3498db;
+    outline: none;
+  }
+  
+  /* CSS para el modal */
+  .CONTBDDEP16 {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: auto;
+    max-height: 90vh;
+    overflow-y: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    cursor: pointer;
+    animation: fadeIn 0.5s ease-in-out;
+  }
+  
+  .CONTBDDEP17 {
+    background: #ffffff;
+    padding: 40px;
+    border-radius: 15px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    position: relative;
+    transition: transform 0.3s ease-in-out;
+    transform: scale(1);
+    animation: slideIn 0.4s ease;
+    overflow-y: auto;
+    cursor: auto;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  @keyframes slideIn {
+    from { transform: translateY(-50px); }
+    to { transform: translateY(0); }
+  }
+  
+  .modal-close {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 24px;
+    font-weight: bold;
+    color: #333;
+    cursor: pointer;
+    transition: color 0.3s, transform 0.3s;
+  }
+  
+  .modal-close:hover {
+    color: #e74c3c;
+    transform: scale(1.2);
+  }
+  
+  .CONTBDDEP19 {
+    margin-top: 25px;
+    font-size: 16px;
+    color: #555;
+    line-height: 1.6;
+  }
+  
+  .CONTBDDEP20 {
+    margin-bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #fafafa;
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: background-color 0.3s;
+  }
+  
+  .CONTBDDEP20:hover {
+    background-color: #f0f0f0;
+  }
+  
+  .CONTBDDEP20 strong {
+    display: inline-block;
+    font-weight: 600;
+    color: #333;
+  }
+  
+  .CONTBDDEP20 span {
+    color: #777;
+  }
+  
+  /* Estilos para los campos de filtro */
+  .filter-date {
+    padding: 4px;
+    font-size: 12px;
+    border-radius: 4px;
+    border: 1px solid #aaa;
+    margin-bottom: 5px;
+  }
+  
+  .filter-status {
+    padding: 4px;
+    font-size: 12px;
+    border-radius: 4px;
+    border: 1px solid #aaa;
+    margin-bottom: 5px;
+  }
+  
+  .filters-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Centra horizontalmente */
+    justify-content: center; /* Centra verticalmente si es necesario */
+    margin: 20px auto; /* Añade márgenes automáticos para centrar */
+    padding: 20px;
+    width: 100%;
+    max-width: 800px; /* Ajusta el ancho máximo */
+    background-color: #f9f9f9; /* Color de fondo opcional */
+    border-radius: 10px; /* Bordes redondeados */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); /* Sombra para resaltar */
+  }
+  

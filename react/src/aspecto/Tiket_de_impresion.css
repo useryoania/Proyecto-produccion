@@ -1,0 +1,83 @@
+/* Tiket_deImpresion.css */
+/* Estilos para el contenido del ticket a imprimir */
+#TiketDeImpresionModal {
+  width: 8cm;  /* Ancho para pantalla */
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  margin: auto;
+}
+
+#TiketDeImpresionModal h2 {
+  text-align: center;
+  margin-bottom: 10px;
+  color: #333;
+}
+
+#TiketDeImpresionModal h3 {
+  text-align: center;
+  color: #555;
+}
+
+/* Información centrada del ticket */
+#TiketDeImpresionModal .ticket-info {
+  text-align: center;
+  margin-bottom: 15px;
+  color: #333;
+}
+
+/* Contenedor para la tabla */
+#TiketDeImpresionTableContainer {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 15px;
+}
+
+#TiketDeImpresionModal table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+#TiketDeImpresionModal table th,
+#TiketDeImpresionModal table td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+/* Reglas de impresión para el ticket */
+@media print {
+  /* Oculta todo excepto el ticket */
+  body * {
+      visibility: hidden;
+  }
+  #TiketDeImpresionModal,
+  #TiketDeImpresionModal * {
+      visibility: visible;
+  }
+  /* Permite que el contenido fluya normalmente en la impresión */
+  #TiketDeImpresionModal {
+      position: static;      /* Permite saltos de página */
+      width: auto;           /* Se adapta al ancho de la hoja de impresión */
+      height: auto;          /* Permite imprimir todo el contenido sin restricciones */
+      top: 0;
+      left: 0;
+      transform: none;
+      box-sizing: border-box;
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+      margin: 0 auto;
+  }
+  /* Quita la restricción de altura y overflow para imprimir todo el contenido */
+  #TiketDeImpresionTableContainer {
+      max-height: none;
+      overflow: visible;
+  }
+  /* Oculta los botones del ticket */
+  #TiketDeImpresionModal .ticket-buttons {
+      display: none;
+  }
+}

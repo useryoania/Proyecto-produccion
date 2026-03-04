@@ -26,6 +26,7 @@ const WebRetirosPage = () => {
   const [confirmDelivery, setConfirmDelivery] = useState(null);
   const [excepcionDelivery, setExcepcionDelivery] = useState(null);
   const [adminPassword, setAdminPassword] = useState('');
+  const [excepcionExplicacion, setExcepcionExplicacion] = useState('');
   const [deliveryScannedBultos, setDeliveryScannedBultos] = useState({});
   const [deliveryBarcodeInput, setDeliveryBarcodeInput] = useState('');
   const [deliverySelectedOrders, setDeliverySelectedOrders] = useState({});
@@ -153,6 +154,20 @@ const WebRetirosPage = () => {
     const ubicacionId = `${estanteId}-${sec}-${pos}`;
     const retiroParaAsignar = selectedRetiro; // Capturamos para optimismo
 
+    // === VALIDACIÓN DE CLIENTE ===
+    const dataList = ocupacionEstantes[ubicacionId] || [];
+    if (dataList.length > 0) {
+      // Tomamos el primer ocupante para chequear
+      const primerOcupante = dataList[0];
+      const codigoExistente = String(primerOcupante.CodigoCliente || '').trim().toLowerCase();
+      const codigoNuevo = String(retiroParaAsignar.idcliente || '').trim().toLowerCase();
+
+      if (codigoExistente !== codigoNuevo && codigoExistente !== 'ecommerce') {
+        setError('No puedes guardar órdenes de diferentes clientes en el mismo casillero.');
+        return; // Abortamos la asignación
+      }
+    }
+
     // === OPTIMISMO UI: Actualizamos visualmente al instante ===
     setOcupacionEstantes(prev => {
       const currentList = prev[ubicacionId] || [];
@@ -161,7 +176,7 @@ const WebRetirosPage = () => {
         [ubicacionId]: [...currentList, {
           OrdenRetiro: retiroParaAsignar.ordenDeRetiro,
           CodigoCliente: retiroParaAsignar.idcliente,
-          ClientName: retiroParaAsignar.idcliente
+          ClientName: retiroParaAsignar.clienteNombre || retiroParaAsignar.ClientName || retiroParaAsignar.idcliente
         }]
       };
     });
@@ -248,31 +263,34 @@ const WebRetirosPage = () => {
 
   const handleExcepcionSubmit = async (e) => {
     e.preventDefault();
-    if (!adminPassword) return;
+    if (!adminPassword || !excepcionExplicacion) return;
 
     try {
       const retiro = excepcionDelivery.raw || excepcionDelivery.data;
       await api.post('/web-retiros/excepcional', {
         ordenRetiro: retiro.ordenDeRetiro || retiro.OrdenRetiro,
-        codigoCliente: retiro.idcliente || retiro.CliCodigoCliente || retiro.CodigoCliente || 'Desconocido',
-        monto: retiro.monto || retiro.totalCost || retiro.montopagorealizado || 0,
-        password: adminPassword
+        codigoCliente: retiro.idcliente || retiro.CodigoCliente || retiro.CliCodigoCliente,
+        monto: retiro.monto || retiro.Monto || 0,
+        password: adminPassword,
+        explicacion: excepcionExplicacion
       });
 
-      // Si fue éxito, autorizamos la entrega
-      const blockList = excepcionDelivery.blockList || [excepcionDelivery.data];
-      const id = excepcionDelivery.id;
+      // Si autoriza, procedemos a abrir el modal de checklist real con el bloque entero
+      const block = excepcionDelivery.blockList;
       setExcepcionDelivery(null);
       setAdminPassword('');
-      setConfirmDelivery({ id, dataList: blockList });
+      setExcepcionExplicacion('');
+
+      setConfirmDelivery({ id: excepcionDelivery.id, dataList: block });
       setDeliveryScannedBultos({});
       setDeliveryBarcodeInput('');
 
       const sel = {};
-      blockList.forEach(o => sel[o.OrdenRetiro || o.ordenDeRetiro] = true);
+      block.forEach(o => sel[o.OrdenRetiro || o.ordenDeRetiro] = true);
       setDeliverySelectedOrders(sel);
+
     } catch (err) {
-      alert(err.response?.data?.error || 'Error al autorizar excepcion');
+      setError(err.response?.data?.error || 'Falló la autorización excepcional');
     }
   };
 
@@ -462,12 +480,28 @@ const WebRetirosPage = () => {
                       const id = `${est.id}-${s + 1}-${p + 1}`;
                       const dataList = ocupacionEstantes[id] || [];
                       const isOccupied = dataList.length > 0;
-                      const firstData = dataList[0];
+
+                      let puedeGuardarAca = true;
+                      if (isOccupied && selectedRetiro) {
+                        const clienteExistente = String(dataList[0].CodigoCliente || '').trim().toLowerCase();
+                        const clienteNuevo = String(selectedRetiro.idcliente || '').trim().toLowerCase();
+                        if (clienteExistente !== clienteNuevo && clienteExistente !== 'ecommerce') {
+                          puedeGuardarAca = false;
+                        }
+                      }
+
                       return (
                         <button
                           key={p}
-                          onClick={() => handleAsignarUbicacion(est.id, s + 1, p + 1)}
-                          className={`relative h-24 rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer shadow-sm overflow-hidden ${isOccupied ? 'bg-indigo-600 border-indigo-700 hover:bg-indigo-500 hover:border-indigo-400 opacity-90' : 'bg-white border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 group'}`}
+                          title={!puedeGuardarAca ? "No puedes mezclar órdenes de distintos clientes aquí" : ""}
+                          onClick={() => {
+                            if (!puedeGuardarAca) {
+                              setError('No puedes guardar órdenes de diferentes clientes en el mismo casillero.');
+                              return;
+                            }
+                            handleAsignarUbicacion(est.id, s + 1, p + 1);
+                          }}
+                          className={`relative h-24 rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer shadow-sm overflow-hidden ${isOccupied ? (puedeGuardarAca ? 'bg-indigo-600 border-indigo-700 hover:bg-indigo-500 opacity-90' : 'bg-rose-950 border-rose-800 opacity-60 cursor-not-allowed') : 'bg-white border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 group'}`}
                         >
                           <div className="absolute top-1 left-2">
                             <span className={`text-[10px] font-bold ${isOccupied ? 'text-indigo-200' : 'text-slate-400 uppercase group-hover:text-blue-600'}`}>{id}</span>
@@ -610,6 +644,7 @@ const WebRetirosPage = () => {
                   const convertedRetiro = {
                     ordenDeRetiro: retiro.ordenDeRetiro,
                     idcliente: retiro.CliCodigoCliente,
+                    clienteNombre: retiro.TClNombre || retiro.clienteNombre || retiro.CliCodigoCliente,
                     monto: parseFloat(retiro.totalCost) || parseFloat(retiro.montopagorealizado?.replace('$ ', '').replace('USD ', '')) || 0,
                     moneda: 'UYU', // Default
                     pagorealizado: retiro.pagorealizado,
@@ -843,7 +878,7 @@ const WebRetirosPage = () => {
                                 const term = searchTerm.toLowerCase();
                                 const matchesSearch = isOccupied && dataList.some(item => (
                                   (item.OrdenRetiro && item.OrdenRetiro.toLowerCase().includes(term)) ||
-                                  (item.CodigoCliente && item.CodigoCliente.toLowerCase().includes(term)) ||
+                                  (item.CodigoCliente && String(item.CodigoCliente).toLowerCase().includes(term)) ||
                                   (item.ClientName && item.ClientName.toLowerCase().includes(term))
                                 ));
                                 const isMismatched = searchTerm && isOccupied && !matchesSearch;
@@ -875,7 +910,7 @@ const WebRetirosPage = () => {
                                                 {data.Pagado ? data.OrdenRetiro.replace('R-', 'PW-') : data.OrdenRetiro}
                                               </span>
                                               <span className={`text-[9px] font-bold truncate px-2 max-w-[90%] bg-black/20 rounded-md py-[1px] mt-[1px] ${isMatched ? 'text-green-100' : 'text-indigo-100'}`}>
-                                                {data.ClientName || data.CodigoCliente || 'Cliente'}
+                                                {data.CodigoCliente || data.ClientName || 'Cliente'}
                                               </span>
                                             </div>
                                           ))}
@@ -1078,7 +1113,7 @@ const WebRetirosPage = () => {
             </p>
 
             <form onSubmit={handleExcepcionSubmit}>
-              <div className="mb-6">
+              <div className="mb-4">
                 <label className="block text-sm font-bold text-slate-700 mb-2">Contraseña de Autorización</label>
                 <input
                   type="password"
@@ -1088,6 +1123,18 @@ const WebRetirosPage = () => {
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
                   placeholder="Ingrese contraseña..."
                 />
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-sm font-bold text-slate-700 mb-2">Explicación o Detalle (Requerido)</label>
+                <textarea
+                  required
+                  value={excepcionExplicacion}
+                  onChange={(e) => setExcepcionExplicacion(e.target.value)}
+                  rows={2}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all resize-none"
+                  placeholder="Justifique la excepción de este retiro..."
+                ></textarea>
               </div>
 
               <div className="flex gap-4">

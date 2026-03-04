@@ -1,0 +1,359 @@
+/* Restablecer algunos estilos por defecto */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {overflow-y: auto;
+}
+
+.factura-container {height: 100vh; max-height: 100%;
+    overflow: auto;
+}
+
+.factura-header {
+    text-align: center;
+    color: #333;
+    margin-bottom: 20px;
+}
+
+.factura-top-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.input-container {
+    width: 48%;
+    display: flex;
+    flex-direction: column;
+}
+
+.input-container label {
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #555;
+}
+
+#clientIdInput,
+#paymentInput {
+    padding: 8px 10px;
+    font-size: 14px;
+    color: #555;
+    background-color: #fff;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+    transition: border-color 0.3s ease;
+}
+
+#clientIdInput:focus,
+#paymentInput:focus {
+    border-color: #007bff;
+    outline: none;
+}
+
+.factura-actions-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+#printInvoice {
+    padding: 5px;
+    font-size: 12px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background-color 0.3s, box-shadow 0.3s, transform 0.3s;
+}
+
+#printInvoice:hover {
+    background-color: #0056b3;
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
+    transform: translateY(-3px);
+}
+
+.factura-total {
+    font-size: 14px;
+    font-weight: bold;
+    text-align: right;
+}
+
+.factura-table-section {
+    position: relative;
+    margin-top: 20px;
+    height: auto;
+    overflow: auto;
+}
+
+table {
+    width: 100%;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    overflow: hidden;
+    border: none;
+    border-collapse: collapse;
+}
+
+th, td {
+    padding: 8px;
+    text-align: left;
+    font-size: 13px;
+    border: 1px solid #ddd;
+}
+
+th {
+    background-color: #f9f9f9;
+    font-weight: bold;
+    color: #0f0f0f;
+}
+
+.modal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    z-index: 10;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-content {max-width: calc(100% - 40px);
+    height: auto;
+    max-height: 100%;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: auto;
+}
+
+.modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 10px;
+}
+
+.header-details {
+    text-align: right;
+    flex-grow: 1;
+    font-size: 0.9rem;
+    color: #333;
+}
+
+.header-details h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: bold;
+}
+
+.header-details p {
+    margin: 0.2rem 0;
+}
+
+.logo {
+    width: 80px;
+    height: auto;
+    margin-right: 10px;
+    align-self: flex-start;
+}
+
+.close {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 26px;
+    cursor: pointer;
+    color: #aaa;
+}
+
+.close:hover {
+    color: #000;
+}
+
+.print-button-small {
+    padding: 3px;
+    font-size: 10px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.3s, box-shadow 0.3s, transform 0.3s;
+    align-self: flex-end;
+    width: fit-content;
+}
+
+.print-button-small:hover {
+    background-color: #0056b3;
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
+    transform: translateY(-3px);
+}
+
+.invoice-content {
+    flex-grow: 1;
+    margin-top: 20px;
+}
+
+.invoice-content h3 {
+    text-align: left;
+    margin-bottom: 10px;
+}
+
+.invoice-summary {
+    margin-top: 20px;
+    text-align: right;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.invoice-summary p {
+    margin: 5px 0;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 5px;
+}
+
+.invoice-footer {
+    text-align: center;
+    margin-top: 20px;
+    border-top: 1px solid #ddd;
+    padding-top: 10px;
+    font-size: 0.8rem;
+    color: #555;
+}
+
+.invoice-footer p {
+    font-size: 0.8rem;
+    margin: 5px 0;
+}
+
+.invoice-footer .divider {
+    border-top: 1px solid #ddd;
+    margin: 10px 0;
+}
+
+@media print {
+    body {
+        visibility: hidden;
+    }
+
+    .modal-content {
+        visibility: visible;
+        position: relative;
+        left: 0;
+        top: 0;
+        width: auto;
+        height: auto;
+        max-width: 100%;
+        min-height: auto;
+        padding: 15mm;
+        overflow: visible;
+        box-shadow: none;
+        border: none;
+        page-break-after: always;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        page-break-inside: auto;
+    }
+
+    th, td {
+        padding: 8px;
+        font-size: 11px;
+        border: 1px solid #333;
+        word-wrap: break-word;
+        page-break-inside: avoid;
+    }
+
+    th {
+        background-color: #f1f1f1;
+        font-weight: bold;
+        text-align: center;
+    }
+
+    td {
+        text-align: right;
+    }
+
+    .print-button-small, .close {
+        display: none;
+    }
+
+    .modal-header, .invoice-summary, .invoice-footer {
+        text-align: center;
+    }
+
+    .invoice-summary {
+        font-size: 12px;
+    }
+
+    .factura-total {
+        font-size: 12px;
+    }
+
+    .invoice-summary p {
+        text-align: right;
+        margin: 5px 15mm;
+    }
+
+    @page {
+        size: A4;
+        margin: 10mm;
+    }
+
+    /* Permitir que el contenido se divida en varias páginas correctamente */
+    tr {
+        page-break-inside: auto;
+    }
+
+    td, th {
+        page-break-inside: auto;
+        page-break-after: auto;
+    }
+
+    tbody {
+        page-break-inside: auto;
+    }
+
+    .factura-container {
+        width: 90%;
+        max-width: 800px;
+        overflow: visible;
+    }
+}
+
+.footer-details {
+    text-align: left;
+    margin-top: 10px;
+    font-size: 7px;
+}
+
+.footer-details p {
+    margin: 0;
+}
+
+.footer-details a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.footer-details a:hover {
+    text-decoration: underline;
+}

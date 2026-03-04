@@ -36,6 +36,7 @@ const CustomerPriceCatalogPage = lazy(() => import('../pages/CustomerPriceCatalo
 const IntegralOrderView = lazy(() => import('../pages/IntegralOrderView'));
 const CargaPagosView = lazy(() => import('../pages/CargaPagosView'));
 const VerificarPagosOnlineView = lazy(() => import('../pages/VerificarPagosOnlineView'));
+const ExcepcionesDeudaView = lazy(() => import('../pages/ExcepcionesDeudaView'));
 
 // ============================================
 // 1. COMPONENTE NAVNODE (Mejorado)
@@ -288,6 +289,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/logistica/transporte" element={<TransportControlPage />} />
                                 <Route path="/logistica/stock-deposito" element={<DepositStockPage />} />
                                 <Route path="/logistica/retiros-web" element={<WebRetirosPage />} />
+                                <Route path="/logistica/excepciones" element={<ExcepcionesDeudaView />} />
                                 <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
                                 <Route path="/admin/products-integration" element={<ProductsIntegration />} />
                                 <Route path="/admin/special-prices" element={<SpecialPrices />} />

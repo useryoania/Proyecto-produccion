@@ -1,0 +1,89 @@
+/* Teclado numérico y de letras */
+.simple-keyboard {
+    background-color: #f9fafc;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    padding: 15px;
+    transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.simple-keyboard:hover {
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+.simple-keyboard .hg-layout-numeric {
+    display: flex;
+}
+
+.simple-keyboard.numeric-active .hg-layout-default {
+    display: none;
+}
+
+/* Botones del teclado */
+.simple-keyboard .hg-button {
+    background-color: #ffffff;
+    border: none;
+    color: #1a1a1a;
+    padding: 14px;
+    margin: 4px;
+    font-size: 15px;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: background-color 0.25s, transform 0.1s, box-shadow 0.25s;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+
+.simple-keyboard .hg-button:hover {
+    background-color: #f0f2f5;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+}
+
+.simple-keyboard .hg-button:active {
+    background-color: #e2e4e8;
+    transform: scale(0.95);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Botón de alternar el layout del teclado */
+.simple-keyboard .toggle-button {
+    background-color: #ffffff;
+    border: 1px solid #a1a1a1;
+    color: #333333;
+    padding: 10px;
+    margin-top: 15px;
+    font-size: 15px;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+}
+
+.simple-keyboard .toggle-button:hover {
+    background-color: #333333;
+    color: #ffffff;
+    border-color: #333333;
+}
+
+/* Estilo responsivo para pantallas pequeñas */
+@media (max-width: 600px) {
+    .container {
+        flex-direction: column;
+    }
+
+    .simple-keyboard {
+        max-width: 100%;
+        margin-top: 15px;
+    }
+
+    .simple-keyboard .hg-button {
+        padding: 10px;
+        font-size: 13px;
+    }
+
+    .simple-keyboard .toggle-button {
+        font-size: 13px;
+        padding: 8px;
+    }
+}

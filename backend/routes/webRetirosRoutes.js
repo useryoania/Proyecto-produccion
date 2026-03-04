@@ -27,5 +27,7 @@ router.delete('/estantes/liberar/:ubicacionId', verifyToken, webRetirosControlle
 router.post('/estantes/liberar-multiple', verifyToken, webRetirosController.marcarRetiroEntregadoMultiple);
 
 router.post('/excepcional', verifyToken, webRetirosController.marcarExcepcional);
+router.get('/excepciones', verifyToken, webRetirosController.getExcepciones);
+router.put('/excepciones/:id/gestionar', verifyToken, webRetirosController.gestionarExcepcion);
 
 module.exports = router;

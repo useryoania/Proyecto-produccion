@@ -1,0 +1,30 @@
+Create table HistoricoPreciosProductos (
+	HPPIdCodigo							int identity(1,1) PRIMARY KEY,
+	PPrIdProducto						int,
+	MonIdMoneda							int,
+	HPPPrecioProducto					float,
+	HPPFechaDesde						datetime,
+	HPPFechaHasta						datetime,
+	HPPFechaAlta						datetime,
+	HPPFechaModificacion				datetime,
+	HPPUsuarioAlta						int,
+	FOREIGN KEY (PPrIdProducto)			REFERENCES Productos(PPrIdProducto),
+	FOREIGN KEY (MonIdMoneda)			REFERENCES Monedas(MonIdMoneda),
+	FOREIGN KEY (HPPUsuarioAlta)		REFERENCES Usuarios(UsuIdUsuario)
+)
+
+Insert into HistoricoPreciosProductos (PPrIdProducto,MonIdMoneda,HPPPrecioProducto,HPPFechaDesde,HPPFechaAlta,HPPUsuarioAlta)
+Select PPrIdProducto, MonIdMoneda, PPrPrecioUnidadActual, getdate(), getdate(), 1
+from Productos
+
+ALTER TABLE Productos
+DROP FK__Productos__MonId__114A936A
+
+ALTER TABLE Productos
+DROP COLUMN MonIdMoneda
+
+ALTER TABLE Productos
+DROP COLUMN PPrPrecioUnidadActual
+
+ALTER TABLE Productos
+DROP COLUMN PPrFechaHoraPrecio
