@@ -650,10 +650,9 @@ exports.searchClientUnified = async (req, res) => {
     }
 };
 
-// Actualizar Cliente Local
 exports.updateClient = async (req, res) => {
     const { codCliente } = req.params;
-    const { Nombre, NombreFantasia, CioRuc, Email, TelefonoTrabajo, CliDireccion } = req.body;
+    const { Nombre, NombreFantasia, CioRuc, Email, TelefonoTrabajo, CliDireccion, CodigoReact, IDReact, CodReferencia } = req.body;
 
     if (!codCliente) return res.status(400).json({ error: "Falta CodCliente" });
 
@@ -669,6 +668,9 @@ exports.updateClient = async (req, res) => {
             .input('Mail', sql.NVarChar(100), safeString(Email))
             .input('Tel', sql.NVarChar(50), safeString(TelefonoTrabajo))
             .input('Dir', sql.NVarChar(500), safeString(CliDireccion))
+            .input('CReact', sql.NVarChar(50), safeString(CodigoReact))
+            .input('IReact', sql.NVarChar(50), safeString(IDReact))
+            .input('CRef', sql.Int, CodReferencia ? parseInt(CodReferencia) : null)
             .query(`
                 UPDATE dbo.Clientes 
                 SET Nombre = @Nom,
@@ -676,7 +678,10 @@ exports.updateClient = async (req, res) => {
                     CioRuc = @Ruc,
                     Email = @Mail,
                     TelefonoTrabajo = @Tel,
-                    CliDireccion = @Dir
+                    CliDireccion = @Dir,
+                    CodigoReact = @CReact,
+                    IDReact = @IReact,
+                    CodReferencia = @CRef
                 WHERE CodCliente = @CC
             `);
 
@@ -684,5 +689,97 @@ exports.updateClient = async (req, res) => {
     } catch (e) {
         console.error("Error updateClient:", e);
         res.status(500).json({ error: e.message });
+    }
+};
+
+// Obtener duplicados por IDReact
+exports.getDuplicateClients = async (req, res) => {
+    try {
+        const pool = await getPool();
+
+        const dupIdsResult = await pool.request().query(`
+            SELECT IDCliente
+            FROM dbo.Clientes WITH (NOLOCK)
+            WHERE IDCliente IS NOT NULL AND IDCliente <> ''
+            GROUP BY IDCliente
+            HAVING COUNT(*) > 1
+        `);
+
+        const dupIds = dupIdsResult.recordset.map(row => row.IDCliente);
+        if (dupIds.length === 0) return res.json({ clients: [], reactClients: [], formAnswers: [] });
+
+        const idListStr = dupIds.map(id => `'${id}'`).join(',');
+
+        const clientsResult = await pool.request().query(`
+            SELECT * FROM dbo.Clientes WITH (NOLOCK)
+            WHERE IDCliente IN (${idListStr})
+            ORDER BY IDCliente ASC
+        `);
+
+        const reactIds = [...new Set(clientsResult.recordset.map(c => c.IDReact).filter(id => id && String(id).trim() !== ''))];
+        let reactResult = { recordset: [] };
+        let formResult = { recordset: [] };
+
+        if (reactIds.length > 0) {
+            const reactIdListStr = reactIds.map(id => `'${id}'`).join(',');
+
+            reactResult = await pool.request().query(`
+                SELECT * FROM dbo.clientesreact WITH (NOLOCK)
+                WHERE CAST(CliIdCliente AS VARCHAR) IN (${reactIdListStr})
+            `);
+
+            formResult = await pool.request().query(`
+                SELECT * FROM dbo.[Respuestas de formulario] WITH (NOLOCK)
+                WHERE CAST([ID react] AS VARCHAR) IN (${reactIdListStr})
+            `);
+        }
+
+        res.json({
+            clients: clientsResult.recordset,
+            reactClients: reactResult.recordset,
+            formAnswers: formResult.recordset
+        });
+
+    } catch (err) {
+        console.error("Error getDuplicateClients:", err);
+        res.status(500).json({ error: "DB Error: " + err.message });
+    }
+};
+
+// Eliminar Cliente
+exports.deleteClient = async (req, res) => {
+    const { codCliente } = req.params;
+
+    if (!codCliente) return res.status(400).json({ error: "Falta CodCliente" });
+
+    try {
+        const pool = await getPool();
+
+        await pool.request()
+            .input('CC', sql.Int, codCliente)
+            .query(`
+                DELETE FROM dbo.Clientes
+                WHERE CodCliente = @CC
+            `);
+
+        res.json({ success: true, message: "Cliente eliminado correctamente" });
+    } catch (err) {
+        console.error("Error deleteClient:", err);
+        res.status(500).json({ error: "No se puede eliminar porque posiblemente tenga datos asociados en ordenes o facturas. " + err.message });
+    }
+};
+
+// -------------------------------------------------------------------
+// TIPOS CLIENTES
+// -------------------------------------------------------------------
+exports.getTiposClientes = async (req, res) => {
+    try {
+        const { getPool } = require('../config/db');
+        const pool = await getPool();
+        const result = await pool.request().query('SELECT TClIdTipoCliente, TClDescripcion FROM TiposClientes WITH(NOLOCK) ORDER BY TClIdTipoCliente ASC');
+        res.json(result.recordset);
+    } catch (error) {
+        console.error('Error al obtener Tipos de Clientes:', error);
+        res.status(500).json({ message: 'Error al obtener Tipos de Clientes', error: error.message });
     }
 };

@@ -250,6 +250,14 @@ server.listen(PORT, async () => {
             console.error("❌ [CRON] Error cargando PlanillaSync:", e.message);
         }
 
+        // ACTIVAR CRON WSP AVISOS
+        try {
+            const { startWspJob } = require('./jobs/wspAvisos.job');
+            startWspJob(io);
+        } catch (e) {
+            console.error("❌ [CRON] Error cargando WspAvisos:", e.message);
+        }
+
     } catch (error) {
         console.error("❌ Error al iniciar el Scheduler:", error.message);
     }

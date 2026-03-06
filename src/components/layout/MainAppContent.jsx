@@ -38,6 +38,8 @@ const CargaPagosView = lazy(() => import('../pages/CargaPagosView'));
 const VerificarPagosOnlineView = lazy(() => import('../pages/VerificarPagosOnlineView'));
 const ExcepcionesDeudaView = lazy(() => import('../pages/ExcepcionesDeudaView'));
 const CargaDepositoPage = lazy(() => import('../logistics/CargaDepositoPage'));
+const DuplicateClientsPage = lazy(() => import('../pages/admin/DuplicateClientsPage'));
+const OrderSearchPage = lazy(() => import('../logistics/OrderSearchPage'));
 
 // ============================================
 // 1. COMPONENTE NAVNODE (Mejorado)
@@ -313,7 +315,9 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/logistica/retiros-web" element={<WebRetirosPage />} />
                                 <Route path="/logistica/excepciones" element={<ExcepcionesDeudaView />} />
                                 <Route path="/logistica/carga-deposito" element={<CargaDepositoPage />} />
+                                <Route path="/logistica/buscar-ordenes" element={<OrderSearchPage />} />
                                 <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
+                                <Route path="/admin/duplicate-clients" element={<DuplicateClientsPage />} />
                                 <Route path="/admin/products-integration" element={<ProductsIntegration />} />
                                 <Route path="/admin/special-prices" element={<SpecialPrices />} />
                                 <Route path="/admin/base-prices" element={<BasePrices />} />

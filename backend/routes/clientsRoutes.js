@@ -5,11 +5,17 @@ const controller = require('../controllers/clientsController');
 // GET /api/clients (Lista general para integración)
 router.get('/', controller.getAllClients);
 
+// GET /api/clients/tipos (Lista de Tipos de Clientes)
+router.get('/tipos', controller.getTiposClientes);
+
 // GET /api/clients/external/:id (Proxy para API Macrosoft)
 router.get('/external/:id', controller.getMacrosoftClientData);
 
 // GET /api/clients/react-list (Proxy para API React DataAll)
 router.get('/react-list', controller.getAllReactClients);
+
+// GET /api/clients/admin/duplicates (Obtener clientes duplicados con el mismo IDReact)
+router.get('/admin/duplicates', controller.getDuplicateClients);
 
 // GET /api/clients/macrosoft-list (Proxy para lista full de Macrosoft)
 router.get('/macrosoft-list', controller.getAllMacrosoftClients);
@@ -41,5 +47,8 @@ router.post('/export-react', controller.createReactClient);
 
 // POST /api/clients/export-macrosoft (Exportar de Local a Macrosoft)
 router.post('/export-macrosoft', controller.createMacrosoftClient);
+
+// DELETE /api/clients/:codCliente (Eliminar cliente local)
+router.delete('/:codCliente', controller.deleteClient);
 
 module.exports = router;

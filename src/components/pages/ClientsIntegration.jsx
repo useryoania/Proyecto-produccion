@@ -304,8 +304,8 @@ const ClientsIntegration = () => {
     return (
         <div className="flex flex-col h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
             {/* Cabecera / Buscador General */}
-            <div className="bg-white p-4 shadow-sm z-10 border-b border-slate-200">
-                <div className="max-w-4xl mx-auto relative">
+            <div className="bg-white p-4 shadow-sm z-10 border-b border-slate-200 flex flex-col md:flex-row gap-4 items-center justify-between">
+                <div className="w-full max-w-4xl relative">
                     <i className="fa-solid fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 text-lg"></i>
                     <input
                         type="text"
@@ -315,6 +315,14 @@ const ClientsIntegration = () => {
                         onChange={e => setSearchTerm(e.target.value)}
                     />
                 </div>
+                <a
+                    href="/admin/duplicate-clients"
+                    target="_blank"
+                    className="shrink-0 flex items-center gap-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl font-bold transition-colors shadow-sm"
+                >
+                    <i className="fa-solid fa-users-slash text-amber-500"></i>
+                    Depurar Duplicados
+                </a>
             </div>
 
             {/* Paneles de 3 Columnas */}
