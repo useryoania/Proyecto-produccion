@@ -1,13 +1,69 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { PackageSearch, Send, Trash2, CheckCircle2, AlertCircle, Info, Loader2, Package, User, CheckCircle, Activity, ShoppingBag, DollarSign, Tag, Phone } from 'lucide-react';
+import { PackageSearch, Send, Trash2, CheckCircle2, AlertCircle, Info, Loader2, Package, User, Activity, ShoppingBag, Tag, Phone, XCircle } from 'lucide-react';
 import api from '../../services/api';
 import { socket } from '../../services/socketService';
 
 const CargaDepositoPage = () => {
-    const [codes, setCodes] = useState([{ value: '', id: 0, status: 'idle', message: '', parsed: null }]);
+    // Clave única por sesión de carga (por máquina/usuario), soporta trabajo concurrente
+    const SESSION_KEY = `carga_deposito_draft_${window.location.hostname}_${Date.now().toString(36).slice(-5)}`;
+    const STORAGE_KEY = React.useMemo(() => {
+        // Si ya hay una clave guardada para esta pestaña (en sessionStorage), la reutilizamos
+        const existing = sessionStorage.getItem('carga_session_key');
+        if (existing) return existing;
+        const newKey = `carga_deposito_draft_${window.location.hostname}_${Date.now().toString(36)}`;
+        sessionStorage.setItem('carga_session_key', newKey);
+        return newKey;
+    }, []);
+
+    const EMPTY_CODE = { value: '', id: 0, status: 'idle', message: '', parsed: null };
+
+    // Intentar recuperar estado previo del localStorage al iniciar
+    const getInitialCodes = () => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                // Solo recuperar los que tienen valor real (no la fila vacía en blanco)
+                const recovered = parsed.filter(c => c.value && c.value.trim() !== '');
+                if (recovered.length > 0) {
+                    // Añadir una fila vacía al final para seguir escaneando
+                    return [...recovered, { ...EMPTY_CODE, id: Date.now() }];
+                }
+            }
+        } catch (e) { /* silenciar errores de localStorage */ }
+        return [EMPTY_CODE];
+    };
+
+    const [codes, setCodes] = useState(getInitialCodes);
+    const [hasRecovered, setHasRecovered] = useState(() => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                return parsed.filter(c => c.value && c.value.trim() !== '').length > 0;
+            }
+        } catch (e) { }
+        return false;
+    });
     const [loading, setLoading] = useState(false);
     const [modosMap, setModosMap] = useState({});
     const inputRefs = useRef({});
+
+    // ─── PERSISTENCIA AUTOMÁTICA ────────────────────────────────────────────────
+    // Guardar en localStorage cada vez que cambian los códigos
+    useEffect(() => {
+        try {
+            // Solo guardar los que tienen valor real
+            // Excluir wsp_waiting, wsp_success, wsp_error e info: los primeros los gestiona el API, los demás no son borradores
+            const toSave = codes.filter(c => c.value && c.value.trim() !== '' && !['wsp_waiting', 'wsp_success', 'wsp_error', 'info'].includes(c.status));
+            if (toSave.length > 0) {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
+            } else {
+                localStorage.removeItem(STORAGE_KEY);
+            }
+        } catch (e) { /* silenciar errores de localStorage */ }
+    }, [codes, STORAGE_KEY]);
+    // ───────────────────────────────────────────────────────────────────────────
 
     // Cargar los Modos de Orden y ordenes pendientes de WSP al montar
     useEffect(() => {
@@ -31,10 +87,18 @@ const CargaDepositoPage = () => {
                         status: isError ? 'wsp_error' : 'wsp_waiting',
                         message: isError ? 'Número de teléfono inválido o vacío' : 'Orden guardada. Esperando WhatsApp...',
                         wspError: isError,
-                        parsed: ord // El payload del endpoint ya mapea las propiedades necesarias
+                        parsed: ord
                     };
                 });
-                setCodes(prev => [...pendingCodes, ...prev]);
+                setCodes(prev => {
+                    // Deduplicar: no agregar los que ya están cargados (por idOrden o por código de orden)
+                    const existingIds = new Set(prev.map(c => c.idOrden).filter(Boolean));
+                    const existingValues = new Set(prev.map(c => c.value).filter(Boolean));
+                    const nuevos = pendingCodes.filter(p =>
+                        !existingIds.has(p.idOrden) && !existingValues.has(p.value)
+                    );
+                    return nuevos.length > 0 ? [...nuevos, ...prev] : prev;
+                });
             }
         }).catch(() => console.error("No se pudieron cargar las órdenes pendientes de aviso."));
     }, []);
@@ -161,7 +225,7 @@ const CargaDepositoPage = () => {
     };
 
     const processCodes = async () => {
-        const toProcess = codes.filter(c => c.value.trim() !== '' && c.status !== 'success' && c.status !== 'info' && c.status !== 'error' && c.status !== 'validating');
+        const toProcess = codes.filter(c => c.value.trim() !== '' && c.status !== 'success' && c.status !== 'info' && c.status !== 'error' && c.status !== 'wsp_error' && c.status !== 'validating');
 
         if (toProcess.length === 0) return;
 
@@ -206,6 +270,8 @@ const CargaDepositoPage = () => {
         }));
 
         setLoading(false);
+        localStorage.removeItem(STORAGE_KEY); // Limpiar el storage al confirmar la carga
+        setHasRecovered(false); // Resetear el estado de recuperación
 
         // Limpieza de inputs SOLO para los que no tienen status error o info.
         // Wait, normally we keep them in the UI. Actually, the user wants them staying in the list:
@@ -266,6 +332,13 @@ const CargaDepositoPage = () => {
             <div className="w-full xl:w-[45%] flex flex-col pt-8 bg-white rounded-2xl shadow-sm border border-slate-200">
                 <h1 className="text-3xl font-black text-slate-800 mb-6 text-center tracking-tight">Carga de Códigos</h1>
 
+                {hasRecovered && (
+                    <div className="mx-6 lg:mx-12 mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-800 rounded-lg flex items-center gap-2 text-sm">
+                        <Info size={18} className="shrink-0" />
+                        <p>Se recuperaron códigos de una sesión anterior. Confirme la carga para procesarlos.</p>
+                    </div>
+                )}
+
                 <div className="w-full px-6 lg:px-12 flex flex-col gap-3 min-h-[40vh] max-h-[60vh] overflow-y-auto pb-6 scrollbar-thin scrollbar-thumb-slate-200">
                     {codes.filter(c => !['wsp_waiting', 'wsp_success', 'info', 'wsp_error'].includes(c.status)).map((code, index, visibleArr) => (
                         <div key={code.id} className="w-full relative group flex items-center">
@@ -273,7 +346,7 @@ const CargaDepositoPage = () => {
                                 ref={el => inputRefs.current[code.id] = el}
                                 type="text"
                                 className={`w-full text-center font-bold text-slate-700 py-3 rounded-lg border-2 outline-none transition-all 
-                                    ${code.status === 'error' || code.status === 'wsp_error' ? 'border-rose-400 bg-rose-50' :
+                                ${code.status === 'error' || code.status === 'wsp_error' ? 'border-rose-400 bg-rose-50' :
                                         code.status === 'wsp_success' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' :
                                             code.status === 'wsp_waiting' ? 'border-violet-300 bg-violet-50 text-violet-800' :
                                                 code.status === 'info' ? 'border-blue-300 bg-blue-50 text-blue-800' :
@@ -306,13 +379,25 @@ const CargaDepositoPage = () => {
                     ))}
                 </div>
 
-                <div className="w-full px-6 lg:px-12 pb-10 mt-auto">
+                <div className="w-full px-6 lg:px-12 pb-10 mt-auto flex flex-col gap-2">
                     <button
                         onClick={processCodes}
                         disabled={loading || codes.every(c => c.value.trim() === '' || c.status === 'error' || c.status === 'wsp_success' || c.status === 'wsp_waiting' || c.status === 'info' || c.status === 'validating' || c.wspError)}
                         className="w-full py-4 bg-[#409cf9] hover:bg-[#2b86ea] disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold rounded-xl uppercase tracking-widest shadow-md transition-colors flex justify-center items-center gap-2 text-md"
                     >
                         {loading ? <><Loader2 size={20} className="animate-spin" /> Guardando...</> : 'Confirmar Carga'}
+                    </button>
+                    <button
+                        onClick={() => {
+                            if (!window.confirm('¿Limpiar todos los c\u00f3digos escaneados?')) return;
+                            setCodes([{ ...EMPTY_CODE, id: Date.now() }]);
+                            setHasRecovered(false);
+                            localStorage.removeItem(STORAGE_KEY);
+                        }}
+                        disabled={loading || codes.every(c => c.value.trim() === '')}
+                        className="w-full py-2 border border-slate-300 hover:border-rose-400 hover:bg-rose-50 hover:text-rose-600 text-slate-500 font-semibold rounded-xl transition-colors flex justify-center items-center gap-2 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        <XCircle size={16} /> Limpiar todo
                     </button>
                 </div>
             </div>

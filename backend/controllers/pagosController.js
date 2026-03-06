@@ -96,10 +96,52 @@ const realizarPago = async (req, res) => {
       `);
     }
 
+    // ─── AUTO-CIERRE DEL RETIRO ──────────────────────────────────────────────
+    // Si todas las órdenes hijas de la OrdenRetiro tienen pago registrado,
+    // se cierra automáticamente la Orden de Retiro como "Abonada".
+    const todasPagasRes = await transaction.request()
+      .input('ordenRetiroId', sql.Int, ordenRetiroId)
+      .query(`
+        SELECT 
+          COUNT(*) AS total,
+          SUM(CASE WHEN od.PagIdPago IS NOT NULL THEN 1 ELSE 0 END) AS pagas
+        FROM OrdenesDeposito od WITH(NOLOCK)
+        WHERE od.OReIdOrdenRetiro = @ordenRetiroId
+          AND od.OrdEstadoActual NOT IN (6, 9) -- excluir canceladas y entregadas ya
+      `);
+
+    const { total, pagas } = todasPagasRes.recordset[0];
+
+    if (total > 0 && total === pagas) {
+      // Todas pagadas → actualizar la orden de retiro con el mismo pago y estado "Abonado" (4)
+      await transaction.request()
+        .input('ordenRetiroId', sql.Int, ordenRetiroId)
+        .input('pagoId', sql.Int, pagoId)
+        .input('usuarioId', sql.Int, usuarioId)
+        .query(`
+          UPDATE OrdenesRetiro 
+          SET PagIdPago = @pagoId,
+              OReEstadoActual = 4,
+              OReFechaEstadoActual = GETDATE(),
+              ORePasarPorCaja = 0
+          WHERE OReIdOrdenRetiro = @ordenRetiroId
+            AND (PagIdPago IS NULL OR PagIdPago = 0);
+
+          INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+          VALUES (@ordenRetiroId, 4, GETDATE(), @usuarioId);
+        `);
+
+      console.log(`[AUTO-PAGO] OrdenRetiro R-${ordenRetiroId} marcada como Abonada automáticamente.`);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     await transaction.commit();
 
     const io = req.app.get('socketio');
-    if (io) io.emit('actualizado', { type: 'actualizacion' });
+    if (io) {
+      io.emit('actualizado', { type: 'actualizacion' });
+      io.emit('retiros:update', { type: 'pago' }); // Notifica WebRetirosPage
+    }
 
     res.status(200).json({ message: 'Pago registrado correctamente', pagoId });
   } catch (error) {

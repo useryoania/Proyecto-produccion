@@ -293,7 +293,10 @@ exports.reportarPagoRetiro = async (req, res) => {
             }
 
             const io = req.app.get('socketio');
-            if (io) io.emit('actualizado', { type: 'actualizacion' });
+            if (io) {
+                io.emit('actualizado', { type: 'actualizacion' });
+                io.emit('retiros:update', { type: 'pago_web' }); // Notifica WebRetirosPage del pago web
+            }
 
             res.json({ success: true, message: 'Pago registrado correctamente.', pagoId });
 

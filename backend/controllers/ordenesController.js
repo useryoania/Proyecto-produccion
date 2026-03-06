@@ -177,7 +177,7 @@ const getProductoPorIDReact = async (pool, idProdReactQR) => {
       SELECT TOP 1 a.ProIdProducto,
         LTRIM(RTRIM(a.Descripcion)) AS ProductoNombre,
         '$U' AS MonSimbolo
-      FROM [Productos viejo react] a WITH(NOLOCK)
+      FROM Articulos a WITH(NOLOCK)
       WHERE a.IDProdReact = @IDProdReact
     `);
   return result.recordset.length > 0 ? result.recordset[0] : null;
@@ -741,7 +741,7 @@ const getPendingWspOrders = async (req, res) => {
       FROM OrdenesDeposito Ord WITH (NOLOCK)
       LEFT JOIN Clientes Cli WITH (NOLOCK) ON Cli.CliIdCliente = Ord.CliIdCliente
       LEFT JOIN TiposClientes Tc WITH (NOLOCK) ON Tc.TClIdTipoCliente = Cli.TClIdTipoCliente
-      LEFT JOIN [Productos viejo react] Pro WITH (NOLOCK) ON Pro.ProIdProducto = Ord.ProIdProducto
+      LEFT JOIN Articulos Pro WITH (NOLOCK) ON Pro.ProIdProducto = Ord.ProIdProducto
       LEFT JOIN Monedas Mon WITH (NOLOCK) ON Mon.MonIdMoneda = Ord.MonIdMoneda
       WHERE (Ord.OrdEstadoActual IN (1, 6, 12))
         AND ISNULL(Ord.OrdAvisoWsp, 0) = 0

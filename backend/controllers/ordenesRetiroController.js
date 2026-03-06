@@ -60,7 +60,10 @@ const createOrdenRetiro = async (req, res) => {
     await transaction.commit();
 
     const io = req.app.get('socketio');
-    if (io) io.emit('actualizado', { type: 'actualizacion' });
+    if (io) {
+      io.emit('actualizado', { type: 'actualizacion' });
+      io.emit('retiros:update', { type: 'nuevo_retiro' }); // Nuevo retiro creado
+    }
 
     res.status(201).json({
       message: 'Orden de retiro creada correctamente y órdenes actualizadas',
@@ -99,8 +102,8 @@ const getOrdenesRetiroQueryBase = `
     p.PagFechaPago AS orderFechaPago,
     p.PagRutaComprobante AS comprobante,
     c.CodigoReact AS CliCodigoCliente,
-    c.Tipo AS TClDescripcion,
-    c.TClIdTipoCliente AS TClIdTipoCliente
+    tc.TClDescripcion AS TClDescripcion,
+    tc.TClIdTipoCliente AS TClIdTipoCliente
   FROM OrdenesRetiro r WITH(NOLOCK)
   LEFT JOIN LugaresRetiro lr WITH(NOLOCK) ON lr.LReIdLugarRetiro = r.LReIdLugarRetiro
   LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
@@ -110,6 +113,7 @@ const getOrdenesRetiroQueryBase = `
   LEFT JOIN Monedas monPago WITH(NOLOCK) ON monPago.MonIdMoneda = p.PagIdMonedaPago
   LEFT JOIN MetodosPagos mp WITH(NOLOCK) ON mp.MPaIdMetodoPago = p.MPaIdMetodoPago
   LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+  LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
 `;
 
 const processRetirosRows = (rows) => {
@@ -201,6 +205,7 @@ const actualizarOrdenRetiroEstado = async (req, res) => {
     await transaction.commit();
     res.status(200).json({ message: 'Órden de retiro actualizada' });
     req.app.get('socketio')?.emit('actualizado', { type: 'actualizacion' });
+    req.app.get('socketio')?.emit('retiros:update', { type: 'estado' });
   } catch (err) {
     if (transaction) try { await transaction.rollback(); } catch (e) { }
     res.status(500).json({ error: err.message });
@@ -251,6 +256,7 @@ const marcarOrdenRetiroPronto = async (req, res) => {
     await transaction.commit();
     res.status(200).json({ message: 'Órdenes escaneadas marcadas como Pronto y orden de retiro actualizada' });
     req.app.get('socketio')?.emit('actualizado', { type: 'actualizacion' });
+    req.app.get('socketio')?.emit('retiros:update', { type: 'estado' });
   } catch (err) {
     if (transaction) try { await transaction.rollback(); } catch (e) { }
     res.status(500).json({ error: err.message });
@@ -260,12 +266,16 @@ const marcarOrdenRetiroPronto = async (req, res) => {
 const ordenesRetiroCaja = async (req, res) => {
   try {
     const pool = await getPool();
+    // FIX: c.Tipo era string 'C' pero ahora es INT. Clientes Comunes = TClIdTipoCliente = 1
+    // También se quitó el filtro de LugarRetiro fijo (5) para que muestre todos los que vendrían a retiro en local.
     const query = `
       ${getOrdenesRetiroQueryBase}
       WHERE (r.OReEstadoActual = 1 OR r.OReEstadoActual = 7)
-      AND c.Tipo = 'C'
+      AND c.TClIdTipoCliente = 1
       AND r.LReIdLugarRetiro = 5
-      AND (r.PagIdPago IS NULL OR o.PagIdPago IS NULL)
+      AND NOT EXISTS (
+        SELECT 1 FROM Pagos px WHERE px.PagIdPago = r.PagIdPago
+      )
     `;
     const result = await pool.request().query(query);
     res.status(200).json(processRetirosRows(result.recordset));
@@ -303,6 +313,7 @@ const marcarOrdenRetiroEntregado = async (req, res) => {
     await transaction.commit();
     res.status(200).json({ message: 'Entregadas' });
     req.app.get('socketio')?.emit('actualizado', { type: 'actualizacion' });
+    req.app.get('socketio')?.emit('retiros:update', { type: 'estado' });
   } catch (err) {
     if (transaction) try { await transaction.rollback(); } catch (e) { }
     res.status(500).json({ error: err.message });
@@ -338,6 +349,7 @@ const ordenesRetiroMarcarPasarPorCaja = async (req, res) => {
     await transaction.commit();
     res.status(200).json({ message: 'Exito' });
     req.app.get('socketio')?.emit('actualizado', { type: 'actualizacion' });
+    req.app.get('socketio')?.emit('retiros:update', { type: 'estado' });
   } catch (err) {
     if (transaction) try { await transaction.rollback(); } catch (e) { }
     res.status(500).json({ error: err.message });
@@ -383,11 +395,20 @@ const getOrdenesRetiroPorLugar = async (req, res) => {
       AND r.OReEstadoActual NOT IN (5, 6)
     `;
 
-    // Filtros de pago a nivel "Retiro" (Si tiene PagIdPago está paga)
+    // FIX: filtro no_pagas usa NOT EXISTS para evitar falsos positivos con LEFT JOIN
     if (pagas === 'true') {
-      query += ` AND r.PagIdPago IS NOT NULL`;
+      // Retiro con pago registrado a nivel de cabecera
+      query += ` AND EXISTS (SELECT 1 FROM Pagos px WHERE px.PagIdPago = r.PagIdPago)`;
     } else if (no_pagas === 'true') {
-      query += ` AND (r.PagIdPago IS NULL AND o.PagIdPago IS NULL)`;
+      // Retiro SIN ningún pago en cabecera ni en ninguna de sus hijas
+      query += `
+        AND NOT EXISTS (SELECT 1 FROM Pagos px WHERE px.PagIdPago = r.PagIdPago)
+        AND NOT EXISTS (
+          SELECT 1 FROM OrdenesDeposito od
+          INNER JOIN Pagos px2 ON px2.PagIdPago = od.PagIdPago
+          WHERE od.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+        )
+      `;
     }
 
     const result = await request.query(query);
@@ -458,6 +479,7 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
     await transaction.commit();
     res.status(200).json({ message: 'Órdenes entregadas correctamente.' });
     req.app.get('socketio')?.emit('actualizado', { type: 'actualizacion' });
+    req.app.get('socketio')?.emit('retiros:update', { type: 'estado' });
   } catch (err) {
     if (transaction) try { await transaction.rollback(); } catch (e) { }
     console.error("Error al marcar despacho entregado:", err);

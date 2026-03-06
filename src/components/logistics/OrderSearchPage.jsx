@@ -209,8 +209,9 @@ const OrderSearchPage = () => {
 
         try {
             // Filtrar y mapear igual a BaseDeposito.js
+            // ExportadoOdoo puede venir como false o null (ambos = pendiente de exportar)
             const filteredOrders = orders
-                .filter(order => order.ExportadoOdoo === false)
+                .filter(order => order.ExportadoOdoo === false || order.ExportadoOdoo === null)
                 .map(order => ({
                     'Líneas del pedido/Producto': order.CodigoOdoo + (order.Modo === 'Normal' ? 'N' : order.Modo === 'Urgente' ? 'U' : ''),
                     'Referencia del pedido': order.CodigoOrden,
@@ -231,7 +232,7 @@ const OrderSearchPage = () => {
             writeFile(workbook, 'Ordenes.xlsx');
 
             // Actualizar exportación en la DB
-            const orderIds = orders.filter(o => o.ExportadoOdoo === false).map(o => o.IdOrden);
+            const orderIds = orders.filter(o => o.ExportadoOdoo === false || o.ExportadoOdoo === null).map(o => o.IdOrden);
 
             await api.post('/apiordenes/actualizarExportacion', { orderIds });
             toast.success('Órdenes exportadas y marcadas en servidor.');
