@@ -1,10 +1,10 @@
 const { getPool, sql } = require('../config/db');
 const moment = require('moment-timezone');
+const { crearRetiro } = require('../services/retiroService');
 
 const createOrdenRetiro = async (req, res) => {
   const { orders, totalCost, lugarRetiro } = req.body;
   const UsuarioAlta = req.user?.id || 70;
-  const fechaActual = new Date();
 
   if (!orders || orders.length === 0) {
     return res.status(400).json({ error: 'No se proporcionaron órdenes válidas.' });
@@ -14,11 +14,9 @@ const createOrdenRetiro = async (req, res) => {
   let transaction;
 
   try {
-    const orderCode = orders[0]?.orderNumber;
-
-    // Validar orden y cliente directamente desde la DB
+    // Validar orden y determinar tipo de cliente
     const clientResult = await pool.request()
-      .input('OrderCode', sql.VarChar, orderCode)
+      .input('OrderCode', sql.VarChar, orders[0].orderNumber)
       .query(`
           SELECT o.CliIdCliente, c.TClIdTipoCliente 
           FROM OrdenesDeposito o WITH(NOLOCK)
@@ -31,78 +29,33 @@ const createOrdenRetiro = async (req, res) => {
     }
 
     const { TClIdTipoCliente } = clientResult.recordset[0];
-    let estadoOrdenRetiro = (TClIdTipoCliente === 2 || TClIdTipoCliente === 3) ? 4 : 1;
+    const estadoOrdenRetiro = (TClIdTipoCliente === 2 || TClIdTipoCliente === 3) ? 4 : 1;
 
-    transaction = await pool.transaction();
-    await transaction.begin();
-
-    const insertOrdenRetiro = await transaction.request()
-      .input('OReCostoTotalOrden', sql.Float, totalCost)
-      .input('LReIdLugarRetiro', sql.Int, lugarRetiro)
-      .input('OReFechaAlta', sql.DateTime, fechaActual)
-      .input('OReUsuarioAlta', sql.Int, UsuarioAlta)
-      .input('estadoOrdenRetiro', sql.Int, estadoOrdenRetiro)
-      .query(`
-        INSERT INTO OrdenesRetiro (
-          OReCostoTotalOrden, LReIdLugarRetiro, OReFechaAlta, OReUsuarioAlta, OReEstadoActual, OReFechaEstadoActual
-        ) VALUES (
-          @OReCostoTotalOrden, @LReIdLugarRetiro, @OReFechaAlta, @OReUsuarioAlta, @estadoOrdenRetiro, GETDATE()
-        );
-        SELECT SCOPE_IDENTITY() AS OReIdOrdenRetiro;
-      `);
-
-    const OReIdOrdenRetiro = insertOrdenRetiro.recordset[0].OReIdOrdenRetiro;
-
-    await transaction.request()
-      .input('OReIdOrdenRetiro', sql.Int, OReIdOrdenRetiro)
-      .input('estadoOrdenRetiro', sql.Int, estadoOrdenRetiro)
-      .input('HEOFechaEstado', sql.DateTime, fechaActual)
-      .input('HEOUsuarioAlta', sql.Int, UsuarioAlta)
-      .query(`
-        INSERT INTO HistoricoEstadosOrdenesRetiro (
-          OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta
-        ) VALUES (
-          @OReIdOrdenRetiro, @estadoOrdenRetiro, @HEOFechaEstado, @HEOUsuarioAlta
-        );
-      `);
-
-    const orderNumbers = orders.map(order => `'${order.orderNumber}'`).join(',');
-    const orderIdResults = await transaction.request().query(`
-      SELECT OrdIdOrden, OrdCodigoOrden, OrdEstadoActual, OrdFechaEstadoActual 
-      FROM OrdenesDeposito WITH(NOLOCK) 
-      WHERE OrdCodigoOrden IN (${orderNumbers})
+    // Resolver orderNumbers → ordIds
+    const orderReq = pool.request();
+    orders.forEach((order, i) => {
+      orderReq.input(`code${i}`, sql.VarChar, order.orderNumber);
+    });
+    const orderIdResults = await orderReq.query(`
+      SELECT OrdIdOrden FROM OrdenesDeposito WITH(NOLOCK) 
+      WHERE OrdCodigoOrden IN (${orders.map((_, i) => `@code${i}`).join(',')})
     `);
 
     if (orderIdResults.recordset.length === 0) {
       throw new Error('No se encontraron órdenes para los códigos proporcionados.');
     }
 
-    const orderMap = Object.fromEntries(orderIdResults.recordset.map(order => [order.OrdCodigoOrden, order]));
+    const ordIds = orderIdResults.recordset.map(r => r.OrdIdOrden);
 
-    const relacionesValues = orders.map(order => `(${OReIdOrdenRetiro}, ${orderMap[order.orderNumber].OrdIdOrden})`).join(',');
-    await transaction.request().query(`
-      INSERT INTO RelOrdenesRetiroOrdenes (OReIdOrdenRetiro, OrdIdOrden)
-      VALUES ${relacionesValues};
-    `);
+    // Crear retiro usando servicio unificado
+    transaction = await pool.transaction();
+    await transaction.begin();
 
-    const updateCasesLugar = orders.map(order => `WHEN OrdIdOrden = ${orderMap[order.orderNumber].OrdIdOrden} THEN ${lugarRetiro}`).join(' ');
-    const updateCasesOrdenRetiro = orders.map(order => `WHEN OrdIdOrden = ${orderMap[order.orderNumber].OrdIdOrden} THEN ${OReIdOrdenRetiro}`).join(' ');
-
-    await transaction.request().query(`
-      UPDATE OrdenesDeposito
-      SET 
-        LReIdLugarRetiro = CASE ${updateCasesLugar} END,
-        OReIdOrdenRetiro = CASE ${updateCasesOrdenRetiro} END,
-        OrdEstadoActual = 4,
-        OrdFechaEstadoActual = GETDATE()
-      WHERE OrdIdOrden IN (${orderIdResults.recordset.map(o => o.OrdIdOrden).join(',')});
-    `);
-
-    const historicoValues = orders.map(order => `(${orderMap[order.orderNumber].OrdIdOrden}, 4, GETDATE(), ${UsuarioAlta})`).join(',');
-    await transaction.request().query(`
-      INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-      VALUES ${historicoValues};
-    `);
+    const OReIdOrdenRetiro = await crearRetiro(transaction, {
+      ordIds, totalCost, lugarRetiro, estadoOrdenRetiro,
+      usuarioAlta: UsuarioAlta,
+      formaRetiro: 'RL'
+    });
 
     await transaction.commit();
 
@@ -131,6 +84,7 @@ const getOrdenesRetiroQueryBase = `
     r.OReEstadoActual,
     r.PagIdPago,
     r.ORePasarPorCaja,
+    r.FormaRetiro,
     lr.LReNombreLugar AS lugarRetiro,
     er.EORNombreEstado AS estado,
     o.OrdIdOrden AS orderId,
@@ -264,14 +218,21 @@ const marcarOrdenRetiroPronto = async (req, res) => {
     transaction = await pool.transaction();
     await transaction.begin();
 
-    const inClause = scannedValues.map(v => `'${v}'`).join(',');
+    // Parametrizar scannedValues para evitar SQL injection
+    const scanReq = transaction.request();
+    scanReq.input('Fec', sql.DateTime, new Date(fechaActual));
+    scanReq.input('Usr', sql.Int, UsuarioAlta);
+    scannedValues.forEach((v, i) => {
+      scanReq.input(`sv${i}`, sql.VarChar, v.trim());
+    });
+    const inParams = scannedValues.map((_, i) => `@sv${i}`).join(',');
 
-    await transaction.request().query(`
+    await scanReq.query(`
       INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-      SELECT OrdIdOrden, 7, '${fechaActual}', ${UsuarioAlta}
-      FROM OrdenesDeposito WHERE OrdCodigoOrden IN (${inClause});
+      SELECT OrdIdOrden, 7, @Fec, @Usr
+      FROM OrdenesDeposito WHERE OrdCodigoOrden IN (${inParams});
       
-      UPDATE OrdenesDeposito SET OrdEstadoActual = 7, OrdFechaEstadoActual = '${fechaActual}' WHERE OrdCodigoOrden IN (${inClause});
+      UPDATE OrdenesDeposito SET OrdEstadoActual = 7, OrdFechaEstadoActual = @Fec WHERE OrdCodigoOrden IN (${inParams});
     `);
 
     const retRes = await transaction.request().input('ID', sql.Int, OReIdOrdenRetiro).query('SELECT OReEstadoActual FROM OrdenesRetiro WITH(NOLOCK) WHERE OReIdOrdenRetiro = @ID');
