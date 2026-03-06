@@ -32,6 +32,9 @@ router.post('/pickup-orders/create', verifyToken, webOrdersController.createPick
 // GET /api/web-orders/shipping-data (Datos para confirmación de retiro)
 router.get('/shipping-data', verifyToken, webOrdersController.getShippingData);
 
+// PATCH /api/web-orders/pickup-orders/:id/shipping (Actualizar datos de envío)
+router.patch('/pickup-orders/:id/shipping', verifyToken, webOrdersController.updatePickupShipping);
+
 // POST /api/web-orders/saved-addresses (Guardar dirección)
 router.post('/saved-addresses', verifyToken, webOrdersController.saveAddress);
 

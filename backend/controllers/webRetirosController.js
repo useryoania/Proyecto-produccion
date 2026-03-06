@@ -6,11 +6,10 @@ const moment = require('moment-timezone');
 const ordenesRetiroController = require('./ordenesRetiroController');
 
 /**
- * Endpoint nativo para recibir y registrar directamente un retiro web
- * Es posible que quieras llamarlo desde tu webhook o la acción de Finalizar Compra.
+ * Endpoint nativo para recibir y registrar directamente un retiro web.
+ * Actualiza OrdenesRetiro con los datos de pago recibidos.
  */
 exports.crearRetiro = async (req, res) => {
-    // OrdIdRetiro puede ser generado localmente si es nuevo o recibido.
     const { OrdIdRetiro, Monto, Moneda, ReferenciaPago } = req.body;
 
     if (!OrdIdRetiro) {
@@ -19,38 +18,23 @@ exports.crearRetiro = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const transaction = new sql.Transaction(pool);
-        await transaction.begin();
+        const OReId = parseInt(OrdIdRetiro.replace(/^R-0*/, ''), 10);
 
-        try {
-            // Evaluamos estado inicial:
-            // Si tiene RefPago, podemos asumir que es 3 (Abonado), si no es 1 (Ingresado)
-            // Esto también podrías pasarlo en el body si prefieres.
-            let estadoInicial = 1;
-            if (ReferenciaPago || req.body.Estado === 3) {
-                estadoInicial = 3;
-            } else if (req.body.Estado) {
-                estadoInicial = req.body.Estado;
-            }
+        // Actualizar la orden de retiro existente con datos de pago
+        await pool.request()
+            .input('OReId', sql.Int, OReId)
+            .input('Monto', sql.Decimal(18, 2), Monto || null)
+            .input('Moneda', sql.VarChar(10), Moneda || null)
+            .input('Ref', sql.VarChar(200), ReferenciaPago || null)
+            .query(`
+                UPDATE OrdenesRetiro SET 
+                    OReCostoTotalOrden = COALESCE(@Monto, OReCostoTotalOrden),
+                    MonIdMoneda = COALESCE(@Moneda, MonIdMoneda),
+                    ReferenciaPagoOnline = COALESCE(@Ref, ReferenciaPagoOnline)
+                WHERE OReIdOrdenRetiro = @OReId
+            `);
 
-            await new sql.Request(transaction)
-                .input('Ord', sql.NVarChar, OrdIdRetiro)
-                .input('Monto', sql.Decimal(18, 2), Monto || null)
-                .input('Moneda', sql.NVarChar, Moneda || null)
-                .input('Ref', sql.NVarChar, ReferenciaPago || null)
-                .input('Est', sql.Int, estadoInicial)
-                .query(`
-                    INSERT INTO RetirosWeb (OrdIdRetiro, Monto, Moneda, ReferenciaPago, Estado)
-                    VALUES (@Ord, @Monto, @Moneda, @Ref, @Est)
-                `);
-
-            await transaction.commit();
-            res.status(201).json({ success: true, message: 'Retiro registrado en la tabla local', id: OrdIdRetiro });
-
-        } catch (inner) {
-            await transaction.rollback();
-            throw inner;
-        }
+        res.status(201).json({ success: true, message: 'Retiro actualizado en OrdenesRetiro', id: OrdIdRetiro });
 
     } catch (err) {
         console.error("Error al registrar retiro web local:", err);
@@ -140,18 +124,16 @@ const runSyncRetirosCore = async () => {
             if (ret.estado.includes('Entregado')) estadoNumerico = 5;
             if (ret.estado.includes('Cancelar')) estadoNumerico = 6;
 
-            const mergeQuery = `
-                MERGE INTO RetirosWeb AS Target
-                USING (VALUES (@OrdIdRetiro, @Monto, @Moneda, @Estado, @RefPago, @CodCliente, @BultosJSON)) 
-                    AS Source (OrdIdRetiro, Monto, Moneda, Estado, RefPago, CodCliente, BultosJSON)
-                ON Target.OrdIdRetiro = Source.OrdIdRetiro
-                WHEN MATCHED THEN 
-                    UPDATE SET 
-                        Target.Estado = Source.Estado,
-                        Target.Monto = COALESCE(Target.Monto, Source.Monto),
-                        Target.ReferenciaPago = COALESCE(Target.ReferenciaPago, Source.RefPago),
-                        Target.CodCliente = COALESCE(Target.CodCliente, Source.CodCliente),
-                        Target.BultosJSON = COALESCE(Target.BultosJSON, Source.BultosJSON);
+            const updateQuery = `
+                UPDATE OrdenesRetiro SET 
+                    OReEstadoActual = @Estado,
+                    OReCostoTotalOrden = COALESCE(@Monto, OReCostoTotalOrden),
+                    ReferenciaPagoOnline = COALESCE(@RefPago, ReferenciaPagoOnline),
+                    CodCliente = COALESCE(@CodCliente, CodCliente),
+                    MonIdMoneda = COALESCE(@Moneda, MonIdMoneda),
+                    FormaRetiro = COALESCE(FormaRetiro, 'RW'),
+                    OReFechaEstadoActual = GETDATE()
+                WHERE OReIdOrdenRetiro = @OReId
             `;
 
             let montoLimpio = null;
@@ -166,15 +148,18 @@ const runSyncRetirosCore = async () => {
                 montoLimpio = parseFloat(ret.totalCost);
             }
 
+            // Extraer ID numérico de la orden de retiro
+            const OReId = parseInt(ret.ordenDeRetiro.replace(/^R-0*/, ''), 10);
+            if (isNaN(OReId)) continue;
+
             await new sql.Request(transaction)
-                .input('OrdIdRetiro', sql.NVarChar, ret.ordenDeRetiro)
+                .input('OReId', sql.Int, OReId)
                 .input('Monto', sql.Decimal(18, 2), montoLimpio)
-                .input('Moneda', sql.NVarChar, monedaLimpia || 'UYU')
+                .input('Moneda', sql.VarChar(10), monedaLimpia || 'UYU')
                 .input('Estado', sql.Int, estadoNumerico)
-                .input('RefPago', sql.NVarChar, ret.comprobante || null)
-                .input('CodCliente', sql.VarChar, ret.CliCodigoCliente || null)
-                .input('BultosJSON', sql.NVarChar, ret.orders ? JSON.stringify(ret.orders) : null)
-                .query(mergeQuery);
+                .input('RefPago', sql.VarChar(200), ret.comprobante || null)
+                .input('CodCliente', sql.Int, ret.CliCodigoCliente ? parseInt(ret.CliCodigoCliente, 10) : null)
+                .query(updateQuery);
         }
 
         await transaction.commit();
@@ -282,15 +267,7 @@ exports.reportarPagoRetiro = async (req, res) => {
 
             await transaction.commit();
 
-            // Actualizar RetirosWeb local
-            try {
-                await pool.request()
-                    .input('Ord', sql.NVarChar, ordenRetiro)
-                    .input('Est', sql.Int, 3)
-                    .query(`UPDATE RetirosWeb SET Estado = @Est WHERE OrdIdRetiro = @Ord`);
-            } catch (errDb) {
-                console.error("Aviso: no se pudo actualizar RetirosWeb:", errDb.message);
-            }
+            // OrdenesRetiro ya fue actualizada arriba (reportarPago actualiza PagIdPago)
 
             const io = req.app.get('socketio');
             if (io) {
@@ -318,10 +295,19 @@ exports.getAllLocalRetiros = async (req, res) => {
     try {
         const pool = await getPool();
         const query = `
-            SELECT r.*, c.Nombre as NombreCliente 
-            FROM RetirosWeb r
-            LEFT JOIN Clientes c ON CAST(r.CodCliente AS VARCHAR) = CAST(c.CodCliente AS VARCHAR)
-            ORDER BY r.Fecha DESC
+            SELECT 
+                'R-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
+                r.OReCostoTotalOrden AS Monto,
+                r.MonIdMoneda AS Moneda,
+                r.ReferenciaPagoOnline AS ReferenciaPago,
+                r.OReEstadoActual AS Estado,
+                r.CodCliente,
+                r.OReFechaAlta AS Fecha,
+                r.FormaRetiro,
+                c.Nombre AS NombreCliente
+            FROM OrdenesRetiro r WITH(NOLOCK)
+            LEFT JOIN Clientes c WITH(NOLOCK) ON c.CodCliente = r.CodCliente
+            ORDER BY r.OReFechaAlta DESC
         `;
         const result = await pool.request().query(query);
         res.json(result.recordset);
@@ -349,14 +335,22 @@ exports.getMyRetirosPendientes = async (req, res) => {
 
         const pool = await getPool();
         const query = `
-            SELECT r.*
-            FROM RetirosWeb r
-            WHERE CAST(r.CodCliente AS VARCHAR) = CAST(@codCliente AS VARCHAR)
-              AND r.Estado IN (1, 7)
-            ORDER BY r.Fecha DESC
+            SELECT 
+                'R-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
+                r.OReCostoTotalOrden AS Monto,
+                r.MonIdMoneda AS Moneda,
+                r.ReferenciaPagoOnline AS ReferenciaPago,
+                r.OReEstadoActual AS Estado,
+                r.CodCliente,
+                r.OReFechaAlta AS Fecha,
+                r.FormaRetiro
+            FROM OrdenesRetiro r WITH(NOLOCK)
+            WHERE r.CodCliente = @codCliente
+              AND r.OReEstadoActual IN (1, 7)
+            ORDER BY r.OReFechaAlta DESC
         `;
         const result = await pool.request()
-            .input('codCliente', sql.VarChar, String(codCliente))
+            .input('codCliente', sql.Int, parseInt(codCliente, 10))
             .query(query);
 
         res.json(result.recordset);
@@ -441,15 +435,16 @@ exports.createHandyPaymentLinkForRetiro = async (req, res) => {
             return res.status(500).json({ error: result.error });
         }
 
-        // Actualizar la ReferenciaPago en RetirosWeb (específico de retiros)
+        // Actualizar la ReferenciaPagoOnline en OrdenesRetiro
         try {
             const pool = await getPool();
+            const OReId = parseInt(String(ordenRetiro).replace(/^R-0*/, ''), 10);
             await pool.request()
-                .input('Ord', sql.VarChar, String(ordenRetiro))
-                .input('Ref', sql.VarChar, result.transactionId)
-                .query(`UPDATE RetirosWeb SET ReferenciaPago = @Ref WHERE OrdIdRetiro = @Ord`);
+                .input('OReId', sql.Int, OReId)
+                .input('Ref', sql.VarChar(200), result.transactionId)
+                .query(`UPDATE OrdenesRetiro SET ReferenciaPagoOnline = @Ref WHERE OReIdOrdenRetiro = @OReId`);
         } catch (dbErr) {
-            console.warn("[HANDY RETIRO] No se pudo actualizar ReferenciaPago:", dbErr.message);
+            console.warn("[HANDY RETIRO] No se pudo actualizar ReferenciaPagoOnline:", dbErr.message);
         }
 
         return res.json({ success: true, url: result.url, transactionId: result.transactionId });
@@ -478,13 +473,13 @@ exports.obtenerMapaEstantes = async (req, res) => {
                 cli.Nombre as ClientName,
                 o.BultosJSON,
                 o.Pagado,
-                CASE WHEN rw.ReferenciaPago IS NOT NULL AND rw.ReferenciaPago <> '' THEN 1 ELSE 0 END AS PagoHandy,
+                CASE WHEN orr.ReferenciaPagoOnline IS NOT NULL AND orr.ReferenciaPagoOnline <> '' THEN 1 ELSE 0 END AS PagoHandy,
                 o.FechaUbicacion
             FROM ConfiguracionEstantes c
             LEFT JOIN OcupacionEstantes o 
                 ON c.EstanteID = o.EstanteID AND c.Seccion = o.Seccion AND c.Posicion = o.Posicion
             LEFT JOIN Clientes cli ON CAST(o.CodigoCliente AS VARCHAR) = CAST(cli.CodCliente AS VARCHAR)
-            LEFT JOIN RetirosWeb rw ON o.OrdenRetiro = rw.OrdIdRetiro
+            LEFT JOIN OrdenesRetiro orr ON o.OrdenRetiro = 'R-' + CAST(orr.OReIdOrdenRetiro AS VARCHAR)
             WHERE c.Activo = 1
             ORDER BY c.EstanteID, c.Seccion, c.Posicion
         `);
@@ -525,18 +520,7 @@ exports.asignarRetiroAEstante = async (req, res) => {
             const nuevoEstado = pagado ? 8 : 7;
             const ubicacionString = `${estanteId}-${seccion}-${posicion}`;
 
-            await new sql.Request(transaction)
-                .input('Ord', sql.VarChar, ordenRetiro)
-                .input('Est', sql.Int, nuevoEstado)
-                .input('Ubi', sql.VarChar, ubicacionString)
-                .query(`
-                    IF EXISTS (SELECT 1 FROM RetirosWeb WHERE OrdIdRetiro = @Ord)
-                    BEGIN
-                        UPDATE RetirosWeb 
-                        SET Estado = @Est, UbicacionEstante = @Ubi 
-                        WHERE OrdIdRetiro = @Ord
-                    END
-                `);
+            // OrdenesRetiro se actualiza más abajo en el paso 4
 
             await transaction.commit();
 
@@ -634,12 +618,7 @@ exports.marcarRetiroEntregado = async (req, res) => {
                 .input('id', sql.VarChar, ubicacionId)
                 .query('DELETE FROM OcupacionEstantes WHERE UbicacionID = @id');
 
-            // 2. Marcar RetirosWeb como Entregada (Estado 5)
-            for (const ord of ordenesDeRetiro) {
-                await new sql.Request(transaction)
-                    .input('Ord', sql.VarChar, ord)
-                    .query('UPDATE RetirosWeb SET Estado = 5 WHERE OrdIdRetiro = @Ord');
-            }
+            // 2. OrdenesRetiro se actualiza en el paso 3 abajo (Estado=5)
 
             // 3. Marcar entregadas en DB directamente
             try {
@@ -709,15 +688,7 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
                     .input('Ord', sql.VarChar, ord)
                     .query('DELETE FROM OcupacionEstantes WHERE UbicacionID = @id AND OrdenRetiro = @Ord');
 
-                // 2. Marcar RetirosWeb como Entregada (Estado 5) solamente si existe (es web)
-                await new sql.Request(transaction)
-                    .input('Ord', sql.VarChar, ord)
-                    .query(`
-                        IF EXISTS (SELECT 1 FROM RetirosWeb WHERE OrdIdRetiro = @Ord)
-                        BEGIN
-                            UPDATE RetirosWeb SET Estado = 5 WHERE OrdIdRetiro = @Ord
-                        END
-                    `);
+                // 2. OrdenesRetiro se actualiza en el paso 3 abajo (Estado=5)
             }
 
             // 3. Marcar entregadas en DB directamente
