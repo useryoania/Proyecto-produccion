@@ -82,7 +82,8 @@ const getOrdenesRetiroQueryBase = `
     p.PagFechaPago AS orderFechaPago,
     p.PagRutaComprobante AS comprobante,
     c.CodigoReact AS CliCodigoCliente,
-    c.Tipo AS TClDescripcion
+    c.Tipo AS TClDescripcion,
+    c.TClIdTipoCliente AS TClIdTipoCliente
   FROM OrdenesRetiro r WITH(NOLOCK)
   LEFT JOIN LugaresRetiro lr WITH(NOLOCK) ON lr.LReIdLugarRetiro = r.LReIdLugarRetiro
   LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
@@ -112,6 +113,7 @@ const processRetirosRows = (rows) => {
         comprobante: row.comprobante,
         CliCodigoCliente: row.CliCodigoCliente || 'Desconocido',
         TClDescripcion: row.TClDescripcion || 'Desconocido',
+        TClIdTipoCliente: row.TClIdTipoCliente,
         orders: []
       };
     }
@@ -350,7 +352,104 @@ const getOrdenesRetiroPorFecha = async (req, res) => {
   }
 };
 
+const getOrdenesRetiroPorLugar = async (req, res) => {
+  const { lugarId } = req.params;
+  const { pagas, no_pagas } = req.query; // Filtros opcionales
+  try {
+    const pool = await getPool();
+    const request = pool.request();
+    request.input('LugarId', sql.Int, parseInt(lugarId, 10));
+
+    let query = `
+      ${getOrdenesRetiroQueryBase}
+      WHERE r.LReIdLugarRetiro = @LugarId
+      AND r.OReEstadoActual NOT IN (5, 6)
+    `;
+
+    // Filtros de pago a nivel "Retiro" (Si tiene PagIdPago está paga)
+    if (pagas === 'true') {
+      query += ` AND r.PagIdPago IS NOT NULL`;
+    } else if (no_pagas === 'true') {
+      query += ` AND (r.PagIdPago IS NULL AND o.PagIdPago IS NULL)`;
+    }
+
+    const result = await request.query(query);
+    res.json(processRetirosRows(result.recordset));
+  } catch (err) {
+    console.error('[DESPACHOS LUGAR] Error:', err);
+    res.status(500).json({ error: 'Error al cargar despachos' });
+  }
+};
+
+const marcarDespachoEntregadoAutorizado = async (req, res) => {
+  const { ordenesParaEntregar, password } = req.body;
+  const fechaActual = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
+  const UsuarioAlta = req.user?.id || 70;
+
+  if (!Array.isArray(ordenesParaEntregar) || ordenesParaEntregar.length === 0) {
+    return res.status(400).json({ error: 'No se seleccionaron órdenes.' });
+  }
+
+  let transaction;
+  try {
+    const pool = await getPool();
+    transaction = await pool.transaction();
+    await transaction.begin();
+
+    for (const ordenDeRetiro of ordenesParaEntregar) {
+      const OReIdOrdenRetiro = parseInt(ordenDeRetiro.replace('R-', ''), 10);
+
+      // Chequear estado de pago y tipo de cliente
+      const checkRes = await transaction.request()
+        .input('ID', sql.Int, OReIdOrdenRetiro)
+        .query(`
+          SELECT r.PagIdPago, o.PagIdPago as O_PagIdPago, c.TClIdTipoCliente
+          FROM OrdenesRetiro r WITH(NOLOCK)
+          LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+          LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+          WHERE r.OReIdOrdenRetiro = @ID
+        `);
+
+      if (checkRes.recordset.length === 0) continue;
+
+      // Una ORDEN está "impaga" si NI el retiro principal NI las órdenes hijas tienen PagIdPago.
+      // Simplificaremos asumiendo que el Retiro dicta el estado general en este caso.
+      const isImpaga = checkRes.recordset.some(row => !row.PagIdPago && !row.O_PagIdPago);
+      const isSemanalOAdelantado = checkRes.recordset.some(row => row.TClIdTipoCliente === 2 || row.TClIdTipoCliente === 3);
+
+      if (isImpaga && !isSemanalOAdelantado) {
+        if (!password || password !== process.env.CONTRAAUTORIZO) {
+          throw new Error(`La orden de retiro ${ordenDeRetiro} no está paga y requiere autorización. Contraseña incorrecta.`);
+        }
+      }
+
+      await transaction.request()
+        .input('ID', sql.Int, OReIdOrdenRetiro)
+        .input('Fec', sql.DateTime, new Date(fechaActual))
+        .input('Usr', sql.Int, UsuarioAlta)
+        .query(`
+          INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+          SELECT OrdIdOrden, 9, @Fec, @Usr FROM OrdenesDeposito WHERE OReIdOrdenRetiro = @ID;
+
+          UPDATE OrdenesDeposito SET OrdEstadoActual = 9, OrdFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
+          
+          UPDATE OrdenesRetiro SET OReEstadoActual = 5, ORePasarPorCaja = 0, OReFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
+          INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@ID, 5, @Fec, @Usr);
+        `);
+    }
+
+    await transaction.commit();
+    res.status(200).json({ message: 'Órdenes entregadas correctamente.' });
+    req.app.get('socketio')?.emit('actualizado', { type: 'actualizacion' });
+  } catch (err) {
+    if (transaction) try { await transaction.rollback(); } catch (e) { }
+    console.error("Error al marcar despacho entregado:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   createOrdenRetiro, getOrdenesRetiroPorEstados, actualizarOrdenRetiroEstado, marcarOrdenRetiroPronto,
-  marcarOrdenRetiroEntregado, ordenesRetiroCaja, getOrdenesRetiroPasarPorCaja, ordenesRetiroMarcarPasarPorCaja, getOrdenesRetiroPorFecha
+  marcarOrdenRetiroEntregado, ordenesRetiroCaja, getOrdenesRetiroPasarPorCaja, ordenesRetiroMarcarPasarPorCaja, getOrdenesRetiroPorFecha,
+  getOrdenesRetiroPorLugar, marcarDespachoEntregadoAutorizado
 };

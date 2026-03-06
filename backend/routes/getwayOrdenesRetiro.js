@@ -1,7 +1,7 @@
 // apiordenesRetiro.js
 const express = require('express');
 const router = express.Router();
-const { createOrdenRetiro, getOrdenesRetiroPorEstados, actualizarOrdenRetiroEstado, marcarOrdenRetiroPronto, ordenesRetiroCaja, marcarOrdenRetiroEntregado, getOrdenesRetiroPasarPorCaja, ordenesRetiroMarcarPasarPorCaja, getOrdenesRetiroPorFecha } = require('../controllers/ordenesRetiroController');
+const { createOrdenRetiro, getOrdenesRetiroPorEstados, actualizarOrdenRetiroEstado, marcarOrdenRetiroPronto, ordenesRetiroCaja, marcarOrdenRetiroEntregado, getOrdenesRetiroPasarPorCaja, ordenesRetiroMarcarPasarPorCaja, getOrdenesRetiroPorFecha, getOrdenesRetiroPorLugar, marcarDespachoEntregadoAutorizado } = require('../controllers/ordenesRetiroController');
 const { verifyToken } = require('../middleware/authMiddleware');
 
 // Ruta para crear una Orden de Retiro
@@ -29,5 +29,9 @@ router.get('/pasarporcaja', getOrdenesRetiroPasarPorCaja);
 router.post('/marcarpasarporcaja/:pasar', verifyToken, ordenesRetiroMarcarPasarPorCaja);
 
 router.get('/filterByDate', getOrdenesRetiroPorFecha);
+
+// Rutas para Entregas/Logística
+router.get('/lugar/:lugarId', getOrdenesRetiroPorLugar);
+router.post('/despachos/entregar-autorizado', verifyToken, marcarDespachoEntregadoAutorizado);
 
 module.exports = router;
