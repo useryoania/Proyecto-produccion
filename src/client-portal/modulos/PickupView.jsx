@@ -391,10 +391,11 @@ export const PickupView = () => {
     const handleDeleteAddress = async (id) => {
         const result = await Swal.fire({
             title: '¿Eliminar dirección?',
-            theme: 'dark',
+            text: '¿Estás seguro?',
+            color: '#000000',
             showCancelButton: true,
-            confirmButtonColor: '#ff0000',
-            cancelButtonColor: '#71717a',
+            confirmButtonColor: '#ec008b',
+            cancelButtonColor: '#00aeef',
             confirmButtonText: 'ELIMINAR',
             cancelButtonText: 'Cancelar'
         });
