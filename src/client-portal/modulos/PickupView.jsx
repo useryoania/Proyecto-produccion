@@ -186,10 +186,13 @@ export const PickupView = () => {
                 };
             }).filter(Boolean);
 
+            const formaEnvioId = selectedFormaEnvio || shippingData?.defaultFormaEnvioID || 5;
+            const esEncomienda = shippingData?.formasEnvio?.find(f => f.ID === formaEnvioId)?.Nombre?.toLowerCase().includes('encomienda');
+
             const payload = {
                 orders: ordersPayload,
                 totalCost: Number((totalAmount || 0).toFixed(2)),
-                lugarRetiro: 5
+                lugarRetiro: esEncomienda ? 1 : 5
             };
 
             const res = await apiClient.post('/web-orders/pickup-orders/create', payload);
@@ -212,6 +215,37 @@ export const PickupView = () => {
         }
     };
 
+    // Guardar datos de envío en el retiro
+    const saveShippingData = async (code) => {
+        const retiroId = code || pickupCode;
+        if (!retiroId) return;
+
+        const formaEnvioId = selectedFormaEnvio || shippingData?.defaultFormaEnvioID;
+        const esEncomienda = shippingData?.formasEnvio?.find(f => f.ID === formaEnvioId)?.Nombre?.toLowerCase().includes('encomienda');
+
+        // Resolver departamento y localidad desde la dirección seleccionada
+        let dir = selectedDireccion || '';
+        let depto = '';
+        let loc = '';
+        const savedDir = shippingData?.direccionesGuardadas?.find(d => d.Direccion === selectedDireccion);
+        if (savedDir) {
+            depto = savedDir.Ciudad || '';
+            loc = savedDir.Localidad || '';
+        }
+
+        try {
+            await apiClient.patch(`/web-orders/pickup-orders/${retiroId}/shipping`, {
+                lugarRetiro: esEncomienda ? 1 : 5,
+                agenciaId: esEncomienda ? selectedAgencia : null,
+                direccion: esEncomienda ? dir : null,
+                departamento: esEncomienda ? depto : null,
+                localidad: esEncomienda ? loc : null
+            });
+        } catch (e) {
+            console.error('Error guardando datos de envío:', e);
+        }
+    };
+
     const handleProceed = async () => {
         // Flujo Handy: crear link de pago con datos del retiro ya creado
         if (!pickupCode) {
@@ -220,6 +254,9 @@ export const PickupView = () => {
         }
         setLoading(true);
         try {
+            // Guardar datos de envío antes de ir a pagar
+            await saveShippingData();
+
             const ordersPayload = selectedOrders.map(selId => {
                 const order = readyOrders.find(o => o.id === selId);
                 if (!order) return null;
@@ -621,7 +658,10 @@ export const PickupView = () => {
             {/* Botones finales */}
             <div className="flex justify-between items-center">
                 <CustomButton
-                    onClick={() => downloadReceipt(pickupCode)}
+                    onClick={async () => {
+                        await saveShippingData();
+                        downloadReceipt(pickupCode);
+                    }}
                     variant="secondary"
                     icon={Download}
                     className="py-3 px-6"

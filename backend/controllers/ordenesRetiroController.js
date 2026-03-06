@@ -14,23 +14,6 @@ const createOrdenRetiro = async (req, res) => {
   let transaction;
 
   try {
-    // Validar orden y determinar tipo de cliente
-    const clientResult = await pool.request()
-      .input('OrderCode', sql.VarChar, orders[0].orderNumber)
-      .query(`
-          SELECT o.CliIdCliente, c.TClIdTipoCliente 
-          FROM OrdenesDeposito o WITH(NOLOCK)
-          JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
-          WHERE o.OrdCodigoOrden = @OrderCode
-        `);
-
-    if (clientResult.recordset.length === 0) {
-      return res.status(404).json({ error: 'Orden o cliente no encontrado.' });
-    }
-
-    const { TClIdTipoCliente } = clientResult.recordset[0];
-    const estadoOrdenRetiro = (TClIdTipoCliente === 2 || TClIdTipoCliente === 3) ? 4 : 1;
-
     // Resolver orderNumbers → ordIds
     const orderReq = pool.request();
     orders.forEach((order, i) => {
@@ -47,12 +30,12 @@ const createOrdenRetiro = async (req, res) => {
 
     const ordIds = orderIdResults.recordset.map(r => r.OrdIdOrden);
 
-    // Crear retiro usando servicio unificado
+    // Crear retiro usando servicio unificado (el service determina el estado por tipo de cliente)
     transaction = await pool.transaction();
     await transaction.begin();
 
     const OReIdOrdenRetiro = await crearRetiro(transaction, {
-      ordIds, totalCost, lugarRetiro, estadoOrdenRetiro,
+      ordIds, totalCost, lugarRetiro,
       usuarioAlta: UsuarioAlta,
       formaRetiro: 'RL'
     });

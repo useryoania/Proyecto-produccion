@@ -1358,62 +1358,32 @@ exports.createPickupOrder = async (req, res) => {
 
         if (rawOrderIds.length === 0) return res.status(400).json({ error: "Órdenes no encontradas." });
 
-        // Validar orden y obtener tipo de cliente
-        const clientResult = await pool.request()
-            .input('OrderId', sql.Int, rawOrderIds[0])
-            .query(`
-                SELECT o.CliIdCliente, c.Tipo 
-                FROM OrdenesDeposito o WITH(NOLOCK)
-                JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
-                WHERE o.OrdIdOrden = @OrderId
-            `);
-
-        if (clientResult.recordset.length === 0) {
-            return res.status(404).json({ error: 'Orden o cliente no encontrado.' });
-        }
-
-        const clienteTipo = (clientResult.recordset[0].Tipo || '').trim();
-        const estadoOrdenRetiro = (clienteTipo === 'E' || clienteTipo === 'S') ? 4 : 1;
-
-        // Crear retiro usando servicio unificado
+        // Crear retiro usando servicio unificado (el service determina el estado por tipo de cliente)
         const { crearRetiro } = require('../services/retiroService');
         const transaction = new sql.Transaction(pool);
         await transaction.begin();
+
+        // Determinar moneda
+        let targetCurrency = moneda || "UYU";
+        if (!moneda && orders && orders.length > 0) {
+            const firstCost = orders[0].costWithCurrency || '';
+            if (firstCost.includes('USD') || firstCost.includes('U$S')) targetCurrency = 'USD';
+        }
 
         try {
             const OReIdOrdenRetiro = await crearRetiro(transaction, {
                 ordIds: rawOrderIds,
                 totalCost: totalCost || 0,
                 lugarRetiro,
-                estadoOrdenRetiro,
                 usuarioAlta: UsuarioAlta,
-                formaRetiro: 'RW'
+                formaRetiro: 'RW',
+                codCliente: parseInt(codCliente, 10) || null,
+                moneda: targetCurrency
             });
 
             await transaction.commit();
 
             const ordIdRetiro = `R-${OReIdOrdenRetiro}`;
-
-            // Insertar en RetirosWeb (replica local — lógica exclusiva del flujo web)
-            try {
-                let targetCurrency = moneda || "UYU";
-                if (!moneda && orders && orders.length > 0) {
-                    const firstCost = orders[0].costWithCurrency || '';
-                    if (firstCost.includes('USD') || firstCost.includes('U$S')) targetCurrency = 'USD';
-                }
-
-                await pool.request()
-                    .input('Ord', sql.NVarChar, ordIdRetiro)
-                    .input('Monto', sql.Decimal(18, 2), totalCost || 0)
-                    .input('Moneda', sql.NVarChar, targetCurrency)
-                    .input('Ref', sql.NVarChar, null)
-                    .input('Est', sql.Int, 1)
-                    .input('CodCliente', sql.VarChar, String(codCliente))
-                    .input('BultosJSON', sql.NVarChar, JSON.stringify(orders || []))
-                    .query(`INSERT INTO RetirosWeb (OrdIdRetiro, Monto, Moneda, ReferenciaPago, Estado, CodCliente, BultosJSON) VALUES (@Ord, @Monto, @Moneda, @Ref, @Est, @CodCliente, @BultosJSON)`);
-            } catch (dbErr) {
-                console.error("Advertencia: No se pudo replicar en RetirosWeb:", dbErr.message);
-            }
 
             // Emitir socket
             const io = req.app.get('socketio');
@@ -1942,6 +1912,39 @@ exports.getShippingData = async (req, res) => {
     } catch (err) {
         console.error("Error en getShippingData:", err.message);
         res.status(500).json({ error: "Error al obtener datos de envío." });
+    }
+};
+
+// --- ACTUALIZAR DATOS DE ENVÍO DE UN RETIRO ---
+exports.updatePickupShipping = async (req, res) => {
+    try {
+        const OReId = parseInt(req.params.id, 10);
+        if (isNaN(OReId)) return res.status(400).json({ error: "ID de retiro inválido." });
+
+        const { lugarRetiro, agenciaId, direccion, departamento, localidad } = req.body;
+
+        const pool = await getPool();
+        await pool.request()
+            .input('OReId', sql.Int, OReId)
+            .input('Lugar', sql.Int, lugarRetiro || 5)
+            .input('Dir', sql.VarChar(200), direccion || null)
+            .input('Depto', sql.VarChar(50), departamento || null)
+            .input('Loc', sql.VarChar(50), localidad || null)
+            .input('Agencia', sql.Int, agenciaId || null)
+            .query(`
+                UPDATE OrdenesRetiro SET 
+                    LReIdLugarRetiro = @Lugar,
+                    DireccionEnvio = @Dir,
+                    DepartamentoEnvio = @Depto,
+                    LocalidadEnvio = @Loc,
+                    AgenciaEnvio = @Agencia
+                WHERE OReIdOrdenRetiro = @OReId
+            `);
+
+        res.json({ success: true, message: 'Datos de envío actualizados.' });
+    } catch (err) {
+        console.error("Error en updatePickupShipping:", err.message);
+        res.status(500).json({ error: "Error al actualizar datos de envío." });
     }
 };
 

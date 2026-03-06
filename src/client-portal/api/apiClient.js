@@ -76,6 +76,16 @@ export const apiClient = {
         return handleResponse(response);
     },
 
+    patch: async (endpoint, body) => {
+        const requestOptions = {
+            method: 'PATCH',
+            headers: getHeaders(),
+            body: JSON.stringify(body)
+        };
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, requestOptions);
+        return handleResponse(response);
+    },
+
     // Method to upload files
     postFormData: async (endpoint, formData) => {
         const token = localStorage.getItem('auth_token');
