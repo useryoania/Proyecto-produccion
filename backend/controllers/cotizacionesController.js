@@ -7,7 +7,6 @@ const getCotizacionesHoy = async (req, res) => {
     const result = await pool.request().query(`
       SELECT TOP 1 CotFecha, CotDolar 
       FROM Cotizaciones WITH(NOLOCK) 
-      WHERE datediff(d,CotFecha,getdate()) = 0 
       ORDER BY CotFecha DESC
     `);
 
