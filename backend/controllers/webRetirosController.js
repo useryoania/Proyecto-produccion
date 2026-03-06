@@ -546,14 +546,20 @@ exports.asignarRetiroAEstante = async (req, res) => {
                 // Generar lista de códigos de órdenes escaneadas
                 const bultosLimpios = (scannedValues || []).filter(val => val && val.trim() !== '');
                 if (bultosLimpios.length > 0) {
-                    const inClause = bultosLimpios.map(v => `'${v.trim()}'`).join(',');
+                    const scanReq = pool.request();
+                    scanReq.input('FecPronto', sql.DateTime, new Date(fechaPronto));
+                    scanReq.input('UsrAlta', sql.Int, UsuarioAlta);
+                    bultosLimpios.forEach((v, i) => {
+                        scanReq.input(`sv${i}`, sql.VarChar, v.trim());
+                    });
+                    const inParams = bultosLimpios.map((_, i) => `@sv${i}`).join(',');
 
-                    await pool.request().query(`
+                    await scanReq.query(`
                         INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-                        SELECT OrdIdOrden, 7, '${fechaPronto}', ${UsuarioAlta}
-                        FROM OrdenesDeposito WHERE OrdCodigoOrden IN (${inClause});
+                        SELECT OrdIdOrden, 7, @FecPronto, @UsrAlta
+                        FROM OrdenesDeposito WHERE OrdCodigoOrden IN (${inParams});
                         
-                        UPDATE OrdenesDeposito SET OrdEstadoActual = 7, OrdFechaEstadoActual = '${fechaPronto}' WHERE OrdCodigoOrden IN (${inClause});
+                        UPDATE OrdenesDeposito SET OrdEstadoActual = 7, OrdFechaEstadoActual = @FecPronto WHERE OrdCodigoOrden IN (${inParams});
                     `);
                 }
 
@@ -756,86 +762,6 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
     }
 };
 
-/**
- * Traer lista de métodos de pago desde la API central
- 
-exports.getPaymentMethods = async (req, res) => {
-    try {
-        console.log(`[PAYMENT METHODS] Solicitando token a la central...`);
-        const tokenRes = await axios.post(`${REACT_API_URL}/apilogin/generate-token`, {
-            apiKey: "api_key_google_123sadas12513_user"
-        });
-
-        console.log(`[PAYMENT METHODS] Solicitando métodos de pago a la central...`);
-        const response = await axios.get(`${REACT_API_URL}/apipagos/metodos`, {
-            headers: { 'Authorization': `Bearer ${tokenRes.data.token}` }
-        });
-
-        res.json(response.data);
-    } catch (err) {
-        console.error("[PAYMENT METHODS] Error al obtener métodos de pago:", err.response?.data || err.message);
-        res.status(500).json({ error: "Fallo al obtener métodos de pago desde la API central", details: err.message });
-    }
-};*/
-
-/**
- * Traer órdenes para Caja
- 
-exports.getCajaOrdenes = async (req, res) => {
-    try {
-        const tokenRes = await axios.post(`${REACT_API_URL}/apilogin/generate-token`, {
-            apiKey: "api_key_google_123sadas12513_user"
-        });
-
-        const response = await axios.get(`${REACT_API_URL}/apiordenesretiro/caja`, {
-            headers: { 'Authorization': `Bearer ${tokenRes.data.token}` }
-        });
-        res.json(response.data);
-    } catch (err) {
-        console.error("[CAJA ORDENES] Error al obtener órdenes de caja:", err.response?.data || err.message);
-        res.status(500).json({ error: "Fallo al obtener órdenes de caja", details: err.message });
-    }
-};*/
-
-/**
- * Obtener cotización
- 
-exports.getCotizacion = async (req, res) => {
-    try {
-        const response = await axios.get(`${REACT_API_URL}/apicotizaciones/hoy`);
-        res.json(response.data);
-    } catch (err) {
-        console.error("[COTIZACION] Error al obtener cotización:", err.response?.data || err.message);
-        res.status(500).json({ error: "Fallo al obtener cotización", details: err.message });
-    }
-};*/
-
-/**
- * Marcar pasar por caja
- 
-exports.marcarPasarPorCaja = async (req, res) => {
-    try {
-        const { ordenDeRetiro } = req.body;
-        if (!ordenDeRetiro) return res.status(400).json({ error: "No se proporcionó orden de retiro" });
-
-        const tokenRes = await axios.post(`${REACT_API_URL}/apilogin/generate-token`, {
-            apiKey: "api_key_google_123sadas12513_user"
-        });
-
-        const payload = { ordenDeRetiro };
-
-        // Asumiendo que el ID de usuario es 1 para Caja en la URL
-        // o quizás el endpoint no exige un ID dinámico (el usuario dijo /marcarpasarporcaja/1)
-        const response = await axios.post(`${REACT_API_URL}/apiordenesretiro/marcarpasarporcaja/1`, payload, {
-            headers: { 'Authorization': `Bearer ${tokenRes.data.token}` }
-        });
-
-        res.json({ success: true, data: response.data });
-    } catch (err) {
-        console.error("[MARCAR CAJA] Error al marcar por caja:", err.response?.data || err.message);
-        res.status(500).json({ error: "Fallo al marcar pasar por caja", details: err.message });
-    }
-};*/
 
 /**
  * Traer Transacciones de Handy
@@ -902,25 +828,6 @@ exports.getPagosOnline = async (req, res) => {
     }
 };
 
-/**
- * Traer otras OTs (Semanales, Rollos por adelantado, etc) para Caja
- 
-exports.getCajaOtros = async (req, res) => {
-    try {
-        const tokenRes = await axios.post(`${REACT_API_URL}/apilogin/generate-token`, {
-            apiKey: "api_key_google_123sadas12513_user"
-        });
-
-        const url = `${REACT_API_URL}/apiordenesRetiro/estados?estados=Ingresado,Abonado,Abonado%20de%20antemano,Empaquetado%20sin%20abonar`;
-        const response = await axios.get(url, {
-            headers: { 'Authorization': `Bearer ${tokenRes.data.token}` }
-        });
-        res.json(response.data);
-    } catch (err) {
-        console.error("[CAJA OTROS] Error al obtener órdenes de caja (otros):", err.response?.data || err.message);
-        res.status(500).json({ error: "Fallo al obtener otras órdenes de caja", details: err.message });
-    }
-};*/
 
 /**
  * Guardar retiro excepcional (con deuda) en la tabla local
@@ -941,7 +848,7 @@ exports.marcarExcepcional = async (req, res) => {
             return res.status(403).json({ error: "Contraseña incorrecta." });
         }
 
-        const pool = await sql.connect();
+        const pool = await getPool();
         await pool.request()
             .input('orden', sql.VarChar, ordenRetiro)
             .input('cliente', sql.VarChar, codigoCliente)

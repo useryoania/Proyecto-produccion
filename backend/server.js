@@ -79,7 +79,6 @@ app.use('/api/delivery-times', require('./routes/deliveryTimesRoutes'));
 app.get('/api/debug/reprocess/:id', require('./controllers/debugController').reprocessOrder);
 app.use('/api/insumos', require('./routes/insumosRoutes'));
 app.use('/api/reception', require('./routes/receptionRoutes'));
-app.use('/api/logistics', require('./routes/logisticsRoutes'));
 app.use('/api/inventory', require('./routes/inventoryRoutes'));
 app.use('/api/configuraciones', require('./routes/configuracionesRoutes'));
 

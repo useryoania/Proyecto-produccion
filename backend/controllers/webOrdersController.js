@@ -1280,7 +1280,7 @@ exports.getPickupOrders = async (req, res) => {
                 quantityStr: o.Cantidad ? String(o.Cantidad) : '1',
                 clientId: o.IdCliente || 'N/A',
                 contact: o.Celular ? o.Celular.trim() : '',
-                clientType: o.TipoCliente ? o.TipoCliente.trim() : 'Comun'
+                clientType: o.TipoCliente ? String(o.TipoCliente).trim() : 'Comun'
             };
         });
 
@@ -1326,10 +1326,8 @@ exports.createPickupOrder = async (req, res) => {
         const lugarRetiro = req.body.lugarRetiro || 5;
 
         // Determinar las órdenes a incluir
-        let orderNumbers = [];
         let rawOrderIds = [];
         if (orders && Array.isArray(orders) && orders.length > 0) {
-            orderNumbers = orders.map(o => o.orderNumber);
             rawOrderIds = orders.map(o => parseInt(o.OrdIdOrden, 10)).filter(id => !isNaN(id));
         } else if (selectedOrderIds && selectedOrderIds.length > 0) {
             // Buscar en OrdenesDeposito por los IDs seleccionados
@@ -1342,11 +1340,10 @@ exports.createPickupOrder = async (req, res) => {
             const ordersResult = await pool.request()
                 .input('idCliente', sql.VarChar, idClienteString)
                 .query(`
-                    SELECT o.OrdIdOrden, o.OrdCodigoOrden, o.OrdCostoFinal, m.MonSimbolo
+                    SELECT o.OrdIdOrden, o.OrdCodigoOrden
                     FROM OrdenesDeposito o WITH(NOLOCK)
                     LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
                     LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
-                    LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
                     WHERE c.IDCliente = @idCliente
                     AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar')
                 `);
@@ -1354,18 +1351,16 @@ exports.createPickupOrder = async (req, res) => {
             for (const o of ordersResult.recordset) {
                 const docId = o.OrdCodigoOrden || `#${o.OrdIdOrden}`;
                 if (selectedOrderIds.includes(docId) || selectedOrderIds.includes(o.OrdCodigoOrden) || selectedOrderIds.includes(o.OrdIdOrden)) {
-                    orderNumbers.push(String(o.OrdIdOrden));
                     rawOrderIds.push(o.OrdIdOrden);
                 }
             }
         }
 
-        if (orderNumbers.length === 0) return res.status(400).json({ error: "Órdenes no encontradas." });
+        if (rawOrderIds.length === 0) return res.status(400).json({ error: "Órdenes no encontradas." });
 
-        // Validar orden y obtener tipo de cliente (usar ID numérico)
-        const firstRawId = rawOrderIds.length > 0 ? rawOrderIds[0] : parseInt(orderNumbers[0], 10);
+        // Validar orden y obtener tipo de cliente
         const clientResult = await pool.request()
-            .input('OrderId', sql.Int, firstRawId)
+            .input('OrderId', sql.Int, rawOrderIds[0])
             .query(`
                 SELECT o.CliIdCliente, c.Tipo 
                 FROM OrdenesDeposito o WITH(NOLOCK)
@@ -1378,76 +1373,28 @@ exports.createPickupOrder = async (req, res) => {
         }
 
         const clienteTipo = (clientResult.recordset[0].Tipo || '').trim();
-        // Tipo C=Comun, E=Especial, S=Semanal
-        let estadoOrdenRetiro = (clienteTipo === 'E' || clienteTipo === 'S') ? 4 : 1;
+        const estadoOrdenRetiro = (clienteTipo === 'E' || clienteTipo === 'S') ? 4 : 1;
 
-        // Crear la orden de retiro en una transacción
+        // Crear retiro usando servicio unificado
+        const { crearRetiro } = require('../services/retiroService');
         const transaction = new sql.Transaction(pool);
         await transaction.begin();
 
         try {
-            // OReIdOrdenRetiro no es IDENTITY, generar manualmente
-            const maxIdRes = await transaction.request().query('SELECT ISNULL(MAX(OReIdOrdenRetiro), 0) + 1 AS NextId FROM OrdenesRetiro');
-            const OReIdOrdenRetiro = maxIdRes.recordset[0].NextId;
-
-            await transaction.request()
-                .input('OReId', sql.Int, OReIdOrdenRetiro)
-                .input('CostoTotal', sql.Float, totalCost || 0)
-                .input('LugarRetiro', sql.Int, lugarRetiro)
-                .input('FechaAlta', sql.DateTime, new Date())
-                .input('UsuarioAlta', sql.Int, UsuarioAlta)
-                .input('Estado', sql.Int, estadoOrdenRetiro)
-                .query(`
-                    INSERT INTO OrdenesRetiro (OReIdOrdenRetiro, OReCostoTotalOrden, LReIdLugarRetiro, OReFechaAlta, OReUsuarioAlta, OReEstadoActual, OReFechaEstadoActual)
-                    VALUES (@OReId, @CostoTotal, @LugarRetiro, @FechaAlta, @UsuarioAlta, @Estado, GETDATE());
-                `);
-
-            // Insertar histórico de estado
-            await transaction.request()
-                .input('OReId', sql.Int, OReIdOrdenRetiro)
-                .input('Estado', sql.Int, estadoOrdenRetiro)
-                .input('Fecha', sql.DateTime, new Date())
-                .input('Usuario', sql.Int, UsuarioAlta)
-                .query(`
-                    INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-                    VALUES (@OReId, @Estado, @Fecha, @Usuario);
-                `);
-
-            // Buscar IDs de las órdenes (usar rawOrderIds numéricos)
-            const idsToLink = rawOrderIds.length > 0 ? rawOrderIds : orderNumbers.map(n => parseInt(n, 10)).filter(id => !isNaN(id));
-            const orderIdParams = idsToLink.map((n, i) => `@oid${i}`).join(',');
-            const orderIdReq = transaction.request();
-            idsToLink.forEach((n, i) => orderIdReq.input(`oid${i}`, sql.Int, n));
-            const orderIdResults = await orderIdReq.query(`
-                SELECT OrdIdOrden FROM OrdenesDeposito WITH(NOLOCK) WHERE OrdIdOrden IN (${orderIdParams})
-            `);
-
-            // Insertar relaciones (RORIdOrdenRetiroOrden no es IDENTITY)
-            if (orderIdResults.recordset.length > 0) {
-                const maxRelRes = await transaction.request().query('SELECT ISNULL(MAX(RORIdOrdenRetiroOrden), 0) AS maxId FROM RelOrdenesRetiroOrdenes');
-                let nextRelId = maxRelRes.recordset[0].maxId + 1;
-                const relValues = orderIdResults.recordset.map(r => `(${nextRelId++}, ${OReIdOrdenRetiro}, ${r.OrdIdOrden})`).join(',');
-                await transaction.request().query(`INSERT INTO RelOrdenesRetiroOrdenes (RORIdOrdenRetiroOrden, OReIdOrdenRetiro, OrdIdOrden) VALUES ${relValues}`);
-
-                // Actualizar estado de las órdenes
-                const ordIds = orderIdResults.recordset.map(r => r.OrdIdOrden).join(',');
-                await transaction.request()
-                    .input('LugarRetiro', sql.Int, lugarRetiro)
-                    .input('OReId', sql.Int, OReIdOrdenRetiro)
-                    .query(`
-                        UPDATE OrdenesDeposito SET LReIdLugarRetiro = @LugarRetiro, OReIdOrdenRetiro = @OReId, OrdEstadoActual = 4, OrdFechaEstadoActual = GETDATE()
-                        WHERE OrdIdOrden IN (${ordIds});
-
-                        INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-                        SELECT OrdIdOrden, 4, GETDATE(), ${UsuarioAlta} FROM OrdenesDeposito WHERE OrdIdOrden IN (${ordIds});
-                    `);
-            }
+            const OReIdOrdenRetiro = await crearRetiro(transaction, {
+                ordIds: rawOrderIds,
+                totalCost: totalCost || 0,
+                lugarRetiro,
+                estadoOrdenRetiro,
+                usuarioAlta: UsuarioAlta,
+                formaRetiro: 'RW'
+            });
 
             await transaction.commit();
 
             const ordIdRetiro = `R-${OReIdOrdenRetiro}`;
 
-            // Insertar en RetirosWeb (replica local)
+            // Insertar en RetirosWeb (replica local — lógica exclusiva del flujo web)
             try {
                 let targetCurrency = moneda || "UYU";
                 if (!moneda && orders && orders.length > 0) {
