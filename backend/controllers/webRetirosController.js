@@ -250,7 +250,13 @@ exports.getAllLocalRetiros = async (req, res) => {
                 r.CodCliente,
                 r.OReFechaAlta AS Fecha,
                 r.FormaRetiro,
-                c.Nombre AS NombreCliente
+                c.Nombre AS NombreCliente,
+                (
+                    SELECT STRING_AGG(od.OrdCodigoOrden, ',')
+                    FROM RelOrdenesRetiroOrdenes rel WITH(NOLOCK)
+                    JOIN OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = rel.OrdIdOrden
+                    WHERE rel.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+                ) AS OrdenesCodigos
             FROM OrdenesRetiro r WITH(NOLOCK)
             LEFT JOIN Clientes c WITH(NOLOCK) ON c.CodCliente = r.CodCliente
             ORDER BY r.OReFechaAlta DESC
