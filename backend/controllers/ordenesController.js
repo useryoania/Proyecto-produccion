@@ -35,11 +35,7 @@ const getOrdenesByFilter = async (req, res) => {
         CAST(o.OrdCostoFinal AS DECIMAL(10,2)) AS CostoFinal,
         CONCAT(CAST(o.OrdDescuentoAplicado * 100 AS INT), '%') AS DescuentoAplicado,
         mo.MOrNombreModo AS Modo,
-<<<<<<< HEAD
         fe.Nombre AS LugarRetiro,
-=======
-        lr.Nombre AS LugarRetiro,
->>>>>>> df4442e9b00356d953724662fc79be5416a11af2
         o.OrdFechaIngresoOrden AS FechaIngresoOrden,
         o.OrdNotaCliente AS OrdNotaCliente
       FROM OrdenesDeposito o WITH(NOLOCK)
@@ -51,11 +47,7 @@ const getOrdenesByFilter = async (req, res) => {
       LEFT JOIN OrdenesRetiro ore WITH(NOLOCK) ON o.OReIdOrdenRetiro = ore.OReIdOrdenRetiro
       LEFT JOIN EstadosOrdenesRetiro eore WITH(NOLOCK) ON ore.OReEstadoActual = eore.EORIdEstadoOrden
       LEFT JOIN ModosOrdenes mo WITH(NOLOCK) ON o.MOrIdModoOrden = mo.MOrIdModoOrden
-<<<<<<< HEAD
       LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = o.LReIdLugarRetiro
-=======
-      LEFT JOIN FormasEnvio lr WITH(NOLOCK) ON o.LReIdLugarRetiro = lr.ID
->>>>>>> df4442e9b00356d953724662fc79be5416a11af2
       WHERE 1 = 1
     `;
 

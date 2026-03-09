@@ -71,11 +71,7 @@ const getOrdenesRetiroQueryBase = `
     r.PagIdPago,
     r.ORePasarPorCaja,
     r.FormaRetiro,
-<<<<<<< HEAD
     fe.Nombre AS lugarRetiro,
-=======
-    lr.Nombre AS lugarRetiro,
->>>>>>> df4442e9b00356d953724662fc79be5416a11af2
     er.EORNombreEstado AS estado,
     o.OrdIdOrden AS orderId,
     o.OrdCodigoOrden AS orderNumber,
@@ -99,11 +95,7 @@ const getOrdenesRetiroQueryBase = `
     r.LocalidadEnvio,
     ag.Nombre AS AgenciaNombre
   FROM OrdenesRetiro r WITH(NOLOCK)
-<<<<<<< HEAD
   LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
-=======
-  LEFT JOIN FormasEnvio lr WITH(NOLOCK) ON lr.ID = r.LReIdLugarRetiro
->>>>>>> df4442e9b00356d953724662fc79be5416a11af2
   LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
   LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
   LEFT JOIN Monedas monOrden WITH(NOLOCK) ON monOrden.MonIdMoneda = o.MonIdMoneda
