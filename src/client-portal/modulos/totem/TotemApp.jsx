@@ -97,7 +97,10 @@ export const TotemApp = () => {
                         exit={{ y: '-100%' }}
                         transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
                         className="absolute inset-0 z-10 flex items-center justify-center bg-custom-dark cursor-pointer"
-                        onClick={() => setScreen('dashboard')}
+                        onClick={() => {
+                            document.documentElement.requestFullscreen?.().catch(() => { });
+                            setScreen('dashboard');
+                        }}
                     >
                         <div className="flex flex-col items-center justify-between min-h-screen pt-16 pb-6">
                             {/* Logo top */}
