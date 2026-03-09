@@ -54,7 +54,7 @@ const runSyncRetirosCore = async () => {
         SELECT 
             r.OReIdOrdenRetiro, r.OReCostoTotalOrden, r.OReFechaAlta, r.OReUsuarioAlta,
             r.OReEstadoActual, r.PagIdPago, r.ORePasarPorCaja,
-            lr.LReNombreLugar AS lugarRetiro,
+            fe.Nombre AS lugarRetiro,
             er.EORNombreEstado AS estado,
             o.OrdIdOrden AS orderId, o.OrdCodigoOrden AS orderNumber,
             o.OrdEstadoActual AS orderEstado, o.OrdCostoFinal as costoFinal,
@@ -66,7 +66,7 @@ const runSyncRetirosCore = async () => {
             p.PagRutaComprobante AS comprobante,
             c.CodigoReact AS CliCodigoCliente, c.Tipo AS TClDescripcion
         FROM OrdenesRetiro r WITH(NOLOCK)
-        LEFT JOIN LugaresRetiro lr WITH(NOLOCK) ON lr.LReIdLugarRetiro = r.LReIdLugarRetiro
+        LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
         LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
         LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
         LEFT JOIN Monedas monOrden WITH(NOLOCK) ON monOrden.MonIdMoneda = o.MonIdMoneda
@@ -598,10 +598,18 @@ exports.marcarRetiroEntregado = async (req, res) => {
     try {
         const pool = await getPool();
 
+        // Parsear ubicacionId "A-1-2" → estanteId=A, seccion=1, posicion=2
+        const parts = ubicacionId.split('-');
+        const estId = parts[0];
+        const sec = parseInt(parts[1], 10);
+        const pos = parseInt(parts[2], 10);
+
         // Buscar a qué retiro pertenece antes de borrar
         const ubiRes = await pool.request()
-            .input('id', sql.VarChar, ubicacionId)
-            .query('SELECT OrdenRetiro FROM OcupacionEstantes WHERE UbicacionID = @id');
+            .input('estId', sql.Char, estId)
+            .input('sec', sql.Int, sec)
+            .input('pos', sql.Int, pos)
+            .query('SELECT OrdenRetiro FROM OcupacionEstantes WHERE EstanteID = @estId AND Seccion = @sec AND Posicion = @pos');
 
         if (ubiRes.recordset.length === 0) {
             return res.status(404).json({ error: "Ubicación no encontrada" });
@@ -613,10 +621,12 @@ exports.marcarRetiroEntregado = async (req, res) => {
         await transaction.begin();
 
         try {
-            // 1. Liberar el Estante Físico (eliminará todas las filas con ese UbicacionID)
+            // 1. Liberar el Estante Físico (todas las filas de esa posición)
             await new sql.Request(transaction)
-                .input('id', sql.VarChar, ubicacionId)
-                .query('DELETE FROM OcupacionEstantes WHERE UbicacionID = @id');
+                .input('estId', sql.Char, estId)
+                .input('sec', sql.Int, sec)
+                .input('pos', sql.Int, pos)
+                .query('DELETE FROM OcupacionEstantes WHERE EstanteID = @estId AND Seccion = @sec AND Posicion = @pos');
 
             // 2. OrdenesRetiro se actualiza en el paso 3 abajo (Estado=5)
 
@@ -682,13 +692,18 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
 
         try {
             // 1. Liberar del Estante Físico SÓLO las especificadas
+            const partsM = ubicacionId.split('-');
+            const estIdM = partsM[0];
+            const secM = parseInt(partsM[1], 10);
+            const posM = parseInt(partsM[2], 10);
+
             for (const ord of ordenesParaEntregar) {
                 await new sql.Request(transaction)
-                    .input('id', sql.VarChar, ubicacionId)
+                    .input('estId', sql.Char, estIdM)
+                    .input('sec', sql.Int, secM)
+                    .input('pos', sql.Int, posM)
                     .input('Ord', sql.VarChar, ord)
-                    .query('DELETE FROM OcupacionEstantes WHERE UbicacionID = @id AND OrdenRetiro = @Ord');
-
-                // 2. OrdenesRetiro se actualiza en el paso 3 abajo (Estado=5)
+                    .query('DELETE FROM OcupacionEstantes WHERE EstanteID = @estId AND Seccion = @sec AND Posicion = @pos AND OrdenRetiro = @Ord');
             }
 
             // 3. Marcar entregadas en DB directamente
@@ -809,6 +824,7 @@ exports.getPagosOnline = async (req, res) => {
 exports.marcarExcepcional = async (req, res) => {
     try {
         const { ordenRetiro, codigoCliente, monto, password, explicacion } = req.body;
+        const usuarioId = req.user?.id || 70;
 
         if (!password || password.trim() === '') {
             return res.status(401).json({ error: "Contraseña requerida para autorizar este retiro." });
@@ -826,10 +842,11 @@ exports.marcarExcepcional = async (req, res) => {
         await pool.request()
             .input('orden', sql.VarChar, ordenRetiro)
             .input('cliente', sql.VarChar, codigoCliente)
-            .input('monto', sql.VarChar, String(monto))
-            .input('pwd', sql.VarChar, password)
+            .input('monto', sql.Float, parseFloat(monto) || 0)
+            .input('usr', sql.Int, usuarioId)
             .input('expl', sql.NVarChar, explicacion)
-            .query(`INSERT INTO RetirosConDeuda (OrdenRetiro, CodigoCliente, Monto, UsuarioAutorizador, Explicacion) VALUES (@orden, @cliente, @monto, @pwd, @expl)`);
+            .query(`INSERT INTO RetirosConDeuda (OrdenRetiro, CodigoCliente, Monto, UsuarioAutorizador, Explicacion, Estado, Gestionado)
+                    VALUES (@orden, @cliente, @monto, @usr, @expl, 'Pendiente', 0)`);
 
         res.json({ message: "Retiro registrado como deuda y autorizado exitosamente." });
     } catch (err) {
@@ -838,6 +855,7 @@ exports.marcarExcepcional = async (req, res) => {
     }
 };
 
+
 /**
  * Obtener todos los retiros excepcionales con deuda
  */
@@ -845,9 +863,16 @@ exports.getExcepciones = async (req, res) => {
     try {
         const pool = await getPool();
         const result = await pool.request().query(`
-            SELECT e.*, c.Nombre as NombreCliente 
+            SELECT 
+                e.Id, e.OrdenRetiro, e.CodigoCliente, 
+                COALESCE(e.NombreCliente, c.Nombre) AS NombreCliente,
+                e.Monto, e.UsuarioAutorizador, e.Explicacion,
+                e.Estado, e.Gestionado, e.Fecha, e.FechaGestion,
+                e.UsuarioGestion, e.NotaGestion,
+                u.Nombre AS NombreAutorizador
             FROM RetirosConDeuda e
-            LEFT JOIN Clientes c ON CAST(e.CodigoCliente AS VARCHAR) = CAST(c.CodCliente AS VARCHAR)
+            LEFT JOIN Clientes c ON CAST(e.CodigoCliente AS VARCHAR) = CAST(c.CodigoReact AS VARCHAR)
+            LEFT JOIN Usuarios u ON u.IdUsuario = e.UsuarioAutorizador
             ORDER BY e.Fecha DESC
         `);
         res.json(result.recordset);
@@ -857,25 +882,38 @@ exports.getExcepciones = async (req, res) => {
     }
 };
 
+
 /**
  * Marcar una excepcion de deuda como gestionada/pagada
  */
 exports.gestionarExcepcion = async (req, res) => {
     try {
         const { id } = req.params;
-        const { gestionado } = req.body;
+        const { estado, nota } = req.body;  // estado: 'Pendiente' | 'Cobrado' | 'Condonado'
+        const usuarioId = req.user?.id || 70;
+
+        if (!['Pendiente', 'Cobrado', 'Condonado'].includes(estado)) {
+            return res.status(400).json({ error: 'Estado inválido. Valores: Pendiente, Cobrado, Condonado' });
+        }
 
         const pool = await getPool();
         await pool.request()
             .input('id', sql.Int, id)
-            .input('gestionado', sql.Bit, gestionado ? 1 : 0)
+            .input('estado', sql.VarChar, estado)
+            .input('gestionado', sql.Bit, estado !== 'Pendiente' ? 1 : 0)
+            .input('nota', sql.NVarChar, nota || null)
+            .input('usr', sql.Int, usuarioId)
             .query(`
                 UPDATE RetirosConDeuda 
-                SET Gestionado = @gestionado, FechaGestion = GETDATE()
+                SET Estado = @estado,
+                    Gestionado = @gestionado,
+                    NotaGestion = @nota,
+                    UsuarioGestion = @usr,
+                    FechaGestion = CASE WHEN @estado <> 'Pendiente' THEN GETDATE() ELSE NULL END
                 WHERE Id = @id
             `);
 
-        res.json({ success: true, message: "Actualizado exitosamente." });
+        res.json({ success: true, message: 'Estado actualizado correctamente.' });
     } catch (err) {
         console.error("[EXCEPCION GESTION] Error al actualizar estado:", err);
         res.status(500).json({ error: "Fallo al actualizar la excepción", details: err.message });

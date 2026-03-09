@@ -71,11 +71,12 @@ const getOrdenesRetiroQueryBase = `
     r.PagIdPago,
     r.ORePasarPorCaja,
     r.FormaRetiro,
-    lr.LReNombreLugar AS lugarRetiro,
+    fe.Nombre AS lugarRetiro,
     er.EORNombreEstado AS estado,
     o.OrdIdOrden AS orderId,
     o.OrdCodigoOrden AS orderNumber,
     o.OrdEstadoActual AS orderEstado,
+    eo.EOrNombreEstado AS orderEstadoNombre,
     o.OrdCostoFinal as costoFinal,
     monOrden.MonSimbolo AS orderMonedaSimbolo,
     p.MPaIdMetodoPago AS orderIdMetodoPago,
@@ -85,10 +86,16 @@ const getOrdenesRetiroQueryBase = `
     p.PagFechaPago AS orderFechaPago,
     p.PagRutaComprobante AS comprobante,
     c.CodigoReact AS CliCodigoCliente,
+    LTRIM(RTRIM(c.Nombre)) AS CliNombre,
+    LTRIM(RTRIM(c.TelefonoTrabajo)) AS CliTelefono,
     tc.TClDescripcion AS TClDescripcion,
-    tc.TClIdTipoCliente AS TClIdTipoCliente
+    tc.TClIdTipoCliente AS TClIdTipoCliente,
+    r.DireccionEnvio,
+    r.DepartamentoEnvio,
+    r.LocalidadEnvio,
+    ag.Nombre AS AgenciaNombre
   FROM OrdenesRetiro r WITH(NOLOCK)
-  LEFT JOIN LugaresRetiro lr WITH(NOLOCK) ON lr.LReIdLugarRetiro = r.LReIdLugarRetiro
+  LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
   LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
   LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
   LEFT JOIN Monedas monOrden WITH(NOLOCK) ON monOrden.MonIdMoneda = o.MonIdMoneda
@@ -97,6 +104,8 @@ const getOrdenesRetiroQueryBase = `
   LEFT JOIN MetodosPagos mp WITH(NOLOCK) ON mp.MPaIdMetodoPago = p.MPaIdMetodoPago
   LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
   LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+  LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
+  LEFT JOIN EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
 `;
 
 const processRetirosRows = (rows) => {
@@ -116,8 +125,14 @@ const processRetirosRows = (rows) => {
         fechapagooden: row.orderFechaPago,
         comprobante: row.comprobante,
         CliCodigoCliente: row.CliCodigoCliente || 'Desconocido',
+        CliNombre: row.CliNombre || null,
+        CliTelefono: row.CliTelefono || null,
         TClDescripcion: row.TClDescripcion || 'Desconocido',
         TClIdTipoCliente: row.TClIdTipoCliente,
+        direccionEnvio: row.DireccionEnvio || null,
+        departamentoEnvio: row.DepartamentoEnvio || null,
+        localidadEnvio: row.LocalidadEnvio || null,
+        agenciaNombre: row.AgenciaNombre || null,
         orders: []
       };
     }
@@ -126,7 +141,7 @@ const processRetirosRows = (rows) => {
       map[row.OReIdOrdenRetiro].orders.push({
         orderNumber: row.orderNumber,
         orderId: row.orderId,
-        orderEstado: row.orderEstado,
+        orderEstado: row.orderEstadoNombre || row.orderEstado,
         orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaSimbolo} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
         orderIdMetodoPago: row.orderIdMetodoPago,
         orderMetodoPago: row.orderMetodoPago,
@@ -140,6 +155,9 @@ const processRetirosRows = (rows) => {
 
 const getOrdenesRetiroPorEstados = async (req, res) => {
   const estados = req.query.estados.split(',');
+  const soloPageas = req.query.pagas === 'true';
+  const soloNoPageas = req.query.no_pagas === 'true';
+
   try {
     const pool = await getPool();
     const request = pool.request();
@@ -147,10 +165,15 @@ const getOrdenesRetiroPorEstados = async (req, res) => {
     estados.forEach((e, i) => request.input(`e${i}`, sql.Int, parseInt(e.trim(), 10)));
     const inClause = estados.map((_, i) => `@e${i}`).join(',');
 
+    let pagoFiltro = '';
+    if (soloPageas) pagoFiltro = 'AND r.PagIdPago IS NOT NULL';
+    if (soloNoPageas) pagoFiltro = 'AND r.PagIdPago IS NULL';
+
     const query = `
       ${getOrdenesRetiroQueryBase}
       WHERE r.OReEstadoActual IN (${inClause})
       AND (CAST(DATEADD(d,-7,GETDATE()) AS DATE) <= CAST(r.OReFechaAlta AS DATE) OR r.OReEstadoActual NOT IN (5,6))
+      ${pagoFiltro}
     `;
 
     const result = await request.query(query);
@@ -160,6 +183,7 @@ const getOrdenesRetiroPorEstados = async (req, res) => {
     res.status(500).json({ error: 'Error' });
   }
 };
+
 
 const actualizarOrdenRetiroEstado = async (req, res) => {
   const { ordenDeRetiro, nuevoEstado } = req.body;
@@ -403,7 +427,7 @@ const getOrdenesRetiroPorLugar = async (req, res) => {
 };
 
 const marcarDespachoEntregadoAutorizado = async (req, res) => {
-  const { ordenesParaEntregar, password } = req.body;
+  const { ordenesParaEntregar, password, observacion } = req.body;
   const fechaActual = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
   const UsuarioAlta = req.user?.id || 70;
 
@@ -424,7 +448,8 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
       const checkRes = await transaction.request()
         .input('ID', sql.Int, OReIdOrdenRetiro)
         .query(`
-          SELECT r.PagIdPago, o.PagIdPago as O_PagIdPago, c.TClIdTipoCliente
+          SELECT r.PagIdPago, o.PagIdPago as O_PagIdPago, c.TClIdTipoCliente,
+                 r.CodCliente, r.OReCostoTotalOrden
           FROM OrdenesRetiro r WITH(NOLOCK)
           LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
           LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
@@ -442,6 +467,28 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
         if (!password || password !== process.env.CONTRAAUTORIZO) {
           throw new Error(`La orden de retiro ${ordenDeRetiro} no está paga y requiere autorización. Contraseña incorrecta.`);
         }
+        // Guardar excepción en RetirosConDeuda para el historial
+        const codCliente = checkRes.recordset[0]?.CodCliente || null;
+        const monto = checkRes.recordset.reduce((acc, r) => acc + (parseFloat(r.OReCostoTotalOrden) || 0), 0);
+
+        // Obtener nombre del cliente
+        let nombreCliente = null;
+        if (codCliente) {
+          const cliRes = await transaction.request()
+            .input('cod', sql.VarChar, codCliente)
+            .query(`SELECT TOP 1 LTRIM(RTRIM(Nombre)) AS Nombre FROM Clientes WITH(NOLOCK) WHERE CodigoReact = @cod`);
+          nombreCliente = cliRes.recordset[0]?.Nombre || null;
+        }
+
+        await transaction.request()
+          .input('orden', sql.VarChar, ordenDeRetiro)
+          .input('cli', sql.VarChar, codCliente)
+          .input('nomCli', sql.NVarChar, nombreCliente)
+          .input('monto', sql.Decimal, monto)
+          .input('usr', sql.Int, UsuarioAlta)
+          .input('obs', sql.NVarChar, observacion || 'Sin observación')
+          .query(`INSERT INTO RetirosConDeuda (OrdenRetiro, CodigoCliente, NombreCliente, Monto, UsuarioAutorizador, Explicacion, Estado, Gestionado)
+                  VALUES (@orden, @cli, @nomCli, @monto, @usr, @obs, 'Pendiente', 0)`);
       }
 
       await transaction.request()
@@ -470,8 +517,157 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
   }
 };
 
+
+// ─── MOSTRADOR: Buscar órdenes sin pagar por retiro / orden / cliente ───────
+const buscarParaMostrador = async (req, res) => {
+  const { q } = req.query;
+  if (!q || q.trim().length < 2) return res.status(400).json({ error: 'Ingresá al menos 2 caracteres.' });
+
+  try {
+    const pool = await getPool();
+    const termClean = q.trim();
+
+    // Detectar tipo de búsqueda
+    const esRetiro = /^R-?\d+$/i.test(termClean);
+    const esDeposito = /^[A-Za-z]{2}-\d+$/i.test(termClean);
+
+    // ── QUERY BASE para retiros ──────────────────────────────────────────────
+    // Traemos TODOS los retiros que cumplan el criterio, con SUS órdenes sin pagar.
+    // La unión de OrdEstadoActual excluye solo Cancelado (10) y Entregado (9)
+    const baseQuery = (extraWhere) => `
+      SELECT DISTINCT
+        r.OReIdOrdenRetiro,
+        r.OReCostoTotalOrden,
+        r.OReFechaAlta,
+        r.OReEstadoActual,
+        fe.Nombre           AS lugarRetiro,
+        er.EORNombreEstado  AS estadoRetiro,
+        o.OrdIdOrden,
+        o.OrdCodigoOrden,
+        o.OrdCostoFinal,
+        eo.EOrNombreEstado  AS estadoOrden,
+        mon.MonSimbolo,
+        LTRIM(RTRIM(c.Nombre))           AS CliNombre,
+        c.CodigoReact                    AS CliCodigo,
+        LTRIM(RTRIM(c.TelefonoTrabajo))  AS CliTelefono,
+        tc.TClDescripcion
+      FROM OrdenesRetiro r WITH(NOLOCK)
+      LEFT JOIN FormasEnvio fe         WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
+      LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
+      LEFT JOIN OrdenesDeposito o      WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+      LEFT JOIN Monedas mon             WITH(NOLOCK) ON mon.MonIdMoneda = o.MonIdMoneda
+      LEFT JOIN Clientes c              WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+      LEFT JOIN TiposClientes tc        WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+      LEFT JOIN EstadosOrdenes eo       WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
+      WHERE r.OReEstadoActual NOT IN (5, 6)   -- excluir Entregado / Cancelado retiro
+        AND o.PagIdPago IS NULL                -- solo sin pagar
+        AND o.OrdEstadoActual NOT IN (9, 10)   -- excluir entregadas y canceladas
+        ${extraWhere}
+      ORDER BY r.OReIdOrdenRetiro DESC, o.OrdIdOrden
+    `;
+
+    let retiroRows = [];
+    let sinRetiro = [];
+
+    if (esRetiro) {
+      // ── Búsqueda por R-XXXX ──────────────────────────────────────────────
+      const idRetiro = parseInt(termClean.replace(/^R-?0*/i, ''), 10);
+      const req1 = pool.request().input('idRetiro', sql.Int, idRetiro);
+      const result = await req1.query(baseQuery('AND r.OReIdOrdenRetiro = @idRetiro'));
+      retiroRows = result.recordset;
+
+    } else if (esDeposito) {
+      // ── Búsqueda por código de orden (DF-XXXXX) ──────────────────────────
+      // 1) Buscar el retiro asociado a esa orden
+      const lookup = await pool.request()
+        .input('cod', sql.NVarChar, termClean)
+        .query(`SELECT OReIdOrdenRetiro, PagIdPago, OrdEstadoActual
+                FROM OrdenesDeposito WITH(NOLOCK)
+                WHERE OrdCodigoOrden = @cod`);
+
+      if (lookup.recordset.length === 0) {
+        return res.json({ retiroRows: [], sinRetiro: [] });
+      }
+
+      const row = lookup.recordset[0];
+
+      if (row.OReIdOrdenRetiro) {
+        // Está bajo un retiro → devolver todo el retiro con sus órdenes sin pagar
+        const req2 = pool.request().input('idRetiro', sql.Int, row.OReIdOrdenRetiro);
+        const result = await req2.query(baseQuery('AND r.OReIdOrdenRetiro = @idRetiro'));
+        retiroRows = result.recordset;
+
+        // Si el retiro no tiene órdenes sin pagar pero la orden buscada sí es sin pagar, incluirla igual
+        if (retiroRows.length === 0 && !row.PagIdPago) {
+          // Traer la orden directamente aunque el retiro ya esté cerrado
+          const req3 = pool.request().input('cod', sql.NVarChar, termClean);
+          const r3 = await req3.query(`
+            SELECT o.OrdIdOrden, o.OrdCodigoOrden, o.OrdCostoFinal, eo.EOrNombreEstado AS estadoOrden,
+                   mon.MonSimbolo, LTRIM(RTRIM(c.Nombre)) AS CliNombre, c.CodigoReact AS CliCodigo,
+                   LTRIM(RTRIM(c.TelefonoTrabajo)) AS CliTelefono, tc.TClDescripcion
+            FROM OrdenesDeposito o WITH(NOLOCK)
+            LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = o.MonIdMoneda
+            LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+            LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+            LEFT JOIN EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
+            WHERE o.OrdCodigoOrden = @cod AND o.PagIdPago IS NULL
+          `);
+          sinRetiro = r3.recordset;
+        }
+      } else {
+        // Orden sin retiro → sección "sin retiro"
+        if (!row.PagIdPago) {
+          const req4 = pool.request().input('cod', sql.NVarChar, termClean);
+          const r4 = await req4.query(`
+            SELECT o.OrdIdOrden, o.OrdCodigoOrden, o.OrdCostoFinal, eo.EOrNombreEstado AS estadoOrden,
+                   mon.MonSimbolo, LTRIM(RTRIM(c.Nombre)) AS CliNombre, c.CodigoReact AS CliCodigo,
+                   LTRIM(RTRIM(c.TelefonoTrabajo)) AS CliTelefono, tc.TClDescripcion
+            FROM OrdenesDeposito o WITH(NOLOCK)
+            LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = o.MonIdMoneda
+            LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+            LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+            LEFT JOIN EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
+            WHERE o.OrdCodigoOrden = @cod AND o.PagIdPago IS NULL
+          `);
+          sinRetiro = r4.recordset;
+        }
+      }
+    } else {
+      // ── Búsqueda por cliente (texto) ─────────────────────────────────────
+      const patron = `%${termClean.toUpperCase()}%`;
+      const req5 = pool.request().input('codCli', sql.NVarChar, patron);
+      const result = await req5.query(baseQuery('AND (UPPER(c.CodigoReact) LIKE @codCli OR UPPER(c.Nombre) LIKE @codCli)'));
+      retiroRows = result.recordset;
+
+      // Órdenes sin retiro del mismo cliente
+      const req6 = pool.request().input('codCli', sql.NVarChar, patron);
+      const r6 = await req6.query(`
+        SELECT o.OrdIdOrden, o.OrdCodigoOrden, o.OrdCostoFinal, eo.EOrNombreEstado AS estadoOrden,
+               mon.MonSimbolo, LTRIM(RTRIM(c2.Nombre)) AS CliNombre, c2.CodigoReact AS CliCodigo,
+               LTRIM(RTRIM(c2.TelefonoTrabajo)) AS CliTelefono, tc2.TClDescripcion
+        FROM OrdenesDeposito o WITH(NOLOCK)
+        LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = o.MonIdMoneda
+        LEFT JOIN Clientes c2 WITH(NOLOCK) ON c2.CliIdCliente = o.CliIdCliente
+        LEFT JOIN TiposClientes tc2 WITH(NOLOCK) ON tc2.TClIdTipoCliente = c2.TClIdTipoCliente
+        LEFT JOIN EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
+        WHERE o.OReIdOrdenRetiro IS NULL
+          AND o.PagIdPago IS NULL
+          AND o.OrdEstadoActual NOT IN (9, 10)
+          AND (UPPER(c2.CodigoReact) LIKE @codCli OR UPPER(c2.Nombre) LIKE @codCli)
+        ORDER BY o.OrdIdOrden DESC
+      `);
+      sinRetiro = r6.recordset;
+    }
+
+    return res.json({ retiroRows, sinRetiro });
+  } catch (err) {
+    console.error('[MOSTRADOR] Error búsqueda:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 module.exports = {
   createOrdenRetiro, getOrdenesRetiroPorEstados, actualizarOrdenRetiroEstado, marcarOrdenRetiroPronto,
   marcarOrdenRetiroEntregado, ordenesRetiroCaja, getOrdenesRetiroPasarPorCaja, ordenesRetiroMarcarPasarPorCaja, getOrdenesRetiroPorFecha,
-  getOrdenesRetiroPorLugar, marcarDespachoEntregadoAutorizado
+  getOrdenesRetiroPorLugar, marcarDespachoEntregadoAutorizado, buscarParaMostrador
 };

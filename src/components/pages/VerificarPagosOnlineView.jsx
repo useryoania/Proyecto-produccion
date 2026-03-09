@@ -103,7 +103,6 @@ const VerificarPagosOnlineView = () => {
                     <thead className="bg-[#f8f9fa] top-0 sticky text-zinc-600 z-10">
                         <tr>
                             <th className="px-5 py-4 font-bold border-b border-zinc-200">Fecha/Hora</th>
-                            <th className="px-5 py-4 font-bold border-b border-zinc-200">Emisor / Status</th>
                             <th className="px-5 py-4 font-bold border-b border-zinc-200">Transacción Handy</th>
                             <th className="px-5 py-4 font-bold border-b border-zinc-200">Cliente</th>
                             <th className="px-5 py-4 font-bold border-b border-zinc-200">Monto</th>
@@ -113,7 +112,7 @@ const VerificarPagosOnlineView = () => {
                     <tbody className="divide-y divide-zinc-200 text-zinc-800">
                         {loading && pagos.length === 0 ? (
                             <tr>
-                                <td colSpan="6" className="px-5 py-8 text-center text-zinc-500">
+                                <td colSpan="5" className="px-5 py-8 text-center text-zinc-500">
                                     <div className="flex justify-center items-center gap-3">
                                         <div className="animate-spin h-5 w-5 border-2 border-[#0070bc] border-t-transparent rounded-full"></div>
                                         Cargando transacciones...
@@ -122,7 +121,7 @@ const VerificarPagosOnlineView = () => {
                             </tr>
                         ) : pagos.length === 0 ? (
                             <tr>
-                                <td colSpan="6" className="px-5 py-8 text-center text-zinc-500">
+                                <td colSpan="5" className="px-5 py-8 text-center text-zinc-500">
                                     No se encontraron pagos con los filtros aplicados.
                                 </td>
                             </tr>
@@ -144,17 +143,6 @@ const VerificarPagosOnlineView = () => {
                                         onClick={() => setSelectedTransaction(pago)}
                                     >
                                         <td className="px-5 py-3 font-medium">{paidAtDate}</td>
-                                        <td className="px-5 py-3">
-                                            <div className="flex flex-col gap-1">
-                                                <span className="font-bold text-zinc-700">{pago.IssuerName || 'N/A'}</span>
-                                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full inline-block w-fit ${pago.Status === 'APPROVED' ? 'bg-green-100 text-green-700' :
-                                                    pago.Status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                                                        'bg-red-100 text-red-700'
-                                                    }`}>
-                                                    {pago.Status}
-                                                </span>
-                                            </div>
-                                        </td>
                                         <td className="px-5 py-3 text-xs text-zinc-500 font-mono">
                                             {pago.TransactionId}
                                         </td>
