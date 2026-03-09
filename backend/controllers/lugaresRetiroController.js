@@ -5,8 +5,12 @@ const getLugaresRetiro = async (req, res) => {
     const pool = await getPool();
     const result = await pool.request().query(`
       SELECT ID AS LReIdLugarRetiro, Nombre AS LReNombreLugar  
+<<<<<<< HEAD
       FROM FormasEnvio WITH(NOLOCK) 
       ORDER BY ID
+=======
+      FROM FormasEnvio WITH(NOLOCK)
+>>>>>>> df4442e9b00356d953724662fc79be5416a11af2
     `);
 
     res.status(200).json(result.recordset);

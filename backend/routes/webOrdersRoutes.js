@@ -50,6 +50,15 @@ router.post('/pickup-orders/handy-payment', verifyToken, webOrdersController.cre
 // POST /api/web-orders/handy-webhook (Webhook Callback desde Handy)
 router.post('/handy-webhook', webOrdersController.handyWebhook);
 
+// POST /api/web-orders/totem-lookup (Buscar órdenes por código, SIN AUTH - para tótem)
+router.post('/totem-lookup', webOrdersController.totemLookup);
+
+// GET /api/web-orders/totem-verify (Verificar IP del tótem, SIN AUTH)
+router.get('/totem-verify', webOrdersController.totemVerify);
+
+// POST /api/web-orders/totem-create-pickup (Crear retiro desde tótem, SIN AUTH)
+router.post('/totem-create-pickup', webOrdersController.totemCreatePickup);
+
 // POST /api/web-orders/handy-refund (Solicitar Devolución a Handy)
 router.post('/handy-refund', verifyToken, webOrdersController.createHandyRefund);
 

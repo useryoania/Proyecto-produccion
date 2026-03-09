@@ -1,6 +1,6 @@
 const { getPool, sql } = require('../config/db');
 const moment = require('moment-timezone');
-const { crearRetiro } = require('../services/retiroService');
+const { crearRetiro, marcarEntregado } = require('../services/retiroService');
 
 const createOrdenRetiro = async (req, res) => {
   const { orders, totalCost, lugarRetiro } = req.body;
@@ -71,7 +71,11 @@ const getOrdenesRetiroQueryBase = `
     r.PagIdPago,
     r.ORePasarPorCaja,
     r.FormaRetiro,
+<<<<<<< HEAD
     fe.Nombre AS lugarRetiro,
+=======
+    lr.Nombre AS lugarRetiro,
+>>>>>>> df4442e9b00356d953724662fc79be5416a11af2
     er.EORNombreEstado AS estado,
     o.OrdIdOrden AS orderId,
     o.OrdCodigoOrden AS orderNumber,
@@ -95,7 +99,11 @@ const getOrdenesRetiroQueryBase = `
     r.LocalidadEnvio,
     ag.Nombre AS AgenciaNombre
   FROM OrdenesRetiro r WITH(NOLOCK)
+<<<<<<< HEAD
   LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
+=======
+  LEFT JOIN FormasEnvio lr WITH(NOLOCK) ON lr.ID = r.LReIdLugarRetiro
+>>>>>>> df4442e9b00356d953724662fc79be5416a11af2
   LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
   LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
   LEFT JOIN Monedas monOrden WITH(NOLOCK) ON monOrden.MonIdMoneda = o.MonIdMoneda
@@ -113,7 +121,7 @@ const processRetirosRows = (rows) => {
   for (const row of rows) {
     if (!map[row.OReIdOrdenRetiro]) {
       map[row.OReIdOrdenRetiro] = {
-        ordenDeRetiro: `R-${String(row.OReIdOrdenRetiro).padStart(4, '0')}`,
+        ordenDeRetiro: `${row.FormaRetiro || 'R'}-${String(row.OReIdOrdenRetiro).padStart(4, '0')}`,
         totalCost: parseFloat(row.OReCostoTotalOrden).toFixed(2),
         lugarRetiro: row.lugarRetiro || 'Desconocido',
         fechaAlta: row.OReFechaAlta,
@@ -305,17 +313,7 @@ const marcarOrdenRetiroEntregado = async (req, res) => {
     transaction = await pool.transaction();
     await transaction.begin();
 
-    await transaction.request()
-      .input('ID', sql.Int, OReIdOrdenRetiro).input('Fec', sql.DateTime, new Date(fechaActual)).input('Usr', sql.Int, UsuarioAlta)
-      .query(`
-        INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-        SELECT OrdIdOrden, 9, @Fec, @Usr FROM OrdenesDeposito WHERE OReIdOrdenRetiro = @ID;
-
-        UPDATE OrdenesDeposito SET OrdEstadoActual = 9, OrdFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
-        
-        UPDATE OrdenesRetiro SET OReEstadoActual = 5, ORePasarPorCaja = 0, OReFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
-        INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@ID, 5, @Fec, @Usr);
-      `);
+    await marcarEntregado(transaction, OReIdOrdenRetiro, new Date(fechaActual), UsuarioAlta);
 
     await transaction.commit();
     res.status(200).json({ message: 'Entregadas' });
@@ -491,19 +489,7 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
                   VALUES (@orden, @cli, @nomCli, @monto, @usr, @obs, 'Pendiente', 0)`);
       }
 
-      await transaction.request()
-        .input('ID', sql.Int, OReIdOrdenRetiro)
-        .input('Fec', sql.DateTime, new Date(fechaActual))
-        .input('Usr', sql.Int, UsuarioAlta)
-        .query(`
-          INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-          SELECT OrdIdOrden, 9, @Fec, @Usr FROM OrdenesDeposito WHERE OReIdOrdenRetiro = @ID;
-
-          UPDATE OrdenesDeposito SET OrdEstadoActual = 9, OrdFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
-          
-          UPDATE OrdenesRetiro SET OReEstadoActual = 5, ORePasarPorCaja = 0, OReFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
-          INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@ID, 5, @Fec, @Usr);
-        `);
+      await marcarEntregado(transaction, OReIdOrdenRetiro, new Date(fechaActual), UsuarioAlta);
     }
 
     await transaction.commit();

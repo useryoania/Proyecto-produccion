@@ -3,6 +3,21 @@ const driveService = require('../services/driveService');
 const axios = require('axios');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib')
 
+// ===================================
+// TOTEM: VERIFICAR IP (SIN AUTH)
+// ===================================
+exports.totemVerify = (req, res) => {
+    const allowedIp = process.env.TOTEM_ALLOWED_IP;
+    if (!allowedIp) {
+        return res.json({ authorized: true }); // Si no hay IP configurada, permitir (dev mode)
+    }
+    // req.ip puede ser IPv6-mapped (::ffff:192.168.1.1) o IPv4 directo
+    const clientIp = (req.ip || '').replace(/^::ffff:/, '');
+    const authorized = clientIp === allowedIp;
+    console.log(`[TOTEM] IP check: ${clientIp} vs ${allowedIp} → ${authorized ? '✅' : '❌'}`);
+    res.json({ authorized, ip: clientIp });
+};
+
 // --- CONSTANTES Y MAPEOS ---
 const SERVICE_TO_AREA_MAP = {
     'dtf': 'DF',
@@ -1300,6 +1315,195 @@ exports.getPickupOrders = async (req, res) => {
     }
 };
 
+// ===================================
+// TOTEM: BUSCAR ÓRDENES POR CÓDIGO (SIN AUTH)
+// ===================================
+exports.totemLookup = async (req, res) => {
+    try {
+        const { orderCode } = req.body;
+        if (!orderCode) return res.status(400).json({ success: false, message: 'Código de orden requerido' });
+
+        const pool = await getPool();
+
+        // 1. Buscar la orden por CodigoOrden para obtener el cliente
+        const orderRes = await pool.request()
+            .input('code', sql.VarChar(50), orderCode.trim())
+            .query(`
+                SELECT TOP 1 o.CliIdCliente, c.IDCliente, c.Nombre, c.NombreFantasia
+                FROM OrdenesDeposito o WITH(NOLOCK)
+                LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+                WHERE o.OrdCodigoOrden = @code
+            `);
+
+        if (!orderRes.recordset.length) {
+            return res.json({ success: false, message: 'Orden no encontrada' });
+        }
+
+        const client = orderRes.recordset[0];
+
+        // 2. Traer TODAS las órdenes de ese cliente con estado Ingresado/Avisado/Para avisar
+        const ordersResult = await pool.request()
+            .input('cliId', sql.Int, client.CliIdCliente)
+            .query(`
+                SELECT 
+                    o.OrdIdOrden AS IdOrden,
+                    o.OrdCodigoOrden AS CodigoOrden,
+                    o.OrdNombreTrabajo AS NombreTrabajo,
+                    o.OrdCantidad AS Cantidad,
+                    o.OrdCostoFinal AS CostoFinal,
+                    o.OrdFechaEstadoActual AS FechaEstado,
+                    e.EOrNombreEstado AS Estado,
+                    m.MonSimbolo
+                FROM OrdenesDeposito o WITH(NOLOCK)
+                LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
+                LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
+                WHERE o.CliIdCliente = @cliId
+                AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar', 'Pronto para entregar')
+            `);
+
+        // 3. Cruzar con PedidosCobranza para estado de pago
+        const externalOrders = ordersResult.recordset;
+        const codigosList = externalOrders.map(o => o.CodigoOrden).filter(Boolean);
+        let cobranzasMap = {};
+        if (codigosList.length > 0) {
+            try {
+                const request = pool.request();
+                const params = codigosList.map((c, i) => {
+                    request.input(`doc_${i}`, sql.VarChar(50), c);
+                    return `@doc_${i}`;
+                }).join(',');
+                const cobRes = await request.query(`SELECT NoDocERP, MontoTotal, Moneda, EstadoCobro FROM PedidosCobranza WHERE NoDocERP IN (${params})`);
+                cobRes.recordset.forEach(row => { cobranzasMap[row.NoDocERP] = row; });
+            } catch (e) {
+                console.error("Error PedidosCobranza totem:", e.message);
+            }
+        }
+
+        // 4. Mapear
+        const seen = new Set();
+        const orders = externalOrders.map(o => {
+            const docId = o.CodigoOrden || `#${o.IdOrden}`;
+            const cob = cobranzasMap[docId];
+            return {
+                id: docId,
+                rawId: o.IdOrden,
+                desc: o.NombreTrabajo || 'Pedido',
+                quantity: o.Cantidad || '',
+                amount: cob ? parseFloat(cob.MontoTotal) : (parseFloat(o.CostoFinal) || 0),
+                date: o.FechaEstado ? new Date(o.FechaEstado).toLocaleDateString('es-UY') : 'N/A',
+                status: cob?.EstadoCobro === 'Pagado' ? 'PAGADO' : 'LISTO',
+                originalStatus: o.Estado,
+                isPaid: cob?.EstadoCobro === 'Pagado' || false,
+                currency: cob ? cob.Moneda : (o.MonSimbolo || '$'),
+            };
+        }).filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; });
+
+        res.json({
+            success: true,
+            client: {
+                name: client.Nombre,
+                company: client.NombreFantasia,
+                idCliente: client.IDCliente
+            },
+            orders
+        });
+
+    } catch (error) {
+        console.error("Error totem lookup:", error);
+        res.status(500).json({ success: false, message: "Error al buscar orden." });
+    }
+};
+
+// ===================================
+// TOTEM: CREAR RETIRO (SIN AUTH)
+// ===================================
+exports.totemCreatePickup = async (req, res) => {
+    const { orders: selectedOrderIds, totalCost, lugarRetiro, formaRetiro, clientId } = req.body;
+
+    if (!selectedOrderIds || !selectedOrderIds.length) {
+        return res.status(400).json({ success: false, error: "No hay órdenes seleccionadas." });
+    }
+    if (!clientId) {
+        return res.status(400).json({ success: false, error: "Cliente no identificado." });
+    }
+
+    try {
+        const pool = await getPool();
+
+        // 1. Buscar CodCliente a partir del IDCliente
+        const clientRes = await pool.request()
+            .input('idCliente', sql.VarChar, clientId)
+            .query("SELECT CodCliente FROM Clientes WHERE IDCliente = @idCliente");
+
+        if (!clientRes.recordset.length) {
+            return res.status(404).json({ success: false, error: "Cliente no encontrado." });
+        }
+        const codCliente = clientRes.recordset[0].CodCliente;
+
+        // 2. Resolver IDs numéricos de las órdenes seleccionadas
+        const ordersResult = await pool.request()
+            .input('idCli', sql.VarChar, clientId)
+            .query(`
+                SELECT o.OrdIdOrden, o.OrdCodigoOrden
+                FROM OrdenesDeposito o WITH(NOLOCK)
+                LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
+                LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+                WHERE c.IDCliente = @idCli
+                AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar', 'Pronto para entregar')
+            `);
+
+        const rawOrderIds = [];
+        for (const o of ordersResult.recordset) {
+            const docId = o.OrdCodigoOrden || `#${o.OrdIdOrden}`;
+            if (selectedOrderIds.includes(docId) || selectedOrderIds.includes(o.OrdCodigoOrden)) {
+                rawOrderIds.push(o.OrdIdOrden);
+            }
+        }
+
+        if (rawOrderIds.length === 0) {
+            return res.status(400).json({ success: false, error: "Órdenes no encontradas." });
+        }
+
+        // 3. Crear retiro
+        const { crearRetiro } = require('../services/retiroService');
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            const OReIdOrdenRetiro = await crearRetiro(transaction, {
+                ordIds: rawOrderIds,
+                totalCost: totalCost || 0,
+                lugarRetiro: lugarRetiro || 5,
+                usuarioAlta: 70, // Usuario genérico tótem
+                formaRetiro: formaRetiro || 'RT',
+                codCliente: parseInt(codCliente, 10) || null,
+                moneda: 'UYU'
+            });
+
+            await transaction.commit();
+
+            const ordIdRetiro = `RT-${OReIdOrdenRetiro}`;
+
+            // Emitir socket
+            const io = req.app.get('socketio');
+            if (io) {
+                io.emit('actualizado', { type: 'actualizacion' });
+                io.emit('retiros:update', { type: 'nuevo_retiro' });
+            }
+
+            res.json({ success: true, data: { OReIdOrdenRetiro }, ordIdGenerada: ordIdRetiro });
+
+        } catch (txErr) {
+            try { await transaction.rollback(); } catch (e) { }
+            throw txErr;
+        }
+
+    } catch (error) {
+        console.error("Error totem create pickup:", error);
+        res.status(500).json({ success: false, error: "Error al crear retiro: " + error.message });
+    }
+};
+
 // --- API HELPERS ---
 const parseAmount = (amt) => {
     if (typeof amt === 'number') return amt;
@@ -1383,11 +1587,14 @@ exports.createPickupOrder = async (req, res) => {
 
             await transaction.commit();
 
-            const ordIdRetiro = `R-${OReIdOrdenRetiro}`;
+            const ordIdRetiro = `RW-${OReIdOrdenRetiro}`;
 
             // Emitir socket
             const io = req.app.get('socketio');
-            if (io) io.emit('actualizado', { type: 'actualizacion' });
+            if (io) {
+                io.emit('actualizado', { type: 'actualizacion' });
+                io.emit('retiros:update', { type: 'nuevo_retiro' });
+            }
 
             res.json({ success: true, data: { OReIdOrdenRetiro }, ordIdGenerada: ordIdRetiro });
 

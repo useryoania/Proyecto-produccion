@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const { registrarPago } = require('../services/retiroService');
 
 // Controlador para obtener métodos de pago
 const obtenerMetodosPago = async (req, res) => {
@@ -49,6 +50,7 @@ const realizarPago = async (req, res) => {
     transaction = await pool.transaction();
     await transaction.begin();
 
+<<<<<<< HEAD
     // ── 1. Insertar el Pago ───────────────────────────────────────────────────
     const pagoResult = await transaction.request()
       .input('metodoPagoId', sql.Int, metodoPagoId)
@@ -144,6 +146,11 @@ const realizarPago = async (req, res) => {
         console.log(`[AUTO-CIERRE] OrdenRetiro R-${ordenRetiroId} marcada como Abonada.`);
       }
     }
+=======
+    const { pagoId } = await registrarPago(transaction, {
+      ordenRetiroId, metodoPagoId, monedaId, monto, orderNumbers, usuarioId, nuevoEstado
+    });
+>>>>>>> df4442e9b00356d953724662fc79be5416a11af2
 
     await transaction.commit();
 

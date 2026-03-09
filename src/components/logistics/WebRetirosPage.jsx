@@ -354,9 +354,8 @@ const WebRetirosPage = () => {
             moneda: r.Moneda || 'UYU',
             pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
             pagoHandy: !!r.ReferenciaPago,
-            orders: r.BultosJSON ? JSON.parse(r.BultosJSON) : [
-              { orderNumber: `P-${r.OrdIdRetiro.split('-')[1] || '0'}`, orderId: r.IdRetWeb }
-            ]
+            orders: r.BultosJSON ? JSON.parse(r.BultosJSON) :
+              (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() })) : [])
           }));
       } catch (e) {
         console.warn('[WebRetiros] /web-retiros/locales no disponible:', e.message);
@@ -414,9 +413,8 @@ const WebRetirosPage = () => {
                 moneda: r.Moneda || 'UYU',
                 pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
                 pagoHandy: !!r.ReferenciaPago,
-                orders: r.BultosJSON ? JSON.parse(r.BultosJSON) : [
-                  { orderNumber: `P-${r.OrdIdRetiro.split('-')[1] || '0'}`, orderId: r.IdRetWeb }
-                ]
+                orders: r.BultosJSON ? JSON.parse(r.BultosJSON) :
+                  (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() })) : [])
               }));
             setApiOrders(refreshed);
           });
