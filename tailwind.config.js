@@ -34,7 +34,11 @@ export default {
                     100: '#e0e7ff',
                     500: '#6366f1', // Indigo
                     600: '#4f46e5',
-                }
+                },
+                'custom-dark': '#19181B',
+                'custom-cyan': '#00AEEF',
+                'custom-magenta': '#EC008C',
+                'custom-yellow': '#FFF200',
             },
             fontFamily: {
                 sans: ['Inter', 'system-ui', 'sans-serif'],

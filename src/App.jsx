@@ -8,6 +8,7 @@ import ForgotPasswordPage from './components/pages/ForgotPasswordPage';
 import { ClientPortalApp } from './client-portal/ClientPortalApp';
 import MainAppContent from './components/layout/MainAppContent'; // ESTE ES EL IMPORT
 import PaymentResult from './components/pages/PaymentResult';
+import { TotemApp } from './client-portal/modulos/totem/TotemApp';
 import { menuService } from './services/api';
 
 function App() {
@@ -43,6 +44,7 @@ function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/portal/*" element={<ClientPortalApp />} />
         <Route path="/payment-status" element={<PaymentResult />} />
+        <Route path="/totem/*" element={<TotemApp />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -55,6 +57,7 @@ function App() {
       <Routes>
         <Route path="/portal/*" element={<ClientPortalApp />} />
         <Route path="/payment-status" element={<PaymentResult />} />
+        <Route path="/totem/*" element={<TotemApp />} />
         {/* Redirect any other route to portal */}
         <Route path="*" element={<Navigate to="/portal/profile" replace />} />
       </Routes>
@@ -64,6 +67,7 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/totem/*" element={<TotemApp />} />
       <Route path="*" element={<MainAppContent menuItems={menuItems} />} />
     </Routes>
   );

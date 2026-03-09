@@ -39,7 +39,7 @@ const EntregaPedidosView = () => {
     // Cargar Catálogo de Lugares
     const loadLugaresRetiro = async () => {
         try {
-            const response = await api.get('/lugares-retiro');
+            const response = await api.get('/apilugaresRetiro/lugares-retiro');
             setLugaresRetiro(response.data);
             // Si la data viene vacía, no pisamos el filtro por ahora
         } catch (error) {

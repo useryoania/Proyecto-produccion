@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../config/db');
 const axios = require('axios');
 const moment = require('moment-timezone');
+const { marcarEntregado, registrarPago } = require('../services/retiroService');
 
 // Importar funciones del controller de órdenes de retiro local
 const ordenesRetiroController = require('./ordenesRetiroController');
@@ -42,146 +43,140 @@ exports.crearRetiro = async (req, res) => {
     }
 };
 
-/**
- * Backend logic to sync retiros from Central API
- */
-const runSyncRetirosCore = async () => {
-    const pool = await getPool();
-    const transaction = new sql.Transaction(pool);
+// DESHABILITADO: runSyncRetirosCore — loop circular (lee y reescribe la misma DB).
+// Los datos ya se crean correctamente desde crearRetiro. Ver audit 2025-03-09.
+// Se comenta con // porque el regex /^R-0*/ contiene */ que rompe block comments.
+//
+// const runSyncRetirosCore = async () => {
+//     const pool = await getPool();
+//     const transaction = new sql.Transaction(pool);
+//
+//     const queryResult = await pool.request().query(`
+//         SELECT 
+//             r.OReIdOrdenRetiro, r.OReCostoTotalOrden, r.OReFechaAlta, r.OReUsuarioAlta,
+//             r.OReEstadoActual, r.PagIdPago, r.ORePasarPorCaja,
+//             lr.LReNombreLugar AS lugarRetiro,
+//             er.EORNombreEstado AS estado,
+//             o.OrdIdOrden AS orderId, o.OrdCodigoOrden AS orderNumber,
+//             o.OrdEstadoActual AS orderEstado, o.OrdCostoFinal as costoFinal,
+//             monOrden.MonSimbolo AS orderMonedaSimbolo,
+//             p.MPaIdMetodoPago AS orderIdMetodoPago,
+//             mp.MPaDescripcionMetodo AS orderMetodoPago,
+//             monPago.MonSimbolo AS monetPagoSimbolo,
+//             p.PagMontoPago AS orderMontoPago, p.PagFechaPago AS orderFechaPago,
+//             p.PagRutaComprobante AS comprobante,
+//             c.CodigoReact AS CliCodigoCliente, c.Tipo AS TClDescripcion
+//         FROM OrdenesRetiro r WITH(NOLOCK)
+//         LEFT JOIN LugaresRetiro lr WITH(NOLOCK) ON lr.LReIdLugarRetiro = r.LReIdLugarRetiro
+//         LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
+//         LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+//         LEFT JOIN Monedas monOrden WITH(NOLOCK) ON monOrden.MonIdMoneda = o.MonIdMoneda
+//         LEFT JOIN Pagos p WITH(NOLOCK) ON p.PagIdPago = o.PagIdPago
+//         LEFT JOIN Monedas monPago WITH(NOLOCK) ON monPago.MonIdMoneda = p.PagIdMonedaPago
+//         LEFT JOIN MetodosPagos mp WITH(NOLOCK) ON mp.MPaIdMetodoPago = p.MPaIdMetodoPago
+//         LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+//         WHERE r.OReEstadoActual IN (1,3,4,7,8,5,6)
+//         AND (CAST(DATEADD(d,-7,GETDATE()) AS DATE) <= CAST(r.OReFechaAlta AS DATE) OR r.OReEstadoActual NOT IN (5,6))
+//     `);
+//
+//     const map = {};
+//     for (const row of queryResult.recordset) {
+//         if (!map[row.OReIdOrdenRetiro]) {
+//             map[row.OReIdOrdenRetiro] = {
+//                 ordenDeRetiro: `R-${String(row.OReIdOrdenRetiro).padStart(4, '0')}`,
+//                 totalCost: parseFloat(row.OReCostoTotalOrden).toFixed(2),
+//                 lugarRetiro: row.lugarRetiro || 'Desconocido',
+//                 fechaAlta: row.OReFechaAlta,
+//                 usuarioAlta: row.OReUsuarioAlta,
+//                 estado: row.estado || 'Desconocido',
+//                 pagorealizado: row.PagIdPago ? 1 : 0,
+//                 metodoPago: row.orderMetodoPago,
+//                 montopagorealizado: row.PagIdPago ? `${row.monetPagoSimbolo || ''} ${parseFloat(row.orderMontoPago || 0).toFixed(2)}` : null,
+//                 fechapagooden: row.orderFechaPago,
+//                 comprobante: row.comprobante,
+//                 CliCodigoCliente: row.CliCodigoCliente || 'Desconocido',
+//                 TClDescripcion: row.TClDescripcion || 'Desconocido',
+//                 orders: []
+//             };
+//         }
+//         if (row.orderId) {
+//             map[row.OReIdOrdenRetiro].orders.push({
+//                 orderNumber: row.orderNumber, orderId: row.orderId,
+//                 orderEstado: row.orderEstado,
+//                 orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaSimbolo} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
+//                 orderIdMetodoPago: row.orderIdMetodoPago,
+//                 orderMetodoPago: row.orderMetodoPago,
+//                 orderPago: row.monetPagoSimbolo ? `${row.monetPagoSimbolo} ${parseFloat(row.orderMontoPago).toFixed(2)}` : null,
+//                 orderFechaPago: row.orderFechaPago
+//             });
+//         }
+//     }
+//     const retirosExternos = Object.values(map);
+//
+//     await transaction.begin();
+//
+//     try {
+//         for (const ret of retirosExternos) {
+//             let estadoNumerico = 1;
+//             if (ret.estado.includes('Abonado') || ret.estado.includes('Abonado de antemano')) estadoNumerico = 3;
+//             if (ret.estado.includes('Empaquetado sin abonar')) estadoNumerico = 7;
+//             if (ret.estado.includes('Empaquetado y abonado')) estadoNumerico = 8;
+//             if (ret.estado.includes('Entregado')) estadoNumerico = 5;
+//             if (ret.estado.includes('Cancelar')) estadoNumerico = 6;
+//
+//             const updateQuery = `
+//                 UPDATE OrdenesRetiro SET 
+//                     OReEstadoActual = @Estado,
+//                     OReCostoTotalOrden = COALESCE(@Monto, OReCostoTotalOrden),
+//                     ReferenciaPagoOnline = COALESCE(@RefPago, ReferenciaPagoOnline),
+//                     CodCliente = COALESCE(@CodCliente, CodCliente),
+//                     MonIdMoneda = COALESCE(@Moneda, MonIdMoneda),
+//                     FormaRetiro = COALESCE(FormaRetiro, 'RW'),
+//                     OReFechaEstadoActual = GETDATE()
+//                 WHERE OReIdOrdenRetiro = @OReId
+//             `;
+//
+//             let montoLimpio = null;
+//             let monedaLimpia = null;
+//             if (ret.montopagorealizado && ret.montopagorealizado !== 'NaN') {
+//                 const partes = ret.montopagorealizado.split(' ');
+//                 if (partes.length === 2) {
+//                     monedaLimpia = partes[0] === '$' ? 'UYU' : partes[0];
+//                     montoLimpio = parseFloat(partes[1].replace(/,/g, ''));
+//                 }
+//             } else if (ret.totalCost && ret.totalCost !== 'NaN') {
+//                 montoLimpio = parseFloat(ret.totalCost);
+//             }
+//
+//             const OReId = parseInt(ret.ordenDeRetiro.replace(/^R-0*/, ''), 10);
+//             if (isNaN(OReId)) continue;
+//
+//             await new sql.Request(transaction)
+//                 .input('OReId', sql.Int, OReId)
+//                 .input('Monto', sql.Decimal(18, 2), montoLimpio)
+//                 .input('Moneda', sql.VarChar(10), monedaLimpia || 'UYU')
+//                 .input('Estado', sql.Int, estadoNumerico)
+//                 .input('RefPago', sql.VarChar(200), ret.comprobante || null)
+//                 .input('CodCliente', sql.Int, ret.CliCodigoCliente ? parseInt(ret.CliCodigoCliente, 10) : null)
+//                 .query(updateQuery);
+//         }
+//
+//         await transaction.commit();
+//         return { success: true, count: retirosExternos.length, message: `${retirosExternos.length} retiros sincronizados con éxito.` };
+//
+//     } catch (innerErr) {
+//         await transaction.rollback();
+//         throw innerErr;
+//     }
+// };
 
-    // Query directa a DB en vez de llamar al legacy API
-    const queryResult = await pool.request().query(`
-        SELECT 
-            r.OReIdOrdenRetiro, r.OReCostoTotalOrden, r.OReFechaAlta, r.OReUsuarioAlta,
-            r.OReEstadoActual, r.PagIdPago, r.ORePasarPorCaja,
-            lr.LReNombreLugar AS lugarRetiro,
-            er.EORNombreEstado AS estado,
-            o.OrdIdOrden AS orderId, o.OrdCodigoOrden AS orderNumber,
-            o.OrdEstadoActual AS orderEstado, o.OrdCostoFinal as costoFinal,
-            monOrden.MonSimbolo AS orderMonedaSimbolo,
-            p.MPaIdMetodoPago AS orderIdMetodoPago,
-            mp.MPaDescripcionMetodo AS orderMetodoPago,
-            monPago.MonSimbolo AS monetPagoSimbolo,
-            p.PagMontoPago AS orderMontoPago, p.PagFechaPago AS orderFechaPago,
-            p.PagRutaComprobante AS comprobante,
-            c.CodigoReact AS CliCodigoCliente, c.Tipo AS TClDescripcion
-        FROM OrdenesRetiro r WITH(NOLOCK)
-        LEFT JOIN LugaresRetiro lr WITH(NOLOCK) ON lr.LReIdLugarRetiro = r.LReIdLugarRetiro
-        LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
-        LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
-        LEFT JOIN Monedas monOrden WITH(NOLOCK) ON monOrden.MonIdMoneda = o.MonIdMoneda
-        LEFT JOIN Pagos p WITH(NOLOCK) ON p.PagIdPago = o.PagIdPago
-        LEFT JOIN Monedas monPago WITH(NOLOCK) ON monPago.MonIdMoneda = p.PagIdMonedaPago
-        LEFT JOIN MetodosPagos mp WITH(NOLOCK) ON mp.MPaIdMetodoPago = p.MPaIdMetodoPago
-        LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
-        WHERE r.OReEstadoActual IN (1,3,4,7,8,5,6)
-        AND (CAST(DATEADD(d,-7,GETDATE()) AS DATE) <= CAST(r.OReFechaAlta AS DATE) OR r.OReEstadoActual NOT IN (5,6))
-    `);
-
-    // Procesar filas igual que ordenesRetiroController
-    const map = {};
-    for (const row of queryResult.recordset) {
-        if (!map[row.OReIdOrdenRetiro]) {
-            map[row.OReIdOrdenRetiro] = {
-                ordenDeRetiro: `R-${String(row.OReIdOrdenRetiro).padStart(4, '0')}`,
-                totalCost: parseFloat(row.OReCostoTotalOrden).toFixed(2),
-                lugarRetiro: row.lugarRetiro || 'Desconocido',
-                fechaAlta: row.OReFechaAlta,
-                usuarioAlta: row.OReUsuarioAlta,
-                estado: row.estado || 'Desconocido',
-                pagorealizado: row.PagIdPago ? 1 : 0,
-                metodoPago: row.orderMetodoPago,
-                montopagorealizado: row.PagIdPago ? `${row.monetPagoSimbolo || ''} ${parseFloat(row.orderMontoPago || 0).toFixed(2)}` : null,
-                fechapagooden: row.orderFechaPago,
-                comprobante: row.comprobante,
-                CliCodigoCliente: row.CliCodigoCliente || 'Desconocido',
-                TClDescripcion: row.TClDescripcion || 'Desconocido',
-                orders: []
-            };
-        }
-        if (row.orderId) {
-            map[row.OReIdOrdenRetiro].orders.push({
-                orderNumber: row.orderNumber, orderId: row.orderId,
-                orderEstado: row.orderEstado,
-                orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaSimbolo} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
-                orderIdMetodoPago: row.orderIdMetodoPago,
-                orderMetodoPago: row.orderMetodoPago,
-                orderPago: row.monetPagoSimbolo ? `${row.monetPagoSimbolo} ${parseFloat(row.orderMontoPago).toFixed(2)}` : null,
-                orderFechaPago: row.orderFechaPago
-            });
-        }
-    }
-    const retirosExternos = Object.values(map);
-
-    await transaction.begin();
-
-    try {
-        for (const ret of retirosExternos) {
-            let estadoNumerico = 1;
-            if (ret.estado.includes('Abonado') || ret.estado.includes('Abonado de antemano')) estadoNumerico = 3;
-            if (ret.estado.includes('Empaquetado sin abonar')) estadoNumerico = 7;
-            if (ret.estado.includes('Empaquetado y abonado')) estadoNumerico = 8;
-            if (ret.estado.includes('Entregado')) estadoNumerico = 5;
-            if (ret.estado.includes('Cancelar')) estadoNumerico = 6;
-
-            const updateQuery = `
-                UPDATE OrdenesRetiro SET 
-                    OReEstadoActual = @Estado,
-                    OReCostoTotalOrden = COALESCE(@Monto, OReCostoTotalOrden),
-                    ReferenciaPagoOnline = COALESCE(@RefPago, ReferenciaPagoOnline),
-                    CodCliente = COALESCE(@CodCliente, CodCliente),
-                    MonIdMoneda = COALESCE(@Moneda, MonIdMoneda),
-                    FormaRetiro = COALESCE(FormaRetiro, 'RW'),
-                    OReFechaEstadoActual = GETDATE()
-                WHERE OReIdOrdenRetiro = @OReId
-            `;
-
-            let montoLimpio = null;
-            let monedaLimpia = null;
-            if (ret.montopagorealizado && ret.montopagorealizado !== 'NaN') {
-                const partes = ret.montopagorealizado.split(' ');
-                if (partes.length === 2) {
-                    monedaLimpia = partes[0] === '$' ? 'UYU' : partes[0];
-                    montoLimpio = parseFloat(partes[1].replace(/,/g, ''));
-                }
-            } else if (ret.totalCost && ret.totalCost !== 'NaN') {
-                montoLimpio = parseFloat(ret.totalCost);
-            }
-
-            // Extraer ID numérico de la orden de retiro
-            const OReId = parseInt(ret.ordenDeRetiro.replace(/^R-0*/, ''), 10);
-            if (isNaN(OReId)) continue;
-
-            await new sql.Request(transaction)
-                .input('OReId', sql.Int, OReId)
-                .input('Monto', sql.Decimal(18, 2), montoLimpio)
-                .input('Moneda', sql.VarChar(10), monedaLimpia || 'UYU')
-                .input('Estado', sql.Int, estadoNumerico)
-                .input('RefPago', sql.VarChar(200), ret.comprobante || null)
-                .input('CodCliente', sql.Int, ret.CliCodigoCliente ? parseInt(ret.CliCodigoCliente, 10) : null)
-                .query(updateQuery);
-        }
-
-        await transaction.commit();
-        return { success: true, count: retirosExternos.length, message: `${retirosExternos.length} retiros sincronizados con éxito.` };
-
-    } catch (innerErr) {
-        await transaction.rollback();
-        throw innerErr;
-    }
-};
 
 /**
  * Sincronizar retiros desde la API Central
  */
 exports.sincronizarRetirosWeb = async (req, res) => {
-    try {
-        const result = await runSyncRetirosCore();
-        res.json(result);
-    } catch (err) {
-        console.error("Error al sincronizar retiros:", err);
-        res.status(500).json({ error: "Error de sincronización", details: err.message });
-    }
+    // Sync deshabilitado: la DB es la fuente de verdad
+    res.json({ success: true, count: 0, message: 'Sincronización deshabilitada: DB es fuente de verdad.' });
 };
 
 /**
@@ -212,58 +207,9 @@ exports.reportarPagoRetiro = async (req, res) => {
         await transaction.begin();
 
         try {
-            // Insertar pago
-            const pagoResult = await new sql.Request(transaction)
-                .input('metodoPagoId', sql.Int, metodoPagoId)
-                .input('monedaId', sql.Int, monedaId)
-                .input('monto', sql.Float, monto)
-                .input('fecha', sql.DateTime, new Date())
-                .input('usuarioId', sql.Int, usuarioId)
-                .query(`
-                    INSERT INTO Pagos (MPaIdMetodoPago, PagIdMonedaPago, PagMontoPago, PagFechaPago, PagUsuarioAlta)
-                    OUTPUT INSERTED.PagIdPago
-                    VALUES (@metodoPagoId, @monedaId, @monto, @fecha, @usuarioId)
-                `);
-
-            const pagoId = pagoResult.recordset[0].PagIdPago;
-
-            // Actualizar orden de retiro
-            await new sql.Request(transaction)
-                .input('ordenRetiroId', sql.Int, ordenRetiroId)
-                .input('nuevoEstado', sql.Int, nuevoEstado)
-                .input('pagoId', sql.Int, pagoId)
-                .query(`
-                    UPDATE OrdenesRetiro 
-                    SET PagIdPago = @pagoId, OReEstadoActual = @nuevoEstado, OReFechaEstadoActual = GETDATE(), ORePasarPorCaja = 0
-                    WHERE OReIdOrdenRetiro = @ordenRetiroId;
-                `);
-
-            // Histórico
-            await new sql.Request(transaction)
-                .input('ordenRetiroId', sql.Int, ordenRetiroId)
-                .input('nuevoEstado', sql.Int, nuevoEstado)
-                .input('usuarioId', sql.Int, usuarioId)
-                .query(`
-                    INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-                    VALUES (@ordenRetiroId, @nuevoEstado, GETDATE(), @usuarioId);
-                `);
-
-            // Actualizar órdenes individuales si hay orderNumbers
-            if (orderNumbers && orderNumbers.length > 0) {
-                const orderIdsList = orderNumbers.join(', ');
-                await new sql.Request(transaction)
-                    .input('pagoId', sql.Int, pagoId)
-                    .query(`
-                        UPDATE OrdenesDeposito SET PagIdPago = @pagoId, OrdEstadoActual = 7, OrdFechaEstadoActual = GETDATE()
-                        WHERE OrdIdOrden IN (${orderIdsList});
-                    `);
-
-                const historicoValues = orderNumbers.map(oid => `(${oid}, 7, GETDATE(), ${usuarioId})`).join(', ');
-                await new sql.Request(transaction).query(`
-                    INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-                    VALUES ${historicoValues};
-                `);
-            }
+            const { pagoId } = await registrarPago(transaction, {
+                ordenRetiroId, metodoPagoId, monedaId, monto, orderNumbers, usuarioId, nuevoEstado
+            });
 
             await transaction.commit();
 
@@ -296,7 +242,7 @@ exports.getAllLocalRetiros = async (req, res) => {
         const pool = await getPool();
         const query = `
             SELECT 
-                'R-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
+                COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
                 r.OReCostoTotalOrden AS Monto,
                 r.MonIdMoneda AS Moneda,
                 r.ReferenciaPagoOnline AS ReferenciaPago,
@@ -325,18 +271,13 @@ exports.getMyRetirosPendientes = async (req, res) => {
         const codCliente = req.user?.codCliente || req.user?.id;
         if (!codCliente) return res.status(401).json({ error: "Usuario sin código de cliente" });
 
-        // Sincronizar en background para asegurarnos de que la base local tiene el estado fresco
-        // Así los retiros que acaban de ser abonados en otra ventana desaparecen de la tabla de pagos pendientes
-        try {
-            await runSyncRetirosCore();
-        } catch (syncErr) {
-            console.error("Warning: Podría no estar súper fresco el dato (falló sync interno):", syncErr.message);
-        }
+        // Sync deshabilitado: la DB ya es la fuente de verdad
+        // try { await runSyncRetirosCore(); } catch (syncErr) { }
 
         const pool = await getPool();
         const query = `
             SELECT 
-                'R-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
+                COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
                 r.OReCostoTotalOrden AS Monto,
                 r.MonIdMoneda AS Moneda,
                 r.ReferenciaPagoOnline AS ReferenciaPago,
@@ -520,58 +461,52 @@ exports.asignarRetiroAEstante = async (req, res) => {
             const nuevoEstado = pagado ? 8 : 7;
             const ubicacionString = `${estanteId}-${seccion}-${posicion}`;
 
-            // OrdenesRetiro se actualiza más abajo en el paso 4
+            // 4. Marcar pronto en DB directamente (dentro de la misma transacción)
+            const OReIdOrdenRetiro = parseInt(ordenRetiro.replace(/^R-0*/, ''), 10);
+            const fechaPronto = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
+            const UsuarioAlta = req.user?.id || 70;
+
+            // Generar lista de códigos de órdenes escaneadas
+            const bultosLimpios = (scannedValues || []).filter(val => val && val.trim() !== '');
+            if (bultosLimpios.length > 0) {
+                const scanReq = new sql.Request(transaction);
+                scanReq.input('FecPronto', sql.DateTime, new Date(fechaPronto));
+                scanReq.input('UsrAlta', sql.Int, UsuarioAlta);
+                bultosLimpios.forEach((v, i) => {
+                    scanReq.input(`sv${i}`, sql.VarChar, v.trim());
+                });
+                const inParams = bultosLimpios.map((_, i) => `@sv${i}`).join(',');
+
+                await scanReq.query(`
+                    INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+                    SELECT OrdIdOrden, 7, @FecPronto, @UsrAlta
+                    FROM OrdenesDeposito WHERE OrdCodigoOrden IN (${inParams});
+                    
+                    UPDATE OrdenesDeposito SET OrdEstadoActual = 7, OrdFechaEstadoActual = @FecPronto WHERE OrdCodigoOrden IN (${inParams});
+                `);
+            }
+
+            // Actualizar estado de la orden de retiro
+            const retRes = await new sql.Request(transaction)
+                .input('ID', sql.Int, OReIdOrdenRetiro)
+                .query('SELECT OReEstadoActual FROM OrdenesRetiro WITH(NOLOCK) WHERE OReIdOrdenRetiro = @ID');
+
+            if (retRes.recordset.length > 0) {
+                const nuevoEstado = retRes.recordset[0].OReEstadoActual === 1 ? 7 : 8;
+                await new sql.Request(transaction)
+                    .input('ID', sql.Int, OReIdOrdenRetiro)
+                    .input('EstID', sql.Int, nuevoEstado)
+                    .input('Fec', sql.DateTime, new Date(fechaPronto))
+                    .input('Usr', sql.Int, UsuarioAlta)
+                    .query(`
+                        UPDATE OrdenesRetiro SET OReEstadoActual = @EstID, OReFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
+                        INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@ID, @EstID, @Fec, @Usr);
+                    `);
+            }
+
+            console.log(`[PRONTO] OK ${ordenRetiro}`);
 
             await transaction.commit();
-
-            // 4. Marcar pronto en DB directamente (reemplaza llamada a API central)
-            try {
-                const OReIdOrdenRetiro = parseInt(ordenRetiro.replace(/^R-0*/, ''), 10);
-                const fechaPronto = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
-                const UsuarioAlta = req.user?.id || 70;
-
-                // Generar lista de códigos de órdenes escaneadas
-                const bultosLimpios = (scannedValues || []).filter(val => val && val.trim() !== '');
-                if (bultosLimpios.length > 0) {
-                    const scanReq = pool.request();
-                    scanReq.input('FecPronto', sql.DateTime, new Date(fechaPronto));
-                    scanReq.input('UsrAlta', sql.Int, UsuarioAlta);
-                    bultosLimpios.forEach((v, i) => {
-                        scanReq.input(`sv${i}`, sql.VarChar, v.trim());
-                    });
-                    const inParams = bultosLimpios.map((_, i) => `@sv${i}`).join(',');
-
-                    await scanReq.query(`
-                        INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-                        SELECT OrdIdOrden, 7, @FecPronto, @UsrAlta
-                        FROM OrdenesDeposito WHERE OrdCodigoOrden IN (${inParams});
-                        
-                        UPDATE OrdenesDeposito SET OrdEstadoActual = 7, OrdFechaEstadoActual = @FecPronto WHERE OrdCodigoOrden IN (${inParams});
-                    `);
-                }
-
-                // Actualizar estado de la orden de retiro
-                const retRes = await pool.request()
-                    .input('ID', sql.Int, OReIdOrdenRetiro)
-                    .query('SELECT OReEstadoActual FROM OrdenesRetiro WITH(NOLOCK) WHERE OReIdOrdenRetiro = @ID');
-
-                if (retRes.recordset.length > 0) {
-                    const nuevoEstado = retRes.recordset[0].OReEstadoActual === 1 ? 7 : 8;
-                    await pool.request()
-                        .input('ID', sql.Int, OReIdOrdenRetiro)
-                        .input('EstID', sql.Int, nuevoEstado)
-                        .input('Fec', sql.DateTime, new Date(fechaPronto))
-                        .input('Usr', sql.Int, UsuarioAlta)
-                        .query(`
-                            UPDATE OrdenesRetiro SET OReEstadoActual = @EstID, OReFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
-                            INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@ID, @EstID, @Fec, @Usr);
-                        `);
-                }
-
-                console.log(`[PRONTO] OK ${ordenRetiro}`);
-            } catch (extErr) {
-                console.error(`[PRONTO] ERROR ${ordenRetiro}:`, extErr.message);
-            }
 
             // EMITIR EVENTO SOCKET.IO
             const io = req.app.get('socketio');
@@ -621,29 +556,14 @@ exports.marcarRetiroEntregado = async (req, res) => {
             // 2. OrdenesRetiro se actualiza en el paso 3 abajo (Estado=5)
 
             // 3. Marcar entregadas en DB directamente
-            try {
-                const fechaEntrega = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
-                const UsuarioAlta = req.user?.id || 70;
+            const fechaEntrega = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
+            const UsuarioAlta = req.user?.id || 70;
 
-                for (const ord of ordenesDeRetiro) {
-                    const OReId = parseInt(ord.replace(/^R-0*/, ''), 10);
-                    if (isNaN(OReId)) continue;
-                    console.log(`[ENTREGADO MULTIPLE] ${ord} -> ${OReId}`);
-
-                    await new sql.Request(transaction)
-                        .input('ID', sql.Int, OReId)
-                        .input('Fec', sql.DateTime, new Date(fechaEntrega))
-                        .input('Usr', sql.Int, UsuarioAlta)
-                        .query(`
-                            INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-                            SELECT OrdIdOrden, 9, @Fec, @Usr FROM OrdenesDeposito WHERE OReIdOrdenRetiro = @ID;
-                            UPDATE OrdenesDeposito SET OrdEstadoActual = 9, OrdFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
-                            UPDATE OrdenesRetiro SET OReEstadoActual = 5, ORePasarPorCaja = 0, OReFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
-                            INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@ID, 5, @Fec, @Usr);
-                        `);
-                }
-            } catch (extErr) {
-                console.error(`[MARCAR ENTREGADO] ERROR:`, extErr.message);
+            for (const ord of ordenesDeRetiro) {
+                const OReId = parseInt(ord.replace(/^R-0*/, ''), 10);
+                if (isNaN(OReId)) continue;
+                console.log(`[ENTREGADO MULTIPLE] ${ord} -> ${OReId}`);
+                await marcarEntregado(transaction, OReId, new Date(fechaEntrega), UsuarioAlta);
             }
 
             await transaction.commit();
@@ -692,29 +612,14 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
             }
 
             // 3. Marcar entregadas en DB directamente
-            try {
-                const fechaEntrega = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
-                const UsuarioAlta = req.user?.id || 70;
+            const fechaEntrega = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
+            const UsuarioAlta = req.user?.id || 70;
 
-                for (const ord of ordenesParaEntregar) {
-                    const OReId = parseInt(ord.replace(/^R-0*/, ''), 10);
-                    if (isNaN(OReId)) continue;
-                    console.log(`[ENTREGADO MULTIPLE SELECCIÓN] ${ord} -> ${OReId}`);
-
-                    await new sql.Request(transaction)
-                        .input('ID', sql.Int, OReId)
-                        .input('Fec', sql.DateTime, new Date(fechaEntrega))
-                        .input('Usr', sql.Int, UsuarioAlta)
-                        .query(`
-                            INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-                            SELECT OrdIdOrden, 9, @Fec, @Usr FROM OrdenesDeposito WHERE OReIdOrdenRetiro = @ID;
-                            UPDATE OrdenesDeposito SET OrdEstadoActual = 9, OrdFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
-                            UPDATE OrdenesRetiro SET OReEstadoActual = 5, ORePasarPorCaja = 0, OReFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
-                            INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@ID, 5, @Fec, @Usr);
-                        `);
-                }
-            } catch (extErr) {
-                console.error(`[MARCAR ENTREGADO] ERROR:`, extErr.message);
+            for (const ord of ordenesParaEntregar) {
+                const OReId = parseInt(ord.replace(/^R-0*/, ''), 10);
+                if (isNaN(OReId)) continue;
+                console.log(`[ENTREGADO MULTIPLE SELECCIÓN] ${ord} -> ${OReId}`);
+                await marcarEntregado(transaction, OReId, new Date(fechaEntrega), UsuarioAlta);
             }
 
             await transaction.commit();
@@ -827,9 +732,9 @@ exports.marcarExcepcional = async (req, res) => {
             .input('orden', sql.VarChar, ordenRetiro)
             .input('cliente', sql.VarChar, codigoCliente)
             .input('monto', sql.VarChar, String(monto))
-            .input('pwd', sql.VarChar, password)
+            .input('usr', sql.VarChar, `${req.user?.nombre || 'Usuario'} (ID: ${req.user?.id || 0})`)
             .input('expl', sql.NVarChar, explicacion)
-            .query(`INSERT INTO RetirosConDeuda (OrdenRetiro, CodigoCliente, Monto, UsuarioAutorizador, Explicacion) VALUES (@orden, @cliente, @monto, @pwd, @expl)`);
+            .query(`INSERT INTO RetirosConDeuda (OrdenRetiro, CodigoCliente, Monto, UsuarioAutorizador, Explicacion) VALUES (@orden, @cliente, @monto, @usr, @expl)`);
 
         res.json({ message: "Retiro registrado como deuda y autorizado exitosamente." });
     } catch (err) {

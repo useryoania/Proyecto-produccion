@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const { registrarPago } = require('../services/retiroService');
 
 // Controlador para obtener métodos de pago
 const obtenerMetodosPago = async (req, res) => {
@@ -15,7 +16,7 @@ const obtenerMetodosPago = async (req, res) => {
 // Controlador para realizar un pago
 const realizarPago = async (req, res) => {
   const { metodoPagoId, monedaId, monto, ordenRetiro, orderNumbers } = req.body;
-  const usuarioId = req.user?.id || 70; // Hardcode default
+  const usuarioId = req.user?.id || 70;
   console.log('Cuerpo de la solicitud recibido:', req.body);
 
   const pool = await getPool();
@@ -42,98 +43,9 @@ const realizarPago = async (req, res) => {
     transaction = await pool.transaction();
     await transaction.begin();
 
-    const pagoResult = await transaction.request()
-      .input('metodoPagoId', sql.Int, metodoPagoId)
-      .input('monedaId', sql.Int, monedaId)
-      .input('monto', sql.Float, monto)
-      .input('fecha', sql.DateTime, new Date())
-      .input('usuarioId', sql.Int, usuarioId)
-      .query(`
-        INSERT INTO Pagos (MPaIdMetodoPago, PagIdMonedaPago, PagMontoPago, PagFechaPago, PagUsuarioAlta)
-        OUTPUT INSERTED.PagIdPago
-        VALUES (@metodoPagoId, @monedaId, @monto, @fecha, @usuarioId)
-      `);
-
-    const pagoId = pagoResult.recordset[0].PagIdPago;
-
-    await transaction.request()
-      .input('ordenRetiroId', sql.Int, ordenRetiroId)
-      .input('nuevoEstado', sql.Int, nuevoEstado)
-      .input('pagoId', sql.Int, pagoId)
-      .query(`
-        UPDATE OrdenesRetiro 
-        SET PagIdPago = @pagoId, 
-            OReEstadoActual = @nuevoEstado, 
-            OReFechaEstadoActual = GETDATE(),
-            ORePasarPorCaja = 0
-        WHERE OReIdOrdenRetiro = @ordenRetiroId;
-      `);
-
-    await transaction.request()
-      .input('ordenRetiroId', sql.Int, ordenRetiroId)
-      .input('nuevoEstado', sql.Int, nuevoEstado)
-      .input('usuarioId', sql.Int, usuarioId)
-      .query(`
-        INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-        VALUES (@ordenRetiroId, @nuevoEstado, GETDATE(), @usuarioId);
-      `);
-
-    if (orderNumbers && orderNumbers.length > 0) {
-      const orderIdsList = orderNumbers.join(', ');
-
-      await transaction.request()
-        .input('pagoId', sql.Int, pagoId)
-        .query(`
-          UPDATE OrdenesDeposito
-          SET PagIdPago = @pagoId, OrdEstadoActual = 7, OrdFechaEstadoActual = GETDATE()
-          WHERE OrdIdOrden IN (${orderIdsList});
-        `);
-
-      const historicoValues = orderNumbers.map(orderId => `(${orderId}, 7, GETDATE(), ${usuarioId})`).join(', ');
-      await transaction.request().query(`
-        INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-        VALUES ${historicoValues};
-      `);
-    }
-
-    // ─── AUTO-CIERRE DEL RETIRO ──────────────────────────────────────────────
-    // Si todas las órdenes hijas de la OrdenRetiro tienen pago registrado,
-    // se cierra automáticamente la Orden de Retiro como "Abonada".
-    const todasPagasRes = await transaction.request()
-      .input('ordenRetiroId', sql.Int, ordenRetiroId)
-      .query(`
-        SELECT 
-          COUNT(*) AS total,
-          SUM(CASE WHEN od.PagIdPago IS NOT NULL THEN 1 ELSE 0 END) AS pagas
-        FROM OrdenesDeposito od WITH(NOLOCK)
-        WHERE od.OReIdOrdenRetiro = @ordenRetiroId
-          AND od.OrdEstadoActual NOT IN (6, 9) -- excluir canceladas y entregadas ya
-      `);
-
-    const { total, pagas } = todasPagasRes.recordset[0];
-
-    if (total > 0 && total === pagas) {
-      // Todas pagadas → actualizar la orden de retiro con el mismo pago y estado "Abonado" (4)
-      await transaction.request()
-        .input('ordenRetiroId', sql.Int, ordenRetiroId)
-        .input('pagoId', sql.Int, pagoId)
-        .input('usuarioId', sql.Int, usuarioId)
-        .query(`
-          UPDATE OrdenesRetiro 
-          SET PagIdPago = @pagoId,
-              OReEstadoActual = 4,
-              OReFechaEstadoActual = GETDATE(),
-              ORePasarPorCaja = 0
-          WHERE OReIdOrdenRetiro = @ordenRetiroId
-            AND (PagIdPago IS NULL OR PagIdPago = 0);
-
-          INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-          VALUES (@ordenRetiroId, 4, GETDATE(), @usuarioId);
-        `);
-
-      console.log(`[AUTO-PAGO] OrdenRetiro R-${ordenRetiroId} marcada como Abonada automáticamente.`);
-    }
-    // ─────────────────────────────────────────────────────────────────────────
+    const { pagoId } = await registrarPago(transaction, {
+      ordenRetiroId, metodoPagoId, monedaId, monto, orderNumbers, usuarioId, nuevoEstado
+    });
 
     await transaction.commit();
 
