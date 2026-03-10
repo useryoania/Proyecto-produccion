@@ -202,7 +202,7 @@ const RegisterPage = () => {
                 {/* Animated gradient border - only on md+ */}
                 <div className="hidden md:block absolute -inset-[2px] rounded-3xl overflow-hidden">
                     <div
-                        className="absolute inset-[-100%] w-[300%] h-[300%]"
+                        className="absolute inset-[-150%] w-[400%] h-[400%]"
                         style={{
                             background: 'conic-gradient(#00AEEF, #EC008C, #FFF200, #FFFFFF, #00AEEF)',
                             animation: 'rotateBorder 3s linear infinite',
