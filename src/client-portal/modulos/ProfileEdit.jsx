@@ -115,10 +115,10 @@ export const ProfileEdit = () => {
     return (
         <div className="max-w-lg mx-auto space-y-6 animate-fade-in">
             <div className="flex items-center gap-3">
-                <button onClick={() => navigate('/portal/profile')} className="p-2 hover:bg-zinc-100 rounded-lg transition-colors">
-                    <ArrowLeft size={20} className="text-neutral-600" />
+                <button onClick={() => navigate('/portal/pickup')} className="p-2 hover:bg-zinc-800 rounded-lg transition-colors">
+                    <ArrowLeft size={20} className="text-brand-cyan" />
                 </button>
-                <h2 className="text-2xl font-bold text-neutral-800">Editar Datos</h2>
+                <h2 className="text-2xl font-bold text-zinc-100">Editar Datos</h2>
             </div>
 
             <GlassCard className="!p-8">
@@ -154,7 +154,7 @@ export const ProfileEdit = () => {
                     />
 
                     {message && (
-                        <div className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 border ${message.type === 'success' ? 'bg-green-50 text-green-600 border-green-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                        <div className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${message.type === 'success' ? 'text-green-400' : 'text-custom-magenta animate-pulse'}`}>
                             {message.text}
                         </div>
                     )}

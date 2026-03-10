@@ -20,7 +20,7 @@ export const Field = ({ label, icon: Icon, required, error, children }) => (
 );
 
 const SelectArrow = () => (
-    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
+    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-zinc-100">
         <ChevronDown size={16} />
     </div>
 );
@@ -84,7 +84,7 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
         razonSocial: 'Opcional',
         rut: 'Opcional',
         documento: 'Sin puntos ni guiones',
-        direccion: 'Calle 123, Ciudad',
+        direccion: 'Calle 1234',
         ...placeholders,
     };
 
@@ -129,7 +129,7 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
             <div className="grid grid-cols-2 gap-3">
                 <Field label="Departamento" icon={MapPin} required error={fieldErrors.departamentoId}>
                     <select
-                        className={`${selectClass} ${!form.departamentoId ? 'text-slate-400' : ''} ${fieldErrors.departamentoId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
+                        className={`${selectClass} ${!form.departamentoId ? 'text-zinc-100' : ''} ${fieldErrors.departamentoId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
                         value={form.departamentoId}
                         onChange={set('departamentoId')}
                         onBlur={blur('departamentoId')}
@@ -143,7 +143,7 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
                 </Field>
                 <Field label="Localidad" icon={MapPin} required error={fieldErrors.localidadId}>
                     <select
-                        className={`${selectClass} ${!form.localidadId ? 'text-slate-400' : ''} ${fieldErrors.localidadId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
+                        className={`${selectClass} ${!form.localidadId ? 'text-zinc-100' : ''} ${fieldErrors.localidadId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
                         value={form.localidadId}
                         onChange={set('localidadId')}
                         onBlur={blur('localidadId')}
@@ -162,7 +162,7 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
             {form.departamentoId && !isMontevideo && (
                 <Field label="Agencia" icon={Truck} required error={fieldErrors.agenciaId}>
                     <select
-                        className={`${selectClass} ${!form.agenciaId ? 'text-slate-400' : ''} ${fieldErrors.agenciaId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
+                        className={`${selectClass} ${!form.agenciaId ? 'text-zinc-100' : ''} ${fieldErrors.agenciaId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
                         value={form.agenciaId}
                         onChange={set('agenciaId')}
                         onBlur={blur('agenciaId')}
