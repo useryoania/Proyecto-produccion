@@ -1,21 +1,21 @@
 import { useState, useEffect } from 'react';
 import { User, Phone, MapPin, FileText, Building, ChevronDown, Truck } from 'lucide-react';
 
-const inputClass = "w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-300 focus:border-cyan-400 focus:bg-white transition-all outline-none font-semibold text-slate-700 placeholder-slate-400";
-const selectClass = "w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-300 focus:border-cyan-400 focus:bg-white transition-all outline-none font-semibold text-slate-700 appearance-none cursor-pointer";
-const labelClass = "text-xs font-bold text-slate-500 uppercase tracking-wider ml-1";
-const iconClass = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-cyan-600 transition-colors";
+const inputClass = "w-full pl-10 pr-4 py-3 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 focus:placeholder-zinc-100";
+const selectClass = "w-full pl-10 pr-10 py-3 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan transition-all outline-none font-semibold text-zinc-100 appearance-none cursor-pointer";
+const labelClass = "text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1";
+const iconClass = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-cyan group-focus-within:text-custom-cyan transition-colors";
 
 export const Field = ({ label, icon: Icon, required, error, children }) => (
     <div className="space-y-1">
         <label className={labelClass}>
-            {label} {required && <span className="text-red-400">*</span>}
+            {label} {required && <span className="text-custom-magenta">*</span>}
         </label>
         <div className="relative group">
             <div className={iconClass}><Icon size={18} /></div>
             {children}
         </div>
-        {error && <p className="text-red-500 text-xs font-semibold ml-1 mt-0.5">{error}</p>}
+        {error && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{error}</p>}
     </div>
 );
 
@@ -93,16 +93,16 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
             {/* Nombre | Apellido */}
             <div className="grid grid-cols-2 gap-3">
                 <Field label="Nombre" icon={User} required error={fieldErrors.nombre}>
-                    <input type="text" className={`${inputClass} ${fieldErrors.nombre ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder={ph.nombre} value={form.nombre} onChange={set('nombre')} onBlur={blur('nombre')} />
+                    <input type="text" className={`${inputClass} ${fieldErrors.nombre ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder={ph.nombre} value={form.nombre} onChange={set('nombre')} onBlur={blur('nombre')} />
                 </Field>
                 <Field label="Apellido" icon={User} required error={fieldErrors.apellido}>
-                    <input type="text" className={`${inputClass} ${fieldErrors.apellido ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder={ph.apellido} value={form.apellido} onChange={set('apellido')} onBlur={blur('apellido')} />
+                    <input type="text" className={`${inputClass} ${fieldErrors.apellido ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder={ph.apellido} value={form.apellido} onChange={set('apellido')} onBlur={blur('apellido')} />
                 </Field>
             </div>
 
             {/* Teléfono */}
             <Field label="Teléfono" icon={Phone} required error={fieldErrors.telefono}>
-                <input type="text" className={`${inputClass} ${fieldErrors.telefono ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder={ph.telefono} value={form.telefono} onChange={set('telefono')} onBlur={blur('telefono')} />
+                <input type="text" className={`${inputClass} ${fieldErrors.telefono ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder={ph.telefono} value={form.telefono} onChange={set('telefono')} onBlur={blur('telefono')} />
             </Field>
 
             {/* Razón Social */}
@@ -122,14 +122,14 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
 
             {/* Dirección */}
             <Field label="Dirección" icon={MapPin} required error={fieldErrors.direccion}>
-                <input type="text" className={`${inputClass} ${fieldErrors.direccion ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder={ph.direccion} value={form.direccion} onChange={set('direccion')} onBlur={blur('direccion')} />
+                <input type="text" className={`${inputClass} ${fieldErrors.direccion ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder={ph.direccion} value={form.direccion} onChange={set('direccion')} onBlur={blur('direccion')} />
             </Field>
 
             {/* Departamento | Localidad */}
             <div className="grid grid-cols-2 gap-3">
                 <Field label="Departamento" icon={MapPin} required error={fieldErrors.departamentoId}>
                     <select
-                        className={`${selectClass} ${!form.departamentoId ? 'text-slate-400' : ''} ${fieldErrors.departamentoId ? 'border-red-400 focus:ring-red-300' : ''}`}
+                        className={`${selectClass} ${!form.departamentoId ? 'text-slate-400' : ''} ${fieldErrors.departamentoId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
                         value={form.departamentoId}
                         onChange={set('departamentoId')}
                         onBlur={blur('departamentoId')}
@@ -143,7 +143,7 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
                 </Field>
                 <Field label="Localidad" icon={MapPin} required error={fieldErrors.localidadId}>
                     <select
-                        className={`${selectClass} ${!form.localidadId ? 'text-slate-400' : ''} ${fieldErrors.localidadId ? 'border-red-400 focus:ring-red-300' : ''}`}
+                        className={`${selectClass} ${!form.localidadId ? 'text-slate-400' : ''} ${fieldErrors.localidadId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
                         value={form.localidadId}
                         onChange={set('localidadId')}
                         onBlur={blur('localidadId')}
@@ -162,7 +162,7 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
             {form.departamentoId && !isMontevideo && (
                 <Field label="Agencia" icon={Truck} required error={fieldErrors.agenciaId}>
                     <select
-                        className={`${selectClass} ${!form.agenciaId ? 'text-slate-400' : ''} ${fieldErrors.agenciaId ? 'border-red-400 focus:ring-red-300' : ''}`}
+                        className={`${selectClass} ${!form.agenciaId ? 'text-slate-400' : ''} ${fieldErrors.agenciaId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
                         value={form.agenciaId}
                         onChange={set('agenciaId')}
                         onBlur={blur('agenciaId')}

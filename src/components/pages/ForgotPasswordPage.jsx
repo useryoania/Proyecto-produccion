@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button } from '../ui/Button.jsx';
-import { Mail } from 'lucide-react';
+import { Mail, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { API_URL } from '../../services/apiClient';
 
 const ForgotPasswordPage = () => {
@@ -72,14 +72,14 @@ const ForgotPasswordPage = () => {
 
                     {error && (
                         <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-red-100">
-                            <i className="fa-solid fa-circle-exclamation"></i>
+                            <AlertCircle size={14} />
                             {error}
                         </div>
                     )}
 
                     {success && (
                         <div className="bg-green-50 text-green-600 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-green-100">
-                            <i className="fa-solid fa-circle-check"></i>
+                            <CheckCircle2 size={14} />
                             {success}
                         </div>
                     )}

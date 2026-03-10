@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../ui/Button.jsx';
-import { User, Lock, Mail, Eye, EyeOff, UserCheck, ChevronDown } from 'lucide-react';
+import { User, Lock, Mail, Eye, EyeOff, UserCheck, ChevronDown, AlertCircle, CheckCircle2 } from 'lucide-react';
+import Swal from 'sweetalert2';
 import { API_URL } from '../../services/apiClient';
 import { ClientFormFields, Field, useNomenclators, inputClass, iconClass } from '../shared/ClientFormFields';
+import { Logo } from '../Logo.jsx'
 
 const RegisterPage = () => {
     const [form, setForm] = useState({
@@ -20,6 +22,7 @@ const RegisterPage = () => {
     const [hadVendedor, setHadVendedor] = useState(false);
     const [vendedores, setVendedores] = useState([]);
     const [selectedVendedorId, setSelectedVendedorId] = useState('');
+    const [selectedVendedorName, setSelectedVendedorName] = useState('');
     const navigate = useNavigate();
 
     // Nomenclator data via shared hook
@@ -182,47 +185,43 @@ const RegisterPage = () => {
     }, []);
 
     return (
-        <div className="min-h-screen bg-slate-50 relative font-sans py-10 px-4">
-            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-cyan-400 via-magenta-500 to-yellow-400 z-50"></div>
-
-            <div className="bg-white p-10 rounded-3xl shadow-2xl shadow-slate-200/50 w-full max-w-lg border border-slate-100 relative z-10 mx-auto">
+        <div className="min-h-screen bg-custom-dark relative font-sans py-10 px-4">
+            <div className="bg-custom-dark p-10 rounded-3xl w-full max-w-lg border border-slate-100 relative z-10 mx-auto">
                 <div className="flex flex-col items-center mb-6">
-                    <img src="/assets/images/logo.png" alt="Logo" className="w-48 h-auto mb-4 object-contain" />
-                    <h2 className="text-xl font-bold text-slate-800">Crear cuenta</h2>
-                    <p className="text-sm text-slate-400">Registrate con tu ID de Cliente</p>
+                    <Logo className="h-32 w-auto text-white" />
                 </div>
 
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                     {/* ID de Cliente */}
                     <Field label="ID de Cliente" icon={User} required error={fieldErrors.idCliente}>
-                        <input type="text" className={`${inputClass} ${fieldErrors.idCliente ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="Ej: Kasak-1899" value={form.idCliente} onChange={set('idCliente')} onBlur={handleBlur('idCliente')} />
+                        <input type="text" className={`${inputClass} ${fieldErrors.idCliente ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder="Ej: Tu ID" value={form.idCliente} onChange={set('idCliente')} onBlur={handleBlur('idCliente')} />
                     </Field>
 
                     {/* Email */}
                     <Field label="Email" icon={Mail} required error={fieldErrors.email}>
-                        <input type="email" className={`${inputClass} ${fieldErrors.email ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="tu@email.com" value={form.email} onChange={set('email')} onBlur={handleBlur('email')} />
+                        <input type="email" className={`${inputClass} ${fieldErrors.email ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder="tu@email.com" value={form.email} onChange={set('email')} onBlur={handleBlur('email')} />
                     </Field>
 
                     {/* Contraseña | Confirmar Contraseña */}
                     <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Contraseña <span className="text-red-400">*</span></label>
+                            <label className="text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1">Contraseña <span className="text-custom-magenta">*</span></label>
                             <div className="relative group">
                                 <div className={iconClass}><Lock size={18} /></div>
-                                <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.password ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="••••••••" value={form.password} onChange={set('password')} onBlur={handleBlur('password')} />
+                                <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.password ? 'border-custom-magenta focus:ring-custom-magenta focus:border-custom-magenta' : ''}`} placeholder="********" value={form.password} onChange={set('password')} onBlur={handleBlur('password')} />
                             </div>
-                            {fieldErrors.password && <p className="text-red-500 text-xs font-semibold ml-1 mt-0.5">{fieldErrors.password}</p>}
+                            {fieldErrors.password && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.password}</p>}
                         </div>
                         <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Confirmar <span className="text-red-400">*</span></label>
+                            <label className="text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1">Confirmar <span className="text-custom-magenta">*</span></label>
                             <div className="relative group">
                                 <div className={iconClass}><Lock size={18} /></div>
-                                <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.confirmPassword ? 'border-red-400 focus:ring-red-300' : ''}`} placeholder="••••••••" value={form.confirmPassword} onChange={set('confirmPassword')} onBlur={handleBlur('confirmPassword')} />
-                                <button type="button" className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer" onClick={() => setShowPassword(!showPassword)}>
+                                <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.confirmPassword ? 'border-custom-magenta focus:ring-custom-magenta focus:border-custom-magenta' : ''}`} placeholder="********" value={form.confirmPassword} onChange={set('confirmPassword')} onBlur={handleBlur('confirmPassword')} />
+                                <button type="button" className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-cyan hover:text-custom-cyan cursor-pointer" onClick={() => setShowPassword(!showPassword)}>
                                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                 </button>
                             </div>
-                            {fieldErrors.confirmPassword && <p className="text-red-500 text-xs font-semibold ml-1 mt-0.5">{fieldErrors.confirmPassword}</p>}
+                            {fieldErrors.confirmPassword && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.confirmPassword}</p>}
                         </div>
                     </div>
 
@@ -238,78 +237,112 @@ const RegisterPage = () => {
                         isMontevideo={isMontevideo}
                     />
 
-                    {/* Vendedor checkbox + select */}
-                    <div className={`bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 ${!form.departamentoId || !form.localidadId ? 'opacity-50' : ''}`}>
+                    {/* Vendedor checkbox + SweetAlert picker */}
+                    <div className={`bg-brand-dark border border-brand-cyan rounded-2xl p-4 space-y-3 ${!form.departamentoId || !form.localidadId ? 'opacity-50' : ''}`}>
                         <label className={`flex items-center gap-3 select-none ${!form.departamentoId || !form.localidadId ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                             <input
                                 type="checkbox"
                                 checked={hadVendedor}
                                 disabled={!form.departamentoId || !form.localidadId}
-                                onChange={(e) => {
-                                    setHadVendedor(e.target.checked);
-                                    if (!e.target.checked) setSelectedVendedorId('');
+                                onChange={async (e) => {
+                                    if (e.target.checked) {
+                                        if (vendedores.length === 0) {
+                                            Swal.fire({ title: 'Sin asesores', text: 'No hay asesores disponibles para este departamento.', icon: 'info', background: '#212121', color: '#f4f4f5' });
+                                            return;
+                                        }
+                                        // Build HTML grid with photos
+                                        const asesorModules = import.meta.glob('/src/assets/images/asesores/*.svg', { eager: true });
+                                        const grid = vendedores.map(v => {
+                                            const key = Object.keys(asesorModules).find(k => k.includes(String(v.Cedula)));
+                                            const imgUrl = key ? asesorModules[key].default : '';
+                                            return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;align-items:center;gap:14px;padding:14px 18px;border:1px solid #006E97;border-radius:50px;cursor:pointer;transition:all 0.2s;background:#212121;">
+                                                ${imgUrl ? `<img src="${imgUrl}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;flex-shrink:0" />` : `<div style="width:64px;height:64px;border-radius:50%;background:#006E97;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#f4f4f5;font-weight:bold;font-size:22px">${v.Nombre.charAt(0)}</div>`}
+                                                <span style="font-weight:600;color:#f4f4f5;font-size:15px">${v.Nombre}</span>
+                                            </div>`;
+                                        }).join('');
+
+                                        const selected = await new Promise((resolve) => {
+                                            Swal.fire({
+                                                title: 'Seleccioná tu asesor',
+                                                html: `<div style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding:4px">${grid}</div>`,
+                                                showConfirmButton: false,
+                                                showCancelButton: true,
+                                                cancelButtonText: 'Cancelar',
+                                                background: '#19181B',
+                                                color: '#f4f4f5',
+                                                didOpen: () => {
+                                                    const items = Swal.getPopup().querySelectorAll('.swal-asesor');
+                                                    items.forEach(el => {
+                                                        el.addEventListener('mouseenter', () => { el.style.background = '#006E97'; el.style.borderColor = '#00AEEF'; });
+                                                        el.addEventListener('mouseleave', () => { el.style.background = '#212121'; el.style.borderColor = '#006E97'; });
+                                                        el.addEventListener('click', () => {
+                                                            resolve({ id: el.dataset.id, nombre: el.dataset.nombre });
+                                                            Swal.close();
+                                                        });
+                                                    });
+                                                },
+                                            }).then((result) => {
+                                                if (result.dismiss) resolve(null);
+                                            });
+                                        });
+
+                                        if (selected) {
+                                            setHadVendedor(true);
+                                            setSelectedVendedorId(selected.id);
+                                            setSelectedVendedorName(selected.nombre);
+                                        }
+                                        // If cancelled, don't check
+                                    } else {
+                                        setHadVendedor(false);
+                                        setSelectedVendedorId('');
+                                        setSelectedVendedorName('');
+                                    }
                                 }}
-                                className="w-4 h-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-300 disabled:cursor-not-allowed"
+                                className="w-4 h-4 rounded border-brand-cyan text-custom-cyan focus:ring-custom-cyan disabled:cursor-not-allowed"
                             />
-                            <span className="text-sm font-semibold text-slate-600">¿Fuiste atendido por algún asesor?</span>
+                            <span className="text-sm font-semibold text-zinc-300">¿Fuiste atendido por algún asesor?</span>
                         </label>
 
-                        {hadVendedor && (
-                            <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                                    <UserCheck size={18} />
-                                </div>
-                                <select
-                                    className={`${inputClass} appearance-none`}
-                                    value={selectedVendedorId}
-                                    onChange={(e) => setSelectedVendedorId(e.target.value)}
-                                >
-                                    <option value="">Seleccionar asesor...</option>
-                                    {vendedores.map(v => (
-                                        <option key={v.ID} value={v.ID}>{v.Nombre}</option>
-                                    ))}
-                                </select>
-                                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
-                                    <ChevronDown size={16} />
-                                </div>
-                                {vendedores.length === 0 && form.departamentoId && (
-                                    <p className="text-xs text-slate-400 mt-1 ml-1">Seleccioná un departamento primero</p>
-                                )}
+                        {hadVendedor && selectedVendedorName && (
+                            <div className="flex items-center gap-3 mt-2 p-3 bg-brand-dark border border-custom-cyan rounded-xl">
+                                <UserCheck size={18} className="text-custom-cyan" />
+                                <span className="text-sm font-semibold text-zinc-100">{selectedVendedorName}</span>
+                                <button type="button" className="ml-auto text-xs text-zinc-500 hover:text-custom-magenta" onClick={() => { setHadVendedor(false); setSelectedVendedorId(''); setSelectedVendedorName(''); }}>✕</button>
                             </div>
                         )}
                     </div>
 
                     {error && (
-                        <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-red-100">
-                            <i className="fa-solid fa-circle-exclamation"></i>
+                        <div className="text-custom-magenta p-3 rounded-xl text-xs font-bold flex items-center gap-2 justify-center animate-pulse">
+                            <AlertCircle size={14} />
                             {error}
                         </div>
                     )}
 
                     {success && (
                         <div className="bg-green-50 text-green-600 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-green-100">
-                            <i className="fa-solid fa-circle-check"></i>
+                            <CheckCircle2 size={14} />
                             {success}
                         </div>
                     )}
 
                     <Button
                         type="submit"
-                        className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
+                        className="w-full py-3.5 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
                         isLoading={isLoading}
                     >
                         Crear Cuenta
                     </Button>
 
-                    <p className="text-center text-sm text-slate-500">
+                    <p className="text-center text-sm text-zinc-500">
                         ¿Ya tenés cuenta?{' '}
-                        <a href="/login" className="font-bold text-cyan-600 hover:text-cyan-700 transition-colors">
+                        <a href="/login" className="font-bold text-brand-cyan hover:text-custom-cyan transition-colors">
                             Iniciá sesión
                         </a>
                     </p>
                 </form>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 };
 

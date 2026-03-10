@@ -39,6 +39,10 @@ export default {
                 'custom-cyan': '#00AEEF',
                 'custom-magenta': '#EC008C',
                 'custom-yellow': '#FFF200',
+                'brand-cyan': '#006E97',
+                'brand-magenta': '#BD0C7E',
+                'brand-gold': '#DCB308',
+                'brand-dark': '#212121',
             },
             fontFamily: {
                 sans: ['Inter', 'system-ui', 'sans-serif'],

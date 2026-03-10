@@ -147,7 +147,7 @@ router.get('/vendedores-by-department/:departamentoId', async (req, res) => {
         const r = await pool.request()
             .input('DepID', sql.Int, req.params.departamentoId)
             .query(`
-                SELECT t.ID, t.Nombre
+                SELECT t.ID, t.Nombre, t.Cedula
                 FROM dbo.Trabajadores t
                 INNER JOIN dbo.Departamentos d ON t.Zona = d.Zona
                 WHERE d.ID = @DepID AND t.[Área] = 'Ventas'
