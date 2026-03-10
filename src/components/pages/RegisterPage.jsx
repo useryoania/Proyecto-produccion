@@ -57,6 +57,8 @@ const RegisterPage = () => {
             setVendedores([]);
         }
         setSelectedVendedorId('');
+        setSelectedVendedorName('');
+        setHadVendedor(false);
     }, [form.departamentoId]);
 
     const set = (key) => (e) => {
@@ -186,163 +188,243 @@ const RegisterPage = () => {
 
     return (
         <div className="min-h-screen bg-custom-dark relative font-sans py-10 px-4">
-            <div className="bg-custom-dark p-10 rounded-3xl w-full max-w-lg border border-slate-100 relative z-10 mx-auto">
-                <div className="flex flex-col items-center mb-6">
-                    <Logo className="h-32 w-auto text-white" />
+
+            {/* Animated border keyframes */}
+            <style>{`
+                @keyframes rotateBorder {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            `}</style>
+
+            {/* Card wrapper with animated CMY border */}
+            <div className="relative w-full max-w-lg rounded-3xl z-10 mx-auto">
+                {/* Animated gradient border - only on md+ */}
+                <div className="hidden md:block absolute -inset-[2px] rounded-3xl overflow-hidden">
+                    <div
+                        className="absolute inset-[-100%] w-[300%] h-[300%]"
+                        style={{
+                            background: 'conic-gradient(#00AEEF, #EC008C, #FFF200, #FFFFFF, #00AEEF)',
+                            animation: 'rotateBorder 3s linear infinite',
+                        }}
+                    />
                 </div>
 
-                <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                    {/* ID de Cliente */}
-                    <Field label="ID de Cliente" icon={User} required error={fieldErrors.idCliente}>
-                        <input type="text" className={`${inputClass} ${fieldErrors.idCliente ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder="Ej: Tu ID" value={form.idCliente} onChange={set('idCliente')} onBlur={handleBlur('idCliente')} />
-                    </Field>
-
-                    {/* Email */}
-                    <Field label="Email" icon={Mail} required error={fieldErrors.email}>
-                        <input type="email" className={`${inputClass} ${fieldErrors.email ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder="tu@email.com" value={form.email} onChange={set('email')} onBlur={handleBlur('email')} />
-                    </Field>
-
-                    {/* Contraseña | Confirmar Contraseña */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1">Contraseña <span className="text-custom-magenta">*</span></label>
-                            <div className="relative group">
-                                <div className={iconClass}><Lock size={18} /></div>
-                                <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.password ? 'border-custom-magenta focus:ring-custom-magenta focus:border-custom-magenta' : ''}`} placeholder="********" value={form.password} onChange={set('password')} onBlur={handleBlur('password')} />
-                            </div>
-                            {fieldErrors.password && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.password}</p>}
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1">Confirmar <span className="text-custom-magenta">*</span></label>
-                            <div className="relative group">
-                                <div className={iconClass}><Lock size={18} /></div>
-                                <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.confirmPassword ? 'border-custom-magenta focus:ring-custom-magenta focus:border-custom-magenta' : ''}`} placeholder="********" value={form.confirmPassword} onChange={set('confirmPassword')} onBlur={handleBlur('confirmPassword')} />
-                                <button type="button" className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-cyan hover:text-custom-cyan cursor-pointer" onClick={() => setShowPassword(!showPassword)}>
-                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                </button>
-                            </div>
-                            {fieldErrors.confirmPassword && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.confirmPassword}</p>}
-                        </div>
+                <div className="relative bg-custom-dark p-10 rounded-3xl w-full overflow-hidden">
+                    <div className="flex flex-col items-center mb-6">
+                        <Logo className="h-32 w-auto text-white" />
                     </div>
 
-                    {/* Shared client fields */}
-                    <ClientFormFields
-                        form={form}
-                        set={set}
-                        fieldErrors={fieldErrors}
-                        handleBlur={handleBlur}
-                        departments={departments}
-                        localities={localities}
-                        agencies={agencies}
-                        isMontevideo={isMontevideo}
-                    />
+                    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+                        {/* ID de Cliente */}
+                        <Field label="ID de Cliente" icon={User} required error={fieldErrors.idCliente}>
+                            <input type="text" className={`${inputClass} ${fieldErrors.idCliente ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder="Ej: Tu ID" value={form.idCliente} onChange={set('idCliente')} onBlur={handleBlur('idCliente')} />
+                        </Field>
 
-                    {/* Vendedor checkbox + SweetAlert picker */}
-                    <div className={`bg-brand-dark border border-brand-cyan rounded-2xl p-4 space-y-3 ${!form.departamentoId || !form.localidadId ? 'opacity-50' : ''}`}>
-                        <label className={`flex items-center gap-3 select-none ${!form.departamentoId || !form.localidadId ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                            <input
-                                type="checkbox"
-                                checked={hadVendedor}
-                                disabled={!form.departamentoId || !form.localidadId}
-                                onChange={async (e) => {
-                                    if (e.target.checked) {
-                                        if (vendedores.length === 0) {
-                                            Swal.fire({ title: 'Sin asesores', text: 'No hay asesores disponibles para este departamento.', icon: 'info', background: '#212121', color: '#f4f4f5' });
-                                            return;
-                                        }
-                                        // Build HTML grid with photos
-                                        const asesorModules = import.meta.glob('/src/assets/images/asesores/*.svg', { eager: true });
-                                        const grid = vendedores.map(v => {
-                                            const key = Object.keys(asesorModules).find(k => k.includes(String(v.Cedula)));
-                                            const imgUrl = key ? asesorModules[key].default : '';
-                                            return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;align-items:center;gap:14px;padding:14px 18px;border:1px solid #006E97;border-radius:50px;cursor:pointer;transition:all 0.2s;background:#212121;">
-                                                ${imgUrl ? `<img src="${imgUrl}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;flex-shrink:0" />` : `<div style="width:64px;height:64px;border-radius:50%;background:#006E97;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#f4f4f5;font-weight:bold;font-size:22px">${v.Nombre.charAt(0)}</div>`}
-                                                <span style="font-weight:600;color:#f4f4f5;font-size:15px">${v.Nombre}</span>
-                                            </div>`;
-                                        }).join('');
+                        {/* Email */}
+                        <Field label="Email" icon={Mail} required error={fieldErrors.email}>
+                            <input type="email" className={`${inputClass} ${fieldErrors.email ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder="tu@email.com" value={form.email} onChange={set('email')} onBlur={handleBlur('email')} />
+                        </Field>
 
-                                        const selected = await new Promise((resolve) => {
-                                            Swal.fire({
-                                                title: 'Seleccioná tu asesor',
-                                                html: `<div style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto;padding:4px">${grid}</div>`,
-                                                showConfirmButton: false,
-                                                showCancelButton: true,
-                                                cancelButtonText: 'Cancelar',
-                                                background: '#19181B',
-                                                color: '#f4f4f5',
-                                                didOpen: () => {
-                                                    const items = Swal.getPopup().querySelectorAll('.swal-asesor');
-                                                    items.forEach(el => {
-                                                        el.addEventListener('mouseenter', () => { el.style.background = '#006E97'; el.style.borderColor = '#00AEEF'; });
-                                                        el.addEventListener('mouseleave', () => { el.style.background = '#212121'; el.style.borderColor = '#006E97'; });
-                                                        el.addEventListener('click', () => {
-                                                            resolve({ id: el.dataset.id, nombre: el.dataset.nombre });
-                                                            Swal.close();
-                                                        });
-                                                    });
-                                                },
-                                            }).then((result) => {
-                                                if (result.dismiss) resolve(null);
+                        {/* Contraseña | Confirmar Contraseña */}
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1">Contraseña <span className="text-custom-magenta">*</span></label>
+                                <div className="relative group">
+                                    <div className={iconClass}><Lock size={18} /></div>
+                                    <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.password ? 'border-custom-magenta focus:ring-custom-magenta focus:border-custom-magenta' : ''}`} placeholder="********" value={form.password} onChange={set('password')} onBlur={handleBlur('password')} />
+                                </div>
+                                {fieldErrors.password && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.password}</p>}
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1">Confirmar <span className="text-custom-magenta">*</span></label>
+                                <div className="relative group">
+                                    <div className={iconClass}><Lock size={18} /></div>
+                                    <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.confirmPassword ? 'border-custom-magenta focus:ring-custom-magenta focus:border-custom-magenta' : ''}`} placeholder="********" value={form.confirmPassword} onChange={set('confirmPassword')} onBlur={handleBlur('confirmPassword')} />
+                                    <button type="button" className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-cyan hover:text-custom-cyan cursor-pointer" onClick={() => setShowPassword(!showPassword)}>
+                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                                {fieldErrors.confirmPassword && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.confirmPassword}</p>}
+                            </div>
+                        </div>
+
+                        {/* Shared client fields */}
+                        <ClientFormFields
+                            form={form}
+                            set={set}
+                            fieldErrors={fieldErrors}
+                            handleBlur={handleBlur}
+                            departments={departments}
+                            localities={localities}
+                            agencies={agencies}
+                            isMontevideo={isMontevideo}
+                        />
+
+                        {/* Vendedor checkbox + SweetAlert picker */}
+                        <div className={`bg-brand-dark border border-brand-cyan rounded-2xl p-4 space-y-3 ${!form.departamentoId || !form.localidadId ? 'opacity-50' : ''}`}>
+                            <label className={`flex items-center gap-3 select-none ${!form.departamentoId || !form.localidadId ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                                <input
+                                    type="checkbox"
+                                    checked={hadVendedor}
+                                    disabled={!form.departamentoId || !form.localidadId}
+                                    onChange={async (e) => {
+                                        if (e.target.checked) {
+                                            if (vendedores.length === 0) {
+                                                Swal.fire({ title: 'Sin asesores', text: 'No hay asesores disponibles para este departamento.', icon: 'info', background: '#212121', color: '#f4f4f5' });
+                                                return;
+                                            }
+                                            // Build HTML grid with photos
+                                            const asesorModules = import.meta.glob('/src/assets/images/asesores/*.svg', { eager: true });
+                                            const isMobile = window.innerWidth < 768;
+                                            const grid = vendedores.map(v => {
+                                                const key = Object.keys(asesorModules).find(k => k.includes(String(v.Cedula)));
+                                                const imgUrl = key ? asesorModules[key].default : '';
+                                                const firstName = v.Nombre.split(' ')[0];
+                                                if (isMobile) {
+                                                    return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 14px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;">
+                                                        ${imgUrl ? `<img src="${imgUrl}" style="width:72px;height:72px;border-radius:50%;object-fit:cover" />` : `<div style="width:72px;height:72px;border-radius:50%;background:#006E97;display:flex;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:24px">${firstName.charAt(0)}</div>`}
+                                                        <span style="font-weight:600;color:#f4f4f5;font-size:14px;text-transform:uppercase;letter-spacing:0.05em;text-align:center">${firstName}</span>
+                                                    </div>`;
+                                                } else {
+                                                    return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px 16px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;flex:1;min-width:140px;max-width:180px;">
+                                                        ${imgUrl ? `<img src="${imgUrl}" style="width:96px;height:96px;border-radius:50%;object-fit:cover" />` : `<div style="width:96px;height:96px;border-radius:50%;background:#006E97;display:flex;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:30px">${firstName.charAt(0)}</div>`}
+                                                        <span style="font-weight:600;color:#f4f4f5;font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:0.05em">${firstName}</span>
+                                                    </div>`;
+                                                }
                                             });
-                                        });
+                                            const separator = isMobile ? '<hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);width:60%;margin:0 auto" />' : '';
+                                            const gridHtml = grid.join(separator);
 
-                                        if (selected) {
-                                            setHadVendedor(true);
-                                            setSelectedVendedorId(selected.id);
-                                            setSelectedVendedorName(selected.nombre);
+                                            const selected = await new Promise((resolve) => {
+                                                Swal.fire({
+                                                    title: 'SELECCIONÁ TU ASESOR',
+                                                    html: `<div style="display:flex;${isMobile ? 'flex-direction:column;align-items:center;' : 'flex-wrap:wrap;justify-content:center;'}gap:12px;padding:8px">${gridHtml}</div>`,
+                                                    showConfirmButton: false,
+                                                    showCancelButton: false,
+                                                    showCloseButton: isMobile,
+                                                    background: '#19181B',
+                                                    color: '#f4f4f5',
+                                                    width: isMobile ? '100vw' : 'auto',
+                                                    padding: isMobile ? '1rem 0' : undefined,
+                                                    customClass: { popup: isMobile ? 'swal-mobile-full' : '' },
+                                                    didOpen: () => {
+                                                        if (isMobile) {
+                                                            const popup = Swal.getPopup();
+                                                            popup.style.borderRadius = '0';
+                                                            popup.style.margin = '0';
+                                                            popup.style.position = 'fixed';
+                                                            popup.style.top = '0';
+                                                            popup.style.left = '0';
+                                                            popup.style.width = '100vw';
+                                                            popup.style.height = '100vh';
+                                                            popup.style.display = 'flex';
+                                                            popup.style.flexDirection = 'column';
+                                                            // Center the options container vertically
+                                                            const htmlContainer = popup.querySelector('.swal2-html-container');
+                                                            if (htmlContainer) {
+                                                                htmlContainer.style.flex = '1';
+                                                                htmlContainer.style.display = 'flex';
+                                                                htmlContainer.style.alignItems = 'center';
+                                                                htmlContainer.style.justifyContent = 'center';
+                                                            }
+                                                            // Position close button bottom-right
+                                                            const closeBtn = popup.querySelector('.swal2-close');
+                                                            if (closeBtn) {
+                                                                closeBtn.style.position = 'absolute';
+                                                                closeBtn.style.top = '10px';
+                                                                closeBtn.style.right = '20px';
+                                                                closeBtn.style.top = 'auto';
+                                                                closeBtn.style.fontSize = '36px';
+                                                                closeBtn.style.color = '#ec008c';
+                                                            }
+                                                            // Shrink title on mobile
+                                                            const title = popup.querySelector('.swal2-title');
+                                                            if (title) {
+                                                                title.style.fontSize = '24px';
+                                                            }
+                                                        }
+                                                        const items = Swal.getPopup().querySelectorAll('.swal-asesor');
+                                                        items.forEach(el => {
+                                                            el.addEventListener('mouseenter', () => { el.style.background = '#2a2a2a'; });
+                                                            el.addEventListener('mouseleave', () => { el.style.background = 'transparent'; });
+                                                            el.addEventListener('click', () => {
+                                                                resolve({ id: el.dataset.id, nombre: el.dataset.nombre });
+                                                                Swal.close();
+                                                            });
+                                                        });
+                                                    },
+                                                }).then((result) => {
+                                                    if (result.dismiss) resolve(null);
+                                                });
+                                            });
+
+                                            if (selected) {
+                                                setHadVendedor(true);
+                                                setSelectedVendedorId(selected.id);
+                                                setSelectedVendedorName(selected.nombre);
+                                            }
+                                            // If cancelled, don't check
+                                        } else {
+                                            setHadVendedor(false);
+                                            setSelectedVendedorId('');
+                                            setSelectedVendedorName('');
                                         }
-                                        // If cancelled, don't check
-                                    } else {
-                                        setHadVendedor(false);
-                                        setSelectedVendedorId('');
-                                        setSelectedVendedorName('');
-                                    }
-                                }}
-                                className="w-4 h-4 rounded border-brand-cyan text-custom-cyan focus:ring-custom-cyan disabled:cursor-not-allowed"
-                            />
-                            <span className="text-sm font-semibold text-zinc-300">¿Fuiste atendido por algún asesor?</span>
-                        </label>
+                                    }}
+                                    className="w-4 h-4 rounded border-brand-cyan text-custom-cyan focus:ring-custom-cyan disabled:cursor-not-allowed"
+                                />
+                                <span className="text-sm font-semibold text-zinc-300">¿Fuiste atendido por algún asesor?</span>
+                            </label>
 
-                        {hadVendedor && selectedVendedorName && (
-                            <div className="flex items-center gap-3 mt-2 p-3 bg-brand-dark border border-custom-cyan rounded-xl">
-                                <UserCheck size={18} className="text-custom-cyan" />
-                                <span className="text-sm font-semibold text-zinc-100">{selectedVendedorName}</span>
-                                <button type="button" className="ml-auto text-xs text-zinc-500 hover:text-custom-magenta" onClick={() => { setHadVendedor(false); setSelectedVendedorId(''); setSelectedVendedorName(''); }}>✕</button>
+                            {hadVendedor && selectedVendedorName && (
+                                <div className="flex items-center gap-3 mt-2 p-3 bg-brand-dark border border-custom-cyan rounded-xl">
+                                    <UserCheck size={18} className="text-custom-cyan" />
+                                    <span className="text-sm font-semibold text-zinc-100">{selectedVendedorName}</span>
+                                    <button type="button" className="ml-auto text-xs text-zinc-500 hover:text-custom-magenta" onClick={() => { setHadVendedor(false); setSelectedVendedorId(''); setSelectedVendedorName(''); }}>✕</button>
+                                </div>
+                            )}
+                        </div>
+
+                        {error && (
+                            <div className="text-custom-magenta p-3 rounded-xl text-xs font-bold flex items-center gap-2 justify-center animate-pulse">
+                                <AlertCircle size={14} />
+                                {error}
                             </div>
                         )}
-                    </div>
 
-                    {error && (
-                        <div className="text-custom-magenta p-3 rounded-xl text-xs font-bold flex items-center gap-2 justify-center animate-pulse">
-                            <AlertCircle size={14} />
-                            {error}
-                        </div>
-                    )}
+                        {success && (
+                            <div className="bg-green-50 text-green-600 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-green-100">
+                                <CheckCircle2 size={14} />
+                                {success}
+                            </div>
+                        )}
 
-                    {success && (
-                        <div className="bg-green-50 text-green-600 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-green-100">
-                            <CheckCircle2 size={14} />
-                            {success}
-                        </div>
-                    )}
+                        <Button
+                            type="submit"
+                            className="w-full py-3.5 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
+                            isLoading={isLoading}
+                        >
+                            Crear Cuenta
+                        </Button>
 
-                    <Button
-                        type="submit"
-                        className="w-full py-3.5 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
-                        isLoading={isLoading}
-                    >
-                        Crear Cuenta
-                    </Button>
+                        <p className="text-center text-sm text-zinc-500">
+                            ¿Ya tenés cuenta?{' '}
+                            <a href="/login" className="font-bold text-brand-cyan hover:text-custom-cyan transition-colors">
+                                Iniciá sesión
+                            </a>
+                        </p>
+                    </form>
+                </div>
+            </div>
 
-                    <p className="text-center text-sm text-zinc-500">
-                        ¿Ya tenés cuenta?{' '}
-                        <a href="/login" className="font-bold text-brand-cyan hover:text-custom-cyan transition-colors">
-                            Iniciá sesión
-                        </a>
-                    </p>
-                </form>
-            </div >
-        </div >
+            {/* 4-color bar - mobile only, fixed to bottom of screen */}
+            <div className="fixed bottom-0 left-0 w-screen flex h-4 md:hidden z-50">
+                <div className="flex-1 bg-custom-cyan" />
+                <div className="flex-1 bg-custom-magenta" />
+                <div className="flex-1 bg-custom-yellow" />
+                <div className="flex-1 bg-white" />
+            </div>
+        </div>
     );
 };
 
