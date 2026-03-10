@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Button } from '../ui/Button.jsx';
-import { Mail } from 'lucide-react';
+import { Mail, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { API_URL } from '../../services/apiClient';
+import { Logo } from '../Logo.jsx';
 
 const ForgotPasswordPage = () => {
     const [email, setEmail] = useState('');
@@ -41,63 +42,90 @@ const ForgotPasswordPage = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 relative overflow-hidden font-sans">
-            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-cyan-400 via-magenta-500 to-yellow-400 z-50"></div>
-            <div className="absolute -top-40 -right-40 w-96 h-96 bg-cyan-200 rounded-full blur-3xl opacity-30"></div>
-            <div className="absolute top-40 -left-20 w-72 h-72 bg-magenta-200 rounded-full blur-3xl opacity-30"></div>
+        <div className="min-h-screen flex items-center justify-center bg-custom-dark relative overflow-hidden font-sans">
 
-            <div className="bg-white p-10 rounded-3xl shadow-2xl shadow-slate-200/50 w-full max-w-md border border-slate-100 relative z-10 backdrop-blur-sm bg-white/90">
-                <div className="flex flex-col items-center mb-6">
-                    <img src="/assets/images/logo.png" alt="Logo" className="w-48 h-auto mb-4 object-contain" />
-                    <h2 className="text-xl font-bold text-slate-800">Recuperar contraseña</h2>
-                    <p className="text-sm text-slate-400 text-center mt-1">Ingresá tu email y te enviaremos un enlace para restablecer tu contraseña</p>
+            {/* Animated border keyframes */}
+            <style>{`
+                @keyframes rotateBorder {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            `}</style>
+
+            {/* Card wrapper with animated CMY border */}
+            <div className="relative w-full max-w-md rounded-3xl z-10">
+                {/* Animated gradient border - only on md+ */}
+                <div className="hidden md:block absolute -inset-[2px] rounded-3xl overflow-hidden">
+                    <div
+                        className="absolute inset-[-50%] w-[200%] h-[200%]"
+                        style={{
+                            background: 'conic-gradient(#00AEEF, #EC008C, #FFF200, #FFFFFF, #00AEEF)',
+                            animation: 'rotateBorder 3s linear infinite',
+                        }}
+                    />
                 </div>
 
-                <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                    <div className="space-y-1">
-                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Email</label>
-                        <div className="relative group">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-cyan-600 transition-colors">
-                                <Mail size={18} />
-                            </div>
-                            <input
-                                type="email"
-                                className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-cyan-300 focus:border-cyan-400 focus:bg-white transition-all outline-none font-semibold text-slate-700 placeholder-slate-400"
-                                placeholder="tu@email.com"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                            />
-                        </div>
+                <div className="relative bg-custom-dark p-10 rounded-3xl w-full overflow-hidden">
+                    <div className="flex flex-col items-center mb-6">
+                        <Logo className="h-32 w-auto text-white" />
+                        <h2 className="text-xl font-bold text-zinc-100">Recuperar contraseña</h2>
+                        <p className="text-sm text-zinc-100 text-center mt-1">Ingresá tu email y te enviaremos un enlace para restablecer tu contraseña</p>
                     </div>
 
-                    {error && (
-                        <div className="bg-red-50 text-red-600 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-red-100">
-                            <i className="fa-solid fa-circle-exclamation"></i>
-                            {error}
+                    <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1">Email</label>
+                            <div className="relative group">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-cyan group-focus-within:text-custom-cyan transition-colors">
+                                    <Mail size={18} />
+                                </div>
+                                <input
+                                    type="email"
+                                    className="w-full pl-10 pr-4 py-3 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500"
+                                    placeholder="tu@email.com"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                />
+                            </div>
                         </div>
-                    )}
 
-                    {success && (
-                        <div className="bg-green-50 text-green-600 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-green-100">
-                            <i className="fa-solid fa-circle-check"></i>
-                            {success}
-                        </div>
-                    )}
+                        {error && (
+                            <div className="text-custom-magenta p-3 rounded-xl text-xs font-bold flex items-center gap-2 justify-center animate-pulse">
+                                <AlertCircle size={14} />
+                                {error}
+                            </div>
+                        )}
 
-                    <Button
-                        type="submit"
-                        className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold shadow-lg shadow-slate-900/20 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
-                        isLoading={isLoading}
-                    >
-                        Enviar enlace de recuperación
-                    </Button>
+                        {success && (
+                            <div className="bg-green-950/50 text-green-400 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-green-800/50">
+                                <CheckCircle2 size={14} />
+                                {success}
+                            </div>
+                        )}
 
-                    <p className="text-center text-sm text-slate-500">
-                        <a href="/login" className="font-bold text-cyan-600 hover:text-cyan-700 transition-colors">
-                            ← Volver al login
-                        </a>
-                    </p>
-                </form>
+                        <Button
+                            type="submit"
+                            className="w-full py-3.5 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
+                            isLoading={isLoading}
+                        >
+                            Enviar enlace de recuperación
+                        </Button>
+
+                        <p className="text-center text-sm text-zinc-500">
+                            <a href="/login" className="font-bold text-brand-cyan hover:text-custom-cyan transition-colors">
+                                ← Volver al login
+                            </a>
+                        </p>
+                    </form>
+                </div>
+            </div>
+
+            {/* 4-color bar - mobile only */}
+            <div className="fixed bottom-0 left-0 w-screen flex h-4 md:hidden z-50">
+                <div className="flex-1 bg-custom-cyan" />
+                <div className="flex-1 bg-custom-magenta" />
+                <div className="flex-1 bg-custom-yellow" />
+                <div className="flex-1 bg-white" />
             </div>
         </div>
     );

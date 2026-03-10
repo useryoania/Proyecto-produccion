@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { TotemDashboard } from './TotemDashboard';
-import { Logo } from '../../../components/Logo';
 import { ShieldX } from 'lucide-react';
+import { Logo } from '../../../components/Logo'
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const INACTIVITY_TIMEOUT = 2 * 60 * 1000; // 2 minutes
