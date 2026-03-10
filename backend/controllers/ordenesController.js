@@ -20,7 +20,7 @@ const getOrdenesByFilter = async (req, res) => {
         o.OrdCodigoOrden AS CodigoOrden,
         o.OReIdOrdenRetiro AS OrdenRetiro,
         eore.EORNombreEstado AS EstadoOrdenRetiro,
-        c.CodigoReact AS IdCliente,
+        c.IDCliente AS IdCliente,
         c.TelefonoTrabajo AS Celular,
         tc.TClDescripcion AS TipoCliente,
         o.OrdNombreTrabajo AS NombreTrabajo,
@@ -124,7 +124,7 @@ const getOrdenByCodigo = async (req, res) => {
         o.OrdCantidad,
         CASE WHEN o.PagIdPago IS NOT NULL THEN 1 ELSE 0 END AS OrdPagoRealizado,
         eo.EOrNombreEstado,
-        c.CodigoReact,
+        c.IDCliente,
         c.TelefonoTrabajo,
         tc.TClDescripcion,
         mon.MonSimbolo,
@@ -158,8 +158,12 @@ const getOrdenByCodigo = async (req, res) => {
 
 // Helper: Buscar Cliente Local por IDReact que llega en QR
 const getClientePorIDReact = async (pool, idReactQR) => {
+  // Si el valor no puede ser un entero válido, no hay match posible
+  const idNum = parseInt(String(idReactQR).replace(',', '.'), 10);
+  if (isNaN(idNum)) return null;
+
   const result = await pool.request()
-    .input('IDReactQR', sql.NVarChar(50), String(idReactQR).trim())
+    .input('IDReactQR', sql.Int, idNum)
     .query(`
       SELECT TOP 1 c.CliIdCliente, c.Nombre, c.IDReact, c.IDCliente, tc.TClDescripcion AS TipoCliente
       FROM Clientes c WITH(NOLOCK)
@@ -169,19 +173,24 @@ const getClientePorIDReact = async (pool, idReactQR) => {
   return result.recordset.length > 0 ? result.recordset[0] : null;
 };
 
+
 // Helper: Buscar Producto Local por IDProdReact que llega en QR
 const getProductoPorIDReact = async (pool, idProdReactQR) => {
+  const idNum = parseInt(String(idProdReactQR), 10);
+  if (isNaN(idNum)) return null;
   const result = await pool.request()
-    .input('IDProdReact', sql.Int, parseInt(idProdReactQR, 10))
+    .input('IDProdReact', sql.Int, idNum)
     .query(`
       SELECT TOP 1 a.ProIdProducto,
         LTRIM(RTRIM(a.Descripcion)) AS ProductoNombre,
-        '$U' AS MonSimbolo
+        ISNULL(a.MonIdMoneda, 1) AS MonIdMoneda,
+        CASE ISNULL(a.MonIdMoneda, 1) WHEN 2 THEN 'USD' ELSE '$U' END AS MonSimbolo
       FROM Articulos a WITH(NOLOCK)
       WHERE a.IDProdReact = @IDProdReact
     `);
   return result.recordset.length > 0 ? result.recordset[0] : null;
 };
+
 
 const createOrden = async (req, res) => {
   const { ordenString } = req.body;
@@ -223,7 +232,7 @@ const createOrden = async (req, res) => {
           .input('CodigoOrden', sql.VarChar(100), CodigoOrden)
           .input('CodigoCliente', sql.Int, clienteMapeado.CliIdCliente)
           .input('NombreTrabajo', sql.VarChar(255), NombreTrabajo)
-          .input('IdModo', sql.Int, IdModo)
+          .input('IdModo', sql.Int, parseInt(IdModo, 10) || null)
           .input('IdProducto', sql.Int, productoMapeado.ProIdProducto)
           .input('Cantidad', sql.Float, cantidadDecimal)
           .input('CostoFinal', sql.Float, costoFinalDecimal)
@@ -293,14 +302,14 @@ const createOrden = async (req, res) => {
     if (!productoMapeado) {
       return res.status(405).json({ error: 'Producto no encontrado asociando IDProdReact.' });
     }
-    const monIdMoneda = 1; // Default UYU
+    const monIdMoneda = productoMapeado.MonIdMoneda || 1; // Desde Articulos, fallback UYU
 
     const result = await pool.request()
       .input('CodigoOrden', sql.VarChar(100), CodigoOrden)
       .input('Cantidad', sql.Float, cantidadDecimal)
       .input('CodigoCliente', sql.Int, reqClientId)
       .input('NombreTrabajo', sql.VarChar(100), NombreTrabajo)
-      .input('IdModo', sql.Int, IdModo)
+      .input('IdModo', sql.Int, parseInt(IdModo, 10) || null)
       .input('IdProducto', sql.Int, productoMapeado.ProIdProducto)
       .input('CostoFinal', sql.Float, costoFinalDecimal)
       .input('FechaIngresoOrden', sql.DateTime, new Date())
@@ -381,7 +390,7 @@ SELECT
 o.OrdIdOrden AS IdOrden,
   o.OrdCodigoOrden AS CodigoOrden,
     sm.SMaNombreSubMarca AS SubMarca,
-      c.CodigoReact AS IdCliente,
+      c.IDCliente AS IdCliente,
         c.TelefonoTrabajo AS Celular,
           tc.TClDescripcion AS TipoCliente,
             o.OrdNombreTrabajo AS NombreTrabajo,
@@ -507,7 +516,7 @@ o.OrdIdOrden,
   o.OrdCantidad,
   CASE WHEN o.PagIdPago IS NOT NULL THEN 1 ELSE 0 END AS OrdPagoRealizado,
     eo.EOrNombreEstado,
-    c.CodigoReact,
+    c.IDCliente,
     c.TelefonoTrabajo,
     c.CliNombreApellido,
     c.CliLocalidad,

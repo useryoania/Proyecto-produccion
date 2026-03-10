@@ -503,8 +503,8 @@ const CargaDepositoPage = () => {
                                                 </span>
                                             </div>
 
-                                            {/* Columna 5: Cantidad y Modalidad */}
-                                            <div className="flex flex-row items-center justify-between col-span-2 border-t pt-2 border-slate-200 mt-0.5">
+                                            {/* Columna 5: Cantidad, Modalidad, Importe */}
+                                            <div className="flex flex-row items-center justify-between col-span-2 border-t pt-2 border-slate-200 mt-0.5 flex-wrap gap-y-1">
                                                 <div className="flex gap-2 items-center">
                                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cant:</span>
                                                     <span className="text-slate-800 font-black text-lg leading-none">{code.parsed.Cantidad}</span>
@@ -513,7 +513,18 @@ const CargaDepositoPage = () => {
                                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Activity size={10} /> Moda:</span>
                                                     <span className="text-slate-800 font-semibold text-xs leading-none">{modosMap[code.parsed.IdModo] || `M-${code.parsed.IdModo}`}</span>
                                                 </div>
+                                                {code.parsed.CostoFinal != null && (
+                                                    <div className="flex gap-1.5 items-center bg-emerald-50 border border-emerald-200 rounded-md px-2 py-0.5">
+                                                        <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wide">
+                                                            {code.parsed.Moneda || '$U'}
+                                                        </span>
+                                                        <span className="text-emerald-800 font-black text-sm leading-none">
+                                                            {Number(code.parsed.CostoFinal).toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        </span>
+                                                    </div>
+                                                )}
                                             </div>
+
 
                                         </div>
                                     )}

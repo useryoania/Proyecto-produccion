@@ -65,12 +65,24 @@ async function enviarTemplateWsp({ to, params }) {
         optin_contact: true,
         template_values: (params || []).map((v) => String(v ?? "")),
     };
+
+    // ── DIAGNÓSTICO: logear payload exacto antes de enviar ──
+    console.log('[WSP PAYLOAD]', JSON.stringify({
+        to: payload.to,
+        template_uuid: payload.template_uuid,
+        template_values: payload.template_values,
+        channel_uuid: payload.channel_uuid,
+    }, null, 2));
+
     const { data } = await axios.post(CALLBELL_SEND_URL, payload, {
         headers: { Authorization: `Bearer ${CALLBELL_API_KEY}`, "Content-Type": "application/json" },
         timeout: 15000,
     });
+
+    console.log('[WSP RESPUESTA CALLBELL]', JSON.stringify(data));
     return data;
 }
+
 
 async function marcarOrdenEnviada(pool, ordId) {
     await pool.request()
@@ -120,14 +132,11 @@ async function procesarUnaOrdenWsp(io, r, pool, throttle) {
     }
 
     const params = [
-        formatDateUY(new Date()),
-        codigoOrden,
-        r.OrdNombreTrabajo || "-",
-        r.Producto || "-",
-        formatNumberUY(r.Cantidad, 2),
-        `${r.MonSimbolo} ${formatNumberUY(r.CostoFinal, 2)}`,
-        Number(r.MonIdMoneda) !== 1 ? `$ ${formatNumberUY(Number.isFinite(Number(r.CotDolarDia)) ? Number(r.CostoFinal) * Number(r.CotDolarDia) : 0, 2)}` : `$ ${formatNumberUY(r.CostoFinal, 2)}`
+        codigoOrden,                  // {{1}} Orden
+        r.OrdNombreTrabajo || '-',    // {{2}} Trabajo
+        r.Producto || '-',            // {{3}} Producto
     ];
+
 
     try {
         const fnSend = async () => {

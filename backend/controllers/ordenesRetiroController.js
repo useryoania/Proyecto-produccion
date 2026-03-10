@@ -85,7 +85,7 @@ const getOrdenesRetiroQueryBase = `
     p.PagMontoPago AS orderMontoPago,
     p.PagFechaPago AS orderFechaPago,
     p.PagRutaComprobante AS comprobante,
-    c.CodigoReact AS CliCodigoCliente,
+    c.IDCliente AS CliCodigoCliente,
     LTRIM(RTRIM(c.Nombre)) AS CliNombre,
     LTRIM(RTRIM(c.TelefonoTrabajo)) AS CliTelefono,
     tc.TClDescripcion AS TClDescripcion,
@@ -466,7 +466,7 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
         if (codCliente) {
           const cliRes = await transaction.request()
             .input('cod', sql.VarChar, codCliente)
-            .query(`SELECT TOP 1 LTRIM(RTRIM(Nombre)) AS Nombre FROM Clientes WITH(NOLOCK) WHERE CodigoReact = @cod`);
+            .query(`SELECT TOP 1 LTRIM(RTRIM(Nombre)) AS Nombre FROM Clientes WITH(NOLOCK) WHERE IDCliente = @cod`);
           nombreCliente = cliRes.recordset[0]?.Nombre || null;
         }
 
@@ -526,7 +526,7 @@ const buscarParaMostrador = async (req, res) => {
         eo.EOrNombreEstado  AS estadoOrden,
         mon.MonSimbolo,
         LTRIM(RTRIM(c.Nombre))           AS CliNombre,
-        c.CodigoReact                    AS CliCodigo,
+        c.IDCliente                      AS CliCodigo,
         LTRIM(RTRIM(c.TelefonoTrabajo))  AS CliTelefono,
         tc.TClDescripcion
       FROM OrdenesRetiro r WITH(NOLOCK)
@@ -581,57 +581,57 @@ const buscarParaMostrador = async (req, res) => {
           const req3 = pool.request().input('cod', sql.NVarChar, termClean);
           const r3 = await req3.query(`
             SELECT o.OrdIdOrden, o.OrdCodigoOrden, o.OrdCostoFinal, eo.EOrNombreEstado AS estadoOrden,
-                   mon.MonSimbolo, LTRIM(RTRIM(c.Nombre)) AS CliNombre, c.CodigoReact AS CliCodigo,
-                   LTRIM(RTRIM(c.TelefonoTrabajo)) AS CliTelefono, tc.TClDescripcion
+                   mon.MonSimbolo, LTRIM(RTRIM(c.Nombre)) AS CliNombre, c.IDCliente AS CliCodigo,
+                   LTRIM(RTRIM(c.TelefonoTrabajo)) AS CliTelefono, tc.TClDescripcion,
+                   CASE WHEN o.PagIdPago IS NOT NULL THEN 1 ELSE 0 END AS Pagada
             FROM OrdenesDeposito o WITH(NOLOCK)
             LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = o.MonIdMoneda
             LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
             LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
             LEFT JOIN EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
-            WHERE o.OrdCodigoOrden = @cod AND o.PagIdPago IS NULL
+            WHERE o.OrdCodigoOrden = @cod
           `);
           sinRetiro = r3.recordset;
         }
       } else {
-        // Orden sin retiro → sección "sin retiro"
-        if (!row.PagIdPago) {
-          const req4 = pool.request().input('cod', sql.NVarChar, termClean);
-          const r4 = await req4.query(`
-            SELECT o.OrdIdOrden, o.OrdCodigoOrden, o.OrdCostoFinal, eo.EOrNombreEstado AS estadoOrden,
-                   mon.MonSimbolo, LTRIM(RTRIM(c.Nombre)) AS CliNombre, c.CodigoReact AS CliCodigo,
-                   LTRIM(RTRIM(c.TelefonoTrabajo)) AS CliTelefono, tc.TClDescripcion
-            FROM OrdenesDeposito o WITH(NOLOCK)
-            LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = o.MonIdMoneda
-            LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
-            LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
-            LEFT JOIN EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
-            WHERE o.OrdCodigoOrden = @cod AND o.PagIdPago IS NULL
-          `);
-          sinRetiro = r4.recordset;
-        }
+        // Orden sin retiro → sección "sin retiro" (incluyendo pagas para poder generar retiro igual)
+        const req4 = pool.request().input('cod', sql.NVarChar, termClean);
+        const r4 = await req4.query(`
+          SELECT o.OrdIdOrden, o.OrdCodigoOrden, o.OrdCostoFinal, eo.EOrNombreEstado AS estadoOrden,
+                 mon.MonSimbolo, LTRIM(RTRIM(c.Nombre)) AS CliNombre, c.IDCliente AS CliCodigo,
+                 LTRIM(RTRIM(c.TelefonoTrabajo)) AS CliTelefono, tc.TClDescripcion,
+                 CASE WHEN o.PagIdPago IS NOT NULL THEN 1 ELSE 0 END AS Pagada
+          FROM OrdenesDeposito o WITH(NOLOCK)
+          LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = o.MonIdMoneda
+          LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+          LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+          LEFT JOIN EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
+          WHERE o.OrdCodigoOrden = @cod
+        `);
+        sinRetiro = r4.recordset;
       }
     } else {
       // ── Búsqueda por cliente (texto) ─────────────────────────────────────
       const patron = `%${termClean.toUpperCase()}%`;
       const req5 = pool.request().input('codCli', sql.NVarChar, patron);
-      const result = await req5.query(baseQuery('AND (UPPER(c.CodigoReact) LIKE @codCli OR UPPER(c.Nombre) LIKE @codCli)'));
+      const result = await req5.query(baseQuery('AND (UPPER(c.IDCliente) LIKE @codCli OR UPPER(c.Nombre) LIKE @codCli)'));
       retiroRows = result.recordset;
 
-      // Órdenes sin retiro del mismo cliente
+      // Órdenes sin retiro del mismo cliente (incl. pagas para poder crear retiro si no lo tienen)
       const req6 = pool.request().input('codCli', sql.NVarChar, patron);
       const r6 = await req6.query(`
         SELECT o.OrdIdOrden, o.OrdCodigoOrden, o.OrdCostoFinal, eo.EOrNombreEstado AS estadoOrden,
-               mon.MonSimbolo, LTRIM(RTRIM(c2.Nombre)) AS CliNombre, c2.CodigoReact AS CliCodigo,
-               LTRIM(RTRIM(c2.TelefonoTrabajo)) AS CliTelefono, tc2.TClDescripcion
+               mon.MonSimbolo, LTRIM(RTRIM(c2.Nombre)) AS CliNombre, c2.IDCliente AS CliCodigo,
+               LTRIM(RTRIM(c2.TelefonoTrabajo)) AS CliTelefono, tc2.TClDescripcion,
+               CASE WHEN o.PagIdPago IS NOT NULL THEN 1 ELSE 0 END AS Pagada
         FROM OrdenesDeposito o WITH(NOLOCK)
         LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = o.MonIdMoneda
         LEFT JOIN Clientes c2 WITH(NOLOCK) ON c2.CliIdCliente = o.CliIdCliente
         LEFT JOIN TiposClientes tc2 WITH(NOLOCK) ON tc2.TClIdTipoCliente = c2.TClIdTipoCliente
         LEFT JOIN EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
         WHERE o.OReIdOrdenRetiro IS NULL
-          AND o.PagIdPago IS NULL
           AND o.OrdEstadoActual NOT IN (9, 10)
-          AND (UPPER(c2.CodigoReact) LIKE @codCli OR UPPER(c2.Nombre) LIKE @codCli)
+          AND (UPPER(c2.IDCliente) LIKE @codCli OR UPPER(c2.Nombre) LIKE @codCli)
         ORDER BY o.OrdIdOrden DESC
       `);
       sinRetiro = r6.recordset;

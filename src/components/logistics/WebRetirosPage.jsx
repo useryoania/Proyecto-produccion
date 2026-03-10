@@ -376,7 +376,11 @@ const WebRetirosPage = () => {
       estantesData.forEach(item => {
         if (item.OrdenRetiro) {
           if (!estantesMap[item.UbicacionID]) estantesMap[item.UbicacionID] = [];
-          estantesMap[item.UbicacionID].push(item);
+          // Convertir OrdenesCodigos (STRING_AGG: "DF-123,DF-456") en array orders[]
+          const ordersFromDB = item.OrdenesCodigos
+            ? item.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() }))
+            : (item.BultosJSON ? JSON.parse(item.BultosJSON) : []);
+          estantesMap[item.UbicacionID].push({ ...item, orders: ordersFromDB });
         }
         if (!configMap[item.EstanteID]) {
           configMap[item.EstanteID] = { id: item.EstanteID, secciones: 0, posiciones: 0 };
@@ -388,15 +392,29 @@ const WebRetirosPage = () => {
       setEstantesConfigArr(Object.values(configMap).sort((a, b) => a.id.localeCompare(b.id)));
       setOcupacionEstantes(estantesMap);
 
-      // 2.5 Traer "Resto de Retiros" (otros retiros)
+      // 2.5 Traer "Retiros Fuera de Estante":
+      //   - Empaquetados (7,8) sin ubicacion asignada
+      //   - Retiros RL (generados en Logistica local) en estado 1 que no fueron a estante
       try {
-        const { data: otrosData } = await api.get('/apiordenesRetiro/estados?estados=1,3,4');
-        if (Array.isArray(otrosData)) {
-          const ocupadasSet = new Set(estantesData.map(e => e.OrdenRetiro));
-          const apiOrdersSet = new Set(formattedRetiros.map(o => o.ordenDeRetiro));
-          const filtrados = otrosData.filter(o => !ocupadasSet.has(o.ordenDeRetiro) && !apiOrdersSet.has(o.ordenDeRetiro));
-          setOtrosRetiros(filtrados);
-        }
+        const ocupadasSet = new Set(estantesData.map(e => e.OrdenRetiro));
+
+        // Empaquetados sin estante
+        const { data: empaquetadosData } = await api.get('/apiordenesRetiro/estados?estados=7,8');
+        const empaquetados = Array.isArray(empaquetadosData)
+          ? empaquetadosData.filter(o => !ocupadasSet.has(o.ordenDeRetiro))
+          : [];
+
+        // Retiros RL (generados desde Logistica local) en estado 1 sin estante
+        // Aparecen en Fuera de Estante aunque tambien esten en Empaque
+        const { data: rlData } = await api.get('/apiordenesRetiro/estados?estados=1');
+        const rlFuera = Array.isArray(rlData)
+          ? rlData.filter(o =>
+            o.ordenDeRetiro?.startsWith('RL-') &&
+            !ocupadasSet.has(o.ordenDeRetiro)
+          )
+          : [];
+
+        setOtrosRetiros([...empaquetados, ...rlFuera]);
       } catch (e) { console.error(e) }
 
       // 3. Lanzar sincronización pesada en segundo plano si aplica (sin bloquear UI)
@@ -510,11 +528,26 @@ const WebRetirosPage = () => {
   const triggerEntregar = (id, dataOrDataList) => {
     const list = Array.isArray(dataOrDataList) ? dataOrDataList : [dataOrDataList];
 
+    // Enriquecer cada item del estante con los orders del retiro completo
+    // (los items del estante solo tienen OrdenRetiro/CodigoCliente, sin orders[])
+    const listEnriquecida = list.map(item => {
+      const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
+      const retiroFull = apiOrders.find(o => o.ordenDeRetiro === ordenStr)
+        || otrosRetiros.find(o => o.ordenDeRetiro === ordenStr);
+      return {
+        ...item,
+        orders: item.orders?.length ? item.orders : (retiroFull?.orders || []),
+        pagorealizado: item.Pagado ? 1 : (retiroFull?.pagorealizado ?? item.pagorealizado ?? 0),
+        TClDescripcion: retiroFull?.TClDescripcion || item.TClDescripcion || '',
+        estado: retiroFull?.estado || item.estado || '',
+      };
+    });
+
     // Find if ANY order in the list is unauthorized
     let exceptionItem = null;
     let exceptionItemRaw = null;
 
-    for (const item of list) {
+    for (const item of listEnriquecida) {
       const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
       const retiroFull = apiOrders.find(o => o.ordenDeRetiro === ordenStr) || otrosRetiros.find(o => o.ordenDeRetiro === ordenStr);
       let isAuthorized = false;
@@ -533,32 +566,36 @@ const WebRetirosPage = () => {
       if (!isAuthorized) {
         exceptionItem = item;
         exceptionItemRaw = retiroFull;
-        break; // Stop at first unauthorized
+        break;
       }
     }
 
     if (exceptionItem) {
-      // Si hay aunque sea uno sin abonar, pedimos excepcion global
-      setExcepcionDelivery({ id, data: exceptionItem, raw: exceptionItemRaw, blockList: list });
+      setExcepcionDelivery({ id, data: exceptionItem, raw: exceptionItemRaw, blockList: listEnriquecida });
       return;
     }
 
-    setConfirmDelivery({ id, dataList: list });
+    setConfirmDelivery({ id, dataList: listEnriquecida });
     setDeliveryScannedBultos({});
     setDeliveryBarcodeInput('');
 
     // Select all orders by default for delivery
     const sel = {};
-    list.forEach(o => sel[o.OrdenRetiro || o.ordenDeRetiro] = true);
+    listEnriquecida.forEach(o => sel[o.OrdenRetiro || o.ordenDeRetiro] = true);
     setDeliverySelectedOrders(sel);
   };
+
 
   const handleExcepcionSubmit = async (e) => {
     e.preventDefault();
     if (!adminPassword || !excepcionExplicacion) return;
 
+    // IMPORTANTE: capturar todo ANTES de cualquier setState
+    const deliverySnap = excepcionDelivery;
+    const block = deliverySnap.blockList;
+    const retiro = deliverySnap.raw || deliverySnap.data;
+
     try {
-      const retiro = excepcionDelivery.raw || excepcionDelivery.data;
       await api.post('/web-retiros/excepcional', {
         ordenRetiro: retiro.ordenDeRetiro || retiro.OrdenRetiro,
         codigoCliente: retiro.idcliente || retiro.CodigoCliente || retiro.CliCodigoCliente,
@@ -567,13 +604,13 @@ const WebRetirosPage = () => {
         explicacion: excepcionExplicacion
       });
 
-      // Si autoriza, procedemos a abrir el modal de checklist real con el bloque entero
-      const block = excepcionDelivery.blockList;
+      // Autorizado: limpiar modal excepción y abrir checklist
       setExcepcionDelivery(null);
       setAdminPassword('');
       setExcepcionExplicacion('');
+      setError(null);
 
-      setConfirmDelivery({ id: excepcionDelivery.id, dataList: block });
+      setConfirmDelivery({ id: deliverySnap.id, dataList: block });
       setDeliveryScannedBultos({});
       setDeliveryBarcodeInput('');
 
@@ -582,7 +619,9 @@ const WebRetirosPage = () => {
       setDeliverySelectedOrders(sel);
 
     } catch (err) {
-      setError(err.response?.data?.error || 'Falló la autorización excepcional');
+      // Mostrar error inline en el modal (contraseña incorrecta, etc.)
+      const msg = err.response?.data?.error || 'Falló la autorización excepcional';
+      setError(msg);
     }
   };
 
@@ -1582,13 +1621,13 @@ const WebRetirosPage = () => {
                     type="password"
                     required
                     value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
+                    onChange={(e) => { setAdminPassword(e.target.value); setError(null); }}
                     className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none transition-all"
                     placeholder="Ingrese contraseña..."
                   />
                 </div>
 
-                <div className="mb-6">
+                <div className="mb-4">
                   <label className="block text-sm font-bold text-slate-700 mb-2">Explicación o Detalle (Requerido)</label>
                   <textarea
                     required
@@ -1600,10 +1639,17 @@ const WebRetirosPage = () => {
                   ></textarea>
                 </div>
 
+                {/* Error inline: contraseña incorrecta, etc. */}
+                {error && (
+                  <div className="mb-4 bg-red-50 border border-red-300 text-red-700 text-sm font-bold rounded-xl px-4 py-2.5">
+                    ⚠️ {error}
+                  </div>
+                )}
+
                 <div className="flex gap-4">
                   <button
                     type="button"
-                    onClick={() => { setExcepcionDelivery(null); setAdminPassword(''); }}
+                    onClick={() => { setExcepcionDelivery(null); setAdminPassword(''); setError(null); }}
                     className="flex-[1] py-3 px-4 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
                   >
                     Cancelar

@@ -11,14 +11,20 @@ router.get('/tipos', controller.getTiposClientes);
 // GET /api/clients/external/:id (Proxy para API Macrosoft)
 router.get('/external/:id', controller.getMacrosoftClientData);
 
+// GET /api/clients/catalogs (Catálogos: localidades, depts, agencias, formas envío, tipos, vendedores)
+router.get('/catalogs', controller.getCatalogs);
+
 // GET /api/clients/react-list (Proxy para API React DataAll)
 router.get('/react-list', controller.getAllReactClients);
 
 // GET /api/clients/admin/duplicates (Obtener clientes duplicados con el mismo IDReact)
 router.get('/admin/duplicates', controller.getDuplicateClients);
 
-// GET /api/clients/macrosoft-list (Proxy para lista full de Macrosoft)
+// GET /api/clients/macrosoft-list?q=&page=&pageSize= (Lista ClientesReact paginada con filtro)
 router.get('/macrosoft-list', controller.getAllMacrosoftClients);
+
+// GET /api/clients/react-clients/search?q=... (Búsqueda rápida en ClientesReact para autocompletado)
+router.get('/react-clients/search', controller.getAllMacrosoftClients);
 
 // GET /api/clients/search?q=Juan (Búsqueda autocompletado)
 // GET /api/clients/search?q=Juan (Búsqueda autocompletado en otros módulos)

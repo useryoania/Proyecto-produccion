@@ -259,6 +259,13 @@ exports.getAllLocalRetiros = async (req, res) => {
                 ) AS OrdenesCodigos
             FROM OrdenesRetiro r WITH(NOLOCK)
             LEFT JOIN Clientes c WITH(NOLOCK) ON c.CodCliente = r.CodCliente
+            -- Excluir retiros entregados o cancelados
+            WHERE r.OReEstadoActual NOT IN (5, 6)
+            -- Excluir retiros que ya estan asignados a un estante fisico
+            AND NOT EXISTS (
+                SELECT 1 FROM OcupacionEstantes oe WITH(NOLOCK)
+                WHERE oe.OrdenRetiro = COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR)
+            )
             ORDER BY r.OReFechaAlta DESC
         `;
         const result = await pool.request().query(query);
@@ -421,18 +428,25 @@ exports.obtenerMapaEstantes = async (req, res) => {
                 o.BultosJSON,
                 o.Pagado,
                 CASE WHEN orr.ReferenciaPagoOnline IS NOT NULL AND orr.ReferenciaPagoOnline <> '' THEN 1 ELSE 0 END AS PagoHandy,
-                o.FechaUbicacion
+                o.FechaUbicacion,
+                -- Órdenes de depósito asociadas al retiro (para el checklist)
+                (
+                    SELECT STRING_AGG(od.OrdCodigoOrden, ',')
+                    FROM OrdenesDeposito od WITH(NOLOCK)
+                    WHERE od.OReIdOrdenRetiro = orr.OReIdOrdenRetiro
+                ) AS OrdenesCodigos
             FROM ConfiguracionEstantes c
             LEFT JOIN OcupacionEstantes o 
                 ON c.EstanteID = o.EstanteID AND c.Seccion = o.Seccion AND c.Posicion = o.Posicion
             LEFT JOIN Clientes cli ON CAST(o.CodigoCliente AS VARCHAR) = CAST(cli.CodCliente AS VARCHAR)
-            LEFT JOIN OrdenesRetiro orr ON o.OrdenRetiro = 'R-' + CAST(orr.OReIdOrdenRetiro AS VARCHAR)
+            LEFT JOIN OrdenesRetiro orr 
+                ON o.OrdenRetiro = COALESCE(orr.FormaRetiro, 'R') + '-' + CAST(orr.OReIdOrdenRetiro AS VARCHAR)
             WHERE c.Activo = 1
             ORDER BY c.EstanteID, c.Seccion, c.Posicion
         `);
         res.json(result.recordset);
     } catch (err) {
-        res.status(500).json({ error: "Error al obtener mapa estantes", details: err.message });
+        res.status(500).json({ error: 'Error al obtener mapa estantes', details: err.message });
     }
 };
 
@@ -467,10 +481,16 @@ exports.asignarRetiroAEstante = async (req, res) => {
             const nuevoEstado = pagado ? 8 : 7;
             const ubicacionString = `${estanteId}-${seccion}-${posicion}`;
 
-            // 4. Marcar pronto en DB directamente (dentro de la misma transacción)
-            const OReIdOrdenRetiro = parseInt(ordenRetiro.replace(/^R-0*/, ''), 10);
+            // Extraer ID numérico del retiro: soporta R-, RL-, RT-, RW-, etc.
+            // Ej: 'RL-60658' → 60658 | 'RT-60657' → 60657 | 'R-0001' → 1
+            const numMatch = ordenRetiro.match(/(\d+)$/);
+            const OReIdOrdenRetiro = numMatch ? parseInt(numMatch[1], 10) : NaN;
             const fechaPronto = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
             const UsuarioAlta = req.user?.id || 70;
+
+            if (isNaN(OReIdOrdenRetiro)) {
+                throw new Error(`No se pudo extraer el ID numérico del retiro: '${ordenRetiro}'`);
+            }
 
             // Generar lista de códigos de órdenes escaneadas
             const bultosLimpios = (scannedValues || []).filter(val => val && val.trim() !== '');
@@ -781,7 +801,7 @@ exports.getExcepciones = async (req, res) => {
                 e.UsuarioGestion, e.NotaGestion,
                 u.Nombre AS NombreAutorizador
             FROM RetirosConDeuda e
-            LEFT JOIN Clientes c ON CAST(e.CodigoCliente AS VARCHAR) = CAST(c.CodigoReact AS VARCHAR)
+            LEFT JOIN Clientes c ON CAST(e.CodigoCliente AS VARCHAR) = CAST(c.IDCliente AS VARCHAR)
             LEFT JOIN Usuarios u ON u.IdUsuario = e.UsuarioAutorizador
             ORDER BY e.Fecha DESC
         `);

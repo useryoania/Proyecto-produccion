@@ -42,88 +42,77 @@ async function getMacrosoftToken() {
     }
 }
 
-// Proxy para API Externa (Evita CORS) - Obtener Un Cliente por ID (Legacy/Local)
+// ─── BÚSQUEDA EN ClientesReact (local DB) — reemplaza la llamada a API externa ───
 exports.getMacrosoftClientData = async (req, res) => {
     const { id } = req.params;
     try {
-        const token = await getMacrosoftToken();
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-        const response = await axios.get(`${ERP_API_BASE}/clientes/${id}`, { headers });
-        res.json(response.data);
-    } catch (error) {
-        console.log(`[PROXY] Falló búsqueda directa '/clientes/${id}'. Intentando buscar en lista completa...`);
-
-        // Fallback: Obtener todos y filtrar (según descripción usuario "trae todos")
-        try {
-            const token = await getMacrosoftToken();
-            const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-            const listRes = await axios.get(`${ERP_API_BASE}/clientes`, { headers });
-            let items = listRes.data;
-            if (items && items.data) items = items.data; // Nuevo formato con { data: [...] }
-            if (items && items.recordset) items = items.recordset;
-
-            if (Array.isArray(items)) {
-                const term = id.toLowerCase();
-                const found = items.find(c =>
-                    (c.CodigoCliente && String(c.CodigoCliente).toLowerCase() === term) ||
-                    (c.IdCliente && String(c.IdCliente) === term) ||
-                    (c.NombreCliente && c.NombreCliente.toLowerCase().includes(term))
-                );
-
-                if (found) {
-                    console.log(`[PROXY] Encontrado en lista completa: ${found.NombreCliente}`);
-                    return res.json(found);
-                }
-            }
-        } catch (err2) {
-            console.log("[PROXY] Falló fallback 1 (/api/clientes). Probando espejo React (dataall)...");
-            try {
-                const listRes2 = await axios.get(`${ERP_API_BASE}/api/apicliente/dataall`);
-                let items2 = listRes2.data;
-                if (items2 && items2.recordset) items2 = items2.recordset;
-
-                if (Array.isArray(items2)) {
-                    const term = id.toLowerCase();
-                    const found = items2.find(c =>
-                        (c.CodigoCliente && String(c.CodigoCliente).toLowerCase() === term) ||
-                        (c.IdCliente && String(c.IdCliente) === term) ||
-                        (c.NombreCliente && c.NombreCliente.toLowerCase().includes(term))
-                    );
-                    if (found) {
-                        console.log(`[PROXY] Encontrado en espejo React: ${found.NombreCliente}`);
-                        return res.json(found);
-                    }
-                }
-            } catch (err3) {
-                console.error("[PROXY] Fallaron todos los intentos:", err3.message);
-            }
+        const pool = await getPool();
+        const result = await pool.request()
+            .input('term', sql.VarChar(100), id)
+            .query(`
+                SELECT TOP 1 *
+                FROM ClientesReact WITH(NOLOCK)
+                WHERE CliCodigoCliente = @term
+                   OR CAST(CliIdCliente AS VARCHAR) = @term
+                   OR CliNombreApellido LIKE '%' + @term + '%'
+                   OR CliNombreEmpresa  LIKE '%' + @term + '%'
+            `);
+        if (result.recordset.length === 0) {
+            return res.status(404).json({ error: 'Cliente no encontrado en ClientesReact' });
         }
-
-        // Si falla todo, devolver error original
-        res.status(502).json({
-            error: "Error API Macrosoft",
-            details: error.response?.data ? JSON.stringify(error.response.data) : error.message
-        });
+        res.json(result.recordset[0]);
+    } catch (error) {
+        console.error('[getMacrosoftClientData] Error:', error.message);
+        res.status(500).json({ error: error.message });
     }
 };
 
-// Obtener TODOS los clientes del sistema (query directa a DB local)
+// Obtener clientes de ClientesReact que NO están vinculados en la tabla local Clientes
 exports.getAllReactClients = async (req, res) => {
     try {
         const pool = await getPool();
-        const result = await pool.request().query(`
+        const { q } = req.query;
+        const request = pool.request();
+        let whereSearch = '1=1';
+
+        if (q) {
+            whereSearch = `(
+                cr.CliNombreApellido LIKE @q
+                OR cr.CliNombreEmpresa LIKE @q
+                OR cr.CliCodigoCliente LIKE @q
+                OR cr.CliMail LIKE @q
+                OR cr.CliDocumento LIKE @q
+            )`;
+            request.input('q', sql.VarChar(200), `%${q}%`);
+        }
+
+        // Solo retorna los de ClientesReact que NO están ya vinculados en dbo.Clientes
+        const result = await request.query(`
             SELECT 
-                CliIdCliente, CodCliente, Nombre, NombreFantasia, TelefonoTrabajo,
-                CioRuc, Email, CodigoReact, IDReact, Tipo, CliDireccion,
-                Localidad, Agencia, IDCliente, Cedula, IDClientePlanilla,
-                WebActive, ESTADO, VendedorID, FechaRegistro
-            FROM dbo.Clientes WITH(NOLOCK)
-            ORDER BY Nombre ASC
+                cr.CliIdCliente       AS IdCliente,
+                cr.CliCodigoCliente   AS CodigoCliente,
+                cr.CliNombreApellido  AS NombreCliente,
+                cr.CliNombreEmpresa   AS EmpresaCliente,
+                cr.CliCelular         AS Telefono,
+                cr.CliMail            AS Email,
+                cr.CliDocumento       AS Rut,
+                cr.CliLocalidad       AS Localidad,
+                cr.CliDireccion       AS Direccion,
+                cr.CliAgencia         AS Agencia,
+                cr.TClIdTipoCliente,
+                cr.LReIdLugarRetiro,
+                cr.CliFechaAlta
+            FROM ClientesReact cr WITH(NOLOCK)
+            WHERE NOT EXISTS (
+                SELECT 1 FROM dbo.Clientes loc WITH(NOLOCK)
+                WHERE loc.CodigoReact = cr.CliCodigoCliente
+                   OR (loc.IDReact IS NOT NULL AND loc.IDReact <> '' AND CAST(loc.IDReact AS VARCHAR) = CAST(cr.CliIdCliente AS VARCHAR))
+            )
+            AND ${whereSearch}
+            ORDER BY cr.CliNombreApellido ASC
         `);
 
-        console.log(`[getAllReactClients] Devolviendo ${result.recordset.length} clientes desde DB local`);
+        console.log(`[getAllReactClients] Devolviendo ${result.recordset.length} clientes React sin vincular`);
         res.set('Cache-Control', 'no-store');
         res.json(result.recordset);
     } catch (error) {
@@ -132,37 +121,63 @@ exports.getAllReactClients = async (req, res) => {
     }
 };
 
+// Obtener todos los clientes de ClientesReact (paginado/búsqueda) — reemplaza la llamada a API externa
 exports.getAllMacrosoftClients = async (req, res) => {
+    const { q, page = 1, pageSize = 50 } = req.query;
     try {
-        const token = await getMacrosoftToken();
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const pool = await getPool();
+        const request = pool.request();
+        let where = '1=1';
 
-        // Fetch primera página
-        const response1 = await axios.get(`${ERP_API_BASE}/clientes?page=1`, { headers });
-        let allClients = response1.data.data || [];
-        const totalPages = response1.data.pages || 1;
-
-        if (totalPages > 1) {
-            // Buscamos las demás páginas en paralelo para acelerar respuesta
-            const pageRequests = [];
-            for (let i = 2; i <= totalPages; i++) {
-                pageRequests.push(
-                    axios.get(`${ERP_API_BASE}/clientes?page=${i}`, { headers }).catch(e => ({ data: { data: [] } }))
-                );
-            }
-            const responses = await Promise.all(pageRequests);
-            responses.forEach(r => {
-                if (r.data && r.data.data) {
-                    allClients = allClients.concat(r.data.data);
-                }
-            });
+        if (q) {
+            where = `(
+                CliNombreApellido LIKE @q
+                OR CliNombreEmpresa LIKE @q
+                OR CliCodigoCliente LIKE @q
+                OR CliMail LIKE @q
+                OR CliDocumento LIKE @q
+            )`;
+            request.input('q', sql.VarChar(200), `%${q}%`);
         }
 
+        const offset = (parseInt(page) - 1) * parseInt(pageSize);
+        request.input('offset', sql.Int, offset);
+        request.input('pageSize', sql.Int, parseInt(pageSize));
+
+        const result = await request.query(`
+            SELECT 
+                CliIdCliente    AS IdCliente,
+                CliCodigoCliente AS CodigoCliente,
+                CliNombreApellido AS NombreCliente,
+                CliNombreEmpresa  AS EmpresaCliente,
+                CliCelular       AS Telefono,
+                CliMail          AS Email,
+                CliDocumento     AS Rut,
+                CliLocalidad     AS Localidad,
+                CliDireccion     AS Direccion,
+                CliAgencia       AS Agencia,
+                TClIdTipoCliente,
+                LReIdLugarRetiro,
+                CliFechaAlta
+            FROM ClientesReact WITH(NOLOCK)
+            WHERE ${where}
+            ORDER BY CliNombreApellido ASC
+            OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
+        `);
+
+        const countResult = await pool.request()
+            .query(`SELECT COUNT(*) AS total FROM ClientesReact WITH(NOLOCK) WHERE ${where}`);
+
         res.set('Cache-Control', 'no-store');
-        res.json(allClients);
+        res.json({
+            data: result.recordset,
+            total: countResult.recordset[0].total,
+            page: parseInt(page),
+            pageSize: parseInt(pageSize)
+        });
     } catch (error) {
-        console.error("Error Proxy Macrosoft API:", error.message);
-        res.status(502).json({ error: "Fallo conexión con API Externa Macrosoft" });
+        console.error('[getAllMacrosoftClients] Error:', error.message);
+        res.status(500).json({ error: error.message });
     }
 };
 
@@ -248,52 +263,66 @@ exports.createClient = async (req, res) => {
 
 // --- NUEVOS METODOS DE INTEGRACION ---
 
-// Obtener todos los clientes (paginado o top) para gestión
+// Obtener todos los clientes con JOINs a catálogos para vista tabla
 exports.getAllClients = async (req, res) => {
-    const { q, mode } = req.query; // mode: 'all', 'linked', 'unlinked'
+    const { q, mode } = req.query;
     try {
         const pool = await getPool();
         let query = `
             SELECT 
-                CodCliente, Nombre, NombreFantasia, CioRuc, CodigoReact, IDReact, Email, TelefonoTrabajo, CodReferencia
-            FROM dbo.Clientes
+                c.CliIdCliente, c.CodCliente, c.Nombre, c.NombreFantasia,
+                c.IDCliente, c.CioRuc, c.IDReact, c.CodReferencia,
+                c.Email, c.TelefonoTrabajo, c.DireccionTrabajo,
+                c.ESTADO, c.WebActive,
+                c.VendedorID, c.FechaRegistro,
+                c.DepartamentoID, c.LocalidadID, c.AgenciaID,
+                c.FormaEnvioID, c.TClIdTipoCliente,
+                l.Nombre  AS LocalidadNombre,
+                d.Nombre  AS DepartamentoNombre,
+                a.Nombre  AS AgenciaNombre,
+                fe.Nombre AS FormaEnvioNombre,
+                tc.TClDescripcion AS TipoClienteNombre,
+                t.Nombre  AS VendedorNombre
+            FROM dbo.Clientes c WITH(NOLOCK)
+            LEFT JOIN Localidades   l  WITH(NOLOCK) ON l.ID  = c.LocalidadID
+            LEFT JOIN Departamentos d  WITH(NOLOCK) ON d.ID  = c.DepartamentoID
+            LEFT JOIN Agencias      a  WITH(NOLOCK) ON a.ID  = c.AgenciaID
+            LEFT JOIN FormasEnvio   fe WITH(NOLOCK) ON fe.ID = c.FormaEnvioID
+            LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+            LEFT JOIN Trabajadores  t  WITH(NOLOCK) ON TRY_CAST(t.Cedula AS NVARCHAR(50)) = c.VendedorID
             WHERE 1=1
         `;
 
         const request = pool.request();
 
         if (q) {
-            // Búsqueda en servidor sobre todos los campos relevantes
             query += ` 
-                AND (Nombre LIKE @q 
-                   OR NombreFantasia LIKE @q 
-                   OR CioRuc LIKE @q 
-                   OR CAST(CodCliente AS VARCHAR) LIKE @q)
+                AND (c.Nombre LIKE @q 
+                   OR c.NombreFantasia LIKE @q 
+                   OR c.CioRuc LIKE @q 
+                   OR c.Email LIKE @q
+                   OR c.TelefonoTrabajo LIKE @q
+                   OR CAST(c.CodCliente AS VARCHAR) LIKE @q)
             `;
             request.input('q', sql.NVarChar, `%${q}%`);
         }
 
-        // Filtro por MODO (linked / unlinked)
-        // Usamos IDReact como criterio principal de "vinculado"
         if (mode === 'linked') {
-            query += ` AND (IDReact IS NOT NULL AND IDReact <> '')`;
+            query += ` AND c.IDReact IS NOT NULL`;
         } else if (mode === 'unlinked') {
-            query += ` AND (IDReact IS NULL OR IDReact = '')`;
+            query += ` AND c.IDReact IS NULL`;
         }
 
-        // Ordenamiento: 
-        // Si buscamos 'unlinked', ordenamos por nombre.
-        // Si buscamos 'all' o 'linked', priorizamos los que tienen IDReact para verlos primero (o consistencia).
-        // En este caso, si el usuario filtra, el orden debe ser consistente.
-
-        query += ` ORDER BY Nombre ASC`;
+        query += ` ORDER BY c.Nombre ASC`;
 
         const result = await request.query(query);
         res.json(result.recordset);
     } catch (err) {
+        console.error('getAllClients error:', err.message);
         res.status(500).json({ error: err.message });
     }
 };
+
 
 // Vincular Cliente con React
 exports.updateClientLink = async (req, res) => {
@@ -346,41 +375,71 @@ exports.updateClientLinkMacrosoft = async (req, res) => {
     }
 };
 
-// Importar Cliente desde React (Crear en Local)
+// Importar Cliente desde ClientesReact → tabla local Clientes
 exports.importReactClient = async (req, res) => {
-    const { NombreCliente, EmpresaCliente, Email, Rut, Telefono, Direccion, CodigoCliente, IdCliente } = req.body;
+    // Acepta tanto el formato nuevo (de ClientesReact) como el antiguo (de API externa)
+    const {
+        IdCliente, CodigoCliente,          // de ClientesReact
+        NombreCliente, EmpresaCliente,     // de ClientesReact
+        Telefono, Email, Rut,              // de ClientesReact
+        Localidad, Direccion,              // de ClientesReact
+        TClIdTipoCliente, LReIdLugarRetiro // de ClientesReact
+    } = req.body;
 
-    console.log("[IMPORT] Creando cliente local desde React:", { NombreCliente, CodigoCliente });
+    const nombreFinal = (EmpresaCliente || NombreCliente || '').trim() || 'Sin Nombre';
+    const fantasiaFinal = (NombreCliente || '').trim();
+
+    console.log('[IMPORT] Importando desde ClientesReact:', { nombreFinal, CodigoCliente, IdCliente });
 
     try {
         const pool = await getPool();
 
-        // Mapeo de campos: React -> Local
-        const nombreFinal = EmpresaCliente || NombreCliente || 'Sin Nombre';
-        const rutFinal = Rut || '';
-        const emailFinal = Email || '';
-        const telFinal = Telefono || '';
-
-        // Insertar en Local
-        const result = await pool.request()
-            .input('Nom', sql.NVarChar(200), nombreFinal)
-            .input('Fant', sql.NVarChar(200), NombreCliente || '')
-            .input('Ruc', sql.NVarChar(50), rutFinal)
-            .input('Email', sql.NVarChar(100), emailFinal)
-            .input('Tel', sql.NVarChar(50), telFinal)
+        // Verificar si ya existe por CodigoReact o IDReact
+        const check = await pool.request()
             .input('CR', sql.NVarChar(50), String(CodigoCliente || '').trim())
-            .input('IR', sql.NVarChar(50), String(IdCliente || '').trim())
+            .input('IR', sql.Int, parseInt(IdCliente) || null)
             .query(`
-                INSERT INTO dbo.Clientes (Nombre, NombreFantasia, CioRuc, Email, TelefonoTrabajo, CodigoReact, IDReact)
-                OUTPUT INSERTED.*
-                VALUES (@Nom, @Fant, @Ruc, @Email, @Tel, @CR, @IR)
+                SELECT TOP 1 CodCliente, Nombre FROM dbo.Clientes WITH(NOLOCK)
+                WHERE (CodigoReact = @CR AND @CR <> '')
+                   OR (IDReact = @IR AND @IR IS NOT NULL)
             `);
 
-        res.json({ success: true, client: result.recordset[0] });
+        if (check.recordset.length > 0) {
+            return res.json({
+                success: true,
+                alreadyExists: true,
+                client: check.recordset[0],
+                message: `El cliente ya existe localmente (CodCliente=${check.recordset[0].CodCliente})`
+            });
+        }
+
+        // Insertar en Clientes local
+        const result = await pool.request()
+            .input('Nom', sql.NVarChar(200), nombreFinal)
+            .input('Fant', sql.NVarChar(200), fantasiaFinal)
+            .input('Ruc', sql.NVarChar(50), String(Rut || '').trim() || null)
+            .input('Email', sql.NVarChar(200), String(Email || '').trim() || null)
+            .input('Tel', sql.NVarChar(50), String(Telefono || '').trim() || null)
+            .input('Dir', sql.NVarChar(500), String(Direccion || '').trim() || null)
+            .input('Loc', sql.NVarChar(200), String(Localidad || '').trim() || null)
+            .input('CR', sql.NVarChar(50), String(CodigoCliente || '').trim() || null)
+            .input('IR', sql.Int, parseInt(IdCliente) || null)
+            .input('Tipo', sql.Int, parseInt(TClIdTipoCliente) || null)
+            .input('LRe', sql.Int, parseInt(LReIdLugarRetiro) || null)
+            .query(`
+                INSERT INTO dbo.Clientes
+                    (Nombre, NombreFantasia, CioRuc, Email, TelefonoTrabajo,
+                     CliDireccion, Localidad, CodigoReact, IDReact, TClIdTipoCliente, FormaEnvioID)
+                OUTPUT INSERTED.*
+                VALUES (@Nom, @Fant, @Ruc, @Email, @Tel,
+                        @Dir, @Loc, @CR, @IR, @Tipo, @LRe)
+            `);
+
+        res.json({ success: true, alreadyExists: false, client: result.recordset[0] });
 
     } catch (err) {
-        console.error("[IMPORT ERROR]", err);
-        res.status(500).json({ error: "Error creando cliente local: " + err.message });
+        console.error('[IMPORT ERROR]', err);
+        res.status(500).json({ error: 'Error creando cliente local: ' + err.message });
     }
 };
 
@@ -494,150 +553,181 @@ exports.createMacrosoftClient = async (req, res) => {
     }
 };
 
-// Búsqueda Unificada: Local -> Legacy (6061)
+// Búsqueda Unificada: Local → ClientesReact (misma DB, sin llamada a API externa)
 exports.searchClientUnified = async (req, res) => {
     const { term } = req.query;
-    if (!term) return res.status(400).json({ error: "Término de búsqueda requerido" });
+    if (!term) return res.status(400).json({ error: 'Término de búsqueda requerido' });
 
     try {
         const pool = await getPool();
 
-        // 1. Búsqueda Local (Prioridad)
+        // 1. Búsqueda en tabla local Clientes (prioridad)
         const localRes = await pool.request()
             .input('Term', sql.NVarChar(100), term)
             .query(`
-                SELECT TOP 1 * FROM dbo.Clientes 
-                WHERE CAST(CodCliente AS NVARCHAR(50)) = @Term 
-                   OR Nombre LIKE '%' + @Term + '%' 
+                SELECT TOP 1 * FROM dbo.Clientes WITH(NOLOCK)
+                WHERE CAST(CodCliente AS NVARCHAR(50)) = @Term
+                   OR Nombre LIKE '%' + @Term + '%'
                    OR CioRuc = @Term
                    OR CodigoReact = @Term
                    OR CAST(IDReact AS NVARCHAR(50)) = @Term
+                   OR NombreFantasia LIKE '%' + @Term + '%'
             `);
 
         if (localRes.recordset.length > 0) {
             console.log(`[Unified] Encontrado en Local: ${term}`);
-            return res.json({
-                source: 'local',
-                client: localRes.recordset[0],
-                found: true
-            });
+            return res.json({ source: 'local', client: localRes.recordset[0], found: true });
         }
 
-        // 2. Búsqueda Legacy (6061)
-        console.log(`[Unified] No en local. Buscando en Macrosoft: ${term}`);
+        // 2. Búsqueda en ClientesReact (tabla local, antes era API externa)
+        console.log(`[Unified] No en local. Buscando en ClientesReact: ${term}`);
+        const reactRes = await pool.request()
+            .input('Term2', sql.VarChar(200), term)
+            .query(`
+                SELECT TOP 1
+                    CliIdCliente    AS IdCliente,
+                    CliCodigoCliente AS CodigoCliente,
+                    CliNombreApellido AS NombreCliente,
+                    CliNombreEmpresa  AS EmpresaCliente,
+                    CliCelular       AS Telefono,
+                    CliMail          AS Email,
+                    CliDocumento     AS Rut,
+                    CliLocalidad     AS Localidad,
+                    CliDireccion     AS Direccion,
+                    CliAgencia       AS Agencia,
+                    TClIdTipoCliente,
+                    LReIdLugarRetiro
+                FROM ClientesReact WITH(NOLOCK)
+                WHERE CliCodigoCliente = @Term2
+                   OR CAST(CliIdCliente AS VARCHAR) = @Term2
+                   OR CliNombreApellido LIKE '%' + @Term2 + '%'
+                   OR CliNombreEmpresa  LIKE '%' + @Term2 + '%'
+                   OR CliMail = @Term2
+                   OR CliDocumento = @Term2
+            `);
 
-        let legacyClient = null;
-
-        // Intento 1: Directo (útil si term es ID numérico como '185201')
-        try {
-            const token = await getMacrosoftToken();
-            const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-            const r = await axios.get(`${ERP_API_BASE}/clientes/${term}`, { headers });
-            let data = r.data;
-            if (data && data.recordset) data = data.recordset;
-            if (data && data.data && !Array.isArray(data.data)) data = data.data; // Desempaquetar { data: {...} }
-
-            if (Array.isArray(data)) {
-                if (data.length > 0) legacyClient = data[0];
-            } else if (data) {
-                legacyClient = data;
-            }
-        } catch (e) {
-            console.log(`[Unified] Fallo directo Api Macrosoft (/clientes/${term}). Probando búsqueda en lista...`);
+        if (reactRes.recordset.length > 0) {
+            console.log(`[Unified] Encontrado en ClientesReact: ${term}`);
+            return res.json({ source: 'react', client: reactRes.recordset[0], found: true });
         }
 
-        // Intento 2: Búsqueda en Lista Completa (Backup robusto)
-        if (!legacyClient) {
-            try {
-                // Intentamos primero la ruta standard, luego la de 'dataall' que nos pegó el usuario
-                let rutasListas = [
-                    `${ERP_API_BASE}/clientes`,
-                    `${ERP_API_BASE}/api/apicliente/dataall` // Mantener por si acaso retrocompatible
-                ];
-
-                for (const url of rutasListas) {
-                    if (legacyClient) break;
-                    try {
-                        const token = await getMacrosoftToken();
-                        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-
-                        const r = await axios.get(url, { headers });
-                        let items = r.data;
-                        if (items && items.recordset) items = items.recordset; // Manejar wrapper recordset
-
-                        if (Array.isArray(items)) {
-                            const t = term.toLowerCase();
-                            legacyClient = items.find(c =>
-                                (c.CodigoCliente && String(c.CodigoCliente).toLowerCase() == t) ||
-                                (c.IdCliente && String(c.IdCliente) == t) ||
-                                (c.NombreCliente && c.NombreCliente.toLowerCase().includes(t)) ||
-                                (c.CliNombreApellido && c.CliNombreApellido.toLowerCase().includes(t))
-                            );
-                            if (legacyClient) console.log(`[Unified] Encontrado en lista (${url})`);
-                        }
-                    } catch (ign) { }
-                }
-            } catch (e2) { console.error("[Unified] Error fallback:", e2); }
-        }
-
-        if (legacyClient) {
-            return res.json({
-                source: 'legacy',
-                client: legacyClient,
-                found: true
-            });
-        }
-
-        return res.json({ found: false, message: "No encontrado en Local ni Legacy" });
+        return res.json({ found: false, message: 'No encontrado en Local ni en ClientesReact' });
 
     } catch (error) {
-        console.error("Error Unified Search:", error);
+        console.error('Error Unified Search:', error);
         res.status(500).json({ error: error.message });
     }
 };
 
 exports.updateClient = async (req, res) => {
     const { codCliente } = req.params;
-    const { Nombre, NombreFantasia, CioRuc, Email, TelefonoTrabajo, CliDireccion, CodigoReact, IDReact, CodReferencia } = req.body;
+    const {
+        // Identificación
+        Nombre, NombreFantasia, IDCliente, CioRuc, CodigoReact, IDReact, CodReferencia,
+        // Contacto
+        TelefonoTrabajo, Email,
+        // Direcciones
+        DireccionTrabajo, CliDireccion,
+        // Clasificación
+        Tipo, TiposPrecios, TClIdTipoCliente, Moneda,
+        // Geo (texto heredado + FK)
+        Localidad, Agencia,
+        DepartamentoID, LocalidadID, AgenciaID, FormaEnvioID,
+        // Comercial
+        VendedorID, IDClientePlanilla,
+        // Estado / Web
+        ESTADO, WebActive,
+    } = req.body;
 
-    if (!codCliente) return res.status(400).json({ error: "Falta CodCliente" });
+    if (!codCliente) return res.status(400).json({ error: 'Falta CodCliente' });
 
     try {
         const pool = await getPool();
-        const safeString = (val) => (val !== undefined && val !== null) ? String(val) : null;
+        const safeStr = (val, max = 500) => (val !== undefined && val !== null) ? String(val).substring(0, max) : null;
+        const safeInt = (val) => (val !== undefined && val !== null && val !== '') ? parseInt(val) : null;
+        const safeSI = (val) => (val !== undefined && val !== null && val !== '') ? parseInt(val) : null; // smallint
 
         await pool.request()
-            .input('CC', sql.Int, codCliente)
-            .input('Nom', sql.NVarChar(200), safeString(Nombre))
-            .input('Fan', sql.NVarChar(200), safeString(NombreFantasia))
-            .input('Ruc', sql.NVarChar(50), safeString(CioRuc))
-            .input('Mail', sql.NVarChar(100), safeString(Email))
-            .input('Tel', sql.NVarChar(50), safeString(TelefonoTrabajo))
-            .input('Dir', sql.NVarChar(500), safeString(CliDireccion))
-            .input('CReact', sql.NVarChar(50), safeString(CodigoReact))
-            .input('IReact', sql.NVarChar(50), safeString(IDReact))
-            .input('CRef', sql.Int, CodReferencia ? parseInt(CodReferencia) : null)
+            // Identificación
+            .input('CC', sql.Int, safeInt(codCliente))
+            .input('Nom', sql.Char(150), safeStr(Nombre, 150))
+            .input('Fan', sql.Char(150), safeStr(NombreFantasia, 150))
+            .input('IDCli', sql.VarChar(255), safeStr(IDCliente, 255))
+            .input('Ruc', sql.Char(20), safeStr(CioRuc, 20))
+            .input('CReact', sql.NVarChar(50), safeStr(CodigoReact, 50))
+            .input('IReact', sql.Int, safeInt(IDReact))
+            .input('CRef', sql.Int, safeInt(CodReferencia))
+            // Contacto
+            .input('Tel', sql.Char(20), safeStr(TelefonoTrabajo, 20))
+            .input('Mail', sql.Char(40), safeStr(Email, 40))
+            // Direcciones
+            .input('DirTrab', sql.Char(80), safeStr(DireccionTrabajo, 80))
+            .input('Dir', sql.NVarChar(500), safeStr(CliDireccion, 500))
+            // Clasificación
+            .input('Tipo', sql.Int, safeInt(Tipo))
+            .input('TipPre', sql.SmallInt, safeSI(TiposPrecios))
+            .input('TipCli', sql.Int, safeInt(TClIdTipoCliente))
+            .input('Mon', sql.Int, safeInt(Moneda))
+            // Geo texto
+            .input('Loc', sql.NVarChar(200), safeStr(Localidad, 200))
+            .input('Age', sql.NVarChar(200), safeStr(Agencia, 200))
+            // Geo FK
+            .input('DepID', sql.Int, safeInt(DepartamentoID))
+            .input('LocID', sql.Int, safeInt(LocalidadID))
+            .input('AgeID', sql.Int, safeInt(AgenciaID))
+            .input('FEnvID', sql.Int, safeInt(FormaEnvioID))
+            // Comercial
+            .input('Vend', sql.NVarChar(20), safeStr(VendedorID, 20))
+            .input('IPlan', sql.VarChar(255), safeStr(IDClientePlanilla, 255))
+            // Estado / Web
+            .input('Est', sql.NVarChar(10), safeStr(ESTADO, 10))
+            .input('WA', sql.Bit, WebActive != null ? (WebActive ? 1 : 0) : null)
             .query(`
-                UPDATE dbo.Clientes 
-                SET Nombre = @Nom,
-                    NombreFantasia = @Fan,
-                    CioRuc = @Ruc,
-                    Email = @Mail,
-                    TelefonoTrabajo = @Tel,
-                    CliDireccion = @Dir,
-                    CodigoReact = @CReact,
-                    IDReact = @IReact,
-                    CodReferencia = @CRef
+                UPDATE dbo.Clientes SET
+                    -- Identificación
+                    Nombre            = COALESCE(@Nom,    Nombre),
+                    NombreFantasia    = COALESCE(@Fan,    NombreFantasia),
+                    IDCliente         = COALESCE(@IDCli,  IDCliente),
+                    CioRuc            = COALESCE(@Ruc,    CioRuc),
+                    CodigoReact       = @CReact,
+                    IDReact           = COALESCE(@IReact, IDReact),
+                    CodReferencia     = @CRef,
+                    -- Contacto
+                    TelefonoTrabajo   = COALESCE(@Tel,    TelefonoTrabajo),
+                    Email             = COALESCE(@Mail,   Email),
+                    -- Direcciones
+                    DireccionTrabajo  = COALESCE(@DirTrab, DireccionTrabajo),
+                    CliDireccion      = COALESCE(@Dir,    CliDireccion),
+                    -- Clasificación
+                    Tipo              = COALESCE(@Tipo,   Tipo),
+                    TiposPrecios      = COALESCE(@TipPre, TiposPrecios),
+                    TClIdTipoCliente  = COALESCE(@TipCli, TClIdTipoCliente),
+                    Moneda            = COALESCE(@Mon,    Moneda),
+                    -- Geo texto (se actualiza siempre si se manda)
+                    Localidad         = COALESCE(@Loc,    Localidad),
+                    Agencia           = COALESCE(@Age,    Agencia),
+                    -- Geo FK
+                    DepartamentoID    = COALESCE(@DepID,  DepartamentoID),
+                    LocalidadID       = COALESCE(@LocID,  LocalidadID),
+                    AgenciaID         = COALESCE(@AgeID,  AgenciaID),
+                    FormaEnvioID      = COALESCE(@FEnvID, FormaEnvioID),
+                    -- Comercial
+                    VendedorID        = COALESCE(@Vend,   VendedorID),
+                    IDClientePlanilla = COALESCE(@IPlan,  IDClientePlanilla),
+                    -- Estado / Web
+                    ESTADO            = COALESCE(@Est,    ESTADO),
+                    WebActive         = COALESCE(@WA,     WebActive)
                 WHERE CodCliente = @CC
             `);
 
-        res.json({ success: true, message: "Cliente actualizado correctamente" });
+        res.json({ success: true, message: 'Cliente actualizado correctamente' });
     } catch (e) {
-        console.error("Error updateClient:", e);
+        console.error('Error updateClient:', e);
         res.status(500).json({ error: e.message });
     }
 };
+
+
 
 // Obtener duplicados por IDReact
 exports.getDuplicateClients = async (req, res) => {
@@ -728,5 +818,34 @@ exports.getTiposClientes = async (req, res) => {
     } catch (error) {
         console.error('Error al obtener Tipos de Clientes:', error);
         res.status(500).json({ message: 'Error al obtener Tipos de Clientes', error: error.message });
+    }
+};
+
+// -------------------------------------------------------------------
+// CATALOGS — todos los catálogos en una sola llamada
+// -------------------------------------------------------------------
+exports.getCatalogs = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const [localidades, departamentos, agencias, formasEnvio, tiposClientes, vendedores] = await Promise.all([
+            pool.request().query('SELECT ID, Nombre, DepartamentoID FROM Localidades WITH(NOLOCK) ORDER BY Nombre'),
+            pool.request().query('SELECT ID, Nombre FROM Departamentos WITH(NOLOCK) ORDER BY Nombre'),
+            pool.request().query('SELECT ID, Nombre FROM Agencias WITH(NOLOCK) ORDER BY Nombre'),
+            pool.request().query('SELECT ID, Nombre FROM FormasEnvio WITH(NOLOCK) ORDER BY Nombre'),
+            pool.request().query('SELECT TClIdTipoCliente AS ID, TClDescripcion AS Nombre FROM TiposClientes WITH(NOLOCK) ORDER BY TClDescripcion'),
+            // Trabajadores del área VENTAS — columna se llama [Área] con Á mayúscula (U+00C1)
+            pool.request().query("SELECT Cedula, Nombre FROM Trabajadores WITH(NOLOCK) WHERE [\u00C1rea] = 'VENTAS' ORDER BY Nombre"),
+        ]);
+        res.json({
+            localidades: localidades.recordset,
+            departamentos: departamentos.recordset,
+            agencias: agencias.recordset,
+            formasEnvio: formasEnvio.recordset,
+            tiposClientes: tiposClientes.recordset,
+            vendedores: vendedores.recordset,
+        });
+    } catch (error) {
+        console.error('Error getCatalogs:', error);
+        res.status(500).json({ error: error.message });
     }
 };
