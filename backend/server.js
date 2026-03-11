@@ -25,12 +25,18 @@ app.use(helmet({
     frameguard: false // Allow framing
 }));
 
+const WHITELISTED_IPS = (process.env.RATE_LIMIT_WHITELIST || '').split(',').map(ip => ip.trim()).filter(Boolean);
+
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 300,
+    max: 1000,
     standardHeaders: true,
     legacyHeaders: false,
-    message: "Demasiadas peticiones desde esta IP, por favor intente nuevamente en 15 minutos."
+    message: "Demasiadas peticiones desde esta IP, por favor intente nuevamente en 15 minutos.",
+    skip: (req) => {
+        const clientIp = (req.ip || '').replace(/^::ffff:/, '');
+        return WHITELISTED_IPS.includes(clientIp);
+    }
 });
 app.use(limiter);
 
