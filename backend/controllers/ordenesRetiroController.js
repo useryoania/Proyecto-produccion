@@ -726,7 +726,9 @@ const getTodasSinRetiro = async (req, res) => {
         LTRIM(RTRIM(c.TelefonoTrabajo)) AS CliTelefono,
         tc.TClDescripcion,
         o.CliIdCliente AS CliIdClienteFK,
+        o.OrdNombreTrabajo,
         CASE WHEN o.PagIdPago IS NOT NULL THEN 1 ELSE 0 END AS Pagada
+
       FROM OrdenesDeposito o WITH(NOLOCK)
       LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = o.MonIdMoneda
       LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente

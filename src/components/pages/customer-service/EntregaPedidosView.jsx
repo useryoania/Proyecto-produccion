@@ -867,12 +867,15 @@ const EntregaPedidosView = () => {
                                 </div>
                             </div>
                             <button
-                                onClick={buscarMostrador}
-                                disabled={!searchTerm || mostradorLoading}
-                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
+                                onClick={() => {
+                                    // El filtro es en memoria, el botón solo refresca el foco
+                                    if (!searchTerm.trim()) toast.warning('Ingresá un criterio de búsqueda.');
+                                }}
+                                disabled={false}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all flex items-center gap-2"
                             >
-                                {mostradorLoading ? <RefreshCcw className="animate-spin" size={18} /> : <Search size={18} />}
-                                {mostradorLoading ? 'Buscando...' : 'Buscar Expediente'}
+                                <Search size={18} />
+                                Buscar Expediente
                             </button>
                         </div>
 
@@ -882,7 +885,18 @@ const EntregaPedidosView = () => {
                                 <div>
                                     <div className="text-white font-black text-lg">Órdenes sin Retiro Asignado</div>
                                     <div className="text-amber-100 text-sm">
-                                        {loadingMostradorAll ? 'Cargando...' : `${mostradorAllSinRetiro.length} orden(es) pendientes`}
+                                        {loadingMostradorAll ? 'Cargando...' : (() => {
+                                            if (searchTerm.trim()) {
+                                                const q = searchTerm.trim().toLowerCase();
+                                                const count = mostradorAllSinRetiro.filter(o =>
+                                                    (o.OrdCodigoOrden || '').toLowerCase().includes(q) ||
+                                                    (o.CliNombre || '').toLowerCase().includes(q) ||
+                                                    String(o.CliCodigo || '').toLowerCase().includes(q)
+                                                ).length;
+                                                return `${count} de ${mostradorAllSinRetiro.length} orden(es)`;
+                                            }
+                                            return `${mostradorAllSinRetiro.length} orden(es) pendientes`;
+                                        })()}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-3">
@@ -927,8 +941,18 @@ const EntregaPedidosView = () => {
                             </div>
 
                             {mostradorAllSinRetiro.length > 0 ? (() => {
-                                const selectedArr = mostradorAllSinRetiro.filter(o => selectedSinRetiro.has(o.OrdIdOrden));
-                                const allChecked = selectedArr.length === mostradorAllSinRetiro.length;
+                                // Filtro en memoria por código de orden, nombre o ID de cliente
+                                const q = searchTerm.trim().toLowerCase();
+                                const filteredSinRetiro = q
+                                    ? mostradorAllSinRetiro.filter(o =>
+                                        (o.OrdCodigoOrden || '').toLowerCase().includes(q) ||
+                                        (o.CliNombre || '').toLowerCase().includes(q) ||
+                                        String(o.CliCodigo || '').toLowerCase().includes(q)
+                                    )
+                                    : mostradorAllSinRetiro;
+
+                                const selectedArr = filteredSinRetiro.filter(o => selectedSinRetiro.has(o.OrdIdOrden));
+                                const allChecked = filteredSinRetiro.length > 0 && selectedArr.length === filteredSinRetiro.length;
                                 const someChecked = selectedArr.length > 0;
                                 const totalSel = selectedArr.reduce((s, o) => s + parseFloat(o.OrdCostoFinal || 0), 0);
                                 return (
@@ -966,7 +990,7 @@ const EntregaPedidosView = () => {
                                                         <th className="p-3 pl-4 w-10">
                                                             <input type="checkbox" checked={allChecked}
                                                                 onChange={e => {
-                                                                    if (e.target.checked) setSelectedSinRetiro(new Set(mostradorAllSinRetiro.map(o => o.OrdIdOrden)));
+                                                                    if (e.target.checked) setSelectedSinRetiro(new Set(filteredSinRetiro.map(o => o.OrdIdOrden)));
                                                                     else setSelectedSinRetiro(new Set());
                                                                 }}
                                                                 className="w-4 h-4 accent-amber-500 cursor-pointer"
@@ -981,7 +1005,7 @@ const EntregaPedidosView = () => {
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    {mostradorAllSinRetiro.map(o => {
+                                                    {filteredSinRetiro.map(o => {
                                                         const isSel = selectedSinRetiro.has(o.OrdIdOrden);
                                                         return (
                                                             <tr key={o.OrdIdOrden}
@@ -1007,7 +1031,7 @@ const EntregaPedidosView = () => {
                                                                         ? <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">{o.LugarRetiroNombre}</span>
                                                                         : <span className="text-slate-400 text-xs italic">Sin lugar</span>}
                                                                 </td>
-                                                                <td className="p-3 text-slate-500 text-xs">{o.estadoOrden}</td>
+                                                                <td className="p-3 font-bold text-slate-800 text-xs">{o.OrdNombreTrabajo || o.estadoOrden || '-'}</td>
                                                                 <td className="p-3 text-right font-black text-amber-700">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</td>
                                                                 <td className="p-3 pr-4" onClick={e => e.stopPropagation()}>
                                                                     <div className="flex items-center gap-2 justify-center">
