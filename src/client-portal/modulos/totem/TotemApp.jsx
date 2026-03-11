@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { TotemDashboard } from './TotemDashboard';
 import { ShieldX } from 'lucide-react';
 import { Logo } from '../../../components/Logo'
+import ParticlesCanvas from '../../../components/ui/ParticlesCanvas';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const INACTIVITY_TIMEOUT = 2 * 60 * 1000; // 2 minutes
@@ -102,6 +103,7 @@ export const TotemApp = () => {
                             setScreen('dashboard');
                         }}
                     >
+                        <ParticlesCanvas />
                         <div className="flex flex-col items-center justify-between min-h-screen pt-16 pb-6">
                             {/* Logo top */}
                             <Logo className="h-50 mt-[10vh] text-white" />

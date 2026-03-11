@@ -5,8 +5,10 @@ import { Button } from '../ui/Button.jsx';
 import { User, Lock, Eye, EyeOff, AlertCircle, LogIn, KeyRound } from 'lucide-react';
 import { Logo } from '../Logo.jsx';
 import { API_URL } from '../../services/apiClient';
+import ParticlesCanvas from '../ui/ParticlesCanvas';
 
 const GOOGLE_CLIENT_ID = '731319806954-13nu06rau4pnvo1lu0fmai4f2inm7j6c.apps.googleusercontent.com';
+
 
 // --- FORCED RESET PASSWORD SCREEN ---
 const ResetPasswordScreen = ({ token, onSuccess }) => {
@@ -45,6 +47,7 @@ const ResetPasswordScreen = ({ token, onSuccess }) => {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-custom-dark relative overflow-hidden font-sans">
+            <ParticlesCanvas />
             <div className="relative w-full max-w-md rounded-3xl z-10">
                 <div className="hidden md:block absolute -inset-[2px] rounded-3xl overflow-hidden">
                     <div className="absolute inset-[-50%] w-[200%] h-[200%]"
@@ -226,6 +229,9 @@ const LoginPage = () => {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-custom-dark relative overflow-hidden font-sans">
+
+            {/* Particles canvas */}
+            <ParticlesCanvas />
 
             {/* Animated border keyframes */}
             <style>{`
