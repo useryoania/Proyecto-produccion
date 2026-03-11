@@ -3,6 +3,7 @@ import { Button } from '../ui/Button.jsx';
 import { Mail, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { API_URL } from '../../services/apiClient';
 import { Logo } from '../Logo.jsx';
+import ParticlesCanvas from '../ui/ParticlesCanvas';
 
 const ForgotPasswordPage = () => {
     const [email, setEmail] = useState('');
@@ -43,6 +44,9 @@ const ForgotPasswordPage = () => {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-custom-dark relative overflow-hidden font-sans">
+
+            {/* Particles canvas */}
+            <ParticlesCanvas />
 
             {/* Animated border keyframes */}
             <style>{`

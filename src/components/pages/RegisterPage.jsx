@@ -6,6 +6,7 @@ import Swal from 'sweetalert2';
 import { API_URL } from '../../services/apiClient';
 import { ClientFormFields, Field, useNomenclators, inputClass, iconClass } from '../shared/ClientFormFields';
 import { Logo } from '../Logo.jsx'
+import ParticlesCanvas from '../ui/ParticlesCanvas';
 
 const RegisterPage = () => {
     const [form, setForm] = useState({
@@ -187,7 +188,10 @@ const RegisterPage = () => {
     }, []);
 
     return (
-        <div className="min-h-screen bg-custom-dark relative font-sans py-10 px-4">
+        <div className="min-h-screen bg-custom-dark relative font-sans py-10 px-4 overflow-hidden">
+
+            {/* Particles canvas */}
+            <ParticlesCanvas />
 
             {/* Animated border keyframes */}
             <style>{`
