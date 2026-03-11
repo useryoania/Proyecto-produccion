@@ -67,7 +67,8 @@ export function AuthProvider({ children }) {
                     token: receivedToken, // Store the found token
                     areaKey: (data.user.area || data.user.AreaUsuario || data.user.AreaKey || '').trim(),
                     userType: data.userType, // INTERNAL or CLIENT
-                    redirectUrl: data.redirectUrl // Where to go
+                    redirectUrl: data.redirectUrl, // Where to go
+                    requireReset: data.user.requireReset || false // Force password change
                 };
 
                 // Normalize Role for Frontend Checks
@@ -79,22 +80,27 @@ export function AuthProvider({ children }) {
                 console.log("📍 [Auth] Mapped User Data:", userData);
                 console.log("💾 [LoginStep 3] Guardando en LocalStorage:", userData);
 
+                // If client needs to reset password, only store token (for API call)
+                // but DON'T store user/session (prevents back-button session restore)
+                if (userData.requireReset) {
+                    if (receivedToken) {
+                        localStorage.setItem('auth_token', receivedToken);
+                    }
+                    return userData;
+                }
+
                 // MAIN STORAGE (Shared)
                 localStorage.setItem('user', JSON.stringify(userData));
 
                 // ALSO STORE TOKEN IN 'auth_token' FOR CLIENT PORTAL COMPATIBILITY
-                // ALSO STORE TOKEN IN 'auth_token' FOR CLIENT PORTAL COMPATIBILITY
                 if (receivedToken) {
                     localStorage.setItem('auth_token', receivedToken);
-                    localStorage.setItem('user_session', JSON.stringify(data.user)); // For Client Portal context
+                    localStorage.setItem('user_session', JSON.stringify(data.user));
                 } else {
                     console.error("No token to write to auth_token!");
                 }
 
                 setUser(userData);
-
-                // Navigation is handled by the calling component via React Router
-                // (removed window.location.href to avoid full page reload)
 
                 return userData;
             } else {

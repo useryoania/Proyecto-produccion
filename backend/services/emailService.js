@@ -58,7 +58,7 @@ exports.sendRegistrationMail = async (to, clientName, codCliente) => {
 };
 
 exports.sendOrderConfirmation = async (to, clientName, orderNumber, orderDetails) => {
-    const html = `<div style="font-family:Arial, sans-serif; max-width:600px; margin: 0 auto; padding 20px;">
+    const html = `<div style="font-family:Arial, sans-serif; max-width:600px; margin: 0 auto; padding: 20px;">
     <h2>Detalles del pedido</h2>
     <p>Hola ${clientName}, tu pedido <strong>#${orderNumber}</strong> fue recibido.</p>
     <p>${orderDetails || 'Pronto nos pondremos en contacto.'}</p>
@@ -70,16 +70,16 @@ exports.sendOrderConfirmation = async (to, clientName, orderNumber, orderDetails
 
 exports.sendPasswordResetMail = async (to, resetCode) => {
     const html = `
-    <div style="font-family:Arial, sans-serif; max-width:600px; margin 0 auto; padding:20px;>
+    <div style="font-family:Arial, sans-serif; max-width:600px; margin: 0 auto; padding: 20px;">
     <h2> Restablecer contraseña </h2>
     <p>Tu código de verificación es:</p>
-    <div style="background: #f0f0f0; padding;20px; text-align:center; font-size:32px; font-weight:bold; letter-spacing:5px; margin:20px 0;">
+    <div style="background: #f0f0f0; padding: 20px; text-align:center; font-size:32px; font-weight:bold; letter-spacing:5px; margin:20px 0;">
     ${resetCode}
     </div>
     <p>Este código expira en <strong>15 minutos</strong>.</p>
     <p>Si no solicitaste esto, ignorá este mensaje.</p>
     <hr>
-    <p style="color: #888; font-size: 12px;";>User - Sistema de Producción</p>
+    <p style="color: #888; font-size: 12px;">User - Sistema de Producción</p>
     </div>
     `;
     return this.sendMail(to, "Código de recuperación de contraseña", html);
