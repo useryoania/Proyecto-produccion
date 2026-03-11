@@ -120,6 +120,37 @@ const CargaDepositoPage = () => {
         }
     }, [codes.length]);
 
+    // ─── GLOBAL SCANNER CAPTURE ─────────────────────────────────────────────────
+    // Captura teclas del escáner aunque el input no esté en foco.
+    // Si se presiona una tecla imprimible y el foco NO está en un input de código,
+    // redirige automáticamente al último input vacío.
+    useEffect(() => {
+        const handleGlobalKey = (e) => {
+            // Ignorar si ya estamos en un input de esta página
+            const active = document.activeElement;
+            const isOurInput = active && active.dataset && active.dataset.cargaInput === 'true';
+            if (isOurInput) return;
+
+            // Ignorar teclas de control (Shift, Ctrl, Alt, etc.) excepto Enter
+            if (e.key.length > 1 && e.key !== 'Enter') return;
+
+            // Ignorar si hay un modal abierto o se está en otro input/textarea
+            if (active && (active.tagName === 'TEXTAREA' || (active.tagName === 'INPUT' && active.type !== 'button'))) return;
+
+            // Buscar el último input vacío
+            const visibleCodes = codes.filter(c => !['wsp_waiting', 'wsp_success', 'info', 'wsp_error'].includes(c.status));
+            const lastCode = visibleCodes[visibleCodes.length - 1];
+            if (lastCode && inputRefs.current[lastCode.id]) {
+                const input = inputRefs.current[lastCode.id];
+                input.focus();
+                // No inyectar Enter, solo redirigir foco — el scanner mandará el char al input enfocado
+            }
+        };
+
+        window.addEventListener('keydown', handleGlobalKey);
+        return () => window.removeEventListener('keydown', handleGlobalKey);
+    }, [codes]);
+
     // Socket.io para escuchar actualizaciones de WS
     useEffect(() => {
         const handleWspUpdate = (data) => {
@@ -409,6 +440,7 @@ const CargaDepositoPage = () => {
                                 onKeyDown={(e) => handleKeyDown(e, code.id)}
                                 disabled={code.status === 'loading' || code.status === 'wsp_success' || code.status === 'wsp_waiting' || code.status === 'info' || code.wspError}
                                 autoComplete="off"
+                                data-carga-input="true"
                             />
                             {/* Loader durante la validacion async */}
                             {code.status === 'validating' && (
