@@ -207,6 +207,13 @@ const CargaDepositoPage = () => {
     const handleKeyDown = (e, codeId) => {
         if (e.key === 'Enter' || e.key === 'Tab') {
             e.preventDefault();
+            const current = codes.find(c => c.id === codeId);
+            // Si el código tiene error, Enter re-dispara la validación
+            if (current && current.status === 'error' && current.value.trim() !== '') {
+                setCodes(prev => prev.map(c => c.id === codeId ? { ...c, status: 'validating', message: 'Reintentando...', parsed: null } : c));
+                setTimeout(() => validateQRCode(codeId, current.value.trim()), 50);
+                return;
+            }
             const visibleCodes = codes.filter(c => !['wsp_waiting', 'wsp_success', 'info', 'wsp_error'].includes(c.status));
             const currentIndex = visibleCodes.findIndex(c => c.id === codeId);
             if (currentIndex < visibleCodes.length - 1) {
@@ -229,26 +236,44 @@ const CargaDepositoPage = () => {
 
         if (toProcess.length === 0) return;
 
-        setLoading(true);
+        // ── Deduplicar por CodigoOrden (primera parte del QR) ──────────────
+        const seen = new Set();
+        const duplicateIds = [];
+        const unique = toProcess.filter(c => {
+            const codigo = c.value.trim().split('$*')[0];
+            if (seen.has(codigo)) { duplicateIds.push(c.id); return false; }
+            seen.add(codigo);
+            return true;
+        });
 
-        // Marcamos como cargando
+        // Marcar duplicados como error antes de procesar
+        if (duplicateIds.length > 0) {
+            setCodes(prev => prev.map(c =>
+                duplicateIds.includes(c.id)
+                    ? { ...c, status: 'error', message: '⚠️ Código duplicado en la lista. Solo se procesa una vez.' }
+                    : c
+            ));
+        }
+
+        setLoading(true);
         setCodes(prev => prev.map(c =>
-            toProcess.some(p => p.id === c.id) ? { ...c, status: 'loading', message: 'Guardando...' } : c
+            unique.some(p => p.id === c.id) ? { ...c, status: 'loading', message: 'Guardando...' } : c
         ));
 
-        // Procesamiento en paralelo
-        const promises = toProcess.map(async (codeObj) => {
+        // ── Procesamiento SECUENCIAL para evitar race conditions en DB ──────
+        const results = [];
+        for (const codeObj of unique) {
             try {
                 const res = await api.post('/apiordenes/data', {
                     ordenString: codeObj.value,
                     estado: 'Ingresado'
                 });
-                return {
+                results.push({
                     id: codeObj.id,
                     idOrden: res.data.idOrden,
                     status: res.status === 202 ? 'info' : 'wsp_waiting',
                     message: res.status === 202 ? 'La orden se reingresó exitosamente al depósito.' : 'Orden guardada. Esperando WhatsApp...'
-                };
+                });
             } catch (err) {
                 const status = err.response?.status;
                 let message = 'Error inesperado al cargar.';
@@ -257,11 +282,9 @@ const CargaDepositoPage = () => {
                 if (status === 404) message = 'Cliente no encontrado en el sistema.';
                 if (status === 405) message = 'Producto no encontrado en el sistema.';
                 if (status === 500) message = 'Falla interna del servidor. Carga rechazada.';
-                return { id: codeObj.id, status: 'error', message };
+                results.push({ id: codeObj.id, status: 'error', message });
             }
-        });
-
-        const results = await Promise.all(promises);
+        }
 
         setCodes(prev => prev.map(c => {
             const r = results.find(res => res.id === c.id);
@@ -529,16 +552,28 @@ const CargaDepositoPage = () => {
                                         </div>
                                     )}
 
-                                    {/* Mostrar el mensaje de status (incluyendo Info o Error de la DB) */}
+                                    {/* Mensaje de status + botón Reintentar para errores */}
                                     {code.message && (
-                                        <div className={`mt-2 text-[0.8rem] font-semibold px-3 py-2 rounded-lg border flex justify-between items-center text-center
+                                        <div className={`mt-2 text-[0.8rem] font-semibold px-3 py-2 rounded-lg border flex justify-between items-center gap-2
                                             ${isError ? 'bg-rose-50 text-rose-700 border-rose-200' :
                                                 isWspSuccess ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                                     isWspWaiting ? 'bg-violet-50 text-violet-700 border-violet-200' :
                                                         'bg-blue-50 text-blue-800 border-blue-200'
                                             }
                                         `}>
-                                            <span className="w-full">{code.message}</span>
+                                            <span className="flex-1 text-center">{code.message}</span>
+                                            {isError && !code.wspError && (
+                                                <button
+                                                    title="Reintentar validación"
+                                                    onClick={() => {
+                                                        setCodes(prev => prev.map(c => c.id === code.id ? { ...c, status: 'validating', message: 'Reintentando...', parsed: null } : c));
+                                                        setTimeout(() => validateQRCode(code.id, code.value.trim()), 50);
+                                                    }}
+                                                    className="shrink-0 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-md px-2 py-0.5 text-[0.7rem] font-bold transition-colors flex items-center gap-1"
+                                                >
+                                                    <Loader2 size={10} /> Reintentar
+                                                </button>
+                                            )}
                                         </div>
                                     )}
 

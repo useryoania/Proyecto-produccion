@@ -63,6 +63,7 @@ app.use('/api/roles', require('./routes/rolesRoutes'));
 app.use('/api/users', require('./routes/usersRoutes'));
 app.use('/api/audit', require('./routes/auditRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 
 const webAuthRoutes = require('./routes/webAuthRoutes');
 const webOrdersRoutes = require('./routes/webOrdersRoutes'); // Nueva ruta Pedidos Web
@@ -255,6 +256,14 @@ server.listen(PORT, async () => {
             startWspJob(io);
         } catch (e) {
             console.error("❌ [CRON] Error cargando WspAvisos:", e.message);
+        }
+
+        // ACTIVAR CRON COTIZACIÓN BCU (USD/UYU automático)
+        try {
+            const { startCotizacionJob } = require('./jobs/cotizacionBCU.job');
+            startCotizacionJob();
+        } catch (e) {
+            console.error("❌ [CRON] Error cargando CotizacionBCU:", e.message);
         }
 
     } catch (error) {

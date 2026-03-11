@@ -11,7 +11,7 @@ const WA_TEST_TO = process.env.WA_TEST_TO;
 const ESTADO_POR_AVISAR = Number(process.env.WSP_ESTADO_POR_AVISAR ?? 1);
 const GLOBAL_CONCURRENCY = Number(process.env.WSP_GLOBAL_CONCURRENCY ?? 4);
 const PER_RECIPIENT_MIN_INTERVAL_MS = Number(process.env.WSP_PER_RECIPIENT_DELAY_MS ?? 4000);
-const WSP_ENABLED_ENV = String(process.env.WSP_ENABLED ?? "true") === "true";
+const WSP_ENABLED_ENV = String(process.env.WSP_ENABLED ?? "true").toLowerCase() === "true";
 const CALLBELL_SEND_URL = "https://api.callbell.eu/v1/messages/send";
 
 // ======================================

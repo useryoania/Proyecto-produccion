@@ -637,29 +637,33 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
         await transaction.begin();
 
         try {
-            // 1. Liberar del Estante Físico SÓLO las especificadas
-            const partsM = ubicacionId.split('-');
-            const estIdM = partsM[0];
-            const secM = parseInt(partsM[1], 10);
-            const posM = parseInt(partsM[2], 10);
-
-            for (const ord of ordenesParaEntregar) {
-                await new sql.Request(transaction)
-                    .input('estId', sql.Char, estIdM)
-                    .input('sec', sql.Int, secM)
-                    .input('pos', sql.Int, posM)
-                    .input('Ord', sql.VarChar, ord)
-                    .query('DELETE FROM OcupacionEstantes WHERE EstanteID = @estId AND Seccion = @sec AND Posicion = @pos AND OrdenRetiro = @Ord');
-            }
-
-            // 3. Marcar entregadas en DB directamente
             const fechaEntrega = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
             const UsuarioAlta = req.user?.id || 70;
 
+            // 1. Liberar del Estante Físico SOLO si tiene estante real (no aplica a "Fuera de Estante")
+            if (ubicacionId !== 'FUERA DE ESTANTE') {
+                const partsM = ubicacionId.split('-');
+                const estIdM = partsM[0];
+                const secM = parseInt(partsM[1], 10);
+                const posM = parseInt(partsM[2], 10);
+
+                for (const ord of ordenesParaEntregar) {
+                    await new sql.Request(transaction)
+                        .input('estId', sql.Char, estIdM)
+                        .input('sec', sql.Int, secM)
+                        .input('pos', sql.Int, posM)
+                        .input('Ord', sql.VarChar, ord)
+                        .query('DELETE FROM OcupacionEstantes WHERE EstanteID = @estId AND Seccion = @sec AND Posicion = @pos AND OrdenRetiro = @Ord');
+                }
+            }
+
+            // 2. Marcar entregadas en DB
+            // El código tiene prefijo variable: RL-0003, RW-0001, RT-0002, R-00123...
+            // Extraemos solo los dígitos finales
             for (const ord of ordenesParaEntregar) {
-                const OReId = parseInt(ord.replace(/^R-0*/, ''), 10);
-                if (isNaN(OReId)) continue;
-                console.log(`[ENTREGADO MULTIPLE SELECCIÓN] ${ord} -> ${OReId}`);
+                const OReId = parseInt((ord || '').replace(/^[A-Za-z]+-0*/, ''), 10);
+                if (isNaN(OReId)) { console.warn(`[ENTREGADO] OReId invalido para: ${ord}`); continue; }
+                console.log(`[ENTREGADO MULTIPLE] ${ord} -> OReId ${OReId}`);
                 await marcarEntregado(transaction, OReId, new Date(fechaEntrega), UsuarioAlta);
             }
 
@@ -846,5 +850,66 @@ exports.gestionarExcepcion = async (req, res) => {
     } catch (err) {
         console.error("[EXCEPCION GESTION] Error al actualizar estado:", err);
         res.status(500).json({ error: "Fallo al actualizar la excepción", details: err.message });
+    }
+};
+
+/**
+ * SEED: Recrear ConfiguracionEstantes
+ * POST /web-retiros/estantes/config/seed
+ * Body: { estantes: ['A','B','C'], secciones: 4, posiciones: 10 }
+ */
+exports.seedConfigEstantes = async (req, res) => {
+    const {
+        estantes = ['A', 'B', 'C'],
+        secciones = 4,
+        posiciones = 10
+    } = req.body;
+
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. Borrar configuración existente (NO toca OcupacionEstantes)
+            await new sql.Request(transaction).query('DELETE FROM ConfiguracionEstantes');
+
+            // 2. Insertar nueva configuración
+            let inserted = 0;
+            for (const est of estantes) {
+                for (let s = 1; s <= secciones; s++) {
+                    for (let p = 1; p <= posiciones; p++) {
+                        await new sql.Request(transaction)
+                            .input('e', sql.Char(1), est)
+                            .input('s', sql.Int, s)
+                            .input('p', sql.Int, p)
+                            .query(`
+                                INSERT INTO ConfiguracionEstantes (EstanteID, Seccion, Posicion, Activo)
+                                VALUES (@e, @s, @p, 1)
+                            `);
+                        inserted++;
+                    }
+                }
+            }
+
+            await transaction.commit();
+
+            const io = req.app.get('socketio');
+            if (io) io.emit('retiros:update');
+
+            res.json({
+                success: true,
+                message: `Configuración cargada: ${estantes.length} estante(s) × ${secciones} secciones × ${posiciones} posiciones = ${inserted} casilleros.`,
+                inserted
+            });
+
+        } catch (innerErr) {
+            await transaction.rollback();
+            throw innerErr;
+        }
+
+    } catch (err) {
+        console.error('[SEED ESTANTES] Error:', err);
+        res.status(500).json({ error: err.message });
     }
 };

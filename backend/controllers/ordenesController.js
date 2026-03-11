@@ -54,20 +54,20 @@ const getOrdenesByFilter = async (req, res) => {
     const request = pool.request();
 
     if (codigoCliente) {
-      query += ` AND c.CodigoReact = @codigoCliente`;
-      request.input("codigoCliente", codigoCliente);
+      query += ` AND (c.IDCliente LIKE '%' + @codigoCliente + '%' OR c.Nombre LIKE '%' + @codigoCliente + '%' OR CAST(c.IDReact AS VARCHAR) = @codigoCliente)`;
+      request.input("codigoCliente", sql.NVarChar, codigoCliente);
     }
     if (codigoOrden) {
       query += ` AND o.OrdCodigoOrden LIKE '%' + @codigoOrden + '%'`;
       request.input("codigoOrden", codigoOrden);
     }
     if (fechaDesde) {
-      query += ` AND o.OrdFechaIngresoOrden >= @fechaDesde`;
-      request.input("fechaDesde", fechaDesde);
+      query += ` AND CONVERT(DATE, o.OrdFechaIngresoOrden) >= @fechaDesde`;
+      request.input("fechaDesde", sql.Date, new Date(fechaDesde));
     }
     if (fechaHasta) {
-      query += ` AND o.OrdFechaIngresoOrden <= @fechaHasta`;
-      request.input("fechaHasta", fechaHasta);
+      query += ` AND CONVERT(DATE, o.OrdFechaIngresoOrden) <= @fechaHasta`;
+      request.input("fechaHasta", sql.Date, new Date(fechaHasta));
     }
     if (estado) {
       if (Array.isArray(estado)) {
@@ -165,7 +165,7 @@ const getClientePorIDReact = async (pool, idReactQR) => {
   const result = await pool.request()
     .input('IDReactQR', sql.Int, idNum)
     .query(`
-      SELECT TOP 1 c.CliIdCliente, c.Nombre, c.IDReact, c.IDCliente, tc.TClDescripcion AS TipoCliente
+      SELECT TOP 1 c.CliIdCliente, c.Nombre, c.IDReact, c.IDCliente, c.FormaEnvioID, tc.TClDescripcion AS TipoCliente
       FROM Clientes c WITH(NOLOCK)
       LEFT JOIN TiposClientes tc WITH(NOLOCK) ON c.TClIdTipoCliente = tc.TClIdTipoCliente
       WHERE c.IDReact = @IDReactQR
@@ -213,7 +213,7 @@ const createOrden = async (req, res) => {
 
     const existingResult = await pool.request()
       .input('CodigoOrden', sql.VarChar(100), CodigoOrden)
-      .query('SELECT o.*, r.OReIdOrdenRetiro as checkRetiro, r.OReIdOrdenRetiro as oReId, r.OReFechaEstadoActual as rEstadoActual FROM OrdenesDeposito o WITH(NOLOCK) LEFT JOIN OrdenesRetiro r WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro WHERE o.OrdCodigoOrden = @CodigoOrden');
+      .query('SELECT o.*, r.OReIdOrdenRetiro as checkRetiro, r.OReIdOrdenRetiro as oReId, r.OReFechaEstadoActual as rEstadoActual FROM OrdenesDeposito o WITH(UPDLOCK, HOLDLOCK) LEFT JOIN OrdenesRetiro r WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro WHERE o.OrdCodigoOrden = @CodigoOrden');
 
     if (existingResult.recordset.length > 0) {
       const existingOrden = existingResult.recordset[0];
@@ -317,6 +317,7 @@ const createOrden = async (req, res) => {
       .input('OrdEstadoActual', sql.Int, 1)
       .input('OrdFechaEstadoActual', sql.DateTime, new Date())
       .input('MonIdMoneda', sql.Int, monIdMoneda)
+      .input('LugarRetiro', sql.Int, clienteMapeado.FormaEnvioID ? parseInt(clienteMapeado.FormaEnvioID, 10) : null)
       .query(`
         DECLARE @newOrdIdOrden TABLE (Codigo INT);
 
@@ -332,7 +333,8 @@ const createOrden = async (req, res) => {
           OrdFechaIngresoOrden,
           OrdUsuarioAlta,
           OrdEstadoActual,
-          OrdFechaEstadoActual
+          OrdFechaEstadoActual,
+          LReIdLugarRetiro
         )
         OUTPUT INSERTED.OrdIdOrden INTO @newOrdIdOrden
         VALUES (
@@ -340,7 +342,7 @@ const createOrden = async (req, res) => {
           @NombreTrabajo, @IdModo, @IdProducto,
           @MonIdMoneda,
           @CostoFinal, @FechaIngresoOrden,
-          @UsuarioAlta, @OrdEstadoActual, @OrdFechaEstadoActual
+          @UsuarioAlta, @OrdEstadoActual, @OrdFechaEstadoActual, @LugarRetiro
         );
 
         SELECT Codigo AS NewOrderId FROM @newOrdIdOrden;

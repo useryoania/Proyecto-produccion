@@ -97,6 +97,10 @@ const EntregaPedidosView = () => {
     // --- TAB: MOSTRADOR (Gestión por Cliente / Pedido) ---
     const [searchTerm, setSearchTerm] = useState('');
     const [clientData, setClientData] = useState(null);
+    // Lista completa de órdenes sin retiro (auto-cargada al activar tab)
+    const [mostradorAllSinRetiro, setMostradorAllSinRetiro] = useState([]);
+    const [filtroLugarMostrador, setFiltroLugarMostrador] = useState(''); // '' = Todas
+    const [loadingMostradorAll, setLoadingMostradorAll] = useState(false);
 
     // --- TAB: ENCOMIENDAS (DESPACHOS) ---
     const [lugaresRetiro, setLugaresRetiro] = useState([]);
@@ -112,6 +116,14 @@ const EntregaPedidosView = () => {
     const [retiroModal, setRetiroModal] = useState(null); // { ordenes: [] } | null
     const [retiroLugar, setRetiroLugar] = useState('');
     const [retiroGenerando, setRetiroGenerando] = useState(false);
+    // Datos de envío para el modal de retiro
+    const [retiroEnvio, setRetiroEnvio] = useState({ direccion: '', departamentoId: '', localidadId: '', agenciaId: '' });
+    const [clienteEnvioDatos, setClienteEnvioDatos] = useState(null);
+    const [retiroDirSeleccionada, setRetiroDirSeleccionada] = useState(null);
+    // Nomencladores globales (cargados una vez al montar)
+    const [agenciasLista, setAgenciasLista] = useState([]);
+    const [departamentosLista, setDepartamentosLista] = useState([]);
+    const [localidadesLista, setLocalidadesLista] = useState([]);
 
     // Selección múltiple en tabla sinRetiro
     const [selectedSinRetiro, setSelectedSinRetiro] = useState(new Set()); // Set de OrdIdOrden
@@ -122,13 +134,41 @@ const EntregaPedidosView = () => {
     // --- INICIALIZACIÓN ---
     useEffect(() => {
         loadLugaresRetiro();
+        // Nomencladores para el modal de envío
+        Promise.all([
+            api.get('/nomenclators/agencies'),
+            api.get('/nomenclators/departments'),
+            api.get('/nomenclators/localities/0').catch(() => ({ data: [] })) // fallback si no hay dpto
+        ]).then(([ags, deptos, locs]) => {
+            setAgenciasLista(ags.data?.data || ags.data || []);
+            setDepartamentosLista(deptos.data?.data || deptos.data || []);
+        }).catch(err => console.warn('[Nomencladores envío]', err));
+
+        // Localidades se cargan dinámicamente por departamento
     }, []);
 
     useEffect(() => {
         if (activeTab === 'encomiendas') {
             loadDespachos();
+        } else if (activeTab === 'mostrador') {
+            loadTodasSinRetiro(filtroLugarMostrador);
         }
-    }, [activeTab]); // Solo recarga al cambiar de tab, NO al cambiar filtros (usa botón Buscar)
+    }, [activeTab]); // Solo recarga al cambiar de tab
+
+    // Cargar lista completa de órdenes sin retiro (con filtro opcional por lugar)
+    const loadTodasSinRetiro = async (lugar = filtroLugarMostrador) => {
+        setLoadingMostradorAll(true);
+        try {
+            const params = lugar ? `?lugar=${lugar}` : '';
+            const res = await api.get(`/apiordenesRetiro/sin-retiro${params}`);
+            setMostradorAllSinRetiro(res.data?.sinRetiro || []);
+        } catch (err) {
+            console.error('[SinRetiro]', err);
+            toast.error('Error al cargar órdenes sin retiro');
+        } finally {
+            setLoadingMostradorAll(false);
+        }
+    };
 
     // Cargar Catálogo de Lugares
     const loadLugaresRetiro = async () => {
@@ -447,6 +487,42 @@ const EntregaPedidosView = () => {
         }
     };
 
+    // Cargar datos de envío del cliente (direcciones guardadas + defaults)
+    const cargarEnvioCliente = async (cliIdFK) => {
+        if (!cliIdFK) return;
+        try {
+            const res = await api.get(`/apiordenesRetiro/cliente-envio/${cliIdFK}`);
+            setClienteEnvioDatos(res.data);
+            const deptId = res.data.defaultDepartamentoId || '';
+            // Si hay departamento, pre-cargar las localidades de ese depto
+            if (deptId) {
+                api.get(`/nomenclators/localities/${deptId}`)
+                    .then(r => setLocalidadesLista(r.data?.data || r.data || []))
+                    .catch(() => { });
+            }
+            setRetiroEnvio({
+                direccion: res.data.defaultDir || '',
+                departamentoId: deptId,
+                localidadId: res.data.defaultLocalidadId || '',
+                agenciaId: res.data.defaultAgenciaId || ''
+            });
+            setRetiroDirSeleccionada(null);
+        } catch (err) {
+            console.error('[EnvioCliente] Error cargando datos:', err);
+        }
+    };
+
+    // Cuando cambia departamento, carga sus localidades
+    const handleDepartamentoChange = (deptId) => {
+        setRetiroEnvio(prev => ({ ...prev, departamentoId: deptId, localidadId: '' }));
+        setLocalidadesLista([]);
+        if (deptId) {
+            api.get(`/nomenclators/localities/${deptId}`)
+                .then(r => setLocalidadesLista(r.data?.data || r.data || []))
+                .catch(() => { });
+        }
+    };
+
     const abrirModalPago = (ordenes, retiroId, clienteInfo) => {
         // Calcular total en UYU por defecto (igual que Caja)
         const total = ordenes.reduce((a, o) => {
@@ -737,302 +813,614 @@ const EntregaPedidosView = () => {
                 </div>
             )}
 
-            {/* TAB MOSTRADOR */}
-            {activeTab === 'mostrador' && (
-                <div className="flex flex-col gap-6">
-                    {/* Barra de búsqueda */}
-                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-end">
-                        <div className="flex-1 min-w-[300px]">
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Buscar por Retiro, Orden de Depósito o Cliente</label>
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    placeholder="Ej: R-60653  |  DF-85423  |  MACROSOFT"
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 font-bold transition-all"
-                                    onKeyDown={(e) => e.key === 'Enter' && buscarMostrador()}
-                                />
-                                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+            {/* TAB MOSTRADOR — Lista completa + filtro + búsqueda puntual */}
+            {
+                activeTab === 'mostrador' && (
+                    <div className="flex flex-col gap-6">
+
+                        {/* ── Buscador Puntual (arriba) ── */}
+                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-end">
+                            <div className="flex-1 min-w-[300px]">
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Buscar orden de retiro, depósito o cliente específico</label>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        placeholder="Ej: R-60653  |  DF-85423  |  MACROSOFT"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 font-bold transition-all"
+                                        onKeyDown={(e) => e.key === 'Enter' && buscarMostrador()}
+                                    />
+                                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+                                </div>
                             </div>
+                            <button
+                                onClick={buscarMostrador}
+                                disabled={!searchTerm || mostradorLoading}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
+                            >
+                                {mostradorLoading ? <RefreshCcw className="animate-spin" size={18} /> : <Search size={18} />}
+                                {mostradorLoading ? 'Buscando...' : 'Buscar Expediente'}
+                            </button>
                         </div>
-                        <button
-                            onClick={buscarMostrador}
-                            disabled={!searchTerm || mostradorLoading}
-                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
-                        >
-                            {mostradorLoading ? <RefreshCcw className="animate-spin" size={18} /> : <Search size={18} />}
-                            {mostradorLoading ? 'Buscando...' : 'Buscar Expediente'}
-                        </button>
-                    </div>
 
-                    {/* Resultados */}
-                    {mostradorData && (
-                        <div className="flex flex-col gap-4">
-                            {/* Retiros con órdenes sin pagar */}
-                            {mostradorData.retiros.map(ret => (
-                                <div key={ret.OReIdOrdenRetiro} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                                    <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex justify-between items-center">
-                                        <div>
-                                            <div className="text-white font-black text-lg tracking-wide">{ret.etiqueta}</div>
-                                            <div className="text-blue-100 text-sm font-medium">{ret.estadoRetiro} · {ret.lugarRetiro}</div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-white font-bold text-sm">{ret.CliNombre || ret.CliCodigo}</div>
-                                            <div className="text-blue-200 text-xs">{ret.TClDescripcion}</div>
-                                        </div>
-                                    </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm">
-                                            <thead>
-                                                <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-100">
-                                                    <th className="p-3 pl-6 text-left">Código Orden</th>
-                                                    <th className="p-3 text-left">Estado</th>
-                                                    <th className="p-3 text-right">Importe</th>
-                                                    <th className="p-3 pr-6 text-center">Acción</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {ret.ordenes.map(o => (
-                                                    <tr key={o.OrdIdOrden} className="border-b border-slate-50 hover:bg-slate-50">
-                                                        <td className="p-3 pl-6 font-bold text-slate-800">{o.codigo}</td>
-                                                        <td className="p-3 text-slate-500 font-medium">{o.estado}</td>
-                                                        <td className="p-3 text-right font-black text-blue-700">{o.simbolo} {parseFloat(o.costo || 0).toFixed(2)}</td>
-                                                        <td className="p-3 pr-6 text-center">
-                                                            <button
-                                                                onClick={() => abrirModalPago([o], ret.etiqueta, ret)}
-                                                                className="bg-green-500 hover:bg-green-600 text-white font-bold px-3 py-1 rounded-lg text-xs transition-colors flex items-center gap-1 mx-auto"
-                                                            >
-                                                                <DollarSign size={12} /> Pagar
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <div className="p-4 px-6 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
-                                        <span className="text-xs font-bold text-slate-400 uppercase">{ret.ordenes.length} orden(es) sin pagar</span>
-                                        <button
-                                            onClick={() => abrirModalPago(ret.ordenes, ret.etiqueta, ret)}
-                                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-2 shadow-sm"
-                                        >
-                                            <DollarSign size={14} /> Pagar Todas las Órdenes
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
-
-                            {/* Órdenes sin retiro */}
-                            {mostradorData.sinRetiro.length > 0 && (() => {
-                                const totalSR = mostradorData.sinRetiro.length;
-                                const selectedArr = mostradorData.sinRetiro.filter(o => selectedSinRetiro.has(o.OrdIdOrden));
-                                const allChecked = selectedArr.length === totalSR;
-                                const someChecked = selectedArr.length > 0;
-                                const totalSeleccionado = selectedArr.reduce((s, o) => s + parseFloat(o.OrdCostoFinal || 0), 0);
-
-                                return (
-                                    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                                        {/* Header con acciones grupales */}
-                                        <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 flex justify-between items-center">
-                                            <div>
-                                                <div className="text-white font-black text-lg">Órdenes sin Retiro</div>
-                                                <div className="text-amber-100 text-sm">Sin orden de retiro asignada · {totalSR} orden{totalSR !== 1 ? 'es' : ''}</div>
-                                            </div>
-                                            {someChecked && (
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-white text-xs font-bold bg-amber-700/40 px-2 py-1 rounded-lg">
-                                                        {selectedArr.length} sel. · $ {totalSeleccionado.toFixed(2)}
-                                                    </span>
-                                                    <button
-                                                        onClick={() => {
-                                                            const items = selectedArr.map(o => ({ ...o, codigo: o.OrdCodigoOrden, costo: o.OrdCostoFinal, simbolo: o.MonSimbolo }));
-                                                            abrirModalPago(items, null, selectedArr[0]);
-                                                        }}
-                                                        className="bg-white text-amber-700 font-black px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-amber-50"
-                                                    >
-                                                        <DollarSign size={12} /> Pagar ({selectedArr.length})
-                                                    </button>
-                                                    <button
-                                                        onClick={() => { setRetiroModal({ ordenes: selectedArr }); setRetiroLugar(lugaresRetiro[0]?.LReIdLugarRetiro || ''); }}
-                                                        className="bg-blue-600 text-white font-black px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-blue-700"
-                                                    >
-                                                        <ClipboardList size={12} /> Generar Retiro ({selectedArr.length})
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <table className="w-full text-sm">
-                                            <thead>
-                                                <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-100">
-                                                    <th className="p-3 pl-4 w-10">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={allChecked}
-                                                            onChange={e => {
-                                                                if (e.target.checked) setSelectedSinRetiro(new Set(mostradorData.sinRetiro.map(o => o.OrdIdOrden)));
-                                                                else setSelectedSinRetiro(new Set());
-                                                            }}
-                                                            className="w-4 h-4 accent-amber-500 cursor-pointer"
-                                                        />
-                                                    </th>
-                                                    <th className="p-3 text-left">Código</th>
-                                                    <th className="p-3 text-left">Cliente</th>
-                                                    <th className="p-3 text-left">Estado</th>
-                                                    <th className="p-3 text-right">Importe</th>
-                                                    <th className="p-3 pr-6 text-center">Acción Individual</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {mostradorData.sinRetiro.map(o => {
-                                                    const isSel = selectedSinRetiro.has(o.OrdIdOrden);
-                                                    return (
-                                                        <tr key={o.OrdIdOrden} className={`border-b border-slate-50 cursor-pointer transition-colors ${isSel ? 'bg-amber-50' : o.Pagada ? 'bg-green-50/60' : 'hover:bg-slate-50'}`}
-                                                            onClick={() => setSelectedSinRetiro(prev => { const s = new Set(prev); if (s.has(o.OrdIdOrden)) s.delete(o.OrdIdOrden); else s.add(o.OrdIdOrden); return s; })}
-                                                        >
-                                                            <td className="p-3 pl-4" onClick={e => e.stopPropagation()}>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={isSel}
-                                                                    onChange={() => setSelectedSinRetiro(prev => { const s = new Set(prev); if (s.has(o.OrdIdOrden)) s.delete(o.OrdIdOrden); else s.add(o.OrdIdOrden); return s; })}
-                                                                    className="w-4 h-4 accent-amber-500 cursor-pointer"
-                                                                />
-                                                            </td>
-                                                            <td className="p-3 font-bold text-slate-800">
-                                                                {o.OrdCodigoOrden}
-                                                                {o.Pagada ? <span className="ml-2 text-[10px] bg-green-100 text-green-700 font-black px-1.5 py-0.5 rounded-full">✓ Paga</span> : null}
-                                                            </td>
-                                                            <td className="p-3 text-slate-600 font-medium">{o.CliNombre || o.CliCodigo}</td>
-                                                            <td className="p-3 text-slate-500">{o.estadoOrden}</td>
-                                                            <td className="p-3 text-right font-black text-amber-700">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</td>
-                                                            <td className="p-3 pr-6" onClick={e => e.stopPropagation()}>
-                                                                <div className="flex items-center gap-2 justify-center">
-                                                                    {!o.Pagada && (
-                                                                        <button
-                                                                            onClick={() => abrirModalPago([{ ...o, codigo: o.OrdCodigoOrden, costo: o.OrdCostoFinal, simbolo: o.MonSimbolo }], null, o)}
-                                                                            className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1"
-                                                                        >
-                                                                            <DollarSign size={12} /> Pagar
-                                                                        </button>
-                                                                    )}
-                                                                    <button
-                                                                        onClick={() => { setRetiroModal({ ordenes: [o] }); setRetiroLugar(lugaresRetiro[0]?.LReIdLugarRetiro || ''); }}
-                                                                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1"
-                                                                    >
-                                                                        <ClipboardList size={12} /> Generar Retiro
-                                                                    </button>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                );
-                            })()}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* MODAL: GENERAR RETIRO (soporta una o varias órdenes) */}
-            {retiroModal && (() => {
-                const ordenes = retiroModal.ordenes || [];
-                const totalCost = ordenes.reduce((s, o) => s + parseFloat(o.OrdCostoFinal || 0), 0);
-                const clienteNombre = ordenes[0]?.CliNombre || ordenes[0]?.CliCodigo || '';
-                return (
-                    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-                            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 rounded-t-2xl flex justify-between items-center">
+                        {/* ── Todas las Órdenes Sin Retiro (debajo del buscador) ── */}
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                            <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 flex flex-wrap justify-between items-center gap-3">
                                 <div>
-                                    <div className="text-white font-black text-lg">Generar Orden de Retiro</div>
-                                    <div className="text-blue-200 text-sm">
-                                        {ordenes.length === 1
-                                            ? `${ordenes[0].OrdCodigoOrden} · ${clienteNombre}`
-                                            : `${ordenes.length} órdenes · ${clienteNombre}`}
+                                    <div className="text-white font-black text-lg">Órdenes sin Retiro Asignado</div>
+                                    <div className="text-amber-100 text-sm">
+                                        {loadingMostradorAll ? 'Cargando...' : `${mostradorAllSinRetiro.length} orden(es) pendientes`}
                                     </div>
                                 </div>
-                                <button onClick={() => setRetiroModal(null)} className="text-white hover:text-blue-200 text-2xl font-bold">&times;</button>
-                            </div>
-                            <div className="p-6 flex flex-col gap-4">
-                                {/* Lista de órdenes seleccionadas */}
-                                <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
-                                    <div className="px-4 py-2 bg-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wider">Incluye</div>
-                                    <div className="divide-y divide-slate-100 max-h-36 overflow-y-auto">
-                                        {ordenes.map(o => (
-                                            <div key={o.OrdIdOrden} className="flex justify-between items-center px-4 py-2 text-sm">
-                                                <span className="font-bold text-slate-800">{o.OrdCodigoOrden}</span>
-                                                <span className="font-black text-blue-700">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <div className="px-4 py-2 bg-blue-50 flex justify-between text-sm font-black">
-                                        <span className="text-slate-600">TOTAL</span>
-                                        <span className="text-blue-700">$ {totalCost.toFixed(2)}</span>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-bold text-slate-700 mb-1">Lugar / Forma de Envío</label>
+                                <div className="flex items-center gap-3">
+                                    {/* Filtro por Lugar */}
                                     <select
-                                        value={retiroLugar}
-                                        onChange={e => setRetiroLugar(e.target.value)}
-                                        className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-blue-400"
+                                        value={filtroLugarMostrador}
+                                        onChange={e => {
+                                            const v = e.target.value;
+                                            setFiltroLugarMostrador(v);
+                                            loadTodasSinRetiro(v);
+                                            setSelectedSinRetiro(new Set());
+                                        }}
+                                        className="bg-amber-600/60 text-white font-bold text-sm rounded-xl px-3 py-2 border border-amber-400/40 outline-none focus:ring-2 focus:ring-amber-300 min-w-[180px]"
                                     >
+                                        <option value="">— Todos los lugares —</option>
                                         {lugaresRetiro.map(l => (
                                             <option key={l.LReIdLugarRetiro} value={l.LReIdLugarRetiro}>{l.LReNombreLugar}</option>
                                         ))}
                                     </select>
-                                </div>
-
-                                <div className="flex gap-3 mt-1">
-                                    <button onClick={() => setRetiroModal(null)} className="flex-1 border border-slate-200 text-slate-600 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
-                                        Cancelar
+                                    <button
+                                        onClick={() => loadTodasSinRetiro(filtroLugarMostrador)}
+                                        className="bg-white/10 hover:bg-white/20 text-white font-bold px-3 py-2 rounded-xl border border-white/20 text-sm flex items-center gap-1"
+                                    >
+                                        <RefreshCcw size={14} className={loadingMostradorAll ? 'animate-spin' : ''} /> Actualizar
                                     </button>
                                     <button
-                                        disabled={retiroGenerando || !retiroLugar}
+                                        title="Asigna el lugar de retiro del cliente a todas las órdenes que tienen ese campo vacío"
                                         onClick={async () => {
-                                            setRetiroGenerando(true);
                                             try {
-                                                const payload = {
-                                                    orders: ordenes.map(o => ({ orderNumber: o.OrdCodigoOrden, orderId: o.OrdIdOrden })),
-                                                    totalCost,
-                                                    lugarRetiro: parseInt(retiroLugar)
-                                                };
-                                                const res = await api.post('/apiordenesRetiro/crear', payload);
-                                                const idRetiro = res.data.OReIdOrdenRetiro;
-                                                toast.success(`Retiro generado: RL-${String(idRetiro).padStart(4, '0')}`);
-                                                const lugarNombre = lugaresRetiro.find(l => String(l.LReIdLugarRetiro) === String(retiroLugar))?.LReNombreLugar || '';
-                                                printTicketEncomienda({
-                                                    ordenDeRetiro: `RL-${String(idRetiro).padStart(4, '0')}`,
-                                                    lugarRetiro: lugarNombre,
-                                                    totalCost: totalCost.toFixed(2),
-                                                    pagorealizado: 0,
-                                                    orders: ordenes.map(o => ({ orderNumber: o.OrdCodigoOrden })),
-                                                    TClDescripcion: ordenes[0]?.TipoCliente || '',
-                                                    idcliente: ordenes[0]?.CliCodigo || '',
-                                                });
-                                                setRetiroModal(null);
-                                                setSelectedSinRetiro(new Set());
-                                                buscarMostrador();
+                                                const res = await api.post('/apiordenesRetiro/backfill-lugar');
+                                                toast.success(`✅ ${res.data.message}`);
+                                                loadTodasSinRetiro(filtroLugarMostrador);
                                             } catch (err) {
-                                                toast.error('Error al generar retiro: ' + (err.response?.data?.error || err.message));
-                                            } finally {
-                                                setRetiroGenerando(false);
+                                                toast.error('Error al actualizar: ' + (err.response?.data?.error || err.message));
                                             }
                                         }}
-                                        className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black py-2.5 rounded-xl transition-colors shadow-md flex items-center justify-center gap-2"
+                                        className="bg-white/10 hover:bg-white/20 text-white font-bold px-3 py-2 rounded-xl border border-white/20 text-sm flex items-center gap-1"
                                     >
-                                        <ClipboardList size={16} />
-                                        {retiroGenerando ? 'Generando...' : `Generar${ordenes.length > 1 ? ` (${ordenes.length})` : ''} e Imprimir`}
+                                        ⚡ Asignar lugar a órdenes sin lugar
                                     </button>
                                 </div>
                             </div>
+
+                            {mostradorAllSinRetiro.length > 0 ? (() => {
+                                const selectedArr = mostradorAllSinRetiro.filter(o => selectedSinRetiro.has(o.OrdIdOrden));
+                                const allChecked = selectedArr.length === mostradorAllSinRetiro.length;
+                                const someChecked = selectedArr.length > 0;
+                                const totalSel = selectedArr.reduce((s, o) => s + parseFloat(o.OrdCostoFinal || 0), 0);
+                                return (
+                                    <>
+                                        {someChecked && (
+                                            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 border-b border-amber-100">
+                                                <span className="text-xs font-bold text-amber-700">{selectedArr.length} seleccionadas</span>
+                                                <button
+                                                    onClick={() => {
+                                                        const items = selectedArr.map(o => ({ ...o, codigo: o.OrdCodigoOrden, costo: o.OrdCostoFinal, simbolo: o.MonSimbolo }));
+                                                        abrirModalPago(items, null, selectedArr[0]);
+                                                    }}
+                                                    className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1"
+                                                >
+                                                    <DollarSign size={12} /> Pagar ({selectedArr.length})
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setRetiroModal({ ordenes: selectedArr });
+                                                        setRetiroLugar(String(lugaresRetiro[0]?.LReIdLugarRetiro || ''));
+                                                        setRetiroEnvio({ direccion: '', departamentoId: '', localidadId: '', agenciaId: '' });
+                                                        setClienteEnvioDatos(null);
+                                                        if (selectedArr[0]?.CliIdClienteFK) cargarEnvioCliente(selectedArr[0].CliIdClienteFK);
+                                                    }}
+                                                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1"
+                                                >
+                                                    <ClipboardList size={12} /> Generar Retiro ({selectedArr.length})
+                                                </button>
+                                            </div>
+                                        )}
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm">
+                                                <thead>
+                                                    <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-100">
+                                                        <th className="p-3 pl-4 w-10">
+                                                            <input type="checkbox" checked={allChecked}
+                                                                onChange={e => {
+                                                                    if (e.target.checked) setSelectedSinRetiro(new Set(mostradorAllSinRetiro.map(o => o.OrdIdOrden)));
+                                                                    else setSelectedSinRetiro(new Set());
+                                                                }}
+                                                                className="w-4 h-4 accent-amber-500 cursor-pointer"
+                                                            />
+                                                        </th>
+                                                        <th className="p-3 text-left">Código</th>
+                                                        <th className="p-3 text-left">Cliente</th>
+                                                        <th className="p-3 text-left">Lugar Retiro</th>
+                                                        <th className="p-3 text-left">Estado</th>
+                                                        <th className="p-3 text-right">Importe</th>
+                                                        <th className="p-3 pr-4 text-center">Acción</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {mostradorAllSinRetiro.map(o => {
+                                                        const isSel = selectedSinRetiro.has(o.OrdIdOrden);
+                                                        return (
+                                                            <tr key={o.OrdIdOrden}
+                                                                className={`border-b border-slate-50 cursor-pointer transition-colors ${isSel ? 'bg-amber-50' : o.Pagada ? 'bg-green-50/60' : 'hover:bg-slate-50'}`}
+                                                                onClick={() => setSelectedSinRetiro(prev => { const s = new Set(prev); if (s.has(o.OrdIdOrden)) s.delete(o.OrdIdOrden); else s.add(o.OrdIdOrden); return s; })}
+                                                            >
+                                                                <td className="p-3 pl-4" onClick={e => e.stopPropagation()}>
+                                                                    <input type="checkbox" checked={isSel}
+                                                                        onChange={() => setSelectedSinRetiro(prev => { const s = new Set(prev); if (s.has(o.OrdIdOrden)) s.delete(o.OrdIdOrden); else s.add(o.OrdIdOrden); return s; })}
+                                                                        className="w-4 h-4 accent-amber-500 cursor-pointer"
+                                                                    />
+                                                                </td>
+                                                                <td className="p-3 font-bold text-slate-800">
+                                                                    {o.OrdCodigoOrden}
+                                                                    {o.Pagada ? <span className="ml-2 text-[10px] bg-green-100 text-green-700 font-black px-1.5 py-0.5 rounded-full">✓ Paga</span> : null}
+                                                                </td>
+                                                                <td className="p-3 text-slate-600 font-medium">
+                                                                    <div className="font-bold">{o.CliNombre || o.CliCodigo}</div>
+                                                                    <div className="text-[10px] text-slate-400">{o.TClDescripcion}</div>
+                                                                </td>
+                                                                <td className="p-3">
+                                                                    {o.LugarRetiroNombre
+                                                                        ? <span className="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded-full">{o.LugarRetiroNombre}</span>
+                                                                        : <span className="text-slate-400 text-xs italic">Sin lugar</span>}
+                                                                </td>
+                                                                <td className="p-3 text-slate-500 text-xs">{o.estadoOrden}</td>
+                                                                <td className="p-3 text-right font-black text-amber-700">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</td>
+                                                                <td className="p-3 pr-4" onClick={e => e.stopPropagation()}>
+                                                                    <div className="flex items-center gap-2 justify-center">
+                                                                        {!o.Pagada && (
+                                                                            <button
+                                                                                onClick={() => abrirModalPago([{ ...o, codigo: o.OrdCodigoOrden, costo: o.OrdCostoFinal, simbolo: o.MonSimbolo }], null, o)}
+                                                                                className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-2 py-1 rounded-lg text-xs flex items-center gap-1"
+                                                                            >
+                                                                                <DollarSign size={11} /> Pagar
+                                                                            </button>
+                                                                        )}
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setRetiroModal({ ordenes: [o] });
+                                                                                setRetiroLugar(o.LReIdLugarRetiro ? String(o.LReIdLugarRetiro) : String(lugaresRetiro[0]?.LReIdLugarRetiro || ''));
+                                                                                setRetiroEnvio({ direccion: '', departamentoId: '', localidadId: '', agenciaId: '' });
+                                                                                setClienteEnvioDatos(null);
+                                                                                if (o.CliIdClienteFK) cargarEnvioCliente(o.CliIdClienteFK);
+                                                                            }}
+                                                                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-2 py-1 rounded-lg text-xs flex items-center gap-1"
+                                                                        >
+                                                                            <ClipboardList size={11} /> Retiro
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </>
+                                );
+                            })() : (
+                                <div className="p-10 text-center">
+                                    {loadingMostradorAll
+                                        ? <RefreshCcw className="animate-spin mx-auto mb-3 text-amber-400" size={28} />
+                                        : <><Package size={36} className="mx-auto mb-3 text-slate-300" /><p className="font-bold text-slate-500">No hay órdenes sin retiro{filtroLugarMostrador ? ' para este lugar' : ''}</p></>}
+                                </div>
+                            )}
                         </div>
+
+                        {/* Resultados de búsqueda puntual */}
+                        {mostradorData && (
+                            <div className="flex flex-col gap-4">
+                                {/* Retiros con órdenes sin pagar */}
+                                {mostradorData.retiros.map(ret => (
+                                    <div key={ret.OReIdOrdenRetiro} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                                        <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex justify-between items-center">
+                                            <div>
+                                                <div className="text-white font-black text-lg tracking-wide">{ret.etiqueta}</div>
+                                                <div className="text-blue-100 text-sm font-medium">{ret.estadoRetiro} · {ret.lugarRetiro}</div>
+                                            </div>
+                                            <div className="text-right">
+                                                <div className="text-white font-bold text-sm">{ret.CliNombre || ret.CliCodigo}</div>
+                                                <div className="text-blue-200 text-xs">{ret.TClDescripcion}</div>
+                                            </div>
+                                        </div>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm">
+                                                <thead>
+                                                    <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-100">
+                                                        <th className="p-3 pl-6 text-left">Código Orden</th>
+                                                        <th className="p-3 text-left">Estado</th>
+                                                        <th className="p-3 text-right">Importe</th>
+                                                        <th className="p-3 pr-6 text-center">Acción</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {ret.ordenes.map(o => (
+                                                        <tr key={o.OrdIdOrden} className="border-b border-slate-50 hover:bg-slate-50">
+                                                            <td className="p-3 pl-6 font-bold text-slate-800">{o.codigo}</td>
+                                                            <td className="p-3 text-slate-500 font-medium">{o.estado}</td>
+                                                            <td className="p-3 text-right font-black text-blue-700">{o.simbolo} {parseFloat(o.costo || 0).toFixed(2)}</td>
+                                                            <td className="p-3 pr-6 text-center">
+                                                                <button
+                                                                    onClick={() => abrirModalPago([o], ret.etiqueta, ret)}
+                                                                    className="bg-green-500 hover:bg-green-600 text-white font-bold px-3 py-1 rounded-lg text-xs transition-colors flex items-center gap-1 mx-auto"
+                                                                >
+                                                                    <DollarSign size={12} /> Pagar
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div className="p-4 px-6 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+                                            <span className="text-xs font-bold text-slate-400 uppercase">{ret.ordenes.length} orden(es) sin pagar</span>
+                                            <button
+                                                onClick={() => abrirModalPago(ret.ordenes, ret.etiqueta, ret)}
+                                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-2 shadow-sm"
+                                            >
+                                                <DollarSign size={14} /> Pagar Todas las Órdenes
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {/* Órdenes sin retiro */}
+                                {mostradorData.sinRetiro.length > 0 && (() => {
+                                    const totalSR = mostradorData.sinRetiro.length;
+                                    const selectedArr = mostradorData.sinRetiro.filter(o => selectedSinRetiro.has(o.OrdIdOrden));
+                                    const allChecked = selectedArr.length === totalSR;
+                                    const someChecked = selectedArr.length > 0;
+                                    const totalSeleccionado = selectedArr.reduce((s, o) => s + parseFloat(o.OrdCostoFinal || 0), 0);
+
+                                    return (
+                                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                                            {/* Header con acciones grupales */}
+                                            <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 flex justify-between items-center">
+                                                <div>
+                                                    <div className="text-white font-black text-lg">Órdenes sin Retiro</div>
+                                                    <div className="text-amber-100 text-sm">Sin orden de retiro asignada · {totalSR} orden{totalSR !== 1 ? 'es' : ''}</div>
+                                                </div>
+                                                {someChecked && (
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-white text-xs font-bold bg-amber-700/40 px-2 py-1 rounded-lg">
+                                                            {selectedArr.length} sel. · $ {totalSeleccionado.toFixed(2)}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => {
+                                                                const items = selectedArr.map(o => ({ ...o, codigo: o.OrdCodigoOrden, costo: o.OrdCostoFinal, simbolo: o.MonSimbolo }));
+                                                                abrirModalPago(items, null, selectedArr[0]);
+                                                            }}
+                                                            className="bg-white text-amber-700 font-black px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-amber-50"
+                                                        >
+                                                            <DollarSign size={12} /> Pagar ({selectedArr.length})
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { setRetiroModal({ ordenes: selectedArr }); setRetiroLugar(lugaresRetiro[0]?.LReIdLugarRetiro || ''); }}
+                                                            className="bg-blue-600 text-white font-black px-3 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-blue-700"
+                                                        >
+                                                            <ClipboardList size={12} /> Generar Retiro ({selectedArr.length})
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <table className="w-full text-sm">
+                                                <thead>
+                                                    <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-100">
+                                                        <th className="p-3 pl-4 w-10">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={allChecked}
+                                                                onChange={e => {
+                                                                    if (e.target.checked) setSelectedSinRetiro(new Set(mostradorData.sinRetiro.map(o => o.OrdIdOrden)));
+                                                                    else setSelectedSinRetiro(new Set());
+                                                                }}
+                                                                className="w-4 h-4 accent-amber-500 cursor-pointer"
+                                                            />
+                                                        </th>
+                                                        <th className="p-3 text-left">Código</th>
+                                                        <th className="p-3 text-left">Cliente</th>
+                                                        <th className="p-3 text-left">Estado</th>
+                                                        <th className="p-3 text-right">Importe</th>
+                                                        <th className="p-3 pr-6 text-center">Acción Individual</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {mostradorData.sinRetiro.map(o => {
+                                                        const isSel = selectedSinRetiro.has(o.OrdIdOrden);
+                                                        return (
+                                                            <tr key={o.OrdIdOrden} className={`border-b border-slate-50 cursor-pointer transition-colors ${isSel ? 'bg-amber-50' : o.Pagada ? 'bg-green-50/60' : 'hover:bg-slate-50'}`}
+                                                                onClick={() => setSelectedSinRetiro(prev => { const s = new Set(prev); if (s.has(o.OrdIdOrden)) s.delete(o.OrdIdOrden); else s.add(o.OrdIdOrden); return s; })}
+                                                            >
+                                                                <td className="p-3 pl-4" onClick={e => e.stopPropagation()}>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isSel}
+                                                                        onChange={() => setSelectedSinRetiro(prev => { const s = new Set(prev); if (s.has(o.OrdIdOrden)) s.delete(o.OrdIdOrden); else s.add(o.OrdIdOrden); return s; })}
+                                                                        className="w-4 h-4 accent-amber-500 cursor-pointer"
+                                                                    />
+                                                                </td>
+                                                                <td className="p-3 font-bold text-slate-800">
+                                                                    {o.OrdCodigoOrden}
+                                                                    {o.Pagada ? <span className="ml-2 text-[10px] bg-green-100 text-green-700 font-black px-1.5 py-0.5 rounded-full">✓ Paga</span> : null}
+                                                                </td>
+                                                                <td className="p-3 text-slate-600 font-medium">{o.CliNombre || o.CliCodigo}</td>
+                                                                <td className="p-3 text-slate-500">{o.estadoOrden}</td>
+                                                                <td className="p-3 text-right font-black text-amber-700">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</td>
+                                                                <td className="p-3 pr-6" onClick={e => e.stopPropagation()}>
+                                                                    <div className="flex items-center gap-2 justify-center">
+                                                                        {!o.Pagada && (
+                                                                            <button
+                                                                                onClick={() => abrirModalPago([{ ...o, codigo: o.OrdCodigoOrden, costo: o.OrdCostoFinal, simbolo: o.MonSimbolo }], null, o)}
+                                                                                className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1"
+                                                                            >
+                                                                                <DollarSign size={12} /> Pagar
+                                                                            </button>
+                                                                        )}
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setRetiroModal({ ordenes: [o] });
+                                                                                setRetiroLugar(
+                                                                                    o.LReIdLugarRetiro
+                                                                                        ? String(o.LReIdLugarRetiro)
+                                                                                        : String(lugaresRetiro[0]?.LReIdLugarRetiro || '')
+                                                                                );
+                                                                                setRetiroEnvio({ direccion: '', departamentoId: '', localidadId: '', agenciaId: '' });
+                                                                                setClienteEnvioDatos(null);
+                                                                                if (o.CliIdClienteFK) cargarEnvioCliente(o.CliIdClienteFK);
+                                                                            }}
+                                                                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1"
+                                                                        >
+                                                                            <ClipboardList size={12} /> Generar Retiro
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
                     </div>
-                );
-            })()}
+                )
+            }
+
+            {/* MODAL: GENERAR RETIRO (soporta una o varias órdenes) */}
+            {
+                retiroModal && (() => {
+                    const ordenes = retiroModal.ordenes || [];
+                    const totalCost = ordenes.reduce((s, o) => s + parseFloat(o.OrdCostoFinal || 0), 0);
+                    const clienteNombre = ordenes[0]?.CliNombre || ordenes[0]?.CliCodigo || '';
+                    const simboloTotal = ordenes[0]?.MonSimbolo || '$';
+                    const lugarSeleccionado = lugaresRetiro.find(l => String(l.LReIdLugarRetiro) === String(retiroLugar));
+                    const esEnvio = lugarSeleccionado && !/local|mostrador/i.test(lugarSeleccionado.LReNombreLugar);
+                    return (
+                        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+                                <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 rounded-t-2xl flex justify-between items-center sticky top-0 z-10">
+                                    <div>
+                                        <div className="text-white font-black text-lg">Generar Orden de Retiro</div>
+                                        <div className="text-blue-200 text-sm">
+                                            {ordenes.length === 1
+                                                ? `${ordenes[0].OrdCodigoOrden} · ${clienteNombre}`
+                                                : `${ordenes.length} órdenes · ${clienteNombre}`}
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setRetiroModal(null)} className="text-white hover:text-blue-200 text-2xl font-bold">&times;</button>
+                                </div>
+                                <div className="p-6 flex flex-col gap-4">
+                                    {/* Lista de órdenes seleccionadas */}
+                                    <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                                        <div className="px-4 py-2 bg-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wider">Incluye</div>
+                                        <div className="divide-y divide-slate-100 max-h-36 overflow-y-auto">
+                                            {ordenes.map(o => (
+                                                <div key={o.OrdIdOrden} className="flex justify-between items-center px-4 py-2 text-sm">
+                                                    <span className="font-bold text-slate-800">{o.OrdCodigoOrden}</span>
+                                                    <span className="font-black text-blue-700">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="px-4 py-2 bg-blue-50 flex justify-between text-sm font-black">
+                                            <span className="text-slate-600">TOTAL</span>
+                                            <span className="text-blue-700">{simboloTotal} {totalCost.toFixed(2)}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Lugar / Forma de Envío */}
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Lugar / Forma de Envío</label>
+                                        <select
+                                            value={retiroLugar}
+                                            onChange={e => {
+                                                setRetiroLugar(e.target.value);
+                                                setRetiroEnvio({ direccion: '', ciudad: '', localidad: '', agenciaId: '' });
+                                                setRetiroDirSeleccionada(null);
+                                            }}
+                                            className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-blue-400"
+                                        >
+                                            {lugaresRetiro.map(l => (
+                                                <option key={l.LReIdLugarRetiro} value={l.LReIdLugarRetiro}>{l.LReNombreLugar}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* ── Sección Dirección: solo cuando NO es retiro local ── */}
+                                    {esEnvio && (
+                                        <div className="flex flex-col gap-3 border border-blue-100 bg-blue-50/40 rounded-xl p-4">
+                                            <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">Datos de Envío</p>
+
+                                            {/* Selector de direcciones guardadas */}
+                                            {clienteEnvioDatos?.direcciones?.length > 0 && (
+                                                <div>
+                                                    <label className="block text-xs font-bold text-slate-600 mb-1">Dirección guardada</label>
+                                                    <select
+                                                        value={retiroDirSeleccionada || ''}
+                                                        onChange={e => {
+                                                            const id = e.target.value;
+                                                            setRetiroDirSeleccionada(id);
+                                                            const found = clienteEnvioDatos?.direcciones?.find(d => String(d.ID) === String(id));
+                                                            if (found) {
+                                                                // Buscar IDs a partir de los nombres guardados
+                                                                const deptFound = departamentosLista.find(d => d.Nombre === found.Ciudad);
+                                                                const newDeptId = deptFound?.ID || '';
+                                                                if (newDeptId) {
+                                                                    // Cargar localidades del depto encontrado
+                                                                    api.get(`/nomenclators/localities/${newDeptId}`)
+                                                                        .then(r => setLocalidadesLista(r.data?.data || r.data || []))
+                                                                        .catch(() => { });
+                                                                }
+                                                                setRetiroEnvio({
+                                                                    direccion: found.Direccion || '',
+                                                                    departamentoId: String(found.DepartamentoID || newDeptId || ''),
+                                                                    localidadId: String(found.LocalidadID || ''),
+                                                                    agenciaId: String(found.AgenciaID || '')
+                                                                });
+                                                            }
+                                                        }}
+                                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                                                    >
+                                                        <option value="">— Ingresar manualmente —</option>
+                                                        {clienteEnvioDatos.direcciones.map(d => (
+                                                            <option key={d.ID} value={d.ID}>{d.Alias || d.Direccion} {d.Ciudad ? `· ${d.Ciudad}` : ''}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+
+                                            {/* Agencia — siempre visible si hay datos */}
+                                            {agenciasLista.length > 0 && (
+                                                <div>
+                                                    <label className="block text-xs font-bold text-slate-600 mb-1">Agencia de transporte</label>
+                                                    <select
+                                                        value={retiroEnvio.agenciaId || ''}
+                                                        onChange={e => setRetiroEnvio(prev => ({ ...prev, agenciaId: e.target.value }))}
+                                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                                                    >
+                                                        <option value="">— Sin agencia —</option>
+                                                        {agenciasLista.map(a => (
+                                                            <option key={a.ID} value={a.ID}>{a.Nombre}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            )}
+
+                                            {/* Dirección */}
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1">Dirección</label>
+                                                <input
+                                                    type="text"
+                                                    value={retiroEnvio.direccion}
+                                                    onChange={e => setRetiroEnvio(prev => ({ ...prev, direccion: e.target.value }))}
+                                                    placeholder="Ej: Av. Italia 1234"
+                                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-blue-400"
+                                                />
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {/* Departamento */}
+                                                <div>
+                                                    <label className="block text-xs font-bold text-slate-600 mb-1">Departamento</label>
+                                                    <select
+                                                        value={retiroEnvio.departamentoId || ''}
+                                                        onChange={e => handleDepartamentoChange(e.target.value)}
+                                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+                                                    >
+                                                        <option value="">— Seleccionar —</option>
+                                                        {departamentosLista.map(d => (
+                                                            <option key={d.ID} value={d.ID}>{d.Nombre}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                {/* Localidad */}
+                                                <div>
+                                                    <label className="block text-xs font-bold text-slate-600 mb-1">Localidad</label>
+                                                    <select
+                                                        value={retiroEnvio.localidadId || ''}
+                                                        onChange={e => setRetiroEnvio(prev => ({ ...prev, localidadId: e.target.value }))}
+                                                        disabled={!retiroEnvio.departamentoId}
+                                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-blue-400 bg-white disabled:opacity-50"
+                                                    >
+                                                        <option value="">— Seleccionar —</option>
+                                                        {localidadesLista.map(l => (
+                                                            <option key={l.ID} value={l.ID}>{l.Nombre}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="flex gap-3 mt-1">
+                                        <button onClick={() => setRetiroModal(null)} className="flex-1 border border-slate-200 text-slate-600 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors">
+                                            Cancelar
+                                        </button>
+                                        <button
+                                            disabled={retiroGenerando || !retiroLugar}
+                                            onClick={async () => {
+                                                setRetiroGenerando(true);
+                                                try {
+                                                    const localidadNombre = localidadesLista.find(l => String(l.ID) === String(retiroEnvio.localidadId))?.Nombre || '';
+                                                    const departamentoNombre = departamentosLista.find(d => String(d.ID) === String(retiroEnvio.departamentoId))?.Nombre || '';
+                                                    const payload = {
+                                                        orders: ordenes.map(o => ({ orderNumber: o.OrdCodigoOrden, orderId: o.OrdIdOrden })),
+                                                        totalCost,
+                                                        lugarRetiro: parseInt(retiroLugar),
+                                                        ...(esEnvio ? {
+                                                            direccion: retiroEnvio.direccion || null,
+                                                            departamento: departamentoNombre || null,
+                                                            localidad: localidadNombre || null,
+                                                            agenciaId: retiroEnvio.agenciaId ? parseInt(retiroEnvio.agenciaId) : null
+                                                        } : {})
+                                                    };
+                                                    const res = await api.post('/apiordenesRetiro/crear', payload);
+                                                    const idRetiro = res.data.OReIdOrdenRetiro;
+                                                    toast.success(`Retiro generado: RL-${String(idRetiro).padStart(4, '0')}`);
+                                                    const lugarNombre = lugarSeleccionado?.LReNombreLugar || '';
+                                                    printTicketEncomienda({
+                                                        ordenDeRetiro: `RL-${String(idRetiro).padStart(4, '0')}`,
+                                                        lugarRetiro: lugarNombre,
+                                                        totalCost: totalCost.toFixed(2),
+                                                        pagorealizado: 0,
+                                                        orders: ordenes.map(o => ({ orderNumber: o.OrdCodigoOrden })),
+                                                        TClDescripcion: ordenes[0]?.TipoCliente || '',
+                                                        idcliente: ordenes[0]?.CliCodigo || '',
+                                                    });
+                                                    setRetiroModal(null);
+                                                    setSelectedSinRetiro(new Set());
+                                                    loadTodasSinRetiro(filtroLugarMostrador);
+                                                    if (searchTerm.trim()) buscarMostrador();
+                                                } catch (err) {
+                                                    toast.error('Error al generar retiro: ' + (err.response?.data?.error || err.message));
+                                                } finally {
+                                                    setRetiroGenerando(false);
+                                                }
+                                            }}
+                                            className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-black py-2.5 rounded-xl transition-colors shadow-md flex items-center justify-center gap-2"
+                                        >
+                                            <ClipboardList size={16} />
+                                            {retiroGenerando ? 'Generando...' : `Generar${ordenes.length > 1 ? ` (${ordenes.length})` : ''} e Imprimir`}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()
+            }
 
             {/* ALERTA DE AUTORIZACIÓN — Modal custom reemplaza Swal */}
             <AlertaAutorizacionModal
@@ -1051,103 +1439,105 @@ const EntregaPedidosView = () => {
             />
 
             {/* MODAL DE PAGO — igual a Caja */}
-            {pagoModal && (
-                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
-                        {/* Cabecera */}
-                        <div className="bg-gradient-to-r from-[#0070bc] to-[#005a99] px-6 py-4 rounded-t-2xl flex justify-between items-center">
-                            <div>
-                                <div className="text-white font-black text-lg">Registrar Pago</div>
-                                <div className="text-blue-100 text-sm">{pagoModal.retiroId || 'Orden directa'} · {pagoModal.ordenes.length} orden(es)</div>
-                            </div>
-                            <button onClick={() => setPagoModal(null)} className="text-white hover:text-blue-200 text-2xl font-bold leading-none">&times;</button>
-                        </div>
-
-                        <div className="p-6 flex flex-col gap-4">
-                            {/* Cotización */}
-                            {cotizacion && (
-                                <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2 text-sm text-[#0070bc] font-bold text-center">
-                                    Cotización: 1 USD = {Number(cotizacion).toFixed(2)} UYU
+            {
+                pagoModal && (
+                    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+                            {/* Cabecera */}
+                            <div className="bg-gradient-to-r from-[#0070bc] to-[#005a99] px-6 py-4 rounded-t-2xl flex justify-between items-center">
+                                <div>
+                                    <div className="text-white font-black text-lg">Registrar Pago</div>
+                                    <div className="text-blue-100 text-sm">{pagoModal.retiroId || 'Orden directa'} · {pagoModal.ordenes.length} orden(es)</div>
                                 </div>
-                            )}
+                                <button onClick={() => setPagoModal(null)} className="text-white hover:text-blue-200 text-2xl font-bold leading-none">&times;</button>
+                            </div>
 
-                            {/* Resumen órdenes */}
-                            <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
-                                {pagoModal.ordenes.map(o => (
-                                    <div key={o.OrdIdOrden} className="flex justify-between text-sm font-bold py-1 border-b border-slate-100 last:border-0">
-                                        <span className="text-slate-600">{o.codigo || o.OrdCodigoOrden}</span>
-                                        <span className="text-[#0070bc]">{o.simbolo} {parseFloat(o.costo || o.OrdCostoFinal || 0).toFixed(2)}</span>
+                            <div className="p-6 flex flex-col gap-4">
+                                {/* Cotización */}
+                                {cotizacion && (
+                                    <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2 text-sm text-[#0070bc] font-bold text-center">
+                                        Cotización: 1 USD = {Number(cotizacion).toFixed(2)} UYU
                                     </div>
-                                ))}
-                            </div>
+                                )}
 
-                            {/* Forma de pago — select igual a Caja */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-sm font-bold text-zinc-800">Seleccionar forma de pago</label>
-                                <select
-                                    value={formaPago}
-                                    onChange={e => setFormaPago(e.target.value)}
-                                    className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-[#0070bc] focus:ring-1 focus:ring-[#0070bc] appearance-none"
-                                >
-                                    <option value="">Seleccione un método</option>
-                                    {metodosPago.map(m => (
-                                        <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>
+                                {/* Resumen órdenes */}
+                                <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
+                                    {pagoModal.ordenes.map(o => (
+                                        <div key={o.OrdIdOrden} className="flex justify-between text-sm font-bold py-1 border-b border-slate-100 last:border-0">
+                                            <span className="text-slate-600">{o.codigo || o.OrdCodigoOrden}</span>
+                                            <span className="text-[#0070bc]">{o.simbolo} {parseFloat(o.costo || o.OrdCostoFinal || 0).toFixed(2)}</span>
+                                        </div>
                                     ))}
-                                </select>
-                            </div>
+                                </div>
 
-                            {/* Moneda — igual a Caja */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-sm font-bold text-zinc-800">Seleccionar Moneda</label>
-                                <select
-                                    value={monedaPago}
-                                    onChange={e => handleCambioMoneda(e.target.value)}
-                                    className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-[#0070bc] focus:ring-1 focus:ring-[#0070bc] appearance-none"
-                                >
-                                    <option value="UYU">UYU — Peso Uruguayo</option>
-                                    <option value="USD">USD — Dólar</option>
-                                </select>
-                            </div>
+                                {/* Forma de pago — select igual a Caja */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-sm font-bold text-zinc-800">Seleccionar forma de pago</label>
+                                    <select
+                                        value={formaPago}
+                                        onChange={e => setFormaPago(e.target.value)}
+                                        className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-[#0070bc] focus:ring-1 focus:ring-[#0070bc] appearance-none"
+                                    >
+                                        <option value="">Seleccione un método</option>
+                                        {metodosPago.map(m => (
+                                            <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>
+                                        ))}
+                                    </select>
+                                </div>
 
-                            {/* Comprobante */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-sm font-bold text-zinc-800">Cargar comprobante (opcional)</label>
-                                <input
-                                    type="file"
-                                    onChange={e => setFileComprobante(e.target.files[0])}
-                                    className="w-full text-sm border border-zinc-300 p-2 rounded-lg cursor-pointer"
-                                />
-                            </div>
+                                {/* Moneda — igual a Caja */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-sm font-bold text-zinc-800">Seleccionar Moneda</label>
+                                    <select
+                                        value={monedaPago}
+                                        onChange={e => handleCambioMoneda(e.target.value)}
+                                        className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-[#0070bc] focus:ring-1 focus:ring-[#0070bc] appearance-none"
+                                    >
+                                        <option value="UYU">UYU — Peso Uruguayo</option>
+                                        <option value="USD">USD — Dólar</option>
+                                    </select>
+                                </div>
 
-                            {/* Monto */}
-                            <div className="flex flex-col gap-1">
-                                <label className="text-sm font-bold text-zinc-800">Ingrese Monto ({monedaPago})</label>
-                                <input
-                                    type="number"
-                                    placeholder="Monto"
-                                    step="0.01"
-                                    value={montoPago}
-                                    onChange={e => setMontoPago(e.target.value)}
-                                    className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-[#0070bc] focus:ring-1 focus:ring-[#0070bc] text-lg font-bold"
-                                />
-                            </div>
+                                {/* Comprobante */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-sm font-bold text-zinc-800">Cargar comprobante (opcional)</label>
+                                    <input
+                                        type="file"
+                                        onChange={e => setFileComprobante(e.target.files[0])}
+                                        className="w-full text-sm border border-zinc-300 p-2 rounded-lg cursor-pointer"
+                                    />
+                                </div>
 
-                            {/* Botones */}
-                            <div className="flex gap-3 mt-2">
-                                <button onClick={() => setPagoModal(null)} className="flex-1 border border-slate-200 text-slate-600 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors">Cancelar</button>
-                                <button
-                                    onClick={confirmarPago}
-                                    disabled={pagandoLoading}
-                                    className="flex-1 bg-[#0070bc] hover:bg-[#005a99] disabled:opacity-50 text-white font-black py-2.5 rounded-full transition-colors flex items-center justify-center gap-2 shadow-md"
-                                >
-                                    {pagandoLoading ? <RefreshCcw className="animate-spin" size={16} /> : <CheckCircle size={16} />}
-                                    {pagandoLoading ? 'Registrando...' : 'Realizar Pago'}
-                                </button>
+                                {/* Monto */}
+                                <div className="flex flex-col gap-1">
+                                    <label className="text-sm font-bold text-zinc-800">Ingrese Monto ({monedaPago})</label>
+                                    <input
+                                        type="number"
+                                        placeholder="Monto"
+                                        step="0.01"
+                                        value={montoPago}
+                                        onChange={e => setMontoPago(e.target.value)}
+                                        className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-[#0070bc] focus:ring-1 focus:ring-[#0070bc] text-lg font-bold"
+                                    />
+                                </div>
+
+                                {/* Botones */}
+                                <div className="flex gap-3 mt-2">
+                                    <button onClick={() => setPagoModal(null)} className="flex-1 border border-slate-200 text-slate-600 font-bold py-2.5 rounded-xl hover:bg-slate-50 transition-colors">Cancelar</button>
+                                    <button
+                                        onClick={confirmarPago}
+                                        disabled={pagandoLoading}
+                                        className="flex-1 bg-[#0070bc] hover:bg-[#005a99] disabled:opacity-50 text-white font-black py-2.5 rounded-full transition-colors flex items-center justify-center gap-2 shadow-md"
+                                    >
+                                        {pagandoLoading ? <RefreshCcw className="animate-spin" size={16} /> : <CheckCircle size={16} />}
+                                        {pagandoLoading ? 'Registrando...' : 'Realizar Pago'}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
         </div>
     );
 };

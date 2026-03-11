@@ -11,12 +11,12 @@ exports.exportClientToReact = async (clientData) => {
         // Verificar si ya existe
         const check = await pool.request()
             .input('Nom', sql.NVarChar(200), clientData.Nombre)
-            .query("SELECT CodCliente, CodigoReact, IDReact FROM dbo.Clientes WHERE Nombre = @Nom");
+            .query("SELECT CodCliente, IDCliente, IDReact FROM dbo.Clientes WHERE Nombre = @Nom");
 
         if (check.recordset.length > 0) {
             const existing = check.recordset[0];
             console.log(`[SyncClient] Cliente ya existe: CodCliente=${existing.CodCliente}`);
-            return { success: true, reactCode: existing.CodigoReact || String(existing.CodCliente), reactId: existing.IDReact || String(existing.CodCliente), fullRes: existing };
+            return { success: true, reactCode: existing.IDCliente || String(existing.CodCliente), reactId: existing.IDReact || String(existing.CodCliente), fullRes: existing };
         }
 
         // Insertar nuevo
@@ -53,7 +53,7 @@ exports.updateLocalLink = async (codCliente, reactCode, reactId) => {
             .input('CC', sql.Int, codCliente)
             .input('CR', sql.NVarChar(50), String(reactCode).trim())
             .input('IR', sql.NVarChar(50), reactId ? String(reactId).trim() : null)
-            .query(`UPDATE dbo.Clientes SET CodigoReact = @CR, IDReact = @IR WHERE CodCliente = @CC`);
+            .query(`UPDATE dbo.Clientes SET IDCliente = @CR, IDReact = @IR WHERE CodCliente = @CC`);
         return true;
     } catch (e) {
         console.error("[SyncClient] Link Error:", e.message);

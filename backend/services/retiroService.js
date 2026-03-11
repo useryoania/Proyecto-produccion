@@ -29,7 +29,7 @@ function resolverEstadoPorTipoCliente(tipoCliente) {
  * @param {string} [params.moneda] — moneda del retiro ('UYU' o 'USD')
  * @returns {number} OReIdOrdenRetiro — ID del retiro creado
  */
-async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuarioAlta, formaRetiro, codCliente, moneda }) {
+async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuarioAlta, formaRetiro, codCliente, moneda, direccion, departamento, localidad, agenciaId }) {
     if (!ordIds || ordIds.length === 0) {
         throw new Error('No se proporcionaron órdenes válidas para el retiro.');
     }
@@ -64,11 +64,15 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
         .input('FormaRetiro', sql.VarChar(2), formaRetiro || 'RL')
         .input('CodCliente', sql.Int, finalCodCliente)
         .input('Moneda', sql.VarChar(10), moneda || null)
+        .input('Dir', sql.NVarChar(500), direccion || null)
+        .input('Depto', sql.NVarChar(200), departamento || null)
+        .input('Loc', sql.NVarChar(200), localidad || null)
+        .input('AgenciaId', sql.Int, agenciaId ? parseInt(agenciaId, 10) : null)
         .query(`
             INSERT INTO OrdenesRetiro 
-                (OReIdOrdenRetiro, OReCostoTotalOrden, LReIdLugarRetiro, OReFechaAlta, OReUsuarioAlta, OReEstadoActual, OReFechaEstadoActual, FormaRetiro, CodCliente, MonIdMoneda)
+                (OReIdOrdenRetiro, OReCostoTotalOrden, LReIdLugarRetiro, OReFechaAlta, OReUsuarioAlta, OReEstadoActual, OReFechaEstadoActual, FormaRetiro, CodCliente, MonIdMoneda, DireccionEnvio, DepartamentoEnvio, LocalidadEnvio, AgenciaEnvio)
             VALUES 
-                (@OReId, @Costo, @Lugar, GETDATE(), @Usr, @Estado, GETDATE(), @FormaRetiro, @CodCliente, @Moneda)
+                (@OReId, @Costo, @Lugar, GETDATE(), @Usr, @Estado, GETDATE(), @FormaRetiro, @CodCliente, @Moneda, @Dir, @Depto, @Loc, @AgenciaId)
         `);
 
     // 3. INSERT HistoricoEstadosOrdenesRetiro (estado inicial)

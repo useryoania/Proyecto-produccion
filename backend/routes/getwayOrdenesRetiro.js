@@ -1,7 +1,7 @@
 // apiordenesRetiro.js
 const express = require('express');
 const router = express.Router();
-const { createOrdenRetiro, getOrdenesRetiroPorEstados, actualizarOrdenRetiroEstado, marcarOrdenRetiroPronto, ordenesRetiroCaja, marcarOrdenRetiroEntregado, getOrdenesRetiroPasarPorCaja, ordenesRetiroMarcarPasarPorCaja, getOrdenesRetiroPorFecha, getOrdenesRetiroPorLugar, marcarDespachoEntregadoAutorizado, buscarParaMostrador } = require('../controllers/ordenesRetiroController');
+const { createOrdenRetiro, getOrdenesRetiroPorEstados, actualizarOrdenRetiroEstado, marcarOrdenRetiroPronto, ordenesRetiroCaja, marcarOrdenRetiroEntregado, getOrdenesRetiroPasarPorCaja, ordenesRetiroMarcarPasarPorCaja, getOrdenesRetiroPorFecha, getOrdenesRetiroPorLugar, marcarDespachoEntregadoAutorizado, buscarParaMostrador, getClienteEnvioDatos, getTodasSinRetiro, backfillLugarRetiro } = require('../controllers/ordenesRetiroController');
 const { verifyToken } = require('../middleware/authMiddleware');
 
 // Ruta para crear una Orden de Retiro
@@ -36,5 +36,15 @@ router.post('/despachos/entregar-autorizado', verifyToken, marcarDespachoEntrega
 
 // Mostrador & Facturación Remota
 router.get('/mostrador/buscar', verifyToken, buscarParaMostrador);
+
+// Todas las órdenes sin retiro, con filtro opcional ?lugar=ID
+router.get('/sin-retiro', verifyToken, getTodasSinRetiro);
+
+// Datos de envío del cliente (DireccionesEnvioCliente)
+router.get('/cliente-envio/:cliId', verifyToken, getClienteEnvioDatos);
+
+// Backfill: ?dry=true para preview, sin parámetro para ejecutar
+router.get('/backfill-lugar', verifyToken, backfillLugarRetiro);
+router.post('/backfill-lugar', verifyToken, backfillLugarRetiro);
 
 module.exports = router;

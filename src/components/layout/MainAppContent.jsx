@@ -41,6 +41,7 @@ const CargaDepositoPage = lazy(() => import('../logistics/CargaDepositoPage'));
 const DuplicateClientsPage = lazy(() => import('../pages/admin/DuplicateClientsPage'));
 const OrderSearchPage = lazy(() => import('../logistics/OrderSearchPage'));
 const EntregaPedidosView = lazy(() => import('../pages/customer-service/EntregaPedidosView'));
+const DepositoDashboard = lazy(() => import('../logistics/DepositoDashboard'));
 
 // ============================================
 // 1. COMPONENTE NAVNODE (Mejorado)
@@ -317,6 +318,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/logistica/excepciones" element={<ExcepcionesDeudaView />} />
                                 <Route path="/logistica/carga-deposito" element={<CargaDepositoPage />} />
                                 <Route path="/logistica/buscar-ordenes" element={<OrderSearchPage />} />
+                                <Route path="/logistica/dashboard-deposito" element={<DepositoDashboard />} />
                                 <Route path="/atencion-cliente/entrega-pedidos" element={<EntregaPedidosView />} />
                                 <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
                                 <Route path="/admin/duplicate-clients" element={<DuplicateClientsPage />} />
@@ -389,6 +391,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/atencion-cliente/reposiciones') return <CustomerReplacementPage />;
     if (menuItem.Ruta === '/atencion-cliente/entrega-pedidos') return <EntregaPedidosView />;
     if (menuItem.Ruta === '/logistica/retiros-web') return <WebRetirosPage />;
+    if (menuItem.Ruta === '/logistica/dashboard-deposito') return <DepositoDashboard />;
     if (menuItem.Ruta === '/caja/pagos' || menuItem.Ruta.toLowerCase() === '/caja/pagos/') return <CargaPagosView />;
 
     // NEW: Historial de Lotes

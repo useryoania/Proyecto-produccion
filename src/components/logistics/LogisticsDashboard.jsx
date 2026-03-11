@@ -8,6 +8,7 @@ import TransportView from './TransportView';
 import ReceptionView from './ReceptionView';
 import StockView from './StockView';
 import LostView from './LostView';
+import DepositoDashboard from './DepositoDashboard';
 // Dynamic Import for DepositStockPage to optimize chunk loading
 const DepositStockPage = React.lazy(() => import('./DepositStockPage'));
 
@@ -16,7 +17,7 @@ const LogisticsDashboard = () => {
     const isAdmin = user?.rol?.toLowerCase() === 'admin';
     const isDeposito = user?.areaKey?.trim().toUpperCase() === 'DEPOSITO';
     const hasFullAccess = isAdmin || isDeposito;
-    const [activeTab, setActiveTab] = useState('dispatch');
+    const [activeTab, setActiveTab] = useState('dashboard');
 
     // Global Area Filter
     const [globalArea, setGlobalArea] = useState('TODOS');
@@ -84,7 +85,8 @@ const LogisticsDashboard = () => {
         const commonProps = { areaFilter: globalArea === 'TODOS' ? null : globalArea };
 
         switch (activeTab) {
-            // case 'packing': return <PackingView {...commonProps} />;
+            case 'dashboard':
+                return <DepositoDashboard />;
             case 'dispatch':
                 return <DispatchView {...commonProps} mode="create" />;
             case 'history':

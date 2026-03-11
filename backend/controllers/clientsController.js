@@ -105,7 +105,7 @@ exports.getAllReactClients = async (req, res) => {
             FROM ClientesReact cr WITH(NOLOCK)
             WHERE NOT EXISTS (
                 SELECT 1 FROM dbo.Clientes loc WITH(NOLOCK)
-                WHERE loc.CodigoReact = cr.CliCodigoCliente
+                WHERE loc.IDCliente = cr.CliCodigoCliente
                    OR (loc.IDReact IS NOT NULL AND loc.IDReact <> '' AND CAST(loc.IDReact AS VARCHAR) = CAST(cr.CliIdCliente AS VARCHAR))
             )
             AND ${whereSearch}
@@ -248,9 +248,9 @@ exports.createClient = async (req, res) => {
             .input('CodReact', sql.NVarChar(50), safeString(codReact))
             .input('IdReact', sql.NVarChar(50), safeString(idReact))
             .query(`
-                INSERT INTO dbo.Clientes (CodCliente, Nombre, TelefonoTrabajo, Email, CliDireccion, CioRuc, NombreFantasia, CodigoReact, IDReact) 
+                INSERT INTO dbo.Clientes (CodCliente, Nombre, TelefonoTrabajo, Email, CioRuc, NombreFantasia, IDCliente, IDReact) 
                 OUTPUT INSERTED.* 
-                VALUES (@NextId, @Nombre, @Telefono, @Email, @Direccion, @Ruc, @Fantasia, @CodReact, @IdReact)
+                VALUES (@NextId, @Nombre, @Telefono, @Email, @Ruc, @Fantasia, @CodReact, @IdReact)
             `);
 
         res.json(result.recordset[0]);
@@ -339,7 +339,7 @@ exports.updateClientLink = async (req, res) => {
             .input('IR', sql.NVarChar(50), idReact ? String(idReact).trim() : null)
             .query(`
                 UPDATE dbo.Clientes 
-                SET CodigoReact = @CR, IDReact = @IR 
+                SET IDCliente = @CR, IDReact = @IR 
                 WHERE CodCliente = @CC
             `);
 
@@ -400,7 +400,7 @@ exports.importReactClient = async (req, res) => {
             .input('IR', sql.Int, parseInt(IdCliente) || null)
             .query(`
                 SELECT TOP 1 CodCliente, Nombre FROM dbo.Clientes WITH(NOLOCK)
-                WHERE (CodigoReact = @CR AND @CR <> '')
+                WHERE (IDCliente = @CR AND @CR <> '')
                    OR (IDReact = @IR AND @IR IS NOT NULL)
             `);
 
@@ -429,7 +429,7 @@ exports.importReactClient = async (req, res) => {
             .query(`
                 INSERT INTO dbo.Clientes
                     (Nombre, NombreFantasia, CioRuc, Email, TelefonoTrabajo,
-                     CliDireccion, Localidad, CodigoReact, IDReact, TClIdTipoCliente, FormaEnvioID)
+                     CliDireccion, Localidad, IDCliente, IDReact, TClIdTipoCliente, FormaEnvioID)
                 OUTPUT INSERTED.*
                 VALUES (@Nom, @Fant, @Ruc, @Email, @Tel,
                         @Dir, @Loc, @CR, @IR, @Tipo, @LRe)
@@ -569,7 +569,7 @@ exports.searchClientUnified = async (req, res) => {
                 WHERE CAST(CodCliente AS NVARCHAR(50)) = @Term
                    OR Nombre LIKE '%' + @Term + '%'
                    OR CioRuc = @Term
-                   OR CodigoReact = @Term
+                   OR IDCliente = @Term
                    OR CAST(IDReact AS NVARCHAR(50)) = @Term
                    OR NombreFantasia LIKE '%' + @Term + '%'
             `);
@@ -623,7 +623,7 @@ exports.updateClient = async (req, res) => {
     const { codCliente } = req.params;
     const {
         // Identificación
-        Nombre, NombreFantasia, IDCliente, CioRuc, CodigoReact, IDReact, CodReferencia,
+        Nombre, NombreFantasia, IDCliente, CioRuc, IDReact, CodReferencia,
         // Contacto
         TelefonoTrabajo, Email,
         // Direcciones
@@ -654,7 +654,7 @@ exports.updateClient = async (req, res) => {
             .input('Fan', sql.Char(150), safeStr(NombreFantasia, 150))
             .input('IDCli', sql.VarChar(255), safeStr(IDCliente, 255))
             .input('Ruc', sql.Char(20), safeStr(CioRuc, 20))
-            .input('CReact', sql.NVarChar(50), safeStr(CodigoReact, 50))
+            .input('CReact', sql.NVarChar(50), safeStr(IDReact ? String(IDReact) : null, 50))
             .input('IReact', sql.Int, safeInt(IDReact))
             .input('CRef', sql.Int, safeInt(CodReferencia))
             // Contacto
@@ -689,7 +689,6 @@ exports.updateClient = async (req, res) => {
                     NombreFantasia    = COALESCE(@Fan,    NombreFantasia),
                     IDCliente         = COALESCE(@IDCli,  IDCliente),
                     CioRuc            = COALESCE(@Ruc,    CioRuc),
-                    CodigoReact       = @CReact,
                     IDReact           = COALESCE(@IReact, IDReact),
                     CodReferencia     = @CRef,
                     -- Contacto

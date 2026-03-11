@@ -1229,11 +1229,12 @@ exports.getPickupOrders = async (req, res) => {
                     e.EOrNombreEstado AS Estado,
                     c.IDCliente AS IdCliente,
                     c.TelefonoTrabajo AS Celular,
-                    c.Tipo AS TipoCliente,
+                    tc.TClDescripcion AS TipoCliente,
                     m.MonSimbolo
                 FROM OrdenesDeposito o WITH(NOLOCK)
                 LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
                 LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+                LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
                 LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
                 WHERE c.IDCliente = @idCliente
                 AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar')
@@ -1433,12 +1434,15 @@ exports.totemCreatePickup = async (req, res) => {
         // 1. Buscar CodCliente a partir del IDCliente
         const clientRes = await pool.request()
             .input('idCliente', sql.VarChar, clientId)
-            .query("SELECT CodCliente FROM Clientes WHERE IDCliente = @idCliente");
+            .query("SELECT CodCliente, FormaEnvioID FROM Clientes WHERE IDCliente = @idCliente");
 
         if (!clientRes.recordset.length) {
             return res.status(404).json({ success: false, error: "Cliente no encontrado." });
         }
         const codCliente = clientRes.recordset[0].CodCliente;
+        // Resolver lugarRetiro: del body o del FormaEnvioID del cliente
+        const clientFormaEnvio = clientRes.recordset[0].FormaEnvioID || 5;
+        const lugarRetiroFinal = lugarRetiro ? parseInt(lugarRetiro, 10) : clientFormaEnvio;
 
         // 2. Resolver IDs numéricos de las órdenes seleccionadas
         const ordersResult = await pool.request()
@@ -1473,8 +1477,8 @@ exports.totemCreatePickup = async (req, res) => {
             const OReIdOrdenRetiro = await crearRetiro(transaction, {
                 ordIds: rawOrderIds,
                 totalCost: totalCost || 0,
-                lugarRetiro: lugarRetiro || 5,
-                usuarioAlta: 70, // Usuario genérico tótem
+                lugarRetiro: lugarRetiroFinal,
+                usuarioAlta: 70,
                 formaRetiro: formaRetiro || 'RT',
                 codCliente: parseInt(codCliente, 10) || null,
                 moneda: 'UYU'
@@ -1527,7 +1531,20 @@ exports.createPickupOrder = async (req, res) => {
 
         const pool = await getPool();
         const UsuarioAlta = user?.id || 70;
-        const lugarRetiro = req.body.lugarRetiro || 5;
+        // Resolver lugarRetiro: del body o del FormaEnvioID del cliente
+        let lugarRetiro;
+        if (req.body.lugarRetiro) {
+            lugarRetiro = parseInt(req.body.lugarRetiro, 10);
+        } else {
+            try {
+                const lugarRes = await pool.request()
+                    .input('cod', sql.Int, parseInt(codCliente, 10) || 0)
+                    .query('SELECT FormaEnvioID FROM Clientes WHERE CodCliente = @cod');
+                lugarRetiro = lugarRes.recordset[0]?.FormaEnvioID || 5;
+            } catch {
+                lugarRetiro = 5;
+            }
+        }
 
         // Determinar las órdenes a incluir
         let rawOrderIds = [];

@@ -659,11 +659,8 @@ const WebRetirosPage = () => {
     setConfirmDelivery(null);
 
     try {
-      if (ubicacionId === 'FUERA DE ESTANTE') {
-        // TODO handle Fuera de estante which needs direct API central contact
-        // Normally we just did an api request to our own backend to mark it depending on what we mapped
-        // Para fuera de estante, enviemos la info a eliminar si aplica
-      }
+      // Para fuera de estante, el backend ya maneja ubicacionId='FUERA DE ESTANTE'
+      // (omite el DELETE de OcupacionEstantes y llama directamente a marcarEntregado)
 
       await api.post(`/web-retiros/estantes/liberar-multiple`, {
         ubicacionId,
@@ -791,22 +788,22 @@ const WebRetirosPage = () => {
         <button onClick={() => setUbicationMode(false)} className="px-6 py-2.5 bg-white border border-slate-200 rounded-lg font-bold text-slate-500 shadow-sm hover:bg-slate-50 text-sm">Atrás</button>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="grid lg:grid-cols-3 gap-4">
         {estantesConfigArr.map(est => (
-          <div key={est.id} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center text-white font-black text-lg">{est.id}</div>
-              <span className="text-lg font-bold text-slate-700">Módulo de Estantería</span>
+          <div key={est.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-white font-black text-base">{est.id}</div>
+              <span className="text-sm font-bold text-slate-700">Estante {est.id}</span>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-1.5">
               {[...Array(est.secciones)].map((_, s) => (
-                <div key={s} className="flex gap-4 items-stretch">
-                  <div className="w-12 bg-slate-50 rounded-lg flex flex-col items-center justify-center border border-slate-200 p-2">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase">Sec</span>
-                    <span className="text-lg font-black text-slate-700">{s + 1}</span>
+                <div key={s} className="flex gap-1.5 items-center">
+                  <div className="w-8 bg-slate-50 rounded-md flex flex-col items-center justify-center border border-slate-200 py-1 shrink-0">
+                    <span className="text-[8px] font-bold text-slate-400 uppercase">S</span>
+                    <span className="text-xs font-black text-slate-700">{s + 1}</span>
                   </div>
-                  <div className="grid grid-cols-4 flex-1 gap-2">
+                  <div className="grid grid-cols-5 flex-1 gap-1">
                     {[...Array(est.posiciones)].map((_, p) => {
                       const id = `${est.id}-${s + 1}-${p + 1}`;
                       const dataList = ocupacionEstantes[id] || [];
@@ -824,7 +821,7 @@ const WebRetirosPage = () => {
                       return (
                         <button
                           key={p}
-                          title={!puedeGuardarAca ? "No puedes mezclar órdenes de distintos clientes aquí" : ""}
+                          title={isOccupied ? (dataList[0]?.OrdenRetiro || id) : id}
                           onClick={() => {
                             if (!puedeGuardarAca) {
                               setError('No puedes guardar órdenes de diferentes clientes en el mismo casillero.');
@@ -832,31 +829,24 @@ const WebRetirosPage = () => {
                             }
                             handleAsignarUbicacion(est.id, s + 1, p + 1);
                           }}
-                          className={`relative h-24 rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-1.5 cursor-pointer shadow-sm overflow-hidden ${isOccupied ? (puedeGuardarAca ? 'bg-indigo-600 border-indigo-700 hover:bg-indigo-500 opacity-90' : 'bg-rose-950 border-rose-800 opacity-60 cursor-not-allowed') : 'bg-white border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 group'}`}
+                          className={`relative h-10 rounded-lg border-2 transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${isOccupied
+                              ? puedeGuardarAca
+                                ? 'bg-indigo-600 border-indigo-700 hover:bg-indigo-500'
+                                : 'bg-rose-950 border-rose-800 opacity-60 cursor-not-allowed'
+                              : 'bg-white border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50'
+                            }`}
                         >
-                          <div className="absolute top-1 left-2">
-                            <span className={`text-[10px] font-bold ${isOccupied ? 'text-indigo-200' : 'text-slate-400 uppercase group-hover:text-blue-600'}`}>{id}</span>
-                          </div>
-                          {isOccupied && dataList.length > 1 && (
-                            <div className="absolute top-1 right-1 bg-rose-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full z-10">
+                          {isOccupied ? (
+                            <span className="text-[8px] font-black text-white leading-tight px-0.5 truncate w-full text-center">
+                              {dataList[0]?.OrdenRetiro?.split('-')[1] || '?'}
+                            </span>
+                          ) : (
+                            <span className="text-[8px] text-slate-300">{p + 1}</span>
+                          )}
+                          {dataList.length > 1 && (
+                            <div className="absolute top-0 right-0 bg-rose-500 text-white text-[7px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
                               {dataList.length}
                             </div>
-                          )}
-
-                          {isOccupied ? (
-                            <div className="flex flex-col gap-1 w-full max-h-full overflow-y-auto mt-4 px-1" style={{ scrollbarWidth: 'none' }}>
-                              {dataList.map((data, idx) => (
-                                <div key={idx} className="flex flex-col items-center bg-indigo-500/50 rounded flex-shrink-0 w-full border border-indigo-400/50 py-0.5">
-                                  <span className="text-[9px] font-black text-white px-1 truncate max-w-full">{data.PagoHandy ? data.OrdenRetiro.replace('R-', 'PW-') : data.OrdenRetiro}</span>
-                                  <span className="text-[7px] font-bold text-indigo-100 px-1 truncate max-w-[90%]">{data.CodigoCliente || data.ClientName || 'Cliente'}</span>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <>
-                              <span className="text-[10px] font-bold text-slate-400 uppercase group-hover:text-blue-600 mb-1">{id}</span>
-                              <div className="w-1.5 h-1.5 rounded-full bg-slate-200 group-hover:bg-blue-400 transition-colors" />
-                            </>
                           )}
                         </button>
                       );
@@ -933,12 +923,31 @@ const WebRetirosPage = () => {
           </div>
         </div>
 
-        <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200">
-          <button onClick={() => setView('empaque')} className={`px-6 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 transition-all ${view === 'empaque' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>
-            <Truck size={18} /> Empaque
-          </button>
-          <button onClick={() => setView('entrega')} className={`px-6 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 transition-all ${view === 'entrega' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>
-            <MapPin size={18} /> Entregas a Mostrar
+        <div className="flex items-center gap-3">
+          <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+            <button onClick={() => setView('empaque')} className={`px-6 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 transition-all ${view === 'empaque' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>
+              <Truck size={18} /> Empaque
+            </button>
+            <button onClick={() => setView('entrega')} className={`px-6 py-2.5 rounded-lg font-bold text-sm flex items-center gap-2 transition-all ${view === 'entrega' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>
+              <MapPin size={18} /> Entregas a Mostrar
+            </button>
+          </div>
+          {/* Configuración de estantes — botón de administración */}
+          <button
+            title="Recrear estantes: 3 × 4 secciones × 10 posiciones"
+            onClick={async () => {
+              if (!window.confirm('¿Recrear ConfiguracionEstantes con 3 estantes (A/B/C) × 4 secciones × 10 posiciones?\nLas ubicaciones ocupadas NO se borran.')) return;
+              try {
+                const r = await api.post('/web-retiros/estantes/config/seed', { estantes: ['A', 'B', 'C'], secciones: 4, posiciones: 10 });
+                alert('✅ ' + r.data.message);
+                fetchAllData(false);
+              } catch (e) {
+                alert('❌ Error: ' + (e.response?.data?.error || e.message));
+              }
+            }}
+            className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            ⚙️
           </button>
         </div>
       </div>
@@ -1293,22 +1302,22 @@ const WebRetirosPage = () => {
 
               {/* MAPA VISUAL DE ESTANTES */}
               {filterEstante !== 'FUERA' && (
-                <div className="grid gap-8">
+                <div className="grid gap-4">
                   {estantesConfigArr.filter(est => filterEstante === 'ALL' || filterEstante === est.id).map(est => (
-                    <div key={est.id} className="bg-white p-8 rounded-[32px] border border-slate-100 shadow-sm">
-                      <div className="flex items-center gap-4 mb-8">
-                        <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black text-xl italic shadow-md shadow-blue-200">{est.id}</div>
-                        <span className="text-xl font-black text-slate-800 uppercase italic tracking-tighter">Bloque {est.id}</span>
+                    <div key={est.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black text-base italic shadow-md shadow-blue-200">{est.id}</div>
+                        <span className="text-base font-black text-slate-800 uppercase italic tracking-tighter">Bloque {est.id}</span>
                       </div>
 
-                      <div className="space-y-6">
+                      <div className="space-y-1.5">
                         {[...Array(est.secciones)].map((_, s) => (
-                          <div key={s} className="flex gap-6 items-center">
-                            <div className="w-16 h-16 flex flex-col items-center justify-center bg-slate-50/50 rounded-[20px] border border-slate-100">
-                              <span className="text-[10px] font-black text-slate-400 uppercase">Sec</span>
-                              <span className="text-xl font-black text-blue-600">{s + 1}</span>
+                          <div key={s} className="flex gap-2 items-center">
+                            <div className="w-10 h-10 flex flex-col items-center justify-center bg-slate-50/50 rounded-xl border border-slate-100 shrink-0">
+                              <span className="text-[9px] font-black text-slate-400 uppercase">Sec</span>
+                              <span className="text-sm font-black text-blue-600">{s + 1}</span>
                             </div>
-                            <div className="grid grid-cols-4 flex-1 gap-4">
+                            <div className="grid grid-cols-5 flex-1 gap-1.5">
                               {[...Array(est.posiciones)].map((_, p) => {
                                 const id = `${est.id}-${s + 1}-${p + 1}`;
                                 const dataList = ocupacionEstantes[id] || [];
@@ -1328,50 +1337,43 @@ const WebRetirosPage = () => {
                                   <div
                                     id={`box-${id}`}
                                     key={p}
-                                    className={`h-28 rounded-[24px] border-2 transition-all flex flex-col items-center justify-center gap-2 relative group overflow-hidden 
-                                        ${isOccupied ? 'bg-indigo-600 border-indigo-700 shadow-md shadow-indigo-300' : 'bg-white border-dashed border-slate-200'}
+                                    className={`h-14 rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-0.5 relative group overflow-hidden 
+                                        ${isOccupied ? 'bg-indigo-600 border-indigo-700 shadow-sm shadow-indigo-200' : 'bg-white border-dashed border-slate-200'}
                                         ${isMismatched ? 'opacity-20 grayscale' : ''}
-                                        ${isMatched ? 'ring-4 ring-green-400 border-green-500 bg-green-600 scale-[1.02] shadow-lg shadow-green-200/50' : ''}
+                                        ${isMatched ? 'ring-4 ring-green-400 border-green-500 bg-green-600 scale-[1.02]' : ''}
                                       `}
                                   >
                                     {isOccupied ? (
                                       <>
                                         {dataList.length > 1 && (
-                                          <div className="absolute top-2 right-2 bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full z-10 animate-bounce">
-                                            {dataList.length} retiros
+                                          <div className="absolute top-0.5 right-0.5 bg-rose-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center z-10">
+                                            {dataList.length}
                                           </div>
                                         )}
-                                        <span className={`font-black tracking-widest absolute top-2 left-3 ${isMatched ? 'text-white text-[10px] drop-shadow-md bg-green-700/50 px-2 py-0.5 rounded mb-1' : 'text-indigo-200 text-[10px]'}`}>{id}</span>
+                                        <span className={`text-[8px] font-bold absolute top-0.5 left-1 ${isMatched ? 'text-green-100' : 'text-indigo-300'}`}>{id}</span>
 
-                                        <div className="flex flex-col gap-1 w-full max-h-full overflow-y-auto mt-6 px-2" style={{ scrollbarWidth: 'none' }}>
-                                          {dataList.map((data, idx) => (
-                                            <div key={idx} className={`flex flex-col items-center rounded flex-shrink-0 w-full border py-0.5 ${isMatched ? 'bg-green-700/50 border-green-400' : 'bg-indigo-500/50 border-indigo-400/50'}`}>
-                                              <span className={`text-[11px] font-black italic uppercase truncate px-2 ${isMatched ? 'text-white' : 'text-white'}`}>
-                                                {data.PagoHandy ? data.OrdenRetiro.replace('R-', 'PW-') : data.OrdenRetiro}
-                                              </span>
-                                              <span className={`text-[9px] font-bold truncate px-2 max-w-[90%] bg-black/20 rounded-md py-[1px] mt-[1px] ${isMatched ? 'text-green-100' : 'text-indigo-100'}`}>
-                                                {data.CodigoCliente || data.ClientName || 'Cliente'}
-                                              </span>
-                                            </div>
+                                        <div className="flex flex-col gap-0.5 w-full overflow-hidden mt-3 px-1">
+                                          {dataList.slice(0, 2).map((data, idx) => (
+                                            <span key={idx} className="text-[9px] font-black text-white truncate text-center leading-tight">
+                                              {data.PagoHandy ? data.OrdenRetiro.replace('R-', 'PW-') : data.OrdenRetiro}
+                                            </span>
                                           ))}
                                         </div>
 
                                         {isOccupied && (
-                                          <div className={`absolute inset-0 bg-blue-600/95 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer`}
+                                          <div className="absolute inset-0 bg-blue-700/95 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                                             onClick={() => triggerEntregar(id, dataList)}
                                           >
-                                            <button
-                                              className="px-6 py-2 bg-white text-blue-600 rounded-xl font-black text-xs uppercase shadow-xl hover:scale-105 transition-transform flex items-center gap-2"
-                                            >
-                                              <Check size={16} /> ENTREGAR
+                                            <button className="px-2 py-1 bg-white text-blue-600 rounded-lg font-black text-[9px] uppercase shadow flex items-center gap-1">
+                                              <Check size={10} /> ENTREGAR
                                             </button>
                                           </div>
                                         )}
                                       </>
                                     ) : (
                                       <>
-                                        <span className="text-[12px] font-black text-slate-300">P{p + 1}</span>
-                                        <div className="w-1.5 h-1.5 rounded-full bg-slate-200" />
+                                        <span className="text-[9px] font-black text-slate-300">P{p + 1}</span>
+                                        <div className="w-1 h-1 rounded-full bg-slate-200" />
                                       </>
                                     )}
                                   </div>
@@ -1424,7 +1426,7 @@ const WebRetirosPage = () => {
                           <div key={o.ordenDeRetiro} className="relative bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-2 overflow-hidden">
                             <div className={`absolute top-0 left-0 right-0 h-1 ${dotColor} rounded-t-2xl`} />
                             <div className="font-black text-slate-800 text-sm tracking-tight mt-1">{o.ordenDeRetiro}</div>
-                            <div className="text-[10px] font-bold text-slate-400 uppercase truncate">{o.CliCodigoCliente}</div>
+                            <div className="text-[10px] font-bold text-slate-400 uppercase truncate">{o.CliCodigoCliente || o.CliNombre}</div>
                             <div className={`text-xs font-black ${pagado ? 'text-emerald-600' : 'text-rose-500'}`}>
                               {pagado ? 'Pagado ✓' : 'Pend. Pago'}
                             </div>
@@ -1432,6 +1434,12 @@ const WebRetirosPage = () => {
                               <span className="flex items-center gap-0.5 text-[10px] font-bold text-slate-700"><Clock size={9} /> {timeStr}</span>
                               <span className="flex items-center gap-0.5 text-[10px] font-bold text-slate-400"><Package size={9} /> {(o.orders || []).length}</span>
                             </div>
+                            <button
+                              onClick={() => triggerEntregar('FUERA DE ESTANTE', o)}
+                              className="mt-1 w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black rounded-xl transition-colors"
+                            >
+                              Entregar
+                            </button>
                           </div>
                         );
                       })
