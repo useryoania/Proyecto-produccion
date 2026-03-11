@@ -1085,8 +1085,17 @@ const WebRetirosPage = () => {
                   _raw: o,
                 }));
 
-                // 2. Unificar y filtrar
-                const all = [...webNorm, ...localNorm].filter(item => {
+                // 2. Unificar, deduplicar y filtrar
+                const seenOrders = new Set();
+                const deduped = [];
+                // Web orders first (they have richer data like payment info)
+                for (const item of [...webNorm, ...localNorm]) {
+                  if (!seenOrders.has(item.ordenDeRetiro)) {
+                    seenOrders.add(item.ordenDeRetiro);
+                    deduped.push(item);
+                  }
+                }
+                const all = deduped.filter(item => {
                   // Filtro tipo
                   if (filtroTipo !== 'ALL' && getTipoKey(item) !== filtroTipo) return false;
                   // Filtro lugar
