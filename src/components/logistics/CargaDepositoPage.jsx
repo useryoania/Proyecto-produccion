@@ -48,6 +48,8 @@ const CargaDepositoPage = () => {
     const [loading, setLoading] = useState(false);
     const [modosMap, setModosMap] = useState({});
     const inputRefs = useRef({});
+    // Timers de debounce por fila — cancela la validación anterior si el scanner sigue enviando
+    const debounceTimers = useRef({});
 
     // ─── PERSISTENCIA AUTOMÁTICA ────────────────────────────────────────────────
     // Guardar en localStorage cada vez que cambian los códigos
@@ -171,8 +173,13 @@ const CargaDepositoPage = () => {
                     if (isDuplicate) {
                         return { ...c, value: trimmedValue, status: 'error', message: 'Este código ya fue escaneado en esta tanda.', parsed: null };
                     } else if (trimmedValue !== '' && c.value !== trimmedValue) {
-                        // Iniciar validacion asíncrona
-                        setTimeout(() => validateQRCode(id, trimmedValue), 50);
+                        // Debounce con cancelación: espera 400ms sin cambios antes de validar
+                        // Esto evita que el scanner, que envía char a char, valide con código incompleto
+                        if (debounceTimers.current[id]) clearTimeout(debounceTimers.current[id]);
+                        debounceTimers.current[id] = setTimeout(() => {
+                            delete debounceTimers.current[id];
+                            validateQRCode(id, trimmedValue);
+                        }, 400);
                         return { ...c, value: trimmedValue, status: 'validating', message: 'Verificando orden...', parsed: null };
                     }
                     return { ...c, value: trimmedValue };
@@ -326,6 +333,20 @@ const CargaDepositoPage = () => {
             }
             return arr;
         });
+    };
+
+    const handleOmitirWsp = async (idOrden) => {
+        if (!window.confirm('¿Marcar esta orden como avisada sin enviar WhatsApp?')) return;
+        try {
+            await api.post('/apiordenes/omitir-wsp', { ordId: idOrden });
+            setCodes(prev => prev.map(c =>
+                c.idOrden === idOrden
+                    ? { ...c, status: 'wsp_success', message: 'WSP omitido. Orden marcada como avisada.', wspError: false }
+                    : c
+            ));
+        } catch (err) {
+            alert('No se pudo omitir el WSP: ' + (err.response?.data?.error || err.message));
+        }
     };
 
     const handleUpdatePhone = async (idOrden, nuevoTelefono) => {
@@ -552,7 +573,7 @@ const CargaDepositoPage = () => {
                                         </div>
                                     )}
 
-                                    {/* Mensaje de status + botón Reintentar para errores */}
+                                    {/* Mensaje de status + botón Reintentar / Omitir WSP */}
                                     {code.message && (
                                         <div className={`mt-2 text-[0.8rem] font-semibold px-3 py-2 rounded-lg border flex justify-between items-center gap-2
                                             ${isError ? 'bg-rose-50 text-rose-700 border-rose-200' :
@@ -572,6 +593,15 @@ const CargaDepositoPage = () => {
                                                     className="shrink-0 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-md px-2 py-0.5 text-[0.7rem] font-bold transition-colors flex items-center gap-1"
                                                 >
                                                     <Loader2 size={10} /> Reintentar
+                                                </button>
+                                            )}
+                                            {isWspWaiting && code.idOrden && (
+                                                <button
+                                                    title="Marcar como avisado sin enviar WhatsApp"
+                                                    onClick={() => handleOmitirWsp(code.idOrden)}
+                                                    className="shrink-0 bg-violet-100 hover:bg-violet-200 text-violet-700 rounded-md px-2 py-0.5 text-[0.7rem] font-bold transition-colors flex items-center gap-1"
+                                                >
+                                                    <XCircle size={10} /> Saltar WSP
                                                 </button>
                                             )}
                                         </div>

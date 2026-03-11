@@ -1,7 +1,7 @@
 // apiordenes.js
 const express = require('express');
 const router = express.Router();
-const { getOrdenesByFilter, createOrden, getOrdenByCodigo, getOrdenesClienteByOrden, getOrdenesEstado, updateOrdenEstado, getEstadosOrdenes, updateExportacion, eliminarOrdenes, getModosOrdenes, parseQROrden, updatePhoneAndResendWsp, getPendingWspOrders } = require('../controllers/ordenesController');
+const { getOrdenesByFilter, createOrden, getOrdenByCodigo, getOrdenesClienteByOrden, getOrdenesEstado, updateOrdenEstado, getEstadosOrdenes, updateExportacion, eliminarOrdenes, getModosOrdenes, parseQROrden, updatePhoneAndResendWsp, getPendingWspOrders, omitirWsp } = require('../controllers/ordenesController');
 const { verifyToken } = require('../middleware/authMiddleware');
 
 // Ruta para obtener todas las órdenes
@@ -20,6 +20,8 @@ router.post('/data', verifyToken, createOrden);
 router.post('/parse-qr', verifyToken, parseQROrden);
 // Nueva ruta para re-despachar WSP y corregir teléfono
 router.post('/update-phone', verifyToken, updatePhoneAndResendWsp);
+// Omitir envío de WSP (marcar como avisado sin enviar)
+router.post('/omitir-wsp', verifyToken, omitirWsp);
 
 // Ruta para traer las ordenes pendientes de WSP al cargar la página
 router.get('/pending-wsp', verifyToken, getPendingWspOrders);

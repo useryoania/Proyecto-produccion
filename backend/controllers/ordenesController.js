@@ -791,4 +791,26 @@ const getPendingWspOrders = async (req, res) => {
   }
 };
 
-module.exports = { getOrdenesByFilter, createOrden, getOrdenByCodigo, getOrdenesClienteByOrden, getOrdenesEstado, updateOrdenEstado, getEstadosOrdenes, updateExportacion, eliminarOrdenes, getModosOrdenes, parseQROrden, updatePhoneAndResendWsp, getPendingWspOrders };
+
+const omitirWsp = async (req, res) => {
+  const { ordId } = req.body;
+  if (!ordId) return res.status(400).json({ error: 'Falta ordId.' });
+  try {
+    const pool = await getPool();
+    await pool.request()
+      .input('id', sql.Int, ordId)
+      .query(`
+        UPDATE OrdenesDeposito
+        SET OrdAvisoWsp = 1,
+            OrdFechaAvisoWsp = GETDATE(),
+            OrdEstadoActual = 6
+        WHERE OrdIdOrden = @id
+      `);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error en omitirWsp:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = { getOrdenesByFilter, createOrden, getOrdenByCodigo, getOrdenesClienteByOrden, getOrdenesEstado, updateOrdenEstado, getEstadosOrdenes, updateExportacion, eliminarOrdenes, getModosOrdenes, parseQROrden, updatePhoneAndResendWsp, getPendingWspOrders, omitirWsp };

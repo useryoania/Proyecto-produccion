@@ -566,7 +566,13 @@ const EntregaPedidosView = () => {
             });
             toast.success('✅ Pago registrado correctamente');
             setPagoModal(null);
-            buscarMostrador();
+            // Refrescar la sección correcta según el origen del pago
+            if (searchTerm.trim()) {
+                buscarMostrador();           // venía del buscador → actualizar resultados
+            } else {
+                loadTodasSinRetiro(filtroLugarMostrador); // venía de "Sin Retiro" → actualizar esa lista
+            }
+
         } catch (err) {
             toast.error(err.response?.data?.error || 'Error al registrar el pago.');
         } finally {
