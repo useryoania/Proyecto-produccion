@@ -403,7 +403,13 @@ const WebRetirosPage = () => {
         // Estado 1 = Ingresado, 3 = Abonado de antemano, 4 = Abonado de antemano (variante),
         // 7 = Empaquetado sin abonar, 8 = Empaquetado y abonado
         const { data: todosData } = await api.get('/apiordenesRetiro/estados?estados=1,3,4,7,8');
-        setOtrosRetiros(Array.isArray(todosData) ? todosData : []);
+        // Filter out retiros that are already assigned to a shelf
+        const enEstante = new Set();
+        Object.values(estantesMap).forEach(items => items.forEach(item => {
+          if (item.OrdenRetiro) enEstante.add(item.OrdenRetiro);
+        }));
+        const sinEstante = (Array.isArray(todosData) ? todosData : []).filter(o => !enEstante.has(o.ordenDeRetiro));
+        setOtrosRetiros(sinEstante);
       } catch (e) { console.error(e) }
 
 

@@ -1240,6 +1240,7 @@ exports.getPickupOrders = async (req, res) => {
             `);
 
         const externalOrders = ordersResult.recordset;
+        console.log(`🔍 [DEBUG PICKUP] Query returned ${externalOrders?.length || 0} orders for client ${idClienteString}:`, externalOrders?.map(o => o.CodigoOrden));
 
         if (!externalOrders || externalOrders.length === 0) {
             return res.json({ success: true, data: [] });
