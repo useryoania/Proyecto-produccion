@@ -93,7 +93,6 @@ exports.createWebOrder = async (req, res) => {
         }
 
         // --- 3. PREPARACIÓN DE ÁREAS Y RUTAS (Igual que antes) ---
-        // --- 3. PREPARACIÓN DE ÁREAS Y RUTAS (Igual que antes) ---
         const mappingRes = await pool.request().query("SELECT AreaID_Interno, Numero FROM ConfigMapeoERP");
         const mapaAreasNumero = {}; // AreaID -> Numero (Priority/Order)
         mappingRes.recordset.forEach(r => mapaAreasNumero[r.AreaID_Interno.trim().toUpperCase()] = r.Numero || 999);
@@ -154,7 +153,6 @@ exports.createWebOrder = async (req, res) => {
             finalNote = generalNote ? `OBS: ${generalNote}` : '';
         }
 
-        // --- 5. ESTRUCTURAR ORDENES (Igual que antes) ---
         // --- 5. ESTRUCTURAR ORDENES ---
         const pendingOrderExecutions = [];
 
@@ -414,7 +412,7 @@ exports.createWebOrder = async (req, res) => {
                 });
 
             } catch (lookupErr) {
-                console.warn("⚠️ No se pudo resolver IdProductoReact desde Articuls:", lookupErr.message);
+                console.warn("⚠️ No se pudo resolver IdProductoReact desde Articulos:", lookupErr.message);
                 // No bloqueamos el flujo, seguimos con lo que tengamos
             }
         }
@@ -429,7 +427,7 @@ exports.createWebOrder = async (req, res) => {
             const generatedOrders = [];
             const generatedIDs = [];
             const timestamp = Date.now();
-            let totalMagnitud = 0;
+
 
             for (let idx = 0; idx < pendingOrderExecutions.length; idx++) {
                 const exec = pendingOrderExecutions[idx];
@@ -1229,11 +1227,7 @@ exports.getPickupOrders = async (req, res) => {
                     e.EOrNombreEstado AS Estado,
                     c.IDCliente AS IdCliente,
                     c.TelefonoTrabajo AS Celular,
-<<<<<<< HEAD
                     tc.TClDescripcion AS TipoCliente,
-=======
-                    c.TClIdTipoCliente AS TipoCliente,
->>>>>>> c7404adfc7d0ffe6205e8f4ba730ad5cfe4131a9
                     m.MonSimbolo
                 FROM OrdenesDeposito o WITH(NOLOCK)
                 LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
