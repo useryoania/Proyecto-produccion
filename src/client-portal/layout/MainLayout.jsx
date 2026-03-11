@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SERVICES_LIST } from '../constants/services';
+import { Logo } from '../../components/Logo';
 
 const BASE_URL = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') : '';
 
@@ -83,24 +84,26 @@ export const MainLayout = ({ children }) => {
             to={to}
             onClick={() => setIsMobileMenuOpen(false)}
             className={`
-        flex items-center gap-3 px-4 py-3 rounded-xl transition-all
+        flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm
         ${isActive(to)
-                    ? 'bg-zinc-800 text-white shadow-lg shadow-zinc-900/20'
-                    : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'}
+                    ? 'text-zinc-100 border border-brand-cyan/40 bg-brand-cyan/5'
+                    : 'text-zinc-500 border border-zinc-800 hover:border-zinc-600 hover:text-zinc-300 hover:bg-brand-dark/50'}
       `}
         >
-            <Icon size={20} />
-            <span className="font-medium">{label}</span>
+            <Icon size={20} strokeWidth={1.5} />
+            <span className="font-medium tracking-wide">{label}</span>
         </Link>
     );
 
     return (
-        <div className="flex h-screen bg-zinc-300 overflow-hidden font-sans text-zinc-100">
+        <div className="flex h-screen bg-zinc-900 overflow-hidden font-sans text-zinc-100">
             {/* Sidebar Desktop */}
             <aside className="hidden md:flex flex-col w-72 bg-custom-dark text-zinc-100 shadow-2xl z-20 m-4 rounded-2xl border border-brand-dark backdrop-blur-xl">
-                <div className="p-6 border-b border-brand-dark leading-none">
-                    <div className="flex items-center gap-3 text-brand-cyan justify-center">
-                        <h1 className="text-lg font-bold tracking-tight text-zinc-100">AUTOGESTIÓN</h1>
+                <div className="p-4 border-b border-brand-dark leading-none overflow-hidden">
+                    <div className="flex items-center">
+                        <Logo className="h-12 w-auto text-white shrink-0 mt-3" />
+                        <div className="w-px h-14 bg-zinc-700 mx-4 shrink-0"></div>
+                        <h1 className="text-lg font-bold tracking-tight text-zinc-100 flex-1 text-center">AUTOGESTIÓN</h1>
                     </div>
                 </div>
 
@@ -194,7 +197,7 @@ export const MainLayout = ({ children }) => {
                     </div>
                     <button
                         onClick={logout}
-                        className="flex items-center gap-2 text-sm text-brand-magenta hover:text-custom-magenta transition-colors w-full px-2 py-2 rounded-lg justify-center"
+                        className="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors w-full px-3 py-2.5 rounded-xl justify-center border border-zinc-800 hover:border-brand-magenta/40 hover:bg-brand-magenta/5"
                     >
                         <LogOut size={16} /> Cerrar Sesión
                     </button>
@@ -237,7 +240,7 @@ export const MainLayout = ({ children }) => {
             </AnimatePresence>
 
             {/* Main Content */}
-            <main className="flex-1 overflow-y-auto relative scrollbar-thin bg-zinc-50/50">
+            <main className="flex-1 overflow-y-auto relative scrollbar-thin bg-zinc-900">
                 <div className="md:hidden h-16"></div> {/* Spacer for mobile header */}
                 <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-full">
                     {children}

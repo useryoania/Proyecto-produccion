@@ -5,9 +5,10 @@ import Lottie from 'lottie-react';
 import loadingAnim from '../../assets/animations/loading.json';
 import { useAuth } from '../auth/AuthContext';
 import { apiClient } from '../api/apiClient'; // Assuming user comes from here
-import { CheckCircle, AlertCircle, ChevronRight, Truck, CreditCard, Download, MapPin, Package, Trash2, Plus } from 'lucide-react';
-import { GlassCard } from '../pautas/GlassCard';
+import { CheckCircle, AlertCircle, ChevronRight, Truck, CreditCard, Download, MapPin, MapPinCheck, Package, PackageCheck, Trash2, Plus } from 'lucide-react';
+
 import { CustomButton } from '../pautas/CustomButton';
+import { CustomSelect } from '../pautas/CustomSelect';
 import { FormInput } from '../pautas/FormInput';
 
 export const PickupView = () => {
@@ -300,7 +301,7 @@ export const PickupView = () => {
     if (step === 'success') {
         return (
             <div className="max-w-xl mx-auto text-center py-12 animate-fade-in">
-                <GlassCard className="flex flex-col items-center">
+                <div className="flex flex-col items-center p-6">
                     <div className="inline-flex p-4 bg-green-100 rounded-full text-green-600 mb-6">
                         <CheckCircle size={64} />
                     </div>
@@ -331,7 +332,7 @@ export const PickupView = () => {
                             Volver a lista de retiros
                         </button>
                     </div>
-                </GlassCard>
+                </div>
             </div>
         );
     }
@@ -343,7 +344,7 @@ export const PickupView = () => {
                     <ChevronRight className="rotate-180" size={20} /> Volver
                 </button>
 
-                <GlassCard noPadding className="overflow-hidden">
+                <div className="overflow-hidden">
                     <div className="p-6 border-b border-zinc-200 bg-zinc-50/50">
                         <h2 className="text-xl font-bold text-neutral-800 flex items-center gap-2">
                             <CreditCard className="text-black" /> Pasarela de Pago
@@ -378,7 +379,7 @@ export const PickupView = () => {
                             </CustomButton>
                         </form>
                     </div>
-                </GlassCard>
+                </div>
             </div>
         );
     }
@@ -428,13 +429,19 @@ export const PickupView = () => {
     const handleDeleteAddress = async (id) => {
         const result = await Swal.fire({
             title: '¿Eliminar dirección?',
-            text: '¿Estás seguro?',
-            color: '#000000',
+            text: 'Se quitará de tu lista. Podés volver a agregarla más tarde.',
+            background: '#212121',
+            color: '#e4e4e7',
             showCancelButton: true,
-            confirmButtonColor: '#ec008b',
-            cancelButtonColor: '#00aeef',
-            confirmButtonText: 'ELIMINAR',
-            cancelButtonText: 'Cancelar'
+            confirmButtonColor: '#DC2626',
+            cancelButtonColor: '#3f3f46',
+            confirmButtonText: 'Eliminar',
+            cancelButtonText: 'Cancelar',
+            customClass: {
+                popup: 'rounded-xl border border-zinc-700',
+                title: '!text-lg !font-bold',
+                htmlContainer: '!text-sm !text-zinc-400',
+            }
         });
         if (!result.isConfirmed) return;
         try {
@@ -450,99 +457,92 @@ export const PickupView = () => {
 
     if (step === 'confirmation') return (
         <div className="animate-fade-in space-y-6">
-            <button onClick={() => { setSelectedOrders([]); sessionStorage.removeItem('pickup_selected'); setStep('selection'); }} className="mb-2 flex items-center text-zinc-500 hover:text-black transition-colors">
+            <button onClick={() => { setSelectedOrders([]); sessionStorage.removeItem('pickup_selected'); setStep('selection'); }} className="mb-2 flex items-center text-zinc-500 hover:text-zinc-300 transition-colors">
                 <ChevronRight className="rotate-180" size={20} /> Volver
             </button>
 
             {/* Header */}
-            <div className="flex items-center gap-4 mb-2">
-                <div className="p-3 bg-white border border-zinc-200 text-black rounded-xl shadow-sm">
-                    <Package size={28} />
-                </div>
+            <div className="flex items-center gap-3 mb-2">
+                <PackageCheck size={48} strokeWidth={1} className="text-brand-gold" />
                 <div>
-                    <h2 className="text-3xl font-bold text-neutral-800 tracking-tight">Retiro R-{pickupCode}</h2>
-                    <p className="text-zinc-500 font-medium">Retiro creado. Revisá los datos y elegí forma de envío.</p>
+                    <h2 className="text-3xl font-bold text-zinc-300 uppercase tracking-tight">Retiro <span className="text-custom-cyan">RW-{pickupCode}</span></h2>
+                    <p className="text-zinc-500 uppercase text-sm">Revisá los datos y elegí forma de envío.</p>
                 </div>
             </div>
 
             {/* Resumen de órdenes */}
-            <GlassCard noPadding className="overflow-hidden">
-                <div className="p-5 border-b border-zinc-200 bg-zinc-50/50">
-                    <h3 className="font-bold text-zinc-800">Órdenes Seleccionadas</h3>
+            <div className="overflow-hidden rounded-xl shadow-lg shadow-black/20">
+                <div className="p-5 border-b border-zinc-700 bg-custom-dark">
+                    <h3 className="font-bold text-zinc-100 uppercase text-xs tracking-wider">Órdenes Seleccionadas</h3>
                 </div>
-                <div className="divide-y divide-zinc-100">
+                <div className="divide-y divide-zinc-800">
                     {selectedOrdersData.map(o => (
-                        <div key={o.id} className="p-4 flex justify-between items-center">
+                        <div key={o.id} className="p-4 flex justify-between items-center bg-brand-dark">
                             <div>
-                                <span className="font-mono font-bold text-zinc-700">{o.id}</span>
-                                <p className="text-sm text-zinc-500 mt-0.5">{o.desc}</p>
+                                <span className="font-mono font-bold text-sm text-zinc-100">{o.id}</span>
+                                <p className="text-sm text-zinc-400 mt-0.5">{o.desc}</p>
                             </div>
-                            <span className="font-bold text-zinc-800">
+                            <span className="font-bold text-custom-cyan">
                                 {o.currency === 'USD' ? 'US$' : '$'} {(o.amount || 0).toFixed(2)}
                             </span>
                         </div>
                     ))}
                 </div>
-                <div className="p-5 border-t border-zinc-200 bg-zinc-50/50 flex justify-between items-center">
-                    <span className="font-bold text-zinc-600 uppercase text-sm">Total</span>
-                    <span className="text-2xl font-black text-black">
+                <div className="p-5 border-t border-zinc-700 bg-custom-dark flex justify-between items-center">
+                    <span className="font-bold text-zinc-500 uppercase text-sm">Total</span>
+                    <span className="text-2xl font-black text-zinc-100">
                         {activeCurrency === 'USD' ? 'US$' : '$'} {(totalAmount || 0).toFixed(2)}
                     </span>
                 </div>
-            </GlassCard>
+            </div>
 
             {/* Forma de envío */}
             {shippingData && (
-                <GlassCard className="space-y-5">
-                    <h3 className="font-bold text-zinc-800 flex items-center gap-2">
-                        <Truck size={20} /> Forma de Envío
+                <div className="space-y-5 p-6 rounded-xl bg-custom-dark shadow-lg shadow-black/20">
+                    <h3 className="font-bold text-zinc-100 flex items-center gap-2 uppercase text-xs tracking-wider">
+                        <Truck size={24} strokeWidth={2} className="text-brand-gold" /> Forma de Envío
                     </h3>
 
-                    <select
-                        value={selectedFormaEnvio || ''}
-                        onChange={e => setSelectedFormaEnvio(Number(e.target.value))}
-                        className="w-full p-3 border border-zinc-300 rounded-xl bg-white text-zinc-800 font-medium focus:outline-none focus:ring-2 focus:ring-black/10"
-                    >
-                        {shippingData.formasEnvio.map(f => (
-                            <option key={f.ID} value={f.ID}>{f.Nombre}</option>
-                        ))}
-                    </select>
+                    <CustomSelect
+                        value={selectedFormaEnvio}
+                        onChange={(val) => setSelectedFormaEnvio(Number(val))}
+                        options={shippingData.formasEnvio.map(f => ({ value: f.ID, label: f.Nombre }))}
+                        placeholder="Seleccionar forma de envío..."
+                    />
 
                     {/* Si es encomienda: agencia + dirección */}
                     {isEncomienda && (
                         <div className="space-y-4 pt-2">
                             {/* Agencia */}
                             <div>
-                                <label className="block text-sm font-bold text-zinc-600 mb-2 uppercase">Agencia</label>
-                                <select
-                                    value={selectedAgencia || ''}
-                                    onChange={e => setSelectedAgencia(Number(e.target.value))}
-                                    className="w-full p-3 border border-zinc-300 rounded-xl bg-white text-zinc-800 font-medium focus:outline-none focus:ring-2 focus:ring-black/10"
-                                >
-                                    {shippingData.agencias.map(a => (
-                                        <option key={a.ID} value={a.ID}>{a.Nombre}</option>
-                                    ))}
-                                </select>
+                                <label className="block text-sm font-bold text-zinc-500 mb-2 uppercase">Agencia</label>
+                                <CustomSelect
+                                    value={selectedAgencia}
+                                    onChange={(val) => setSelectedAgencia(Number(val))}
+                                    options={shippingData.agencias.map(a => ({ value: a.ID, label: a.Nombre }))}
+                                    placeholder="Seleccionar agencia..."
+                                />
                             </div>
 
                             {/* Dirección */}
                             <div>
-                                <label className="block text-sm font-bold text-zinc-600 mb-2 uppercase">Dirección de Envío</label>
+                                <label className="block text-sm font-bold text-zinc-500 mb-2 uppercase">Dirección de Envío <span className="text-zinc-600 font-normal">({(shippingData.direccionesGuardadas?.length || 0) + (shippingData.defaultDireccion ? 1 : 0)}/3)</span></label>
                                 {(shippingData.defaultDireccion || shippingData.direccionesGuardadas?.length > 0) ? (
                                     <div className="space-y-2">
                                         {/* Dirección principal */}
                                         {shippingData.defaultDireccion && (
                                             <label
-                                                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selectedDireccion === shippingData.defaultDireccion ? 'border-black bg-zinc-50 ring-1 ring-black' : 'border-zinc-200 hover:border-zinc-400'}`}
+                                                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selectedDireccion === shippingData.defaultDireccion ? 'border-brand-cyan/40 bg-brand-cyan/5' : 'border-zinc-700 hover:border-zinc-500'}`}
                                                 onClick={() => setSelectedDireccion(shippingData.defaultDireccion)}
                                             >
                                                 <div className="flex items-center gap-3">
-                                                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selectedDireccion === shippingData.defaultDireccion ? 'border-black' : 'border-zinc-300'}`}>
-                                                        {selectedDireccion === shippingData.defaultDireccion && <div className="w-2 h-2 rounded-full bg-black" />}
-                                                    </div>
-                                                    <div>
-                                                        <span className="text-sm font-bold text-zinc-800">📍 Principal</span>
-                                                        <p className="text-sm text-zinc-600">{shippingData.defaultDireccion}</p>
+                                                    {selectedDireccion === shippingData.defaultDireccion
+                                                        ? <MapPinCheck size={24} strokeWidth={1.5} className="flex-shrink-0 text-custom-cyan" />
+                                                        : <MapPin size={24} strokeWidth={1.5} className="flex-shrink-0 text-zinc-500" />
+                                                    }
+                                                    <div className="flex flex-col justify-center">
+                                                        <span className="text-sm font-bold text-zinc-200">Principal</span>
+                                                        <p className="text-sm text-zinc-400">{shippingData.defaultDireccion}</p>
                                                     </div>
                                                 </div>
                                             </label>
@@ -552,27 +552,27 @@ export const PickupView = () => {
                                         {shippingData.direccionesGuardadas?.map((d, idx) => (
                                             <div
                                                 key={d.ID}
-                                                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selectedDireccion === d.Direccion ? 'border-black bg-zinc-50 ring-1 ring-black' : 'border-zinc-200 hover:border-zinc-400'}`}
+                                                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selectedDireccion === d.Direccion ? 'border-brand-cyan/40 bg-brand-cyan/5' : 'border-zinc-700 hover:border-zinc-500'}`}
                                                 onClick={() => setSelectedDireccion(d.Direccion)}
                                             >
                                                 <div className="flex items-center gap-3">
-                                                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${selectedDireccion === d.Direccion ? 'border-black' : 'border-zinc-300'}`}>
-                                                        {selectedDireccion === d.Direccion && <div className="w-2 h-2 rounded-full bg-black" />}
-                                                    </div>
-                                                    <div>
-                                                        <span className="text-sm font-bold text-zinc-800">{d.Alias || 'Dirección guardada'}</span>
-                                                        <p className="text-sm text-zinc-600">
+                                                    {selectedDireccion === d.Direccion
+                                                        ? <MapPinCheck size={24} strokeWidth={1.5} className="flex-shrink-0 text-custom-cyan" />
+                                                        : <MapPin size={24} strokeWidth={1.5} className="flex-shrink-0 text-zinc-500" />
+                                                    }
+                                                    <div className="flex flex-col justify-center">
+                                                        <span className="text-sm font-bold text-zinc-200">{d.Alias || 'Dirección guardada'}</span>
+                                                        <p className="text-sm text-zinc-400">
                                                             {d.Direccion}
                                                             {d.Ciudad ? `, ${d.Ciudad}` : ''}
                                                             {d.Localidad ? ` (${d.Localidad})` : ''}
                                                         </p>
                                                     </div>
                                                 </div>
-                                                {/* No permitir eliminar la primera dirección si no hay dirección principal */}
                                                 {(idx > 0 || shippingData.defaultDireccion) && (
                                                     <button
                                                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteAddress(d.ID); }}
-                                                        className="text-zinc-400 hover:text-red-500 transition-colors p-1"
+                                                        className="text-zinc-600 hover:text-brand-magenta transition-colors p-1"
                                                     >
                                                         <Trash2 size={16} />
                                                     </button>
@@ -586,63 +586,63 @@ export const PickupView = () => {
                             </div>
 
                             {/* Agregar nueva dirección */}
-                            {(shippingData.direccionesGuardadas?.length || 0) < 3 && (
+                            {((shippingData.direccionesGuardadas?.length || 0) + (shippingData.defaultDireccion ? 1 : 0)) < 3 && (
                                 <div>
                                     {!showAddAddress ? (
                                         <button
                                             onClick={() => setShowAddAddress(true)}
-                                            className="flex items-center gap-2 text-sm font-bold text-zinc-500 hover:text-black transition-colors"
+                                            className="flex items-center gap-2 text-sm font-bold text-zinc-500 hover:text-zinc-300 transition-colors"
                                         >
                                             <Plus size={16} /> Agregar nueva dirección
                                         </button>
                                     ) : (
-                                        <div className="space-y-3 p-4 bg-zinc-50 rounded-xl border border-zinc-200">
+                                        <div className="space-y-3 p-4 bg-custom-dark rounded-xl border border-zinc-700">
                                             <input
                                                 type="text"
                                                 placeholder='Alias (ej: "Oficina")'
                                                 value={newAlias}
                                                 onChange={e => setNewAlias(e.target.value)}
-                                                className="w-full p-2.5 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+                                                className="w-full p-2.5 border border-zinc-700 rounded-lg text-sm bg-brand-dark text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand-cyan/30"
                                             />
                                             <input
                                                 type="text"
                                                 placeholder="Dirección completa"
                                                 value={newDireccion}
                                                 onChange={e => setNewDireccion(e.target.value)}
-                                                className="w-full p-2.5 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+                                                className="w-full p-2.5 border border-zinc-700 rounded-lg text-sm bg-brand-dark text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand-cyan/30"
                                             />
                                             <div className="grid grid-cols-2 gap-3">
-                                                <select
+                                                <CustomSelect
                                                     value={newCiudad}
-                                                    onChange={e => { setNewCiudad(e.target.value); setNewLocalidad(''); }}
-                                                    className="w-full p-2.5 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10 bg-white"
-                                                >
-                                                    <option value="">Departamento...</option>
-                                                    {shippingData.departamentos?.map(d => (
-                                                        <option key={d.ID} value={d.Nombre}>{d.Nombre}</option>
-                                                    ))}
-                                                </select>
-                                                <select
+                                                    onChange={(val) => { setNewCiudad(val); setNewLocalidad(''); }}
+                                                    options={[
+                                                        { value: '', label: 'Departamento...' },
+                                                        ...(shippingData.departamentos?.map(d => ({ value: d.Nombre, label: d.Nombre })) || [])
+                                                    ]}
+                                                    placeholder="Departamento..."
+                                                    size="small"
+                                                />
+                                                <CustomSelect
                                                     value={newLocalidad}
-                                                    onChange={e => setNewLocalidad(e.target.value)}
-                                                    className="w-full p-2.5 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black/10 bg-white"
+                                                    onChange={(val) => setNewLocalidad(val)}
+                                                    options={[
+                                                        { value: '', label: 'Localidad...' },
+                                                        ...(() => {
+                                                            const dept = shippingData.departamentos?.find(d => d.Nombre === newCiudad);
+                                                            if (!dept) return [];
+                                                            return shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID).map(l => ({ value: l.Nombre, label: l.Nombre })) || [];
+                                                        })()
+                                                    ]}
+                                                    placeholder="Localidad..."
+                                                    size="small"
                                                     disabled={!newCiudad}
-                                                >
-                                                    <option value="">Localidad...</option>
-                                                    {(() => {
-                                                        const dept = shippingData.departamentos?.find(d => d.Nombre === newCiudad);
-                                                        if (!dept) return null;
-                                                        return shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID).map(l => (
-                                                            <option key={l.ID} value={l.Nombre}>{l.Nombre}</option>
-                                                        ));
-                                                    })()}
-                                                </select>
+                                                />
                                             </div>
                                             <div className="flex gap-2">
-                                                <CustomButton onClick={handleAddAddress} variant="primary" className="text-sm py-2 px-4">
+                                                <CustomButton onClick={handleAddAddress} variant="primary" className="text-sm py-2 px-4 !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5" whileHover={{ scale: 1 }} whileTap={{ scale: 1 }}>
                                                     Guardar
                                                 </CustomButton>
-                                                <button onClick={() => { setShowAddAddress(false); setNewAlias(''); setNewDireccion(''); setNewCiudad(''); setNewLocalidad(''); }} className="text-sm text-zinc-500 hover:text-black">
+                                                <button onClick={() => { setShowAddAddress(false); setNewAlias(''); setNewDireccion(''); setNewCiudad(''); setNewLocalidad(''); }} className="text-sm text-zinc-500 hover:text-zinc-300">
                                                     Cancelar
                                                 </button>
                                             </div>
@@ -652,7 +652,7 @@ export const PickupView = () => {
                             )}
                         </div>
                     )}
-                </GlassCard>
+                </div>
             )}
 
             {/* Botones finales */}
@@ -664,7 +664,9 @@ export const PickupView = () => {
                     }}
                     variant="secondary"
                     icon={Download}
-                    className="py-3 px-6"
+                    className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-zinc-600 hover:!bg-brand-dark/50"
+                    whileHover={{ scale: 1 }}
+                    whileTap={{ scale: 1 }}
                 >
                     Descargar Comprobante
                 </CustomButton>
@@ -675,7 +677,9 @@ export const PickupView = () => {
                         isLoading={loading}
                         variant="primary"
                         icon={CreditCard}
-                        className="py-3 px-8 text-lg"
+                        className="py-3 px-8 text-lg !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!bg-brand-cyan/5 hover:!border-brand-cyan"
+                        whileHover={{ scale: 1 }}
+                        whileTap={{ scale: 1 }}
                     >
                         Ir a Pagar
                     </CustomButton>
@@ -689,30 +693,46 @@ export const PickupView = () => {
     // ========================
     return (
         <div className="animate-fade-in space-y-6">
-            <div className="flex items-center gap-4 mb-2">
-                <div className="p-3 bg-white border border-zinc-200 text-black rounded-xl">
-                    <Truck size={28} />
-                </div>
+            <div className="flex items-center gap-3 mb-2">
+                <Package size={48} strokeWidth={1} className="text-brand-gold" />
                 <div>
-                    <h2 className="text-3xl font-bold text-neutral-800">Gestión de Retiros</h2>
-                    <p className="text-zinc-500">Selecciona las órdenes que deseas retirar hoy.</p>
+                    <h2 className="text-3xl font-bold text-zinc-300 uppercase">Gestión de <span className="text-custom-cyan">Retiros</span></h2>
+                    <p className="text-zinc-500 uppercase text-sm">Selecciona las órdenes que deseas retirar.</p>
                 </div>
             </div>
 
-            <GlassCard noPadding className="overflow-hidden">
+            <div className="overflow-hidden rounded-xl shadow-lg shadow-black/20">
                 {/* Desktop: Tabla */}
                 <div className="hidden md:block">
-                    <table className="w-full text-left">
-                        <thead className="bg-zinc-50/50 border-b border-zinc-200">
+                    <table className="w-full text-left border-collapse">
+                        <thead className="bg-custom-dark border-b border-zinc-700">
                             <tr>
-                                <th className="p-4 w-12 text-center">
-                                    <input type="checkbox" className="rounded accent-black" disabled />
+                                <th className="py-4 px-4 w-14 text-center">
+                                    <input
+                                        type="checkbox"
+                                        className="w-5 h-5 rounded border-zinc-600 cursor-pointer accent-[#006E97]"
+                                        checked={readyOrders.length > 0 && selectedOrders.length === readyOrders.length}
+                                        onChange={() => {
+                                            if (selectedOrders.length === readyOrders.length) {
+                                                setSelectedOrders([]);
+                                            } else {
+                                                // Seleccionar todas de la misma moneda que la primera
+                                                const firstCurrency = readyOrders[0]?.currency;
+                                                const allSameCurrency = readyOrders.every(o => o.currency === firstCurrency);
+                                                if (allSameCurrency) {
+                                                    setSelectedOrders(readyOrders.map(o => o.id));
+                                                } else {
+                                                    alert("⚠️ Hay órdenes en distintas monedas. Seleccionalas manualmente.");
+                                                }
+                                            }
+                                        }}
+                                    />
                                 </th>
-                                <th className="p-4 text-sm font-bold text-zinc-600">Orden ID</th>
-                                <th className="p-4 text-sm font-bold text-zinc-600">Descripción</th>
-                                <th className="p-4 text-sm font-bold text-zinc-600">Fecha Listo</th>
-                                <th className="p-4 text-sm font-bold text-zinc-600 text-right">Saldo Pendiente</th>
-                                <th className="p-4 text-sm font-bold text-zinc-600 text-center">Estado</th>
+                                <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Orden ID</th>
+                                <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider">Descripción</th>
+                                <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Fecha</th>
+                                <th className="p-4 pr-6 text-xs font-bold text-zinc-100 text-right uppercase tracking-wider">Importe</th>
+                                {/* <th className="p-4 text-sm font-bold text-zinc-100 text-center">Estado</th> */}
                             </tr>
                         </thead>
                         <tbody>
@@ -720,33 +740,35 @@ export const PickupView = () => {
                                 <tr
                                     key={`${order.id}-${idx}`}
                                     onClick={() => handleToggleOrder(order.id)}
-                                    className={`border-b border-zinc-100 hover:bg-zinc-50/50 transition-colors cursor-pointer ${selectedOrders.includes(order.id) ? 'bg-zinc-50' : ''}`}
+                                    className={`border-b border-zinc-800 transition-all cursor-pointer ${selectedOrders.includes(order.id) ? 'bg-[#1a2c30] shadow-[inset_3px_0_0_#006E97]' : 'bg-brand-dark hover:bg-[#1a1a1a]'}`}
                                 >
-                                    <td className="p-4 text-center">
-                                        <input
-                                            type="checkbox"
-                                            className="w-5 h-5 rounded border-zinc-300 text-black focus:ring-black cursor-pointer accent-black"
-                                            checked={selectedOrders.includes(order.id)}
-                                            readOnly
-                                        />
+                                    <td className="py-4 px-4 border-r border-zinc-800">
+                                        <div className="flex items-center justify-center h-full">
+                                            <input
+                                                type="checkbox"
+                                                className="w-5 h-5 rounded border-zinc-600 cursor-pointer accent-[#006E97]"
+                                                checked={selectedOrders.includes(order.id)}
+                                                readOnly
+                                            />
+                                        </div>
                                     </td>
-                                    <td className="p-4 font-mono font-medium text-zinc-700">{order.id}</td>
-                                    <td className="p-4 text-zinc-600">{order.desc}</td>
-                                    <td className="p-4 text-zinc-500 text-sm">{order.date}</td>
-                                    <td className="p-4 text-right font-medium text-zinc-800">
+                                    <td className="p-4 font-mono font-medium text-sm text-zinc-100 border-r border-zinc-800 text-center">{order.id}</td>
+                                    <td className="p-4 text-sm text-zinc-300 border-r border-zinc-800">{order.desc}</td>
+                                    <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.date}</td>
+                                    <td className="p-4 pr-6 text-right font-medium">
                                         {order.isPaid ? (
-                                            <span className="text-green-600 flex items-center justify-end gap-1">
+                                            <span className="text-green-400 flex items-center justify-end gap-1">
                                                 <CheckCircle size={14} /> Pagado
                                             </span>
                                         ) : (
-                                            `${order.currency === 'USD' ? 'US$' : '$'} ${(order.amount || 0).toFixed(2)}`
+                                            <span className="text-custom-cyan">{`${order.currency === 'USD' ? 'US$' : '$'} ${(order.amount || 0).toFixed(2)}`}</span>
                                         )}
                                     </td>
-                                    <td className="p-4 text-center">
-                                        <span className={`text-xs px-2 py-1 rounded-full font-bold border ${order.isPaid ? 'bg-green-100 text-green-700 border-green-200' : 'bg-green-100 text-green-700 border-green-200'}`}>
+                                    {/* <td className="p-4 text-center">
+                                        <span className={`text-xs px-3 py-1 rounded-full font-bold ${order.isPaid ? 'text-green-400' : 'text-custom-cyan'}`}>
                                             {order.status}
                                         </span>
-                                    </td>
+                                    </td> */}
                                 </tr>
                             ))}
                         </tbody>
@@ -754,36 +776,36 @@ export const PickupView = () => {
                 </div>
 
                 {/* Mobile: Cards */}
-                <div className="md:hidden divide-y divide-zinc-100">
+                <div className="md:hidden divide-y divide-zinc-800">
                     {readyOrders.map((order, idx) => (
                         <div
                             key={`mobile-${order.id}-${idx}`}
                             onClick={() => handleToggleOrder(order.id)}
-                            className={`p-4 flex items-start gap-3 cursor-pointer transition-colors ${selectedOrders.includes(order.id) ? 'bg-zinc-50' : ''}`}
+                            className={`p-4 flex items-start gap-3 cursor-pointer transition-all ${selectedOrders.includes(order.id) ? 'bg-[#1a2c30] shadow-[inset_3px_0_0_#006E97]' : 'bg-brand-dark hover:bg-[#1a1a1a]'}`}
                         >
                             <input
                                 type="checkbox"
-                                className="w-5 h-5 mt-0.5 rounded border-zinc-300 text-black focus:ring-black cursor-pointer accent-black"
+                                className="w-5 h-5 mt-0.5 rounded border-zinc-600 cursor-pointer accent-[#006E97]"
                                 checked={selectedOrders.includes(order.id)}
                                 readOnly
                             />
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between gap-2 mb-1">
-                                    <span className="font-mono font-bold text-sm text-zinc-800">{order.id}</span>
-                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${order.isPaid ? 'bg-green-100 text-green-700 border-green-200' : 'bg-green-100 text-green-700 border-green-200'}`}>
+                                    <span className="font-mono font-bold text-sm text-zinc-100">{order.id}</span>
+                                    {/* <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${order.isPaid ? 'text-green-400' : 'text-custom-cyan'}`}>
                                         {order.status}
-                                    </span>
+                                    </span> */}
                                 </div>
-                                <p className="text-sm text-zinc-600 truncate">{order.desc}</p>
+                                <p className="text-sm text-zinc-400 truncate">{order.desc}</p>
                                 <div className="flex items-center justify-between mt-2 text-xs text-zinc-500">
                                     <span>{order.date}</span>
-                                    <span className="font-medium text-zinc-800">
+                                    <span className="font-medium">
                                         {order.isPaid ? (
-                                            <span className="text-green-600 flex items-center gap-1">
+                                            <span className="text-green-400 flex items-center gap-1">
                                                 <CheckCircle size={12} /> Pagado
                                             </span>
                                         ) : (
-                                            `${order.currency === 'USD' ? 'US$' : '$'} ${(order.amount || 0).toFixed(2)}`
+                                            <span className="text-custom-cyan">{`${order.currency === 'USD' ? 'US$' : '$'} ${(order.amount || 0).toFixed(2)}`}</span>
                                         )}
                                     </span>
                                 </div>
@@ -792,15 +814,15 @@ export const PickupView = () => {
                     ))}
                 </div>
 
-                <div className="p-6 bg-zinc-50/50 border-t border-zinc-200 flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div className="text-zinc-600">
-                        <span className="font-bold text-zinc-800">{selectedOrders.length}</span> órdenes seleccionadas
+                <div className="p-6 bg-custom-dark border-t border-brand-dark flex flex-col md:flex-row justify-between items-center gap-4">
+                    <div className="text-custom-cyan">
+                        <span className="font-bold text-zinc-200">{selectedOrders.length}</span> órdenes seleccionadas
                     </div>
 
                     <div className="flex items-center gap-6">
                         <div className="text-right">
-                            <p className="text-xs text-zinc-500 uppercase font-bold">Total a Pagar</p>
-                            <p className="text-2xl font-bold text-zinc-800">
+                            <p className="text-xs text-custom-cyan uppercase font-bold">Total a Pagar</p>
+                            <p className="text-2xl font-bold text-zinc-200">
                                 {activeCurrency === 'USD' ? 'US$' : '$'} {(totalAmount || 0).toFixed(2)}
                             </p>
                         </div>
@@ -833,24 +855,21 @@ export const PickupView = () => {
                             isLoading={loading || loadingShipping}
                             variant="primary"
                             icon={ChevronRight}
-                            className="py-3 px-6"
+                            className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!bg-brand-cyan/5 hover:!border-brand-cyan"
+                            style={{}}
+                            whileHover={{ scale: 1 }}
+                            whileTap={{ scale: 1 }}
                         >
                             Confirmar Retiro
                         </CustomButton>
                     </div>
                 </div>
-            </GlassCard>
+            </div>
 
-            {/* Aviso de Cuenta Corriente */}
-            {user?.hasCredit ? (
+            {user?.hasCredit && (
                 <div className="flex items-center gap-3 p-4 bg-green-50 text-green-800 rounded-lg border border-green-200">
                     <CheckCircle size={20} />
                     <p className="text-sm">Tu cuenta corriente está habilitada. Puedes retirar sin pago inmediato.</p>
-                </div>
-            ) : (
-                <div className="flex items-center gap-3 p-4 bg-amber-50 text-amber-800 rounded-lg border border-amber-200">
-                    <AlertCircle size={20} />
-                    <p className="text-sm">Se requiere pago online para generar el código de retiro.</p>
                 </div>
             )}
         </div>

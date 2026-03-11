@@ -1229,7 +1229,7 @@ exports.getPickupOrders = async (req, res) => {
                     e.EOrNombreEstado AS Estado,
                     c.IDCliente AS IdCliente,
                     c.TelefonoTrabajo AS Celular,
-                    c.Tipo AS TipoCliente,
+                    c.TClIdTipoCliente AS TipoCliente,
                     m.MonSimbolo
                 FROM OrdenesDeposito o WITH(NOLOCK)
                 LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
@@ -2081,7 +2081,8 @@ exports.getShippingData = async (req, res) => {
         const clientRes = await pool.request()
             .input('cod', sql.Int, codCliente)
             .query(`
-                SELECT CliIdCliente, CliDireccion, FormaEnvioID, AgenciaID, Nombre
+                SELECT CliIdCliente, FormaEnvioID, AgenciaID, Nombre,
+                       ISNULL(DireccionTrabajo, '') AS CliDireccion
                 FROM Clientes WHERE CodCliente = @cod
             `);
 

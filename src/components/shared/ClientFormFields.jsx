@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { User, Phone, MapPin, FileText, Building, ChevronDown, Truck } from 'lucide-react';
+import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
 
 const inputClass = "w-full pl-10 pr-4 py-3 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 focus:placeholder-zinc-100";
-const selectClass = "w-full pl-10 pr-10 py-3 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan transition-all outline-none font-semibold text-zinc-100 appearance-none cursor-pointer";
+const selectClass = "w-full pl-10 pr-10 py-3 bg-brand-dark border border-zinc-700 rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan transition-all outline-none font-semibold text-zinc-100 appearance-none cursor-pointer hover:border-zinc-500";
 const labelClass = "text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1";
 const iconClass = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-cyan group-focus-within:text-custom-cyan transition-colors";
 
@@ -19,20 +20,11 @@ export const Field = ({ label, icon: Icon, required, error, children }) => (
     </div>
 );
 
-const SelectArrow = () => (
-    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-zinc-100">
-        <ChevronDown size={16} />
-    </div>
-);
-
 // Export style constants for pages that need them (e.g. password fields)
 export { inputClass, selectClass, labelClass, iconClass };
 
 /**
  * Shared nomenclator hook — fetches departments, localities, agencies.
- * @param {Function} fetchFn  A function like (url) => Promise<data>  
- *   where data is already parsed JSON. This lets both the main app (raw fetch)
- *   and the client portal (apiClient.get) provide their own fetcher.
  */
 export const useNomenclators = (departamentoId, fetchFn) => {
     const [departments, setDepartments] = useState([]);
@@ -63,20 +55,20 @@ export const useNomenclators = (departamentoId, fetchFn) => {
 
 /**
  * Shared form fields for client data.
- * 
- * Props:
- *  - form: object with { nombre, apellido, telefono, razonSocial, rut, documento, direccion, departamentoId, localidadId, agenciaId }
- *  - set(key): returns onChange handler
- *  - fieldErrors: object with field-level error messages
- *  - handleBlur(key): returns onBlur handler (optional)
- *  - departments, localities, agencies: nomenclator arrays
- *  - isMontevideo: boolean
- *  - placeholders: optional object to override default placeholder text per field
  */
 export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, departments, localities, agencies, isMontevideo, placeholders = {} }) => {
     const blur = handleBlur || (() => () => { });
 
-    // Default placeholders for registration; overridden by the placeholders prop (e.g. with current DB values in edit mode)
+    // Auto-select locality when only one exists for the chosen department
+    useEffect(() => {
+        if (localities.length === 1 && !form.localidadId) {
+            set('localidadId')({ target: { value: String(localities[0].ID) } });
+        }
+    }, [localities]);
+
+    // Bridge CustomSelect onChange (passes value directly) to set() handler (expects e.target.value)
+    const selectSet = (key) => (val) => set(key)({ target: { value: val } });
+
     const ph = {
         nombre: 'Juan',
         apellido: 'Pérez',
@@ -127,53 +119,55 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
 
             {/* Departamento | Localidad */}
             <div className="grid grid-cols-2 gap-3">
-                <Field label="Departamento" icon={MapPin} required error={fieldErrors.departamentoId}>
-                    <select
-                        className={`${selectClass} ${!form.departamentoId ? 'text-zinc-100' : ''} ${fieldErrors.departamentoId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
+                <div className="space-y-1">
+                    <label className={labelClass}>
+                        Departamento <span className="text-custom-magenta">*</span>
+                    </label>
+                    <CustomSelect
                         value={form.departamentoId}
-                        onChange={set('departamentoId')}
-                        onBlur={blur('departamentoId')}
-                    >
-                        <option value="">Seleccionar...</option>
-                        {departments.map(d => (
-                            <option key={d.ID} value={d.ID}>{d.Nombre}</option>
-                        ))}
-                    </select>
-                    <SelectArrow />
-                </Field>
-                <Field label="Localidad" icon={MapPin} required error={fieldErrors.localidadId}>
-                    <select
-                        className={`${selectClass} ${!form.localidadId ? 'text-zinc-100' : ''} ${fieldErrors.localidadId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
+                        onChange={selectSet('departamentoId')}
+                        options={departments.map(d => ({ value: String(d.ID), label: d.Nombre }))}
+                        placeholder="Seleccionar..."
+                        size="small"
+                        direction="up"
+                        className="!border-brand-cyan font-semibold"
+                    />
+                    {fieldErrors.departamentoId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.departamentoId}</p>}
+                </div>
+                <div className="space-y-1">
+                    <label className={labelClass}>
+                        Localidad <span className="text-custom-magenta">*</span>
+                    </label>
+                    <CustomSelect
                         value={form.localidadId}
-                        onChange={set('localidadId')}
-                        onBlur={blur('localidadId')}
+                        onChange={selectSet('localidadId')}
+                        options={localities.map(l => ({ value: String(l.ID), label: l.Nombre }))}
+                        placeholder={form.departamentoId ? 'Seleccionar...' : 'Localidad'}
+                        size="small"
+                        direction="up"
                         disabled={!form.departamentoId}
-                    >
-                        <option value="">{form.departamentoId ? 'Seleccionar...' : 'Localidad'}</option>
-                        {localities.map(l => (
-                            <option key={l.ID} value={l.ID}>{l.Nombre}</option>
-                        ))}
-                    </select>
-                    <SelectArrow />
-                </Field>
+                        className="!border-brand-cyan font-semibold"
+                    />
+                    {fieldErrors.localidadId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.localidadId}</p>}
+                </div>
             </div>
 
             {/* Agencia - solo si NO es Montevideo */}
             {form.departamentoId && !isMontevideo && (
-                <Field label="Agencia" icon={Truck} required error={fieldErrors.agenciaId}>
-                    <select
-                        className={`${selectClass} ${!form.agenciaId ? 'text-zinc-100' : ''} ${fieldErrors.agenciaId ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`}
+                <div className="space-y-1">
+                    <label className={labelClass}>
+                        Agencia <span className="text-custom-magenta">*</span>
+                    </label>
+                    <CustomSelect
                         value={form.agenciaId}
-                        onChange={set('agenciaId')}
-                        onBlur={blur('agenciaId')}
-                    >
-                        <option value="">Seleccionar agencia...</option>
-                        {agencies.map(a => (
-                            <option key={a.ID} value={a.ID}>{a.Nombre}</option>
-                        ))}
-                    </select>
-                    <SelectArrow />
-                </Field>
+                        onChange={selectSet('agenciaId')}
+                        options={agencies.map(a => ({ value: String(a.ID), label: a.Nombre }))}
+                        placeholder="Seleccionar agencia..."
+                        direction="up"
+                        className="!border-brand-cyan font-semibold"
+                    />
+                    {fieldErrors.agenciaId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.agenciaId}</p>}
+                </div>
             )}
         </>
     );

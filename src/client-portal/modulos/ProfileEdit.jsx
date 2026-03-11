@@ -121,16 +121,16 @@ export const ProfileEdit = () => {
                 <h2 className="text-2xl font-bold text-zinc-100">Editar Datos</h2>
             </div>
 
-            <GlassCard className="!p-8">
+            <div className="p-8 bg-custom-dark rounded-xl">
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                     {/* ID de Cliente (read-only) */}
                     <Field label="ID de Cliente" icon={User}>
-                        <input type="text" className={`${inputClass} opacity-60 cursor-not-allowed`} value={user.idCliente || ''} disabled />
+                        <input type="text" className={`${inputClass} cursor-not-allowed`} value={user.idCliente || ''} disabled />
                     </Field>
 
                     {/* Email (read-only) */}
                     <Field label="Email" icon={Mail}>
-                        <input type="email" className={`${inputClass} opacity-60 cursor-not-allowed`} value={user.email || ''} disabled />
+                        <input type="email" className={`${inputClass} cursor-not-allowed`} value={user.email || ''} disabled />
                     </Field>
 
                     {/* Shared client fields */}
@@ -160,15 +160,15 @@ export const ProfileEdit = () => {
                     )}
 
                     <div className="flex gap-3 pt-2">
-                        <CustomButton type="button" variant="ghost" onClick={() => navigate('/portal/profile')} className="flex-1">
+                        <CustomButton type="button" onClick={() => navigate('/portal/profile')} className="flex-1 !bg-transparent !text-zinc-500 hover:!text-zinc-300 !shadow-none border border-zinc-800 hover:!border-brand-magenta/40 hover:!bg-brand-magenta/5" whileHover={{ scale: 1 }} whileTap={{ scale: 1 }}>
                             Cancelar
                         </CustomButton>
-                        <CustomButton type="submit" isLoading={saving} icon={Save} className="flex-1">
+                        <CustomButton type="submit" isLoading={saving} icon={Save} className="flex-1 !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5" whileHover={{ scale: 1 }} whileTap={{ scale: 1 }}>
                             Guardar Cambios
                         </CustomButton>
                     </div>
                 </form>
-            </GlassCard>
+            </div>
         </div>
     );
 };

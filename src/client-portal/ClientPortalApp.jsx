@@ -85,7 +85,7 @@ export const ClientPortalApp = () => {
                         </ProtectedRoute>
                     } />
 
-                    <Route path="*" element={<Navigate to="/portal" replace />} />
+                    <Route path="*" element={<Navigate to="/portal/pickup" replace />} />
                 </Routes>
             </ToastProvider>
         </AuthProvider>
