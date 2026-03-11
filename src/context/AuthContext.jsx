@@ -161,7 +161,7 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('user');
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user_session');
-        setUser(null);
+        // No llamar setUser(null) — provoca re-renders que crashean componentes antes del redirect
         window.location.href = '/login';
     };
 

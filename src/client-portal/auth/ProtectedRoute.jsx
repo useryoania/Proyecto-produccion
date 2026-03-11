@@ -1,13 +1,14 @@
 import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 
 export const ProtectedRoute = ({ children }) => {
     const { isLoggedIn } = useAuth();
-    const location = useLocation();
 
     if (!isLoggedIn) {
-        return <Navigate to="/login" state={{ from: location }} replace />;
+        // Usar window.location en vez de <Navigate> para salir del contexto
+        // de rutas del portal y evitar loop infinito con el catch-all
+        window.location.href = '/login';
+        return null;
     }
 
     return children;

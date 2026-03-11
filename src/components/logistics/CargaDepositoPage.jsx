@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PackageSearch, Send, Trash2, CheckCircle2, AlertCircle, Info, Loader2, Package, User, Activity, ShoppingBag, Tag, Phone, XCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/api';
 import { socket } from '../../services/socketService';
 
@@ -53,6 +54,7 @@ const CargaDepositoPage = () => {
     });
     const [loading, setLoading] = useState(false);
     const [modosMap, setModosMap] = useState({});
+    const [expandedCardId, setExpandedCardId] = useState(null);
     const inputRefs = useRef({});
     // Timers de debounce por fila — cancela la validación anterior si el scanner sigue enviando
     const debounceTimers = useRef({});
@@ -407,10 +409,10 @@ const CargaDepositoPage = () => {
     };
 
     return (
-        <div className="p-4 lg:p-8 max-w-[1600px] w-full mx-auto min-h-[85vh] flex gap-8 flex-col xl:flex-row bg-[#f6f8fb]">
+        <div className="p-4 lg:p-6 w-full mx-auto min-h-[85vh] flex gap-8 flex-col xl:flex-row bg-[#f6f8fb]">
 
             {/* PANEL IZQUIERDO: Inputs */}
-            <div className="w-full xl:w-[45%] flex flex-col pt-8 bg-white rounded-2xl shadow-sm border border-slate-200">
+            <div className="flex-1 min-w-0 flex flex-col pt-8 bg-white rounded-2xl shadow-sm border border-slate-200">
                 <h1 className="text-3xl font-black text-slate-800 mb-6 text-center tracking-tight">Carga de Códigos</h1>
 
                 {hasRecovered && (
@@ -484,14 +486,14 @@ const CargaDepositoPage = () => {
                 </div>
             </div>
 
-            {/* PANEL DERECHO: Tarjetas asincrónicas ampliadas */}
-            <div className="w-full xl:w-[55%] flex flex-col p-4 bg-transparent">
-                <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
-                    <PackageSearch className="text-[#409cf9]" /> Resultados y Validaciones
+            {/* PANEL DERECHO: Tarjetas */}
+            <div className="w-full xl:w-[50%] 2xl:w-[55%] shrink-0 flex flex-col bg-transparent">
+                <h2 className="text-sm font-bold text-slate-500 mb-3 flex items-center gap-2 uppercase tracking-wider">
+                    <PackageSearch className="text-[#409cf9]" size={16} /> Validaciones
                 </h2>
 
-                <div className="grid grid-cols-1 2xl:grid-cols-2 gap-3 max-h-[75vh] items-start overflow-y-auto pr-2 pb-10 scrollbar-thin scrollbar-thumb-slate-300 auto-rows-max">
-                    {codes.slice().reverse().filter(c => c.value.trim() !== '').map(code => {
+                <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 max-h-[80vh] overflow-y-auto pr-1 pb-10 scrollbar-thin scrollbar-thumb-slate-300 auto-rows-max">
+                    {codes.slice().reverse().filter(c => c.value.trim() !== '').map((code, idx) => {
                         const isError = code.status === 'error' || code.status === 'wsp_error';
                         const isWspSuccess = code.status === 'wsp_success';
                         const isWspWaiting = code.status === 'wsp_waiting';
@@ -502,174 +504,157 @@ const CargaDepositoPage = () => {
                         const rawStringDisplay = code.parsed ? code.parsed.CodigoOrden : (code.value.length > 25 ? code.value.substring(0, 25) + '...' : code.value);
 
                         return (
-                            <div key={`card-${code.id}`} className={`p-4 rounded-xl border flex flex-col sm:flex-row items-start gap-4 transition-all shadow-sm bg-white
-                                ${isError ? 'border-rose-300' :
-                                    isWspSuccess ? 'border-emerald-300' :
-                                        isWspWaiting ? 'border-violet-300 bg-violet-50/20' :
-                                            isInfo ? 'border-blue-300' :
-                                                isLoading ? 'border-amber-300 opacity-90' : 'border-slate-200'
-                                }
-                            `}>
-                                {/* Icono Lado Izquierdo */}
-                                <div className="mt-1 sm:self-center shrink-0">
-                                    {isError && <AlertCircle className="text-rose-500 transform scale-100" size={28} />}
-                                    {isWspSuccess && <CheckCircle2 className="text-emerald-500 transform scale-100" size={28} />}
-                                    {isWspWaiting && <Send className="text-violet-500 transform scale-100 animate-pulse" size={28} />}
-                                    {isInfo && <Info className="text-blue-500 transform scale-100" size={28} />}
-                                    {isLoading && <Loader2 className="text-amber-500 animate-spin" size={28} />}
-                                    {isIdle && <Package className="text-slate-400" size={28} />}
-                                </div>
-
-                                <div className="flex-1 flex flex-col w-full overflow-hidden">
-                                    <div className="flex justify-between items-start mb-1 text-sm">
-                                        <span className={`font-black text-lg truncate pr-2 ${isError ? 'text-rose-800' : isWspSuccess ? 'text-emerald-800' : isWspWaiting ? 'text-violet-800' : 'text-slate-800'}`}>
+                            <div key={`card-${code.id}`}
+                                className={`px-4 py-3 rounded-xl border-2 flex items-start justify-between gap-3 transition-all shadow-sm cursor-pointer self-start
+                                    ${isError ? 'bg-rose-50 border-rose-300 hover:bg-rose-100' :
+                                        isWspSuccess ? 'bg-emerald-50 border-emerald-300 hover:bg-emerald-100' :
+                                            isWspWaiting ? 'bg-violet-50 border-violet-300 hover:bg-violet-100' :
+                                                isInfo ? 'bg-blue-50 border-blue-300 hover:bg-blue-100' :
+                                                    isLoading ? 'bg-amber-50 border-amber-300' :
+                                                        'bg-white border-slate-200 hover:bg-slate-50'
+                                    }
+                                `}
+                                onClick={(e) => {
+                                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+                                    console.log('CLICK card idx:', idx, 'value:', code.value, 'id:', code.id);
+                                    setExpandedCardId(prev => prev === idx ? null : idx);
+                                }}
+                            >
+                                <div className="flex-1 flex flex-col overflow-hidden">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className={`font-black text-lg truncate ${isError ? 'text-rose-800' : isWspSuccess ? 'text-emerald-800' : isWspWaiting ? 'text-violet-800' : isLoading ? 'text-amber-800' : 'text-slate-800'}`}>
                                             {rawStringDisplay}
                                         </span>
-                                        {/* Status Badge */}
-                                        <span className={`px-2 py-0.5 text-[0.65rem] font-bold uppercase rounded-md tracking-wider border shrink-0
-                                            ${isError ? 'bg-rose-50 text-rose-600 border-rose-200' :
-                                                isWspSuccess ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
-                                                    isWspWaiting ? 'bg-violet-50 text-violet-600 border-violet-200' :
-                                                        isInfo ? 'bg-blue-50 text-blue-600 border-blue-200' :
-                                                            code.status === 'validating' ? 'bg-amber-50 text-amber-600 border-amber-200' :
-                                                                isLoading ? 'bg-blue-50 text-blue-600 border-blue-200' :
-                                                                    'bg-slate-100 text-slate-500 border-slate-200'
-                                            }
-                                        `}>
-                                            {isError ? 'RECHAZADO' :
-                                                isWspSuccess ? 'ENVIADO' :
-                                                    isWspWaiting ? 'AVISO...' :
-                                                        isInfo ? 'REINGRESADO' :
-                                                            code.status === 'validating' ? 'VALIDANDO...' :
-                                                                isLoading ? 'GUARDANDO...' : 'LISTO'}
-                                        </span>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {isLoading && <Loader2 className="text-amber-500 animate-spin" size={16} />}
+                                            <span className={`px-2.5 py-1 text-[0.65rem] font-bold uppercase rounded-lg tracking-wider border
+                                                ${isError ? 'bg-rose-100 text-rose-700 border-rose-300' :
+                                                    isWspSuccess ? 'bg-emerald-100 text-emerald-700 border-emerald-300' :
+                                                        isWspWaiting ? 'bg-violet-100 text-violet-700 border-violet-300' :
+                                                            isInfo ? 'bg-blue-100 text-blue-700 border-blue-300' :
+                                                                code.status === 'validating' ? 'bg-amber-100 text-amber-700 border-amber-300' :
+                                                                    isLoading ? 'bg-blue-100 text-blue-700 border-blue-300' :
+                                                                        'bg-slate-100 text-slate-600 border-slate-300'
+                                                }
+                                            `}>
+                                                {isError ? 'RECHAZADO' :
+                                                    isWspSuccess ? 'ENVIADO' :
+                                                        isWspWaiting ? 'EN ESPERA' :
+                                                            isInfo ? 'REINGRESADO' :
+                                                                code.status === 'validating' ? 'VALIDANDO...' :
+                                                                    isLoading ? 'GUARDANDO...' : 'LISTO'}
+                                            </span>
+                                            {code.parsed && (
+                                                <span className={`text-xs transition-transform ${expandedCardId === idx ? 'rotate-180' : ''} ${isError ? 'text-rose-400' : 'text-slate-400'}`}>▼</span>
+                                            )}
+                                        </div>
                                     </div>
 
-                                    {/* Mostrar Información Completa parseada */}
-                                    {code.parsed && (
-                                        <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-1.5 bg-slate-50 rounded-lg p-2.5 border border-slate-100 text-sm">
-
-                                            {/* Columna 1: Cliente y Tipo */}
-                                            <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
-                                                <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-                                                    <span className="flex items-center gap-1"><User size={10} /> Cliente</span>
-                                                    <span className="text-blue-600 bg-blue-50 px-1 py-0.5 rounded-[4px]">{code.parsed.TipoCliente}</span>
-                                                </div>
-                                                <span className="text-slate-800 font-semibold truncate" title={code.parsed.CodigoCliente}>
-                                                    {code.parsed.CodigoCliente}
-                                                    {code.parsed.IDCliente && code.parsed.IDCliente !== 'N/A' && (
-                                                        <span className="ml-1 text-[10px] font-normal text-slate-500 bg-slate-200 px-1 py-[1.5px] rounded-[3px]">
-                                                            ID: {code.parsed.IDCliente}
-                                                        </span>
-                                                    )}
-                                                </span>
-                                            </div>
-
-                                            {/* Columna 2: Producto */}
-                                            <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
-                                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-                                                    <ShoppingBag size={10} /> Producto
-                                                </div>
-                                                <span className="text-slate-800 font-semibold truncate" title={code.parsed.ProductoNombre}>
-                                                    {code.parsed.ProductoNombre}
-                                                </span>
-                                            </div>
-
-                                            {/* Columna 4: Trabajo */}
-                                            <div className="flex flex-col gap-0.5 col-span-2">
-                                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase tracking-wide">
-                                                    <Tag size={10} /> Nombre de Trabajo
-                                                </div>
-                                                <span className="text-slate-700 italic truncate" title={code.parsed.NombreTrabajo}>
-                                                    {code.parsed.NombreTrabajo || 'Sin Descripción'}
-                                                </span>
-                                            </div>
-
-                                            {/* Columna 5: Cantidad, Modalidad, Importe */}
-                                            <div className="flex flex-row items-center justify-between col-span-2 border-t pt-2 border-slate-200 mt-0.5 flex-wrap gap-y-1">
-                                                <div className="flex gap-2 items-center">
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Cant:</span>
-                                                    <span className="text-slate-800 font-black text-lg leading-none">{code.parsed.Cantidad}</span>
-                                                </div>
-                                                <div className="flex gap-2 items-center">
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Activity size={10} /> Moda:</span>
-                                                    <span className="text-slate-800 font-semibold text-xs leading-none">{modosMap[code.parsed.IdModo] || `M-${code.parsed.IdModo}`}</span>
-                                                </div>
-                                                {code.parsed.CostoFinal != null && (
-                                                    <div className="flex gap-1.5 items-center bg-emerald-50 border border-emerald-200 rounded-md px-2 py-0.5">
-                                                        <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-wide">
-                                                            {code.parsed.Moneda || '$U'}
-                                                        </span>
-                                                        <span className="text-emerald-800 font-black text-sm leading-none">
-                                                            {Number(code.parsed.CostoFinal).toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    {/* Información expandida */}
+                                    <AnimatePresence>
+                                    {expandedCardId === idx && (
+                                        <motion.div
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: 'auto' }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            transition={{ duration: 0.2, ease: 'easeOut' }}
+                                            className="overflow-hidden"
+                                        >
+                                        <div className="mt-3 flex flex-col gap-2" onClick={e => e.stopPropagation()}
+                                        >                                            {/* Info parseada */}
+                                            {code.parsed && (
+                                                <div className="grid grid-cols-2 gap-x-3 gap-y-2 bg-white/70 rounded-lg p-2.5 border border-slate-100 text-sm">
+                                                    <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><User size={10} /> Cliente</span>
+                                                        <span className="text-slate-800 font-semibold truncate">{code.parsed.CodigoCliente}
+                                                            {code.parsed.IDCliente && code.parsed.IDCliente !== 'N/A' && (
+                                                                <span className="ml-1 text-[10px] font-normal text-slate-500 bg-slate-200 px-1 py-[1.5px] rounded-[3px]">ID: {code.parsed.IDCliente}</span>
+                                                            )}
                                                         </span>
                                                     </div>
-                                                )}
-                                            </div>
-
-
-                                        </div>
-                                    )}
-
-                                    {/* Mensaje de status + botón Reintentar / Omitir WSP */}
-                                    {code.message && (
-                                        <div className={`mt-2 text-[0.8rem] font-semibold px-3 py-2 rounded-lg border flex justify-between items-center gap-2
-                                            ${isError ? 'bg-rose-50 text-rose-700 border-rose-200' :
-                                                isWspSuccess ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                                    isWspWaiting ? 'bg-violet-50 text-violet-700 border-violet-200' :
-                                                        'bg-blue-50 text-blue-800 border-blue-200'
-                                            }
-                                        `}>
-                                            <span className="flex-1 text-center">{code.message}</span>
-                                            {isError && !code.wspError && (
-                                                <button
-                                                    title="Reintentar validación"
-                                                    onClick={() => {
-                                                        setCodes(prev => prev.map(c => c.id === code.id ? { ...c, status: 'validating', message: 'Reintentando...', parsed: null } : c));
-                                                        setTimeout(() => validateQRCode(code.id, code.value.trim()), 50);
-                                                    }}
-                                                    className="shrink-0 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-md px-2 py-0.5 text-[0.7rem] font-bold transition-colors flex items-center gap-1"
-                                                >
-                                                    <Loader2 size={10} /> Reintentar
-                                                </button>
+                                                    <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><ShoppingBag size={10} /> Producto</span>
+                                                        <span className="text-slate-800 font-semibold truncate">{code.parsed.ProductoNombre}</span>
+                                                    </div>
+                                                    <div className="flex flex-col gap-0.5 col-span-2">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Tag size={10} /> Trabajo</span>
+                                                        <span className="text-slate-700 italic truncate">{code.parsed.NombreTrabajo || 'Sin Descripción'}</span>
+                                                    </div>
+                                                    <div className="flex items-center justify-between col-span-2 border-t pt-2 border-slate-200 flex-wrap gap-2">
+                                                        <span className="text-slate-800 font-black text-base">Cant: {code.parsed.Cantidad}</span>
+                                                        <span className="text-slate-700 font-semibold text-xs">{modosMap[code.parsed.IdModo] || `M-${code.parsed.IdModo}`}</span>
+                                                        {code.parsed.CostoFinal != null && (
+                                                            <span className="bg-emerald-50 border border-emerald-200 rounded-md px-2 py-0.5 text-emerald-800 font-black text-sm">
+                                                                {code.parsed.Moneda || '$U'} {Number(code.parsed.CostoFinal).toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             )}
-                                            {isWspWaiting && code.idOrden && (
-                                                <button
-                                                    title="Marcar como avisado sin enviar WhatsApp"
-                                                    onClick={() => handleOmitirWsp(code.idOrden)}
-                                                    className="shrink-0 bg-violet-100 hover:bg-violet-200 text-violet-700 rounded-md px-2 py-0.5 text-[0.7rem] font-bold transition-colors flex items-center gap-1"
-                                                >
-                                                    <XCircle size={10} /> Saltar WSP
-                                                </button>
+
+                                            {/* Mensaje de error / WSP */}
+                                            {code.message && (
+                                                <div className={`text-[0.8rem] font-semibold px-3 py-2 rounded-lg border flex justify-between items-center gap-2
+                                                    ${isError ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                                        isWspSuccess ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                            isWspWaiting ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                                                'bg-blue-50 text-blue-800 border-blue-200'
+                                                    }
+                                                `}>
+                                                    <span className="flex-1 text-center">{code.message}</span>
+                                                    {isError && !code.wspError && (
+                                                        <button
+                                                            title="Reintentar validación"
+                                                            onClick={() => {
+                                                                setCodes(prev => prev.map(c => c.id === code.id ? { ...c, status: 'validating', message: 'Reintentando...', parsed: null } : c));
+                                                                setTimeout(() => validateQRCode(code.id, code.value.trim()), 50);
+                                                            }}
+                                                            className="shrink-0 bg-rose-100 hover:bg-rose-200 text-rose-700 rounded-md px-2 py-0.5 text-[0.7rem] font-bold transition-colors flex items-center gap-1"
+                                                        >
+                                                            <Loader2 size={10} /> Reintentar
+                                                        </button>
+                                                    )}
+                                                    {isWspWaiting && code.idOrden && (
+                                                        <button
+                                                            title="Marcar como avisado sin enviar WhatsApp"
+                                                            onClick={() => handleOmitirWsp(code.idOrden)}
+                                                            className="shrink-0 bg-violet-100 hover:bg-violet-200 text-violet-700 rounded-md px-2 py-0.5 text-[0.7rem] font-bold transition-colors flex items-center gap-1"
+                                                        >
+                                                            <XCircle size={10} /> Saltar WSP
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* Re-Despacho si falla WhatsApp */}
+                                            {code.wspError && code.idOrden && (
+                                                <div className="bg-white p-2 border border-rose-200 rounded-lg flex items-center gap-2">
+                                                    <div className="flex bg-rose-50 text-rose-500 p-1.5 border border-rose-100 rounded-md">
+                                                        <Phone size={14} />
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Celular válido..."
+                                                            className="w-full bg-slate-50 border border-slate-200 py-[4px] px-2 rounded-md text-[0.8rem] outline-none focus:border-[#409cf9]"
+                                                            id={`phone-input-${code.idOrden}`}
+                                                        />
+                                                    </div>
+                                                    <button
+                                                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 flex items-center gap-1.5 px-3 rounded-md text-[0.75rem] transition-colors"
+                                                        onClick={() => {
+                                                            const val = document.getElementById(`phone-input-${code.idOrden}`).value;
+                                                            if (val) handleUpdatePhone(code.idOrden, val);
+                                                        }}
+                                                    >
+                                                        <Send size={12} /> Redespachar
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
+                                        </motion.div>
                                     )}
-
-                                    {/* Componente Adicional de Re-Despacho si falla WhatsApp */}
-                                    {code.wspError && code.idOrden && (
-                                        <div className="mt-2 bg-white p-2 border border-rose-200 rounded-lg flex items-center gap-2">
-                                            <div className="flex bg-rose-50 text-rose-500 p-1.5 border border-rose-100 rounded-md">
-                                                <Phone size={14} />
-                                            </div>
-                                            <div className="flex-1">
-                                                <input
-                                                    type="text"
-                                                    placeholder="Celular válido..."
-                                                    className="w-full bg-slate-50 border border-slate-200 py-[4px] px-2 rounded-md text-[0.8rem] outline-none focus:border-[#409cf9]"
-                                                    id={`phone-input-${code.idOrden}`}
-                                                />
-                                            </div>
-                                            <button
-                                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 flex items-center gap-1.5 px-3 rounded-md text-[0.75rem] transition-colors"
-                                                onClick={() => {
-                                                    const val = document.getElementById(`phone-input-${code.idOrden}`).value;
-                                                    if (val) handleUpdatePhone(code.idOrden, val);
-                                                }}
-                                            >
-                                                <Send size={12} /> Redespachar
-                                            </button>
-                                        </div>
-                                    )}
+                                    </AnimatePresence>
                                 </div>
                             </div>
                         );

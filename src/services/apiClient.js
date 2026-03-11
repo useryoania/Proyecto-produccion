@@ -60,10 +60,14 @@ api.interceptors.response.use(
     },
     (error) => {
         if (error.response && error.response.status === 401) {
-            localStorage.removeItem('user');
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('user_session');
-            window.location.href = '/login';
+            // Evitar múltiples redirects simultáneos (ej: al cerrar sesión)
+            if (!window.__isRedirectingToLogin && !window.location.pathname.includes('/login')) {
+                window.__isRedirectingToLogin = true;
+                localStorage.removeItem('user');
+                localStorage.removeItem('auth_token');
+                localStorage.removeItem('user_session');
+                window.location.href = '/login';
+            }
         }
         return Promise.reject(error);
     }
