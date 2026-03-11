@@ -1229,11 +1229,8 @@ exports.getPickupOrders = async (req, res) => {
                     e.EOrNombreEstado AS Estado,
                     c.IDCliente AS IdCliente,
                     c.TelefonoTrabajo AS Celular,
-<<<<<<< HEAD
                     tc.TClDescripcion AS TipoCliente,
-=======
                     c.TClIdTipoCliente AS TipoCliente,
->>>>>>> c7404adfc7d0ffe6205e8f4ba730ad5cfe4131a9
                     m.MonSimbolo
                 FROM OrdenesDeposito o WITH(NOLOCK)
                 LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
