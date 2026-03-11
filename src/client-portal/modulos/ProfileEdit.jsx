@@ -115,22 +115,22 @@ export const ProfileEdit = () => {
     return (
         <div className="max-w-lg mx-auto space-y-6 animate-fade-in">
             <div className="flex items-center gap-3">
-                <button onClick={() => navigate('/portal/profile')} className="p-2 hover:bg-zinc-100 rounded-lg transition-colors">
-                    <ArrowLeft size={20} className="text-neutral-600" />
+                <button onClick={() => navigate('/portal/pickup')} className="p-2 hover:bg-zinc-800 rounded-lg transition-colors">
+                    <ArrowLeft size={20} className="text-brand-cyan" />
                 </button>
-                <h2 className="text-2xl font-bold text-neutral-800">Editar Datos</h2>
+                <h2 className="text-2xl font-bold text-zinc-100">Editar Datos</h2>
             </div>
 
-            <GlassCard className="!p-8">
+            <div className="p-8 bg-custom-dark rounded-xl">
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                     {/* ID de Cliente (read-only) */}
                     <Field label="ID de Cliente" icon={User}>
-                        <input type="text" className={`${inputClass} opacity-60 cursor-not-allowed`} value={user.idCliente || ''} disabled />
+                        <input type="text" className={`${inputClass} cursor-not-allowed`} value={user.idCliente || ''} disabled />
                     </Field>
 
                     {/* Email (read-only) */}
                     <Field label="Email" icon={Mail}>
-                        <input type="email" className={`${inputClass} opacity-60 cursor-not-allowed`} value={user.email || ''} disabled />
+                        <input type="email" className={`${inputClass} cursor-not-allowed`} value={user.email || ''} disabled />
                     </Field>
 
                     {/* Shared client fields */}
@@ -154,21 +154,21 @@ export const ProfileEdit = () => {
                     />
 
                     {message && (
-                        <div className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 border ${message.type === 'success' ? 'bg-green-50 text-green-600 border-green-100' : 'bg-red-50 text-red-600 border-red-100'}`}>
+                        <div className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 ${message.type === 'success' ? 'text-green-400' : 'text-custom-magenta animate-pulse'}`}>
                             {message.text}
                         </div>
                     )}
 
                     <div className="flex gap-3 pt-2">
-                        <CustomButton type="button" variant="ghost" onClick={() => navigate('/portal/profile')} className="flex-1">
+                        <CustomButton type="button" onClick={() => navigate('/portal/profile')} className="flex-1 !bg-transparent !text-zinc-500 hover:!text-zinc-300 !shadow-none border border-zinc-800 hover:!border-brand-magenta/40 hover:!bg-brand-magenta/5" whileHover={{ scale: 1 }} whileTap={{ scale: 1 }}>
                             Cancelar
                         </CustomButton>
-                        <CustomButton type="submit" isLoading={saving} icon={Save} className="flex-1">
+                        <CustomButton type="submit" isLoading={saving} icon={Save} className="flex-1 !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5" whileHover={{ scale: 1 }} whileTap={{ scale: 1 }}>
                             Guardar Cambios
                         </CustomButton>
                     </div>
                 </form>
-            </GlassCard>
+            </div>
         </div>
     );
 };

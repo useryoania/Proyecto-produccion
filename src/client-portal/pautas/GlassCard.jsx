@@ -11,7 +11,7 @@ export const GlassCard = ({ title, children, className = '', noPadding = false, 
         >
             {title && (
                 <div className="mb-6">
-                    <h3 className="text-xl font-extrabold text-neutral-900 flex items-center gap-3">
+                    <h3 className="text-xl font-extrabold text-zinc-100 flex items-center gap-3">
                         <span className="w-8 h-8 rounded-lg bg-black text-white flex items-center justify-center text-sm shadow-lg">
                             {title.split('.')[0]}
                         </span>

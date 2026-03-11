@@ -59,7 +59,7 @@ function App() {
         <Route path="/payment-status" element={<PaymentResult />} />
         <Route path="/totem/*" element={<TotemApp />} />
         {/* Redirect any other route to portal */}
-        <Route path="*" element={<Navigate to="/portal/profile" replace />} />
+        <Route path="*" element={<Navigate to="/portal/pickup" replace />} />
       </Routes>
     );
   }

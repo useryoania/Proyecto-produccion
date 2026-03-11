@@ -22,9 +22,9 @@
   --font-family: 'Inter', system-ui, -apple-system, sans-serif;
   --font-heading: 'DM Sans', sans-serif;
 
-  --glass-bg: rgba(255, 255, 255, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.5);
-  --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --glass-bg: rgba(33, 33, 33, 0.85);
+  --glass-border: rgba(0, 110, 151, 0.3);
+  --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
   --glass-blur: blur(12px);
 }
 
@@ -51,7 +51,7 @@ h6 {
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--color-zinc-200);
+  border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
 }
 
@@ -62,16 +62,16 @@ h6 {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-zinc-100);
+  background: var(--color-zinc-800);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-zinc-300);
+  background: var(--color-zinc-600);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-zinc-400);
+  background: var(--color-zinc-500);
 }
 
 /* Animations */

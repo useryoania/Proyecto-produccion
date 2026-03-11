@@ -275,20 +275,18 @@ const RegisterPage = () => {
                                                 return;
                                             }
                                             // Build HTML grid with photos
-                                            const asesorModules = import.meta.glob('/src/assets/images/asesores/*.svg', { eager: true });
                                             const isMobile = window.innerWidth < 768;
                                             const grid = vendedores.map(v => {
-                                                const key = Object.keys(asesorModules).find(k => k.includes(String(v.Cedula)));
-                                                const imgUrl = key ? asesorModules[key].default : '';
+                                                const imgUrl = `/assets/images/asesores/${v.Cedula}.svg`;
                                                 const firstName = v.Nombre.split(' ')[0];
                                                 if (isMobile) {
                                                     return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 14px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;">
-                                                        ${imgUrl ? `<img src="${imgUrl}" style="width:72px;height:72px;border-radius:50%;object-fit:cover" />` : `<div style="width:72px;height:72px;border-radius:50%;background:#006E97;display:flex;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:24px">${firstName.charAt(0)}</div>`}
+                                                        <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:72px;height:72px;border-radius:50%;object-fit:cover" /><div style="width:72px;height:72px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:24px">${firstName.charAt(0)}</div>
                                                         <span style="font-weight:600;color:#f4f4f5;font-size:14px;text-transform:uppercase;letter-spacing:0.05em;text-align:center">${firstName}</span>
                                                     </div>`;
                                                 } else {
                                                     return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px 16px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;flex:1;min-width:140px;max-width:180px;">
-                                                        ${imgUrl ? `<img src="${imgUrl}" style="width:96px;height:96px;border-radius:50%;object-fit:cover" />` : `<div style="width:96px;height:96px;border-radius:50%;background:#006E97;display:flex;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:30px">${firstName.charAt(0)}</div>`}
+                                                        <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:96px;height:96px;border-radius:50%;object-fit:cover" /><div style="width:96px;height:96px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:30px">${firstName.charAt(0)}</div>
                                                         <span style="font-weight:600;color:#f4f4f5;font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:0.05em">${firstName}</span>
                                                     </div>`;
                                                 }
