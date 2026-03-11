@@ -44,9 +44,32 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
             WHERE o.OrdIdOrden = @OrdId
         `);
     const tipoCliente = tipoRes.recordset[0]?.TClIdTipoCliente || 1;
-    const estadoOrdenRetiro = resolverEstadoPorTipoCliente(tipoCliente);
     // Si no se pasó codCliente, resolverlo desde la orden
     const finalCodCliente = codCliente || tipoRes.recordset[0]?.CodCliente || null;
+
+    // Verificar si las órdenes hijas ya tienen pago registrado
+    // Si sí → el retiro debe nacer en estado 3 (Abonado) con ese PagIdPago
+    const ordIdsInClause = ordIds.map((_, i) => `@chk${i}`).join(',');
+    const pagoChkReq = transaction.request();
+    ordIds.forEach((id, i) => pagoChkReq.input(`chk${i}`, sql.Int, id));
+    const pagoChkRes = await pagoChkReq.query(`
+        SELECT TOP 1 PagIdPago FROM OrdenesDeposito WITH(NOLOCK)
+        WHERE OrdIdOrden IN (${ordIdsInClause}) AND PagIdPago IS NOT NULL
+    `);
+    const pagoExistenteId = pagoChkRes.recordset[0]?.PagIdPago || null;
+
+    // Estado del retiro:
+    //  - Semanal/Rollo (tipo 2/3) → 4 (Abonado de antemano)
+    //  - Ya pagado (pagoExistenteId) → 3 (Abonado)
+    //  - Común/Deudor sin pago    → 1 (Ingresado)
+    let estadoOrdenRetiro;
+    if (tipoCliente === 2 || tipoCliente === 3) {
+        estadoOrdenRetiro = 4; // Abonado de antemano
+    } else if (pagoExistenteId) {
+        estadoOrdenRetiro = 3; // Abonado (ya tiene pago registrado)
+    } else {
+        estadoOrdenRetiro = 1; // Ingresado (aún no pagó)
+    }
 
     // 1. Generar ID para OrdenesRetiro con UPDLOCK (previene race condition)
     const maxIdRes = await transaction.request().query(
@@ -54,7 +77,7 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
     );
     const OReIdOrdenRetiro = maxIdRes.recordset[0].NextId;
 
-    // 2. INSERT OrdenesRetiro (con CodCliente, MonIdMoneda, FormaRetiro)
+    // 2. INSERT OrdenesRetiro (con CodCliente, MonIdMoneda, FormaRetiro, PagIdPago si ya está pago)
     await transaction.request()
         .input('OReId', sql.Int, OReIdOrdenRetiro)
         .input('Costo', sql.Float, totalCost || 0)
@@ -68,12 +91,14 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
         .input('Depto', sql.NVarChar(200), departamento || null)
         .input('Loc', sql.NVarChar(200), localidad || null)
         .input('AgenciaId', sql.Int, agenciaId ? parseInt(agenciaId, 10) : null)
+        .input('PagIdExistente', sql.Int, pagoExistenteId)
         .query(`
             INSERT INTO OrdenesRetiro 
-                (OReIdOrdenRetiro, OReCostoTotalOrden, LReIdLugarRetiro, OReFechaAlta, OReUsuarioAlta, OReEstadoActual, OReFechaEstadoActual, FormaRetiro, CodCliente, MonIdMoneda, DireccionEnvio, DepartamentoEnvio, LocalidadEnvio, AgenciaEnvio)
+                (OReIdOrdenRetiro, OReCostoTotalOrden, LReIdLugarRetiro, OReFechaAlta, OReUsuarioAlta, OReEstadoActual, OReFechaEstadoActual, FormaRetiro, CodCliente, MonIdMoneda, DireccionEnvio, DepartamentoEnvio, LocalidadEnvio, AgenciaEnvio, PagIdPago)
             VALUES 
-                (@OReId, @Costo, @Lugar, GETDATE(), @Usr, @Estado, GETDATE(), @FormaRetiro, @CodCliente, @Moneda, @Dir, @Depto, @Loc, @AgenciaId)
+                (@OReId, @Costo, @Lugar, GETDATE(), @Usr, @Estado, GETDATE(), @FormaRetiro, @CodCliente, @Moneda, @Dir, @Depto, @Loc, @AgenciaId, @PagIdExistente)
         `);
+
 
     // 3. INSERT HistoricoEstadosOrdenesRetiro (estado inicial)
     await transaction.request()

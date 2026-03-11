@@ -433,7 +433,12 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
     await transaction.begin();
 
     for (const ordenDeRetiro of ordenesParaEntregar) {
-      const OReIdOrdenRetiro = parseInt(ordenDeRetiro.replace('R-', ''), 10);
+      // Soporta todos los prefijos: R-, RL-, RW-, RT-, etc.
+      const OReIdOrdenRetiro = parseInt((ordenDeRetiro || '').replace(/^[A-Za-z]+-0*/, ''), 10);
+      if (isNaN(OReIdOrdenRetiro)) {
+        console.warn(`[ENTREGA] ID inválido para: ${ordenDeRetiro}`);
+        continue;
+      }
 
       // Chequear estado de pago y tipo de cliente
       const checkRes = await transaction.request()
@@ -487,8 +492,11 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
 
     await transaction.commit();
     res.status(200).json({ message: 'Órdenes entregadas correctamente.' });
-    req.app.get('socketio')?.emit('actualizado', { type: 'actualizacion' });
-    req.app.get('socketio')?.emit('retiros:update', { type: 'estado' });
+    const io = req.app.get('socketio');
+    if (io) {
+      io.emit('retiros:update', { type: 'entregado', ordenesRetiro: ordenesParaEntregar });
+      io.emit('actualizado', { type: 'actualizacion' });
+    }
   } catch (err) {
     if (transaction) try { await transaction.rollback(); } catch (e) { }
     console.error("Error al marcar despacho entregado:", err);
