@@ -462,8 +462,14 @@ exports.asignarRetiroAEstante = async (req, res) => {
         await transaction.begin();
 
         try {
-            // Eliminamos la comprobación de ocupación única para permitir múltiple
-            // const checkQuery = ...
+            // Check if this order is already assigned to any shelf position
+            const dupCheck = await new sql.Request(transaction)
+                .input('ord', sql.VarChar, ordenRetiro)
+                .query('SELECT COUNT(*) AS cnt FROM OcupacionEstantes WHERE OrdenRetiro = @ord');
+            if (dupCheck.recordset[0].cnt > 0) {
+                await transaction.rollback();
+                return res.status(400).json({ error: `La orden ${ordenRetiro} ya está asignada a un estante.` });
+            }
 
             await new sql.Request(transaction)
                 .input('e', sql.Char, estanteId)
