@@ -323,7 +323,10 @@ const WebRetirosPage = () => {
       const tipo = payload?.type || 'estado';
       console.log(`♻️ [WebSocket] retiros:update — tipo: ${tipo}`);
 
-      if (tipo === 'pago' || tipo === 'pago_web' || tipo === 'estado') {
+      if (tipo === 'asignado_estante' && payload?.ordenRetiro) {
+        // Quitar instantáneamente el retiro asignado al estante de la lista de pendientes
+        setOtrosRetiros(prev => prev.filter(o => o.ordenDeRetiro !== payload.ordenRetiro));
+      } else if (tipo === 'pago' || tipo === 'pago_web' || tipo === 'estado') {
         // Refetch LIVIANO: sin sincronización ERP, sin spinner pesado
         fetchAllData(false);
       } else {
@@ -396,26 +399,14 @@ const WebRetirosPage = () => {
       //   - Empaquetados (7,8) sin ubicacion asignada
       //   - Retiros RL (generados en Logistica local) en estado 1 que no fueron a estante
       try {
-        const ocupadasSet = new Set(estantesData.map(e => e.OrdenRetiro));
-
-        // Empaquetados sin estante
-        const { data: empaquetadosData } = await api.get('/apiordenesRetiro/estados?estados=7,8');
-        const empaquetados = Array.isArray(empaquetadosData)
-          ? empaquetadosData.filter(o => !ocupadasSet.has(o.ordenDeRetiro))
-          : [];
-
-        // Retiros RL (generados desde Logistica local) en estado 1 sin estante
-        // Aparecen en Fuera de Estante aunque tambien esten en Empaque
-        const { data: rlData } = await api.get('/apiordenesRetiro/estados?estados=1');
-        const rlFuera = Array.isArray(rlData)
-          ? rlData.filter(o =>
-            o.ordenDeRetiro?.startsWith('RL-') &&
-            !ocupadasSet.has(o.ordenDeRetiro)
-          )
-          : [];
-
-        setOtrosRetiros([...empaquetados, ...rlFuera]);
+        // Traer TODOS los retiros pendientes (no entregados ni cancelados), sin excluir por estante
+        // Estado 1 = Ingresado, 3 = Abonado de antemano, 4 = Abonado de antemano (variante),
+        // 7 = Empaquetado sin abonar, 8 = Empaquetado y abonado
+        const { data: todosData } = await api.get('/apiordenesRetiro/estados?estados=1,3,4,7,8');
+        setOtrosRetiros(Array.isArray(todosData) ? todosData : []);
       } catch (e) { console.error(e) }
+
+
 
       // 3. Lanzar sincronización pesada en segundo plano si aplica (sin bloquear UI)
       if (backgroundSync) {
@@ -830,10 +821,10 @@ const WebRetirosPage = () => {
                             handleAsignarUbicacion(est.id, s + 1, p + 1);
                           }}
                           className={`relative h-10 rounded-lg border-2 transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${isOccupied
-                              ? puedeGuardarAca
-                                ? 'bg-indigo-600 border-indigo-700 hover:bg-indigo-500'
-                                : 'bg-rose-950 border-rose-800 opacity-60 cursor-not-allowed'
-                              : 'bg-white border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50'
+                            ? puedeGuardarAca
+                              ? 'bg-indigo-600 border-indigo-700 hover:bg-indigo-500'
+                              : 'bg-rose-950 border-rose-800 opacity-60 cursor-not-allowed'
+                            : 'bg-white border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50'
                             }`}
                         >
                           {isOccupied ? (

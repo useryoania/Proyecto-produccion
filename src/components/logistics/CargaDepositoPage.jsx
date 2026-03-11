@@ -24,7 +24,13 @@ const CargaDepositoPage = () => {
             if (saved) {
                 const parsed = JSON.parse(saved);
                 // Solo recuperar los que tienen valor real (no la fila vacía en blanco)
-                const recovered = parsed.filter(c => c.value && c.value.trim() !== '');
+                // Los que tenían error se resetean a idle para que se revaliden limpios
+                const recovered = parsed
+                    .filter(c => c.value && c.value.trim() !== '')
+                    .map(c => c.status === 'error'
+                        ? { ...c, status: 'idle', message: '', parsed: null }
+                        : c
+                    );
                 if (recovered.length > 0) {
                     // Añadir una fila vacía al final para seguir escaneando
                     return [...recovered, { ...EMPTY_CODE, id: Date.now() }];
@@ -55,9 +61,9 @@ const CargaDepositoPage = () => {
     // Guardar en localStorage cada vez que cambian los códigos
     useEffect(() => {
         try {
-            // Solo guardar los que tienen valor real
-            // Excluir wsp_waiting, wsp_success, wsp_error e info: los primeros los gestiona el API, los demás no son borradores
-            const toSave = codes.filter(c => c.value && c.value.trim() !== '' && !['wsp_waiting', 'wsp_success', 'wsp_error', 'info'].includes(c.status));
+            // Solo guardar idle y validating (no errores ni estados de WSP)
+            // Los errores no se guardan: en la siguiente sesión el usuario debe re-escanear
+            const toSave = codes.filter(c => c.value && c.value.trim() !== '' && ['idle', 'validating'].includes(c.status));
             if (toSave.length > 0) {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
             } else {

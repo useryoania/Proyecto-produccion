@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import api from '../../../services/api';
+import { socket } from '../../../services/socketService';
 import { Package, Truck, Search, QrCode, FileText, CheckCircle, RefreshCcw, DollarSign, ChevronDown, ChevronRight, Printer, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
@@ -132,19 +133,40 @@ const EntregaPedidosView = () => {
     const [expandedRows, setExpandedRows] = useState(new Set());
 
     // --- INICIALIZACIÓN ---
+    // Refs para que el socket handler siempre acceda a la versión más reciente de las funciones
+    const loadDespachoRef = useRef(null);
+    const loadSinRetiroRef = useRef(null);
+
     useEffect(() => {
         loadLugaresRetiro();
-        // Nomencladores para el modal de envío
         Promise.all([
             api.get('/nomenclators/agencies'),
             api.get('/nomenclators/departments'),
-            api.get('/nomenclators/localities/0').catch(() => ({ data: [] })) // fallback si no hay dpto
-        ]).then(([ags, deptos, locs]) => {
+            api.get('/nomenclators/localities/0').catch(() => ({ data: [] }))
+        ]).then(([ags, deptos]) => {
             setAgenciasLista(ags.data?.data || ags.data || []);
             setDepartamentosLista(deptos.data?.data || deptos.data || []);
         }).catch(err => console.warn('[Nomencladores envío]', err));
+    }, []);
 
-        // Localidades se cargan dinámicamente por departamento
+    // Socket listener: reacciona a cambios de retiros en tiempo real
+    useEffect(() => {
+        const handleRetiroUpdate = (payload) => {
+            const tipo = payload?.type || '';
+            if (tipo === 'entregado' && Array.isArray(payload.ordenesRetiro)) {
+                // Eliminar instantáneamente los retiros entregados de la lista de encomiendas
+                const entregados = new Set(payload.ordenesRetiro.map(o => String(o).toUpperCase()));
+                setEncomiendas(prev => prev.filter(enc => !entregados.has(String(enc.ordenDeRetiro || '').toUpperCase())));
+            } else if (tipo === 'nuevo_retiro') {
+                // Alguien creó un retiro → refrescar sinRetiro
+                if (loadSinRetiroRef.current) loadSinRetiroRef.current();
+            } else if (tipo === 'pago_web' || tipo === 'estado' || tipo === '') {
+                // Refrescar encomiendas si estamos en ese tab
+                if (loadDespachoRef.current) loadDespachoRef.current();
+            }
+        };
+        socket.on('retiros:update', handleRetiroUpdate);
+        return () => socket.off('retiros:update', handleRetiroUpdate);
     }, []);
 
     useEffect(() => {
@@ -169,6 +191,7 @@ const EntregaPedidosView = () => {
             setLoadingMostradorAll(false);
         }
     };
+    loadSinRetiroRef.current = loadTodasSinRetiro;
 
     // Cargar Catálogo de Lugares
     const loadLugaresRetiro = async () => {
@@ -206,6 +229,9 @@ const EntregaPedidosView = () => {
             setLoading(false);
         }
     };
+    // Conectar ref para el socket handler
+    loadDespachoRef.current = loadDespachos;
+
 
     // --- ACCIONES TAB ENCOMIENDAS ---
     const toggleRow = (ordenRetiro) => {

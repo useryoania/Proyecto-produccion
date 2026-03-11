@@ -536,7 +536,7 @@ exports.asignarRetiroAEstante = async (req, res) => {
 
             // EMITIR EVENTO SOCKET.IO
             const io = req.app.get('socketio');
-            if (io) io.emit('retiros:update');
+            if (io) io.emit('retiros:update', { type: 'asignado_estante', ordenRetiro });
 
             res.json({ success: true, message: 'Ubicación asignada y notificada a central' });
 
@@ -606,7 +606,7 @@ exports.marcarRetiroEntregado = async (req, res) => {
 
             // EMITIR EVENTO SOCKET.IO
             const io = req.app.get('socketio');
-            if (io) io.emit('retiros:update');
+            if (io) io.emit('retiros:update', { type: 'entregado', ordenesRetiro: (ordenesDeRetiro || ordenesParaEntregar || []) });
 
             res.json({ success: true, message: 'Orden entregada. Estante liberado exitosamente.' });
 
@@ -671,7 +671,7 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
 
             // EMITIR EVENTO SOCKET.IO
             const io = req.app.get('socketio');
-            if (io) io.emit('retiros:update');
+            if (io) io.emit('retiros:update', { type: 'entregado', ordenesRetiro: (ordenesDeRetiro || ordenesParaEntregar || []) });
 
             res.json({ success: true, message: 'Órdenes seleccionadas entregadas exitosamente.' });
 
@@ -895,7 +895,7 @@ exports.seedConfigEstantes = async (req, res) => {
             await transaction.commit();
 
             const io = req.app.get('socketio');
-            if (io) io.emit('retiros:update');
+            if (io) io.emit('retiros:update', { type: 'entregado', ordenesRetiro: (ordenesDeRetiro || ordenesParaEntregar || []) });
 
             res.json({
                 success: true,
