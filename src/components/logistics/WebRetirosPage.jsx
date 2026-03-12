@@ -30,48 +30,49 @@ const printRetiroTicket = (item) => {
   <meta charset="UTF-8">
   <title>Comprobante Retiro ${item.displayLabel || item.ordenDeRetiro}</title>
   <style>
-    @page { size: A5; margin: 12mm 10mm; }
+    @page { size: A5; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-      font-size: 13px;
+      font-size: 15px;
       color: #111;
       background: #fff;
+      padding: 10mm 10mm 8mm;
     }
 
-    /* ── ENCABEZADO (igual a LogisticsPage / ReceptionPage) ── */
+    /* ── ENCABEZADO ── */
     .header {
       text-align: center;
       border-bottom: 2px solid #222;
-      padding-bottom: 8px;
-      margin-bottom: 12px;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
     }
     .header .empresa {
-      font-size: 20px;
+      font-size: 24px;
       font-weight: 900;
-      letter-spacing: 2px;
+      letter-spacing: 3px;
       text-transform: uppercase;
     }
     .header .modulo {
-      font-size: 12px;
+      font-size: 13px;
       color: #555;
-      margin-top: 2px;
+      margin-top: 3px;
     }
     .header .doc-tipo {
-      font-size: 11px;
+      font-size: 12px;
       color: #888;
-      margin-top: 1px;
+      margin-top: 2px;
       font-style: italic;
     }
 
     /* ── CÓDIGO PRINCIPAL ── */
     .codigo-principal {
       text-align: center;
-      font-size: 26px;
+      font-size: 32px;
       font-weight: 900;
-      letter-spacing: 2px;
-      margin: 10px 0 8px;
-      padding: 6px 0;
+      letter-spacing: 3px;
+      margin: 12px 0 10px;
+      padding: 8px 0;
       border-top: 1px dashed #ccc;
       border-bottom: 1px dashed #ccc;
     }
@@ -79,11 +80,11 @@ const printRetiroTicket = (item) => {
     /* ── ESTADO BADGE ── */
     .estado-badge {
       display: inline-block;
-      padding: 3px 10px;
+      padding: 5px 14px;
       border: 2px solid ${pagado ? '#16a34a' : '#dc2626'};
       color: ${pagado ? '#16a34a' : '#dc2626'};
       font-weight: 900;
-      font-size: 11px;
+      font-size: 14px;
       border-radius: 4px;
       text-transform: uppercase;
       letter-spacing: 1px;
@@ -93,79 +94,83 @@ const printRetiroTicket = (item) => {
     .info-table {
       width: 100%;
       border-collapse: collapse;
-      margin: 10px 0;
+      margin: 14px 0;
     }
     .info-table td {
-      padding: 5px 2px;
+      padding: 6px 4px;
       border-bottom: 1px solid #eee;
       vertical-align: top;
     }
     .info-table td:first-child {
       color: #000;
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      width: 32%;
+      width: 34%;
       white-space: nowrap;
     }
     .info-table td:last-child {
       font-weight: 700;
       text-align: right;
-      font-size: 13px;
+      font-size: 15px;
     }
 
-    /* ── TABLA DE ÓRDENES (igual a LogisticsPage) ── */
+    /* ── TABLA DE ÓRDENES ── */
     .orders-table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 10px;
-      font-size: 12px;
+      font-size: 14px;
     }
     .orders-table thead tr {
       background: #f3f4f6;
     }
     .orders-table th {
-      padding: 6px 6px;
+      padding: 7px 6px;
       text-align: left;
-      font-size: 11px;
+      font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       color: #444;
       border-bottom: 1px solid #ddd;
     }
     .orders-table td {
-      padding: 6px 6px;
+      padding: 7px 6px;
       border-bottom: 1px solid #eee;
       font-weight: 600;
     }
 
     /* ── SEPARADOR ── */
-    .sep { border-top: 1px dashed #bbb; margin: 10px 0; }
+    .sep { border-top: 1px dashed #bbb; margin: 12px 0; }
 
-    /* ── FIRMA (igual a LogisticsPage) ── */
+    /* ── FIRMA ── */
     .firma-row {
       display: flex;
       justify-content: space-between;
-      margin-top: 60px;
+      margin-top: 50px;
     }
     .firma-box {
       width: 44%;
       border-top: 1px solid #333;
-      padding-top: 4px;
+      padding-top: 5px;
       text-align: center;
-      font-size: 11px;
+      font-size: 12px;
       color: #555;
     }
 
     /* ── PIE ── */
     .footer {
       margin-top: 14px;
-      font-size: 11px;
+      font-size: 12px;
       text-align: center;
       color: #aaa;
       border-top: 1px solid #eee;
       padding-top: 6px;
+    }
+
+    @media print {
+      html, body { margin: 0; padding: 10mm 10mm 8mm; }
     }
   </style>
 </head>
@@ -182,7 +187,7 @@ const printRetiroTicket = (item) => {
   <div class="codigo-principal">${item.displayLabel || item.ordenDeRetiro}</div>
 
   <!-- ESTADO -->
-  <div style="text-align:center; margin-bottom:8px;">
+  <div style="text-align:center; margin-bottom:18px;">
     <span class="estado-badge">${pagado ? '✓ PAGADO' : 'PENDIENTE DE PAGO'}</span>
   </div>
 
