@@ -14,6 +14,7 @@ import { FactoryView } from './modulos/FactoryView';
 import { PickupView } from './modulos/PickupView';
 import { UnpaidPickupsView } from './modulos/UnpaidPickupsView';
 import { ClubView } from './modulos/ClubView';
+import PaymentResult from '../components/pages/PaymentResult';
 
 export const ClientPortalApp = () => {
     return (
@@ -82,6 +83,12 @@ export const ClientPortalApp = () => {
                             <MainLayout>
                                 <ClubView />
                             </MainLayout>
+                        </ProtectedRoute>
+                    } />
+
+                    <Route path="/payment-status" element={
+                        <ProtectedRoute>
+                            <PaymentResult />
                         </ProtectedRoute>
                     } />
 

@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import Lottie from 'lottie-react';
 import loadingAnim from '../../assets/animations/loading.json';
 import { useAuth } from '../auth/AuthContext';
 import { apiClient } from '../api/apiClient'; // Assuming user comes from here
-import { CheckCircle, AlertCircle, ChevronRight, Truck, CreditCard, Download, MapPin, MapPinCheck, Package, PackageCheck, Trash2, Plus } from 'lucide-react';
+import { CheckCircle, AlertCircle, ChevronRight, Truck, CreditCard, Download, MapPin, MapPinCheck, Package, PackageCheck, Trash2, Plus, ArrowLeft } from 'lucide-react';
 
 import { CustomButton } from '../pautas/CustomButton';
 import { CustomSelect } from '../pautas/CustomSelect';
@@ -35,6 +35,7 @@ export const PickupView = () => {
     };
     const [loading, setLoading] = useState(false);
     const [fetching, setFetching] = useState(true);
+    const [confirmedWithoutPayment, setConfirmedWithoutPayment] = useState(false);
 
     // Shipping/confirmation state
     const [shippingData, setShippingData] = useState(null);
@@ -47,6 +48,7 @@ export const PickupView = () => {
     const [newCiudad, setNewCiudad] = useState('');
     const [newLocalidad, setNewLocalidad] = useState('');
     const [loadingShipping, setLoadingShipping] = useState(false);
+    const addAddressRef = useRef(null);
 
     useEffect(() => {
         const loadPickupOrders = async () => {
@@ -281,7 +283,7 @@ export const PickupView = () => {
 
             if (res.success && res.url) {
                 window.open(res.url, '_blank');
-                window.location.href = `/payment-status?txId=${res.transactionId}`;
+                window.location.href = `/portal/payment-status?txId=${res.transactionId}`;
             } else {
                 alert("No se pudo generar el link de pago: " + (res.error || ""));
             }
@@ -300,85 +302,60 @@ export const PickupView = () => {
 
     if (step === 'success') {
         return (
-            <div className="max-w-xl mx-auto text-center py-12 animate-fade-in">
-                <div className="flex flex-col items-center p-6">
-                    <div className="inline-flex p-4 bg-green-100 rounded-full text-green-600 mb-6">
-                        <CheckCircle size={64} />
-                    </div>
-                    <h2 className="text-3xl font-bold text-neutral-800 mb-4">¡Retiro Habilitado!</h2>
-                    <p className="text-neutral-600 mb-6">
-                        {user?.hasCredit
-                            ? "El importe ha sido cargado a tu Cuenta Corriente."
-                            : "El pago se ha procesado correctamente."
-                        }
-                        <br />Ya puedes pasar por el mostrador de entregas.
-                    </p>
-
-                    <div className="bg-black p-6 rounded-xl inline-block shadow-lg mb-8 w-full max-w-sm">
-                        <div className="text-white text-center">
-                            <p className="text-xs uppercase tracking-widest text-zinc-400 mb-2">Código de Retiro</p>
-                            <p className="text-4xl font-mono font-bold text-white tracking-wider">{pickupCode}</p>
-                        </div>
-                    </div>
-
-                    <div className="mb-8">
-                        <CustomButton onClick={() => downloadReceipt(pickupCode)} variant="secondary" icon={Download}>
-                            Descargar Comprobante
-                        </CustomButton>
-                    </div>
-
+            <div className="animate-fade-in flex flex-col min-h-[80vh]">
+                {/* Header */}
+                <div className="flex items-center gap-3">
+                    <CheckCircle size={48} strokeWidth={1} className="text-green-400" />
                     <div>
-                        <button onClick={() => { setStep('selection'); setSelectedOrders([]); }} className="text-black font-bold hover:underline">
-                            Volver a lista de retiros
-                        </button>
+                        <h2 className="text-3xl font-bold text-zinc-300 uppercase tracking-tight">
+                            Retiro <span className="text-custom-cyan">RW-{pickupCode}</span>
+                        </h2>
+                        <p className="text-zinc-500 uppercase text-sm">
+                            {confirmedWithoutPayment ? 'Creado — Pendiente de pago' : 'Habilitado'}
+                        </p>
                     </div>
                 </div>
-            </div>
-        );
-    }
 
-    if (step === 'payment') {
-        return (
-            <div className="max-w-2xl mx-auto animate-fade-in">
-                <button onClick={() => setStep('selection')} className="mb-4 flex items-center text-zinc-500 hover:text-black transition-colors">
-                    <ChevronRight className="rotate-180" size={20} /> Volver
-                </button>
-
-                <div className="overflow-hidden">
-                    <div className="p-6 border-b border-zinc-200 bg-zinc-50/50">
-                        <h2 className="text-xl font-bold text-neutral-800 flex items-center gap-2">
-                            <CreditCard className="text-black" /> Pasarela de Pago
-                        </h2>
+                {/* Código de retiro — centrado */}
+                <div className="flex-1 flex flex-col items-center justify-center gap-4">
+                    <div className="max-w-xs w-full rounded-xl bg-brand-dark border border-zinc-700 p-6 text-center">
+                        <p className="text-xs uppercase tracking-widest text-zinc-500 font-bold mb-2">Código de Retiro</p>
+                        <p className="text-3xl font-mono font-black text-custom-cyan tracking-widest">RW-{pickupCode}</p>
                     </div>
 
-                    <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div>
-                            <p className="text-sm font-bold text-zinc-500 mb-4 uppercase">Resumen de Pago</p>
-                            <ul className="space-y-3 mb-6">
-                                {readyOrders.filter(o => selectedOrders.includes(o.id)).map(o => (
-                                    <li key={o.id} className="flex justify-between text-sm">
-                                        <span className="text-zinc-600">{o.desc}</span>
-                                        <span className="font-medium">${o.amount}</span>
-                                    </li>
-                                ))}
-                            </ul>
-                            <div className="border-t border-zinc-200 pt-3 flex justify-between font-bold text-lg">
-                                <span>Total a Pagar:</span>
-                                <span className="text-black">${totalAmount}</span>
-                            </div>
-                        </div>
+                    <p className="text-zinc-500 text-sm text-center max-w-sm">
+                        {confirmedWithoutPayment
+                            ? 'Tu retiro ha sido registrado y está pendiente de pago. Podés abonar en mostrador o desde la sección de pagos pendientes.'
+                            : user?.hasCredit
+                                ? 'El importe ha sido cargado a tu Cuenta Corriente. Ya puedes pasar por el mostrador de entregas.'
+                                : 'El pago se ha procesado correctamente. Ya puedes pasar por el mostrador de entregas.'
+                        }
+                    </p>
+                </div>
 
-                        <form onSubmit={handlePayment} className="space-y-4">
-                            <FormInput label="Número de Tarjeta" placeholder="0000 0000 0000 0000" required />
-                            <div className="grid grid-cols-2 gap-4">
-                                <FormInput label="Vencimiento" placeholder="MM/AA" required />
-                                <FormInput label="CVC" placeholder="123" required />
-                            </div>
-                            <CustomButton type="submit" variant="primary" className="w-full mt-4" isLoading={loading}>
-                                Pagar y Generar Código
-                            </CustomButton>
-                        </form>
-                    </div>
+                {/* Botones */}
+                <div className="flex justify-between items-center">
+                    <CustomButton
+                        onClick={() => downloadReceipt(pickupCode)}
+                        variant="secondary"
+                        icon={Download}
+                        className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-zinc-600 hover:!bg-brand-dark/50"
+                        whileHover={{ scale: 1 }}
+                        whileTap={{ scale: 1 }}
+                    >
+                        Descargar Comprobante
+                    </CustomButton>
+
+                    <CustomButton
+                        onClick={() => { setStep('selection'); setSelectedOrders([]); setConfirmedWithoutPayment(false); }}
+                        variant="secondary"
+                        icon={ArrowLeft}
+                        className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!border-brand-cyan hover:!bg-brand-cyan/5"
+                        whileHover={{ scale: 1 }}
+                        whileTap={{ scale: 1 }}
+                    >
+                        Volver a retiros
+                    </CustomButton>
                 </div>
             </div>
         );
@@ -590,13 +567,13 @@ export const PickupView = () => {
                                 <div>
                                     {!showAddAddress ? (
                                         <button
-                                            onClick={() => setShowAddAddress(true)}
+                                            onClick={() => { setShowAddAddress(true); setTimeout(() => addAddressRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100); }}
                                             className="flex items-center gap-2 text-sm font-bold text-zinc-500 hover:text-zinc-300 transition-colors"
                                         >
                                             <Plus size={16} /> Agregar nueva dirección
                                         </button>
                                     ) : (
-                                        <div className="space-y-3 p-4 bg-custom-dark rounded-xl border border-zinc-700">
+                                        <div ref={addAddressRef} className="space-y-3 p-4 bg-custom-dark rounded-xl border border-zinc-700">
                                             <input
                                                 type="text"
                                                 placeholder='Alias (ej: "Oficina")'
@@ -614,13 +591,20 @@ export const PickupView = () => {
                                             <div className="grid grid-cols-2 gap-3">
                                                 <CustomSelect
                                                     value={newCiudad}
-                                                    onChange={(val) => { setNewCiudad(val); setNewLocalidad(''); }}
+                                                    onChange={(val) => {
+                                                        setNewCiudad(val);
+                                                        // Auto-seleccionar si hay una sola localidad
+                                                        const dept = shippingData.departamentos?.find(d => d.Nombre === val);
+                                                        const locs = dept ? shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID) : [];
+                                                        setNewLocalidad(locs?.length === 1 ? locs[0].Nombre : '');
+                                                    }}
                                                     options={[
                                                         { value: '', label: 'Departamento...' },
                                                         ...(shippingData.departamentos?.map(d => ({ value: d.Nombre, label: d.Nombre })) || [])
                                                     ]}
                                                     placeholder="Departamento..."
                                                     size="small"
+                                                    direction="up"
                                                 />
                                                 <CustomSelect
                                                     value={newLocalidad}
@@ -635,6 +619,7 @@ export const PickupView = () => {
                                                     ]}
                                                     placeholder="Localidad..."
                                                     size="small"
+                                                    direction="up"
                                                     disabled={!newCiudad}
                                                 />
                                             </div>
@@ -671,19 +656,47 @@ export const PickupView = () => {
                     Descargar Comprobante
                 </CustomButton>
 
-                {!user?.hasCredit && totalAmount > 0 && (
+                <div className="flex items-center gap-3">
                     <CustomButton
-                        onClick={handleProceed}
+                        onClick={async () => {
+                            setLoading(true);
+                            try {
+                                await saveShippingData();
+                                setConfirmedWithoutPayment(true);
+                                setStep('success');
+                                sessionStorage.removeItem('pickup_selected');
+                                sessionStorage.removeItem('pickup_code');
+                            } catch (err) {
+                                console.error('Error al confirmar retiro:', err);
+                                alert('Error al confirmar el retiro.');
+                            } finally {
+                                setLoading(false);
+                            }
+                        }}
                         isLoading={loading}
-                        variant="primary"
-                        icon={CreditCard}
-                        className="py-3 px-8 text-lg !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!bg-brand-cyan/5 hover:!border-brand-cyan"
+                        variant="secondary"
+                        icon={PackageCheck}
+                        className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-brand-gold/40 hover:!border-brand-gold hover:!bg-brand-gold/5"
                         whileHover={{ scale: 1 }}
                         whileTap={{ scale: 1 }}
                     >
-                        Ir a Pagar
+                        Confirmar retiro
                     </CustomButton>
-                )}
+
+                    {!user?.hasCredit && totalAmount > 0 && (
+                        <CustomButton
+                            onClick={handleProceed}
+                            isLoading={loading}
+                            variant="primary"
+                            icon={CreditCard}
+                            className="py-3 px-8 text-lg !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!bg-brand-cyan/5 hover:!border-brand-cyan"
+                            whileHover={{ scale: 1 }}
+                            whileTap={{ scale: 1 }}
+                        >
+                            Ir a Pagar
+                        </CustomButton>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -860,7 +873,7 @@ export const PickupView = () => {
                             whileHover={{ scale: 1 }}
                             whileTap={{ scale: 1 }}
                         >
-                            Confirmar Retiro
+                            Crear Retiro
                         </CustomButton>
                     </div>
                 </div>

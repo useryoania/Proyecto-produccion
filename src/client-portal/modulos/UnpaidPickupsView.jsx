@@ -46,7 +46,7 @@ export const UnpaidPickupsView = () => {
             if (url) {
                 window.open(url, '_blank');
                 if (txId) {
-                    window.location.href = `/payment-status?txId=${txId}`;
+                    window.location.href = `/portal/payment-status?txId=${txId}`;
                 }
             } else {
                 alert("No se pudo obtener el link de pago.");
