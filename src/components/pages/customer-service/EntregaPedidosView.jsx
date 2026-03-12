@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import api from '../../../services/api';
 import { socket } from '../../../services/socketService';
-import { Package, Truck, Search, QrCode, FileText, CheckCircle, RefreshCcw, DollarSign, ChevronDown, ChevronRight, Printer, ClipboardList } from 'lucide-react';
+import { Package, Truck, Search, QrCode, FileText, CheckCircle, RefreshCcw, DollarSign, ChevronDown, ChevronRight, Printer, ClipboardList, Tag } from 'lucide-react';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import AlertaAutorizacionModal from '../../modals/AlertaAutorizacionModal';
@@ -688,9 +688,82 @@ const EntregaPedidosView = () => {
                                 onClick={printResumenSeleccionados}
                                 disabled={selectedEncomiendas.size === 0}
                                 className="bg-slate-100 hover:bg-slate-200 disabled:opacity-40 text-slate-700 font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-2"
-                                title="Imprimir resumen de los seleccionados"
+                                title="Imprimir hoja de despacho"
                             >
-                                <FileText size={16} /> Imprimir ({selectedEncomiendas.size})
+                                <FileText size={16} /> Despacho ({selectedEncomiendas.size})
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const sel = encomiendas.filter(e => selectedEncomiendas.has(e.ordenDeRetiro));
+                                    if (sel.length === 0) return toast.warning('Seleccioná al menos una orden.');
+                                    const labelsHtml = sel.map(enc => {
+                                        const nombre = enc.CliNombre || enc.CliCodigoCliente || '-';
+                                        const telefono = enc.CliTelefono ? enc.CliTelefono.trim() : '';
+                                        const depto = enc.departamentoEnvio || '';
+                                        const localidad = enc.localidadEnvio || '';
+                                        const ubicacion = [depto, localidad].filter(Boolean).join(' — ');
+                                        const direccion = enc.direccionEnvio || '';
+                                        const agencia = enc.agenciaNombre || '';
+                                        const ordenRetiro = enc.ordenDeRetiro || '';
+                                        return `<div class="label">
+                                            <div class="header-bar">
+                                                <span class="logo">USER</span>
+                                                <span class="orden-code">${ordenRetiro}</span>
+                                            </div>
+                                            <div class="dest-section">
+                                                <div class="badge">DESTINATARIO</div>
+                                                <div class="dest-nombre">${nombre}</div>
+                                                ${telefono ? `<div class="dest-row"><span class="icon">&#9742;</span> ${telefono}</div>` : ''}
+                                                ${ubicacion ? `<div class="dest-row"><span class="icon">&#9872;</span> ${ubicacion}</div>` : ''}
+                                                ${direccion ? `<div class="dest-row"><span class="icon">&#9962;</span> ${direccion}</div>` : ''}
+                                                ${agencia ? `<div class="agencia-pill">&#9654; ${agencia}</div>` : ''}
+                                            </div>
+                                            <div class="divider-area">
+                                                <div class="divider-line"></div>
+                                                <div class="scissors">&#9986;</div>
+                                                <div class="divider-line"></div>
+                                            </div>
+                                            <div class="rem-section">
+                                                <div class="badge rem-badge">REMITENTE</div>
+                                                <div class="rem-nombre">USER</div>
+                                                <div class="rem-row">Arenal Grande 2667</div>
+                                                <div class="rem-row">Montevideo, Uruguay</div>
+                                                <div class="rem-row">&#9742; 092284262</div>
+                                            </div>
+                                        </div>`;
+                                    }).join('');
+                                    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Etiquetas</title>
+                                    <style>
+                                        @page{size:10cm 15cm;margin:0;}*{margin:0;padding:0;box-sizing:border-box;}
+                                        body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:#f5f5f5;}
+                                        .label{width:10cm;height:15cm;background:#fff;border:2px solid #222;display:flex;flex-direction:column;page-break-after:always;overflow:hidden;}
+                                        .label:last-child{page-break-after:avoid;}
+                                        .header-bar{background:#1a1a1a;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}
+                                        .logo{font-size:16px;font-weight:900;letter-spacing:3px;text-transform:uppercase;}
+                                        .orden-code{font-size:16px;font-weight:900;font-family:'Courier New',monospace;letter-spacing:1px;background:rgba(255,255,255,0.15);padding:3px 10px;border-radius:4px;}
+                                        .dest-section{flex:1;padding:16px 20px 10px;display:flex;flex-direction:column;}
+                                        .badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#fff;background:#1a1a1a;padding:3px 10px;border-radius:3px;margin-bottom:10px;width:fit-content;}
+                                        .dest-nombre{font-size:24px;font-weight:900;text-transform:uppercase;line-height:1.15;margin-bottom:10px;color:#111;border-bottom:2px solid #eee;padding-bottom:8px;}
+                                        .dest-row{font-size:14px;font-weight:600;color:#333;margin-bottom:4px;line-height:1.4;}
+                                        .dest-row .icon{display:inline-block;width:18px;font-size:13px;color:#888;}
+                                        .agencia-pill{margin-top:10px;font-size:15px;font-weight:800;color:#1a1a1a;background:#f0f0f0;border:1.5px solid #ccc;padding:6px 14px;border-radius:6px;display:inline-block;}
+                                        .divider-area{display:flex;align-items:center;padding:0 16px;gap:8px;}
+                                        .divider-line{flex:1;border-top:2px dashed #aaa;}
+                                        .scissors{font-size:16px;color:#aaa;}
+                                        .rem-section{padding:10px 20px 14px;background:#fafafa;border-top:1px solid #eee;}
+                                        .rem-badge{background:#666;margin-bottom:6px;}
+                                        .rem-nombre{font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#333;margin-bottom:2px;}
+                                        .rem-row{font-size:11px;font-weight:600;color:#666;line-height:1.5;}
+                                        @media print{body{background:#fff;}.label{border:none;}}
+                                    </style></head><body>${labelsHtml}</body></html>`;
+                                    const win = window.open('', '_blank', 'width=420,height=620');
+                                    if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => win.print(), 400); }
+                                }}
+                                disabled={selectedEncomiendas.size === 0}
+                                className="bg-emerald-50 hover:bg-emerald-100 disabled:opacity-40 text-emerald-700 font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-2 border border-emerald-200"
+                                title="Imprimir etiquetas de los seleccionados"
+                            >
+                                <Tag size={16} /> Etiquetas ({selectedEncomiendas.size})
                             </button>
                             <button
                                 onClick={marcarEntregadas}

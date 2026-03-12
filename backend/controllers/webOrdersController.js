@@ -1229,16 +1229,15 @@ exports.getPickupOrders = async (req, res) => {
                     c.TelefonoTrabajo AS Celular,
                     tc.TClDescripcion AS TipoCliente,
                     -- tc.TClIdTipoCliente AS IdTipoCliente,
-                    m.MonSimbolo,
-                    a.Descripcion AS NombreArticulo
+                    m.MonSimbolo
                 FROM OrdenesDeposito o WITH(NOLOCK)
                 LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
                 LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                 LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
                 LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
-                LEFT JOIN Articulos a WITH(NOLOCK) ON a.IDProdReact = o.IdProductoReact
                 WHERE c.IDCliente = @idCliente
                 AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar')
+                AND o.OReIdOrdenRetiro IS NULL
             `);
 
         const externalOrders = ordersResult.recordset;
@@ -1298,8 +1297,7 @@ exports.getPickupOrders = async (req, res) => {
                 quantityStr: o.Cantidad ? String(o.Cantidad) : '1',
                 clientId: o.IdCliente || 'N/A',
                 contact: o.Celular ? o.Celular.trim() : '',
-                clientType: o.TipoCliente ? String(o.TipoCliente).trim() : 'Comun',
-                article: o.NombreArticulo || '-'
+                clientType: o.TipoCliente ? String(o.TipoCliente).trim() : 'Comun'
             };
         });
 
@@ -2149,23 +2147,25 @@ exports.updatePickupShipping = async (req, res) => {
         const OReId = parseInt(req.params.id, 10);
         if (isNaN(OReId)) return res.status(400).json({ error: "ID de retiro inválido." });
 
-        const { lugarRetiro, agenciaId, direccion, departamento, localidad } = req.body;
+        const { lugarRetiro, agenciaId, customAgencia, direccion, departamento, localidad } = req.body;
 
         const pool = await getPool();
         await pool.request()
             .input('OReId', sql.Int, OReId)
             .input('Lugar', sql.Int, lugarRetiro || 5)
-            .input('Dir', sql.VarChar(200), direccion || null)
-            .input('Depto', sql.VarChar(50), departamento || null)
-            .input('Loc', sql.VarChar(50), localidad || null)
+            .input('Dir', sql.NVarChar(500), direccion || null)
+            .input('Depto', sql.NVarChar(200), departamento || null)
+            .input('Loc', sql.NVarChar(200), localidad || null)
             .input('Agencia', sql.Int, agenciaId || null)
+            .input('AgenciaOtra', sql.NVarChar(200), customAgencia || null)
             .query(`
                 UPDATE OrdenesRetiro SET 
                     LReIdLugarRetiro = @Lugar,
                     DireccionEnvio = @Dir,
                     DepartamentoEnvio = @Depto,
                     LocalidadEnvio = @Loc,
-                    AgenciaEnvio = @Agencia
+                    AgenciaEnvio = @Agencia,
+                    AgenciaOtra = @AgenciaOtra
                 WHERE OReIdOrdenRetiro = @OReId
             `);
 

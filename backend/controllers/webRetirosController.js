@@ -297,8 +297,14 @@ exports.getMyRetirosPendientes = async (req, res) => {
                 r.OReEstadoActual AS Estado,
                 r.CodCliente,
                 r.OReFechaAlta AS Fecha,
-                r.FormaRetiro
+                r.FormaRetiro,
+                o.OrdCodigoOrden,
+                o.OrdNombreTrabajo,
+                o.OrdCostoFinal,
+                m.MonSimbolo
             FROM OrdenesRetiro r WITH(NOLOCK)
+            LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+            LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
             WHERE r.CodCliente = @codCliente
               AND r.OReEstadoActual IN (1, 7)
             ORDER BY r.OReFechaAlta DESC
@@ -307,7 +313,35 @@ exports.getMyRetirosPendientes = async (req, res) => {
             .input('codCliente', sql.Int, parseInt(codCliente, 10))
             .query(query);
 
-        res.json(result.recordset);
+        // Group by retiro and build BultosJSON from joined orders
+        const retirosMap = {};
+        for (const row of result.recordset) {
+            if (!retirosMap[row.OrdIdRetiro]) {
+                retirosMap[row.OrdIdRetiro] = {
+                    OrdIdRetiro: row.OrdIdRetiro,
+                    Monto: row.Monto,
+                    Moneda: row.Moneda,
+                    ReferenciaPago: row.ReferenciaPago,
+                    Estado: row.Estado,
+                    CodCliente: row.CodCliente,
+                    Fecha: row.Fecha,
+                    FormaRetiro: row.FormaRetiro,
+                    BultosJSON: '[]'
+                };
+            }
+            if (row.OrdCodigoOrden) {
+                const bultos = JSON.parse(retirosMap[row.OrdIdRetiro].BultosJSON);
+                bultos.push({
+                    orderNumber: row.OrdCodigoOrden,
+                    desc: row.OrdNombreTrabajo || row.OrdCodigoOrden,
+                    amount: parseFloat(row.OrdCostoFinal) || 0,
+                    currency: row.MonSimbolo || '$'
+                });
+                retirosMap[row.OrdIdRetiro].BultosJSON = JSON.stringify(bultos);
+            }
+        }
+
+        res.json(Object.values(retirosMap));
     } catch (err) {
         console.error("Error get_my_retiros_pendientes:", err);
         res.status(500).json({ error: err.message });

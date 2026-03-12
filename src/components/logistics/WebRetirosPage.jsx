@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Package, Search, Check, AlertCircle, ArrowLeft, CheckCircle,
-  Truck, Loader2, LayoutGrid, MapPin, Clock, Printer
+  Truck, Loader2, LayoutGrid, MapPin, Clock, Printer, Tag
 } from 'lucide-react';
 import api from '../../services/api'; // Axios instance base
 import { io } from 'socket.io-client';
@@ -286,6 +286,215 @@ const printRetiroTicket = (item) => {
     win.document.close();
     win.focus();
     // No auto-print: el usuario ve la vista previa y decide cuando imprimir (Ctrl+P o botón del browser)
+  }
+};
+
+// ─── HELPER: Etiqueta de despacho ───
+const printRetiroLabel = (items) => {
+  const labelsArr = Array.isArray(items) ? items : [items];
+  const labelsHtml = labelsArr.map(item => {
+    const nombre = item.CliNombre || item.idcliente || '-';
+    const telefono = item.CliTelefono ? item.CliTelefono.trim() : '';
+    const depto = item.departamentoEnvio || '';
+    const localidad = item.localidadEnvio || '';
+    const ubicacion = [depto, localidad].filter(Boolean).join(' — ');
+    const direccion = item.direccionEnvio || '';
+    const agencia = item.agenciaNombre || '';
+    const ordenRetiro = item.displayLabel || item.ordenDeRetiro || '';
+
+    return `
+      <div class="label">
+        <div class="header-bar">
+          <span class="logo">USER</span>
+          <span class="orden-code">${ordenRetiro}</span>
+        </div>
+
+        <div class="dest-section">
+          <div class="badge">DESTINATARIO</div>
+          <div class="dest-nombre">${nombre}</div>
+          ${telefono ? `<div class="dest-row"><span class="icon">&#9742;</span> ${telefono}</div>` : ''}
+          ${ubicacion ? `<div class="dest-row"><span class="icon">&#9872;</span> ${ubicacion}</div>` : ''}
+          ${direccion ? `<div class="dest-row"><span class="icon">&#9962;</span> ${direccion}</div>` : ''}
+          ${agencia ? `<div class="agencia-pill">&#9654; ${agencia}</div>` : ''}
+        </div>
+
+        <div class="divider-area">
+          <div class="divider-line"></div>
+          <div class="scissors">&#9986;</div>
+          <div class="divider-line"></div>
+        </div>
+
+        <div class="rem-section">
+          <div class="badge rem-badge">REMITENTE</div>
+          <div class="rem-nombre">USER</div>
+          <div class="rem-row">Arenal Grande 2667</div>
+          <div class="rem-row">Montevideo, Uruguay</div>
+          <div class="rem-row">&#9742; 092284262</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Etiquetas de Despacho</title>
+  <style>
+    @page { size: 10cm 15cm; margin: 0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; background: #f5f5f5; }
+    
+    .label {
+      width: 10cm;
+      height: 15cm;
+      background: #fff;
+      border: 2px solid #222;
+      display: flex;
+      flex-direction: column;
+      page-break-after: always;
+      overflow: hidden;
+    }
+    .label:last-child { page-break-after: avoid; }
+
+    /* Header bar */
+    .header-bar {
+      background: #1a1a1a;
+      color: #fff;
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .logo {
+      font-size: 16px;
+      font-weight: 900;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+    .orden-code {
+      font-size: 16px;
+      font-weight: 900;
+      font-family: 'Courier New', monospace;
+      letter-spacing: 1px;
+      background: rgba(255,255,255,0.15);
+      padding: 3px 10px;
+      border-radius: 4px;
+    }
+
+    /* Destinatario */
+    .dest-section {
+      flex: 1;
+      padding: 16px 20px 10px;
+      display: flex;
+      flex-direction: column;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      color: #fff;
+      background: #1a1a1a;
+      padding: 3px 10px;
+      border-radius: 3px;
+      margin-bottom: 10px;
+      width: fit-content;
+    }
+    .dest-nombre {
+      font-size: 24px;
+      font-weight: 900;
+      text-transform: uppercase;
+      line-height: 1.15;
+      margin-bottom: 10px;
+      color: #111;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 8px;
+    }
+    .dest-row {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 4px;
+      line-height: 1.4;
+    }
+    .dest-row .icon {
+      display: inline-block;
+      width: 18px;
+      font-size: 13px;
+      color: #888;
+    }
+    .agencia-pill {
+      margin-top: 10px;
+      font-size: 15px;
+      font-weight: 800;
+      color: #1a1a1a;
+      background: #f0f0f0;
+      border: 1.5px solid #ccc;
+      padding: 6px 14px;
+      border-radius: 6px;
+      display: inline-block;
+    }
+
+    /* Divider */
+    .divider-area {
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 8px;
+    }
+    .divider-line {
+      flex: 1;
+      border-top: 2px dashed #aaa;
+    }
+    .scissors {
+      font-size: 16px;
+      color: #aaa;
+    }
+
+    /* Remitente */
+    .rem-section {
+      padding: 10px 20px 14px;
+      background: #fafafa;
+      border-top: 1px solid #eee;
+    }
+    .rem-badge {
+      background: #666;
+      margin-bottom: 6px;
+    }
+    .rem-nombre {
+      font-size: 15px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #333;
+      margin-bottom: 2px;
+    }
+    .rem-row {
+      font-size: 11px;
+      font-weight: 600;
+      color: #666;
+      line-height: 1.5;
+    }
+
+    @media print {
+      body { background: #fff; }
+      .label { border: none; }
+    }
+  </style>
+</head>
+<body>
+  ${labelsHtml}
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=420,height=620');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 400);
   }
 };
 
@@ -1209,16 +1418,28 @@ const WebRetirosPage = () => {
                                 {/* Barra de color superior */}
                                 <div className={`absolute top-0 left-0 right-0 h-1 ${meta.dot} rounded-t-2xl`} />
 
-                                {/* Botón imprimir - arriba a la derecha */}
-                                <div
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={(e) => { e.stopPropagation(); printRetiroTicket(item); }}
-                                  onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); printRetiroTicket(item); } }}
-                                  title="Imprimir ticket"
-                                  className="absolute top-2 right-2 w-9 h-9 rounded-lg flex items-center justify-center text-custom-dark hover:text-blue-500 hover:bg-blue-50 transition-colors cursor-pointer z-10"
-                                >
-                                  <Printer size={18} />
+                                {/* Botón imprimir ticket - arriba a la derecha */}
+                                <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+                                  <div
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => { e.stopPropagation(); printRetiroLabel(item); }}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); printRetiroLabel(item); } }}
+                                    title="Imprimir etiqueta"
+                                    className="w-9 h-9 rounded-lg flex items-center justify-center text-custom-dark hover:text-emerald-500 hover:bg-emerald-50 transition-colors cursor-pointer"
+                                  >
+                                    <Tag size={18} />
+                                  </div>
+                                  <div
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => { e.stopPropagation(); printRetiroTicket(item); }}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); printRetiroTicket(item); } }}
+                                    title="Imprimir hoja de despacho"
+                                    className="w-9 h-9 rounded-lg flex items-center justify-center text-custom-dark hover:text-blue-500 hover:bg-blue-50 transition-colors cursor-pointer"
+                                  >
+                                    <Printer size={18} />
+                                  </div>
                                 </div>
 
                                 {/* Código de orden */}

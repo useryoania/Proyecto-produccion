@@ -287,6 +287,24 @@ export const TotemDashboard = ({ onLogout }) => {
                         </div>
                     ) : (
                         <div className="w-[80%] mx-auto flex flex-col gap-2">
+                            {/* Select all */}
+                            <div
+                                className="flex items-center gap-3 px-5 py-3 mb-1 rounded-xl cursor-pointer transition-all bg-white/[0.03] border border-white/[0.06] active:bg-white/[0.08]"
+                                onClick={selectAll}
+                            >
+                                <div className="flex-shrink-0 text-blue-400">
+                                    {selectedOrders.length === orders.length && orders.length > 0 ? (
+                                        <CheckCircle size={22} />
+                                    ) : (
+                                        <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                    )}
+                                </div>
+                                <span className="text-sm font-bold text-white/50 uppercase tracking-wider">
+                                    Seleccionar todas ({orders.length})
+                                </span>
+                            </div>
+
+                            <div className="max-h-[50vh] overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
                             {/* Column headers */}
                             <div className="flex items-center gap-4 px-5 py-2 text-xs font-semibold text-white/30 uppercase tracking-wider">
                                 <div className="w-[26px] flex-shrink-0" />
@@ -336,6 +354,7 @@ export const TotemDashboard = ({ onLogout }) => {
                                     </div>
                                 </div>
                             ))}
+                            </div>
 
                             {/* Search another */}
                             <button

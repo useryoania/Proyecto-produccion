@@ -41,6 +41,7 @@ export const PickupView = () => {
     const [shippingData, setShippingData] = useState(null);
     const [selectedFormaEnvio, setSelectedFormaEnvio] = useState(null);
     const [selectedAgencia, setSelectedAgencia] = useState(null);
+    const [customAgencia, setCustomAgencia] = useState('');
     const [selectedDireccion, setSelectedDireccion] = useState('');
     const [showAddAddress, setShowAddAddress] = useState(false);
     const [newAlias, setNewAlias] = useState('');
@@ -239,7 +240,8 @@ export const PickupView = () => {
         try {
             await apiClient.patch(`/web-orders/pickup-orders/${retiroId}/shipping`, {
                 lugarRetiro: esEncomienda ? 2 : 1,
-                agenciaId: esEncomienda ? selectedAgencia : null,
+                agenciaId: esEncomienda ? (selectedAgencia === -1 ? null : selectedAgencia) : null,
+                customAgencia: esEncomienda && selectedAgencia === -1 ? customAgencia : null,
                 direccion: esEncomienda ? dir : null,
                 departamento: esEncomienda ? depto : null,
                 localidad: esEncomienda ? loc : null
@@ -511,10 +513,22 @@ export const PickupView = () => {
                                 <label className="block text-sm font-bold text-zinc-500 mb-2 uppercase">Agencia</label>
                                 <CustomSelect
                                     value={selectedAgencia}
-                                    onChange={(val) => setSelectedAgencia(Number(val))}
-                                    options={shippingData.agencias.map(a => ({ value: a.ID, label: a.Nombre }))}
+                                    onChange={(val) => { setSelectedAgencia(Number(val)); if (Number(val) !== -1) setCustomAgencia(''); }}
+                                    options={[
+                                        ...shippingData.agencias.map(a => ({ value: a.ID, label: a.Nombre })),
+                                        { value: -1, label: 'Otra...' }
+                                    ]}
                                     placeholder="Seleccionar agencia..."
                                 />
+                                {selectedAgencia === -1 && (
+                                    <input
+                                        type="text"
+                                        value={customAgencia}
+                                        onChange={(e) => setCustomAgencia(e.target.value)}
+                                        placeholder="Especifique la agencia..."
+                                        className="mt-2 w-full bg-brand-dark border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan outline-none transition-all"
+                                    />
+                                )}
                             </div>
 
                             {/* Dirección */}
@@ -657,22 +671,7 @@ export const PickupView = () => {
             )}
 
             {/* Botones finales */}
-            <div className="flex justify-between items-center">
-                <CustomButton
-                    onClick={async () => {
-                        await saveShippingData();
-                        downloadReceipt(pickupCode);
-                    }}
-                    variant="secondary"
-                    icon={Download}
-                    className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-zinc-600 hover:!bg-brand-dark/50"
-                    whileHover={{ scale: 1 }}
-                    whileTap={{ scale: 1 }}
-                >
-                    Descargar Comprobante
-                </CustomButton>
-
-                <div className="flex items-center gap-3">
+            <div className="flex justify-end items-center gap-3">
                     <CustomButton
                         onClick={async () => {
                             setLoading(true);
@@ -697,7 +696,7 @@ export const PickupView = () => {
                         whileHover={{ scale: 1 }}
                         whileTap={{ scale: 1 }}
                     >
-                        Confirmar retiro
+                        Retiro sin pagar
                     </CustomButton>
 
                     {totalAmount > 0 && (
@@ -711,10 +710,9 @@ export const PickupView = () => {
                             whileHover={{ scale: 1 }}
                             whileTap={{ scale: 1 }}
                         >
-                            Ir a Pagar
+                            Pagar ahora
                         </CustomButton>
                     )}
-                </div>
             </div>
         </div>
     );

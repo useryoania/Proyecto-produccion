@@ -86,15 +86,16 @@ const getOrdenesRetiroQueryBase = `
     p.PagMontoPago AS orderMontoPago,
     p.PagFechaPago AS orderFechaPago,
     p.PagRutaComprobante AS comprobante,
-    c.IDCliente AS CliCodigoCliente,
-    LTRIM(RTRIM(c.Nombre)) AS CliNombre,
-    LTRIM(RTRIM(c.TelefonoTrabajo)) AS CliTelefono,
-    tc.TClDescripcion AS TClDescripcion,
-    tc.TClIdTipoCliente AS TClIdTipoCliente,
+    COALESCE(c.IDCliente, cr.IDCliente) AS CliCodigoCliente,
+    COALESCE(LTRIM(RTRIM(c.Nombre)), LTRIM(RTRIM(cr.Nombre))) AS CliNombre,
+    COALESCE(LTRIM(RTRIM(c.TelefonoTrabajo)), LTRIM(RTRIM(cr.TelefonoTrabajo))) AS CliTelefono,
+    COALESCE(tc.TClDescripcion, tcr.TClDescripcion) AS TClDescripcion,
+    COALESCE(tc.TClIdTipoCliente, tcr.TClIdTipoCliente) AS TClIdTipoCliente,
     r.DireccionEnvio,
     r.DepartamentoEnvio,
     r.LocalidadEnvio,
-    ag.Nombre AS AgenciaNombre
+    ag.Nombre AS AgenciaNombre,
+    r.AgenciaOtra
   FROM OrdenesRetiro r WITH(NOLOCK)
   LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
   LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
@@ -105,6 +106,8 @@ const getOrdenesRetiroQueryBase = `
   LEFT JOIN MetodosPagos mp WITH(NOLOCK) ON mp.MPaIdMetodoPago = p.MPaIdMetodoPago
   LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
   LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+  LEFT JOIN Clientes cr WITH(NOLOCK) ON cr.CodCliente = r.CodCliente
+  LEFT JOIN TiposClientes tcr WITH(NOLOCK) ON tcr.TClIdTipoCliente = cr.TClIdTipoCliente
   LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
   LEFT JOIN EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
 `;
@@ -133,7 +136,7 @@ const processRetirosRows = (rows) => {
         direccionEnvio: row.DireccionEnvio || null,
         departamentoEnvio: row.DepartamentoEnvio || null,
         localidadEnvio: row.LocalidadEnvio || null,
-        agenciaNombre: row.AgenciaNombre || null,
+        agenciaNombre: row.AgenciaNombre || row.AgenciaOtra || null,
         orders: []
       };
     }
