@@ -3,7 +3,7 @@ import { Package, RefreshCw, CheckCircle, Search, ArrowLeft } from 'lucide-react
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
-const BASE_PREFIXES = ['SB', 'DF', 'UVDF', 'ECOUV', 'TWC', 'EMB', 'TWD', 'EST', 'TP', 'IMD'];
+const BASE_PREFIXES = ['SB', 'DF', 'UVDF', 'ECOUV', 'TWC', 'EMB', 'EST', 'TP', 'IMD'];
 const STANDALONE_PREFIXES = ['PRO', 'VEN'];
 
 // Print ticket (same format as WebRetirosPage)
@@ -85,13 +85,25 @@ const printTotemTicket = ({ ordenRetiro, client, orders, totalCost }) => {
 </body>
 </html>`;
 
-    const win = window.open('', '_blank', 'width=620,height=800');
-    if (win) {
-        win.document.write(html);
-        win.document.close();
-        win.focus();
-        win.print();
-    }
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.top = '-9999px';
+    iframe.style.left = '-9999px';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+
+    // Limpiar iframe después de imprimir
+    setTimeout(() => document.body.removeChild(iframe), 3000);
 };
 
 export const TotemDashboard = ({ onLogout }) => {
@@ -251,19 +263,6 @@ export const TotemDashboard = ({ onLogout }) => {
                     <h2 className="text-2xl md:text-3xl font-bold">
                         Hola, {client.company || client.name}
                     </h2>
-                    <button
-                        className="flex items-center gap-2 px-8 py-3.5 rounded-xl text-lg font-bold bg-gradient-to-r from-blue-500 to-brand-500 text-white transition-all active:scale-[0.97] disabled:opacity-30"
-                        onClick={createPickup}
-                        disabled={creating || selectedOrders.length === 0}
-                    >
-                        <Package size={22} />
-                        {creating
-                            ? 'Creando...'
-                            : selectedOrders.length > 0
-                                ? `Retirar (${selectedOrders.length})`
-                                : 'Retirar'
-                        }
-                    </button>
                 </div>
 
                 {/* Error */}
@@ -345,6 +344,21 @@ export const TotemDashboard = ({ onLogout }) => {
                             >
                                 <ArrowLeft size={16} /> Buscar otra orden
                             </button>
+
+                            {/* Retirar button */}
+                            <button
+                                className="mt-6 w-full flex items-center justify-center gap-3 px-8 py-4 rounded-xl text-xl font-bold bg-gradient-to-r from-blue-500 to-brand-500 text-white transition-all active:scale-[0.97] disabled:opacity-30 uppercase"
+                                onClick={createPickup}
+                                disabled={creating || selectedOrders.length === 0}
+                            >
+                                <Package size={24} />
+                                {creating
+                                    ? 'Creando...'
+                                    : selectedOrders.length > 0
+                                        ? `Retirar (${selectedOrders.length})`
+                                        : 'Seleccioná órdenes para retirar'
+                                }
+                            </button>
                         </div>
                     )}
                 </div>
@@ -358,12 +372,13 @@ export const TotemDashboard = ({ onLogout }) => {
             <div className="bg-white/[0.06] backdrop-blur-xl border border-white/10 rounded-3xl p-7 w-full max-w-[520px] shadow-2xl">
 
                 <div className="text-center mb-6">
-                    <h2 className="text-xl font-bold text-white">Ingresá tu número de orden</h2>
-                    <p className="text-white/40 text-xs mt-0.5">Seleccioná el prefijo y escribí el número</p>
+                    <h2 className="text-xl font-bold text-white uppercase">Ingresá tu número de orden</h2>
+                    <p className="text-white/40 text-xs mt-0.5 uppercase">Seleccioná el prefijo y escribí el número</p>
                 </div>
 
-                {/* External prefix toggles */}
-                <div className="flex items-center gap-2 mb-4">
+                <div className="border-t border-white/10 my-2" />
+                {/* External prefix toggles + standalone prefixes */}
+                <div className="flex items-center gap-2 py-3">
                     <button
                         className={`w-10 py-1.5 rounded-lg text-sm font-bold border-2 transition-all text-center ${externalMode === 'X'
                             ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
@@ -382,37 +397,35 @@ export const TotemDashboard = ({ onLogout }) => {
                     >
                         R
                     </button>
-                    <span className="text-white/30 text-xs">Prefijo externo</span>
-                </div>
-
-                {/* Base prefixes */}
-                <div className="grid grid-cols-5 gap-2 mb-3">
-                    {BASE_PREFIXES.map(p => (
-                        <button
-                            key={p}
-                            className={`py-1.5 rounded-lg text-xs font-bold border transition-all active:scale-95 ${prefix === p
-                                ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
-                                : 'bg-white/[0.06] border-white/10 text-white/70 hover:bg-white/[0.1]'
-                                }`}
-                            onClick={() => handlePrefix(p)}
-                        >
-                            {externalMode ? `${externalMode}${p}` : p}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Standalone prefixes */}
-                <div className="grid grid-cols-5 gap-2 mb-5">
+                    <span className="text-white/30 text-xs uppercase tracking-tight">Prefijo externo</span>
+                    <div className="flex-1" />
                     {STANDALONE_PREFIXES.map(p => (
                         <button
                             key={p}
-                            className={`py-1.5 rounded-lg text-xs font-bold border transition-all active:scale-95 ${prefix === p
+                            className={`w-14 py-1.5 rounded-lg text-sm font-bold border-2 transition-all text-center ${prefix === p
                                 ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
-                                : 'bg-white/[0.06] border-white/10 text-white/70 hover:bg-white/[0.1]'
+                                : 'bg-white/[0.04] border-white/10 text-white/40'
                                 }`}
                             onClick={() => handlePrefix(p)}
                         >
                             {p}
+                        </button>
+                    ))}
+                </div>
+                <div className="border-t border-white/10 my-2" />
+
+                {/* Base prefixes */}
+                <div className="grid grid-cols-5 gap-2 mb-5">
+                    {BASE_PREFIXES.map(p => (
+                        <button
+                            key={p}
+                            className={`py-3 rounded-lg text-sm font-bold border transition-all active:scale-95 ${prefix === p
+                                ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
+                                : 'bg-custom-dark border-white/10 text-white/70 hover:bg-white/[0.1]'
+                                }`}
+                            onClick={() => handlePrefix(p)}
+                        >
+                            {externalMode ? `${externalMode}${p}` : p}
                         </button>
                     ))}
                 </div>
@@ -425,7 +438,7 @@ export const TotemDashboard = ({ onLogout }) => {
                         </div>
                     )}
                     <div className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-center text-xl font-bold tracking-[4px] min-h-[36px] text-white">
-                        {number || <span className="text-white/20 text-lg tracking-normal">{prefix ? 'Ingresá el número...' : 'Seleccioná un prefijo...'}</span>}
+                        {number || <span className="text-white/20 text-lg tracking-tight uppercase">{prefix ? 'Ingresá el número...' : 'Seleccioná un prefijo...'}</span>}
                     </div>
                 </div>
 
@@ -455,7 +468,7 @@ export const TotemDashboard = ({ onLogout }) => {
 
                 {/* Search button */}
                 <button
-                    className="w-full py-2.5 rounded-xl text-lg font-bold bg-custom-magenta text-white transition-all active:scale-[0.97] disabled:opacity-40 flex items-center justify-center gap-2"
+                    className="w-full py-2.5 rounded-xl text-lg font-bold bg-custom-magenta text-white transition-all active:scale-[0.97] disabled:opacity-40 flex items-center justify-center gap-2 uppercase"
                     onClick={handleSearch}
                     disabled={searching || !prefix || !number}
                 >

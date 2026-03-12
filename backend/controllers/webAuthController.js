@@ -197,7 +197,7 @@ exports.register = asyncHandler(async (req, res) => {
         .input('VenID', sql.NVarChar(20), vendedorId)
         .query(`
             INSERT INTO Clientes (
-                CodCliente, IDCliente, Nombre, NombreFantasia, Email, TelefonoTrabajo, CliDireccion, CioRuc, 
+                CodCliente, IDCliente, Nombre, NombreFantasia, Email, TelefonoTrabajo, DireccionTrabajo, CioRuc, 
                 Localidad, Agencia, WebPasswordHash, WebActive, WebResetPassword, Cedula,
                 DepartamentoID, LocalidadID, AgenciaID, FormaEnvioID, VendedorID, FechaRegistro
             )
@@ -244,7 +244,7 @@ exports.me = asyncHandler(async (req, res) => {
                 name: u.Nombre,
                 company: u.NombreFantasia,
                 phone: u.TelefonoTrabajo,
-                address: u.CliDireccion,
+                address: u.DireccionTrabajo,
                 ruc: u.CioRuc,
                 documento: u.Cedula,
                 localidad: u.Localidad,
@@ -315,7 +315,7 @@ exports.updateProfile = asyncHandler(async (req, res) => {
             SET Nombre = ISNULL(@Nombre, Nombre),
                 NombreFantasia = ISNULL(@NombreFantasia, NombreFantasia),
                 TelefonoTrabajo = ISNULL(@Telefono, TelefonoTrabajo),
-                CliDireccion = ISNULL(@Direccion, CliDireccion),
+                DireccionTrabajo = ISNULL(@Direccion, DireccionTrabajo),
                 CioRuc = ISNULL(@Ruc, CioRuc),
                 Cedula = ISNULL(@Ced, Cedula),
                 Localidad = ISNULL(@Loc, Localidad),
@@ -343,7 +343,7 @@ exports.updateProfile = asyncHandler(async (req, res) => {
                 name: u.Nombre,
                 company: u.NombreFantasia,
                 phone: u.TelefonoTrabajo,
-                address: u.CliDireccion,
+                address: u.DireccionTrabajo,
                 ruc: u.CioRuc,
                 documento: u.Cedula,
                 localidad: u.Localidad,

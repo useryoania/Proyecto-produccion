@@ -242,7 +242,7 @@ exports.getAllLocalRetiros = async (req, res) => {
         const pool = await getPool();
         const query = `
             SELECT 
-                COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
+                COALESCE(r.FormaRetiro, 'R') + '-' + RIGHT('0000' + CAST(r.OReIdOrdenRetiro AS VARCHAR), 4) AS OrdIdRetiro,
                 r.OReCostoTotalOrden AS Monto,
                 r.MonIdMoneda AS Moneda,
                 r.ReferenciaPagoOnline AS ReferenciaPago,
@@ -264,7 +264,7 @@ exports.getAllLocalRetiros = async (req, res) => {
             -- Excluir retiros que ya estan asignados a un estante fisico
             AND NOT EXISTS (
                 SELECT 1 FROM OcupacionEstantes oe WITH(NOLOCK)
-                WHERE oe.OrdenRetiro = COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR)
+                WHERE oe.OrdenRetiro = COALESCE(r.FormaRetiro, 'R') + '-' + RIGHT('0000' + CAST(r.OReIdOrdenRetiro AS VARCHAR), 4)
             )
             ORDER BY r.OReFechaAlta DESC
         `;
@@ -290,7 +290,7 @@ exports.getMyRetirosPendientes = async (req, res) => {
         const pool = await getPool();
         const query = `
             SELECT 
-                COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
+                COALESCE(r.FormaRetiro, 'R') + '-' + RIGHT('0000' + CAST(r.OReIdOrdenRetiro AS VARCHAR), 4) AS OrdIdRetiro,
                 r.OReCostoTotalOrden AS Monto,
                 r.MonIdMoneda AS Moneda,
                 r.ReferenciaPagoOnline AS ReferenciaPago,

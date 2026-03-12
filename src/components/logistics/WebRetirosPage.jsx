@@ -1209,30 +1209,45 @@ const WebRetirosPage = () => {
                                 {/* Barra de color superior */}
                                 <div className={`absolute top-0 left-0 right-0 h-1 ${meta.dot} rounded-t-2xl`} />
 
+                                {/* Botón imprimir - arriba a la derecha */}
+                                <div
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={(e) => { e.stopPropagation(); printRetiroTicket(item); }}
+                                  onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); printRetiroTicket(item); } }}
+                                  title="Imprimir ticket"
+                                  className="absolute top-2 right-2 w-9 h-9 rounded-lg flex items-center justify-center text-custom-dark hover:text-blue-500 hover:bg-blue-50 transition-colors cursor-pointer z-10"
+                                >
+                                  <Printer size={18} />
+                                </div>
+
                                 {/* Código de orden */}
                                 <div className="font-black text-slate-800 text-sm tracking-tight leading-tight mt-1">
                                   {item.displayLabel}
                                 </div>
 
-                                {/* Nombre cliente */}
                                 {item.CliNombre && (
                                   <div className="text-[11px] font-semibold text-slate-600 truncate leading-tight">
                                     {item.CliNombre}
                                   </div>
                                 )}
 
-                                {/* ID + tipo + lugar */}
+                                {/* ID + tipo */}
                                 <div className="flex flex-wrap items-center gap-1 mt-0.5">
                                   <span className="text-[9px] font-bold text-slate-400 uppercase">{item.idcliente}</span>
                                   {item.TClDescripcion && (
                                     <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500 font-bold">{item.TClDescripcion}</span>
                                   )}
-                                  {item.lugarRetiro && item.lugarRetiro !== 'Desconocido' && (
-                                    <span className="text-[9px] px-1 py-0.5 rounded bg-blue-50 text-blue-500 font-bold truncate max-w-[80px]">{item.lugarRetiro}</span>
-                                  )}
                                 </div>
 
-                                {/* Pie: tiempo + órdenes + impresora */}
+                                {/* Lugar de retiro */}
+                                {item.lugarRetiro && item.lugarRetiro !== 'Desconocido' && (
+                                  <div className="text-[10px] font-bold text-blue-500 truncate leading-tight">
+                                    {item.lugarRetiro}{item.agenciaNombre ? ` (${item.agenciaNombre})` : ''}
+                                  </div>
+                                )}
+
+                                {/* Pie: tiempo + órdenes */}
                                 <div className="flex items-center justify-between mt-auto">
                                   {elapsed && (
                                     <span className={`flex items-center gap-0.5 text-xs ${timeColor}`}>
@@ -1245,23 +1260,8 @@ const WebRetirosPage = () => {
                                         <Package size={9} /> {orderCount}
                                       </span>
                                     )}
-                                    <div
-                                      role="button"
-                                      tabIndex={0}
-                                      onClick={(e) => { e.stopPropagation(); printRetiroTicket(item); }}
-                                      onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); printRetiroTicket(item); } }}
-                                      title="Imprimir ticket"
-                                      className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-300 hover:text-blue-500 hover:bg-blue-50 transition-colors cursor-pointer"
-                                    >
-                                      <Printer size={11} />
-                                    </div>
                                   </div>
                                 </div>
-
-                                {/* Badge Web */}
-                                {item._isWeb && (
-                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 self-start">Web</span>
-                                )}
                               </button>
                             );
                           })}

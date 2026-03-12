@@ -195,7 +195,7 @@ export const PickupView = () => {
             const payload = {
                 orders: ordersPayload,
                 totalCost: Number((totalAmount || 0).toFixed(2)),
-                lugarRetiro: esEncomienda ? 1 : 5
+                lugarRetiro: esEncomienda ? 2 : 1
             };
 
             const res = await apiClient.post('/web-orders/pickup-orders/create', payload);
@@ -238,7 +238,7 @@ export const PickupView = () => {
 
         try {
             await apiClient.patch(`/web-orders/pickup-orders/${retiroId}/shipping`, {
-                lugarRetiro: esEncomienda ? 1 : 5,
+                lugarRetiro: esEncomienda ? 2 : 1,
                 agenciaId: esEncomienda ? selectedAgencia : null,
                 direccion: esEncomienda ? dir : null,
                 departamento: esEncomienda ? depto : null,
@@ -683,7 +683,7 @@ export const PickupView = () => {
                         Confirmar retiro
                     </CustomButton>
 
-                    {!user?.hasCredit && totalAmount > 0 && (
+                    {totalAmount > 0 && (
                         <CustomButton
                             onClick={handleProceed}
                             isLoading={loading}
@@ -743,6 +743,8 @@ export const PickupView = () => {
                                 </th>
                                 <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Orden ID</th>
                                 <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider">Descripción</th>
+                                <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Artículos</th>
+                                <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Cantidad</th>
                                 <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Fecha</th>
                                 <th className="p-4 pr-6 text-xs font-bold text-zinc-100 text-right uppercase tracking-wider">Importe</th>
                                 {/* <th className="p-4 text-sm font-bold text-zinc-100 text-center">Estado</th> */}
@@ -767,6 +769,8 @@ export const PickupView = () => {
                                     </td>
                                     <td className="p-4 font-mono font-medium text-sm text-zinc-100 border-r border-zinc-800 text-center">{order.id}</td>
                                     <td className="p-4 text-sm text-zinc-300 border-r border-zinc-800">{order.desc}</td>
+                                    <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.article || '-'}</td>
+                                    <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.quantityStr || order.quantity || '-'}</td>
                                     <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.date}</td>
                                     <td className="p-4 pr-6 text-right font-medium">
                                         {order.isPaid ? (
