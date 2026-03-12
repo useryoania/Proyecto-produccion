@@ -6,6 +6,94 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const BASE_PREFIXES = ['SB', 'DF', 'UVDF', 'ECOUV', 'TWC', 'EMB', 'TWD', 'EST', 'TP', 'IMD'];
 const STANDALONE_PREFIXES = ['PRO', 'VEN'];
 
+// Print ticket (same format as WebRetirosPage)
+const printTotemTicket = ({ ordenRetiro, client, orders, totalCost }) => {
+    const now = new Date().toLocaleString('es-UY', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false
+    });
+    const ordersRows = orders.map((o, i) => `<tr><td>${i + 1}</td><td><strong>${o.id}</strong></td><td style="text-align:right;">${o.amount ? `$ ${o.amount.toFixed(2)}` : '-'}</td></tr>`).join('');
+    const ticketBody = `
+  <div class="header">
+    <div class="empresa">USER</div>
+    <div class="modulo">Logística — Comprobante de Retiro</div>
+    <div class="doc-tipo">Retiro Tótem · Local: Retiro Web</div>
+  </div>
+  <div class="codigo-principal">${ordenRetiro}</div>
+  <div style="text-align:center; margin-bottom:8px;">
+    <span class="estado-badge">PENDIENTE DE PAGO</span>
+  </div>
+  <table class="info-table">
+    <tr><td>Cliente</td><td><strong>${client.company || client.name}</strong> <span style="color:#888;font-size:9px;">(${client.idCliente})</span></td></tr>
+    ${totalCost ? `<tr><td>Monto</td><td>$ ${Number(totalCost).toFixed(2)}</td></tr>` : ''}
+    <tr><td>Local Retiro</td><td>Retiro Web</td></tr>
+    <tr><td>Fecha Alta</td><td>${now}</td></tr>
+  </table>
+  <div class="sep"></div>
+  <div style="font-size:11px;color:#000;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:800;">Órdenes incluidas (${orders.length})</div>
+  <table class="orders-table">
+    <thead><tr><th>#</th><th>Código de Orden</th><th style="text-align:right;">Importe</th></tr></thead>
+    <tbody>${ordersRows}</tbody>
+  </table>
+  <div class="sep"></div>
+  <table style="width:100%;font-size:9px;color:#666;"><tr><td>Impreso:</td><td style="text-align:right;">${now}</td></tr></table>
+  <div style="text-align:center; margin:8px 0 14px;">
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(ordenRetiro)}&color=000000&bgcolor=ffffff&margin=2" alt="QR" style="width:90px;height:90px;border:1px solid #eee;" />
+    <div style="font-size:9px;color:#999;margin-top:2px;letter-spacing:1px;">${ordenRetiro}</div>
+  </div>
+  <div class="firma-row">
+    <div class="firma-box">Firma y Aclaración Cliente</div>
+    <div class="firma-box">Firma Responsable Logística</div>
+  </div>
+  <div class="footer">USER — Documento interno. Conserve este comprobante.</div>`;
+
+    const styles = `
+    @page { size: A5; margin: 12mm 10mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 13px; color: #111; background: #fff; }
+    .header { text-align: center; border-bottom: 2px solid #222; padding-bottom: 8px; margin-bottom: 12px; }
+    .header .empresa { font-size: 20px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; }
+    .header .modulo { font-size: 12px; color: #555; margin-top: 2px; }
+    .header .doc-tipo { font-size: 11px; color: #888; margin-top: 1px; font-style: italic; }
+    .codigo-principal { text-align: center; font-size: 26px; font-weight: 900; letter-spacing: 2px; margin: 10px 0 8px; padding: 6px 0; border-top: 1px dashed #ccc; border-bottom: 1px dashed #ccc; }
+    .estado-badge { display: inline-block; padding: 3px 10px; border: 2px solid #dc2626; color: #dc2626; font-weight: 900; font-size: 11px; border-radius: 4px; text-transform: uppercase; letter-spacing: 1px; }
+    .info-table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+    .info-table td { padding: 5px 2px; border-bottom: 1px solid #eee; vertical-align: top; }
+    .info-table td:first-child { color: #000; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 32%; white-space: nowrap; }
+    .info-table td:last-child { font-weight: 700; text-align: right; font-size: 13px; }
+    .orders-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+    .orders-table thead tr { background: #f3f4f6; }
+    .orders-table th { padding: 6px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #444; border-bottom: 1px solid #ddd; }
+    .orders-table td { padding: 6px; border-bottom: 1px solid #eee; font-weight: 600; }
+    .sep { border-top: 1px dashed #bbb; margin: 10px 0; }
+    .firma-row { display: flex; justify-content: space-between; margin-top: 60px; }
+    .firma-box { width: 44%; border-top: 1px solid #333; padding-top: 4px; text-align: center; font-size: 11px; color: #555; }
+    .footer { margin-top: 14px; font-size: 11px; text-align: center; color: #aaa; border-top: 1px solid #eee; padding-top: 6px; }
+    .page-break { page-break-before: always; }`;
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Comprobante Retiro ${ordenRetiro}</title>
+  <style>${styles}</style>
+</head>
+<body>
+  ${ticketBody}
+  <div class="page-break"></div>
+  ${ticketBody}
+</body>
+</html>`;
+
+    const win = window.open('', '_blank', 'width=620,height=800');
+    if (win) {
+        win.document.write(html);
+        win.document.close();
+        win.focus();
+        win.print();
+    }
+};
+
 export const TotemDashboard = ({ onLogout }) => {
     // Search state
     const [externalMode, setExternalMode] = useState(''); // '' | 'X' | 'R'
@@ -114,9 +202,17 @@ export const TotemDashboard = ({ onLogout }) => {
             });
             const data = await res.json();
             if (data.success) {
+                // Print ticket before showing success
+                const selectedOrdObjects = orders.filter(o => selectedOrders.includes(o.id));
+                printTotemTicket({
+                    ordenRetiro: data.ordIdGenerada || data.ordenRetiro || 'R-' + Date.now(),
+                    client,
+                    orders: selectedOrdObjects,
+                    totalCost
+                });
                 setSuccess(true);
                 setSelectedOrders([]);
-                setTimeout(() => { setSuccess(false); onLogout(); }, 5000);
+                setTimeout(() => { setSuccess(false); onLogout(); }, 8000);
             } else {
                 setError(data.error || 'Error al crear retiro');
             }
@@ -258,18 +354,18 @@ export const TotemDashboard = ({ onLogout }) => {
 
     // Search screen (default)
     return (
-        <div className="flex items-center justify-center min-h-screen p-6">
-            <div className="bg-white/[0.06] backdrop-blur-xl border border-white/10 rounded-3xl p-8 w-full max-w-[520px] shadow-2xl">
+        <div className="flex items-center justify-center min-h-screen p-3">
+            <div className="bg-white/[0.06] backdrop-blur-xl border border-white/10 rounded-3xl p-7 w-full max-w-[520px] shadow-2xl">
 
                 <div className="text-center mb-6">
-                    <h2 className="text-2xl font-bold text-white">Ingresá tu número de orden</h2>
-                    <p className="text-white/40 text-sm mt-1">Seleccioná el prefijo y escribí el número</p>
+                    <h2 className="text-xl font-bold text-white">Ingresá tu número de orden</h2>
+                    <p className="text-white/40 text-xs mt-0.5">Seleccioná el prefijo y escribí el número</p>
                 </div>
 
                 {/* External prefix toggles */}
-                <div className="flex items-center gap-2 mb-3">
+                <div className="flex items-center gap-2 mb-4">
                     <button
-                        className={`w-12 py-2.5 rounded-lg text-base font-bold border-2 transition-all text-center ${externalMode === 'X'
+                        className={`w-10 py-1.5 rounded-lg text-sm font-bold border-2 transition-all text-center ${externalMode === 'X'
                             ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
                             : 'bg-white/[0.04] border-white/10 text-white/40'
                             }`}
@@ -278,7 +374,7 @@ export const TotemDashboard = ({ onLogout }) => {
                         X
                     </button>
                     <button
-                        className={`w-12 py-2.5 rounded-lg text-base font-bold border-2 transition-all text-center ${externalMode === 'R'
+                        className={`w-10 py-1.5 rounded-lg text-sm font-bold border-2 transition-all text-center ${externalMode === 'R'
                             ? 'bg-orange-500/20 border-orange-500/50 text-orange-400'
                             : 'bg-white/[0.04] border-white/10 text-white/40'
                             }`}
@@ -286,15 +382,15 @@ export const TotemDashboard = ({ onLogout }) => {
                     >
                         R
                     </button>
-                    <span className="text-white/30 text-sm">Prefijo externo</span>
+                    <span className="text-white/30 text-xs">Prefijo externo</span>
                 </div>
 
                 {/* Base prefixes */}
-                <div className="grid grid-cols-5 gap-1.5 mb-2">
+                <div className="grid grid-cols-5 gap-2 mb-3">
                     {BASE_PREFIXES.map(p => (
                         <button
                             key={p}
-                            className={`py-2.5 rounded-lg text-sm font-bold border transition-all active:scale-95 ${prefix === p
+                            className={`py-1.5 rounded-lg text-xs font-bold border transition-all active:scale-95 ${prefix === p
                                 ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
                                 : 'bg-white/[0.06] border-white/10 text-white/70 hover:bg-white/[0.1]'
                                 }`}
@@ -306,11 +402,11 @@ export const TotemDashboard = ({ onLogout }) => {
                 </div>
 
                 {/* Standalone prefixes */}
-                <div className="grid grid-cols-5 gap-1.5 mb-4">
+                <div className="grid grid-cols-5 gap-2 mb-5">
                     {STANDALONE_PREFIXES.map(p => (
                         <button
                             key={p}
-                            className={`py-2.5 rounded-lg text-sm font-bold border transition-all active:scale-95 ${prefix === p
+                            className={`py-1.5 rounded-lg text-xs font-bold border transition-all active:scale-95 ${prefix === p
                                 ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
                                 : 'bg-white/[0.06] border-white/10 text-white/70 hover:bg-white/[0.1]'
                                 }`}
@@ -322,31 +418,31 @@ export const TotemDashboard = ({ onLogout }) => {
                 </div>
 
                 {/* Code display */}
-                <div className="mb-4 flex items-center gap-2">
+                <div className="mb-5 flex items-center gap-2">
                     {prefix && (
-                        <div className="text-2xl font-bold text-blue-400 whitespace-nowrap">
+                        <div className="text-xl font-bold text-blue-400 whitespace-nowrap">
                             {externalMode && BASE_PREFIXES.includes(prefix) ? `${externalMode}${prefix}` : prefix}-
                         </div>
                     )}
-                    <div className="flex-1 bg-black/30 border border-white/10 rounded-xl px-5 py-4 text-center text-2xl font-bold tracking-[6px] min-h-[40px] text-white">
+                    <div className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-center text-xl font-bold tracking-[4px] min-h-[36px] text-white">
                         {number || <span className="text-white/20 text-lg tracking-normal">{prefix ? 'Ingresá el número...' : 'Seleccioná un prefijo...'}</span>}
                     </div>
                 </div>
 
                 {/* Error */}
                 {searchError && (
-                    <div className="bg-red-500/15 border border-red-500/30 text-red-300 rounded-xl px-4 py-3 text-center text-sm mb-3">
+                    <div className="bg-red-500/15 border border-red-500/30 text-red-300 rounded-xl px-3 py-2 text-center text-sm mb-2">
                         {searchError}
                     </div>
                 )}
 
                 {/* Numpad */}
-                <div className="grid grid-cols-3 gap-2 mb-4">
+                <div className="grid grid-cols-3 gap-2 mb-5">
                     {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'CLEAR', '0', 'DEL'].map(key => (
                         <button
                             key={key}
-                            className={`rounded-xl py-3.5 text-xl font-semibold border transition-all active:scale-95 ${key === 'CLEAR' || key === 'DEL'
-                                ? 'bg-white/[0.04] border-white/10 text-white/60 text-base'
+                            className={`rounded-xl py-2 text-lg font-semibold border transition-all active:scale-95 ${key === 'CLEAR' || key === 'DEL'
+                                ? 'bg-white/[0.04] border-white/10 text-white/60 text-sm'
                                 : 'bg-white/[0.08] border-white/10 text-white hover:bg-white/[0.12]'
                                 }`}
                             onClick={() => handleKey(key)}
@@ -359,7 +455,7 @@ export const TotemDashboard = ({ onLogout }) => {
 
                 {/* Search button */}
                 <button
-                    className="w-full py-4 rounded-xl text-xl font-bold bg-custom-magenta text-white transition-all active:scale-[0.97] disabled:opacity-40 flex items-center justify-center gap-2"
+                    className="w-full py-2.5 rounded-xl text-lg font-bold bg-custom-magenta text-white transition-all active:scale-[0.97] disabled:opacity-40 flex items-center justify-center gap-2"
                     onClick={handleSearch}
                     disabled={searching || !prefix || !number}
                 >

@@ -101,8 +101,9 @@ const printRetiroTicket = (item) => {
       vertical-align: top;
     }
     .info-table td:first-child {
-      color: #555;
-      font-size: 11px;
+      color: #000;
+      font-size: 12px;
+      font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.5px;
       width: 32%;
@@ -146,7 +147,7 @@ const printRetiroTicket = (item) => {
     .firma-row {
       display: flex;
       justify-content: space-between;
-      margin-top: 28px;
+      margin-top: 60px;
     }
     .firma-box {
       width: 44%;
@@ -221,7 +222,7 @@ const printRetiroTicket = (item) => {
   <div class="sep"></div>
 
   <!-- TABLA DE ÓRDENES con importe -->
-  <div style="font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">
+  <div style="font-size:11px;color:#000;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:800;">
     Órdenes incluidas (${orderObjs.length})
   </div>
   <table class="orders-table">
@@ -408,7 +409,20 @@ const WebRetirosPage = () => {
         Object.values(estantesMap).forEach(items => items.forEach(item => {
           if (item.OrdenRetiro) enEstante.add(item.OrdenRetiro);
         }));
-        const sinEstante = (Array.isArray(todosData) ? todosData : []).filter(o => !enEstante.has(o.ordenDeRetiro));
+        // Filter out retiros already in apiOrders (web/totem) to avoid duplicates
+        // apiOrders use format "RT-18", otrosRetiros use "RT-0018" — compare by numeric ID
+        const apiOrderIds = new Set(formattedRetiros.map(o => {
+          const match = (o.ordenDeRetiro || '').match(/(\d+)$/);
+          return match ? parseInt(match[1], 10) : null;
+        }).filter(Boolean));
+        const sinEstante = (Array.isArray(todosData) ? todosData : []).filter(o => {
+          if (enEstante.has(o.ordenDeRetiro)) return false;
+          // Extract numeric ID from "RT-0018" format
+          const match = (o.ordenDeRetiro || '').match(/(\d+)$/);
+          const numId = match ? parseInt(match[1], 10) : null;
+          if (numId && apiOrderIds.has(numId)) return false;
+          return true;
+        });
         setOtrosRetiros(sinEstante);
       } catch (e) { console.error(e) }
 

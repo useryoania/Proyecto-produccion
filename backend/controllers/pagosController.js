@@ -28,7 +28,7 @@ const realizarPago = async (req, res) => {
     let nuevoEstadoRetiro = null;
 
     if (tieneRetiro) {
-      ordenRetiroId = parseInt(ordenRetiro.toString().replace(/^R-0*/i, ''), 10);
+      ordenRetiroId = parseInt(ordenRetiro.toString().replace(/^[A-Za-z]+-0*/i, ''), 10);
       if (isNaN(ordenRetiroId)) {
         return res.status(400).json({ error: 'ordenRetiroId inválido.' });
       }
@@ -165,32 +165,29 @@ const realizarPago = async (req, res) => {
 
 const subirComprobante = async (req, res) => {
   try {
-    const { ordenRetiroId } = req.body;
-    console.log('ordenRetiroId recibido:', ordenRetiroId);
-
-    if (!ordenRetiroId || !req.file) {
-      return res.status(400).send({ error: 'Faltan datos o archivo.' });
+    if (!req.file) {
+      return res.status(400).send({ error: 'No se proporcionó archivo.' });
     }
 
     const filePath = req.file.filename;
+    const { ordenRetiroId } = req.body;
 
-    const pool = await getPool();
-    const result = await pool.request()
-      .input('ordenRetiroId', sql.Int, ordenRetiroId)
-      .input('filePath', sql.NVarChar, filePath)
-      .query(`
-        UPDATE Pag
-        SET PagRutaComprobante = @filePath
-        FROM Pagos Pag WITH(NOLOCK)
-        JOIN OrdenesRetiro ORe WITH(NOLOCK) ON ORe.PagIdPago = Pag.PagIdPago
-        WHERE ORe.OReIdOrdenRetiro = @ordenRetiroId
-      `);
-
-    if (result.rowsAffected[0] === 0) {
-      return res.status(404).send({ error: 'No se encontró la orden de retiro asociada.' });
+    // Si se proporcionó ordenRetiroId, asociar el comprobante en la DB
+    if (ordenRetiroId) {
+      const pool = await getPool();
+      await pool.request()
+        .input('ordenRetiroId', sql.Int, ordenRetiroId)
+        .input('filePath', sql.NVarChar, filePath)
+        .query(`
+          UPDATE Pag
+          SET PagRutaComprobante = @filePath
+          FROM Pagos Pag WITH(NOLOCK)
+          JOIN OrdenesRetiro ORe WITH(NOLOCK) ON ORe.PagIdPago = Pag.PagIdPago
+          WHERE ORe.OReIdOrdenRetiro = @ordenRetiroId
+        `);
     }
 
-    res.status(200).send({ message: 'Archivo subido y ruta guardada correctamente', filePath });
+    res.status(200).send({ message: 'Archivo subido correctamente', filename: filePath });
   } catch (error) {
     console.error('Error al subir comprobante:', error);
     res.status(500).send({ error: 'Error al subir el comprobante.' });
