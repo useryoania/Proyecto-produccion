@@ -186,10 +186,7 @@ exports.register = asyncHandler(async (req, res) => {
         .input('Tel', sql.NVarChar(50), phone || '')
         .input('Dir', sql.NVarChar(500), address || '')
         .input('Ruc', sql.NVarChar(50), ruc || '')
-        .input('Loc', sql.NVarChar(200), localidad || '')
-        .input('Age', sql.NVarChar(200), agencia || '')
         .input('Pass', sql.NVarChar(255), password)
-        .input('Ced', sql.NVarChar(50), documento || '')
         .input('DepID', sql.Int, departamentoId || null)
         .input('LocID', sql.Int, localidadId || null)
         .input('AgeID', sql.Int, agenciaId || null)
@@ -198,12 +195,12 @@ exports.register = asyncHandler(async (req, res) => {
         .query(`
             INSERT INTO Clientes (
                 CodCliente, IDCliente, Nombre, NombreFantasia, Email, TelefonoTrabajo, DireccionTrabajo, CioRuc, 
-                Localidad, Agencia, WebPasswordHash, WebActive, WebResetPassword, Cedula,
+                WebPasswordHash, WebActive, WebResetPassword,
                 DepartamentoID, LocalidadID, AgenciaID, FormaEnvioID, VendedorID, FechaRegistro
             )
             VALUES (
                 @CC, @IDC, @Nom, @Fant, @Email, @Tel, @Dir, @Ruc, 
-                @Loc, @Age, @Pass, 0, 0, @Ced,
+                @Pass, 0, 0,
                 @DepID, @LocID, @AgeID, @FenvID, @VenID, GETDATE()
             )
         `);
@@ -246,9 +243,6 @@ exports.me = asyncHandler(async (req, res) => {
                 phone: u.TelefonoTrabajo,
                 address: u.DireccionTrabajo,
                 ruc: u.CioRuc,
-                documento: u.Cedula,
-                localidad: u.Localidad,
-                agencia: u.Agencia,
                 departamentoId: u.DepartamentoID,
                 localidadId: u.LocalidadID,
                 agenciaId: u.AgenciaID,
@@ -303,9 +297,6 @@ exports.updateProfile = asyncHandler(async (req, res) => {
         .input('Telefono', sql.NVarChar, phone || null)
         .input('Direccion', sql.NVarChar, address || null)
         .input('Ruc', sql.NVarChar, ruc || null)
-        .input('Ced', sql.NVarChar, documento || null)
-        .input('Loc', sql.NVarChar, localidad || null)
-        .input('Age', sql.NVarChar, agencia || null)
         .input('DepID', sql.Int, departamentoId || null)
         .input('LocID', sql.Int, localidadId || null)
         .input('AgeID', sql.Int, agenciaId || null)
@@ -317,9 +308,6 @@ exports.updateProfile = asyncHandler(async (req, res) => {
                 TelefonoTrabajo = ISNULL(@Telefono, TelefonoTrabajo),
                 DireccionTrabajo = ISNULL(@Direccion, DireccionTrabajo),
                 CioRuc = ISNULL(@Ruc, CioRuc),
-                Cedula = ISNULL(@Ced, Cedula),
-                Localidad = ISNULL(@Loc, Localidad),
-                Agencia = ISNULL(@Age, Agencia),
                 DepartamentoID = ISNULL(@DepID, DepartamentoID),
                 LocalidadID = ISNULL(@LocID, LocalidadID),
                 AgenciaID = ISNULL(@AgeID, AgenciaID),
@@ -345,9 +333,6 @@ exports.updateProfile = asyncHandler(async (req, res) => {
                 phone: u.TelefonoTrabajo,
                 address: u.DireccionTrabajo,
                 ruc: u.CioRuc,
-                documento: u.Cedula,
-                localidad: u.Localidad,
-                agencia: u.Agencia,
                 departamentoId: u.DepartamentoID,
                 localidadId: u.LocalidadID,
                 agenciaId: u.AgenciaID,

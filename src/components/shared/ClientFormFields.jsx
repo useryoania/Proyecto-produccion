@@ -102,15 +102,12 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
                 <input type="text" className={inputClass} placeholder={ph.razonSocial} value={form.razonSocial} onChange={set('razonSocial')} />
             </Field>
 
-            {/* RUT */}
-            <Field label="RUT" icon={FileText}>
+            {/* Cédula o RUT */}
+            <Field label="Cédula o RUT" icon={FileText}>
                 <input type="text" className={inputClass} placeholder={ph.rut} value={form.rut} maxLength={12} onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); set('rut')({ target: { value: v } }); }} />
             </Field>
 
-            {/* Documento de identidad */}
-            <Field label="Documento de identidad" icon={FileText}>
-                <input type="text" className={inputClass} placeholder={ph.documento} value={form.documento} maxLength={8} onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); set('documento')({ target: { value: v } }); }} />
-            </Field>
+
 
             {/* Dirección */}
             <Field label="Dirección" icon={MapPin} required error={fieldErrors.direccion}>

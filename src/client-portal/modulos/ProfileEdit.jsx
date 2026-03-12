@@ -22,7 +22,6 @@ export const ProfileEdit = () => {
         telefono: user?.phone || '',
         razonSocial: user?.name || '',       // Clientes.Nombre = razón social
         rut: user?.ruc || '',
-        documento: user?.documento || '',
         direccion: user?.address || '',
         departamentoId: user?.departamentoId ? String(user.departamentoId) : '',
         localidadId: user?.localidadId ? String(user.localidadId) : '',
@@ -93,16 +92,12 @@ export const ProfileEdit = () => {
                 phone: form.telefono,
                 address: form.direccion,
                 ruc: form.rut,
-                documento: form.documento,
-                localidad: locName,
-                agencia: ageName,
                 departamentoId: form.departamentoId ? parseInt(form.departamentoId) : null,
                 localidadId: form.localidadId ? parseInt(form.localidadId) : null,
                 agenciaId: form.agenciaId ? parseInt(form.agenciaId) : null,
                 formaEnvioId: isMontevideo ? 1 : 2,
             });
             setMessage({ type: 'success', text: 'Datos actualizados correctamente' });
-            setTimeout(() => navigate('/portal/profile'), 1500);
         } catch (err) {
             setMessage({ type: 'error', text: 'Error al guardar los cambios' });
         } finally {

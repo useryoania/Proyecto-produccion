@@ -12,7 +12,7 @@ const RegisterPage = () => {
     const [form, setForm] = useState({
         idCliente: '', email: '', password: '', confirmPassword: '',
         nombre: '', apellido: '', telefono: '',
-        razonSocial: '', rut: '', documento: '',
+        razonSocial: '', rut: '',
         direccion: '', departamentoId: '', localidadId: '', agenciaId: ''
     });
     const [fieldErrors, setFieldErrors] = useState({});
@@ -155,7 +155,6 @@ const RegisterPage = () => {
                     address: form.direccion,
                     ruc: form.rut,
                     fantasyName: `${form.nombre} ${form.apellido}`,
-                    documento: form.documento,
                     departamentoId: form.departamentoId ? parseInt(form.departamentoId) : null,
                     localidadId: form.localidadId ? parseInt(form.localidadId) : null,
                     agenciaId: form.agenciaId ? parseInt(form.agenciaId) : null,
