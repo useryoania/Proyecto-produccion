@@ -480,12 +480,28 @@ export const PickupView = () => {
                         <Truck size={24} strokeWidth={2} className="text-brand-gold" /> Forma de Envío
                     </h3>
 
-                    <CustomSelect
-                        value={selectedFormaEnvio}
-                        onChange={(val) => setSelectedFormaEnvio(Number(val))}
-                        options={shippingData.formasEnvio.map(f => ({ value: f.ID, label: f.Nombre }))}
-                        placeholder="Seleccionar forma de envío..."
-                    />
+                    <div className="flex flex-col md:flex-row gap-3">
+                        {shippingData.formasEnvio.map(f => (
+                            <label
+                                key={f.ID}
+                                className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 cursor-pointer transition-all text-sm font-bold uppercase tracking-wide ${
+                                    selectedFormaEnvio === f.ID
+                                        ? 'border-brand-cyan bg-brand-cyan/10 text-zinc-100'
+                                        : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
+                                }`}
+                            >
+                                <input
+                                    type="radio"
+                                    name="formaEnvio"
+                                    value={f.ID}
+                                    checked={selectedFormaEnvio === f.ID}
+                                    onChange={() => setSelectedFormaEnvio(f.ID)}
+                                    className="sr-only"
+                                />
+                                {f.Nombre}
+                            </label>
+                        ))}
+                    </div>
 
                     {/* Si es encomienda: agencia + dirección */}
                     {isEncomienda && (
@@ -674,6 +690,7 @@ export const PickupView = () => {
                             }
                         }}
                         isLoading={loading}
+                        disabled={!selectedFormaEnvio}
                         variant="secondary"
                         icon={PackageCheck}
                         className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-brand-gold/40 hover:!border-brand-gold hover:!bg-brand-gold/5"
@@ -687,6 +704,7 @@ export const PickupView = () => {
                         <CustomButton
                             onClick={handleProceed}
                             isLoading={loading}
+                            disabled={!selectedFormaEnvio}
                             variant="primary"
                             icon={CreditCard}
                             className="py-3 px-8 text-lg !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!bg-brand-cyan/5 hover:!border-brand-cyan"
@@ -855,7 +873,7 @@ export const PickupView = () => {
                                     const res = await apiClient.get('/web-orders/shipping-data');
                                     if (res.success) {
                                         setShippingData(res.data);
-                                        setSelectedFormaEnvio(res.data.defaultFormaEnvioID || res.data.formasEnvio[0]?.ID);
+                                        setSelectedFormaEnvio(null);
                                         setSelectedAgencia(res.data.defaultAgenciaID || res.data.agencias[0]?.ID);
                                         setSelectedDireccion(res.data.defaultDireccion || '');
                                     }
