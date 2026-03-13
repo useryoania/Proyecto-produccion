@@ -1361,6 +1361,7 @@ exports.totemLookup = async (req, res) => {
                 LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
                 WHERE o.CliIdCliente = @cliId
                 AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar', 'Pronto para entregar')
+                AND o.OReIdOrdenRetiro IS NULL
             `);
 
         // 3. Cruzar con PedidosCobranza para estado de pago
@@ -1455,6 +1456,7 @@ exports.totemCreatePickup = async (req, res) => {
                 LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                 WHERE c.IDCliente = @idCli
                 AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar', 'Pronto para entregar')
+                AND o.OReIdOrdenRetiro IS NULL
             `);
 
         const rawOrderIds = [];

@@ -253,6 +253,9 @@ const CargaDepositoPage = () => {
     const handleKeyDown = (e, codeId) => {
         if (e.key === 'Enter' || e.key === 'Tab') {
             e.preventDefault();
+            // Si el escáner aún está enviando caracteres (debounce activo), ignorar el Enter
+            if (debounceTimers.current[codeId]) return;
+
             const current = codes.find(c => c.id === codeId);
             // Si el código tiene error, Enter re-dispara la validación
             if (current && current.status === 'error' && current.value.trim() !== '') {

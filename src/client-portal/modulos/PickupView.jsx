@@ -310,19 +310,14 @@ export const PickupView = () => {
 
                 {/* Código de retiro — centrado */}
                 <div className="flex-1 flex flex-col items-center justify-center gap-4">
-                    <div className="max-w-xs w-full rounded-xl bg-brand-dark border border-zinc-700 p-6 text-center">
-                        <p className="text-xs uppercase tracking-widest text-zinc-500 font-bold mb-2">Código de Retiro</p>
-                        <p className="text-3xl font-mono font-black text-custom-cyan tracking-widest">RW-{pickupCode}</p>
-                    </div>
-
-                    <p className="text-zinc-500 text-sm text-center max-w-sm">
-                        {confirmedWithoutPayment
-                            ? 'Tu retiro ha sido registrado y está pendiente de pago. Podés abonar en mostrador o desde la sección de pagos pendientes.'
-                            : user?.hasCredit
-                                ? 'El importe ha sido cargado a tu Cuenta Corriente. Ya puedes pasar por el mostrador de entregas.'
-                                : 'El pago se ha procesado correctamente. Ya puedes pasar por el mostrador de entregas.'
-                        }
+                    <p className="text-zinc-500 text-xs text-center max-w-sm uppercase">
+                        Mostrá este código en nuestro local para retirar tu pedido.
                     </p>
+
+                    <div className="max-w-xs w-full rounded-xl bg-brand-dark border border-zinc-700 py-6 text-center">
+                        <p className="text-xs uppercase tracking-widest text-zinc-500 font-bold mb-2">Código de Retiro</p>
+                        <p className="text-5xl font-mono font-black text-custom-cyan tracking-widest">RW-{pickupCode}</p>
+                    </div>
                 </div>
 
                 {/* Botones */}

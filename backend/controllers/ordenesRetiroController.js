@@ -786,7 +786,7 @@ const getClienteEnvioDatos = async (req, res) => {
         .query('SELECT ID, Alias, Direccion, AgenciaID, Ciudad, Localidad FROM DireccionesEnvioCliente WHERE CliIdCliente = @cliId ORDER BY FechaCreacion DESC'),
       pool.request()
         .input('cliId', sql.Int, parseInt(cliId, 10))
-        .query('SELECT ISNULL(DireccionTrabajo, \'\') AS CliDireccion, CliLocalidad AS Localidad, LocalidadID, AgenciaID, DepartamentoID FROM Clientes WHERE CliIdCliente = @cliId')
+        .query('SELECT ISNULL(DireccionTrabajo, \'\') AS CliDireccion, LocalidadID AS Localidad, LocalidadID, AgenciaID, DepartamentoID FROM Clientes WHERE CliIdCliente = @cliId')
     ]);
 
     res.json({
