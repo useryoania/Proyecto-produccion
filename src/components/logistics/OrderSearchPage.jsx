@@ -207,37 +207,51 @@ const OrderSearchPage = () => {
             return;
         }
 
+        // Solo las no exportadas aún
+        const pendientes = orders.filter(o => o.ExportadoOdoo === false || o.ExportadoOdoo === null);
+
+        if (pendientes.length === 0) {
+            toast.info('No hay órdenes pendientes de exportación a Odoo. Todas ya fueron exportadas.');
+            return;
+        }
+
+        // Detectar las que no tienen ProCodigoOdooProducto configurado
+        const sinCodigo = pendientes.filter(o => !o.ProCodigoOdooProducto || o.ProCodigoOdooProducto.trim() === '');
+        if (sinCodigo.length > 0) {
+            const codigos = sinCodigo.map(o => o.CodigoOrden).join(', ');
+            toast.warning(`${sinCodigo.length} orden(es) no tienen Código Odoo de Producto configurado y serán omitidas: ${codigos}`);
+        }
+
+        // Solo exportar las que SÍ tienen código Odoo
+        const exportables = pendientes.filter(o => o.ProCodigoOdooProducto && o.ProCodigoOdooProducto.trim() !== '');
+
+        if (exportables.length === 0) {
+            toast.error('Ninguna orden pendiente tiene el Código Odoo de Producto configurado. Actualizá la tabla Articulos primero.');
+            return;
+        }
+
         try {
-            // Filtrar y mapear igual a BaseDeposito.js
-            // ExportadoOdoo puede venir como false o null (ambos = pendiente de exportar)
-            const filteredOrders = orders
-                .filter(order => order.ExportadoOdoo === false || order.ExportadoOdoo === null)
-                .map(order => ({
-                    'Líneas del pedido/Producto': order.CodigoOdoo + (order.Modo === 'Normal' ? 'N' : order.Modo === 'Urgente' ? 'U' : ''),
-                    'Referencia del pedido': order.CodigoOrden,
-                    'Líneas del pedido/Cantidad': order.Cantidad ? parseFloat(order.Cantidad) : 0,
-                    'Cliente': order.IdCliente,
-                    'Referencia cliente': order.NombreTrabajo,
-                    'Modo': order.Modo,
-                }));
+            const filas = exportables.map(order => ({
+                'Líneas del pedido/Producto': order.ProCodigoOdooProducto + (order.Modo === 'Normal' ? 'N' : order.Modo === 'Urgente' ? 'U' : ''),
+                'Referencia del pedido': order.CodigoOrden,
+                'Líneas del pedido/Cantidad': order.Cantidad ? parseFloat(order.Cantidad) : 0,
+                'Cliente': order.IdCliente,
+                'Referencia cliente': order.NombreTrabajo,
+                'Modo': order.Modo,
+            }));
 
-            if (filteredOrders.length === 0) {
-                toast.info('No hay órdenes pendientes de exportación a Odoo.');
-                return;
-            }
-
-            const worksheet = utils.json_to_sheet(filteredOrders);
+            const worksheet = utils.json_to_sheet(filas);
             const workbook = utils.book_new();
             utils.book_append_sheet(workbook, worksheet, 'Órdenes');
-            writeFile(workbook, 'Ordenes.xlsx');
+            writeFile(workbook, `Ordenes_Odoo_${new Date().toISOString().slice(0,10)}.xlsx`);
 
-            // Actualizar exportación en la DB
-            const orderIds = orders.filter(o => o.ExportadoOdoo === false || o.ExportadoOdoo === null).map(o => o.IdOrden);
-
+            // Marcar como exportadas en la DB (solo las que efectivamente se exportaron)
+            const orderIds = exportables.map(o => o.IdOrden);
             await api.post('/apiordenes/actualizarExportacion', { orderIds });
-            toast.success('Órdenes exportadas y marcadas en servidor.');
 
-            // Recargar
+            toast.success(`✅ ${exportables.length} orden(es) exportadas y marcadas como exportadas en el servidor.`);
+
+            // Recargar para reflejar el cambio de ExportadoOdoo
             fetchAllOrders(filters);
 
         } catch (error) {

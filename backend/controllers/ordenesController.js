@@ -26,6 +26,7 @@ const getOrdenesByFilter = async (req, res) => {
         o.OrdNombreTrabajo AS NombreTrabajo,
         CONCAT(p.Descripcion, '') AS Producto,
         ISNULL(p.CodArticulo, '') AS CodigoOdoo,
+        ISNULL(p.ProCodigoOdooProducto, '') AS ProCodigoOdooProducto,
         o.OrdExportadoOdoo AS ExportadoOdoo,
         eo.EOrNombreEstado AS Estado,
         o.OrdFechaEstadoActual AS FechaEstado,
