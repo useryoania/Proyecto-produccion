@@ -1850,7 +1850,7 @@ exports.handyWebhook = async (req, res) => {
                     console.log('[HANDY WEBHOOK] Registrando pago directamente en DB...', JSON.stringify(payloadPago));
 
                     // --- MIGRACIÓN: Escribir directamente en DB en vez de llamar a API React ---
-                    const ordenRetiroId = parseInt(String(payloadPago.ordenRetiro).replace(/^R-0*/, ''), 10);
+                    const ordenRetiroId = parseInt(String(payloadPago.ordenRetiro).replace(/^[A-Za-z]+-0*/, ''), 10);
                     if (!isNaN(ordenRetiroId)) {
                         // Determinar nuevo estado de la orden de retiro
                         const retiroState = await pool.request()

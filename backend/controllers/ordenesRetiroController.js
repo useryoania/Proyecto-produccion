@@ -79,6 +79,7 @@ const getOrdenesRetiroQueryBase = `
     o.OrdEstadoActual AS orderEstado,
     eo.EOrNombreEstado AS orderEstadoNombre,
     o.OrdCostoFinal as costoFinal,
+    o.MonIdMoneda AS orderMonedaId,
     monOrden.MonSimbolo AS orderMonedaSimbolo,
     p.MPaIdMetodoPago AS orderIdMetodoPago,
     mp.MPaDescripcionMetodo AS orderMetodoPago,
@@ -146,8 +147,9 @@ const processRetirosRows = (rows) => {
         orderNumber: row.orderNumber,
         orderId: row.orderId,
         orderEstado: row.orderEstadoNombre || row.orderEstado,
-        orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaSimbolo} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
-        simbolo: row.orderMonedaSimbolo || '$',
+        orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaId === 2 ? 'US$' : '$'} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
+        simbolo: row.orderMonedaId === 2 ? 'US$' : '$',
+        monedaId: row.orderMonedaId || 1,
         orderIdMetodoPago: row.orderIdMetodoPago,
         orderMetodoPago: row.orderMetodoPago,
         orderPago: row.monetPagoSimbolo ? `${row.monetPagoSimbolo} ${parseFloat(row.orderMontoPago).toFixed(2)}` : null,
@@ -761,7 +763,7 @@ const getClienteEnvioDatos = async (req, res) => {
     const [dirs, cliData] = await Promise.all([
       pool.request()
         .input('cliId', sql.Int, parseInt(cliId, 10))
-        .query('SELECT ID, Alias, Direccion, AgenciaID, Ciudad, Localidad, DepartamentoID, LocalidadID FROM DireccionesEnvioCliente WHERE CliIdCliente = @cliId ORDER BY FechaCreacion DESC'),
+        .query('SELECT ID, Alias, Direccion, AgenciaID, Ciudad, Localidad FROM DireccionesEnvioCliente WHERE CliIdCliente = @cliId ORDER BY FechaCreacion DESC'),
       pool.request()
         .input('cliId', sql.Int, parseInt(cliId, 10))
         .query('SELECT ISNULL(DireccionTrabajo, \'\') AS CliDireccion, CliLocalidad AS Localidad, LocalidadID, AgenciaID, DepartamentoID FROM Clientes WHERE CliIdCliente = @cliId')

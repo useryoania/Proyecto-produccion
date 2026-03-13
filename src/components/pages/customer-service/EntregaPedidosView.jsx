@@ -15,6 +15,7 @@ const printTicketEncomienda = (enc) => {
     const tipoDesc = enc.TClDescripcion || 'Común';
     const local = enc.lugarRetiro && enc.lugarRetiro !== 'Desconocido' ? enc.lugarRetiro : 'Retiro';
     const monto = enc.totalCost && enc.totalCost !== '0.00' ? enc.totalCost : null;
+    const monedaSimbolo = enc.orders?.[0]?.monedaId === 2 ? 'US$' : '$';
     const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
   <title>Comprobante ${enc.ordenDeRetiro}</title>
   <style>
@@ -52,7 +53,7 @@ const printTicketEncomienda = (enc) => {
     ${enc.CliCodigoCliente ? `<tr><td>Cód.Cliente</td><td>${enc.CliCodigoCliente}</td></tr>` : ''}
     ${enc.CliTelefono ? `<tr><td>Teléfono</td><td>${enc.CliTelefono}</td></tr>` : ''}
     <tr><td>Tipo Cliente</td><td>${tipoDesc}</td></tr>
-    ${monto ? `<tr><td>Monto</td><td>${monto}</td></tr>` : ''}
+    ${monto ? `<tr><td>Monto</td><td>${monedaSimbolo} ${monto}</td></tr>` : ''}
     ${enc.metodoPago ? `<tr><td>Forma Pago</td><td>${enc.metodoPago}</td></tr>` : ''}
     <tr><td>Local Retiro</td><td>${local}</td></tr>
     <tr><td>Fecha Alta</td><td>${enc.fechaAlta ? new Date(enc.fechaAlta).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</td></tr>
@@ -837,7 +838,7 @@ const EntregaPedidosView = () => {
                                                 </td>
                                                 <td className="p-4">
                                                     <span className="font-black text-slate-800 text-lg">
-                                                        {enc.orders?.[0]?.simbolo || '$'} {enc.totalCost}
+                                                        {enc.orders?.[0]?.monedaId === 2 ? 'US$' : '$'} {enc.totalCost}
                                                     </span>
                                                 </td>
                                                 <td className="p-4">

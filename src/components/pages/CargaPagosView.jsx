@@ -162,9 +162,9 @@ export const CargaGestionPagosView = () => {
             if (o.orderIdMetodoPago !== null || o.orderPago !== null) return; // Ignore already paid orders! (Important from old Caja)
             let costStr = o.orderCosto || "";
             let cost = parseFloat(costStr.replace(/[^0-9.-]+/g, "")) || 0;
-            const curSym = costStr.includes('USD') || costStr.includes('U$S') ? 'USD' : (costStr.includes('$') ? 'UYU' : 'USD');
+            const curSym = o.monedaId === 2 ? 'US$' : '$';
 
-            if (curSym === 'USD') sumUSD += cost;
+            if (curSym === 'US$') sumUSD += cost;
             else sumUYU += cost;
         });
 
@@ -178,10 +178,10 @@ export const CargaGestionPagosView = () => {
 
         if (moneda === 'USD') {
             const val = sumUSD + (sumUYU / cotizacion);
-            return `USD ${val.toFixed(2)}`;
+            return `US$ ${val.toFixed(2)}`;
         } else {
             const val = sumUYU + (sumUSD * cotizacion);
-            return `UYU ${val.toFixed(2)}`;
+            return `$ ${val.toFixed(2)}`;
         }
     };
 
@@ -299,8 +299,8 @@ export const CargaGestionPagosView = () => {
                         value={moneda}
                         onChange={handleCurrencyChange}
                     >
-                        <option value="USD">USD</option>
-                        <option value="UYU">UYU</option>
+                        <option value="USD">US$</option>
+                        <option value="UYU">$</option>
                     </select>
                 </div>
 
@@ -340,7 +340,7 @@ export const CargaGestionPagosView = () => {
                 <h3 className="text-lg font-bold text-[#0070bc]">Cotización del Dólar:</h3>
 
                 {cotizacion !== null ? (
-                    <p className="text-xl font-black text-zinc-800">1 USD = {Number(cotizacion).toFixed(2)} UYU</p>
+                    <p className="text-xl font-black text-zinc-800">US$1 (dólar) = ${Number(cotizacion).toFixed(2)} (pesos) </p>
                 ) : (
                     <div className="mt-2 text-center">
                         {!isManualCotizacion ? (
@@ -430,16 +430,16 @@ export const CargaGestionPagosView = () => {
                                 {getOrdenes(selectedRetiro).length > 0 ? (
                                     getOrdenes(selectedRetiro).map((po, i) => {
                                         const costStr = po.orderCosto || "";
-                                        const curSym = costStr.includes('USD') || costStr.includes('U$S') ? 'USD' : (costStr.includes('$') ? 'UYU' : 'USD');
+                                        const curSym = po.monedaId === 2 ? 'US$' : '$';
                                         const rawValor = parseFloat(costStr.replace(/[^0-9.-]+/g, "")) || 0;
                                         const isPaid = po.orderIdMetodoPago !== null || po.orderPago !== null;
 
                                         let valorConvertidoDest = "";
-                                        if (moneda === 'UYU' && (curSym === 'USD' || curSym === 'U$S') && cotizacion) {
+                                        if (moneda === 'UYU' && curSym === 'US$' && cotizacion) {
                                             valorConvertidoDest = ` ($ ${(rawValor * cotizacion).toFixed(2)})`;
                                         }
-                                        if (moneda === 'USD' && (curSym === '$' || curSym === 'UYU') && cotizacion) {
-                                            valorConvertidoDest = ` (USD ${(rawValor / cotizacion).toFixed(2)})`;
+                                        if (moneda === 'USD' && curSym === '$' && cotizacion) {
+                                            valorConvertidoDest = ` (US$ ${(rawValor / cotizacion).toFixed(2)})`;
                                         }
 
                                         return (

@@ -587,7 +587,7 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
 
             // EMITIR EVENTO SOCKET.IO
             const io = req.app.get('socketio');
-            if (io) io.emit('retiros:update', { type: 'entregado', ordenesRetiro: (ordenesDeRetiro || ordenesParaEntregar || []) });
+            if (io) io.emit('retiros:update', { type: 'entregado', ordenesRetiro: ordenesParaEntregar });
 
             res.json({ success: true, message: 'Órdenes seleccionadas entregadas exitosamente.' });
 
