@@ -200,7 +200,7 @@ exports.googleLogin = async (req, res) => {
         const clientResult = await pool.request()
             .input('Email', sql.NVarChar, googleEmail)
             .query(`
-                SELECT CodCliente, IDCliente, Nombre, Email, NombreFantasia, WebPasswordHash, WebResetPassword
+                SELECT CodCliente, IDCliente, Nombre, Email, NombreFantasia, WebPasswordHash, WebResetPassword, WebActive
                 FROM Clientes
                 WHERE LTRIM(RTRIM(Email)) = @Email
             `);

@@ -43,134 +43,6 @@ exports.crearRetiro = async (req, res) => {
     }
 };
 
-// DESHABILITADO: runSyncRetirosCore — loop circular (lee y reescribe la misma DB).
-// Los datos ya se crean correctamente desde crearRetiro. Ver audit 2025-03-09.
-// Se comenta con // porque el regex /^R-0*/ contiene */ que rompe block comments.
-//
-// const runSyncRetirosCore = async () => {
-//     const pool = await getPool();
-//     const transaction = new sql.Transaction(pool);
-//
-//     const queryResult = await pool.request().query(`
-//         SELECT 
-//             r.OReIdOrdenRetiro, r.OReCostoTotalOrden, r.OReFechaAlta, r.OReUsuarioAlta,
-//             r.OReEstadoActual, r.PagIdPago, r.ORePasarPorCaja,
-//             lr.LReNombreLugar AS lugarRetiro,
-//             er.EORNombreEstado AS estado,
-//             o.OrdIdOrden AS orderId, o.OrdCodigoOrden AS orderNumber,
-//             o.OrdEstadoActual AS orderEstado, o.OrdCostoFinal as costoFinal,
-//             monOrden.MonSimbolo AS orderMonedaSimbolo,
-//             p.MPaIdMetodoPago AS orderIdMetodoPago,
-//             mp.MPaDescripcionMetodo AS orderMetodoPago,
-//             monPago.MonSimbolo AS monetPagoSimbolo,
-//             p.PagMontoPago AS orderMontoPago, p.PagFechaPago AS orderFechaPago,
-//             p.PagRutaComprobante AS comprobante,
-//             c.CodigoReact AS CliCodigoCliente, c.Tipo AS TClDescripcion
-//         FROM OrdenesRetiro r WITH(NOLOCK)
-//         LEFT JOIN LugaresRetiro lr WITH(NOLOCK) ON lr.LReIdLugarRetiro = r.LReIdLugarRetiro
-//         LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
-//         LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
-//         LEFT JOIN Monedas monOrden WITH(NOLOCK) ON monOrden.MonIdMoneda = o.MonIdMoneda
-//         LEFT JOIN Pagos p WITH(NOLOCK) ON p.PagIdPago = o.PagIdPago
-//         LEFT JOIN Monedas monPago WITH(NOLOCK) ON monPago.MonIdMoneda = p.PagIdMonedaPago
-//         LEFT JOIN MetodosPagos mp WITH(NOLOCK) ON mp.MPaIdMetodoPago = p.MPaIdMetodoPago
-//         LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
-//         WHERE r.OReEstadoActual IN (1,3,4,7,8,5,6)
-//         AND (CAST(DATEADD(d,-7,GETDATE()) AS DATE) <= CAST(r.OReFechaAlta AS DATE) OR r.OReEstadoActual NOT IN (5,6))
-//     `);
-//
-//     const map = {};
-//     for (const row of queryResult.recordset) {
-//         if (!map[row.OReIdOrdenRetiro]) {
-//             map[row.OReIdOrdenRetiro] = {
-//                 ordenDeRetiro: `R-${String(row.OReIdOrdenRetiro).padStart(4, '0')}`,
-//                 totalCost: parseFloat(row.OReCostoTotalOrden).toFixed(2),
-//                 lugarRetiro: row.lugarRetiro || 'Desconocido',
-//                 fechaAlta: row.OReFechaAlta,
-//                 usuarioAlta: row.OReUsuarioAlta,
-//                 estado: row.estado || 'Desconocido',
-//                 pagorealizado: row.PagIdPago ? 1 : 0,
-//                 metodoPago: row.orderMetodoPago,
-//                 montopagorealizado: row.PagIdPago ? `${row.monetPagoSimbolo || ''} ${parseFloat(row.orderMontoPago || 0).toFixed(2)}` : null,
-//                 fechapagooden: row.orderFechaPago,
-//                 comprobante: row.comprobante,
-//                 CliCodigoCliente: row.CliCodigoCliente || 'Desconocido',
-//                 TClDescripcion: row.TClDescripcion || 'Desconocido',
-//                 orders: []
-//             };
-//         }
-//         if (row.orderId) {
-//             map[row.OReIdOrdenRetiro].orders.push({
-//                 orderNumber: row.orderNumber, orderId: row.orderId,
-//                 orderEstado: row.orderEstado,
-//                 orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaSimbolo} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
-//                 orderIdMetodoPago: row.orderIdMetodoPago,
-//                 orderMetodoPago: row.orderMetodoPago,
-//                 orderPago: row.monetPagoSimbolo ? `${row.monetPagoSimbolo} ${parseFloat(row.orderMontoPago).toFixed(2)}` : null,
-//                 orderFechaPago: row.orderFechaPago
-//             });
-//         }
-//     }
-//     const retirosExternos = Object.values(map);
-//
-//     await transaction.begin();
-//
-//     try {
-//         for (const ret of retirosExternos) {
-//             let estadoNumerico = 1;
-//             if (ret.estado.includes('Abonado') || ret.estado.includes('Abonado de antemano')) estadoNumerico = 3;
-//             if (ret.estado.includes('Empaquetado sin abonar')) estadoNumerico = 7;
-//             if (ret.estado.includes('Empaquetado y abonado')) estadoNumerico = 8;
-//             if (ret.estado.includes('Entregado')) estadoNumerico = 5;
-//             if (ret.estado.includes('Cancelar')) estadoNumerico = 6;
-//
-//             const updateQuery = `
-//                 UPDATE OrdenesRetiro SET 
-//                     OReEstadoActual = @Estado,
-//                     OReCostoTotalOrden = COALESCE(@Monto, OReCostoTotalOrden),
-//                     ReferenciaPagoOnline = COALESCE(@RefPago, ReferenciaPagoOnline),
-//                     CodCliente = COALESCE(@CodCliente, CodCliente),
-//                     MonIdMoneda = COALESCE(@Moneda, MonIdMoneda),
-//                     FormaRetiro = COALESCE(FormaRetiro, 'RW'),
-//                     OReFechaEstadoActual = GETDATE()
-//                 WHERE OReIdOrdenRetiro = @OReId
-//             `;
-//
-//             let montoLimpio = null;
-//             let monedaLimpia = null;
-//             if (ret.montopagorealizado && ret.montopagorealizado !== 'NaN') {
-//                 const partes = ret.montopagorealizado.split(' ');
-//                 if (partes.length === 2) {
-//                     monedaLimpia = partes[0] === '$' ? 'UYU' : partes[0];
-//                     montoLimpio = parseFloat(partes[1].replace(/,/g, ''));
-//                 }
-//             } else if (ret.totalCost && ret.totalCost !== 'NaN') {
-//                 montoLimpio = parseFloat(ret.totalCost);
-//             }
-//
-//             const OReId = parseInt(ret.ordenDeRetiro.replace(/^R-0*/, ''), 10);
-//             if (isNaN(OReId)) continue;
-//
-//             await new sql.Request(transaction)
-//                 .input('OReId', sql.Int, OReId)
-//                 .input('Monto', sql.Decimal(18, 2), montoLimpio)
-//                 .input('Moneda', sql.VarChar(10), monedaLimpia || 'UYU')
-//                 .input('Estado', sql.Int, estadoNumerico)
-//                 .input('RefPago', sql.VarChar(200), ret.comprobante || null)
-//                 .input('CodCliente', sql.Int, ret.CliCodigoCliente ? parseInt(ret.CliCodigoCliente, 10) : null)
-//                 .query(updateQuery);
-//         }
-//
-//         await transaction.commit();
-//         return { success: true, count: retirosExternos.length, message: `${retirosExternos.length} retiros sincronizados con éxito.` };
-//
-//     } catch (innerErr) {
-//         await transaction.rollback();
-//         throw innerErr;
-//     }
-// };
-
-
 /**
  * Sincronizar retiros desde la API Central
  */
@@ -242,7 +114,7 @@ exports.getAllLocalRetiros = async (req, res) => {
         const pool = await getPool();
         const query = `
             SELECT 
-                COALESCE(r.FormaRetiro, 'R') + '-' + RIGHT('0000' + CAST(r.OReIdOrdenRetiro AS VARCHAR), 4) AS OrdIdRetiro,
+                COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
                 r.OReCostoTotalOrden AS Monto,
                 r.MonIdMoneda AS Moneda,
                 r.ReferenciaPagoOnline AS ReferenciaPago,
@@ -251,6 +123,8 @@ exports.getAllLocalRetiros = async (req, res) => {
                 r.OReFechaAlta AS Fecha,
                 r.FormaRetiro,
                 c.Nombre AS NombreCliente,
+                fe.Nombre AS LugarRetiro,
+                COALESCE(ag.Nombre, r.AgenciaOtra) AS AgenciaNombre,
                 (
                     SELECT STRING_AGG(od.OrdCodigoOrden, ',')
                     FROM RelOrdenesRetiroOrdenes rel WITH(NOLOCK)
@@ -259,12 +133,14 @@ exports.getAllLocalRetiros = async (req, res) => {
                 ) AS OrdenesCodigos
             FROM OrdenesRetiro r WITH(NOLOCK)
             LEFT JOIN Clientes c WITH(NOLOCK) ON c.CodCliente = r.CodCliente
+            LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
+            LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
             -- Excluir retiros entregados o cancelados
             WHERE r.OReEstadoActual NOT IN (5, 6)
             -- Excluir retiros que ya estan asignados a un estante fisico
             AND NOT EXISTS (
                 SELECT 1 FROM OcupacionEstantes oe WITH(NOLOCK)
-                WHERE oe.OrdenRetiro = COALESCE(r.FormaRetiro, 'R') + '-' + RIGHT('0000' + CAST(r.OReIdOrdenRetiro AS VARCHAR), 4)
+                WHERE oe.OrdenRetiro = COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR)
             )
             ORDER BY r.OReFechaAlta DESC
         `;
@@ -290,7 +166,7 @@ exports.getMyRetirosPendientes = async (req, res) => {
         const pool = await getPool();
         const query = `
             SELECT 
-                COALESCE(r.FormaRetiro, 'R') + '-' + RIGHT('0000' + CAST(r.OReIdOrdenRetiro AS VARCHAR), 4) AS OrdIdRetiro,
+                COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
                 r.OReCostoTotalOrden AS Monto,
                 r.MonIdMoneda AS Moneda,
                 r.ReferenciaPagoOnline AS ReferenciaPago,
@@ -651,7 +527,7 @@ exports.marcarRetiroEntregado = async (req, res) => {
             res.json({ success: true, message: 'Orden entregada. Estante liberado exitosamente.' });
 
         } catch (innerErr) {
-            await transaction.rollback();
+            try { await transaction.rollback(); } catch (e) { /* already rolled back */ }
             throw innerErr;
         }
 
@@ -711,12 +587,12 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
 
             // EMITIR EVENTO SOCKET.IO
             const io = req.app.get('socketio');
-            if (io) io.emit('retiros:update', { type: 'entregado', ordenesRetiro: (ordenesDeRetiro || ordenesParaEntregar || []) });
+            if (io) io.emit('retiros:update', { type: 'entregado', ordenesRetiro: ordenesParaEntregar });
 
             res.json({ success: true, message: 'Órdenes seleccionadas entregadas exitosamente.' });
 
         } catch (innerErr) {
-            await transaction.rollback();
+            try { await transaction.rollback(); } catch (e) { /* already rolled back */ }
             throw innerErr;
         }
 

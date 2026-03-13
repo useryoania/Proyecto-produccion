@@ -79,7 +79,11 @@ const getOrdenesRetiroQueryBase = `
     o.OrdEstadoActual AS orderEstado,
     eo.EOrNombreEstado AS orderEstadoNombre,
     o.OrdCostoFinal as costoFinal,
+<<<<<<< HEAD
     o.OrdCantidad AS orderCantidad,
+=======
+    o.MonIdMoneda AS orderMonedaId,
+>>>>>>> c52b063f7f3349910a4654243a26127ba1f3520b
     monOrden.MonSimbolo AS orderMonedaSimbolo,
     p.MPaIdMetodoPago AS orderIdMetodoPago,
     mp.MPaDescripcionMetodo AS orderMetodoPago,
@@ -118,7 +122,7 @@ const processRetirosRows = (rows) => {
   for (const row of rows) {
     if (!map[row.OReIdOrdenRetiro]) {
       map[row.OReIdOrdenRetiro] = {
-        ordenDeRetiro: `${row.FormaRetiro || 'R'}-${String(row.OReIdOrdenRetiro).padStart(4, '0')}`,
+        ordenDeRetiro: `${row.FormaRetiro || 'R'}-${row.OReIdOrdenRetiro}`,
         totalCost: parseFloat(row.OReCostoTotalOrden).toFixed(2),
         lugarRetiro: row.lugarRetiro || 'Desconocido',
         fechaAlta: row.OReFechaAlta,
@@ -147,8 +151,14 @@ const processRetirosRows = (rows) => {
         orderNumber: row.orderNumber,
         orderId: row.orderId,
         orderEstado: row.orderEstadoNombre || row.orderEstado,
+<<<<<<< HEAD
         orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaSimbolo} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
         orderCantidad: row.orderCantidad != null ? parseFloat(row.orderCantidad) : null,
+=======
+        orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaId === 2 ? 'US$' : '$'} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
+        simbolo: row.orderMonedaId === 2 ? 'US$' : '$',
+        monedaId: row.orderMonedaId || 1,
+>>>>>>> c52b063f7f3349910a4654243a26127ba1f3520b
         orderIdMetodoPago: row.orderIdMetodoPago,
         orderMetodoPago: row.orderMetodoPago,
         orderPago: row.monetPagoSimbolo ? `${row.monetPagoSimbolo} ${parseFloat(row.orderMontoPago).toFixed(2)}` : null,
@@ -780,10 +790,10 @@ const getClienteEnvioDatos = async (req, res) => {
     const [dirs, cliData] = await Promise.all([
       pool.request()
         .input('cliId', sql.Int, parseInt(cliId, 10))
-        .query('SELECT ID, Alias, Direccion, AgenciaID, Ciudad, Localidad, DepartamentoID, LocalidadID FROM DireccionesEnvioCliente WHERE CliIdCliente = @cliId ORDER BY FechaCreacion DESC'),
+        .query('SELECT ID, Alias, Direccion, AgenciaID, Ciudad, Localidad FROM DireccionesEnvioCliente WHERE CliIdCliente = @cliId ORDER BY FechaCreacion DESC'),
       pool.request()
         .input('cliId', sql.Int, parseInt(cliId, 10))
-        .query('SELECT CliDireccion, Localidad, LocalidadID, AgenciaID, DepartamentoID FROM Clientes WHERE CliIdCliente = @cliId')
+        .query('SELECT ISNULL(DireccionTrabajo, \'\') AS CliDireccion, CliLocalidad AS Localidad, LocalidadID, AgenciaID, DepartamentoID FROM Clientes WHERE CliIdCliente = @cliId')
     ]);
 
     res.json({
