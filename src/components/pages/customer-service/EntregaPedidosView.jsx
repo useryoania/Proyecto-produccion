@@ -483,7 +483,7 @@ const EntregaPedidosView = () => {
                 if (!retiroMap[key]) {
                     retiroMap[key] = {
                         OReIdOrdenRetiro: key,
-                        etiqueta: `R-${String(key).padStart(4, '0')}`,
+                        etiqueta: `R-${key}`,
                         estadoRetiro: row.estadoRetiro,
                         lugarRetiro: row.lugarRetiro,
                         CliNombre: row.CliNombre,
@@ -1517,10 +1517,10 @@ const EntregaPedidosView = () => {
                                                     };
                                                     const res = await api.post('/apiordenesRetiro/crear', payload);
                                                     const idRetiro = res.data.OReIdOrdenRetiro;
-                                                    toast.success(`Retiro generado: RL-${String(idRetiro).padStart(4, '0')}`);
+                                                    toast.success(`Retiro generado: RL-${idRetiro}`);
                                                     const lugarNombre = lugarSeleccionado?.LReNombreLugar || '';
                                                     printTicketEncomienda({
-                                                        ordenDeRetiro: `RL-${String(idRetiro).padStart(4, '0')}`,
+                                                        ordenDeRetiro: `RL-${idRetiro}`,
                                                         lugarRetiro: lugarNombre,
                                                         totalCost: totalCost.toFixed(2),
                                                         pagorealizado: 0,

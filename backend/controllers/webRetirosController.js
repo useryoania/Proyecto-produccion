@@ -242,7 +242,7 @@ exports.getAllLocalRetiros = async (req, res) => {
         const pool = await getPool();
         const query = `
             SELECT 
-                COALESCE(r.FormaRetiro, 'R') + '-' + RIGHT('0000' + CAST(r.OReIdOrdenRetiro AS VARCHAR), 4) AS OrdIdRetiro,
+                COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
                 r.OReCostoTotalOrden AS Monto,
                 r.MonIdMoneda AS Moneda,
                 r.ReferenciaPagoOnline AS ReferenciaPago,
@@ -251,6 +251,8 @@ exports.getAllLocalRetiros = async (req, res) => {
                 r.OReFechaAlta AS Fecha,
                 r.FormaRetiro,
                 c.Nombre AS NombreCliente,
+                fe.Nombre AS LugarRetiro,
+                COALESCE(ag.Nombre, r.AgenciaOtra) AS AgenciaNombre,
                 (
                     SELECT STRING_AGG(od.OrdCodigoOrden, ',')
                     FROM RelOrdenesRetiroOrdenes rel WITH(NOLOCK)
@@ -259,12 +261,14 @@ exports.getAllLocalRetiros = async (req, res) => {
                 ) AS OrdenesCodigos
             FROM OrdenesRetiro r WITH(NOLOCK)
             LEFT JOIN Clientes c WITH(NOLOCK) ON c.CodCliente = r.CodCliente
+            LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
+            LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
             -- Excluir retiros entregados o cancelados
             WHERE r.OReEstadoActual NOT IN (5, 6)
             -- Excluir retiros que ya estan asignados a un estante fisico
             AND NOT EXISTS (
                 SELECT 1 FROM OcupacionEstantes oe WITH(NOLOCK)
-                WHERE oe.OrdenRetiro = COALESCE(r.FormaRetiro, 'R') + '-' + RIGHT('0000' + CAST(r.OReIdOrdenRetiro AS VARCHAR), 4)
+                WHERE oe.OrdenRetiro = COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR)
             )
             ORDER BY r.OReFechaAlta DESC
         `;
@@ -290,7 +294,7 @@ exports.getMyRetirosPendientes = async (req, res) => {
         const pool = await getPool();
         const query = `
             SELECT 
-                COALESCE(r.FormaRetiro, 'R') + '-' + RIGHT('0000' + CAST(r.OReIdOrdenRetiro AS VARCHAR), 4) AS OrdIdRetiro,
+                COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
                 r.OReCostoTotalOrden AS Monto,
                 r.MonIdMoneda AS Moneda,
                 r.ReferenciaPagoOnline AS ReferenciaPago,

@@ -117,7 +117,7 @@ const processRetirosRows = (rows) => {
   for (const row of rows) {
     if (!map[row.OReIdOrdenRetiro]) {
       map[row.OReIdOrdenRetiro] = {
-        ordenDeRetiro: `${row.FormaRetiro || 'R'}-${String(row.OReIdOrdenRetiro).padStart(4, '0')}`,
+        ordenDeRetiro: `${row.FormaRetiro || 'R'}-${row.OReIdOrdenRetiro}`,
         totalCost: parseFloat(row.OReCostoTotalOrden).toFixed(2),
         lugarRetiro: row.lugarRetiro || 'Desconocido',
         fechaAlta: row.OReFechaAlta,

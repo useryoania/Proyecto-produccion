@@ -572,6 +572,8 @@ const WebRetirosPage = () => {
             moneda: r.Moneda || 'UYU',
             pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
             pagoHandy: !!r.ReferenciaPago,
+            lugarRetiro: r.LugarRetiro || null,
+            agenciaNombre: r.AgenciaNombre || null,
             orders: r.BultosJSON ? JSON.parse(r.BultosJSON) :
               (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() })) : [])
           }));
@@ -656,6 +658,8 @@ const WebRetirosPage = () => {
                 moneda: r.Moneda || 'UYU',
                 pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
                 pagoHandy: !!r.ReferenciaPago,
+                lugarRetiro: r.LugarRetiro || null,
+                agenciaNombre: r.AgenciaNombre || null,
                 orders: r.BultosJSON ? JSON.parse(r.BultosJSON) :
                   (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() })) : [])
               }));
@@ -1287,6 +1291,7 @@ const WebRetirosPage = () => {
                   TClDescripcion: o.TClDescripcion || '',
                   fechaAlta: o.fechaAlta || o.FechaAlta || null,
                   lugarRetiro: o.lugarRetiro || 'Web',
+                  agenciaNombre: o.agenciaNombre || null,
                   totalCost: o.monto ? `${o.moneda} ${Number(o.monto).toFixed(2)}` : '-',
                   orders: o.orders,
                   pagoHandy: o.pagoHandy,
@@ -1303,6 +1308,7 @@ const WebRetirosPage = () => {
                   TClDescripcion: o.TClDescripcion || '',
                   fechaAlta: o.fechaAlta || o.FechaAlta || null,
                   lugarRetiro: o.lugarRetiro || '-',
+                  agenciaNombre: o.agenciaNombre || null,
                   totalCost: (o.totalCost && o.totalCost !== 'NaN') ? o.totalCost : (o.montopagorealizado || '-'),
                   orders: (o.orders || []).map(sub => ({
                     orderNumber: sub.orderNumber || sub.codigoOrden,
@@ -1469,7 +1475,7 @@ const WebRetirosPage = () => {
                                 {/* Lugar de retiro */}
                                 {item.lugarRetiro && item.lugarRetiro !== 'Desconocido' && (
                                   <div className="text-[10px] font-bold text-blue-500 truncate leading-tight">
-                                    {item.lugarRetiro}{item.agenciaNombre ? ` (${item.agenciaNombre})` : ''}
+                                    {(item.agenciaNombre) ? item.lugarRetiro.replace(/\s*\(.*\)\s*$/, '') + ` (${item.agenciaNombre})` : item.lugarRetiro}
                                   </div>
                                 )}
 

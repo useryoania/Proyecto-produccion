@@ -50,6 +50,7 @@ export const PickupView = () => {
     const [newLocalidad, setNewLocalidad] = useState('');
     const [loadingShipping, setLoadingShipping] = useState(false);
     const addAddressRef = useRef(null);
+    const creatingRef = useRef(false);
 
     useEffect(() => {
         const loadPickupOrders = async () => {
@@ -166,7 +167,9 @@ export const PickupView = () => {
         }
     };
 
-    const handleCreatePickup = async () => {
+    const handleCreatePickup = async (shippingOverrides = {}) => {
+        if (creatingRef.current) return null;
+        creatingRef.current = true;
         setLoading(true);
         try {
             const ordersPayload = selectedOrders.map(selId => {
@@ -190,13 +193,28 @@ export const PickupView = () => {
                 };
             }).filter(Boolean);
 
-            const formaEnvioId = selectedFormaEnvio || shippingData?.defaultFormaEnvioID || 5;
+            const formaEnvioId = shippingOverrides.formaEnvioId || selectedFormaEnvio || shippingData?.defaultFormaEnvioID || 5;
             const esEncomienda = shippingData?.formasEnvio?.find(f => f.ID === formaEnvioId)?.Nombre?.toLowerCase().includes('encomienda');
+
+            // Resolver departamento y localidad desde la dirección seleccionada
+            let dir = selectedDireccion || '';
+            let depto = '';
+            let loc = '';
+            const savedDir = shippingData?.direccionesGuardadas?.find(d => d.Direccion === selectedDireccion);
+            if (savedDir) {
+                depto = savedDir.Ciudad || '';
+                loc = savedDir.Localidad || '';
+            }
 
             const payload = {
                 orders: ordersPayload,
                 totalCost: Number((totalAmount || 0).toFixed(2)),
-                lugarRetiro: esEncomienda ? 2 : 1
+                lugarRetiro: esEncomienda ? 2 : 1,
+                direccion: esEncomienda ? dir : null,
+                departamento: esEncomienda ? depto : null,
+                localidad: esEncomienda ? loc : null,
+                agenciaId: esEncomienda ? (selectedAgencia === -1 ? null : selectedAgencia) : null,
+                customAgencia: esEncomienda && selectedAgencia === -1 ? customAgencia : null
             };
 
             const res = await apiClient.post('/web-orders/pickup-orders/create', payload);
@@ -215,53 +233,19 @@ export const PickupView = () => {
             alert("Error al conectar con el servidor: " + error.message);
             return null;
         } finally {
+            creatingRef.current = false;
             setLoading(false);
         }
     };
 
-    // Guardar datos de envío en el retiro
-    const saveShippingData = async (code) => {
-        const retiroId = code || pickupCode;
-        if (!retiroId) return;
-
-        const formaEnvioId = selectedFormaEnvio || shippingData?.defaultFormaEnvioID;
-        const esEncomienda = shippingData?.formasEnvio?.find(f => f.ID === formaEnvioId)?.Nombre?.toLowerCase().includes('encomienda');
-
-        // Resolver departamento y localidad desde la dirección seleccionada
-        let dir = selectedDireccion || '';
-        let depto = '';
-        let loc = '';
-        const savedDir = shippingData?.direccionesGuardadas?.find(d => d.Direccion === selectedDireccion);
-        if (savedDir) {
-            depto = savedDir.Ciudad || '';
-            loc = savedDir.Localidad || '';
-        }
-
-        try {
-            await apiClient.patch(`/web-orders/pickup-orders/${retiroId}/shipping`, {
-                lugarRetiro: esEncomienda ? 2 : 1,
-                agenciaId: esEncomienda ? (selectedAgencia === -1 ? null : selectedAgencia) : null,
-                customAgencia: esEncomienda && selectedAgencia === -1 ? customAgencia : null,
-                direccion: esEncomienda ? dir : null,
-                departamento: esEncomienda ? depto : null,
-                localidad: esEncomienda ? loc : null
-            });
-        } catch (e) {
-            console.error('Error guardando datos de envío:', e);
-        }
-    };
-
-    const handleProceed = async () => {
-        // Flujo Handy: crear link de pago con datos del retiro ya creado
-        if (!pickupCode) {
+    const handleProceed = async (codeOverride) => {
+        const retiroCode = codeOverride || pickupCode;
+        if (!retiroCode) {
             alert('No hay retiro creado.');
             return;
         }
         setLoading(true);
         try {
-            // Guardar datos de envío antes de ir a pagar
-            await saveShippingData();
-
             const ordersPayload = selectedOrders.map(selId => {
                 const order = readyOrders.find(o => o.id === selId);
                 if (!order) return null;
@@ -275,7 +259,7 @@ export const PickupView = () => {
             }).filter(Boolean);
 
             const payload = {
-                ordenRetiro: pickupCode,
+                ordenRetiro: retiroCode,
                 totalAmount: totalAmount,
                 activeCurrency: activeCurrency,
                 bultosJSON: JSON.stringify(ordersPayload)
@@ -444,8 +428,8 @@ export const PickupView = () => {
             <div className="flex items-center gap-3 mb-2">
                 <PackageCheck size={48} strokeWidth={1} className="text-brand-gold" />
                 <div>
-                    <h2 className="text-3xl font-bold text-zinc-300 uppercase tracking-tight">Retiro <span className="text-custom-cyan">RW-{pickupCode}</span></h2>
-                    <p className="text-zinc-500 uppercase text-sm">Revisá los datos y elegí forma de envío.</p>
+                    <h2 className="text-3xl font-bold text-zinc-300 uppercase tracking-tight">Nuevo <span className="text-custom-cyan">Retiro</span></h2>
+                    <p className="text-zinc-500 uppercase text-sm">Revisá los datos y elegí forma de envío para confirmar.</p>
                 </div>
             </div>
 
@@ -674,19 +658,12 @@ export const PickupView = () => {
             <div className="flex justify-end items-center gap-3">
                     <CustomButton
                         onClick={async () => {
-                            setLoading(true);
-                            try {
-                                await saveShippingData();
-                                setConfirmedWithoutPayment(true);
-                                setStep('success');
-                                sessionStorage.removeItem('pickup_selected');
-                                sessionStorage.removeItem('pickup_code');
-                            } catch (err) {
-                                console.error('Error al confirmar retiro:', err);
-                                alert('Error al confirmar el retiro.');
-                            } finally {
-                                setLoading(false);
-                            }
+                            const code = await handleCreatePickup();
+                            if (!code) return;
+                            setConfirmedWithoutPayment(true);
+                            setStep('success');
+                            sessionStorage.removeItem('pickup_selected');
+                            sessionStorage.removeItem('pickup_code');
                         }}
                         isLoading={loading}
                         disabled={!selectedFormaEnvio}
@@ -701,7 +678,11 @@ export const PickupView = () => {
 
                     {totalAmount > 0 && (
                         <CustomButton
-                            onClick={handleProceed}
+                            onClick={async () => {
+                                const code = await handleCreatePickup();
+                                if (!code) return;
+                                await handleProceed(code);
+                            }}
                             isLoading={loading}
                             disabled={!selectedFormaEnvio}
                             variant="primary"
@@ -861,11 +842,7 @@ export const PickupView = () => {
                         </div>
                         <CustomButton
                             onClick={async () => {
-                                // 1. Crear retiro
-                                const code = await handleCreatePickup();
-                                if (!code) return;
-
-                                // 2. Cargar datos de envío
+                                // Cargar datos de envío (NO crear retiro aún)
                                 setLoadingShipping(true);
                                 try {
                                     const res = await apiClient.get('/web-orders/shipping-data');
@@ -880,7 +857,7 @@ export const PickupView = () => {
                                 }
                                 setLoadingShipping(false);
 
-                                // 3. Ir a confirmación
+                                // Ir a confirmación (el retiro se crea al confirmar)
                                 setStep('confirmation');
                                 window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}

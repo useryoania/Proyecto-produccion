@@ -1519,7 +1519,7 @@ const parseAmount = (amt) => {
 
 // --- CREAR ORDEN DE RETIRO (QUERY DIRECTA A DB) ---
 exports.createPickupOrder = async (req, res) => {
-    const { selectedOrderIds, orders, totalCost, clientName, moneda } = req.body;
+    const { selectedOrderIds, orders, totalCost, clientName, moneda, direccion, departamento, localidad, agenciaId, customAgencia } = req.body;
 
     if ((!selectedOrderIds || !selectedOrderIds.length) && (!orders || !orders.length)) {
         return res.status(400).json({ error: "No hay órdenes seleccionadas." });
@@ -1600,10 +1600,22 @@ exports.createPickupOrder = async (req, res) => {
                 usuarioAlta: UsuarioAlta,
                 formaRetiro: 'RW',
                 codCliente: parseInt(codCliente, 10) || null,
-                moneda: targetCurrency
+                moneda: targetCurrency,
+                direccion: direccion || null,
+                departamento: departamento || null,
+                localidad: localidad || null,
+                agenciaId: agenciaId || null
             });
 
             await transaction.commit();
+
+            // Si se eligió agencia "Otra", guardar el nombre custom
+            if (customAgencia) {
+                await pool.request()
+                    .input('OReId', sql.Int, OReIdOrdenRetiro)
+                    .input('AgenciaOtra', sql.NVarChar(200), customAgencia)
+                    .query('UPDATE OrdenesRetiro SET AgenciaOtra = @AgenciaOtra WHERE OReIdOrdenRetiro = @OReId');
+            }
 
             const ordIdRetiro = `RW-${OReIdOrdenRetiro}`;
 
