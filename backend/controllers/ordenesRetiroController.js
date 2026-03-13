@@ -147,6 +147,7 @@ const processRetirosRows = (rows) => {
         orderId: row.orderId,
         orderEstado: row.orderEstadoNombre || row.orderEstado,
         orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaSimbolo} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
+        simbolo: row.orderMonedaSimbolo || '$',
         orderIdMetodoPago: row.orderIdMetodoPago,
         orderMetodoPago: row.orderMetodoPago,
         orderPago: row.monetPagoSimbolo ? `${row.monetPagoSimbolo} ${parseFloat(row.orderMontoPago).toFixed(2)}` : null,
@@ -763,7 +764,7 @@ const getClienteEnvioDatos = async (req, res) => {
         .query('SELECT ID, Alias, Direccion, AgenciaID, Ciudad, Localidad, DepartamentoID, LocalidadID FROM DireccionesEnvioCliente WHERE CliIdCliente = @cliId ORDER BY FechaCreacion DESC'),
       pool.request()
         .input('cliId', sql.Int, parseInt(cliId, 10))
-        .query('SELECT CliDireccion, Localidad, LocalidadID, AgenciaID, DepartamentoID FROM Clientes WHERE CliIdCliente = @cliId')
+        .query('SELECT ISNULL(DireccionTrabajo, \'\') AS CliDireccion, CliLocalidad AS Localidad, LocalidadID, AgenciaID, DepartamentoID FROM Clientes WHERE CliIdCliente = @cliId')
     ]);
 
     res.json({

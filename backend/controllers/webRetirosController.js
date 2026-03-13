@@ -527,7 +527,7 @@ exports.marcarRetiroEntregado = async (req, res) => {
             res.json({ success: true, message: 'Orden entregada. Estante liberado exitosamente.' });
 
         } catch (innerErr) {
-            await transaction.rollback();
+            try { await transaction.rollback(); } catch (e) { /* already rolled back */ }
             throw innerErr;
         }
 
@@ -592,7 +592,7 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
             res.json({ success: true, message: 'Órdenes seleccionadas entregadas exitosamente.' });
 
         } catch (innerErr) {
-            await transaction.rollback();
+            try { await transaction.rollback(); } catch (e) { /* already rolled back */ }
             throw innerErr;
         }
 

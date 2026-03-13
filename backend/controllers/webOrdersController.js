@@ -1292,7 +1292,7 @@ exports.getPickupOrders = async (req, res) => {
                 status: isPaid ? 'PAGADO' : 'LISTO',
                 originalStatus: o.Estado,
                 isPaid: isPaid,
-                currency: cob ? cob.Moneda : (o.MonSimbolo || '$'),
+                currency: cob ? cob.Moneda : (o.MonSimbolo && o.MonSimbolo.toUpperCase().includes('U') ? 'USD' : '$'),
                 quantity: parseQuantity(o.Cantidad),
                 quantityStr: o.Cantidad ? String(o.Cantidad) : '1',
                 clientId: o.IdCliente || 'N/A',

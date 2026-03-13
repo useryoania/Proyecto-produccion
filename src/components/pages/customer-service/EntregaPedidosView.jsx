@@ -837,7 +837,7 @@ const EntregaPedidosView = () => {
                                                 </td>
                                                 <td className="p-4">
                                                     <span className="font-black text-slate-800 text-lg">
-                                                        UYU {enc.totalCost}
+                                                        {enc.orders?.[0]?.simbolo || '$'} {enc.totalCost}
                                                     </span>
                                                 </td>
                                                 <td className="p-4">
