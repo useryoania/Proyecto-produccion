@@ -139,8 +139,9 @@ const LoginPage = () => {
     const googleWrapperRef = useRef(null);
     const [requireReset, setRequireReset] = useState(false);
     const [resetToken, setResetToken] = useState(null);
+    const googleCallbackRef = useRef(null);
 
-    const handleGoogleResponse = useCallback(async (response) => {
+    googleCallbackRef.current = async (response) => {
         setError('');
         setGoogleLoading(true);
         try {
@@ -155,9 +156,12 @@ const LoginPage = () => {
         } finally {
             setGoogleLoading(false);
         }
-    }, [googleLogin, navigate]);
+    };
 
     useEffect(() => {
+        if (window.__gsiInitialized) return;
+        window.__gsiInitialized = true;
+
         const script = document.createElement('script');
         script.src = 'https://accounts.google.com/gsi/client';
         script.async = true;
@@ -166,7 +170,7 @@ const LoginPage = () => {
             if (window.google && googleWrapperRef.current) {
                 window.google.accounts.id.initialize({
                     client_id: GOOGLE_CLIENT_ID,
-                    callback: handleGoogleResponse,
+                    callback: (resp) => googleCallbackRef.current?.(resp),
                 });
                 window.google.accounts.id.renderButton(googleWrapperRef.current, {
                     type: 'standard',
@@ -180,10 +184,7 @@ const LoginPage = () => {
             }
         };
         document.body.appendChild(script);
-        return () => {
-            if (document.body.contains(script)) document.body.removeChild(script);
-        };
-    }, [handleGoogleResponse]);
+    }, []);
 
     const handleSubmit = async (e) => {
         e.preventDefault();

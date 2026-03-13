@@ -42,6 +42,8 @@ export const PickupView = () => {
     const [selectedFormaEnvio, setSelectedFormaEnvio] = useState(null);
     const [selectedAgencia, setSelectedAgencia] = useState(null);
     const [customAgencia, setCustomAgencia] = useState('');
+    const [defaultDepto, setDefaultDepto] = useState('');
+    const [defaultLocalidad, setDefaultLocalidad] = useState('');
     const [selectedDireccion, setSelectedDireccion] = useState('');
     const [showAddAddress, setShowAddAddress] = useState(false);
     const [newAlias, setNewAlias] = useState('');
@@ -204,6 +206,10 @@ export const PickupView = () => {
             if (savedDir) {
                 depto = savedDir.Ciudad || '';
                 loc = savedDir.Localidad || '';
+            } else if (dir === shippingData?.defaultDireccion) {
+                // Default address — use manually selected dept/loc
+                depto = defaultDepto || '';
+                loc = defaultLocalidad || '';
             }
 
             const payload = {
@@ -361,6 +367,10 @@ export const PickupView = () => {
     // ========================
     const selectedOrdersData = readyOrders.filter(o => selectedOrders.includes(o.id));
     const isEncomienda = shippingData?.formasEnvio?.find(f => f.ID === selectedFormaEnvio)?.Nombre?.toLowerCase().includes('encomienda');
+    const isDefaultAddress = selectedDireccion && selectedDireccion === shippingData?.defaultDireccion;
+    const selectedSavedDir = shippingData?.direccionesGuardadas?.find(d => d.Direccion === selectedDireccion);
+    const needsDeptLoc = isEncomienda && isDefaultAddress && (!defaultDepto || !defaultLocalidad);
+    const needsAddress = isEncomienda && (!selectedDireccion?.trim() || needsDeptLoc);
 
     const handleAddAddress = async () => {
         if (!newDireccion.trim()) return;
@@ -539,6 +549,42 @@ export const PickupView = () => {
                                             </label>
                                         )}
 
+                                        {/* Dept/Loc pickers for default address */}
+                                        {isDefaultAddress && (
+                                            <div className="grid grid-cols-2 gap-3 mt-2 ml-9">
+                                                <CustomSelect
+                                                    value={defaultDepto}
+                                                    onChange={(val) => {
+                                                        setDefaultDepto(val);
+                                                        const dept = shippingData.departamentos?.find(d => d.Nombre === val);
+                                                        const locs = dept ? shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID) : [];
+                                                        setDefaultLocalidad(locs?.length === 1 ? locs[0].Nombre : '');
+                                                    }}
+                                                    options={[
+                                                        { value: '', label: 'Departamento...' },
+                                                        ...(shippingData.departamentos?.map(d => ({ value: d.Nombre, label: d.Nombre })) || [])
+                                                    ]}
+                                                    placeholder="Departamento..."
+                                                    size="small"
+                                                />
+                                                <CustomSelect
+                                                    value={defaultLocalidad}
+                                                    onChange={(val) => setDefaultLocalidad(val)}
+                                                    options={[
+                                                        { value: '', label: 'Localidad...' },
+                                                        ...(() => {
+                                                            const dept = shippingData.departamentos?.find(d => d.Nombre === defaultDepto);
+                                                            if (!dept) return [];
+                                                            return shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID).map(l => ({ value: l.Nombre, label: l.Nombre })) || [];
+                                                        })()
+                                                    ]}
+                                                    placeholder="Localidad..."
+                                                    size="small"
+                                                    disabled={!defaultDepto}
+                                                />
+                                            </div>
+                                        )}
+
                                         {/* Direcciones guardadas */}
                                         {shippingData.direccionesGuardadas?.map((d, idx) => (
                                             <div
@@ -654,6 +700,17 @@ export const PickupView = () => {
                 </div>
             )}
 
+            {/* Aviso de dirección requerida */}
+            {needsAddress && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-brand-gold/10 border border-brand-gold/30 text-brand-gold text-sm font-semibold">
+                    <AlertCircle size={16} />
+                    {needsDeptLoc
+                        ? 'Seleccioná departamento y localidad para la dirección principal.'
+                        : 'Seleccioná o agregá una dirección de envío para continuar.'
+                    }
+                </div>
+            )}
+
             {/* Botones finales */}
             <div className="flex justify-end items-center gap-3">
                     <CustomButton
@@ -666,7 +723,7 @@ export const PickupView = () => {
                             sessionStorage.removeItem('pickup_code');
                         }}
                         isLoading={loading}
-                        disabled={!selectedFormaEnvio}
+                        disabled={!selectedFormaEnvio || needsAddress}
                         variant="secondary"
                         icon={PackageCheck}
                         className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-brand-gold/40 hover:!border-brand-gold hover:!bg-brand-gold/5"
@@ -684,7 +741,7 @@ export const PickupView = () => {
                                 await handleProceed(code);
                             }}
                             isLoading={loading}
-                            disabled={!selectedFormaEnvio}
+                            disabled={!selectedFormaEnvio || needsAddress}
                             variant="primary"
                             icon={CreditCard}
                             className="py-3 px-8 text-lg !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!bg-brand-cyan/5 hover:!border-brand-cyan"

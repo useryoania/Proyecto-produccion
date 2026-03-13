@@ -19,6 +19,7 @@
     "cors": "^2.8.5",
     "express": "^5.2.1",
     "framer-motion": "^12.34.0",
+    "google-auth-library": "^10.6.1",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
     "jszip": "^3.10.1",

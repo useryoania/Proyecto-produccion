@@ -530,7 +530,7 @@ const WebRetirosPage = () => {
 
   // 1. Conexión WebSocket para Tiempo Real
   useEffect(() => {
-    const socket = io(import.meta.env.VITE_API_URL || 'http://localhost:5000', {
+    const socket = io(import.meta.env.VITE_API_URL || window.location.origin, {
       transports: ['websocket', 'polling']
     });
 
