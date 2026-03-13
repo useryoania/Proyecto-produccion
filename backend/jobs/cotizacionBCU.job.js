@@ -1,36 +1,83 @@
 const axios = require('axios');
 const { getPool, sql } = require('../config/db');
 
-// ── BCU API (Banco Central del Uruguay) ──────────────────────────────────────
-// Moneda 2222 = Dólar USA | Fecha formato: DDMMYYYY
-// Devuelve compra y venta del día. Usamos el promedio (o solo venta si preferís).
-const BCU_URL = 'https://cotizaciones.bcu.gub.uy/wscotizaciones/ServicioCotizaciones.svc/getCotizaciones';
+// ── BCU SOAP API (Banco Central del Uruguay) ──────────────────────────────────
+// Moneda 2222 = Dólar USA | Grupo 0 = Todos
+// WSDL: https://cotizaciones.bcu.gub.uy/wscotizaciones/servlet/awsbcucotizaciones?wsdl
+//
+// BCU devuelve cotización INTERBANCARIA. Para llevarla a precio BANCARIO (BROU)
+// se aplican estos spreads:
+//   Compra = BCU × 0.9945  (-0.55%)
+//   Venta  = BCU × 1.0242  (+2.42%)
+const BCU_SOAP_URL = 'https://cotizaciones.bcu.gub.uy/wscotizaciones/servlet/awsbcucotizaciones';
+const BCU_SOAP_ACTION = 'Cotizaaction/AWSBCUCOTIZACIONES.Execute';
+const SPREAD_COMPRA = 0.9945;
+const SPREAD_VENTA  = 1.0242;
 
-function fechaBCU(d = new Date()) {
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}${mm}${yyyy}`;
+function buildBCUSoapRequest(fechaDesde, fechaHasta) {
+    return '<?xml version="1.0" encoding="utf-8"?>' +
+        '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:cot="Cotiza">' +
+        '<soap:Body>' +
+        '<cot:wsbcucotizaciones.Execute>' +
+        '<cot:Entrada>' +
+        '<cot:Moneda><cot:item>2222</cot:item></cot:Moneda>' +
+        '<cot:FechaDesde>' + fechaDesde + '</cot:FechaDesde>' +
+        '<cot:FechaHasta>' + fechaHasta + '</cot:FechaHasta>' +
+        '<cot:Grupo>0</cot:Grupo>' +
+        '</cot:Entrada>' +
+        '</cot:wsbcucotizaciones.Execute>' +
+        '</soap:Body>' +
+        '</soap:Envelope>';
 }
 
+function formatDate(d) {
+    return d.toISOString().split('T')[0]; // YYYY-MM-DD
+}
+
+// Intenta hoy, si no hay cotización intenta ayer (BCU publica ~13hs)
 async function fetchCotizacionBCU() {
-    const fecha = fechaBCU();
-    const url = `${BCU_URL}?Moneda=2222&Fecha=${fecha}&Rows=1&idPadre=0&Cab=S`;
+    const hoy = new Date();
+    const ayer = new Date(hoy);
+    ayer.setDate(ayer.getDate() - 1);
 
-    const { data } = await axios.get(url, {
-        timeout: 15000,
-        headers: { Accept: 'application/json' }
-    });
+    const fechas = [formatDate(hoy), formatDate(ayer)];
 
-    // Respuesta esperada: { tipocambio: [{ Fecha, TCC, TCN }] }
-    // TCC = precio compra, TCN = precio venta
-    const rows = data?.tipocambio;
-    if (!rows || rows.length === 0) throw new Error('BCU no devolvió datos de cotización');
+    for (const fecha of fechas) {
+        try {
+            const soapXml = buildBCUSoapRequest(fecha, fecha);
+            const { data } = await axios.post(BCU_SOAP_URL, soapXml, {
+                timeout: 15000,
+                headers: {
+                    'Content-Type': 'text/xml; charset=utf-8',
+                    'SOAPAction': BCU_SOAP_ACTION
+                }
+            });
 
-    const venta = parseFloat(rows[0].TCN ?? rows[0].TCC);
-    if (!isFinite(venta) || venta <= 0) throw new Error(`Cotización inválida: ${JSON.stringify(rows[0])}`);
+            const xml = String(data);
+            const tcvMatch = xml.match(/<TCV>([\d.]+)<\/TCV>/);
+            const tccMatch = xml.match(/<TCC>([\d.]+)<\/TCC>/);
+            const interbancario = parseFloat(tcvMatch?.[1] || tccMatch?.[1] || '0');
 
-    return venta;
+            if (isFinite(interbancario) && interbancario > 1) {
+                const compra = parseFloat((interbancario * SPREAD_COMPRA).toFixed(2));
+                const venta  = parseFloat((interbancario * SPREAD_VENTA).toFixed(2));
+                console.log(`[COTIZACION] BCU ${fecha}: interbancario=${interbancario} → compra=${compra}, venta=${venta}`);
+                return { interbancario, compra, venta };
+            }
+        } catch (err) {
+            console.warn(`[COTIZACION] BCU ${fecha} falló:`, err.message);
+        }
+    }
+
+    // Fallback: open.er-api.com (ya devuelve tasa de mercado, no aplicar spread)
+    console.log('[COTIZACION] BCU sin datos, usando fallback open.er-api.com...');
+    const { data } = await axios.get('https://open.er-api.com/v6/latest/USD', { timeout: 15000 });
+    const rate = data?.rates?.UYU;
+    if (!rate || !isFinite(rate) || rate <= 0) {
+        throw new Error(`Fallback inválido: UYU=${rate}`);
+    }
+    const r = parseFloat(rate.toFixed(2));
+    return { interbancario: r, compra: r, venta: r };
 }
 
 async function runCotizacionJob() {
@@ -47,38 +94,37 @@ async function runCotizacionJob() {
             return;
         }
 
-        // Obtener del BCU
-        const cotizacion = await fetchCotizacionBCU();
+        // Obtener cotización
+        const cot = await fetchCotizacionBCU();
 
-        // Insertar en DB
+        // Insertar en DB (guardamos la venta bancaria)
         await pool.request()
-            .input('cot', sql.Float, cotizacion)
-            .query(`INSERT INTO Cotizaciones (CotFecha, CotDolar) VALUES (GETDATE(), @cot)`);
+            .input('cot', sql.Float, cot.venta)
+            .query(`INSERT INTO Cotizaciones (CotIdCotizacion, CotFecha, CotDolar)
+                    VALUES ((SELECT ISNULL(MAX(CotIdCotizacion),0)+1 FROM Cotizaciones), GETDATE(), @cot)`);
 
-        console.log(`[COTIZACION JOB] ✅ Cotización BCU insertada: $U ${cotizacion}`);
+        console.log(`[COTIZACION JOB] ✅ Cotización insertada: compra=$U ${cot.compra} / venta=$U ${cot.venta} (interbancario: ${cot.interbancario})`);
 
     } catch (err) {
         console.error('[COTIZACION JOB] ❌ Error:', err.message);
     }
 }
 
-// ── Scheduler: corre a las 09:10 y 10:30 (por si BCU tarda en publicar) ──────
+// ── Scheduler: corre a las 09:10 y 13:30 (BCU publica ~13hs) ──────
 function startCotizacionJob() {
     const cron = require('node-cron');
 
-    // 09:10 AM hora Uruguay
     cron.schedule('10 9 * * 1-5', () => {
         console.log('[COTIZACION JOB] Ejecutando (09:10 lun-vie)...');
         runCotizacionJob();
     }, { timezone: 'America/Montevideo' });
 
-    // 10:30 AM como respaldo (por si el BCU no publicó aún a las 9)
-    cron.schedule('30 10 * * 1-5', () => {
-        console.log('[COTIZACION JOB] Ejecutando respaldo (10:30 lun-vie)...');
+    cron.schedule('30 13 * * 1-5', () => {
+        console.log('[COTIZACION JOB] Ejecutando respaldo (13:30 lun-vie)...');
         runCotizacionJob();
     }, { timezone: 'America/Montevideo' });
 
-    console.log('⏱️ [CRON] Cotización BCU: Activado (09:10 y 10:30, Lun-Vie).');
+    console.log('⏱️ [CRON] Cotización BCU: Activado (09:10 y 13:30, Lun-Vie).');
 }
 
-module.exports = { startCotizacionJob, runCotizacionJob };
+module.exports = { startCotizacionJob, runCotizacionJob, fetchCotizacionBCU };

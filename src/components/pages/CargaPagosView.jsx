@@ -20,7 +20,9 @@ export const CargaGestionPagosView = () => {
 
     // Cotización
     const [cotizacion, setCotizacion] = useState(null);
+    const [cotizacionFecha, setCotizacionFecha] = useState(null);
     const [loadingCotizacion, setLoadingCotizacion] = useState(false);
+    const [cotFlash, setCotFlash] = useState(false);
     const [isManualCotizacion, setIsManualCotizacion] = useState(false);
     const [manualCotizacion, setManualCotizacion] = useState('');
 
@@ -85,6 +87,7 @@ export const CargaGestionPagosView = () => {
             }
             if (resCotiz.status === 'fulfilled' && resCotiz.value.data?.cotizaciones?.length > 0) {
                 setCotizacion(resCotiz.value.data.cotizaciones[0].CotDolar);
+                setCotizacionFecha(new Date());
             } else {
                 setCotizacion(null);
             }
@@ -97,16 +100,22 @@ export const CargaGestionPagosView = () => {
 
     // ─── COTIZACIÓN: Buscar del banco ─────────────────────
     const handleBuscarCotizacion = async () => {
+        if (loadingCotizacion) return;
         setLoadingCotizacion(true);
         try {
-            const res = await api.get('/apicotizaciones/hoy');
-            if (res.data?.cotizaciones?.length > 0) {
-                setCotizacion(res.data.cotizaciones[0].CotDolar);
+            const res = await api.get('/apicotizaciones/bcu');
+            if (res.data?.cotizacion) {
+                setCotizacion(res.data.cotizacion);
+                setCotizacionFecha(new Date());
                 setIsManualCotizacion(false);
+                setCotFlash(true);
+                setTimeout(() => setCotFlash(false), 300);
             } else {
+                alert('No se encontró cotización. Ingrese manualmente.');
                 setIsManualCotizacion(true);
             }
         } catch {
+            alert('Error al consultar BCU. Ingrese manualmente.');
             setIsManualCotizacion(true);
         } finally {
             setLoadingCotizacion(false);
@@ -121,6 +130,7 @@ export const CargaGestionPagosView = () => {
             try {
                 await api.post('/apicotizaciones/insertar', { cotizacion: parseFloat(manualCotizacion) });
                 setCotizacion(parseFloat(manualCotizacion));
+                setCotizacionFecha(new Date());
                 setIsManualCotizacion(false);
             } catch (error) {
                 console.error('Error insertando cotización:', error);
@@ -311,8 +321,8 @@ export const CargaGestionPagosView = () => {
         <div className="min-h-full flex flex-col gap-5 p-4 lg:p-8 font-sans bg-[#f6f8fb]">
 
             {/* Cabecera / Controles */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end mb-8">
-                <div className="flex flex-col gap-2">
+            {/* <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end mb-8"> */}
+            {/* <div className="flex flex-col gap-2">
                     <label className="text-sm font-bold text-zinc-800">Seleccionar forma de pago</label>
                     <select
                         className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-[#0070bc] focus:ring-1 focus:ring-[#0070bc] appearance-none"
@@ -369,417 +379,404 @@ export const CargaGestionPagosView = () => {
                 >
                     Realizar Pago
                 </button>
-            </div>
+            </div> */}
 
             {/* Banner Cotización */}
-            <div className="bg-[#eaf5ff] rounded-2xl py-6 flex flex-col items-center justify-center mb-10 border border-[#cbe5ff]">
-                <h3 className="text-lg font-bold text-[#0070bc]">Cotización del Dólar:</h3>
 
-                {cotizacion !== null ? (
-                    <p className="text-xl font-black text-zinc-800">US$1 (dólar) = ${Number(cotizacion).toFixed(2)} (pesos) </p>
-                ) : (
-                    <div className="mt-2 text-center">
-                        {!isManualCotizacion ? (
-                            <p className="text-sm font-medium">
-                                No se encontró la cotización del dólar.{' '}
-                                <button className="underline text-[#0070bc]" onClick={() => setIsManualCotizacion(true)}>
-                                    Ingresar manualmente
-                                </button>
-                            </p>
-                        ) : (
-                            <p className="text-sm font-semibold text-amber-600">Sin cotización cargada</p>
-                        )}
-                    </div>
-                )}
 
-            <div className="flex items-center gap-2 flex-wrap">
-                <button
-                    onClick={handleBuscarCotizacion}
-                    disabled={loadingCotizacion}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition-all disabled:opacity-50"
-                >
-                    {loadingCotizacion ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                    Buscar del Banco
-                </button>
-
-                {(isManualCotizacion || cotizacion === null) && (
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="number"
-                            value={manualCotizacion}
-                            onChange={(e) => setManualCotizacion(e.target.value)}
-                            placeholder="Ej: 42.50"
-                            className="w-28 border-2 border-amber-300 rounded-xl px-3 py-2 font-bold text-center text-sm focus:border-blue-500 outline-none bg-amber-50"
-                        />
-                        <button
-                            onClick={handleSetManualCotizacion}
-                            className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-xl text-sm transition-all"
+            {/* ─── FORMULARIO DE PAGO (COMPACTO) ──────────── */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                <div className="flex items-end gap-3 flex-wrap">
+                    {/* Forma de pago */}
+                    <div className="flex flex-col gap-1 min-w-[180px] flex-1">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Método de Pago</label>
+                        <select
+                            className="bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 outline-none focus:border-blue-500 text-sm font-semibold"
+                            value={formaPago}
+                            onChange={(e) => setFormaPago(e.target.value)}
                         >
-                            Confirmar
+                            <option value="">Seleccione...</option>
+                            {metodosPago.map((m) => (
+                                <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Moneda */}
+                    <div className="flex flex-col gap-1 w-[100px]">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Moneda</label>
+                        <select
+                            className="bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 outline-none focus:border-blue-500 text-sm font-semibold"
+                            value={moneda}
+                            onChange={handleCurrencyChange}
+                        >
+                            <option value="USD">US$</option>
+                            <option value="UYU">$</option>
+                        </select>
+                    </div>
+
+                    {/* Monto + Botón Pagar */}
+                    <div className="flex items-end gap-2 flex-1 min-w-[280px]">
+                        <div className="flex flex-col gap-1 flex-1">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Monto a cobrar</label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">{moneda === 'USD' ? 'U$S' : '$'}</span>
+                                <input
+                                    type="number"
+                                    placeholder="0.00"
+                                    className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-slate-800 outline-none focus:border-blue-500 text-lg font-black"
+                                    value={monto}
+                                    onChange={(e) => setMonto(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <button
+                            onClick={handleRealizarPago}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all hover:scale-[1.02] text-sm whitespace-nowrap flex items-center gap-2"
+                        >
+                            <CreditCard size={16} /> Realizar Pago
                         </button>
                     </div>
-                )}
 
-                {cotizacion !== null && !isManualCotizacion && (
-                    <button
-                        onClick={() => setIsManualCotizacion(true)}
-                        className="text-xs text-slate-400 hover:text-blue-500 underline transition-colors"
-                    >
-                        Cambiar manual
-                    </button>
-                )}
-            </div>
-        </div>
-
-            {/* ─── FORMULARIO DE PAGO (COMPACTO) ──────────── */ }
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
-        <div className="flex items-end gap-3 flex-wrap">
-            {/* Forma de pago */}
-            <div className="flex flex-col gap-1 min-w-[180px] flex-1">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Método de Pago</label>
-                <select
-                    className="bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 outline-none focus:border-blue-500 text-sm font-semibold"
-                    value={formaPago}
-                    onChange={(e) => setFormaPago(e.target.value)}
-                >
-                    <option value="">Seleccione...</option>
-                    {metodosPago.map((m) => (
-                        <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>
-                    ))}
-                </select>
-            </div>
-
-            {/* Moneda */}
-            <div className="flex flex-col gap-1 w-[100px]">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Moneda</label>
-                <select
-                    className="bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 outline-none focus:border-blue-500 text-sm font-semibold"
-                    value={moneda}
-                    onChange={handleCurrencyChange}
-                >
-                    <option value="USD">USD</option>
-                    <option value="UYU">UYU</option>
-                </select>
-            </div>
-
-            {/* Monto + Botón Pagar */}
-            <div className="flex items-end gap-2 flex-1 min-w-[280px]">
-                <div className="flex flex-col gap-1 flex-1">
-                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Monto a cobrar</label>
-                    <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">{moneda === 'USD' ? 'U$S' : '$'}</span>
+                    {/* Comprobante */}
+                    <div className="flex flex-col gap-1 min-w-[160px]">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Comprobante</label>
                         <input
-                            type="number"
-                            placeholder="0.00"
-                            className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-slate-800 outline-none focus:border-blue-500 text-lg font-black"
-                            value={monto}
-                            onChange={(e) => setMonto(e.target.value)}
+                            type="file"
+                            id="file-upload"
+                            onChange={(e) => setFileComprobante(e.target.files[0])}
+                            className="text-xs border-2 border-dashed border-slate-200 p-2 rounded-xl cursor-pointer hover:border-blue-400 transition-colors"
                         />
                     </div>
                 </div>
-                <button
-                    onClick={handleRealizarPago}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all hover:scale-[1.02] text-sm whitespace-nowrap flex items-center gap-2"
-                >
-                    <CreditCard size={16} /> Realizar Pago
-                </button>
             </div>
 
-            {/* Comprobante */}
-            <div className="flex flex-col gap-1 min-w-[160px]">
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Comprobante</label>
-                <input
-                    type="file"
-                    id="file-upload"
-                    onChange={(e) => setFileComprobante(e.target.files[0])}
-                    className="text-xs border-2 border-dashed border-slate-200 p-2 rounded-xl cursor-pointer hover:border-blue-400 transition-colors"
-                />
-            </div>
-        </div>
-    </div>
 
-    {/* ─── CONTENIDO PRINCIPAL ─────────────────────── */ }
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 flex-1">
+            {/* ─── CONTENIDO PRINCIPAL ─────────────────────── */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 flex-1">
 
-        {/* PANEL IZQUIERDO: Lista de Retiros */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col">
+                {/* PANEL IZQUIERDO: Lista de Retiros */}
+                <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col">
 
-            {/* Filtro rápido + Buscador */}
-            <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <div className="relative flex-1 min-w-[180px]">
-                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                        type="text"
-                        placeholder="Filtrar retiros..."
-                        className="w-full pl-9 pr-3 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                </div>
-                <div className="flex items-center gap-1">
-                    <input
-                        type="text"
-                        placeholder="Buscar situación..."
-                        className="w-36 pl-3 pr-2 py-2 border-2 border-blue-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 bg-blue-50"
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                    />
-                    <button
-                        onClick={handleSearch}
-                        disabled={searchLoading}
-                        className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-xl transition-all disabled:opacity-50"
-                        title="Buscar situación de pago"
-                    >
-                        {searchLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                    </button>
-                </div>
-            </div>
-
-            {/* Filtros por tipo de cliente */}
-            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                <Filter size={12} className="text-slate-400" />
-                {[
-                    { val: 'todos', label: 'Todos' },
-                    { val: '1', label: 'Comunes' },
-                    { val: '3', label: 'Rollo Adelantado' },
-                ].map(f => (
-                    <button
-                        key={f.val}
-                        onClick={() => setFiltroTipoCliente(f.val)}
-                        className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border
-                                    ${filtroTipoCliente === f.val
-                                ? 'bg-blue-600 text-white border-blue-600'
-                                : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
-                            }`}
-                    >
-                        {f.label}
-                    </button>
-                ))}
-                <label className="flex items-center gap-1 text-xs text-slate-500 ml-2 cursor-pointer select-none">
-                    <input
-                        type="checkbox"
-                        checked={incluirSemanales}
-                        onChange={(e) => setIncluirSemanales(e.target.checked)}
-                        className="rounded border-slate-300"
-                    />
-                    Semanales
-                </label>
-                <span className="ml-auto text-xs text-slate-400 font-semibold">{filteredRetiros.length} retiros</span>
-            </div>
-            <p className="text-[10px] text-slate-400 mb-3 leading-tight">
-                Muestra retiros <strong>con cobro pendiente</strong> (Ingresado, Pasar por caja, Abonado de antemano con saldo, Empaquetado sin abonar).
-                Los <strong>semanales</strong> se excluyen por defecto. El filtro consulta al servidor al cambiar.
-            </p>
-
-            {/* Lista de retiros — chips compactos */}
-            <div className="flex flex-wrap gap-2 overflow-y-auto max-h-[60vh] pr-1 content-start">
-                {filteredRetiros.length === 0 ? (
-                    <p className="text-sm text-slate-400 text-center w-full py-8">No hay órdenes pendientes de pago.</p>
-                ) : (
-                    filteredRetiros.map((retiro) => {
-                        const isSelected = selectedRetiro?.ordenDeRetiro === retiro.ordenDeRetiro;
-                        return (
+                    {/* Filtro rápido + Buscador */}
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                        <div className="relative flex-1 min-w-[180px]">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder="Filtrar retiros..."
+                                className="w-full pl-9 pr-3 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <input
+                                type="text"
+                                placeholder="Buscar situación..."
+                                className="w-36 pl-3 pr-2 py-2 border-2 border-blue-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 bg-blue-50"
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                            />
                             <button
-                                key={retiro.ordenDeRetiro}
-                                onClick={() => handleSelectRetiro(retiro)}
-                                title={retiro.CliNombre || retiro.CliCodigoCliente || ''}
-                                className={`px-4 py-2 rounded-xl border-2 font-black text-sm transition-all whitespace-nowrap
-                                            ${isSelected
-                                        ? 'bg-blue-600 border-blue-600 text-white shadow-md scale-105'
-                                        : 'bg-white border-slate-200 text-slate-700 hover:border-blue-400 hover:text-blue-600'
+                                onClick={handleSearch}
+                                disabled={searchLoading}
+                                className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-xl transition-all disabled:opacity-50"
+                                title="Buscar situación de pago"
+                            >
+                                {searchLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Filtros por tipo de cliente */}
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                        <Filter size={12} className="text-slate-400" />
+                        {[
+                            { val: 'todos', label: 'Todos' },
+                            { val: '1', label: 'Comunes' },
+                            { val: '3', label: 'Rollo Adelantado' },
+                        ].map(f => (
+                            <button
+                                key={f.val}
+                                onClick={() => setFiltroTipoCliente(f.val)}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border
+                                    ${filtroTipoCliente === f.val
+                                        ? 'bg-blue-600 text-white border-blue-600'
+                                        : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
                                     }`}
                             >
-                                {retiro.ordenDeRetiro}
+                                {f.label}
                             </button>
-                        );
-                    })
-                )}
-            </div>
-        </div>
-
-        {/* PANEL DERECHO: Detalle del Retiro */}
-        <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col">
-            {selectedRetiro ? (
-                <>
-                    {/* Header del retiro — sin total duplicado */}
-                    <div className="flex items-center gap-3 mb-4">
-                        <h2 className="text-3xl font-black text-blue-600">{selectedRetiro.ordenDeRetiro}</h2>
-                        <span className="text-sm text-slate-400 font-medium mt-1">{selectedRetiro.lugarRetiro} • {selectedRetiro.estado}</span>
+                        ))}
+                        <label className="flex items-center gap-1 text-xs text-slate-500 ml-2 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={incluirSemanales}
+                                onChange={(e) => setIncluirSemanales(e.target.checked)}
+                                className="rounded border-slate-300"
+                            />
+                            Semanales
+                        </label>
+                        <span className="ml-auto text-xs text-slate-400 font-semibold">{filteredRetiros.length} retiros</span>
                     </div>
+                    {/* <p className="text-[10px] text-slate-400 mb-3 leading-tight">
+                Muestra retiros <strong>con cobro pendiente</strong> (Ingresado, Pasar por caja, Abonado de antemano con saldo, Empaquetado sin abonar).
+                Los <strong>semanales</strong> se excluyen por defecto. El filtro consulta al servidor al cambiar.
+            </p> */}
 
-                    {/* Datos del cliente */}
-                    <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div className="flex items-center gap-2">
-                            <User size={14} className="text-slate-400" />
-                            <div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase">Cliente</p>
-                                <p className="text-sm font-bold text-slate-800 truncate">{selectedRetiro.CliNombre || '—'}</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <FileText size={14} className="text-slate-400" />
-                            <div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase">ID</p>
-                                <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliCodigoCliente || '—'}</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Phone size={14} className="text-slate-400" />
-                            <div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase">Teléfono</p>
-                                <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliTelefono || '—'}</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Package size={14} className="text-slate-400" />
-                            <div>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase">Tipo</p>
-                                <p className="text-sm font-bold text-slate-800">{selectedRetiro.TClDescripcion || '—'}</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Sub-órdenes */}
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Órdenes del retiro</h3>
-                    <div className="flex flex-col gap-2 overflow-y-auto max-h-[50vh] pr-1">
-                        {getOrdenes(selectedRetiro).length > 0 ? (
-                            getOrdenes(selectedRetiro).map((po, i) => {
-                                const costStr = po.orderCosto || "";
-                                const curSym = po.monedaId === 2 ? 'US$' : '$';
-                                const rawValor = parseFloat(costStr.replace(/[^0-9.-]+/g, "")) || 0;
-                                const isPaid = po.orderIdMetodoPago !== null || po.orderPago !== null;
-
-                                let converted = '';
-                                if (moneda === 'UYU' && (curSym === 'USD' || curSym === 'U$S') && cotizacion) {
-                                    converted = ` → $ ${(rawValor * cotizacion).toFixed(2)}`;
-                                }
-                                if (moneda === 'USD' && (curSym === '$' || curSym === 'UYU') && cotizacion) {
-                                    converted = ` → USD ${(rawValor / cotizacion).toFixed(2)}`;
-                                    let valorConvertidoDest = "";
-                                    if (moneda === 'UYU' && curSym === 'US$' && cotizacion) {
-                                        valorConvertidoDest = ` ($ ${(rawValor * cotizacion).toFixed(2)})`;
-                                    }
-                                    if (moneda === 'USD' && curSym === '$' && cotizacion) {
-                                        valorConvertidoDest = ` (US$ ${(rawValor / cotizacion).toFixed(2)})`;
-                                    }
-
-                                    return (
-                                        <div
-                                            key={i}
-                                            className={`p-3 rounded-xl border-2 flex items-center justify-between transition-all
-                                                    ${isPaid ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-200 bg-white'}`}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                {isPaid ? (
-                                                    <CheckCircle size={18} className="text-emerald-500 shrink-0" />
-                                                ) : (
-                                                    <AlertTriangle size={18} className="text-amber-500 shrink-0" />
-                                                )}
-                                                <div>
-                                                    <span className="font-bold text-sm text-slate-800">{po.orderNumber || `Item ${i + 1}`}</span>
-                                                    <span className={`ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                        {isPaid ? 'Pagado' : po.orderEstado || 'Pendiente'}
-                                                    </span>
-                                                    {po.orderCantidad != null && (
-                                                        <span className="ml-2 text-[10px] text-slate-400 font-semibold">
-                                                            Cant: <strong className="text-slate-600">{po.orderCantidad % 1 === 0 ? po.orderCantidad : po.orderCantidad.toFixed(2)}</strong>
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <p className="font-black text-sm text-slate-800">{curSym} {rawValor.toFixed(2)}</p>
-                                                {valorConvertidoDest && <p className="text-xs text-slate-400">{valorConvertidoDest}</p>}
-                                            </div>
-                                        </div>
-                                    );
-                                })
+                    {/* Lista de retiros — chips compactos */}
+                    <div className="flex flex-wrap gap-2 overflow-y-auto max-h-[60vh] pr-1 content-start">
+                        {filteredRetiros.length === 0 ? (
+                            <p className="text-sm text-slate-400 text-center w-full py-8">No hay órdenes pendientes de pago.</p>
                         ) : (
-                            <p className="text-slate-400 text-sm text-center py-4">No hay detalles de órdenes.</p>
+                            filteredRetiros.map((retiro) => {
+                                const isSelected = selectedRetiro?.ordenDeRetiro === retiro.ordenDeRetiro;
+                                return (
+                                    <button
+                                        key={retiro.ordenDeRetiro}
+                                        onClick={() => handleSelectRetiro(retiro)}
+                                        title={retiro.CliNombre || retiro.CliCodigoCliente || ''}
+                                        className={`px-4 py-2 rounded-xl border-2 font-black text-sm transition-all whitespace-nowrap
+                                            ${isSelected
+                                                ? 'bg-blue-600 border-blue-600 text-white shadow-md scale-105'
+                                                : 'bg-white border-slate-200 text-slate-700 hover:border-blue-400 hover:text-blue-600'
+                                            }`}
+                                    >
+                                        {retiro.ordenDeRetiro}
+                                    </button>
+                                );
+                            })
                         )}
                     </div>
-                </>
-            ) : (
-                <div className="flex flex-col items-center justify-center flex-1 text-slate-300">
-                    <CreditCard size={64} className="mb-4" />
-                    <p className="text-lg font-bold">Seleccione un retiro para cobrar</p>
-                    <p className="text-sm mt-1">Haga clic en un retiro de la lista izquierda</p>
                 </div>
-            )}
-        </div>
-    </div>
 
-    {/* ─── MODAL DE BÚSQUEDA (SITUACIÓN DE PAGO) ── */ }
-    {
-        searchModal && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setSearchModal(null)}>
-                <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center justify-between border-b border-slate-200 p-4">
-                        <h3 className="text-lg font-black text-slate-800">Situación de Pago — "{searchInput}"</h3>
-                        <button onClick={() => setSearchModal(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                {/* PANEL DERECHO: Cotización + Detalle del Retiro */}
+                <div className="lg:col-span-3 flex flex-col gap-4">
+
+                    {/* Cotización del Dólar — click en todo el div para actualizar */}
+                    <div
+                        onClick={() => { if (!isManualCotizacion && cotizacion !== null) handleBuscarCotizacion(); }}
+                        className={`rounded-2xl py-4 px-5 flex flex-col items-center justify-center gap-1 transition-all duration-300
+                            ${!isManualCotizacion && cotizacion !== null ? 'cursor-pointer hover:shadow-lg' : ''}`}
+                        style={cotFlash
+                            ? { background: 'linear-gradient(135deg, #006E97, #007daa)', boxShadow: '0 4px 14px rgba(0,110,151,0.35)', color: '#fff' }
+                            : { background: 'linear-gradient(135deg, #00AEEF, #00c6ff)', color: '#fff' }}
+                    >
+                        <h3 className={`text-xs font-bold uppercase tracking-wider transition-colors duration-300 ${cotFlash ? 'text-white/80' : 'text-white/70'}`}>Cotización</h3>
+
+                        {cotizacion !== null ? (
+                            <>
+                                <p className="text-lg font-black text-white tracking-tight">
+                                    US$ 1 <span className="text-white/50 font-medium mx-1">=</span> $ {Number(cotizacion).toFixed(2)}
+                                </p>
+                                {cotizacionFecha && (
+                                    <p className="text-[10px] text-white/50">
+                                        {cotizacionFecha.toLocaleDateString('es-UY')} {cotizacionFecha.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' })}
+                                    </p>
+                                )}
+                            </>
+                        ) : (
+                            <p className="text-sm text-white/60">Click para buscar cotización</p>
+                        )}
+
+                        {(isManualCotizacion || cotizacion === null) && (
+                            <div className="flex items-center gap-2 mt-1" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                    type="number"
+                                    value={manualCotizacion}
+                                    onChange={(e) => setManualCotizacion(e.target.value)}
+                                    placeholder="42.50"
+                                    className="w-24 border-2 border-amber-300 rounded-xl px-2 py-1.5 font-bold text-center text-sm focus:border-blue-500 outline-none bg-amber-50"
+                                />
+                                <button
+                                    onClick={handleSetManualCotizacion}
+                                    className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-xl text-xs transition-all"
+                                >
+                                    OK
+                                </button>
+                            </div>
+                        )}
                     </div>
-                    <div className="p-4 overflow-y-auto flex-1">
-                        {/* Retiros encontrados */}
-                        {searchModal.retiroRows && searchModal.retiroRows.length > 0 && (
-                            <div className="mb-6">
-                                <h4 className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">Con Retiro Asignado</h4>
-                                {(() => {
-                                    const groups = {};
-                                    searchModal.retiroRows.forEach(r => {
-                                        const key = r.OReIdOrdenRetiro;
-                                        if (!groups[key]) groups[key] = { ...r, orders: [] };
-                                        if (r.OrdIdOrden) groups[key].orders.push(r);
-                                    });
-                                    return Object.values(groups).map(g => (
-                                        <div key={g.OReIdOrdenRetiro} className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-2">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <span className="font-black text-blue-700">R-{String(g.OReIdOrdenRetiro).padStart(4, '0')}</span>
-                                                <span className="text-xs font-bold text-slate-500">{g.estadoRetiro} • {g.lugarRetiro}</span>
+
+                    {/* Detalle del Retiro */}
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col flex-1">
+                    {selectedRetiro ? (
+                        <>
+                            {/* Header del retiro — sin total duplicado */}
+                            <div className="flex items-center gap-3 mb-4">
+                                <h2 className="text-3xl font-black text-blue-600">{selectedRetiro.ordenDeRetiro}</h2>
+                                <span className="text-sm text-slate-400 font-medium mt-1">{selectedRetiro.lugarRetiro} • {selectedRetiro.estado}</span>
+                            </div>
+
+                            {/* Datos del cliente */}
+                            <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div className="flex items-center gap-2">
+                                    <User size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Cliente</p>
+                                        <p className="text-sm font-bold text-slate-800 truncate">{selectedRetiro.CliNombre || '—'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <FileText size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">ID</p>
+                                        <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliCodigoCliente || '—'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Phone size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Teléfono</p>
+                                        <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliTelefono || '—'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Package size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Tipo</p>
+                                        <p className="text-sm font-bold text-slate-800">{selectedRetiro.TClDescripcion || '—'}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Sub-órdenes */}
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Órdenes del retiro</h3>
+                            <div className="flex flex-col gap-2 overflow-y-auto max-h-[50vh] pr-1">
+                                {getOrdenes(selectedRetiro).length > 0 ? (
+                                    getOrdenes(selectedRetiro).map((po, i) => {
+                                        const costStr = po.orderCosto || "";
+                                        const curSym = po.monedaId === 2 ? 'US$' : '$';
+                                        const rawValor = parseFloat(costStr.replace(/[^0-9.-]+/g, "")) || 0;
+                                        const isPaid = po.orderIdMetodoPago !== null || po.orderPago !== null;
+
+                                        let valorConvertidoDest = "";
+                                        if (moneda === 'UYU' && curSym === 'US$' && cotizacion) {
+                                            valorConvertidoDest = ` ($ ${(rawValor * cotizacion).toFixed(2)})`;
+                                        }
+                                        if (moneda === 'USD' && curSym === '$' && cotizacion) {
+                                            valorConvertidoDest = ` (US$ ${(rawValor / cotizacion).toFixed(2)})`;
+                                        }
+
+                                        return (
+                                            <div
+                                                key={i}
+                                                className={`p-3 rounded-xl border-2 flex items-center justify-between transition-all
+                                                ${isPaid ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-200 bg-white'}`}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    {isPaid ? (
+                                                        <CheckCircle size={18} className="text-emerald-500 shrink-0" />
+                                                    ) : (
+                                                        <AlertTriangle size={18} className="text-amber-500 shrink-0" />
+                                                    )}
+                                                    <div>
+                                                        <span className="font-bold text-sm text-slate-800">{po.orderNumber || `Item ${i + 1}`}</span>
+                                                        <span className={`ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                            {isPaid ? 'Pagado' : po.orderEstado || 'Pendiente'}
+                                                        </span>
+                                                        {po.orderCantidad != null && (
+                                                            <span className="ml-2 text-[10px] text-slate-400 font-semibold">
+                                                                Cant: <strong className="text-slate-600">{po.orderCantidad % 1 === 0 ? po.orderCantidad : po.orderCantidad.toFixed(2)}</strong>
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="font-black text-sm text-slate-800">{curSym} {rawValor.toFixed(2)}</p>
+                                                    {valorConvertidoDest && <p className="text-xs text-slate-400">{valorConvertidoDest}</p>}
+                                                </div>
                                             </div>
-                                            <p className="text-xs text-slate-500 mb-2">{g.CliNombre} ({g.CliCodigo}) — {g.TClDescripcion}</p>
-                                            {g.orders.map((o, i) => (
-                                                <div key={i} className="flex items-center justify-between py-1 border-t border-slate-200 text-sm">
-                                                    <span className="font-semibold">{o.OrdCodigoOrden}</span>
-                                                    <span className={`text-xs font-bold ${o.estadoOrden === 'Entregado' || o.estadoOrden === 'Cancelado' ? 'text-slate-400' : 'text-slate-700'}`}>{o.estadoOrden}</span>
+                                        );
+                                    })
+                                ) : (
+                                    <p className="text-slate-400 text-sm text-center py-4">No hay detalles de órdenes.</p>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center flex-1 text-slate-300">
+                            <CreditCard size={64} className="mb-4" />
+                            <p className="text-lg font-bold">Seleccione un retiro para cobrar</p>
+                            <p className="text-sm mt-1">Haga clic en un retiro de la lista izquierda</p>
+                        </div>
+                    )}
+                    </div>  {/* cierra detalle del retiro */}
+                </div>  {/* cierra col-span-3 wrapper */}
+            </div>
+
+            {/* ─── MODAL DE BÚSQUEDA (SITUACIÓN DE PAGO) ── */}
+            {
+                searchModal && (
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setSearchModal(null)}>
+                        <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center justify-between border-b border-slate-200 p-4">
+                                <h3 className="text-lg font-black text-slate-800">Situación de Pago — "{searchInput}"</h3>
+                                <button onClick={() => setSearchModal(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                            </div>
+                            <div className="p-4 overflow-y-auto flex-1">
+                                {/* Retiros encontrados */}
+                                {searchModal.retiroRows && searchModal.retiroRows.length > 0 && (
+                                    <div className="mb-6">
+                                        <h4 className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">Con Retiro Asignado</h4>
+                                        {(() => {
+                                            const groups = {};
+                                            searchModal.retiroRows.forEach(r => {
+                                                const key = r.OReIdOrdenRetiro;
+                                                if (!groups[key]) groups[key] = { ...r, orders: [] };
+                                                if (r.OrdIdOrden) groups[key].orders.push(r);
+                                            });
+                                            return Object.values(groups).map(g => (
+                                                <div key={g.OReIdOrdenRetiro} className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-2">
+                                                    <div className="flex items-center justify-between mb-2">
+                                                        <span className="font-black text-blue-700">R-{String(g.OReIdOrdenRetiro).padStart(4, '0')}</span>
+                                                        <span className="text-xs font-bold text-slate-500">{g.estadoRetiro} • {g.lugarRetiro}</span>
+                                                    </div>
+                                                    <p className="text-xs text-slate-500 mb-2">{g.CliNombre} ({g.CliCodigo}) — {g.TClDescripcion}</p>
+                                                    {g.orders.map((o, i) => (
+                                                        <div key={i} className="flex items-center justify-between py-1 border-t border-slate-200 text-sm">
+                                                            <span className="font-semibold">{o.OrdCodigoOrden}</span>
+                                                            <span className={`text-xs font-bold ${o.estadoOrden === 'Entregado' || o.estadoOrden === 'Cancelado' ? 'text-slate-400' : 'text-slate-700'}`}>{o.estadoOrden}</span>
+                                                            <span className="font-bold">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ));
+                                        })()}
+                                    </div>
+                                )}
+
+                                {/* Sin retiro */}
+                                {searchModal.sinRetiro && searchModal.sinRetiro.length > 0 && (
+                                    <div>
+                                        <h4 className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-2">Sin Retiro Asignado</h4>
+                                        {searchModal.sinRetiro.map((o, i) => (
+                                            <div key={i} className="flex items-center justify-between py-2 border-b border-slate-100 text-sm">
+                                                <div>
+                                                    <span className="font-bold text-slate-800">{o.OrdCodigoOrden}</span>
+                                                    <span className="ml-2 text-xs text-slate-400">{o.CliNombre} ({o.CliCodigo})</span>
+                                                    <span className="ml-2 text-xs text-slate-400">{o.TClDescripcion}</span>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <span className={`text-xs font-bold ${o.Pagada ? 'text-emerald-600' : 'text-amber-600'}`}>{o.Pagada ? 'PAGADA' : o.estadoOrden}</span>
                                                     <span className="font-bold">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</span>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    ));
-                                })()}
-                            </div>
-                        )}
-
-                        {/* Sin retiro */}
-                        {searchModal.sinRetiro && searchModal.sinRetiro.length > 0 && (
-                            <div>
-                                <h4 className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-2">Sin Retiro Asignado</h4>
-                                {searchModal.sinRetiro.map((o, i) => (
-                                    <div key={i} className="flex items-center justify-between py-2 border-b border-slate-100 text-sm">
-                                        <div>
-                                            <span className="font-bold text-slate-800">{o.OrdCodigoOrden}</span>
-                                            <span className="ml-2 text-xs text-slate-400">{o.CliNombre} ({o.CliCodigo})</span>
-                                            <span className="ml-2 text-xs text-slate-400">{o.TClDescripcion}</span>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <span className={`text-xs font-bold ${o.Pagada ? 'text-emerald-600' : 'text-amber-600'}`}>{o.Pagada ? 'PAGADA' : o.estadoOrden}</span>
-                                            <span className="font-bold">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</span>
-                                        </div>
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
-                            </div>
-                        )}
+                                )}
 
-                        {/* Sin resultados */}
-                        {(!searchModal.retiroRows || searchModal.retiroRows.length === 0) && (!searchModal.sinRetiro || searchModal.sinRetiro.length === 0) && (
-                            <p className="text-center text-slate-400 py-8">No se encontraron resultados para "{searchInput}"</p>
-                        )}
+                                {/* Sin resultados */}
+                                {(!searchModal.retiroRows || searchModal.retiroRows.length === 0) && (!searchModal.sinRetiro || searchModal.sinRetiro.length === 0) && (
+                                    <p className="text-center text-slate-400 py-8">No se encontraron resultados para "{searchInput}"</p>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-        )
-    }
+                )
+            }
         </div >
     );
 };

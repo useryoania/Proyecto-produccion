@@ -583,14 +583,18 @@ const EntregaPedidosView = () => {
             }
 
             const orderIds = pagoModal.ordenes.map(o => o.OrdIdOrden);
-            await api.post('/apipagos/realizarPago', {
+            const payload = {
                 metodoPagoId: parseInt(formaPago),
                 monedaId,
                 monto: importe,
                 ordenRetiro: pagoModal.retiroId || null,
                 orderNumbers: orderIds,
                 comprobanteUrl
-            });
+            };
+            console.log('[PAGO MOSTRADOR] Enviando:', JSON.stringify(payload, null, 2));
+            console.log('[PAGO MOSTRADOR] Cliente:', pagoModal.clienteInfo?.CliNombre, '| Tipo:', pagoModal.clienteInfo?.TClDescripcion, '| Estado Retiro:', pagoModal.clienteInfo?.estadoRetiro, '| Retiro:', pagoModal.retiroId);
+            const response = await api.post('/apipagos/realizarPago', payload);
+            console.log('[PAGO MOSTRADOR] Respuesta:', JSON.stringify(response.data, null, 2));
             toast.success('✅ Pago registrado correctamente');
             setPagoModal(null);
             // Refrescar la sección correcta según el origen del pago
@@ -601,6 +605,7 @@ const EntregaPedidosView = () => {
             }
 
         } catch (err) {
+            console.error('[PAGO MOSTRADOR] Error:', err.response?.data || err.message);
             toast.error(err.response?.data?.error || 'Error al registrar el pago.');
         } finally {
             setPagandoLoading(false);

@@ -79,11 +79,8 @@ const getOrdenesRetiroQueryBase = `
     o.OrdEstadoActual AS orderEstado,
     eo.EOrNombreEstado AS orderEstadoNombre,
     o.OrdCostoFinal as costoFinal,
-<<<<<<< HEAD
     o.OrdCantidad AS orderCantidad,
-=======
     o.MonIdMoneda AS orderMonedaId,
->>>>>>> c52b063f7f3349910a4654243a26127ba1f3520b
     monOrden.MonSimbolo AS orderMonedaSimbolo,
     p.MPaIdMetodoPago AS orderIdMetodoPago,
     mp.MPaDescripcionMetodo AS orderMetodoPago,
@@ -151,14 +148,10 @@ const processRetirosRows = (rows) => {
         orderNumber: row.orderNumber,
         orderId: row.orderId,
         orderEstado: row.orderEstadoNombre || row.orderEstado,
-<<<<<<< HEAD
-        orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaSimbolo} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
-        orderCantidad: row.orderCantidad != null ? parseFloat(row.orderCantidad) : null,
-=======
         orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaId === 2 ? 'US$' : '$'} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
+        orderCantidad: row.orderCantidad != null ? parseFloat(row.orderCantidad) : null,
         simbolo: row.orderMonedaId === 2 ? 'US$' : '$',
         monedaId: row.orderMonedaId || 1,
->>>>>>> c52b063f7f3349910a4654243a26127ba1f3520b
         orderIdMetodoPago: row.orderIdMetodoPago,
         orderMetodoPago: row.orderMetodoPago,
         orderPago: row.monetPagoSimbolo ? `${row.monetPagoSimbolo} ${parseFloat(row.orderMontoPago).toFixed(2)}` : null,

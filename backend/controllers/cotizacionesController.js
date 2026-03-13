@@ -50,8 +50,8 @@ const insertCotizacion = async (req, res) => {
     await pool.request()
       .input('cotizacion', sql.Float, cotizacion)
       .query(`
-        INSERT INTO Cotizaciones (CotFecha, CotDolar)
-        VALUES (GETDATE(), @cotizacion)
+        INSERT INTO Cotizaciones (CotIdCotizacion, CotFecha, CotDolar)
+        VALUES ((SELECT ISNULL(MAX(CotIdCotizacion),0)+1 FROM Cotizaciones), GETDATE(), @cotizacion)
       `);
 
     res.status(201).json({ message: 'Cotización insertada exitosamente.' });
@@ -61,4 +61,38 @@ const insertCotizacion = async (req, res) => {
   }
 };
 
-module.exports = { getCotizacionesHoy, insertCotizacion };
+// Buscar cotización en vivo del BCU y guardarla si no existe hoy
+const fetchFromBCU = async (req, res) => {
+  try {
+    const pool = await getPool();
+
+    // 1. ¿Ya existe hoy?
+    const check = await pool.request().query(`
+      SELECT TOP 1 CotDolar FROM Cotizaciones WITH(NOLOCK)
+      WHERE CONVERT(DATE, CotFecha) = CONVERT(DATE, GETDATE())
+      ORDER BY CotFecha DESC
+    `);
+    if (check.recordset.length > 0) {
+      return res.json({ cotizacion: check.recordset[0].CotDolar, source: 'db' });
+    }
+
+    // 2. Buscar del BCU
+    const { fetchCotizacionBCU } = require('../jobs/cotizacionBCU.job');
+    const cot = await fetchCotizacionBCU();
+
+    // 3. Guardar venta bancaria en DB
+    await pool.request()
+      .input('cot', sql.Float, cot.venta)
+      .query(`INSERT INTO Cotizaciones (CotIdCotizacion, CotFecha, CotDolar)
+              VALUES ((SELECT ISNULL(MAX(CotIdCotizacion),0)+1 FROM Cotizaciones), GETDATE(), @cot)`);
+
+    console.log(`[COTIZACION] ✅ On-demand: compra=$U ${cot.compra} / venta=$U ${cot.venta}`);
+    res.json({ cotizacion: cot.venta, compra: cot.compra, interbancario: cot.interbancario, source: 'bcu' });
+
+  } catch (error) {
+    console.error('[COTIZACION] Error fetching from BCU:', error.message);
+    res.status(500).json({ error: 'No se pudo obtener la cotización del BCU. Ingrese manualmente.' });
+  }
+};
+
+module.exports = { getCotizacionesHoy, insertCotizacion, fetchFromBCU };
