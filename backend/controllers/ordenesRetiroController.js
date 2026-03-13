@@ -79,6 +79,7 @@ const getOrdenesRetiroQueryBase = `
     o.OrdEstadoActual AS orderEstado,
     eo.EOrNombreEstado AS orderEstadoNombre,
     o.OrdCostoFinal as costoFinal,
+    o.OrdCantidad AS orderCantidad,
     monOrden.MonSimbolo AS orderMonedaSimbolo,
     p.MPaIdMetodoPago AS orderIdMetodoPago,
     mp.MPaDescripcionMetodo AS orderMetodoPago,
@@ -147,6 +148,7 @@ const processRetirosRows = (rows) => {
         orderId: row.orderId,
         orderEstado: row.orderEstadoNombre || row.orderEstado,
         orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaSimbolo} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
+        orderCantidad: row.orderCantidad != null ? parseFloat(row.orderCantidad) : null,
         orderIdMetodoPago: row.orderIdMetodoPago,
         orderMetodoPago: row.orderMetodoPago,
         orderPago: row.monetPagoSimbolo ? `${row.monetPagoSimbolo} ${parseFloat(row.orderMontoPago).toFixed(2)}` : null,
@@ -277,18 +279,36 @@ const marcarOrdenRetiroPronto = async (req, res) => {
 const ordenesRetiroCaja = async (req, res) => {
   try {
     const pool = await getPool();
-    // FIX: c.Tipo era string 'C' pero ahora es INT. Clientes Comunes = TClIdTipoCliente = 1
-    // También se quitó el filtro de LugarRetiro fijo (5) para que muestre todos los que vendrían a retiro en local.
+    const request = pool.request();
+
+    // Filtros opcionales por query params
+    const { tipoCliente, incluirSemanales } = req.query;
+
+    let filtroTipo = '';
+    if (tipoCliente && tipoCliente !== 'todos') {
+      request.input('TipoCliente', sql.Int, parseInt(tipoCliente, 10));
+      filtroTipo = 'AND COALESCE(tc.TClIdTipoCliente, tcr.TClIdTipoCliente) = @TipoCliente';
+    } else if (incluirSemanales !== 'true') {
+      // Por defecto excluir semanales (tipo 2)
+      filtroTipo = 'AND COALESCE(tc.TClIdTipoCliente, tcr.TClIdTipoCliente) != 2';
+    }
+
+    // Estados que pueden aparecer en caja:
+    //   1 = Ingresado, 2 = Pasar por caja, 7 = Empaquetado sin abonar
+    //   4 = Abonado de antemano → incluido porque puede tener sub-órdenes mixtas
+    //       (algunos servicios pre-pagados, otros no)
+    // Excluye via EXISTS: solo aparece si tiene AL MENOS una sub-orden sin pago
     const query = `
       ${getOrdenesRetiroQueryBase}
-      WHERE (r.OReEstadoActual = 1 OR r.OReEstadoActual = 7)
-      AND c.TClIdTipoCliente = 1
-      AND r.LReIdLugarRetiro = 5
-      AND NOT EXISTS (
-        SELECT 1 FROM Pagos px WHERE px.PagIdPago = r.PagIdPago
+      WHERE r.OReEstadoActual IN (1, 2, 4, 7)
+      AND EXISTS (
+        SELECT 1 FROM OrdenesDeposito od2 WITH(NOLOCK)
+        WHERE od2.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+        AND od2.PagIdPago IS NULL
       )
+      ${filtroTipo}
     `;
-    const result = await pool.request().query(query);
+    const result = await request.query(query);
     res.status(200).json(processRetirosRows(result.recordset));
   } catch (err) {
     console.error('[CAJA ERROR]', err);

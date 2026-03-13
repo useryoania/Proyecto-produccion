@@ -38,6 +38,7 @@ const CargaPagosView = lazy(() => import('../pages/CargaPagosView'));
 const VerificarPagosOnlineView = lazy(() => import('../pages/VerificarPagosOnlineView'));
 const ExcepcionesDeudaView = lazy(() => import('../pages/ExcepcionesDeudaView'));
 const CargaDepositoPage = lazy(() => import('../logistics/CargaDepositoPage'));
+const VerificarCodigoPage = lazy(() => import('../logistics/VerificarCodigoPage'));
 const DuplicateClientsPage = lazy(() => import('../pages/admin/DuplicateClientsPage'));
 const OrderSearchPage = lazy(() => import('../logistics/OrderSearchPage'));
 const EntregaPedidosView = lazy(() => import('../pages/customer-service/EntregaPedidosView'));
@@ -317,6 +318,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/logistica/retiros-web" element={<WebRetirosPage />} />
                                 <Route path="/logistica/excepciones" element={<ExcepcionesDeudaView />} />
                                 <Route path="/logistica/carga-deposito" element={<CargaDepositoPage />} />
+                                <Route path="/logistica/verificar-codigo" element={<VerificarCodigoPage />} />
                                 <Route path="/logistica/buscar-ordenes" element={<OrderSearchPage />} />
                                 <Route path="/logistica/dashboard-deposito" element={<DepositoDashboard />} />
                                 <Route path="/atencion-cliente/entrega-pedidos" element={<EntregaPedidosView />} />

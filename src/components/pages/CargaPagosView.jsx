@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import api, { SOCKET_URL } from '../../services/apiClient';
 import { io } from 'socket.io-client';
+import {
+    DollarSign, CreditCard, Search, X, CheckCircle, AlertTriangle,
+    RefreshCw, Loader2, User, Phone, Package, FileText, Filter
+} from 'lucide-react';
 
 export const CargaGestionPagosView = () => {
     const { user } = useAuth();
@@ -14,42 +18,53 @@ export const CargaGestionPagosView = () => {
     const [fileComprobante, setFileComprobante] = useState(null);
     const [metodosPago, setMetodosPago] = useState([]);
 
-    // Cotizacion hooks
+    // Cotización
     const [cotizacion, setCotizacion] = useState(null);
+    const [loadingCotizacion, setLoadingCotizacion] = useState(false);
     const [isManualCotizacion, setIsManualCotizacion] = useState(false);
     const [manualCotizacion, setManualCotizacion] = useState('');
 
+    // Buscador + Modal
     const [searchTerm, setSearchTerm] = useState('');
+    const [searchModal, setSearchModal] = useState(null);
+    const [searchLoading, setSearchLoading] = useState(false);
+    const [searchInput, setSearchInput] = useState('');
+
+    // Filtros
+    const [filtroTipoCliente, setFiltroTipoCliente] = useState('todos');
+    const [incluirSemanales, setIncluirSemanales] = useState(false);
+
     const [socketInstance, setSocketInstance] = useState(null);
 
-    // Initial Load
+    // ─── SOCKET ───────────────────────────────────────────
     useEffect(() => {
-        // Socket init
         const socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
-
         socket.on("connect", () => console.log("Caja conectada a Sockets:", socket.id));
-        socket.on("retiros:update", () => {
-            console.log("Evento retiros:update (Socket). Refrescando Caja...");
-            fetchOrders();
-        });
-        socket.on("actualizado", () => {
-            console.log("Evento actualizado (Socket). Refrescando Caja...");
-            fetchOrders();
-        });
-
+        socket.on("retiros:update", () => { fetchOrders(); });
+        socket.on("actualizado", () => { fetchOrders(); });
         setSocketInstance(socket);
-
         fetchData();
-
         return () => {
             socket.disconnect();
             if (selectedRetiro) unlockOrder(selectedRetiro.ordenDeRetiro);
         };
     }, []);
 
+    // Refetch cuando cambian filtros
+    useEffect(() => {
+        fetchOrders();
+    }, [filtroTipoCliente, incluirSemanales]);
+
+    // ─── FETCH ────────────────────────────────────────────
     const fetchOrders = async () => {
         try {
-            const resRetiros = await api.get('/apiordenesretiro/caja');
+            let url = '/apiordenesRetiro/caja';
+            const params = new URLSearchParams();
+            if (filtroTipoCliente && filtroTipoCliente !== 'todos') params.append('tipoCliente', filtroTipoCliente);
+            if (incluirSemanales) params.append('incluirSemanales', 'true');
+            if (params.toString()) url += '?' + params.toString();
+
+            const resRetiros = await api.get(url);
             const dataRetiros = Array.isArray(resRetiros.data) ? resRetiros.data : (Array.isArray(resRetiros) ? resRetiros : []);
             setRetiros(dataRetiros);
         } catch (e) {
@@ -61,17 +76,13 @@ export const CargaGestionPagosView = () => {
         setLoading(true);
         try {
             await fetchOrders();
-
             const [resMetodos, resCotiz] = await Promise.allSettled([
                 api.get('/apipagos/metodos'),
                 api.get('/apicotizaciones/hoy')
             ]);
-
             if (resMetodos.status === 'fulfilled') {
-                const dataMetodos = Array.isArray(resMetodos.value.data) ? resMetodos.value.data : [];
-                setMetodosPago(dataMetodos);
+                setMetodosPago(Array.isArray(resMetodos.value.data) ? resMetodos.value.data : []);
             }
-
             if (resCotiz.status === 'fulfilled' && resCotiz.value.data?.cotizaciones?.length > 0) {
                 setCotizacion(resCotiz.value.data.cotizaciones[0].CotDolar);
             } else {
@@ -84,54 +95,62 @@ export const CargaGestionPagosView = () => {
         }
     };
 
+    // ─── COTIZACIÓN: Buscar del banco ─────────────────────
+    const handleBuscarCotizacion = async () => {
+        setLoadingCotizacion(true);
+        try {
+            const res = await api.get('/apicotizaciones/hoy');
+            if (res.data?.cotizaciones?.length > 0) {
+                setCotizacion(res.data.cotizaciones[0].CotDolar);
+                setIsManualCotizacion(false);
+            } else {
+                setIsManualCotizacion(true);
+            }
+        } catch {
+            setIsManualCotizacion(true);
+        } finally {
+            setLoadingCotizacion(false);
+        }
+    };
+
     const handleSetManualCotizacion = async () => {
         if (!manualCotizacion || isNaN(manualCotizacion)) {
-            return alert('Por favor, ingrese un valor válido para la cotización.');
+            return alert('Ingrese un valor válido para la cotización.');
         }
-
-        if (window.confirm(`¿Está seguro de establecer la cotización del dólar en ${manualCotizacion} UYU?`)) {
+        if (window.confirm(`¿Establecer la cotización del dólar en ${manualCotizacion} UYU?`)) {
             try {
-                await api.post('/apicotizaciones/insertar', {
-                    cotizacion: parseFloat(manualCotizacion)
-                });
-                alert('Cotización registrada exitosamente');
+                await api.post('/apicotizaciones/insertar', { cotizacion: parseFloat(manualCotizacion) });
                 setCotizacion(parseFloat(manualCotizacion));
                 setIsManualCotizacion(false);
             } catch (error) {
                 console.error('Error insertando cotización:', error);
-                alert('Hubo un error al guardar la cotización.');
+                alert('Error al guardar la cotización. Puede que ya exista una para hoy.');
             }
         }
     };
 
+    // ─── MONEDA / MONTO ───────────────────────────────────
     const handleCurrencyChange = (e) => {
         const newCurrency = e.target.value;
         let payment = parseFloat(monto);
         if (isNaN(payment) || payment <= 0) payment = 0;
-
-        if (moneda === 'USD' && newCurrency === 'UYU' && cotizacion) {
-            payment = payment * cotizacion;
-        } else if (moneda === 'UYU' && newCurrency === 'USD' && cotizacion) {
-            payment = payment / cotizacion;
-        }
-
+        if (moneda === 'USD' && newCurrency === 'UYU' && cotizacion) payment = payment * cotizacion;
+        else if (moneda === 'UYU' && newCurrency === 'USD' && cotizacion) payment = payment / cotizacion;
         setMoneda(newCurrency);
         if (payment > 0) setMonto(payment.toFixed(2));
     };
 
-    // Locks the order logically from DB / API
+    // ─── LOCK / UNLOCK ────────────────────────────────────
     const lockOrder = async (orderId) => {
-        try {
-            await api.post('/apiordenesretiro/marcarpasarporcaja/1', { ordenDeRetiro: orderId });
-        } catch (e) { console.error("Error locking order:", e); }
+        try { await api.post('/apiordenesRetiro/marcarpasarporcaja/1', { ordenDeRetiro: orderId }); }
+        catch (e) { console.error("Error locking:", e); }
     };
-
     const unlockOrder = async (orderId) => {
-        try {
-            await api.post('/apiordenesretiro/marcarpasarporcaja/0', { ordenDeRetiro: orderId });
-        } catch (e) { console.error("Error unlocking order:", e); }
+        try { await api.post('/apiordenesRetiro/marcarpasarporcaja/0', { ordenDeRetiro: orderId }); }
+        catch (e) { console.error("Error unlocking:", e); }
     };
 
+    // ─── SELECCIÓN DE RETIRO ──────────────────────────────
     const handleSelectRetiro = async (retiro) => {
         if (selectedRetiro?.ordenDeRetiro === retiro.ordenDeRetiro) {
             await unlockOrder(retiro.ordenDeRetiro);
@@ -139,271 +158,360 @@ export const CargaGestionPagosView = () => {
             setMonto('');
             return;
         }
-
-        if (selectedRetiro) {
-            await unlockOrder(selectedRetiro.ordenDeRetiro);
-        }
-
+        if (selectedRetiro) await unlockOrder(selectedRetiro.ordenDeRetiro);
         setSelectedRetiro(retiro);
-        setMonto('');
+        // Auto-fill monto
+        const { sumUSD, sumUYU } = calculatePendingSums(retiro);
+        if (moneda === 'USD') {
+            const val = sumUSD + (cotizacion ? sumUYU / cotizacion : 0);
+            setMonto(val > 0 ? val.toFixed(2) : '');
+        } else {
+            const val = sumUYU + (cotizacion ? sumUSD * cotizacion : 0);
+            setMonto(val > 0 ? val.toFixed(2) : '');
+        }
         await lockOrder(retiro.ordenDeRetiro);
     };
 
-    const getOrdenes = (retiro) => {
-        return retiro?.orders || [];
-    };
+    const getOrdenes = (retiro) => retiro?.orders || [];
 
-    // Calcular montos PENDIENTES
     const calculatePendingSums = (retiro) => {
-        let sumUSD = 0;
-        let sumUYU = 0;
-
+        let sumUSD = 0, sumUYU = 0;
         getOrdenes(retiro).forEach(o => {
-            if (o.orderIdMetodoPago !== null || o.orderPago !== null) return; // Ignore already paid orders! (Important from old Caja)
+            if (o.orderIdMetodoPago !== null || o.orderPago !== null) return;
             let costStr = o.orderCosto || "";
             let cost = parseFloat(costStr.replace(/[^0-9.-]+/g, "")) || 0;
             const curSym = costStr.includes('USD') || costStr.includes('U$S') ? 'USD' : (costStr.includes('$') ? 'UYU' : 'USD');
-
             if (curSym === 'USD') sumUSD += cost;
             else sumUYU += cost;
         });
-
         return { sumUSD, sumUYU };
     };
 
     const displayTotal = (retiro) => {
         if (!cotizacion) return "Requiere cotización";
-
         const { sumUSD, sumUYU } = calculatePendingSums(retiro);
-
-        if (moneda === 'USD') {
-            const val = sumUSD + (sumUYU / cotizacion);
-            return `USD ${val.toFixed(2)}`;
-        } else {
-            const val = sumUYU + (sumUSD * cotizacion);
-            return `UYU ${val.toFixed(2)}`;
-        }
+        if (moneda === 'USD') return `USD ${(sumUSD + (sumUYU / cotizacion)).toFixed(2)}`;
+        return `$ ${(sumUYU + (sumUSD * cotizacion)).toFixed(2)}`;
     };
 
-    const handleFileChange = (e) => {
-        setFileComprobante(e.target.files[0]);
-    };
-
+    // ─── PAGO ─────────────────────────────────────────────
     const handleRealizarPago = async () => {
         if (!selectedRetiro) return alert("Seleccione una orden para pagar.");
         if (!formaPago) return alert("Seleccione un método de pago.");
-
         const importe = parseFloat(monto);
-        if (isNaN(importe) || importe <= 0) {
-            return alert("El importe del pago debe ser mayor que cero.");
-        }
+        if (isNaN(importe) || importe <= 0) return alert("El importe debe ser mayor que cero.");
 
-        // Subordenes no pagadas
         const ordersToPay = getOrdenes(selectedRetiro)
             .filter(o => o.orderIdMetodoPago === null && o.orderPago === null)
             .map(o => o.orderId);
-
-        if (ordersToPay.length === 0) {
-            return alert("No hay sub-órdenes listas para pagar en este retiro (ya están pagas o error).");
-        }
+        if (ordersToPay.length === 0) return alert("No hay sub-órdenes listas para pagar.");
 
         try {
             const monedaId = moneda === 'USD' ? 2 : 1;
             let filenameDest = null;
-
-            // Si hay comprobante para cargar
             if (fileComprobante) {
                 const formData = new FormData();
                 formData.append('comprobante', fileComprobante);
-                const uploadRes = await api.post('/apipagos/uploadComprobante', formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                });
-
-                if (uploadRes.data?.filename || uploadRes.data?.comprobanteUrl) {
-                    filenameDest = uploadRes.data.filename || uploadRes.data.comprobanteUrl;
-                }
+                const uploadRes = await api.post('/apipagos/uploadComprobante', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+                filenameDest = uploadRes.data?.filename || uploadRes.data?.comprobanteUrl || null;
             }
-
-            const res = await api.post('/apipagos/realizarPago', {
+            await api.post('/apipagos/realizarPago', {
                 metodoPagoId: parseInt(formaPago),
-                monedaId: monedaId,
+                monedaId,
                 monto: importe,
                 ordenRetiro: selectedRetiro.ordenDeRetiro,
                 orderNumbers: ordersToPay,
                 comprobanteUrl: filenameDest
             });
-
-            if (res.data) {
-                alert("Pago guardado exitosamente.");
-                setMonto('');
-                setFormaPago('');
-                setFileComprobante(null);
-                setSelectedRetiro(null);
-                document.getElementById('file-upload').value = '';
-                fetchData();
-            } else {
-                alert("No se pudo confirmar el pago.");
-            }
+            alert("Pago guardado exitosamente.");
+            setMonto(''); setFormaPago(''); setFileComprobante(null); setSelectedRetiro(null);
+            const fileInput = document.getElementById('file-upload');
+            if (fileInput) fileInput.value = '';
+            fetchData();
         } catch (err) {
             console.error(err);
             alert("Error al procesar el pago.");
         }
     };
 
+    // ─── BUSCADOR INTELIGENTE ──────────────────────────────
+    // Si el término coincide con un retiro en la lista → seleccionarlo directamente
+    // Si no → buscar en el backend y abrir modal con la situación
+    const handleSearch = async () => {
+        const term = searchInput.trim();
+        if (!term || term.length < 2) return;
+
+        const termLower = term.toLowerCase();
+
+        // 1. Buscar en la lista local de retiros
+        const match = retiros.find(retiro => {
+            if (retiro.ordenDeRetiro?.toLowerCase() === termLower) return true;
+            if (retiro.CliCodigoCliente?.toLowerCase() === termLower) return true;
+            if (retiro.CliNombre?.toLowerCase().includes(termLower)) return true;
+            // Buscar por código de sub-orden
+            return getOrdenes(retiro).some(o => o.orderNumber?.toLowerCase() === termLower);
+        });
+
+        if (match) {
+            // Encontrado en la lista → seleccionar directamente
+            await handleSelectRetiro(match);
+            setSearchInput('');
+            return;
+        }
+
+        // 2. No encontrado en la lista → buscar situación en el backend
+        setSearchLoading(true);
+        try {
+            const res = await api.get(`/apiordenesRetiro/mostrador/buscar?q=${encodeURIComponent(term)}`);
+            setSearchModal(res.data);
+        } catch (err) {
+            console.error(err);
+            alert('Error al buscar.');
+        } finally {
+            setSearchLoading(false);
+        }
+    };
+
+    // ─── FILTRO LOCAL ─────────────────────────────────────
     const filteredRetiros = retiros.filter((retiro) => {
         if (!searchTerm) return true;
         const term = searchTerm.toLowerCase();
-        if (retiro.ordenDeRetiro && retiro.ordenDeRetiro.toLowerCase().includes(term)) return true;
-
-        const ordenes = getOrdenes(retiro);
-        for (let o of ordenes) {
-            if (o.codigoOrden && o.codigoOrden.toLowerCase().includes(term)) return true;
-            if (o.cliente) {
-                if (String(o.cliente.id).includes(term)) return true;
-                if (o.cliente.codigo?.toLowerCase().includes(term)) return true;
-                if (o.cliente.nombreApellido?.toLowerCase().includes(term)) return true;
-            }
+        if (retiro.ordenDeRetiro?.toLowerCase().includes(term)) return true;
+        if (retiro.CliNombre?.toLowerCase().includes(term)) return true;
+        if (retiro.CliCodigoCliente?.toLowerCase().includes(term)) return true;
+        for (let o of getOrdenes(retiro)) {
+            if (o.codigoOrden?.toLowerCase().includes(term)) return true;
+            if (o.orderNumber?.toLowerCase().includes(term)) return true;
         }
         return false;
     });
 
+    // ─── RENDER ───────────────────────────────────────────
     if (loading && retiros.length === 0) {
-        return <div className="p-8 text-center text-zinc-500">Cargando órdenes de la caja...</div>;
+        return (
+            <div className="flex items-center justify-center min-h-[60vh]">
+                <Loader2 className="animate-spin text-blue-500" size={40} />
+                <span className="ml-3 text-zinc-500 font-medium">Cargando caja...</span>
+            </div>
+        );
     }
 
     return (
-        <div className="bg-white rounded-xl shadow-lg p-6 lg:p-10 font-sans border border-zinc-100 min-h-full flex flex-col">
+        <div className="min-h-full flex flex-col gap-5 p-4 lg:p-8 font-sans bg-[#f6f8fb]">
 
-            {/* Cabecera / Controles */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end mb-8">
-                <div className="flex flex-col gap-2">
-                    <label className="text-sm font-bold text-zinc-800">Seleccionar forma de pago</label>
-                    <select
-                        className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-[#0070bc] focus:ring-1 focus:ring-[#0070bc] appearance-none"
-                        value={formaPago}
-                        onChange={(e) => setFormaPago(e.target.value)}
-                    >
-                        <option value="">Seleccione un método</option>
-                        {metodosPago.map((m) => (
-                            <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>
-                                {m.MPaDescripcionMetodo}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                    <label className="text-sm font-bold text-zinc-800">Seleccionar Moneda</label>
-                    <select
-                        className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-[#0070bc] focus:ring-1 focus:ring-[#0070bc] appearance-none"
-                        value={moneda}
-                        onChange={handleCurrencyChange}
-                    >
-                        <option value="USD">USD</option>
-                        <option value="UYU">UYU</option>
-                    </select>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                    <label className="text-sm font-bold text-zinc-800">Cargar comprobante</label>
-                    <input
-                        type="file"
-                        id="file-upload"
-                        onChange={handleFileChange}
-                        className="w-full text-sm border border-zinc-300 p-2 rounded-lg cursor-pointer"
-                    />
-                </div>
-
-                <div className="flex flex-col gap-2 relative">
-                    <label className="text-sm font-bold text-zinc-800">Ingrese Monto</label>
-                    <input
-                        type="number"
-                        placeholder="Monto"
-                        className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-[#0070bc] focus:ring-1 focus:ring-[#0070bc] text-lg font-bold"
-                        value={monto}
-                        onChange={(e) => setMonto(e.target.value)}
-                    />
-                </div>
-            </div>
-
-            <div className="flex justify-end mb-8">
-                <button
-                    onClick={handleRealizarPago}
-                    className="bg-[#0070bc] hover:bg-[#005a99] text-white font-bold py-2.5 px-8 rounded-full shadow-md transition-transform hover:scale-105"
-                >
-                    Realizar Pago
-                </button>
-            </div>
-
-            {/* Banner Cotización */}
-            <div className="bg-[#eaf5ff] rounded-2xl py-6 flex flex-col items-center justify-center mb-10 border border-[#cbe5ff]">
-                <h3 className="text-lg font-bold text-[#0070bc]">Cotización del Dólar:</h3>
-
-                {cotizacion !== null ? (
-                    <p className="text-xl font-black text-zinc-800">1 USD = {Number(cotizacion).toFixed(2)} UYU</p>
-                ) : (
-                    <div className="mt-2 text-center">
-                        {!isManualCotizacion ? (
-                            <p className="text-sm font-medium">
-                                No se encontró la cotización del dólar.{' '}
-                                <button className="underline text-[#0070bc]" onClick={() => setIsManualCotizacion(true)}>
-                                    Ingresar manualmente
-                                </button>
-                            </p>
+            {/* ─── BANNER COTIZACIÓN (ARRIBA) ─────────────── */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex items-center justify-between flex-wrap gap-4">
+                <div className="flex items-center gap-3">
+                    <div className="bg-blue-100 text-blue-600 p-2.5 rounded-xl">
+                        <DollarSign size={22} />
+                    </div>
+                    <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Cotización del Dólar</p>
+                        {cotizacion !== null ? (
+                            <p className="text-xl font-black text-slate-800">1 USD = <span className="text-blue-600">{Number(cotizacion).toFixed(2)}</span> UYU</p>
                         ) : (
-                            <div className="flex flex-col gap-2 mt-2">
-                                <input
-                                    type="number"
-                                    value={manualCotizacion}
-                                    onChange={(e) => setManualCotizacion(e.target.value)}
-                                    placeholder="Cotización ej: 40"
-                                    className="border rounded-lg px-3 py-1 font-bold text-center"
-                                />
-                                <button onClick={handleSetManualCotizacion} className="bg-[#0070bc] text-white rounded-lg px-3 py-1 text-sm">
-                                    Confirmar Cotización
-                                </button>
-                            </div>
+                            <p className="text-sm font-semibold text-amber-600">Sin cotización cargada</p>
                         )}
                     </div>
-                )}
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                        onClick={handleBuscarCotizacion}
+                        disabled={loadingCotizacion}
+                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl text-sm transition-all disabled:opacity-50"
+                    >
+                        {loadingCotizacion ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                        Buscar del Banco
+                    </button>
+
+                    {(isManualCotizacion || cotizacion === null) && (
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="number"
+                                value={manualCotizacion}
+                                onChange={(e) => setManualCotizacion(e.target.value)}
+                                placeholder="Ej: 42.50"
+                                className="w-28 border-2 border-amber-300 rounded-xl px-3 py-2 font-bold text-center text-sm focus:border-blue-500 outline-none bg-amber-50"
+                            />
+                            <button
+                                onClick={handleSetManualCotizacion}
+                                className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-xl text-sm transition-all"
+                            >
+                                Confirmar
+                            </button>
+                        </div>
+                    )}
+
+                    {cotizacion !== null && !isManualCotizacion && (
+                        <button
+                            onClick={() => setIsManualCotizacion(true)}
+                            className="text-xs text-slate-400 hover:text-blue-500 underline transition-colors"
+                        >
+                            Cambiar manual
+                        </button>
+                    )}
+                </div>
             </div>
 
-            {/* Main Content Split */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 flex-1">
-                {/* Lado Izquierdo: Órdenes para Pagar */}
-                <div className="pr-0 lg:pr-10 lg:border-r border-zinc-200">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                        <h3 className="text-lg font-bold text-zinc-800">Órdenes pendientes</h3>
-                        <div className="relative w-full md:w-64">
+            {/* ─── FORMULARIO DE PAGO (COMPACTO) ──────────── */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                <div className="flex items-end gap-3 flex-wrap">
+                    {/* Forma de pago */}
+                    <div className="flex flex-col gap-1 min-w-[180px] flex-1">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Método de Pago</label>
+                        <select
+                            className="bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 outline-none focus:border-blue-500 text-sm font-semibold"
+                            value={formaPago}
+                            onChange={(e) => setFormaPago(e.target.value)}
+                        >
+                            <option value="">Seleccione...</option>
+                            {metodosPago.map((m) => (
+                                <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Moneda */}
+                    <div className="flex flex-col gap-1 w-[100px]">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Moneda</label>
+                        <select
+                            className="bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 outline-none focus:border-blue-500 text-sm font-semibold"
+                            value={moneda}
+                            onChange={handleCurrencyChange}
+                        >
+                            <option value="USD">USD</option>
+                            <option value="UYU">UYU</option>
+                        </select>
+                    </div>
+
+                    {/* Monto + Botón Pagar */}
+                    <div className="flex items-end gap-2 flex-1 min-w-[280px]">
+                        <div className="flex flex-col gap-1 flex-1">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Monto a cobrar</label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">{moneda === 'USD' ? 'U$S' : '$'}</span>
+                                <input
+                                    type="number"
+                                    placeholder="0.00"
+                                    className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-slate-800 outline-none focus:border-blue-500 text-lg font-black"
+                                    value={monto}
+                                    onChange={(e) => setMonto(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <button
+                            onClick={handleRealizarPago}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all hover:scale-[1.02] text-sm whitespace-nowrap flex items-center gap-2"
+                        >
+                            <CreditCard size={16} /> Realizar Pago
+                        </button>
+                    </div>
+
+                    {/* Comprobante */}
+                    <div className="flex flex-col gap-1 min-w-[160px]">
+                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Comprobante</label>
+                        <input
+                            type="file"
+                            id="file-upload"
+                            onChange={(e) => setFileComprobante(e.target.files[0])}
+                            className="text-xs border-2 border-dashed border-slate-200 p-2 rounded-xl cursor-pointer hover:border-blue-400 transition-colors"
+                        />
+                    </div>
+                </div>
+            </div>
+
+            {/* ─── CONTENIDO PRINCIPAL ─────────────────────── */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 flex-1">
+
+                {/* PANEL IZQUIERDO: Lista de Retiros */}
+                <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col">
+
+                    {/* Filtro rápido + Buscador */}
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                        <div className="relative flex-1 min-w-[180px]">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input
                                 type="text"
-                                placeholder="Buscar Retiro, Orden, Cliente..."
-                                className="w-full pl-10 pr-4 py-2 border border-zinc-300 rounded-full text-sm focus:outline-none focus:border-[#0070bc] focus:ring-1 focus:ring-[#0070bc]"
+                                placeholder="Filtrar retiros..."
+                                className="w-full pl-9 pr-3 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
-                            <i className="fa-solid fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-zinc-400"></i>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <input
+                                type="text"
+                                placeholder="Buscar situación..."
+                                className="w-36 pl-3 pr-2 py-2 border-2 border-blue-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 bg-blue-50"
+                                value={searchInput}
+                                onChange={(e) => setSearchInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                            />
+                            <button
+                                onClick={handleSearch}
+                                disabled={searchLoading}
+                                className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-xl transition-all disabled:opacity-50"
+                                title="Buscar situación de pago"
+                            >
+                                {searchLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                            </button>
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-4 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2 pb-2 content-start">
+                    {/* Filtros por tipo de cliente */}
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                        <Filter size={12} className="text-slate-400" />
+                        {[
+                            { val: 'todos', label: 'Todos' },
+                            { val: '1', label: 'Comunes' },
+                            { val: '3', label: 'Rollo Adelantado' },
+                        ].map(f => (
+                            <button
+                                key={f.val}
+                                onClick={() => setFiltroTipoCliente(f.val)}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border
+                                    ${filtroTipoCliente === f.val
+                                        ? 'bg-blue-600 text-white border-blue-600'
+                                        : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                                    }`}
+                            >
+                                {f.label}
+                            </button>
+                        ))}
+                        <label className="flex items-center gap-1 text-xs text-slate-500 ml-2 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={incluirSemanales}
+                                onChange={(e) => setIncluirSemanales(e.target.checked)}
+                                className="rounded border-slate-300"
+                            />
+                            Semanales
+                        </label>
+                        <span className="ml-auto text-xs text-slate-400 font-semibold">{filteredRetiros.length} retiros</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mb-3 leading-tight">
+                        Muestra retiros <strong>con cobro pendiente</strong> (Ingresado, Pasar por caja, Abonado de antemano con saldo, Empaquetado sin abonar).
+                        Los <strong>semanales</strong> se excluyen por defecto. El filtro consulta al servidor al cambiar.
+                    </p>
+
+                    {/* Lista de retiros — chips compactos */}
+                    <div className="flex flex-wrap gap-2 overflow-y-auto max-h-[60vh] pr-1 content-start">
                         {filteredRetiros.length === 0 ? (
-                            <p className="text-zinc-500">No hay órdenes en la caja.</p>
+                            <p className="text-sm text-slate-400 text-center w-full py-8">No hay órdenes pendientes de pago.</p>
                         ) : (
                             filteredRetiros.map((retiro) => {
                                 const isSelected = selectedRetiro?.ordenDeRetiro === retiro.ordenDeRetiro;
-                                const isLocked = selectedRetiro && selectedRetiro.ordenDeRetiro !== retiro.ordenDeRetiro;
-
                                 return (
                                     <button
                                         key={retiro.ordenDeRetiro}
                                         onClick={() => handleSelectRetiro(retiro)}
-                                        className={`
-                                            px-6 py-2.5 rounded-full font-bold border-2 transition-all cursor-pointer hover:bg-[#eaf5ff]
-                                            ${isSelected ? 'bg-[#0070bc] border-[#0070bc] text-white shadow-lg scale-105 !hover:bg-[#005a99]' : ''}
-                                            ${!isSelected && !isLocked ? 'bg-white border-[#85c3f0] text-[#429fe5]' : ''}
-                                            ${isLocked && !isSelected ? 'opacity-50 hover:opacity-100 bg-zinc-50 border-zinc-300 text-zinc-500 hover:border-[#85c3f0] hover:text-[#429fe5]' : ''}
-                                        `}
+                                        title={retiro.CliNombre || retiro.CliCodigoCliente || ''}
+                                        className={`px-4 py-2 rounded-xl border-2 font-black text-sm transition-all whitespace-nowrap
+                                            ${isSelected
+                                                ? 'bg-blue-600 border-blue-600 text-white shadow-md scale-105'
+                                                : 'bg-white border-slate-200 text-slate-700 hover:border-blue-400 hover:text-blue-600'
+                                            }`}
                                     >
                                         {retiro.ordenDeRetiro}
                                     </button>
@@ -413,20 +521,51 @@ export const CargaGestionPagosView = () => {
                     </div>
                 </div>
 
-                {/* Lado Derecho: Detalles de la Orden */}
-                <div className="pl-0 lg:pl-4">
+                {/* PANEL DERECHO: Detalle del Retiro */}
+                <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col">
                     {selectedRetiro ? (
-                        <div className="flex flex-col items-center lg:items-end text-center lg:text-right w-full fade-in">
-                            <h2 className="text-4xl font-black text-[#0070bc] mb-2 mt-4">
-                                {selectedRetiro.ordenDeRetiro}
-                            </h2>
+                        <>
+                            {/* Header del retiro — sin total duplicado */}
+                            <div className="flex items-center gap-3 mb-4">
+                                <h2 className="text-3xl font-black text-blue-600">{selectedRetiro.ordenDeRetiro}</h2>
+                                <span className="text-sm text-slate-400 font-medium mt-1">{selectedRetiro.lugarRetiro} • {selectedRetiro.estado}</span>
+                            </div>
 
-                            <p className="text-[#0070bc] font-bold text-2xl mb-8 mt-2 bg-blue-50 px-6 py-2 rounded-full border border-blue-200">
-                                Total a Cobrar: <span className="font-black text-blue-800">{displayTotal(selectedRetiro)}</span>
-                            </p>
+                            {/* Datos del cliente */}
+                            <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <div className="flex items-center gap-2">
+                                    <User size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Cliente</p>
+                                        <p className="text-sm font-bold text-slate-800 truncate">{selectedRetiro.CliNombre || '—'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <FileText size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">ID</p>
+                                        <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliCodigoCliente || '—'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Phone size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Teléfono</p>
+                                        <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliTelefono || '—'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Package size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Tipo</p>
+                                        <p className="text-sm font-bold text-slate-800">{selectedRetiro.TClDescripcion || '—'}</p>
+                                    </div>
+                                </div>
+                            </div>
 
-                            <h3 className="text-lg font-bold text-zinc-800 mb-6 w-full lg:text-right">Abonos de la orden:</h3>
-                            <div className="flex flex-col gap-4 w-full items-end">
+                            {/* Sub-órdenes */}
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Órdenes del retiro</h3>
+                            <div className="flex flex-col gap-2 overflow-y-auto max-h-[50vh] pr-1">
                                 {getOrdenes(selectedRetiro).length > 0 ? (
                                     getOrdenes(selectedRetiro).map((po, i) => {
                                         const costStr = po.orderCosto || "";
@@ -434,45 +573,128 @@ export const CargaGestionPagosView = () => {
                                         const rawValor = parseFloat(costStr.replace(/[^0-9.-]+/g, "")) || 0;
                                         const isPaid = po.orderIdMetodoPago !== null || po.orderPago !== null;
 
-                                        let valorConvertidoDest = "";
+                                        let converted = '';
                                         if (moneda === 'UYU' && (curSym === 'USD' || curSym === 'U$S') && cotizacion) {
-                                            valorConvertidoDest = ` ($ ${(rawValor * cotizacion).toFixed(2)})`;
+                                            converted = ` → $ ${(rawValor * cotizacion).toFixed(2)}`;
                                         }
                                         if (moneda === 'USD' && (curSym === '$' || curSym === 'UYU') && cotizacion) {
-                                            valorConvertidoDest = ` (USD ${(rawValor / cotizacion).toFixed(2)})`;
+                                            converted = ` → USD ${(rawValor / cotizacion).toFixed(2)}`;
                                         }
 
                                         return (
                                             <div
                                                 key={i}
-                                                className={`w-full border-2 rounded-full px-6 py-3 font-bold flex flex-col md:flex-row justify-between items-center transition-all bg-white
-                                                    ${isPaid ? 'border-green-300 text-green-600 bg-green-50/50' : 'border-[#85c3f0] text-[#0070bc]'}
-                                                `}
+                                                className={`p-3 rounded-xl border-2 flex items-center justify-between transition-all
+                                                    ${isPaid ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-200 bg-white'}`}
                                             >
                                                 <div className="flex items-center gap-3">
-                                                    <span>{po.orderNumber || `Item ${i + 1}`}</span>
-                                                    {isPaid && <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wider">Ya Pagado</span>}
+                                                    {isPaid ? (
+                                                        <CheckCircle size={18} className="text-emerald-500 shrink-0" />
+                                                    ) : (
+                                                        <AlertTriangle size={18} className="text-amber-500 shrink-0" />
+                                                    )}
+                                                    <div>
+                                                        <span className="font-bold text-sm text-slate-800">{po.orderNumber || `Item ${i + 1}`}</span>
+                                                        <span className={`ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                            {isPaid ? 'Pagado' : po.orderEstado || 'Pendiente'}
+                                                        </span>
+                                                        {po.orderCantidad != null && (
+                                                            <span className="ml-2 text-[10px] text-slate-400 font-semibold">
+                                                                Cant: <strong className="text-slate-600">{po.orderCantidad % 1 === 0 ? po.orderCantidad : po.orderCantidad.toFixed(2)}</strong>
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
-
-                                                <div className="mt-2 md:mt-0 opacity-90">
-                                                    Costo total: {curSym} {rawValor.toFixed(2)} {valorConvertidoDest}
+                                                <div className="text-right">
+                                                    <p className="font-black text-sm text-slate-800">{curSym} {rawValor.toFixed(2)}</p>
+                                                    {converted && <p className="text-xs text-slate-400">{converted}</p>}
                                                 </div>
                                             </div>
                                         );
                                     })
                                 ) : (
-                                    <p className="text-zinc-500">No hay detalles de órdenes.</p>
+                                    <p className="text-slate-400 text-sm text-center py-4">No hay detalles de órdenes.</p>
                                 )}
                             </div>
-                        </div>
+                        </>
                     ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-zinc-400 opacity-70">
-                            <i className="fa-solid fa-cash-register text-6xl mb-4 text-[#85c3f0]"></i>
-                            <p className="font-medium">Seleccione una orden libre para cobrarla.</p>
+                        <div className="flex flex-col items-center justify-center flex-1 text-slate-300">
+                            <CreditCard size={64} className="mb-4" />
+                            <p className="text-lg font-bold">Seleccione un retiro para cobrar</p>
+                            <p className="text-sm mt-1">Haga clic en un retiro de la lista izquierda</p>
                         </div>
                     )}
                 </div>
             </div>
+
+            {/* ─── MODAL DE BÚSQUEDA (SITUACIÓN DE PAGO) ── */}
+            {searchModal && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setSearchModal(null)}>
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between border-b border-slate-200 p-4">
+                            <h3 className="text-lg font-black text-slate-800">Situación de Pago — "{searchInput}"</h3>
+                            <button onClick={() => setSearchModal(null)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
+                        </div>
+                        <div className="p-4 overflow-y-auto flex-1">
+                            {/* Retiros encontrados */}
+                            {searchModal.retiroRows && searchModal.retiroRows.length > 0 && (
+                                <div className="mb-6">
+                                    <h4 className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">Con Retiro Asignado</h4>
+                                    {(() => {
+                                        const groups = {};
+                                        searchModal.retiroRows.forEach(r => {
+                                            const key = r.OReIdOrdenRetiro;
+                                            if (!groups[key]) groups[key] = { ...r, orders: [] };
+                                            if (r.OrdIdOrden) groups[key].orders.push(r);
+                                        });
+                                        return Object.values(groups).map(g => (
+                                            <div key={g.OReIdOrdenRetiro} className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-2">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="font-black text-blue-700">R-{String(g.OReIdOrdenRetiro).padStart(4, '0')}</span>
+                                                    <span className="text-xs font-bold text-slate-500">{g.estadoRetiro} • {g.lugarRetiro}</span>
+                                                </div>
+                                                <p className="text-xs text-slate-500 mb-2">{g.CliNombre} ({g.CliCodigo}) — {g.TClDescripcion}</p>
+                                                {g.orders.map((o, i) => (
+                                                    <div key={i} className="flex items-center justify-between py-1 border-t border-slate-200 text-sm">
+                                                        <span className="font-semibold">{o.OrdCodigoOrden}</span>
+                                                        <span className={`text-xs font-bold ${o.estadoOrden === 'Entregado' || o.estadoOrden === 'Cancelado' ? 'text-slate-400' : 'text-slate-700'}`}>{o.estadoOrden}</span>
+                                                        <span className="font-bold">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ));
+                                    })()}
+                                </div>
+                            )}
+
+                            {/* Sin retiro */}
+                            {searchModal.sinRetiro && searchModal.sinRetiro.length > 0 && (
+                                <div>
+                                    <h4 className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-2">Sin Retiro Asignado</h4>
+                                    {searchModal.sinRetiro.map((o, i) => (
+                                        <div key={i} className="flex items-center justify-between py-2 border-b border-slate-100 text-sm">
+                                            <div>
+                                                <span className="font-bold text-slate-800">{o.OrdCodigoOrden}</span>
+                                                <span className="ml-2 text-xs text-slate-400">{o.CliNombre} ({o.CliCodigo})</span>
+                                                <span className="ml-2 text-xs text-slate-400">{o.TClDescripcion}</span>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className={`text-xs font-bold ${o.Pagada ? 'text-emerald-600' : 'text-amber-600'}`}>{o.Pagada ? 'PAGADA' : o.estadoOrden}</span>
+                                                <span className="font-bold">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Sin resultados */}
+                            {(!searchModal.retiroRows || searchModal.retiroRows.length === 0) && (!searchModal.sinRetiro || searchModal.sinRetiro.length === 0) && (
+                                <p className="text-center text-slate-400 py-8">No se encontraron resultados para "{searchInput}"</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
