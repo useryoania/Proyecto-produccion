@@ -1331,7 +1331,7 @@ exports.totemLookup = async (req, res) => {
         const orderRes = await pool.request()
             .input('code', sql.VarChar(50), orderCode.trim())
             .query(`
-                SELECT TOP 1 o.CliIdCliente, c.IDCliente, c.Nombre, c.NombreFantasia
+                SELECT TOP 1 o.CliIdCliente, o.OReIdOrdenRetiro, c.IDCliente, c.Nombre, c.NombreFantasia
                 FROM OrdenesDeposito o WITH(NOLOCK)
                 LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                 WHERE o.OrdCodigoOrden = @code
@@ -1339,6 +1339,10 @@ exports.totemLookup = async (req, res) => {
 
         if (!orderRes.recordset.length) {
             return res.json({ success: false, message: 'Orden no encontrada' });
+        }
+
+        if (orderRes.recordset[0].OReIdOrdenRetiro) {
+            return res.json({ success: false, message: 'Esta orden ya tiene un retiro asociado' });
         }
 
         const client = orderRes.recordset[0];

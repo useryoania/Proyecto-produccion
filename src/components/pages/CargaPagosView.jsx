@@ -527,7 +527,7 @@ export const CargaGestionPagosView = () => {
             </p> */}
 
                     {/* Lista de retiros — chips compactos */}
-                    <div className="flex flex-wrap gap-2 overflow-y-auto max-h-[60vh] pr-1 content-start">
+                    <div className="grid grid-cols-3 gap-2 overflow-y-auto max-h-[60vh] pr-1">
                         {filteredRetiros.length === 0 ? (
                             <p className="text-sm text-slate-400 text-center w-full py-8">No hay órdenes pendientes de pago.</p>
                         ) : (

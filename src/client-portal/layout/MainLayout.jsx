@@ -206,7 +206,9 @@ export const MainLayout = ({ children }) => {
 
             {/* Mobile Header */}
             <div className="md:hidden fixed top-0 w-full bg-custom-dark backdrop-blur-md text-zinc-100 z-30 px-4 py-3 flex justify-between items-center shadow-lg border-b border-brand-dark">
-                <div className="flex items-center gap-2 text-custom-yellow">
+                <div className="flex items-center gap-3">
+                    <Logo className="h-8 w-auto text-white mt-2" />
+                    <div className="w-px h-8 bg-zinc-700"></div>
                     <span className="font-bold text-zinc-100">AUTOGESTIÓN</span>
                 </div>
                 <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 rounded-lg hover:text-custom-magenta">

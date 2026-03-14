@@ -6,6 +6,7 @@ import loadingAnim from '../../assets/animations/loading.json';
 import { useAuth } from '../auth/AuthContext';
 import { apiClient } from '../api/apiClient'; // Assuming user comes from here
 import { CheckCircle, AlertCircle, ChevronRight, Truck, CreditCard, Download, MapPin, MapPinCheck, Package, PackageCheck, Trash2, Plus, ArrowLeft } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 import { CustomButton } from '../pautas/CustomButton';
 import { CustomSelect } from '../pautas/CustomSelect';
@@ -311,22 +312,33 @@ export const PickupView = () => {
                 {/* Código de retiro — centrado */}
                 <div className="flex-1 flex flex-col items-center justify-center gap-4">
                     <p className="text-zinc-500 text-xs text-center max-w-sm uppercase">
-                        Mostrá este código en nuestro local para retirar tu pedido.
+                        Podés abonar desde <span className="text-custom-cyan font-bold">Pagos Pendientes</span> y luego retirar con este código.
                     </p>
 
-                    <div className="max-w-xs w-full rounded-xl bg-brand-dark border border-zinc-700 py-6 text-center">
-                        <p className="text-xs uppercase tracking-widest text-zinc-500 font-bold mb-2">Código de Retiro</p>
+                    <div className="max-w-xs w-full rounded-xl bg-brand-dark border border-zinc-700 py-6 text-center flex flex-col items-center gap-4">
                         <p className="text-5xl font-mono font-black text-custom-cyan tracking-widest">RW-{pickupCode}</p>
+                        <div className="bg-white rounded-xl p-3">
+                            <QRCodeSVG
+                                value={`RW-${pickupCode}`}
+                                size={160}
+                                fgColor="#18181b"
+                                bgColor="#ffffff"
+                            />
+                        </div>
                     </div>
+
+                    <p className="text-zinc-500 text-xs text-center max-w-sm uppercase">
+                        O acercate a nuestro local para abonar y retirar tu pedido.
+                    </p>
                 </div>
 
                 {/* Botones */}
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-stretch gap-3 mt-auto">
                     <CustomButton
                         onClick={() => downloadReceipt(pickupCode)}
                         variant="secondary"
                         icon={Download}
-                        className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-zinc-600 hover:!bg-brand-dark/50"
+                        className="flex-1 py-3 text-sm !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-zinc-600 hover:!bg-brand-dark/50"
                         whileHover={{ scale: 1 }}
                         whileTap={{ scale: 1 }}
                     >
@@ -337,7 +349,7 @@ export const PickupView = () => {
                         onClick={() => { setStep('selection'); setSelectedOrders([]); setConfirmedWithoutPayment(false); }}
                         variant="secondary"
                         icon={ArrowLeft}
-                        className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!border-brand-cyan hover:!bg-brand-cyan/5"
+                        className="flex-1 py-3 text-sm !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-zinc-600 hover:!bg-brand-dark/50"
                         whileHover={{ scale: 1 }}
                         whileTap={{ scale: 1 }}
                     >
@@ -707,7 +719,7 @@ export const PickupView = () => {
             )}
 
             {/* Botones finales */}
-            <div className="flex justify-end items-center gap-3">
+            <div className="flex justify-between items-stretch gap-3">
                     <CustomButton
                         onClick={async () => {
                             const code = await handleCreatePickup();
@@ -721,11 +733,11 @@ export const PickupView = () => {
                         disabled={!selectedFormaEnvio || needsAddress}
                         variant="secondary"
                         icon={PackageCheck}
-                        className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-brand-gold/40 hover:!border-brand-gold hover:!bg-brand-gold/5"
+                        className="flex-1 py-3 text-xs !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-zinc-600 hover:!bg-brand-dark/50"
                         whileHover={{ scale: 1 }}
                         whileTap={{ scale: 1 }}
                     >
-                        Retiro sin pagar
+                        Pagar después
                     </CustomButton>
 
                     {totalAmount > 0 && (
@@ -739,7 +751,7 @@ export const PickupView = () => {
                             disabled={!selectedFormaEnvio || needsAddress}
                             variant="primary"
                             icon={CreditCard}
-                            className="py-3 px-8 text-lg !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!bg-brand-cyan/5 hover:!border-brand-cyan"
+                            className="flex-1 py-3 text-xs !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-zinc-600 hover:!bg-brand-dark/50"
                             whileHover={{ scale: 1 }}
                             whileTap={{ scale: 1 }}
                         >
@@ -770,15 +782,12 @@ export const PickupView = () => {
                         <thead className="bg-custom-dark border-b border-zinc-700">
                             <tr>
                                 <th className="py-4 px-4 w-14 text-center">
-                                    <input
-                                        type="checkbox"
-                                        className="w-5 h-5 rounded border-zinc-600 cursor-pointer accent-[#006E97]"
-                                        checked={readyOrders.length > 0 && selectedOrders.length === readyOrders.length}
-                                        onChange={() => {
+                                    <div
+                                        className="flex items-center justify-center cursor-pointer text-blue-400"
+                                        onClick={() => {
                                             if (selectedOrders.length === readyOrders.length) {
                                                 setSelectedOrders([]);
                                             } else {
-                                                // Seleccionar todas de la misma moneda que la primera
                                                 const firstCurrency = readyOrders[0]?.currency;
                                                 const allSameCurrency = readyOrders.every(o => o.currency === firstCurrency);
                                                 if (allSameCurrency) {
@@ -788,7 +797,13 @@ export const PickupView = () => {
                                                 }
                                             }
                                         }}
-                                    />
+                                    >
+                                        {readyOrders.length > 0 && selectedOrders.length === readyOrders.length ? (
+                                            <CheckCircle size={22} />
+                                        ) : (
+                                            <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                        )}
+                                    </div>
                                 </th>
                                 <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Orden ID</th>
                                 <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider">Descripción</th>
@@ -807,13 +822,12 @@ export const PickupView = () => {
                                     className={`border-b border-zinc-800 transition-all cursor-pointer ${selectedOrders.includes(order.id) ? 'bg-[#1a2c30] shadow-[inset_3px_0_0_#006E97]' : 'bg-brand-dark hover:bg-[#1a1a1a]'}`}
                                 >
                                     <td className="py-4 px-4 border-r border-zinc-800">
-                                        <div className="flex items-center justify-center h-full">
-                                            <input
-                                                type="checkbox"
-                                                className="w-5 h-5 rounded border-zinc-600 cursor-pointer accent-[#006E97]"
-                                                checked={selectedOrders.includes(order.id)}
-                                                readOnly
-                                            />
+                                        <div className="flex items-center justify-center h-full text-blue-400">
+                                            {selectedOrders.includes(order.id) ? (
+                                                <CheckCircle size={22} />
+                                            ) : (
+                                                <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                            )}
                                         </div>
                                     </td>
                                     <td className="p-4 font-mono font-medium text-sm text-zinc-100 border-r border-zinc-800 text-center">{order.id}</td>
@@ -849,12 +863,13 @@ export const PickupView = () => {
                             onClick={() => handleToggleOrder(order.id)}
                             className={`p-4 flex items-start gap-3 cursor-pointer transition-all ${selectedOrders.includes(order.id) ? 'bg-[#1a2c30] shadow-[inset_3px_0_0_#006E97]' : 'bg-brand-dark hover:bg-[#1a1a1a]'}`}
                         >
-                            <input
-                                type="checkbox"
-                                className="w-5 h-5 mt-0.5 rounded border-zinc-600 cursor-pointer accent-[#006E97]"
-                                checked={selectedOrders.includes(order.id)}
-                                readOnly
-                            />
+                            <div className="flex-shrink-0 text-blue-400 mt-0.5">
+                                {selectedOrders.includes(order.id) ? (
+                                    <CheckCircle size={22} />
+                                ) : (
+                                    <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                )}
+                            </div>
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between gap-2 mb-1">
                                     <span className="font-mono font-bold text-sm text-zinc-100">{order.id}</span>
