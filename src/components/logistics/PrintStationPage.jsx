@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Printer, Wifi, WifiOff, Volume2, VolumeX, Bell } from 'lucide-react';
+import { Printer, Wifi, WifiOff, Volume2, VolumeX, Bell, RotateCcw, Package, AlertTriangle, XCircle } from 'lucide-react';
 import { socket } from '../../services/socketService';
 import api from '../../services/api';
+import { Logo } from '../Logo';
 
 const PrintStationPage = () => {
     const [connected, setConnected] = useState(socket.connected);
@@ -17,9 +18,9 @@ const PrintStationPage = () => {
         audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1pq6y0r6KYj5+xtbisl4eEkKW0u7OljYWMnK+4t6yYjI2ZqrW1rZqOjpersbOsnpOPlqexsa6glo+VpbCxr6KYkZWjr7GvoZiSlKOusa+impOUoq+xr6KZk5Sjr7CvopmTlKOvsK+imZOUo6+wr6KZk5Sjr7CvopmTlKOvsK+hmJKToa6vr6GYkpOhr6+voZiSk6GvAA==');
     }, []);
 
-    const addLog = useCallback((message, type = 'info') => {
-        const time = new Date().toLocaleTimeString('es-UY');
-        setLogs(prev => [{ time, message, type }, ...prev].slice(0, 50));
+    const addLog = useCallback((message, type = 'info', retiro = null, icon = null) => {
+        const time = new Date().toLocaleTimeString('es-UY', { hour12: false });
+        setLogs(prev => [{ time, message, type, retiro, icon }, ...prev].slice(0, 50));
     }, []);
 
     // Socket.io connection status
@@ -30,7 +31,7 @@ const PrintStationPage = () => {
         socket.on('connect', onConnect);
         socket.on('disconnect', onDisconnect);
 
-        if (socket.connected) addLog('Print Station iniciada — esperando retiros...', 'success');
+        if (socket.connected) addLog('ESPERANDO RETIROS...', 'success');
 
         return () => {
             socket.off('connect', onConnect);
@@ -124,10 +125,10 @@ const PrintStationPage = () => {
         const handleRetiroUpdate = async (data) => {
             if (data?.type !== 'nuevo_retiro') return;
 
-            addLog('📦 Nuevo retiro detectado — cargando datos...', 'info');
+            addLog('Nuevo retiro detectado — cargando datos...', 'info', null, 'package');
 
             if (soundEnabled && audioRef.current) {
-                try { audioRef.current.play(); } catch (e) { /* user interaction needed */ }
+                audioRef.current.play().catch(() => {});
             }
 
             try {
@@ -137,13 +138,13 @@ const PrintStationPage = () => {
                 if (retiros && retiros.length > 0) {
                     // Ordenar por fecha descendente y tomar el primero
                     const ultimo = retiros.sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta))[0];
-                    addLog(`🖨️ Imprimiendo retiro ${ultimo.ordenDeRetiro} (${copies} copias)...`, 'info');
+                    addLog(`Imprimiendo retiro ${ultimo.ordenDeRetiro} (${copies} copias)...`, 'info', ultimo, 'printer');
                     printTicket(ultimo);
                 } else {
-                    addLog('⚠️ No se encontraron retiros recientes para imprimir', 'error');
+                    addLog('No se encontraron retiros recientes para imprimir', 'error', null, 'warning');
                 }
             } catch (err) {
-                addLog(`❌ Error al obtener retiro: ${err.message}`, 'error');
+                addLog(`Error al obtener retiro: ${err.message}`, 'error', null, 'error');
             }
         };
 
@@ -162,28 +163,32 @@ const PrintStationPage = () => {
             flexDirection: 'column',
             gap: '20px'
         }}>
+
             {/* Header */}
             <div style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '16px 24px',
+                padding: '8px 24px',
                 background: '#141414',
                 borderRadius: '16px',
                 border: '1px solid #222'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <Printer size={28} color="#00d4ff" />
+                    <Printer size={28} color="#ffd700" />
                     <div>
-                        <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#fff', margin: 0 }}>Print Station</h1>
-                        <p style={{ fontSize: '12px', color: '#888', margin: 0 }}>Impresión automática de retiros</p>
+                        <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#fff', margin: 0, textTransform: 'uppercase', letterSpacing: '2px' }}>Print Station</h1>
+                        <p style={{ fontSize: '12px', color: '#888', margin: 0, textTransform: 'uppercase', letterSpacing: '1px' }}>Impresión automática de retiros</p>
                     </div>
                 </div>
+
+                {/* Logo centrado */}
+                <Logo className="h-16 text-white" style={{ marginBottom: '-12px', marginTop: '4px' }} />
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                     {/* Copias */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '12px', color: '#888' }}>Copias:</span>
+                        <span style={{ fontSize: '12px', color: '#888', textTransform: 'uppercase' }}>Copias:</span>
                         <select
                             value={copies}
                             onChange={e => setCopies(Number(e.target.value))}
@@ -242,42 +247,20 @@ const PrintStationPage = () => {
 
             {/* Stats */}
             <div style={{ display: 'flex', gap: '16px' }}>
-                <div style={{
-                    flex: 1,
-                    padding: '20px',
-                    background: '#141414',
-                    borderRadius: '16px',
-                    border: '1px solid #222',
-                    textAlign: 'center'
-                }}>
-                    <div style={{ fontSize: '36px', fontWeight: 800, color: '#00d4ff' }}>{printCount}</div>
-                    <div style={{ fontSize: '12px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>Tickets impresos</div>
+                <div style={{ flex: 1, padding: '10px 16px', background: '#141414', borderRadius: '16px', border: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 800, color: '#00d4ff' }}>{printCount}</div>
+                    <div style={{ fontSize: '11px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>Tickets impresos</div>
                 </div>
-                <div style={{
-                    flex: 1,
-                    padding: '20px',
-                    background: '#141414',
-                    borderRadius: '16px',
-                    border: '1px solid #222',
-                    textAlign: 'center'
-                }}>
-                    <div style={{ fontSize: '36px', fontWeight: 800, color: connected ? '#00d464' : '#ff3c3c' }}>
-                        {connected ? '●' : '○'}
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                <div style={{ flex: 1, padding: '10px 16px', background: '#141414', borderRadius: '16px', border: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                    <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: connected ? '#00d464' : '#ff3c3c', animation: connected ? 'pulse 2s ease-in-out infinite' : 'none', flexShrink: 0 }}></div>
+                    <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
+                    <div style={{ fontSize: '11px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>
                         {connected ? 'Escuchando' : 'Sin conexión'}
                     </div>
                 </div>
-                <div style={{
-                    flex: 1,
-                    padding: '20px',
-                    background: '#141414',
-                    borderRadius: '16px',
-                    border: '1px solid #222',
-                    textAlign: 'center'
-                }}>
-                    <div style={{ fontSize: '36px', fontWeight: 800, color: '#ffd700' }}>{copies}</div>
-                    <div style={{ fontSize: '12px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>Copias por ticket</div>
+                <div style={{ flex: 1, padding: '10px 16px', background: '#141414', borderRadius: '16px', border: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 800, color: '#ffd700' }}>{copies}</div>
+                    <div style={{ fontSize: '11px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>Copias por ticket</div>
                 </div>
             </div>
 
@@ -293,7 +276,7 @@ const PrintStationPage = () => {
                 flexDirection: 'column'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                    <Bell size={16} color="#888" />
+                    <Bell size={16} color="#eb008b" />
                     <span style={{ fontSize: '13px', fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Actividad</span>
                 </div>
                 <div style={{
@@ -315,13 +298,39 @@ const PrintStationPage = () => {
                             gap: '10px',
                             padding: '6px 10px',
                             borderRadius: '8px',
-                            background: log.type === 'error' ? 'rgba(255,60,60,0.05)' : log.type === 'success' ? 'rgba(0,212,100,0.05)' : 'transparent',
+                            background: log.type === 'error' ? 'rgba(255,60,60,0.08)' : log.type === 'success' ? 'rgba(0,212,255,0.08)' : 'transparent',
                             fontSize: '13px'
                         }}>
                             <span style={{ color: '#555', fontSize: '11px', fontFamily: 'monospace', flexShrink: 0 }}>{log.time}</span>
+                            {log.icon === 'package' && <Package size={14} color="#00d4ff" style={{ flexShrink: 0 }} />}
+                            {log.icon === 'printer' && <Printer size={14} color="#aaa" style={{ flexShrink: 0 }} />}
+                            {log.icon === 'warning' && <AlertTriangle size={14} color="#ffd700" style={{ flexShrink: 0 }} />}
+                            {log.icon === 'error' && <XCircle size={14} color="#ff6b6b" style={{ flexShrink: 0 }} />}
                             <span style={{
-                                color: log.type === 'error' ? '#ff6b6b' : log.type === 'success' ? '#51cf66' : '#aaa'
+                                color: log.type === 'error' ? '#ff6b6b' : log.type === 'success' ? '#00d4ff' : '#fff',
+                                flex: 1,
+                                textTransform: 'uppercase'
                             }}>{log.message}</span>
+                            {log.retiro && (
+                                <button
+                                    onClick={() => { addLog(`Reimprimiendo ${log.retiro.ordenDeRetiro}...`, 'info', log.retiro, 'printer'); printTicket(log.retiro); }}
+                                    style={{
+                                        background: 'rgba(255,215,0,0.1)',
+                                        border: '1px solid rgba(255,215,0,0.3)',
+                                        borderRadius: '6px',
+                                        padding: '3px 8px',
+                                        cursor: 'pointer',
+                                        color: '#ffd700',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        fontSize: '11px',
+                                        flexShrink: 0
+                                    }}
+                                >
+                                    <RotateCcw size={12} /> REIMPRIMIR
+                                </button>
+                            )}
                         </div>
                     ))}
                 </div>
