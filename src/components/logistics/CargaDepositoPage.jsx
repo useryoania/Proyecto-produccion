@@ -58,6 +58,8 @@ const CargaDepositoPage = () => {
     const inputRefs = useRef({});
     // Timers de debounce por fila — cancela la validación anterior si el scanner sigue enviando
     const debounceTimers = useRef({});
+    // Timestamp del último caracter recibido por fila (para detectar scanner rápido)
+    const lastCharTime = useRef({});
 
     // ─── PERSISTENCIA AUTOMÁTICA ────────────────────────────────────────────────
     // Guardar en localStorage cada vez que cambian los códigos
@@ -203,8 +205,37 @@ const CargaDepositoPage = () => {
 
     const handleInput = (id, value) => {
         const trimmedValue = value.trim();
+        const now = Date.now();
 
         setCodes(prev => {
+            // ── SCANNER MERGE: si esta fila estaba vacía y recibió input muy rápido
+            // después de otra fila, es porque el scanner partió el código con un Enter ──
+            const currentRow = prev.find(c => c.id === id);
+            const currentIndex = prev.indexOf(currentRow);
+            if (currentRow && currentRow.value === '' && trimmedValue !== '' && currentIndex > 0) {
+                const prevRow = prev[currentIndex - 1];
+                const timeSincePrev = now - (lastCharTime.current[prevRow.id] || 0);
+                // Si la fila anterior recibió input hace menos de 300ms, es un split del scanner
+                if (timeSincePrev < 300 && prevRow.value !== '' && prevRow.status !== 'error') {
+                    const merged = prevRow.value + trimmedValue;
+                    // Cancelar validación anterior de la fila previa
+                    if (debounceTimers.current[prevRow.id]) clearTimeout(debounceTimers.current[prevRow.id]);
+                    debounceTimers.current[prevRow.id] = setTimeout(() => {
+                        delete debounceTimers.current[prevRow.id];
+                        validateQRCode(prevRow.id, merged);
+                    }, 400);
+                    lastCharTime.current[prevRow.id] = now;
+                    // Mergear al anterior y limpiar esta fila
+                    return prev.map(c => {
+                        if (c.id === prevRow.id) return { ...c, value: merged, status: 'validating', message: 'Verificando orden...', parsed: null };
+                        if (c.id === id) return { ...c, value: '', status: 'idle', message: '', parsed: null };
+                        return c;
+                    });
+                }
+            }
+
+            lastCharTime.current[id] = now;
+
             const isDuplicate = prev.some(c => c.value === trimmedValue && c.id !== id && trimmedValue !== '');
 
             const newCodes = prev.map(c => {
@@ -213,7 +244,6 @@ const CargaDepositoPage = () => {
                         return { ...c, value: trimmedValue, status: 'error', message: 'Este código ya fue escaneado en esta tanda.', parsed: null };
                     } else if (trimmedValue !== '' && c.value !== trimmedValue) {
                         // Debounce con cancelación: espera 400ms sin cambios antes de validar
-                        // Esto evita que el scanner, que envía char a char, valide con código incompleto
                         if (debounceTimers.current[id]) clearTimeout(debounceTimers.current[id]);
                         debounceTimers.current[id] = setTimeout(() => {
                             delete debounceTimers.current[id];
@@ -251,10 +281,18 @@ const CargaDepositoPage = () => {
     };
 
     const handleKeyDown = (e, codeId) => {
+        // Trackear tiempo de cada tecla para detectar scanner rápido
+        if (e.key.length === 1) {
+            lastCharTime.current[codeId] = Date.now();
+        }
+
         if (e.key === 'Enter' || e.key === 'Tab') {
             e.preventDefault();
             // Si el escáner aún está enviando caracteres (debounce activo), ignorar el Enter
             if (debounceTimers.current[codeId]) return;
+            // Si el Enter llegó muy rápido después del último carácter (<200ms), es un Enter del scanner a mitad de lectura
+            const timeSinceLastChar = Date.now() - (lastCharTime.current[codeId] || 0);
+            if (timeSinceLastChar < 200) return;
 
             const current = codes.find(c => c.id === codeId);
             // Si el código tiene error, Enter re-dispara la validación

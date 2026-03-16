@@ -13,7 +13,7 @@ const logger = require('../utils/logger');
 const BCU_SOAP_URL = 'https://cotizaciones.bcu.gub.uy/wscotizaciones/servlet/awsbcucotizaciones';
 const BCU_SOAP_ACTION = 'Cotizaaction/AWSBCUCOTIZACIONES.Execute';
 const SPREAD_COMPRA = 0.9945;
-const SPREAD_VENTA = 1.0242;
+const SPREAD_VENTA = 1.0150;
 
 function buildBCUSoapRequest(fechaDesde, fechaHasta) {
     return '<?xml version="1.0" encoding="utf-8"?>' +
@@ -35,13 +35,14 @@ function formatDate(d) {
     return d.toISOString().split('T')[0]; // YYYY-MM-DD
 }
 
-// Intenta hoy, si no hay cotización intenta ayer (BCU publica ~13hs)
+// Intenta hoy y hasta 4 días atrás (cubre fines de semana y feriados)
 async function fetchCotizacionBCU() {
-    const hoy = new Date();
-    const ayer = new Date(hoy);
-    ayer.setDate(ayer.getDate() - 1);
-
-    const fechas = [formatDate(hoy), formatDate(ayer)];
+    const fechas = [];
+    for (let i = 0; i < 5; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        fechas.push(formatDate(d));
+    }
 
     for (const fecha of fechas) {
         try {
