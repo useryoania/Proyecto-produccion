@@ -1,4 +1,5 @@
 const { sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 /**
  * Registra una acción en la tabla de Auditoría.
@@ -36,7 +37,7 @@ async function registrarAuditoria(transactionOrPool, userId, action, details, ip
             .query(`INSERT INTO Auditoria (IdUsuario, Accion, Detalles, DireccionIP, FechaHora) VALUES (@IdUsuario, @Accion, @Detalles, @DireccionIP, GETDATE())`);
 
     } catch (error) {
-        console.error("Error al registrar auditoría:", error.message);
+        logger.error("Error al registrar auditoría:", error.message);
         // No lanzamos error para no tumbar la transacción principal
     }
 }

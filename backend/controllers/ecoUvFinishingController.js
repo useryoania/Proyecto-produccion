@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Obtener órdenes de terminación ECOUV Agrupadas
 exports.getFinishingOrders = async (req, res) => {
@@ -43,7 +44,7 @@ exports.getFinishingOrders = async (req, res) => {
 
         res.json(Object.values(grouped));
     } catch (e) {
-        console.error("Error getFinishingOrders:", e);
+        logger.error("Error getFinishingOrders:", e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -58,12 +59,12 @@ exports.getOrderDetails = async (req, res) => {
             .query("SELECT * FROM ServiciosExtraOrden WHERE OrdenID = @OID");
 
         if (extras.recordset.length > 0) {
-            console.log("🔍 Extra Item Keys:", Object.keys(extras.recordset[0]));
+            logger.info("🔍 Extra Item Keys:", Object.keys(extras.recordset[0]));
         }
 
         res.json({ extras: extras.recordset });
     } catch (e) {
-        console.error("Error getOrderDetails:", e);
+        logger.error("Error getOrderDetails:", e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -109,7 +110,7 @@ exports.updateExtraItem = async (req, res) => {
 
         res.json({ success: true });
     } catch (e) {
-        console.error("Error updateExtraItem:", e);
+        logger.error("Error updateExtraItem:", e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -137,12 +138,12 @@ exports.controlOrder = async (req, res) => {
                 .input('OID', sql.Int, id)
                 .query("UPDATE Ordenes SET FechaFinalizacion = GETDATE() WHERE OrdenID = @OID");
         } catch (ignored) {
-            console.warn("⚠️ No se pudo actualizar FechaFinalizacion");
+            logger.warn("⚠️ No se pudo actualizar FechaFinalizacion");
         }
 
         res.json({ success: true, message: "Orden marcada como Pronto (Canasto Producción)." });
     } catch (e) {
-        console.error("Error controlOrder:", e);
+        logger.error("Error controlOrder:", e);
         res.status(500).json({ error: e.message });
     }
 };

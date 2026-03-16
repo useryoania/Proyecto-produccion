@@ -2,6 +2,7 @@ const { google } = require('googleapis');
 const path = require('path');
 const fs = require('fs');
 const { Readable } = require('stream');
+const logger = require('../utils/logger');
 
 // Rutas de archivos
 const OAUTH_PATH = path.join(__dirname, '../oauth-credentials.json');
@@ -14,7 +15,7 @@ let oauth2Client = null;
  */
 const initOAuth = () => {
     if (!fs.existsSync(OAUTH_PATH)) {
-        console.error("❌ [DriveService] Falta oauth-credentials.json en el backend.");
+        logger.error("❌ [DriveService] Falta oauth-credentials.json en el backend.");
         return null;
     }
 
@@ -29,13 +30,13 @@ const initOAuth = () => {
         if (fs.existsSync(TOKEN_PATH)) {
             const token = fs.readFileSync(TOKEN_PATH);
             oauth2Client.setCredentials(JSON.parse(token));
-            console.log("✅ [DriveService] Sesión de usuario cargada (token.json).");
+            logger.info("✅ [DriveService] Sesión de usuario cargada (token.json).");
         } else {
-            console.warn("⚠️ [DriveService] No hay sesión iniciada. Visita el link de autorización.");
+            logger.warn("⚠️ [DriveService] No hay sesión iniciada. Visita el link de autorización.");
         }
         return oauth2Client;
     } catch (e) {
-        console.error("❌ [DriveService] Error inicializando OAuth:", e);
+        logger.error("❌ [DriveService] Error inicializando OAuth:", e);
         return null;
     }
 };
@@ -53,7 +54,7 @@ exports.getAuthUrl = () => {
     if (!oauth2Client) oauth2Client = initOAuth();
     if (!oauth2Client) return null;
 
-    console.log("🔗 [OAuth] Generating URL with redirect_uri:", oauth2Client.redirectUri);
+    logger.info("🔗 [OAuth] Generating URL with redirect_uri:", oauth2Client.redirectUri);
     return oauth2Client.generateAuthUrl({
         access_type: 'offline',
         scope: [
@@ -72,10 +73,10 @@ exports.saveToken = async (code) => {
         const { tokens } = await oauth2Client.getToken(code);
         oauth2Client.setCredentials(tokens);
         fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
-        console.log("✅ [DriveService] Token guardado correctamente en token.json.");
+        logger.info("✅ [DriveService] Token guardado correctamente en token.json.");
         return true;
     } catch (e) {
-        console.error("❌ Error guardando token:", e);
+        logger.error("❌ Error guardando token:", e);
         return false;
     }
 };
@@ -111,7 +112,7 @@ const getOrCreateFolder = async (folderName, parentId = null, retries = 3) => {
     } catch (error) {
         // Reintentar si es error de red (ECONNRESET, ETIMEDOUT, etc)
         if (retries > 0 && (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.message.includes('socket'))) {
-            console.warn(`⚠️ [DriveService] Error de red en getOrCreateFolder (${folderName}). Reintentando... (${retries} restantes)`);
+            logger.warn(`⚠️ [DriveService] Error de red en getOrCreateFolder (${folderName}). Reintentando... (${retries} restantes)`);
             return getOrCreateFolder(folderName, parentId, retries - 1);
         }
         throw error;
@@ -141,7 +142,7 @@ exports.getFileStream = async (fileId) => {
             size: metaResponse.data.size
         };
     } catch (error) {
-        console.error("Error getFileStream:", error);
+        logger.error("Error getFileStream:", error);
         throw error;
     }
 };
@@ -200,18 +201,18 @@ exports.uploadToDrive = async (fileInput, fileName, areaName, retries = 2) => {
             supportsAllDrives: true
         });
 
-        console.log(`✅ [Drive] Archivo subido: ${fileName} -> ${file.data.webViewLink}`);
+        logger.info(`✅ [Drive] Archivo subido: ${fileName} -> ${file.data.webViewLink}`);
         return file.data.webViewLink;
 
     } catch (error) {
         // Reintentos automáticos para errores de red
         if (retries > 0 && (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.message.includes('socket'))) {
-            console.warn(`⚠️ [DriveService] Error de red. Reintentando subida de ${fileName}... (${retries})`);
+            logger.warn(`⚠️ [DriveService] Error de red. Reintentando subida de ${fileName}... (${retries})`);
             // Esperar un poco antes de reintentar
             await new Promise(r => setTimeout(r, 1500));
             return exports.uploadToDrive(fileInput, fileName, areaName, retries - 1);
         }
-        console.error(`❌ [DriveService] Error subiendo ${fileName}:`, error.message);
+        logger.error(`❌ [DriveService] Error subiendo ${fileName}:`, error.message);
         throw error;
     }
 };

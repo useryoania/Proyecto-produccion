@@ -27,11 +27,11 @@ export const HistorialView = () => {
     const [filtro, setFiltro] = useState('all');
 
     const FILTROS = [
-        { key: 'all', label: 'Todas' },
-        { key: 'pendiente', label: 'Pendientes', estados: [1] },
-        { key: 'pagado', label: 'Pagadas', estados: [3, 8] },
-        { key: 'entregado', label: 'Entregadas', estados: [5] },
-        { key: 'cancelado', label: 'Canceladas', estados: [6] },
+        { key: 'all', label: 'Todas', active: 'bg-brand-cyan/20 text-brand-cyan border-brand-cyan/40' },
+        { key: 'pendiente', label: 'Pendientes', estados: [1], active: 'bg-amber-400/20 text-amber-400 border-amber-400/40' },
+        { key: 'pagado', label: 'Pagadas', estados: [3, 8], active: 'bg-green-400/20 text-green-400 border-green-400/40' },
+        { key: 'entregado', label: 'Entregadas', estados: [5], active: 'bg-blue-400/20 text-blue-400 border-blue-400/40' },
+        { key: 'cancelado', label: 'Canceladas', estados: [6], active: 'bg-red-400/20 text-red-400 border-red-400/40' },
     ];
 
     useEffect(() => {
@@ -66,7 +66,7 @@ export const HistorialView = () => {
     }
 
     return (
-        <div className="max-w-lg mx-auto space-y-3 animate-fade-in">
+        <div className="max-w-lg md:max-w-none mx-auto space-y-3 animate-fade-in">
             {/* Header */}
             <div className="flex items-center gap-3 mb-2">
                 <History size={48} strokeWidth={1} className="text-brand-gold" />
@@ -76,16 +76,32 @@ export const HistorialView = () => {
                 </div>
             </div>
 
-            {/* Filter */}
+            {/* Filter - Mobile: select */}
             <select
                 value={filtro}
                 onChange={(e) => setFiltro(e.target.value)}
-                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-sm font-semibold text-zinc-100 outline-none focus:border-brand-cyan transition-colors appearance-none cursor-pointer"
+                className="md:hidden w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-sm font-semibold text-zinc-100 outline-none focus:border-brand-cyan transition-colors appearance-none cursor-pointer"
             >
                 {FILTROS.map(f => (
                     <option key={f.key} value={f.key}>{f.label}</option>
                 ))}
             </select>
+
+            {/* Filter - Desktop: badges */}
+            <div className="hidden md:flex flex-wrap gap-2">
+                {FILTROS.map(f => (
+                    <button
+                        key={f.key}
+                        onClick={() => setFiltro(f.key)}
+                        className={`px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider rounded-full border transition-all ${filtro === f.key
+                            ? f.active
+                            : 'bg-zinc-800/50 text-zinc-500 border-zinc-700 hover:text-zinc-300 hover:border-zinc-600'
+                        }`}
+                    >
+                        {f.label}
+                    </button>
+                ))}
+            </div>
 
             {/* List */}
             {retirosFiltrados.length === 0 ? (
@@ -110,7 +126,7 @@ export const HistorialView = () => {
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="w-16 text-base font-black text-custom-cyan uppercase tracking-tight">{retiro.OrdIdRetiro}</span>
-                                            <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full border ${estado.color}`}>
+                                            <span className={`px-2 md:px-1.5 py-0.5 text-[10px] md:text-xs font-bold uppercase tracking-wider rounded-full border ${estado.color}`}>
                                                 {estado.label}
                                             </span>
                                             <span className="text-xs text-zinc-500">{formatDate(retiro.Fecha)}</span>

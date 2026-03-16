@@ -1,4 +1,5 @@
 const { sql, getPool } = require('../config/db');
+const logger = require('../utils/logger');
 
 /**
  * Obtiene las etiquetas generadas para una orden específica.
@@ -48,7 +49,7 @@ const getEtiquetas = async (req, res) => {
 
         res.json(labels);
     } catch (err) {
-        console.error("Error en getEtiquetas:", err);
+        logger.error("Error en getEtiquetas:", err);
         res.status(500).json({ error: 'Error al obtener etiquetas', message: err.message });
     }
 };
@@ -92,7 +93,7 @@ const deleteEtiqueta = async (req, res) => {
         res.json({ success: true, message: 'Etiqueta eliminada correctamente' });
 
     } catch (err) {
-        console.error('Error eliminando etiqueta:', err);
+        logger.error('Error eliminando etiqueta:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -108,7 +109,7 @@ const createExtraLabel = async (req, res) => {
 
     if (!ordenId) return res.status(400).json({ error: 'ID de orden requerido' });
 
-    console.log(`[etiquetasController] Creando/Regenerando etiquetas para Orden: ${ordenId}`);
+    logger.info(`[etiquetasController] Creando/Regenerando etiquetas para Orden: ${ordenId}`);
 
     try {
         const result = await LabelGenerationService.regenerateLabelsForOrder(ordenId, userId, userName);
@@ -120,7 +121,7 @@ const createExtraLabel = async (req, res) => {
         res.json({ success: true, message: `Generadas ${result.totalBultos} etiquetas.`, details: result });
 
     } catch (err) {
-        console.error("[etiquetasController] Error:", err);
+        logger.error("[etiquetasController] Error:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -174,7 +175,7 @@ const getOrdersForLabels = async (req, res) => {
 
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error en getOrdersForLabels:", err);
+        logger.error("Error en getOrdersForLabels:", err);
         res.status(500).json({ error: 'Error al obtener órdenes para etiquetas' });
     }
 };
@@ -405,7 +406,7 @@ const printEtiquetas = async (req, res) => {
         res.send(html);
 
     } catch (err) {
-        console.error("Error printEtiquetas:", err);
+        logger.error("Error printEtiquetas:", err);
         res.status(500).send("Error generando vista de impresión");
     }
 };

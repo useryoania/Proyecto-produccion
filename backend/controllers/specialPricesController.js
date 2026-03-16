@@ -1,4 +1,5 @@
 const { sql, getPool } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Obtener Lista de Clientes Especiales
 const getClients = async (req, res) => {
@@ -7,7 +8,7 @@ const getClients = async (req, res) => {
         const result = await pool.request().query("SELECT ClienteID, NombreCliente FROM PreciosEspeciales ORDER BY ClienteID");
         res.json(result.recordset);
     } catch (e) {
-        console.error("Error getting special clients:", e);
+        logger.error("Error getting special clients:", e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -36,7 +37,7 @@ const getClientRules = async (req, res) => {
             rules: itemsRes.recordset
         });
     } catch (e) {
-        console.error("Error getting client rules:", e);
+        logger.error("Error getting client rules:", e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -95,7 +96,7 @@ const saveClientProfile = async (req, res) => {
 
     } catch (e) {
         if (transaction._begun) await transaction.rollback();
-        console.error("Error saving client profile:", e);
+        logger.error("Error saving client profile:", e);
         res.status(500).json({ error: e.message });
     }
 };

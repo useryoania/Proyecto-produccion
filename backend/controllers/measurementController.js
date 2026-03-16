@@ -7,6 +7,7 @@ const { PDFDocument } = require('pdf-lib');
 const archiver = require('archiver');
 const fileProcessingService = require('../services/fileProcessingService');
 const axios = require('axios');
+const logger = require('../utils/logger');
 
 // --- HELPERS ---
 const pointsToCm = (points) => (points / 72) * 2.54;
@@ -58,7 +59,7 @@ exports.getOrdersToMeasure = async (req, res) => {
         }));
         res.json(data);
     } catch (err) {
-        console.error("❌ Error SQL:", err.message);
+        logger.error("❌ Error SQL:", err.message);
         res.status(500).json({ error: err.message });
     }
 };
@@ -89,7 +90,7 @@ exports.processBatch = async (req, res) => {
         const archive = archiver('zip', { zlib: { level: 9 } });
 
         archive.on('error', function (err) {
-            console.error("Archiver Error:", err);
+            logger.error("Archiver Error:", err);
             if (!res.headersSent) res.status(500).send({ error: err.message });
         });
 
@@ -149,7 +150,7 @@ exports.processBatch = async (req, res) => {
                 }
 
             } catch (err) {
-                console.error(`Error processing file ${file.ArchivoID}:`, err);
+                logger.error(`Error processing file ${file.ArchivoID}:`, err);
                 archive.append(`Error: ${err.message}`, { name: `ERRORES/${file.ArchivoID}_ex.txt` });
             }
         }
@@ -157,7 +158,7 @@ exports.processBatch = async (req, res) => {
         archive.finalize();
 
     } catch (err) {
-        console.error("Error ProcessBatch Zip:", err);
+        logger.error("Error ProcessBatch Zip:", err);
         if (!res.headersSent) res.status(500).send(err.message);
     }
 };
@@ -278,7 +279,7 @@ exports.processOrdersBatch = async (req, res) => {
                         // If file > 500MB, skip measurement?
                         const stats = fs.statSync(destPath);
                         if (stats.size > 500 * 1024 * 1024) {
-                            console.warn("Skipping measurement for huge PDF:", stats.size);
+                            logger.warn("Skipping measurement for huge PDF:", stats.size);
                         } else {
                             const pdfBuf = fs.readFileSync(destPath);
                             const pdfDoc = await PDFDocument.load(pdfBuf, { updateMetadata: false });
@@ -323,7 +324,7 @@ exports.processOrdersBatch = async (req, res) => {
                 }
 
             } catch (err) {
-                console.error(`ERROR FILE ${file.ArchivoID}:`, err);
+                logger.error(`ERROR FILE ${file.ArchivoID}:`, err);
                 log.status = 'ERROR';
                 log.error = err.message;
             }
@@ -333,7 +334,7 @@ exports.processOrdersBatch = async (req, res) => {
         res.json({ success: true, results });
 
     } catch (err) {
-        console.error("Error Orders Batch Process:", err);
+        logger.error("Error Orders Batch Process:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -410,13 +411,13 @@ exports.measureFiles = async (req, res) => {
                 });
 
             } catch (error) {
-                console.error(`❌ Error midiendo archivo ${file.ArchivoID}:`, error.message);
+                logger.error(`❌ Error midiendo archivo ${file.ArchivoID}:`, error.message);
                 results.push({ id: file.ArchivoID, width: 0, height: 0, area: 0, error: 'Error al leer/descargar archivo' });
             }
         }
         res.json({ success: true, results });
     } catch (err) {
-        console.error("Error general measureFiles:", err);
+        logger.error("Error general measureFiles:", err);
         res.status(500).json({ error: "Error interno medidor." });
     }
 };
@@ -425,7 +426,7 @@ exports.measureFiles = async (req, res) => {
 const { registrarAuditoria, registrarHistorialOrden } = require('../services/trackingService');
 
 exports.saveMeasurements = async (req, res) => {
-    console.log("🛠️ SAVE MEASUREMENTS:", req.body);
+    logger.info("🛠️ SAVE MEASUREMENTS:", req.body);
     const { measurements, userId } = req.body;
     const currentUserId = userId || 1;
     const userIp = req.ip || req.connection.remoteAddress || '';
@@ -478,7 +479,7 @@ exports.saveMeasurements = async (req, res) => {
             throw innerErr;
         }
     } catch (err) {
-        console.error("Error guardando medidas:", err);
+        logger.error("Error guardando medidas:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -511,7 +512,7 @@ exports.downloadOrdersZip = async (req, res) => {
         const archive = archiver('zip', { zlib: { level: 9 } });
 
         archive.on('error', function (err) {
-            console.error("Archiver Error:", err);
+            logger.error("Archiver Error:", err);
             if (!res.headersSent) res.status(500).send({ error: err.message });
         });
 
@@ -577,7 +578,7 @@ exports.downloadOrdersZip = async (req, res) => {
                 }
 
             } catch (err) {
-                console.error("Error processing file for zip:", err);
+                logger.error("Error processing file for zip:", err);
                 archive.append(`Error procesando ID ${file.ArchivoID}: ${err.message}`, { name: `ERRORES/${file.ArchivoID}_ex.txt` });
             }
         }
@@ -585,7 +586,7 @@ exports.downloadOrdersZip = async (req, res) => {
         archive.finalize();
 
     } catch (err) {
-        console.error("Zip Error:", err);
+        logger.error("Zip Error:", err);
         res.status(500).send("Error del servidor creando el archivo ZIP");
     }
 };

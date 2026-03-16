@@ -1,4 +1,5 @@
 const axios = require('axios');
+const logger = require('../utils/logger');
 
 const apiClient = axios.create({
     baseURL: `${process.env.ERP_API_URL || 'http://localhost:6061'}/api`,
@@ -11,7 +12,7 @@ const getPedidoCompleto = async (id) => {
         const response = await apiClient.get(`/pedidos/${id}/con_sublineas`);
         return response.data.data;
     } catch (error) {
-        console.error(`Error fetching order ${id}:`, error.message);
+        logger.error(`Error fetching order ${id}:`, error.message);
         throw error;
     }
 };

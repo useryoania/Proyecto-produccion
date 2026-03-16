@@ -2,6 +2,7 @@ const axios = require('axios');
 const cron = require('node-cron');
 const { getPool, sql } = require('../config/db');
 const { isProcessActive, updateProcessLog } = require('../controllers/configuracionesController');
+const logger = require('../utils/logger');
 
 // --- CONFIGURACIÓN ---
 const PLANILLA_URL = process.env.PLANILLA_SCRIPT_URL;
@@ -16,10 +17,10 @@ async function syncPlanillaArea(areaId, procesoID) {
         return;
     }
 
-    console.log(`[PlanillaSync-${areaId}] Iniciando sincronización a las ${new Date().toLocaleTimeString()}...`);
+    logger.info(`[PlanillaSync-${areaId}] Iniciando sincronización a las ${new Date().toLocaleTimeString()}...`);
 
     if (!PLANILLA_URL) {
-        console.warn(`[PlanillaSync-${areaId}] No hay URL configurada en .env (PLANILLA_SCRIPT_URL). Omitiendo.`);
+        logger.warn(`[PlanillaSync-${areaId}] No hay URL configurada en .env (PLANILLA_SCRIPT_URL). Omitiendo.`);
         return;
     }
 
@@ -29,14 +30,14 @@ async function syncPlanillaArea(areaId, procesoID) {
         const data = res.data;
 
         // DEBUG: VER QUÉ RESPONDE LA PLANILLA
-        // console.log(`[PlanillaSync-${areaId} DEBUG] Respuesta:`, JSON.stringify(data).substring(0, 200) + "...");
+        // logger.info(`[PlanillaSync-${areaId} DEBUG] Respuesta:`, JSON.stringify(data).substring(0, 200) + "...");
 
         if (data.status === "NO_NEW_DATA" || data.status === "NO_DATA") {
             return;
         }
 
         if (data.status === "OK" && data.data && data.data.length > 0) {
-            console.log(`[PlanillaSync-${areaId}] Recibidos ${data.data.length} pedidos nuevos.`);
+            logger.info(`[PlanillaSync-${areaId}] Recibidos ${data.data.length} pedidos nuevos.`);
 
             // 3. PROCESAR CADA PEDIDO
             for (const pedido of data.data) {
@@ -47,14 +48,14 @@ async function syncPlanillaArea(areaId, procesoID) {
                         timeout: 30000
                     });
 
-                    console.log(`✅ [PlanillaSync-${areaId}] Pedido fila ${pedido.rowNumber} creado OK.`);
+                    logger.info(`✅ [PlanillaSync-${areaId}] Pedido fila ${pedido.rowNumber} creado OK.`);
 
                 } catch (errPedido) {
-                    console.error(`❌ [PlanillaSync-${areaId}] Error fila ${pedido.rowNumber}:`, errPedido.response?.data || errPedido.message);
+                    logger.error(`❌ [PlanillaSync-${areaId}] Error fila ${pedido.rowNumber}:`, errPedido.response?.data || errPedido.message);
                 }
             }
 
-            console.log(`[PlanillaSync-${areaId}] Lote procesado. Última fila: ${data.processedUntil}`);
+            logger.info(`[PlanillaSync-${areaId}] Lote procesado. Última fila: ${data.processedUntil}`);
             await updateProcessLog(procesoID, 'OK', `Recibidos y procesados ${data.data.length} pedidos. Última fila: ${data.processedUntil}`);
         } else {
             // Actializar la ultima ejecucion igual aunque no haya datos nuevos (Para saber que sí corrió)
@@ -62,7 +63,7 @@ async function syncPlanillaArea(areaId, procesoID) {
         }
 
     } catch (error) {
-        console.error(`[PlanillaSync-${areaId}] Error de conexión:`, error.message);
+        logger.error(`[PlanillaSync-${areaId}] Error de conexión:`, error.message);
         await updateProcessLog(procesoID, 'ERROR', `Error conexión: ${error.message}`);
     }
 }
@@ -79,16 +80,16 @@ async function syncAllPlanillas() {
 cron.schedule(`*/${RUN_EVERY_X_MINUTES} * * * *`, () => {
     // Wrap in setImmediate to avoid blocking node-cron's internal timing loop
     setImmediate(() => {
-        syncAllPlanillas().catch(err => console.error("Cron Error Error:", err));
+        syncAllPlanillas().catch(err => logger.error("Cron Error Error:", err));
     });
 });
 
 // Ejecutar INMEDIATAMENTE al iniciar (tras 5s de espera para DB)
 setTimeout(() => {
-    console.log("[PlanillaSync] Ejecutando sincronización inicial...");
-    syncAllPlanillas().catch(err => console.error(err));
+    logger.info("[PlanillaSync] Ejecutando sincronización inicial...");
+    syncAllPlanillas().catch(err => logger.error(err));
 }, 5000);
 
-console.log(`[PlanillaSync] Cron cargado (Intervalo: ${RUN_EVERY_X_MINUTES}m). La activación depende de ConfiguracionesSync en DB.`);
+logger.info(`[PlanillaSync] Cron cargado (Intervalo: ${RUN_EVERY_X_MINUTES}m). La activación depende de ConfiguracionesSync en DB.`);
 
 module.exports = { syncAllPlanillas };

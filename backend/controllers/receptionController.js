@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // ==========================================
 // 1. GUARDAR RECEPCIÓN
@@ -186,7 +187,7 @@ exports.createReception = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error createReception:", err);
+        logger.error("Error createReception:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -235,7 +236,7 @@ exports.getInitData = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Error getInitData:", err);
+        logger.error("Error getInitData:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -290,7 +291,7 @@ exports.getHistory = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Error getHistory:", err);
+        logger.error("Error getHistory:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -315,7 +316,7 @@ exports.getOrdersByClient = async (req, res) => {
 
         res.json(result.recordset.map(r => r.CodigoOrden));
     } catch (err) {
-        console.error("Error getOrdersByClient:", err);
+        logger.error("Error getOrdersByClient:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -358,7 +359,7 @@ exports.getStock = async (req, res) => {
         res.json(result.recordset);
 
     } catch (err) {
-        console.error("Error getStock:", err);
+        logger.error("Error getStock:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -399,7 +400,7 @@ exports.getPotentialOrdersForFabric = async (req, res) => {
         res.json(result.recordset);
 
     } catch (err) {
-        console.error("Error getPotentialOrdersForFabric:", err);
+        logger.error("Error getPotentialOrdersForFabric:", err);
         res.status(500).json({ error: err.message });
     }
 };

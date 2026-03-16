@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // ==========================================
 // 1. OBTENER TABLERO KANBAN (GET)
@@ -13,8 +14,8 @@ exports.getBoardData = async (req, res) => {
         }
         // if (area === 'DF') area = 'DTF'; // DISABLED: User requested no forced conversion
 
-        console.log(`[getBoardData] Buscando rollos para Area: '${area}'`);
-        console.log("[getBoardData] 🔴 EJECUTANDO SQL CON @AreaID =", area);
+        logger.info(`[getBoardData] Buscando rollos para Area: '${area}'`);
+        logger.info("[getBoardData] 🔴 EJECUTANDO SQL CON @AreaID =", area);
         // Se asume que area viene limpia (AreaKey) desde el frontend
 
         const pool = await getPool();
@@ -129,18 +130,18 @@ exports.getBoardData = async (req, res) => {
 
             // DEBUG LOG for Roll 8
             if (String(r.id).includes('8') || r.name.includes('8')) {
-                console.log(`------ DEBUG ROLL ${r.id} (${r.name}) ------`);
-                r.orders.forEach(o => console.log(`   [Ord ${o.code}] Mat: '${o.material}'`));
-                console.log(`   -> Unique Valid: ${JSON.stringify(uniqueMaterials)}`);
-                console.log(`   -> Final: '${r.material}'`);
-                console.log('---------------------------------------------');
+                logger.info(`------ DEBUG ROLL ${r.id} (${r.name}) ------`);
+                r.orders.forEach(o => logger.info(`   [Ord ${o.code}] Mat: '${o.material}'`));
+                logger.info(`   -> Unique Valid: ${JSON.stringify(uniqueMaterials)}`);
+                logger.info(`   -> Final: '${r.material}'`);
+                logger.info('---------------------------------------------');
             }
         });
 
         res.json({ rolls, pendingOrders });
 
     } catch (err) {
-        console.error("Error obteniendo tablero:", err);
+        logger.error("Error obteniendo tablero:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -242,12 +243,12 @@ exports.moveOrder = async (req, res) => {
 
         } catch (innerErr) {
             await transaction.rollback();
-            console.error("Rollback ejecutado por error interno:", innerErr);
+            logger.error("Rollback ejecutado por error interno:", innerErr);
             throw innerErr;
         }
 
     } catch (err) {
-        console.error("Error moviendo orden:", err);
+        logger.error("Error moviendo orden:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -320,7 +321,7 @@ exports.createRoll = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error creando rollo:", err);
+        logger.error("Error creando rollo:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -369,7 +370,7 @@ exports.reorderOrders = async (req, res) => {
         }
 
     } catch (error) {
-        console.error("Error reordenando:", error);
+        logger.error("Error reordenando:", error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -453,7 +454,7 @@ exports.updateRollGeneral = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error actualizando rollo:", err);
+        logger.error("Error actualizando rollo:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -571,7 +572,7 @@ exports.swapBobina = async (req, res) => {
             throw inner;
         }
     } catch (err) {
-        console.error("Error swapBobina:", err);
+        logger.error("Error swapBobina:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -583,7 +584,7 @@ exports.dismantleRoll = async (req, res) => {
     const { rollId } = req.body;
     if (!rollId) return res.status(400).json({ error: "Falta rollId" });
 
-    console.log(`[dismantleRoll] Desarmando rollo: ${rollId}`);
+    logger.info(`[dismantleRoll] Desarmando rollo: ${rollId}`);
 
     try {
         const pool = await getPool();
@@ -625,7 +626,7 @@ exports.dismantleRoll = async (req, res) => {
             throw innerErr;
         }
     } catch (err) {
-        console.error("Error desarmando rollo:", err);
+        logger.error("Error desarmando rollo:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -723,12 +724,12 @@ exports.splitRoll = async (req, res) => {
 
         } catch (inner) {
             await transaction.rollback();
-            console.error("Rollback splitRoll:", inner);
+            logger.error("Rollback splitRoll:", inner);
             throw inner;
         }
 
     } catch (err) {
-        console.error("Error splitRoll:", err);
+        logger.error("Error splitRoll:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -844,7 +845,7 @@ exports.getRolloMetrics = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Error en getRolloMetrics:", err);
+        logger.error("Error en getRolloMetrics:", err);
         res.status(500).json({ error: 'Error al obtener métricas de rollo', message: err.message });
     }
 };
@@ -944,7 +945,7 @@ exports.getRollDetails = async (req, res) => {
         res.json(rollObj);
 
     } catch (err) {
-        console.error("Error obteniendo detalle rollo:", err);
+        logger.error("Error obteniendo detalle rollo:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -964,7 +965,7 @@ exports.getRollosActivos = async (req, res) => {
         // y el usuario pidió explícitamente ver SOLO los finalizados.
         const isControlView = req.baseUrl && req.baseUrl.includes('production-file-control');
 
-        console.log(`[getRollosActivos] Buscando rollos para AreaID: '${areaId}' (Contexto: ${isControlView ? 'CONTROL VIEW - FINALIZADOS' : 'GENERAL - ACTIVOS'})`);
+        logger.info(`[getRollosActivos] Buscando rollos para AreaID: '${areaId}' (Contexto: ${isControlView ? 'CONTROL VIEW - FINALIZADOS' : 'GENERAL - ACTIVOS'})`);
 
         const pool = await getPool();
 
@@ -995,7 +996,7 @@ exports.getRollosActivos = async (req, res) => {
 
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error en getRollosActivos:", err);
+        logger.error("Error en getRollosActivos:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1006,7 +1007,7 @@ exports.generateRollLabels = async (req, res) => {
 
     try {
         const pool = await getPool();
-        console.log(`[RollLabels] Generando etiquetas para Rollo ${id} (Usuario: ${userId})`);
+        logger.info(`[RollLabels] Generando etiquetas para Rollo ${id} (Usuario: ${userId})`);
 
         // 1. Obtener órdenes del rollo (activas) con DETALLES
         const ordersRes = await pool.request()
@@ -1076,7 +1077,7 @@ exports.generateRollLabels = async (req, res) => {
                     }
                 }
             } catch (err) {
-                console.error(`Error etiqueta orden ${o.CodigoOrden}:`, err.message);
+                logger.error(`Error etiqueta orden ${o.CodigoOrden}:`, err.message);
                 errors++;
             }
         }
@@ -1084,7 +1085,7 @@ exports.generateRollLabels = async (req, res) => {
         res.json({ success: true, generated, errors, message: `Se generaron ${generated} etiquetas nuevas.` });
 
     } catch (err) {
-        console.error("Error bulk generating labels:", err);
+        logger.error("Error bulk generating labels:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1127,7 +1128,7 @@ exports.getRollLabels = async (req, res) => {
             `);
         res.json(result.recordset);
     } catch (err) {
-        console.error(err);
+        logger.error(err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1172,7 +1173,7 @@ exports.getRollHistory = async (req, res) => {
         res.json(result.recordset);
 
     } catch (err) {
-        console.error("Error en getRollHistory:", err);
+        logger.error("Error en getRollHistory:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1186,7 +1187,7 @@ exports.magicRollAssignment = async (req, res) => {
 
     let cleanArea = areaId.replace('planilla-', '').toUpperCase();
     if (cleanArea === 'DF') cleanArea = 'DTF';
-    console.log(`[MagicAssignment] Iniciando armado mágico para ${cleanArea}...`);
+    logger.info(`[MagicAssignment] Iniciando armado mágico para ${cleanArea}...`);
 
     try {
         const pool = await getPool();
@@ -1305,7 +1306,7 @@ exports.magicRollAssignment = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error magicRollAssignment:", err);
+        logger.error("Error magicRollAssignment:", err);
         res.status(500).json({ error: err.message });
     }
 };

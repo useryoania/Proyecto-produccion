@@ -2,6 +2,7 @@ const { sql, getPool } = require('../config/db');
 const driveService = require('../services/driveService');
 const axios = require('axios');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib')
+const logger = require('../utils/logger');
 
 // ===================================
 // TOTEM: VERIFICAR IP (SIN AUTH)
@@ -14,7 +15,7 @@ exports.totemVerify = (req, res) => {
     // req.ip puede ser IPv6-mapped (::ffff:192.168.1.1) o IPv4 directo
     const clientIp = (req.ip || '').replace(/^::ffff:/, '');
     const authorized = clientIp === allowedIp;
-    console.log(`[TOTEM] IP check: ${clientIp} vs ${allowedIp} → ${authorized ? '✅' : '❌'}`);
+    logger.info(`[TOTEM] IP check: ${clientIp} vs ${allowedIp} → ${authorized ? '✅' : '❌'}`);
     res.json({ authorized, ip: clientIp });
 };
 
@@ -35,7 +36,7 @@ const SERVICE_TO_AREA_MAP = {
 
 // --- CONTROLADOR PRINCIPAL ---
 exports.createWebOrder = async (req, res) => {
-    console.log("📥 [WebOrder] Iniciando proceso de creación (MODO STREAMING)...");
+    logger.info("📥 [WebOrder] Iniciando proceso de creación (MODO STREAMING)...");
 
     // --- 1. DATOS BÁSICOS ---
     const {
@@ -355,10 +356,10 @@ exports.createWebOrder = async (req, res) => {
 
         // --- 5B. ORDENAR EJECUCIONES POR PRIORIDAD (Lógica Homogénea con Sync) ---
         // Debug Log
-        console.log("--- DEBUG SORTING ---");
-        console.log("Mapa Areas Numero:", JSON.stringify(mapaAreasNumero));
+        logger.info("--- DEBUG SORTING ---");
+        logger.info("Mapa Areas Numero:", JSON.stringify(mapaAreasNumero));
         pendingOrderExecutions.forEach(e => {
-            console.log(`Area: ${e.areaID} - Prioridad: ${mapaAreasNumero[e.areaID] || 999}`);
+            logger.info(`Area: ${e.areaID} - Prioridad: ${mapaAreasNumero[e.areaID] || 999}`);
         });
 
         // Esto asegura que la numeración (1/N, 2/N) respete el flujo real del proceso.
@@ -412,7 +413,7 @@ exports.createWebOrder = async (req, res) => {
                 });
 
             } catch (lookupErr) {
-                console.warn("⚠️ No se pudo resolver IdProductoReact desde Articulos:", lookupErr.message);
+                logger.warn("⚠️ No se pudo resolver IdProductoReact desde Articulos:", lookupErr.message);
                 // No bloqueamos el flujo, seguimos con lo que tengamos
             }
         }
@@ -650,7 +651,7 @@ exports.createWebOrder = async (req, res) => {
                 }
 
                 // --- DEPURACIÓN: LOG DE REFERENCIAS ---
-                // console.log(`[Order ${exec.codigoOrden}] RefCount: ${exec.referencias?.length || 0}`);
+                // logger.info(`[Order ${exec.codigoOrden}] RefCount: ${exec.referencias?.length || 0}`);
 
                 // --- ARCHIVOS DE REFERENCIA ---
 
@@ -832,7 +833,7 @@ exports.createWebOrder = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("❌ Error creando estructura de pedido:", err);
+        logger.error("❌ Error creando estructura de pedido:", err);
         res.status(500).json({ error: "Error iniciando pedido: " + err.message });
     }
 };
@@ -846,7 +847,7 @@ exports.uploadOrderFile = async (req, res) => {
         return res.status(400).json({ error: "Faltan datos (archivo, dbId, type, finalName)" });
     }
 
-    console.log(`🚀 [UploadStream] Recibiendo archivo: ${finalName} (${file.size} bytes)`);
+    logger.info(`🚀 [UploadStream] Recibiendo archivo: ${finalName} (${file.size} bytes)`);
 
     try {
         const driveUrl = await driveService.uploadToDrive(file.buffer, finalName, area || 'GENERAL');
@@ -892,7 +893,7 @@ exports.uploadOrderFile = async (req, res) => {
             const pendientes = checkRes.recordset[0].PendientesProd + checkRes.recordset[0].PendientesRef;
 
             if (pendientes === 0) {
-                console.log(`✅ [Pedido Completo] Orden ${orderID} tiene todos sus archivos. Activando...`);
+                logger.info(`✅ [Pedido Completo] Orden ${orderID} tiene todos sus archivos. Activando...`);
                 // Cambiar estado de 'Cargando...' a 'Pendiente'
                 // TAMBIEN EstadoenArea = 'Pendiente'
                 await pool.request().input('OID', sql.Int, orderID).query(`UPDATE Ordenes SET Estado = 'Pendiente', EstadoenArea = 'Pendiente' WHERE OrdenID = @OID AND Estado = 'Cargando...'`);
@@ -906,7 +907,7 @@ exports.uploadOrderFile = async (req, res) => {
         res.json({ success: true, driveUrl });
 
     } catch (error) {
-        console.error("❌ Error en subida streaming:", error);
+        logger.error("❌ Error en subida streaming:", error);
         res.status(500).json({ error: "Fallo subida a Drive: " + error.message });
     }
 };
@@ -940,7 +941,7 @@ exports.getClientOrders = async (req, res) => {
 
         res.json({ success: true, data: result.recordset });
     } catch (err) {
-        console.error("❌ Error al obtener órdenes del cliente:", err);
+        logger.error("❌ Error al obtener órdenes del cliente:", err);
         res.status(500).json({ error: "Error al consultar la base de datos." });
     }
 };
@@ -997,7 +998,7 @@ exports.deleteIncompleteOrder = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("❌ Error eliminando pedido incompleto:", err);
+        logger.error("❌ Error eliminando pedido incompleto:", err);
         res.status(500).json({ error: "Error eliminando el pedido." });
     }
 };
@@ -1065,7 +1066,7 @@ exports.deleteOrderBundle = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("❌ Error eliminando bundle:", err);
+        logger.error("❌ Error eliminando bundle:", err);
         res.status(500).json({ error: "Error eliminando el proyecto." });
     }
 };
@@ -1094,7 +1095,7 @@ exports.getActiveSublimationOrders = async (req, res) => {
 
         res.json({ success: true, data: result.recordset });
     } catch (err) {
-        console.error("❌ Error al obtener órdenes de sublimación:", err);
+        logger.error("❌ Error al obtener órdenes de sublimación:", err);
         res.status(500).json({ error: "Error al consultar la base de datos." });
     }
 };
@@ -1142,7 +1143,7 @@ exports.getAreaMapping = async (req, res) => {
         // Return structured data
         res.json({ success: true, data: { names, visibility } });
     } catch (error) {
-        console.error("❌ Error fetching area mapping:", error);
+        logger.error("❌ Error fetching area mapping:", error);
         res.status(500).json({ success: false, error: "Error retrieving area mappings." });
     }
 };
@@ -1188,7 +1189,7 @@ exports.updateAreaVisibility = async (req, res) => {
 
         res.json({ success: true, message: "Configuración actualizada" });
     } catch (error) {
-        console.error("❌ Error updating visibility:", error);
+        logger.error("❌ Error updating visibility:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 };
@@ -1241,7 +1242,7 @@ exports.getPickupOrders = async (req, res) => {
             `);
 
         const externalOrders = ordersResult.recordset;
-        console.log(`🔍 [DEBUG PICKUP] Query returned ${externalOrders?.length || 0} orders for client ${idClienteString}:`, externalOrders?.map(o => o.CodigoOrden));
+        logger.info(`🔍 [DEBUG PICKUP] Query returned ${externalOrders?.length || 0} orders for client ${idClienteString}:`, externalOrders?.map(o => o.CodigoOrden));
 
         if (!externalOrders || externalOrders.length === 0) {
             return res.json({ success: true, data: [] });
@@ -1263,7 +1264,7 @@ exports.getPickupOrders = async (req, res) => {
                     cobranzasMap[row.NoDocERP] = row;
                 });
             } catch (sqle) {
-                console.error("Error consultando PedidosCobranza en getPickupOrders:", sqle.message);
+                logger.error("Error consultando PedidosCobranza en getPickupOrders:", sqle.message);
             }
         }
 
@@ -1312,7 +1313,7 @@ exports.getPickupOrders = async (req, res) => {
         res.json({ success: true, data: uniqueOrders });
 
     } catch (error) {
-        console.error("Error fetching pickup orders:", error);
+        logger.error("Error fetching pickup orders:", error);
         res.status(500).json({ error: "Error al obtener órdenes de retiro." });
     }
 };
@@ -1382,7 +1383,7 @@ exports.totemLookup = async (req, res) => {
                 const cobRes = await request.query(`SELECT NoDocERP, MontoTotal, Moneda, EstadoCobro FROM PedidosCobranza WHERE NoDocERP IN (${params})`);
                 cobRes.recordset.forEach(row => { cobranzasMap[row.NoDocERP] = row; });
             } catch (e) {
-                console.error("Error PedidosCobranza totem:", e.message);
+                logger.error("Error PedidosCobranza totem:", e.message);
             }
         }
 
@@ -1416,7 +1417,7 @@ exports.totemLookup = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error totem lookup:", error);
+        logger.error("Error totem lookup:", error);
         res.status(500).json({ success: false, message: "Error al buscar orden." });
     }
 };
@@ -1510,7 +1511,7 @@ exports.totemCreatePickup = async (req, res) => {
         }
 
     } catch (error) {
-        console.error("Error totem create pickup:", error);
+        logger.error("Error totem create pickup:", error);
         res.status(500).json({ success: false, error: "Error al crear retiro: " + error.message });
     }
 };
@@ -1640,7 +1641,7 @@ exports.createPickupOrder = async (req, res) => {
         }
 
     } catch (error) {
-        console.error("Error creating pickup order:", error);
+        logger.error("Error creating pickup order:", error);
         res.status(500).json({ error: "Error al generar la orden de retiro. Detalle: " + error.message });
     }
 };
@@ -1710,7 +1711,7 @@ exports.generatePickupReceipt = async (req, res) => {
         res.send(Buffer.from(pdfBytes));
 
     } catch (error) {
-        console.error("PDF Generate Error:", error);
+        logger.error("PDF Generate Error:", error);
         res.status(500).json({ error: "Error generando PDF" });
     }
 };
@@ -1759,9 +1760,9 @@ exports.createHandyPaymentLink = async (req, res) => {
         res.json({ success: true, url: result.url, transactionId: result.transactionId });
 
     } catch (error) {
-        console.error("[HANDY ERROR] Fallo al crear link de pago:", error.message);
+        logger.error("[HANDY ERROR] Fallo al crear link de pago:", error.message);
         if (error.response) {
-            console.error("[HANDY DATA]", error.response.data);
+            logger.error("[HANDY DATA]", error.response.data);
             return res.status(500).json({ error: "Error desde Handy", details: error.response.data });
         }
         res.status(500).json({ error: "Error interno al intentar generar pago." });
@@ -1774,10 +1775,10 @@ exports.createHandyPaymentLink = async (req, res) => {
 exports.handyWebhook = async (req, res) => {
     const payload = req.body;
 
-    console.log("------------------------------------------");
-    console.log("🔔 [HANDY WEBHOOK] Evento recibido:");
-    console.log(JSON.stringify(payload, null, 2));
-    console.log("------------------------------------------");
+    logger.info("------------------------------------------");
+    logger.info("🔔 [HANDY WEBHOOK] Evento recibido:");
+    logger.info(JSON.stringify(payload, null, 2));
+    logger.info("------------------------------------------");
 
     // Responder 200 inmediatamente (best practice para webhooks)
     res.status(200).send("OK");
@@ -1790,11 +1791,11 @@ exports.handyWebhook = async (req, res) => {
         const issuerName = payload.InstrumentData?.IssuerName || 'N/A';
 
         if (!transactionId) {
-            console.warn("[HANDY WEBHOOK] Evento sin TransactionExternalId, ignorado.");
+            logger.warn("[HANDY WEBHOOK] Evento sin TransactionExternalId, ignorado.");
             return;
         }
 
-        console.log(`[HANDY WEBHOOK] TxID: ${transactionId}, Status: ${status}, Monto: ${totalAmount}, Moneda: ${currency}, Medio: ${issuerName}`);
+        logger.info(`[HANDY WEBHOOK] TxID: ${transactionId}, Status: ${status}, Monto: ${totalAmount}, Moneda: ${currency}, Medio: ${issuerName}`);
 
         const pool = await getPool();
 
@@ -1815,7 +1816,7 @@ exports.handyWebhook = async (req, res) => {
             `);
 
         const emoji = { 0: '🔄', 1: '✅', 2: '❌', 3: '⏳' };
-        console.log(`[HANDY WEBHOOK] ${emoji[status] || '❓'} ${statusLabel} — ${result.rowsAffected[0]} fila(s) actualizadas.`);
+        logger.info(`[HANDY WEBHOOK] ${emoji[status] || '❓'} ${statusLabel} — ${result.rowsAffected[0]} fila(s) actualizadas.`);
 
         // --- NOTIFICAR A API REACT CUANDO EL PAGO ES EXITOSO ---
         if (status === 1) {
@@ -1853,7 +1854,7 @@ exports.handyWebhook = async (req, res) => {
                         orderNumbers: orderNumbers
                     };
 
-                    console.log('[HANDY WEBHOOK] Registrando pago directamente en DB...', JSON.stringify(payloadPago));
+                    logger.info('[HANDY WEBHOOK] Registrando pago directamente en DB...', JSON.stringify(payloadPago));
 
                     // --- MIGRACIÓN: Escribir directamente en DB en vez de llamar a API React ---
                     const ordenRetiroId = parseInt(String(payloadPago.ordenRetiro).replace(/^[A-Za-z]+-0*/, ''), 10);
@@ -1910,21 +1911,21 @@ exports.handyWebhook = async (req, res) => {
                             }
                         }
 
-                        console.log(`[HANDY WEBHOOK] ✅ Pago registrado en DB: PagoId=${pagoId}, OrdenRetiro=${ordenRetiroId}`);
+                        logger.info(`[HANDY WEBHOOK] ✅ Pago registrado en DB: PagoId=${pagoId}, OrdenRetiro=${ordenRetiroId}`);
                     } else {
-                        console.warn('[HANDY WEBHOOK] No se pudo parsear ordenRetiroId:', payloadPago.ordenRetiro);
+                        logger.warn('[HANDY WEBHOOK] No se pudo parsear ordenRetiroId:', payloadPago.ordenRetiro);
                     }
 
                 } else {
-                    console.warn(`[HANDY WEBHOOK] No se encontró transacción ${transactionId} en HandyTransactions`);
+                    logger.warn(`[HANDY WEBHOOK] No se encontró transacción ${transactionId} en HandyTransactions`);
                 }
             } catch (reactErr) {
-                console.error('[HANDY WEBHOOK] Error notificando a API React:', reactErr.response?.data || reactErr.message);
+                logger.error('[HANDY WEBHOOK] Error notificando a API React:', reactErr.response?.data || reactErr.message);
             }
         }
 
     } catch (e) {
-        console.error("[HANDY WEBHOOK] Error procesando evento:", e.message);
+        logger.error("[HANDY WEBHOOK] Error procesando evento:", e.message);
     }
 };
 
@@ -1965,7 +1966,7 @@ exports.getPaymentStatus = async (req, res) => {
             paidAt: tx.PaidAt
         });
     } catch (e) {
-        console.error('[PAYMENT STATUS] Error:', e.message);
+        logger.error('[PAYMENT STATUS] Error:', e.message);
         res.status(500).json({ error: e.message });
     }
 };
@@ -2015,8 +2016,8 @@ exports.createHandyRefund = async (req, res) => {
             CallbackUrl: callbackUrl
         };
 
-        console.log(`[HANDY REFUND] Solicitando devolución (${isProduction ? 'PRODUCCIÓN' : 'TESTING'})...`);
-        console.log("[HANDY REFUND] Payload:", JSON.stringify(refundPayload));
+        logger.info(`[HANDY REFUND] Solicitando devolución (${isProduction ? 'PRODUCCIÓN' : 'TESTING'})...`);
+        logger.info("[HANDY REFUND] Payload:", JSON.stringify(refundPayload));
 
         const response = await axios.delete(handyUrl, {
             headers: {
@@ -2026,7 +2027,7 @@ exports.createHandyRefund = async (req, res) => {
             data: refundPayload
         });
 
-        console.log("[HANDY REFUND] Respuesta:", JSON.stringify(response.data));
+        logger.info("[HANDY REFUND] Respuesta:", JSON.stringify(response.data));
 
         // Marcar en BD como devolución solicitada
         await pool.request()
@@ -2040,9 +2041,9 @@ exports.createHandyRefund = async (req, res) => {
         res.json({ success: true, message: "Devolución solicitada. Recibirás la confirmación por webhook.", data: response.data });
 
     } catch (error) {
-        console.error("[HANDY REFUND ERROR]", error.message);
+        logger.error("[HANDY REFUND ERROR]", error.message);
         if (error.response) {
-            console.error("[HANDY REFUND DATA]", error.response.data);
+            logger.error("[HANDY REFUND DATA]", error.response.data);
             return res.status(500).json({ error: "Error desde Handy al solicitar devolución", details: error.response.data });
         }
         res.status(500).json({ error: "Error interno al solicitar devolución." });
@@ -2055,10 +2056,10 @@ exports.createHandyRefund = async (req, res) => {
 exports.handyRefundWebhook = async (req, res) => {
     const payload = req.body;
 
-    console.log("------------------------------------------");
-    console.log("🔔 [HANDY REFUND WEBHOOK] Evento recibido:");
-    console.log(JSON.stringify(payload, null, 2));
-    console.log("------------------------------------------");
+    logger.info("------------------------------------------");
+    logger.info("🔔 [HANDY REFUND WEBHOOK] Evento recibido:");
+    logger.info(JSON.stringify(payload, null, 2));
+    logger.info("------------------------------------------");
 
     // Responder 200 inmediatamente
     res.status(200).send("OK");
@@ -2067,7 +2068,7 @@ exports.handyRefundWebhook = async (req, res) => {
         const transactionId = payload.TransactionExternalId;
 
         if (!transactionId) {
-            console.warn("[HANDY REFUND WEBHOOK] Evento sin TransactionExternalId, ignorado.");
+            logger.warn("[HANDY REFUND WEBHOOK] Evento sin TransactionExternalId, ignorado.");
             return;
         }
 
@@ -2097,10 +2098,10 @@ exports.handyRefundWebhook = async (req, res) => {
             `);
 
         const emoji = statusLabel === 'Devuelto' ? '✅' : '❌';
-        console.log(`[HANDY REFUND WEBHOOK] ${emoji} ${statusLabel} — ${result.rowsAffected[0]} fila(s) actualizadas.`);
+        logger.info(`[HANDY REFUND WEBHOOK] ${emoji} ${statusLabel} — ${result.rowsAffected[0]} fila(s) actualizadas.`);
 
     } catch (e) {
-        console.error("[HANDY REFUND WEBHOOK] Error procesando evento:", e.message);
+        logger.error("[HANDY REFUND WEBHOOK] Error procesando evento:", e.message);
     }
 };
 
@@ -2154,7 +2155,7 @@ exports.getShippingData = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error("Error en getShippingData:", err.message);
+        logger.error("Error en getShippingData:", err.message);
         res.status(500).json({ error: "Error al obtener datos de envío." });
     }
 };
@@ -2189,7 +2190,7 @@ exports.updatePickupShipping = async (req, res) => {
 
         res.json({ success: true, message: 'Datos de envío actualizados.' });
     } catch (err) {
-        console.error("Error en updatePickupShipping:", err.message);
+        logger.error("Error en updatePickupShipping:", err.message);
         res.status(500).json({ error: "Error al actualizar datos de envío." });
     }
 };
@@ -2238,7 +2239,7 @@ exports.saveAddress = async (req, res) => {
 
         res.json({ success: true, data: insertRes.recordset[0] });
     } catch (err) {
-        console.error("Error en saveAddress:", err.message);
+        logger.error("Error en saveAddress:", err.message);
         res.status(500).json({ error: "Error al guardar dirección." });
     }
 };
@@ -2274,7 +2275,7 @@ exports.deleteAddress = async (req, res) => {
 
         res.json({ success: true });
     } catch (err) {
-        console.error("Error en deleteAddress:", err.message);
+        logger.error("Error en deleteAddress:", err.message);
         res.status(500).json({ error: "Error al eliminar dirección." });
     }
 };

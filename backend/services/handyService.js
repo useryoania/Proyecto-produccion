@@ -5,6 +5,7 @@
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 /**
  * Crea un link de pago en Handy y guarda la transacción en HandyTransactions
@@ -57,8 +58,8 @@ async function createPaymentLink({
         ResponseType: "Json"
     };
 
-    console.log(`${logPrefix} Creando link de pago (${isProduction ? 'PRODUCCIÓN' : 'TESTING'})...`);
-    console.log(`${logPrefix} Payload:`, JSON.stringify(handyPayload));
+    logger.info(`${logPrefix} Creando link de pago (${isProduction ? 'PRODUCCIÓN' : 'TESTING'})...`);
+    logger.info(`${logPrefix} Payload:`, JSON.stringify(handyPayload));
 
     const response = await axios.post(handyUrl, handyPayload, {
         headers: { 'merchant-secret-key': handySecret }
@@ -69,7 +70,7 @@ async function createPaymentLink({
     }
 
     const paymentUrl = response.data.url;
-    console.log(`${logPrefix} Link generado:`, paymentUrl);
+    logger.info(`${logPrefix} Link generado:`, paymentUrl);
 
     // Guardar en HandyTransactions para reconciliar con el webhook
     try {
@@ -87,9 +88,9 @@ async function createPaymentLink({
                 INSERT INTO HandyTransactions (TransactionId, PaymentUrl, TotalAmount, Currency, OrdersJson, CodCliente, Status, CreatedAt)
                 VALUES (@txId, @payUrl, @amount, @currency, @ordersJson, @codCliente, 'Creado', GETDATE())
             `);
-        console.log(`${logPrefix} TransactionId ${transactionId} guardado en HandyTransactions.`);
+        logger.info(`${logPrefix} TransactionId ${transactionId} guardado en HandyTransactions.`);
     } catch (dbErr) {
-        console.warn(`${logPrefix} No se pudo guardar TransactionId en BD:`, dbErr.message);
+        logger.warn(`${logPrefix} No se pudo guardar TransactionId en BD:`, dbErr.message);
     }
 
     return { success: true, url: paymentUrl, transactionId };

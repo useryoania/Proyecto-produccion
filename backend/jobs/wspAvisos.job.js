@@ -1,5 +1,6 @@
 const { getPool, sql } = require("../config/db");
 const axios = require("axios");
+const logger = require('../utils/logger');
 
 // ================= ENV =================
 const CALLBELL_API_KEY = process.env.CALLBELL_API_KEY;
@@ -22,7 +23,7 @@ function assertEnv() {
     if (!CALLBELL_TEMPLATE_UUID) missing.push("CALLBELL_TEMPLATE_UUID");
     if (!CALLBELL_CHANNEL_UUID) missing.push("CALLBELL_CHANNEL_UUID");
     if (FORCE_TEST_TO && !WA_TEST_TO) missing.push("WA_TEST_TO (porque FORCE_TEST_TO=true)");
-    if (missing.length) console.warn(`[WSP] Atención: Faltan variables .env: ${missing.join(", ")}`);
+    if (missing.length) logger.warn(`[WHATSAPP] Atención: Faltan variables .env: ${missing.join(", ")}`);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,7 +68,7 @@ async function enviarTemplateWsp({ to, params }) {
     };
 
     // ── DIAGNÓSTICO: logear payload exacto antes de enviar ──
-    console.log('[WSP PAYLOAD]', JSON.stringify({
+    logger.info('[WHATSAPP PAYLOAD]', JSON.stringify({
         to: payload.to,
         template_uuid: payload.template_uuid,
         template_values: payload.template_values,
@@ -79,7 +80,7 @@ async function enviarTemplateWsp({ to, params }) {
         timeout: 15000,
     });
 
-    console.log('[WSP RESPUESTA CALLBELL]', JSON.stringify(data));
+    logger.info('[WHATSAPP RESPUESTA CALLBELL]', JSON.stringify(data));
     return data;
 }
 
@@ -126,7 +127,7 @@ async function procesarUnaOrdenWsp(io, r, pool, throttle) {
     const to = FORCE_TEST_TO ? normalizePhone(WA_TEST_TO) : toReal;
 
     if (!to) {
-        console.warn(`[WSP JOB] ${codigoOrden} sin celular válido.`);
+        logger.warn(`[WHATSAPP JOB] ${codigoOrden} sin celular válido.`);
         if (io) io.emit("actualizado_wsp", { codigoOrden: r.OrdCodigoOrden, ordId: r.OrdIdOrden, status: 'error', reason: 'Número de teléfono inválido o vacío' });
         return;
     }
@@ -140,7 +141,7 @@ async function procesarUnaOrdenWsp(io, r, pool, throttle) {
 
     try {
         const fnSend = async () => {
-            if (!CALLBELL_API_KEY) { console.warn("[WSP] Simulando envío, sin API_KEY en .env"); return { message: { uuid: "sim-" + Date.now(), status: 'enqueued' } }; }
+            if (!CALLBELL_API_KEY) { logger.warn("[WHATSAPP] Simulando envío, sin API_KEY en .env"); return { message: { uuid: "sim-" + Date.now(), status: 'enqueued' } }; }
             return await enviarTemplateWsp({ to, params });
         };
 
@@ -150,10 +151,10 @@ async function procesarUnaOrdenWsp(io, r, pool, throttle) {
 
         await marcarOrdenEnviada(pool, r.OrdIdOrden);
         if (io) io.emit("actualizado_wsp", { codigoOrden: r.OrdCodigoOrden, ordId: r.OrdIdOrden, status: 'success' });
-        console.log(`[WSP JOB] ENVIADO OK ${codigoOrden}`);
+        logger.info(`[WHATSAPP JOB] Enviado OK ${codigoOrden}`);
     } catch (err) {
         const details = err?.response?.data ? JSON.stringify(err.response.data) : err.message;
-        console.error(`[WSP JOB] Error enviando WSP - ${codigoOrden}:`, details);
+        logger.error(`[WHATSAPP JOB] Error enviando WhatsApp - ${codigoOrden}:`, details);
         if (io) io.emit("actualizado_wsp", { codigoOrden: r.OrdCodigoOrden, ordId: r.OrdIdOrden, status: 'error', reason: `Fallo WS: ${details.substring(0, 50)}...` });
     }
 }
@@ -201,7 +202,7 @@ async function runWspLoop(io) {
     } catch (e) { }
 
     if (WSP_ENABLED_ENV && dbEnabled) {
-        try { await procesarAvisosBatch(io); } catch (e) { console.error("[WSP JOB] Error general:", e.message); }
+        try { await procesarAvisosBatch(io); } catch (e) { logger.error("[WHATSAPP JOB] Error general:", e.message); }
     }
 
     const msec = Math.max(1, mins) * 60000;
@@ -210,7 +211,7 @@ async function runWspLoop(io) {
 
 function startWspJob(io) {
     assertEnv();
-    console.log("⏱️ [CRON] WSP Avisos Activado.");
+    logger.info("⏱️ [CRON] WhatsApp Avisos Activado.");
     if (timeoutId) clearTimeout(timeoutId);
     timeoutId = setTimeout(() => runWspLoop(io), 5000); // initial start in 5s
 }

@@ -1,4 +1,5 @@
 const axios = require('axios');
+const logger = require('../utils/logger');
 
 // URL del Webhook de n8n (Ajustar según configuración en n8n)
 const N8N_HOST = process.env.N8N_API_URL || 'http://localhost:5678';
@@ -13,7 +14,7 @@ const TARGET_URL = N8N_WEBHOOK_URL_TEST;
 
 exports.searchInDrive = async (query) => {
     try {
-        console.log(`📡 [N8N Service] Enviando query a n8n: "${query}"`);
+        logger.info(`📡 [N8N Service] Enviando query a n8n: "${query}"`);
 
         const response = await axios.post(TARGET_URL, {
             query: query
@@ -25,7 +26,7 @@ exports.searchInDrive = async (query) => {
         // O una lista de archivos.
 
         if (response.data) {
-            console.log(`✅ [N8N Service] Respuesta recibida (${JSON.stringify(response.data).length} chars)`);
+            logger.info(`✅ [N8N Service] Respuesta recibida (${JSON.stringify(response.data).length} chars)`);
 
             // Si n8n devuelve un texto directo
             if (typeof response.data === 'string') return response.data;
@@ -45,7 +46,7 @@ exports.searchInDrive = async (query) => {
         return null;
 
     } catch (error) {
-        console.error(`❌ [N8N Service] Error conectando con n8n: ${error.message}`);
+        logger.error(`❌ [N8N Service] Error conectando con n8n: ${error.message}`);
         if (error.code === 'ECONNREFUSED') {
             return "ERROR_N8N_OFFLINE"; // Indicar que n8n no está corriendo
         }

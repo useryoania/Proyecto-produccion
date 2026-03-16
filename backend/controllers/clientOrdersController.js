@@ -2,6 +2,7 @@ const { getPool, sql } = require('../config/db');
 const fs = require('fs');
 const path = require('path');
 const driveService = require('../services/driveService');
+const logger = require('../utils/logger');
 
 // Helper to save base64 file to Google Drive
 const saveFileToDrive = async (base64Data, fileName, areaName) => {
@@ -9,7 +10,7 @@ const saveFileToDrive = async (base64Data, fileName, areaName) => {
     try {
         return await driveService.uploadToDrive(base64Data, fileName, areaName);
     } catch (e) {
-        console.error('Error saving file to Drive:', e);
+        logger.error('Error saving file to Drive:', e);
         return null;
     }
 };
@@ -153,7 +154,7 @@ exports.createClientOrder = async (req, res) => {
 
     } catch (err) {
         if (transaction) await transaction.rollback();
-        console.error("Error creating client order:", err);
+        logger.error("Error creating client order:", err);
         res.status(500).json({ error: err.message });
     }
 };

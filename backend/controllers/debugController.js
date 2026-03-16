@@ -1,5 +1,6 @@
 const { getPool, sql } = require('../config/db');
 const { processOrderList } = require('../services/fileProcessingService');
+const logger = require('../utils/logger');
 
 exports.reprocessOrder = async (req, res) => {
     const { id } = req.params;
@@ -7,7 +8,7 @@ exports.reprocessOrder = async (req, res) => {
 
     try {
         const pool = await getPool();
-        console.log(`🔄 [DEBUG] Forzando reproceso de Orden ${id}...`);
+        logger.info(`🔄 [DEBUG] Forzando reproceso de Orden ${id}...`);
 
         // 1. Limpiar datos previos de archivos para obligar a re-descargar o re-validar
         // NOTA: No borramos RutaLocal del disco físico aquí, solo la referencia en DB para que el script evalúe.
@@ -31,7 +32,7 @@ exports.reprocessOrder = async (req, res) => {
         res.json({ message: `Orden ${id} enviada a cola de reprocesamiento V31.` });
 
     } catch (error) {
-        console.error("Error en reprocess:", error);
+        logger.error("Error en reprocess:", error);
         res.status(500).json({ error: error.message });
     }
 };

@@ -1,5 +1,6 @@
 const { getPool, sql } = require('../config/db');
 const PricingService = require('../services/pricingService');
+const logger = require('../utils/logger');
 
 // Obtener Precios Base (Lista Pagina o Filtrada)
 // Obtener Precios Base (Lista Pagina o Filtrada)
@@ -19,7 +20,7 @@ const getBasePrices = async (req, res) => {
             LEFT JOIN PreciosBase PB ON A.CodArticulo = PB.CodArticulo
             ORDER BY A.SupFlia, A.Grupo, A.CodArticulo, PB.Moneda
         `);
-        console.log(`getBasePrices: Found ${result.recordset.length} rows.`);
+        logger.info(`getBasePrices: Found ${result.recordset.length} rows.`);
         res.json(result.recordset);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -86,7 +87,7 @@ const saveBasePricesBulk = async (req, res) => {
             throw err;
         }
     } catch (e) {
-        console.error("Error saveBasePricesBulk:", e);
+        logger.error("Error saveBasePricesBulk:", e);
         res.status(500).json({ error: e.message });
     }
 };

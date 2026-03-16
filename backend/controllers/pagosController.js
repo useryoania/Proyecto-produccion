@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Controlador para obtener métodos de pago
 const obtenerMetodosPago = async (req, res) => {
@@ -7,7 +8,7 @@ const obtenerMetodosPago = async (req, res) => {
     const result = await pool.request().query('SELECT MPaIdMetodoPago, MPaDescripcionMetodo FROM MetodosPagos WITH(NOLOCK)');
     res.json(result.recordset);
   } catch (error) {
-    console.error('Error al obtener métodos de pago:', error);
+    logger.error('Error al obtener métodos de pago:', error);
     res.status(500).json({ error: 'Error al obtener métodos de pago' });
   }
 };
@@ -16,7 +17,7 @@ const obtenerMetodosPago = async (req, res) => {
 const realizarPago = async (req, res) => {
   const { metodoPagoId, monedaId, monto, ordenRetiro, orderNumbers } = req.body;
   const usuarioId = req.user?.id || 70;
-  console.log('Cuerpo de la solicitud recibido:', req.body);
+  logger.info('Cuerpo de la solicitud recibido:', req.body);
 
   const pool = await getPool();
   let transaction;
@@ -141,7 +142,7 @@ const realizarPago = async (req, res) => {
             VALUES (@ordenRetiroId, 4, GETDATE(), @usuarioId);
           `);
 
-        console.log(`[AUTO-CIERRE] OrdenRetiro R-${ordenRetiroId} marcada como Abonada.`);
+        logger.info(`[AUTO-CIERRE] OrdenRetiro R-${ordenRetiroId} marcada como Abonada.`);
       }
     }
 
@@ -158,7 +159,7 @@ const realizarPago = async (req, res) => {
     if (transaction) {
       try { await transaction.rollback(); } catch (e) { }
     }
-    console.error('Error al registrar el pago:', error);
+    logger.error('Error al registrar el pago:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -189,7 +190,7 @@ const subirComprobante = async (req, res) => {
 
     res.status(200).send({ message: 'Archivo subido correctamente', filename: filePath });
   } catch (error) {
-    console.error('Error al subir comprobante:', error);
+    logger.error('Error al subir comprobante:', error);
     res.status(500).send({ error: 'Error al subir el comprobante.' });
   }
 };

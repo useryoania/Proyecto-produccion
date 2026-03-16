@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // ── BCU SOAP API (Banco Central del Uruguay) ──────────────────────────────────
 // Moneda 2222 = Dólar USA | Grupo 0 = Todos
@@ -61,16 +62,16 @@ async function fetchCotizacionBCU() {
             if (isFinite(interbancario) && interbancario > 1) {
                 const compra = parseFloat((interbancario * SPREAD_COMPRA).toFixed(2));
                 const venta  = parseFloat((interbancario * SPREAD_VENTA).toFixed(2));
-                console.log(`[COTIZACION] BCU ${fecha}: interbancario=${interbancario} → compra=${compra}, venta=${venta}`);
+                logger.info(`[COTIZACION] BCU ${fecha}: interbancario=${interbancario} → compra=${compra}, venta=${venta}`);
                 return { interbancario, compra, venta };
             }
         } catch (err) {
-            console.warn(`[COTIZACION] BCU ${fecha} falló:`, err.message);
+            logger.warn(`[COTIZACION] BCU ${fecha} falló:`, err.message);
         }
     }
 
     // Fallback: open.er-api.com (ya devuelve tasa de mercado, no aplicar spread)
-    console.log('[COTIZACION] BCU sin datos, usando fallback open.er-api.com...');
+    logger.info('[COTIZACION] BCU sin datos, usando fallback open.er-api.com...');
     const { data } = await axios.get('https://open.er-api.com/v6/latest/USD', { timeout: 15000 });
     const rate = data?.rates?.UYU;
     if (!rate || !isFinite(rate) || rate <= 0) {
@@ -90,7 +91,7 @@ async function runCotizacionJob() {
             WHERE CONVERT(DATE, CotFecha) = CONVERT(DATE, GETDATE())
         `);
         if (check.recordset[0].cnt > 0) {
-            console.log('[COTIZACION JOB] Ya existe cotización para hoy. Saltando.');
+            logger.info('[COTIZACION JOB] Ya existe cotización para hoy. Saltando.');
             return;
         }
 
@@ -103,10 +104,10 @@ async function runCotizacionJob() {
             .query(`INSERT INTO Cotizaciones (CotIdCotizacion, CotFecha, CotDolar)
                     VALUES ((SELECT ISNULL(MAX(CotIdCotizacion),0)+1 FROM Cotizaciones), GETDATE(), @cot)`);
 
-        console.log(`[COTIZACION JOB] ✅ Cotización insertada: compra=$U ${cot.compra} / venta=$U ${cot.venta} (interbancario: ${cot.interbancario})`);
+        logger.info(`[COTIZACION JOB] ✅ Cotización insertada: compra=$U ${cot.compra} / venta=$U ${cot.venta} (interbancario: ${cot.interbancario})`);
 
     } catch (err) {
-        console.error('[COTIZACION JOB] ❌ Error:', err.message);
+        logger.error('[COTIZACION JOB] ❌ Error:', err.message);
     }
 }
 
@@ -115,16 +116,16 @@ function startCotizacionJob() {
     const cron = require('node-cron');
 
     cron.schedule('10 9 * * 1-5', () => {
-        console.log('[COTIZACION JOB] Ejecutando (09:10 lun-vie)...');
+        logger.info('[COTIZACION JOB] Ejecutando (09:10 lun-vie)...');
         runCotizacionJob();
     }, { timezone: 'America/Montevideo' });
 
     cron.schedule('30 13 * * 1-5', () => {
-        console.log('[COTIZACION JOB] Ejecutando respaldo (13:30 lun-vie)...');
+        logger.info('[COTIZACION JOB] Ejecutando respaldo (13:30 lun-vie)...');
         runCotizacionJob();
     }, { timezone: 'America/Montevideo' });
 
-    console.log('⏱️ [CRON] Cotización BCU: Activado (09:10 y 13:30, Lun-Vie).');
+    logger.info('⏱️ [CRON] Cotización BCU: Activado (09:10 y 13:30, Lun-Vie).');
 }
 
 module.exports = { startCotizacionJob, runCotizacionJob, fetchCotizacionBCU };

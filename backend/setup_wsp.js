@@ -1,4 +1,5 @@
 const { getPool } = require('./config/db');
+const logger = require('./utils/logger');
 async function setup() {
     try {
         const pool = await getPool();
@@ -8,10 +9,10 @@ async function setup() {
       ELSE
         UPDATE ConfiguracionGlobal SET Valor = '1' WHERE Clave = 'ActivarAvisosWSP';
     `);
-        console.log('✅ Configuración insertada en DB correctamente');
+        logger.info('✅ Configuración insertada en DB correctamente');
         process.exit(0);
     } catch (e) {
-        console.error(e);
+        logger.error(e);
         process.exit(1);
     }
 }

@@ -830,7 +830,7 @@ export const PickupView = () => {
                                             )}
                                         </div>
                                     </td>
-                                    <td className="p-4 font-mono font-medium text-sm text-zinc-100 border-r border-zinc-800 text-center">{order.id}</td>
+                                    <td className="p-4 font-black text-base text-custom-cyan border-r border-zinc-800 text-center">{order.id}</td>
                                     <td className="p-4 text-sm text-zinc-300 border-r border-zinc-800">{order.desc}</td>
                                     <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.article || '-'}</td>
                                     <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.quantityStr || order.quantity || '-'}</td>
@@ -928,7 +928,7 @@ export const PickupView = () => {
                             isLoading={loading || loadingShipping}
                             variant="primary"
                             icon={ChevronRight}
-                            className="w-1/2 !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
+                            className="w-1/2 md:w-auto !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
                             whileHover={{ scale: 1 }}
                             whileTap={{ scale: 1 }}
                         >

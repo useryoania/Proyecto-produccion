@@ -1,4 +1,5 @@
 const { sql, getPool } = require('../config/db');
+const logger = require('../utils/logger');
 
 class PricingService {
 
@@ -7,7 +8,7 @@ class PricingService {
             const res = await pool.request().query("SELECT Valor FROM ConfiguracionGlobal WHERE Clave = 'TIPO_CAMBIO_USD'");
             if (res.recordset.length > 0) return parseFloat(res.recordset[0].Valor) || 40.0;
         } catch (e) {
-            console.error("Error al obtener TIPO_CAMBIO_USD:", e.message);
+            logger.error("Error al obtener TIPO_CAMBIO_USD:", e.message);
         }
         return 40.0; // Fallback
     }
@@ -19,7 +20,7 @@ class PricingService {
             res.recordset.forEach(r => { configs[r.Clave] = r.Valor; });
             return configs;
         } catch (e) {
-            console.error("Error al obtener configuracion global:", e.message);
+            logger.error("Error al obtener configuracion global:", e.message);
             return {};
         }
     }
@@ -61,7 +62,7 @@ class PricingService {
                     .query("SELECT TOP 1 AreaID FROM Ordenes WHERE LTRIM(RTRIM(CodArticulo)) = @Cod");
                 if (areaRes.recordset.length > 0) resolvedAreaId = areaRes.recordset[0].AreaID?.toString().trim().toUpperCase();
             } catch (e) {
-                console.warn("[PricingService] Error fetching AreaID for " + cleanCod);
+                logger.warn("[PricingService] Error fetching AreaID for " + cleanCod);
             }
         }
 
@@ -245,7 +246,7 @@ class PricingService {
 
         const finalPU = precioFinalBase + totalRecargos;
         traceDecision += `\n= PRECIO FINAL CALCULADO: ${finalPU.toFixed(2)}\n`;
-        console.log(traceDecision);
+        logger.info(traceDecision);
 
         // --- Generar resumen textual ---
         let txt = `Base: ${cleanCurrency} ${precioBase.toFixed(2)}`;

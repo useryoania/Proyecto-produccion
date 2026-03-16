@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Obtener Insumos
 exports.getAllInsumos = async (req, res) => {
@@ -7,7 +8,7 @@ exports.getAllInsumos = async (req, res) => {
         const result = await pool.request().query("SELECT * FROM dbo.Insumos ORDER BY Nombre ASC");
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error getting insumos:", err);
+        logger.error("Error getting insumos:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -26,7 +27,7 @@ exports.createInsumo = async (req, res) => {
 
         res.json({ success: true, message: 'Insumo creado' });
     } catch (err) {
-        console.error("Error creating insumo:", err);
+        logger.error("Error creating insumo:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -49,7 +50,7 @@ exports.updateInsumo = async (req, res) => {
 
         res.json({ success: true, message: 'Insumo actualizado' });
     } catch (err) {
-        console.error("Error updating insumo:", err);
+        logger.error("Error updating insumo:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -69,7 +70,7 @@ exports.deleteInsumo = async (req, res) => {
         if (err.number === 547) {
             return res.status(400).json({ error: 'No se puede eliminar porque está en uso.' });
         }
-        console.error("Error deleting insumo:", err);
+        logger.error("Error deleting insumo:", err);
         res.status(500).json({ error: err.message });
     }
 };

@@ -1,5 +1,6 @@
 const { getPool, sql } = require('../config/db');
 const axios = require('axios'); // Importar axios para el proxy
+const logger = require('../utils/logger');
 const ERP_API_BASE = process.env.ERP_API_URL;
 
 // Cache para el Token de la API Macrosoft
@@ -14,7 +15,7 @@ async function getMacrosoftToken() {
         const username = process.env.MACROSOFT_API_USER || 'user';
         const password = process.env.MACROSOFT_API_PASSWORD || '1234';
 
-        console.log(`[MACROSOFT AUTH] Solicitando token a ${ERP_API_BASE}/authenticate`);
+        logger.info(`[MACROSOFT AUTH] Solicitando token a ${ERP_API_BASE}/authenticate`);
         const res = await axios.post(`${ERP_API_BASE}/authenticate`, { username, password });
 
         // Asumiendo que el token viene en res.data.token (o simplemente es el texto JWT retornado)
@@ -29,7 +30,7 @@ async function getMacrosoftToken() {
         }
 
         if (!token) {
-            console.warn('[MACROSOFT AUTH] No se logró parsear el token, se devuelve data completo (podría ser objeto)', res.data);
+            logger.warn('[MACROSOFT AUTH] No se logró parsear el token, se devuelve data completo (podría ser objeto)', res.data);
             token = res.data; // fallback en caso que de todas formas funcionase
         }
 
@@ -37,7 +38,7 @@ async function getMacrosoftToken() {
         macrosoftTokenExp = Date.now() + 1000 * 60 * 55; // 55 mins caché
         return token;
     } catch (err) {
-        console.error("[MACROSOFT AUTH] Error obteniendo token:", err.message);
+        logger.error("[MACROSOFT AUTH] Error obteniendo token:", err.message);
         return null;
     }
 }
@@ -62,7 +63,7 @@ exports.getMacrosoftClientData = async (req, res) => {
         }
         res.json(result.recordset[0]);
     } catch (error) {
-        console.error('[getMacrosoftClientData] Error:', error.message);
+        logger.error('[getMacrosoftClientData] Error:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
@@ -112,11 +113,11 @@ exports.getAllReactClients = async (req, res) => {
             ORDER BY cr.CliNombreApellido ASC
         `);
 
-        console.log(`[getAllReactClients] Devolviendo ${result.recordset.length} clientes React sin vincular`);
+        logger.info(`[getAllReactClients] Devolviendo ${result.recordset.length} clientes React sin vincular`);
         res.set('Cache-Control', 'no-store');
         res.json(result.recordset);
     } catch (error) {
-        console.error("Error getAllReactClients:", error.message);
+        logger.error("Error getAllReactClients:", error.message);
         res.status(500).json({ error: "Error al obtener clientes: " + error.message });
     }
 };
@@ -176,7 +177,7 @@ exports.getAllMacrosoftClients = async (req, res) => {
             pageSize: parseInt(pageSize)
         });
     } catch (error) {
-        console.error('[getAllMacrosoftClients] Error:', error.message);
+        logger.error('[getAllMacrosoftClients] Error:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
@@ -227,14 +228,14 @@ exports.createClient = async (req, res) => {
         let nextId = null;
         if (codCliente) {
             nextId = parseInt(codCliente);
-            console.log("Usando ID Legacy forzado:", nextId);
+            logger.info("Usando ID Legacy forzado:", nextId);
         } else if (idReact && !isNaN(parseInt(idReact))) {
             nextId = parseInt(idReact);
-            console.log("Usando ID React como CodCliente Local:", nextId);
+            logger.info("Usando ID React como CodCliente Local:", nextId);
         } else {
             const idQuery = await pool.request().query("SELECT ISNULL(MAX(CodCliente), 0) + 1 as NextID FROM dbo.Clientes");
             nextId = idQuery.recordset[0].NextID;
-            console.log("Generado nuevo CodCliente Auto:", nextId);
+            logger.info("Generado nuevo CodCliente Auto:", nextId);
         }
 
         const result = await pool.request()
@@ -255,8 +256,8 @@ exports.createClient = async (req, res) => {
 
         res.json(result.recordset[0]);
     } catch (err) {
-        console.error("[CreateClient ERROR]", err);
-        console.error("Full Body:", req.body);
+        logger.error("[CreateClient ERROR]", err);
+        logger.error("Full Body:", req.body);
         res.status(500).json({ error: "DB Error: " + err.message });
     }
 };
@@ -318,7 +319,7 @@ exports.getAllClients = async (req, res) => {
         const result = await request.query(query);
         res.json(result.recordset);
     } catch (err) {
-        console.error('getAllClients error:', err.message);
+        logger.error('getAllClients error:', err.message);
         res.status(500).json({ error: err.message });
     }
 };
@@ -329,7 +330,7 @@ exports.updateClientLink = async (req, res) => {
     const { codCliente } = req.params;
     const { codigoReact, idReact } = req.body;
 
-    console.log(`[LINK] Intentando vincular LocalID=${codCliente} con ReactCode=${codigoReact}, ReactID=${idReact}`);
+    logger.info(`[LINK] Intentando vincular LocalID=${codCliente} con ReactCode=${codigoReact}, ReactID=${idReact}`);
 
     try {
         const pool = await getPool();
@@ -345,7 +346,7 @@ exports.updateClientLink = async (req, res) => {
 
         res.json({ success: true, message: 'Vinculación con React actualizada correctamente' });
     } catch (err) {
-        console.error("[LINK ERROR] Falló SQL Update:", err);
+        logger.error("[LINK ERROR] Falló SQL Update:", err);
         res.status(500).json({ error: "Error al actualizar base de datos: " + err.message });
     }
 };
@@ -355,7 +356,7 @@ exports.updateClientLinkMacrosoft = async (req, res) => {
     const { codCliente } = req.params;
     const { codReferencia } = req.body;
 
-    console.log(`[LINK MACROSOFT] Intentando vincular LocalID=${codCliente} con CodReferencia=${codReferencia}`);
+    logger.info(`[LINK MACROSOFT] Intentando vincular LocalID=${codCliente} con CodReferencia=${codReferencia}`);
 
     try {
         const pool = await getPool();
@@ -370,7 +371,7 @@ exports.updateClientLinkMacrosoft = async (req, res) => {
 
         res.json({ success: true, message: 'Vinculación con Macrosoft actualizada correctamente' });
     } catch (err) {
-        console.error("[LINK MACROSOFT ERROR] Falló SQL Update:", err);
+        logger.error("[LINK MACROSOFT ERROR] Falló SQL Update:", err);
         res.status(500).json({ error: "Error al actualizar base de datos: " + err.message });
     }
 };
@@ -389,7 +390,7 @@ exports.importReactClient = async (req, res) => {
     const nombreFinal = (EmpresaCliente || NombreCliente || '').trim() || 'Sin Nombre';
     const fantasiaFinal = (NombreCliente || '').trim();
 
-    console.log('[IMPORT] Importando desde ClientesReact:', { nombreFinal, CodigoCliente, IdCliente });
+    logger.info('[IMPORT] Importando desde ClientesReact:', { nombreFinal, CodigoCliente, IdCliente });
 
     try {
         const pool = await getPool();
@@ -438,7 +439,7 @@ exports.importReactClient = async (req, res) => {
         res.json({ success: true, alreadyExists: false, client: result.recordset[0] });
 
     } catch (err) {
-        console.error('[IMPORT ERROR]', err);
+        logger.error('[IMPORT ERROR]', err);
         res.status(500).json({ error: 'Error creando cliente local: ' + err.message });
     }
 };
@@ -448,7 +449,7 @@ exports.importReactClient = async (req, res) => {
 exports.createReactClient = async (req, res) => {
     const client = req.body;
     try {
-        console.log("[createReactClient] Creando cliente directamente en DB local:", client.Nombre);
+        logger.info("[createReactClient] Creando cliente directamente en DB local:", client.Nombre);
         const pool = await getPool();
         const safeString = (val) => (val !== undefined && val !== null && val !== '') ? String(val) : null;
 
@@ -480,7 +481,7 @@ exports.createReactClient = async (req, res) => {
             `);
 
         const created = result.recordset[0];
-        console.log(`[createReactClient] Cliente creado: CodCliente=${created.CodCliente}`);
+        logger.info(`[createReactClient] Cliente creado: CodCliente=${created.CodCliente}`);
 
         res.json({
             success: true,
@@ -488,7 +489,7 @@ exports.createReactClient = async (req, res) => {
             message: "Cliente creado en DB local"
         });
     } catch (error) {
-        console.error("Error createReactClient:", error.message);
+        logger.error("Error createReactClient:", error.message);
         res.status(500).json({ error: "Error interno al crear cliente: " + error.message });
     }
 };
@@ -496,7 +497,7 @@ exports.createReactClient = async (req, res) => {
 exports.createMacrosoftClient = async (req, res) => {
     const client = req.body;
     try {
-        console.log("Iniciando exportación a Macrosoft:", client.Nombre);
+        logger.info("Iniciando exportación a Macrosoft:", client.Nombre);
 
         const token = await getMacrosoftToken();
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -548,7 +549,7 @@ exports.createMacrosoftClient = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error exportando a Macrosoft:", error.message);
+        logger.error("Error exportando a Macrosoft:", error.message);
         res.status(500).json({ error: "Fallo conexión API Macrosoft" });
     }
 };
@@ -575,12 +576,12 @@ exports.searchClientUnified = async (req, res) => {
             `);
 
         if (localRes.recordset.length > 0) {
-            console.log(`[Unified] Encontrado en Local: ${term}`);
+            logger.info(`[Unified] Encontrado en Local: ${term}`);
             return res.json({ source: 'local', client: localRes.recordset[0], found: true });
         }
 
         // 2. Búsqueda en ClientesReact (tabla local, antes era API externa)
-        console.log(`[Unified] No en local. Buscando en ClientesReact: ${term}`);
+        logger.info(`[Unified] No en local. Buscando en ClientesReact: ${term}`);
         const reactRes = await pool.request()
             .input('Term2', sql.VarChar(200), term)
             .query(`
@@ -607,14 +608,14 @@ exports.searchClientUnified = async (req, res) => {
             `);
 
         if (reactRes.recordset.length > 0) {
-            console.log(`[Unified] Encontrado en ClientesReact: ${term}`);
+            logger.info(`[Unified] Encontrado en ClientesReact: ${term}`);
             return res.json({ source: 'react', client: reactRes.recordset[0], found: true });
         }
 
         return res.json({ found: false, message: 'No encontrado en Local ni en ClientesReact' });
 
     } catch (error) {
-        console.error('Error Unified Search:', error);
+        logger.error('Error Unified Search:', error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -721,7 +722,7 @@ exports.updateClient = async (req, res) => {
 
         res.json({ success: true, message: 'Cliente actualizado correctamente' });
     } catch (e) {
-        console.error('Error updateClient:', e);
+        logger.error('Error updateClient:', e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -777,7 +778,7 @@ exports.getDuplicateClients = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Error getDuplicateClients:", err);
+        logger.error("Error getDuplicateClients:", err);
         res.status(500).json({ error: "DB Error: " + err.message });
     }
 };
@@ -800,7 +801,7 @@ exports.deleteClient = async (req, res) => {
 
         res.json({ success: true, message: "Cliente eliminado correctamente" });
     } catch (err) {
-        console.error("Error deleteClient:", err);
+        logger.error("Error deleteClient:", err);
         res.status(500).json({ error: "No se puede eliminar porque posiblemente tenga datos asociados en ordenes o facturas. " + err.message });
     }
 };
@@ -815,7 +816,7 @@ exports.getTiposClientes = async (req, res) => {
         const result = await pool.request().query('SELECT TClIdTipoCliente, TClDescripcion FROM TiposClientes WITH(NOLOCK) ORDER BY TClIdTipoCliente ASC');
         res.json(result.recordset);
     } catch (error) {
-        console.error('Error al obtener Tipos de Clientes:', error);
+        logger.error('Error al obtener Tipos de Clientes:', error);
         res.status(500).json({ message: 'Error al obtener Tipos de Clientes', error: error.message });
     }
 };
@@ -844,7 +845,7 @@ exports.getCatalogs = async (req, res) => {
             vendedores: vendedores.recordset,
         });
     } catch (error) {
-        console.error('Error getCatalogs:', error);
+        logger.error('Error getCatalogs:', error);
         res.status(500).json({ error: error.message });
     }
 };

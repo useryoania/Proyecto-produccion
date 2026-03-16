@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 
 
@@ -19,7 +20,7 @@ const registrarMovimiento = async (transaction, { codigoBulto, tipo, area, usuar
                 VALUES (@Cod, @Tipo, @Area, @User, GETDATE(), @Obs, @ant, @nue, @recep)
             `);
     } catch (e) {
-        console.error("Error registrando movimiento:", e);
+        logger.error("Error registrando movimiento:", e);
     }
 };
 
@@ -150,7 +151,7 @@ exports.validateBatch = async (req, res) => {
         }
         res.json({ results });
     } catch (err) {
-        console.error("Error validateBatch:", err);
+        logger.error("Error validateBatch:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -211,7 +212,7 @@ exports.processBatch = async (req, res) => {
             throw inner;
         }
     } catch (err) {
-        console.error("Error processBatch:", err);
+        logger.error("Error processBatch:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -248,7 +249,7 @@ exports.createBulto = async (req, res) => {
 
         res.json({ success: true, id: r.recordset[0].BultoID });
     } catch (err) {
-        console.error("Error createBulto:", err);
+        logger.error("Error createBulto:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -285,7 +286,7 @@ exports.createRemito = async (req, res) => {
 
             // 0. Procesar Bultos Nuevos (Auto-Creación)
             if (newBultos && newBultos.length > 0) {
-                console.log(`[createRemito] Creando ${newBultos.length} bultos automáticos...`);
+                logger.info(`[createRemito] Creando ${newBultos.length} bultos automáticos...`);
                 for (const nb of newBultos) {
                     // nb: { ordenId, descripcion }
                     // Generar código etiqueta automático si no viene
@@ -358,7 +359,7 @@ exports.createRemito = async (req, res) => {
                             });
                         }
                     }
-                    console.log("[createRemito] Auto-consumed inputs for dispatched orders.");
+                    logger.info("[createRemito] Auto-consumed inputs for dispatched orders.");
                 }
             }
 
@@ -418,7 +419,7 @@ exports.createRemito = async (req, res) => {
             throw inner;
         }
     } catch (err) {
-        console.error("Error createRemito:", err);
+        logger.error("Error createRemito:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -483,7 +484,7 @@ exports.getIncomingRemitos = async (req, res) => {
             `);
         res.json(r.recordset);
     } catch (err) {
-        console.error("Error getIncomingRemitos:", err);
+        logger.error("Error getIncomingRemitos:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -504,7 +505,7 @@ exports.getOutgoingRemitos = async (req, res) => {
             `);
         res.json(r.recordset);
     } catch (err) {
-        console.error("Error getOutgoingRemitos:", err);
+        logger.error("Error getOutgoingRemitos:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -604,7 +605,7 @@ exports.receiveDispatch = async (req, res) => {
                         }
 
                         const { Cliente } = bultoInfo;
-                        console.log("Resolved Order Data:", { OrdenID, Cliente, Ref: bultoInfo.Referencias });
+                        logger.info("Resolved Order Data:", { OrdenID, Cliente, Ref: bultoInfo.Referencias });
 
                         // --- AUTO-FULFILL REQUIREMENT ON CHECK-IN ---
                         if (OrdenID && areaReceptora) {
@@ -629,7 +630,7 @@ exports.receiveDispatch = async (req, res) => {
                                 originAreaID = row.AreaOrigenID;
                                 if (row.Entrega) {
                                     reqTypeToFulfill = row.Entrega; // Ej: 'DTF', 'PRENDAS', 'TELA'
-                                    console.log(`[AutoCheck] Requisito detectado por Origen ${originAreaID}: ${reqTypeToFulfill}`);
+                                    logger.info(`[AutoCheck] Requisito detectado por Origen ${originAreaID}: ${reqTypeToFulfill}`);
                                 }
                             }
 
@@ -705,7 +706,7 @@ exports.receiveDispatch = async (req, res) => {
                             }
 
                             const newLabel = `BOB-${Date.now()}-${Math.floor(Math.random() * 100)}`;
-                            console.log("Creating NEW Bobina:", newLabel, "for Ref:", code, "Client:", Cliente, "Mts:", mts);
+                            logger.info("Creating NEW Bobina:", newLabel, "for Ref:", code, "Client:", Cliente, "Mts:", mts);
 
                             await new sql.Request(transaction)
                                 .input('Ubi', sql.VarChar, areaReceptora)
@@ -742,7 +743,7 @@ exports.receiveDispatch = async (req, res) => {
                         } else if (invCheck.recordset.length === 0) {
                             // CASO: Item NO es Bobina/Insumo (ej. Producto Terminado SB, EMB, etc)
                             // Solo actualizamos Logística, no Inventario de Bobinas.
-                            console.log("Check-In Non-Coil Item (Product):", code);
+                            logger.info("Check-In Non-Coil Item (Product):", code);
 
                             await new sql.Request(transaction)
                                 .input('Ubi', sql.VarChar, areaReceptora)
@@ -768,10 +769,10 @@ exports.receiveDispatch = async (req, res) => {
                             // Si el código actual ES un PRE de Recepcion, lo migramos a BOB. Si es otra cosa (SB, EMB), lo dejamos.
                             if (targetCode.startsWith('PRE-')) {
                                 targetCode = `BOB-${Date.now()}-${Math.floor(Math.random() * 100)}`;
-                                console.log("Renaming Legacy Bobina:", existing.CodigoEtiqueta, "->", targetCode);
+                                logger.info("Renaming Legacy Bobina:", existing.CodigoEtiqueta, "->", targetCode);
                             }
 
-                            console.log("Updating Bobina:", targetCode, "Client:", Cliente);
+                            logger.info("Updating Bobina:", targetCode, "Client:", Cliente);
 
                             await new sql.Request(transaction)
                                 .input('Ubi', sql.VarChar, areaReceptora)
@@ -853,7 +854,7 @@ exports.receiveDispatch = async (req, res) => {
             throw inner;
         }
     } catch (err) {
-        console.error("Error receiveDispatch:", err);
+        logger.error("Error receiveDispatch:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -999,7 +1000,7 @@ exports.getDashboard = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Error getDashboard:", err);
+        logger.error("Error getDashboard:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1100,7 +1101,7 @@ exports.confirmTransport = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error confirmTransport:", err);
+        logger.error("Error confirmTransport:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1122,7 +1123,7 @@ exports.getActiveTransports = async (req, res) => {
         `);
         res.json(r.recordset);
     } catch (err) {
-        console.error(err);
+        logger.error(err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1151,7 +1152,7 @@ exports.getOrderRequirements = async (req, res) => {
             `);
         res.json(r.recordset);
     } catch (err) {
-        console.error(err);
+        logger.error(err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1184,7 +1185,7 @@ exports.toggleRequirement = async (req, res) => {
         }
         res.json({ success: true });
     } catch (err) {
-        console.error(err);
+        logger.error(err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1328,7 +1329,7 @@ exports.getOrderRequirements = async (req, res) => {
             `);
         res.json(r.recordset);
     } catch (err) {
-        console.error(err);
+        logger.error(err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1388,14 +1389,14 @@ exports.toggleRequirement = async (req, res) => {
         }
         res.json({ success: true });
     } catch (err) {
-        console.error(err);
+        logger.error(err);
         res.status(500).json({ error: err.message });
     }
 };
 
 exports.getAvailableResources = async (req, res) => {
     const { ordenId, reqCode, areaId } = req.query;
-    console.log(`[getAvailableResources] Buscando para Orden ${ordenId}, Req: ${reqCode}, Area: ${areaId}`);
+    logger.info(`[getAvailableResources] Buscando para Orden ${ordenId}, Req: ${reqCode}, Area: ${areaId}`);
 
     try {
         const pool = await getPool();
@@ -1407,7 +1408,7 @@ exports.getAvailableResources = async (req, res) => {
 
         if (orderRes.recordset.length === 0) return res.json([]);
         const clienteNombre = orderRes.recordset[0].Cliente || '';
-        console.log(`[REQ] Cliente: '${clienteNombre}'`);
+        logger.info(`[REQ] Cliente: '${clienteNombre}'`);
 
         let resources = [];
         let specificFound = false;
@@ -1440,7 +1441,7 @@ exports.getAvailableResources = async (req, res) => {
 
             // ESTRATEGIA 2: Fallback (Top 50 disponibles recientes FILTRANDO InsumoID)
             if (resources.length === 0) {
-                console.log("[REQ] No specific coils found. Fetching generic available coils (Insumo 1146).");
+                logger.info("[REQ] No specific coils found. Fetching generic available coils (Insumo 1146).");
                 const rFallback = await pool.request()
                     .query(`
                         SELECT TOP 50
@@ -1505,11 +1506,11 @@ exports.getAvailableResources = async (req, res) => {
             }
         }
 
-        console.log(`[REQ] Returning ${resources.length} resources (Specific: ${specificFound})`);
+        logger.info(`[REQ] Returning ${resources.length} resources (Specific: ${specificFound})`);
         res.json(resources);
 
     } catch (err) {
-        console.error(err);
+        logger.error(err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1605,7 +1606,7 @@ exports.getDepositStock = async (req, res) => {
 
         res.json(resultGrouped.recordset);
     } catch (err) {
-        console.error("Error getDepositStock:", err);
+        logger.error("Error getDepositStock:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1645,10 +1646,10 @@ exports.syncDepositStock = async (req, res) => {
                 }
 
                 if (code.startsWith('B')) bultoRef = code;
-                console.log(`[SyncLogistics] Procesando item con código: ${code} (Bulto: ${bultoRef || 'No'})`);
+                logger.info(`[SyncLogistics] Procesando item con código: ${code} (Bulto: ${bultoRef || 'No'})`);
             } else if (item.noDocERP) {
                 const docId = item.noDocERP.toString().trim();
-                console.log(`[SyncLogistics] Procesando por NoDocERP directo: ${docId}`);
+                logger.info(`[SyncLogistics] Procesando por NoDocERP directo: ${docId}`);
                 if (!docsToSync.has(docId)) docsToSync.set(docId, { bultoCode: null, notes: '', price: null, quantity: null, profile: null, reactPayload: null, erpPayload: null });
                 continue;
             }
@@ -1680,7 +1681,7 @@ exports.syncDepositStock = async (req, res) => {
 
                 // Fallback: Si no se encontró por QR, intentar por CodigoOrden explícito si existe
                 if (orderInfo.recordset.length === 0 && item.CodigoOrden) {
-                    console.log(`[SyncLogistics] Fallback: Buscando por CodigoOrden explícito: ${item.CodigoOrden}`);
+                    logger.info(`[SyncLogistics] Fallback: Buscando por CodigoOrden explícito: ${item.CodigoOrden}`);
                     const fallbackInfo = await pool.request()
                         .input('C', sql.VarChar, item.CodigoOrden)
                         .query("SELECT TOP 1 NoDocERP FROM Ordenes WHERE CodigoOrden = @C OR CodigoOrden LIKE @C + ' (%)'");
@@ -1691,7 +1692,7 @@ exports.syncDepositStock = async (req, res) => {
 
                 if (orderInfo.recordset.length > 0 && orderInfo.recordset[0].NoDocERP) {
                     const docId = orderInfo.recordset[0].NoDocERP.toString().trim();
-                    console.log(`[SyncLogistics] Documento encontrado: ${docId} para código: ${code}`);
+                    logger.info(`[SyncLogistics] Documento encontrado: ${docId} para código: ${code}`);
                     const existing = docsToSync.get(docId) || { bultoCode: null, notes: '', price: null, quantity: null, profile: null, reactPayload: null, erpPayload: null };
 
                     docsToSync.set(docId, {
@@ -1704,17 +1705,17 @@ exports.syncDepositStock = async (req, res) => {
                         erpPayload: item.erpPayload || existing.erpPayload
                     });
                 } else {
-                    console.log(`[SyncLogistics] NO se encontró NoDocERP en la base de datos para: ${code}`);
+                    logger.info(`[SyncLogistics] NO se encontró NoDocERP en la base de datos para: ${code}`);
                 }
             }
         }
 
-        console.log(`[SyncLogistics] Total de documentos únicos a sincronizar: ${docsToSync.size}`, Array.from(docsToSync.keys()));
+        logger.info(`[SyncLogistics] Total de documentos únicos a sincronizar: ${docsToSync.size}`, Array.from(docsToSync.keys()));
 
         // 2. Ejecutar Sincronización Integral por Documento
         for (const [doc, data] of docsToSync.entries()) {
             try {
-                console.log(`[SyncLogistics] Ejecutando Sync Integral para Doc: ${doc} ${data.bultoCode ? '(Bulto: ' + data.bultoCode + ')' : ''}`);
+                logger.info(`[SyncLogistics] Ejecutando Sync Integral para Doc: ${doc} ${data.bultoCode ? '(Bulto: ' + data.bultoCode + ')' : ''}`);
 
                 const syncRes = await ERPSyncService.syncFinalOrderIntegration(doc, req.user?.id || 1, req.user?.usuario || 'Sistema', data.bultoCode, {
                     userNotes: data.notes,
@@ -1736,7 +1737,7 @@ exports.syncDepositStock = async (req, res) => {
                     erp: syncRes.erpSuccess ? 'OK' : 'Error'
                 });
             } catch (docErr) {
-                console.error(`[SyncLogistics] Error en documento ${doc}:`, docErr.message);
+                logger.error(`[SyncLogistics] Error en documento ${doc}:`, docErr.message);
                 results.push({
                     document: doc,
                     success: false,
@@ -1748,7 +1749,7 @@ exports.syncDepositStock = async (req, res) => {
         res.json({ success: true, results });
 
     } catch (err) {
-        console.error("Error syncDepositStock:", err);
+        logger.error("Error syncDepositStock:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1803,7 +1804,7 @@ exports.recalculateDepositStockPrices = async (req, res) => {
 
         res.json(results);
     } catch (err) {
-        console.error("Error recalculateDepositStockPrices:", err);
+        logger.error("Error recalculateDepositStockPrices:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -1882,7 +1883,7 @@ exports.releaseDepositStock = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error releaseDepositStock:", err);
+        logger.error("Error releaseDepositStock:", err);
         res.status(500).json({ error: err.message });
     }
 };

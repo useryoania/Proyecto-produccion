@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Obtener todas las reglas
 exports.getAllRules = async (req, res) => {
@@ -7,7 +8,7 @@ exports.getAllRules = async (req, res) => {
         const result = await pool.request().query("SELECT * FROM dbo.ConfiguracionRutas ORDER BY Prioridad ASC");
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error getting rules:", err);
+        logger.error("Error getting rules:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -26,7 +27,7 @@ exports.createRule = async (req, res) => {
 
         res.json({ success: true, message: 'Regla creada' });
     } catch (err) {
-        console.error("Error creating rule:", err);
+        logger.error("Error creating rule:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -49,7 +50,7 @@ exports.updateRule = async (req, res) => {
 
         res.json({ success: true, message: 'Regla actualizada' });
     } catch (err) {
-        console.error("Error updating rule:", err);
+        logger.error("Error updating rule:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -65,7 +66,7 @@ exports.deleteRule = async (req, res) => {
 
         res.json({ success: true, message: 'Regla eliminada' });
     } catch (err) {
-        console.error("Error deleting rule:", err);
+        logger.error("Error deleting rule:", err);
         res.status(500).json({ error: err.message });
     }
 };

@@ -142,7 +142,7 @@ export const UnpaidPickupsView = () => {
                                         isLoading={payingId === retiro.OrdIdRetiro}
                                         disabled={payingId !== null}
                                         icon={CreditCard}
-                                        className="w-1/2 !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
+                                        className="w-1/2 md:w-auto !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
                                         whileHover={{ scale: 1 }}
                                         whileTap={{ scale: 1 }}
                                     >

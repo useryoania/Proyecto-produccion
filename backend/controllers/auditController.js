@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 exports.getAll = async (req, res) => {
     try {
@@ -19,7 +20,7 @@ exports.getAll = async (req, res) => {
         `);
         res.json(result.recordset);
     } catch (err) {
-        console.error('Error getting audit logs:', err);
+        logger.error('Error getting audit logs:', err);
         res.status(500).json({ error: err.message });
     }
 };

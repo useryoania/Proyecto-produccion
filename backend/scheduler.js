@@ -1,6 +1,7 @@
 // 1. Cambia './controllers/tuControlador' por el nombre REAL de tu archivo
 const { syncOrdersLogic } = require('./controllers/RestSyncController');
 const { getPool } = require('./config/db');
+const logger = require('./utils/logger');
 
 async function startAutoSync(io) {
     try {
@@ -16,12 +17,12 @@ async function startAutoSync(io) {
         const partes = tiempoStr.split(':').map(Number);
         const intervalMs = ((partes[0] * 3600) + (partes[1] * 60) + partes[2]) * 1000;
 
-        console.log(`⏱️ Sincronización programada cada: ${tiempoStr} (${intervalMs}ms)`);
+        logger.info(`⏱️ Sincronización programada cada: ${tiempoStr} (${intervalMs}ms)`);
 
         // Ejecutar inmediatamente al arrancar para no esperar al primer intervalo
         // Nota: No bloqueamos con isSyncing aquí para permitir arranque, pero sí deberíamos.
         // Mejor dejar que el intervalo controle, o ejecutar con flag.
-        console.log("🔄 Ejecutando primera sincronización al arrancar...");
+        logger.info("🔄 Ejecutando primera sincronización al arrancar...");
         // Opcional: await syncOrdersLogic(io); 
         // Si ejecutamos directo aqui, el intervalo podría solaparse si es muy corto.
         // Mejor lanzarlo "fire and forget" o manejar el flag globalmente.
@@ -34,7 +35,7 @@ async function startAutoSync(io) {
         }, intervalMs);
 
     } catch (error) {
-        console.error("❌ Error en el Scheduler Start:", error.message);
+        logger.error("❌ Error en el Scheduler Start:", error.message);
     }
 }
 
@@ -43,19 +44,19 @@ let isSyncing = false;
 
 async function checkAndSync(io) {
     if (isSyncing) {
-        console.warn("⚠️ [Sync] Ciclo omitido: La sincronización anterior sigue en curso (Posible lentitud de red/BD).");
+        logger.warn("⚠️ [Sync] Ciclo omitido: La sincronización anterior sigue en curso (Posible lentitud de red/BD).");
         return;
     }
 
     isSyncing = true;
     try {
-        console.log("🔄 Ejecutando Sync Automática...");
+        logger.info("🔄 Ejecutando Sync Automática...");
         await syncOrdersLogic(io);
     } catch (err) {
-        console.error("⚠️ Error en ciclo automático de Sync:", err.message);
+        logger.error("⚠️ Error en ciclo automático de Sync:", err.message);
     } finally {
         isSyncing = false;
-        // console.log("✅ Ciclo de Sync finalizado. Esperando siguiente turno.");
+        // logger.info("✅ Ciclo de Sync finalizado. Esperando siguiente turno.");
     }
 }
 

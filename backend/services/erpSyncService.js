@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { sql, getPool } = require('../config/db');
 const PricingService = require('./pricingService');
+const logger = require('../utils/logger');
 
 class ERPSyncService {
 
@@ -13,7 +14,7 @@ class ERPSyncService {
         if (!noDocERP) throw new Error("NoDocERP es requerido para la sincronización.");
 
         const pool = await getPool();
-        console.log(`[ERPSync] Iniciando integración final para NoDocERP: ${noDocERP}${bultoCode ? ' (Bulto: ' + bultoCode + ')' : ''}`);
+        logger.info(`[ERPSync] Iniciando integración final para NoDocERP: ${noDocERP}${bultoCode ? ' (Bulto: ' + bultoCode + ')' : ''}`);
 
         // 1. Obtener todas las órdenes del documento
         const orderRes = await pool.request()
@@ -91,7 +92,7 @@ class ERPSyncService {
                     costoCalculado = parseFloat(priceOverride);
                     precioUnitario = effectiveQty > 0 ? costoCalculado / effectiveQty : costoCalculado;
                     textLog = "Precio Ajustado Manualmente";
-                    console.log(`[ERPSync] Aplicando Precio Override: ${costoCalculado}`);
+                    logger.info(`[ERPSync] Aplicando Precio Override: ${costoCalculado}`);
                 } else {
                     const priceResult = await PricingService.calculatePrice(
                         sib.CodArticulo || '',
@@ -160,7 +161,7 @@ class ERPSyncService {
                 }
 
             } catch (errCalc) {
-                console.error(`[ERPSync] Error calculando precio para Orden ${sib.OrdenID}:`, errCalc.message);
+                logger.error(`[ERPSync] Error calculando precio para Orden ${sib.OrdenID}:`, errCalc.message);
             }
         }
 
@@ -211,20 +212,20 @@ class ERPSyncService {
         // 5.5 Guardar Detalle para Etiquetas (Validación visual de costos)
         const textBreakdown = detallesCobranza.map(d => `- ${d.CodArticulo}: ${d.Cantidad} x ${d.PrecioUnitario} = ${d.Subtotal} (${d.LogPrecioAplicado})`).join('\n');
 
-        console.log(`\n======================================================\n[ERPSync] DESGLOSE DE PRECIOS CALCULADOS PARA ${noDocERP}\n${textBreakdown}\n======================================================\n`);
+        logger.info(`\n======================================================\n[ERPSync] DESGLOSE DE PRECIOS CALCULADOS PARA ${noDocERP}\n${textBreakdown}\n======================================================\n`);
 
         await pool.request()
             .input('Break', sql.NVarChar(sql.MAX), textBreakdown)
             .input('OID', sql.Int, siblings[0].OrdenID)
             .query("UPDATE Etiquetas SET DetalleCostos = @Break WHERE OrdenID = @OID");
 
-        console.log(`[ERPSync] React Code ($*): ${reactCode}`);
+        logger.info(`[ERPSync] React Code ($*): ${reactCode}`);
 
         // 6. Escribir en OrdenesDeposito directamente (migrado de API React)
         let reactSuccess = false;
         if (!syncTarget || syncTarget === 'REACT') {
             if (options.isReactEnabledGlobal === false) {
-                console.log(`[ERPSync] BYPASS REACT por configuración global (Desactivado).`);
+                logger.info(`[ERPSync] BYPASS REACT por configuración global (Desactivado).`);
                 reactSuccess = true;
                 await pool.request()
                     .input('N', sql.VarChar, noDocERP.toString())
@@ -239,7 +240,7 @@ class ERPSyncService {
                     ordenString = reactCode;
                 }
 
-                console.log(`[ERPSync] --> INSERTANDO EN OrdenesDeposito directamente...`, ordenString);
+                logger.info(`[ERPSync] --> INSERTANDO EN OrdenesDeposito directamente...`, ordenString);
 
                 try {
                     // Parsear el string QR: $CodigoOrden$*CodigoCliente$*NombreTrabajo$*IdModo$*IdProducto$*Cantidad$*CostoFinal
@@ -278,7 +279,7 @@ class ERPSyncService {
                                         OrdFechaEstadoActual = GETDATE(), OrdUsuarioAlta = @Usr
                                     WHERE OrdCodigoOrden = @Cod
                                 `);
-                            console.log(`[ERPSync] Orden existente actualizada: ${CodigoOrden}`);
+                            logger.info(`[ERPSync] Orden existente actualizada: ${CodigoOrden}`);
                         } else {
                             // Tiene orden de retiro, verificar si fue entregada para re-ingresar
                             const retiroCheck = await pool.request()
@@ -296,9 +297,9 @@ class ERPSyncService {
                                     .input('Usr', sql.Int, userId)
                                     .query(`INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@OID, 1, GETDATE(), @Usr)`);
 
-                                console.log(`[ERPSync] Orden re-ingresada: ${CodigoOrden}`);
+                                logger.info(`[ERPSync] Orden re-ingresada: ${CodigoOrden}`);
                             } else {
-                                console.log(`[ERPSync] Orden ${CodigoOrden} ya existe con retiro activo, omitiendo.`);
+                                logger.info(`[ERPSync] Orden ${CodigoOrden} ya existe con retiro activo, omitiendo.`);
                             }
                         }
                     } else {
@@ -339,7 +340,7 @@ class ERPSyncService {
                                 .input('Usr', sql.Int, userId)
                                 .query(`INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@OID, 1, GETDATE(), @Usr)`);
                         }
-                        console.log(`[ERPSync] Orden nueva creada: ${CodigoOrden} (ID: ${newOrderId})`);
+                        logger.info(`[ERPSync] Orden nueva creada: ${CodigoOrden} (ID: ${newOrderId})`);
                     }
 
                     reactSuccess = true;
@@ -349,7 +350,7 @@ class ERPSyncService {
                         .query("UPDATE PedidosCobranza SET EstadoSyncReact = 'Enviado_OK', ObsReact = @P WHERE NoDocERP = @Doc");
 
                 } catch (eReact) {
-                    console.error(`[ERPSync] Error al insertar en OrdenesDeposito:`, eReact.message);
+                    logger.error(`[ERPSync] Error al insertar en OrdenesDeposito:`, eReact.message);
                     await pool.request()
                         .input('Doc', sql.NVarChar, noDocERP)
                         .input('E', sql.NVarChar(sql.MAX), JSON.stringify({ error: eReact.message }))
@@ -357,7 +358,7 @@ class ERPSyncService {
                 }
             }
         } else {
-            console.log(`[ERPSync] Omite REACT por filtro de target: ${syncTarget}`);
+            logger.info(`[ERPSync] Omite REACT por filtro de target: ${syncTarget}`);
             const current = await pool.request().input('Doc', sql.NVarChar, noDocERP).query("SELECT EstadoSyncReact FROM PedidosCobranza WHERE NoDocERP = @Doc");
             if (current.recordset[0]?.EstadoSyncReact === 'Enviado_OK') reactSuccess = true;
         }
@@ -368,7 +369,7 @@ class ERPSyncService {
 
         if (!syncTarget || syncTarget === 'ERP') {
             if (options.isErpEnabledGlobal === false) {
-                console.log(`[ERPSync] BYPASS ERP por configuración global (Desactivado).`);
+                logger.info(`[ERPSync] BYPASS ERP por configuración global (Desactivado).`);
                 erpSuccess = true;
                 const pool = await getPool();
                 await pool.request()
@@ -376,7 +377,7 @@ class ERPSyncService {
                     .input('D', sql.NVarChar(sql.MAX), JSON.stringify({ bypassed: true }))
                     .query("UPDATE PedidosCobranza SET EstadoSyncERP = 'Enviado_OK', ObsERP = @D WHERE NoDocERP = @N");
             } else {
-                console.log(`[ERPSync] Iniciando envío selectivo a ERP para ${noDocERP}${forcedErpPayload ? ' (USANDO PAYLOAD FORZADO)' : ''}`);
+                logger.info(`[ERPSync] Iniciando envío selectivo a ERP para ${noDocERP}${forcedErpPayload ? ' (USANDO PAYLOAD FORZADO)' : ''}`);
                 try {
                     const erpToken = await this.getMacrosoftToken();
                     if (erpToken) {
@@ -399,11 +400,11 @@ class ERPSyncService {
                             headers: { 'Authorization': `Bearer ${erpToken}`, 'Content-Type': 'application/json' }
                         });
 
-                        console.log(`[ERPSync] <-- RESPUESTA ERP Macrosoft: Status ${erpRes.status}`, erpRes.data);
+                        logger.info(`[ERPSync] <-- RESPUESTA ERP Macrosoft: Status ${erpRes.status}`, erpRes.data);
 
                         if ((erpRes.status === 200 || erpRes.status === 201) && erpRes.data?.success !== false && !erpRes.data?.error) {
                             erpSuccess = true;
-                            console.log(`[ERPSync] OK ERP Macrosoft para ${noDocERP}`);
+                            logger.info(`[ERPSync] OK ERP Macrosoft para ${noDocERP}`);
                             await pool.request()
                                 .input('Doc', sql.NVarChar, noDocERP)
                                 .input('P', sql.NVarChar(sql.MAX), JSON.stringify(erpPayload))
@@ -414,7 +415,7 @@ class ERPSyncService {
                     }
                 } catch (eErp) {
                     const errLog = eErp.response?.data || { error: eErp.message };
-                    console.error(`[ERPSync] Error al enviar a ERP Macrosoft:`, eErp.message);
+                    logger.error(`[ERPSync] Error al enviar a ERP Macrosoft:`, eErp.message);
                     await pool.request()
                         .input('Doc', sql.NVarChar, noDocERP)
                         .input('E', sql.NVarChar(sql.MAX), JSON.stringify(errLog))
@@ -422,7 +423,7 @@ class ERPSyncService {
                 }
             } // Fin if/else desactivado global
         } else {
-            console.log(`[ERPSync] Omite ERP por filtro de target: ${syncTarget}`);
+            logger.info(`[ERPSync] Omite ERP por filtro de target: ${syncTarget}`);
             const current = await pool.request().input('Doc', sql.NVarChar, noDocERP).query("SELECT EstadoSyncERP FROM PedidosCobranza WHERE NoDocERP = @Doc");
             if (current.recordset[0]?.EstadoSyncERP === 'Enviado_OK') erpSuccess = true;
         }

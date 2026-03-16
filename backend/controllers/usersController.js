@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 exports.getAll = async (req, res) => {
     try {
@@ -6,7 +7,7 @@ exports.getAll = async (req, res) => {
         const result = await pool.request().query('SELECT IdUsuario, Usuario, Email, IdRol, IdCargo, Activo, FechaCreacion, Nombre, AreaUsuario FROM Usuarios');
         res.json(result.recordset);
     } catch (err) {
-        console.error('Error getting users:', err);
+        logger.error('Error getting users:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -39,7 +40,7 @@ exports.create = async (req, res) => {
 
         res.json({ success: true, message: 'Usuario creado', IdUsuario: result.recordset[0].IdUsuario });
     } catch (err) {
-        console.error('Error creating user:', err);
+        logger.error('Error creating user:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -75,7 +76,7 @@ exports.update = async (req, res) => {
         await request.query(query);
         res.json({ success: true, message: 'Usuario actualizado' });
     } catch (err) {
-        console.error('Error updating user:', err);
+        logger.error('Error updating user:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -89,7 +90,7 @@ exports.delete = async (req, res) => {
             .query('DELETE FROM Usuarios WHERE IdUsuario = @IdUsuario');
         res.json({ success: true, message: 'Usuario eliminado' });
     } catch (err) {
-        console.error('Error deleting user:', err);
+        logger.error('Error deleting user:', err);
         res.status(500).json({ error: err.message });
     }
 };
