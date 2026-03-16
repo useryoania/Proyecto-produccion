@@ -829,3 +829,72 @@ exports.seedConfigEstantes = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+/**
+ * Historial completo de retiros de un cliente (todos los estados)
+ */
+exports.getMyRetirosHistorial = async (req, res) => {
+    try {
+        const codCliente = req.user?.codCliente || req.user?.id;
+        if (!codCliente) return res.status(401).json({ error: "Usuario sin código de cliente" });
+
+        const pool = await getPool();
+        const query = `
+            SELECT 
+                COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
+                r.OReCostoTotalOrden AS Monto,
+                r.MonIdMoneda AS Moneda,
+                r.OReEstadoActual AS Estado,
+                r.CodCliente,
+                r.OReFechaAlta AS Fecha,
+                r.FormaRetiro,
+                fe.Nombre AS LugarRetiro,
+                COALESCE(ag.Nombre, r.AgenciaOtra) AS AgenciaNombre,
+                o.OrdCodigoOrden,
+                o.OrdNombreTrabajo,
+                o.OrdCostoFinal,
+                m.MonSimbolo
+            FROM OrdenesRetiro r WITH(NOLOCK)
+            LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
+            LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
+            LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+            LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
+            WHERE r.CodCliente = @codCliente
+            ORDER BY r.OReFechaAlta DESC
+        `;
+        const result = await pool.request()
+            .input('codCliente', sql.Int, parseInt(codCliente, 10))
+            .query(query);
+
+        // Group by retiro
+        const retirosMap = {};
+        for (const row of result.recordset) {
+            if (!retirosMap[row.OrdIdRetiro]) {
+                retirosMap[row.OrdIdRetiro] = {
+                    OrdIdRetiro: row.OrdIdRetiro,
+                    Monto: row.Monto,
+                    Moneda: row.Moneda,
+                    Estado: row.Estado,
+                    Fecha: row.Fecha,
+                    FormaRetiro: row.FormaRetiro,
+                    LugarRetiro: row.LugarRetiro,
+                    AgenciaNombre: row.AgenciaNombre,
+                    Ordenes: []
+                };
+            }
+            if (row.OrdCodigoOrden) {
+                retirosMap[row.OrdIdRetiro].Ordenes.push({
+                    codigo: row.OrdCodigoOrden,
+                    nombre: row.OrdNombreTrabajo || row.OrdCodigoOrden,
+                    costo: parseFloat(row.OrdCostoFinal) || 0,
+                    moneda: row.MonSimbolo || '$'
+                });
+            }
+        }
+
+        res.json(Object.values(retirosMap));
+    } catch (err) {
+        console.error("Error get_my_retiros_historial:", err);
+        res.status(500).json({ error: err.message });
+    }
+};

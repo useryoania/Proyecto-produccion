@@ -4,8 +4,9 @@ import api, { SOCKET_URL } from '../../services/apiClient';
 import { io } from 'socket.io-client';
 import {
     DollarSign, CreditCard, Search, X, CheckCircle, AlertTriangle,
-    RefreshCw, Loader2, User, Phone, Package, FileText, Filter
+    RefreshCw, Loader2, User, Phone, Package, FileText, Filter, SearchAlert
 } from 'lucide-react';
+import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
 
 export const CargaGestionPagosView = () => {
     const { user } = useAuth();
@@ -23,6 +24,7 @@ export const CargaGestionPagosView = () => {
     const [cotizacionFecha, setCotizacionFecha] = useState(null);
     const [loadingCotizacion, setLoadingCotizacion] = useState(false);
     const [cotFlash, setCotFlash] = useState(false);
+    const [cotSpin, setCotSpin] = useState(0);
     const [isManualCotizacion, setIsManualCotizacion] = useState(false);
     const [manualCotizacion, setManualCotizacion] = useState('');
 
@@ -318,7 +320,7 @@ export const CargaGestionPagosView = () => {
     }
 
     return (
-        <div className="min-h-full flex flex-col gap-5 p-4 lg:p-8 font-sans bg-[#f6f8fb]">
+        <div className="min-h-full flex flex-col gap-5 p-4 lg:px-8 lg:py-4 font-sans bg-slate-100">
 
             {/* Cabecera / Controles */}
             {/* <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end mb-8"> */}
@@ -385,67 +387,91 @@ export const CargaGestionPagosView = () => {
 
 
             {/* ─── FORMULARIO DE PAGO (COMPACTO) ──────────── */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+            <div className="bg-white rounded-2xl border border-transparent shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-4">
                 <div className="flex items-end gap-3 flex-wrap">
                     {/* Forma de pago */}
-                    <div className="flex flex-col gap-1 min-w-[180px] flex-1">
+                    <div className="flex flex-col gap-1 flex-1 min-w-[150px]">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Método de Pago</label>
-                        <select
-                            className="bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 outline-none focus:border-blue-500 text-sm font-semibold"
+                        <CustomSelect
                             value={formaPago}
-                            onChange={(e) => setFormaPago(e.target.value)}
-                        >
-                            <option value="">Seleccione...</option>
-                            {metodosPago.map((m) => (
-                                <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>
-                            ))}
-                        </select>
+                            onChange={(val) => setFormaPago(val)}
+                            options={metodosPago.map(m => ({ value: String(m.MPaIdMetodoPago), label: m.MPaDescripcionMetodo }))}
+                            placeholder="Seleccione..."
+                            variant="light"
+                            size="small"
+                        />
                     </div>
 
-                    {/* Moneda */}
-                    <div className="flex flex-col gap-1 w-[100px]">
+                    {/* Moneda — toggle segmentado */}
+                    <div className="flex flex-col gap-1">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Moneda</label>
-                        <select
-                            className="bg-slate-50 border-2 border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 outline-none focus:border-blue-500 text-sm font-semibold"
-                            value={moneda}
-                            onChange={handleCurrencyChange}
+                        <div 
+                            className="flex rounded-lg border border-slate-200 overflow-hidden cursor-pointer select-none"
+                            onClick={() => handleCurrencyChange({ target: { value: moneda === 'USD' ? 'UYU' : 'USD' } })}
                         >
-                            <option value="USD">US$</option>
-                            <option value="UYU">$</option>
-                        </select>
+                            <div className={`w-[50px] py-2.5 text-sm font-bold transition-all text-center ${moneda === 'UYU' ? 'bg-brand-cyan text-white' : 'bg-white text-slate-500'}`}>$</div>
+                            <div className={`w-[50px] py-2.5 text-sm font-bold transition-all text-center border-l border-slate-200 ${moneda === 'USD' ? 'bg-brand-magenta text-white' : 'bg-white text-slate-500'}`}>US$</div>
+                        </div>
                     </div>
 
-                    {/* Monto + Botón Pagar */}
-                    <div className="flex items-end gap-2 flex-1 min-w-[280px]">
-                        <div className="flex flex-col gap-1 flex-1">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Monto a cobrar</label>
+                    {/* Monto */}
+                    <div className="flex items-end gap-2">
+                        <div className="flex flex-col gap-1 w-[160px]">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Importe</label>
                             <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">{moneda === 'USD' ? 'U$S' : '$'}</span>
                                 <input
                                     type="number"
-                                    placeholder="0.00"
-                                    className="w-full bg-slate-50 border-2 border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-slate-800 outline-none focus:border-blue-500 text-lg font-black"
+                                    placeholder={moneda === 'USD' ? 'US$ - 0,00' : '$ - 0,00'}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-4 p-2.5 text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-black transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     value={monto}
                                     onChange={(e) => setMonto(e.target.value)}
                                 />
                             </div>
                         </div>
-                        <button
-                            onClick={handleRealizarPago}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition-all hover:scale-[1.02] text-sm whitespace-nowrap flex items-center gap-2"
-                        >
-                            <CreditCard size={16} /> Realizar Pago
-                        </button>
                     </div>
 
                     {/* Comprobante */}
-                    <div className="flex flex-col gap-1 min-w-[160px]">
+                    <div className="flex flex-col gap-1">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Comprobante</label>
                         <input
                             type="file"
                             id="file-upload"
                             onChange={(e) => setFileComprobante(e.target.files[0])}
-                            className="text-xs border-2 border-dashed border-slate-200 p-2 rounded-xl cursor-pointer hover:border-blue-400 transition-colors"
+                            className="hidden"
+                        />
+                        <label
+                            htmlFor="file-upload"
+                            className="bg-white border border-slate-200 rounded-lg p-2.5 text-sm text-slate-500 cursor-pointer hover:border-blue-400 transition-all truncate max-w-[180px]"
+                        >
+                            {fileComprobante ? fileComprobante.name : 'Adjuntar archivo...'}
+                        </label>
+                    </div>
+
+                    {/* Separador */}
+                    <div className="self-center w-px h-12 bg-slate-300"></div>
+
+                    {/* Cotización */}
+                    <div className="flex items-center gap-4 self-center">
+                        <div className="flex flex-col justify-center text-center">
+                            <div className="flex items-center justify-center gap-2 text-sm">
+                                <span className="font-bold text-brand-cyan uppercase tracking-wider">Cotización</span>
+                                {cotizacionFecha && (
+                                    <span className="text-brand-cyan font-semibold">{cotizacionFecha.toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit', year: '2-digit' })} {cotizacionFecha.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+                                )}
+                            </div>
+                            <div className="text-sm lg:text-lg font-black text-slate-700 whitespace-nowrap">
+                                {cotizacion !== null ? (
+                                    <span>1 Dólar = ${Number(cotizacion).toFixed(2)} Pesos</span>
+                                ) : (
+                                    <span className="text-slate-400 font-medium">Sin cotización</span>
+                                )}
+                            </div>
+                        </div>
+                        <RefreshCw
+                            size={28}
+                            className="text-brand-dark cursor-pointer transition-transform duration-300"
+                            style={{ transform: `rotate(${cotSpin}deg)` }}
+                            onClick={() => { setCotSpin(s => s + 180); handleBuscarCotizacion(); }}
                         />
                     </div>
                 </div>
@@ -453,46 +479,39 @@ export const CargaGestionPagosView = () => {
 
 
             {/* ─── CONTENIDO PRINCIPAL ─────────────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 flex-1">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 flex-1">
 
                 {/* PANEL IZQUIERDO: Lista de Retiros */}
-                <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col">
+                <div className="bg-white rounded-2xl border border-transparent shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-4 flex flex-col">
 
                     {/* Filtro rápido + Buscador */}
-                    <div className="flex items-center gap-2 mb-3 flex-wrap">
-                        <div className="relative flex-1 min-w-[180px]">
-                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <div className="flex items-end gap-3 mb-3 flex-wrap">
+                        <div className="flex flex-col gap-1 flex-1 min-w-[150px]">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Buscar retiros</label>
                             <input
                                 type="text"
-                                placeholder="Filtrar retiros..."
-                                className="w-full pl-9 pr-3 py-2 border-2 border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 bg-slate-50"
+                                placeholder="Buscar..."
+                                className="w-full bg-white border border-slate-200 rounded-lg px-4 p-2.5 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex flex-col gap-1 flex-1 min-w-[150px]">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Buscar situación</label>
                             <input
                                 type="text"
-                                placeholder="Buscar situación..."
-                                className="w-36 pl-3 pr-2 py-2 border-2 border-blue-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 bg-blue-50"
+                                placeholder="Buscar..."
+                                className="w-full bg-white border border-slate-200 rounded-lg px-4 p-2.5 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                                 value={searchInput}
                                 onChange={(e) => setSearchInput(e.target.value)}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                             />
-                            <button
-                                onClick={handleSearch}
-                                disabled={searchLoading}
-                                className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-xl transition-all disabled:opacity-50"
-                                title="Buscar situación de pago"
-                            >
-                                {searchLoading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                            </button>
                         </div>
                     </div>
 
                     {/* Filtros por tipo de cliente */}
-                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                        <Filter size={12} className="text-slate-400" />
+                    <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+                        <Filter size={18} className="text-slate-400" />
                         {[
                             { val: 'todos', label: 'Todos' },
                             { val: '1', label: 'Comunes' },
@@ -503,23 +522,25 @@ export const CargaGestionPagosView = () => {
                                 onClick={() => setFiltroTipoCliente(f.val)}
                                 className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border
                                     ${filtroTipoCliente === f.val
-                                        ? 'bg-blue-600 text-white border-blue-600'
-                                        : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
+                                        ? 'bg-brand-cyan text-white border-brand-cyan shadow-sm'
+                                        : 'bg-white text-slate-600 border-slate-200 hover:border-brand-cyan hover:text-brand-cyan'
                                     }`}
                             >
                                 {f.label}
                             </button>
                         ))}
-                        <label className="flex items-center gap-1 text-xs text-slate-500 ml-2 cursor-pointer select-none">
-                            <input
-                                type="checkbox"
-                                checked={incluirSemanales}
-                                onChange={(e) => setIncluirSemanales(e.target.checked)}
-                                className="rounded border-slate-300"
-                            />
+                        <label
+                            className="flex items-center gap-1.5 text-xs text-slate-500 ml-2 cursor-pointer select-none"
+                            onClick={() => setIncluirSemanales(!incluirSemanales)}
+                        >
+                            {incluirSemanales ? (
+                                <CheckCircle size={20} className="text-brand-cyan" />
+                            ) : (
+                                <div className="w-5 h-5 rounded-full border-2 border-slate-300" />
+                            )}
                             Semanales
                         </label>
-                        <span className="ml-auto text-xs text-slate-400 font-semibold">{filteredRetiros.length} retiros</span>
+                        <span className="ml-auto text-xs text-brand-cyan font-bold uppercase">{filteredRetiros.length} retiros</span>
                     </div>
                     {/* <p className="text-[10px] text-slate-400 mb-3 leading-tight">
                 Muestra retiros <strong>con cobro pendiente</strong> (Ingresado, Pasar por caja, Abonado de antemano con saldo, Empaquetado sin abonar).
@@ -527,7 +548,7 @@ export const CargaGestionPagosView = () => {
             </p> */}
 
                     {/* Lista de retiros — chips compactos */}
-                    <div className="grid grid-cols-3 gap-2 overflow-y-auto max-h-[60vh] pr-1">
+                    <div className="grid grid-cols-3 gap-1 overflow-y-auto max-h-[60vh] pr-1">
                         {filteredRetiros.length === 0 ? (
                             <p className="text-sm text-slate-400 text-center w-full py-8">No hay órdenes pendientes de pago.</p>
                         ) : (
@@ -538,10 +559,10 @@ export const CargaGestionPagosView = () => {
                                         key={retiro.ordenDeRetiro}
                                         onClick={() => handleSelectRetiro(retiro)}
                                         title={retiro.CliNombre || retiro.CliCodigoCliente || ''}
-                                        className={`px-4 py-2 rounded-xl border-2 font-black text-sm transition-all whitespace-nowrap
+                                        className={`px-4 py-2.5 rounded-lg border font-black text-sm transition-all whitespace-nowrap
                                             ${isSelected
-                                                ? 'bg-blue-600 border-blue-600 text-white shadow-md scale-105'
-                                                : 'bg-white border-slate-200 text-slate-700 hover:border-blue-400 hover:text-blue-600'
+                                                ? 'bg-brand-cyan border-brand-cyan text-white shadow-[0_2px_8px_rgba(0,0,0,0.2)]'
+                                                : 'bg-white border-slate-200 text-slate-700 hover:border-brand-cyan hover:text-brand-cyan'
                                             }`}
                                     >
                                         {retiro.ordenDeRetiro}
@@ -553,55 +574,18 @@ export const CargaGestionPagosView = () => {
                 </div>
 
                 {/* PANEL DERECHO: Cotización + Detalle del Retiro */}
-                <div className="lg:col-span-3 flex flex-col gap-4">
+                <div className="flex flex-col gap-4">
 
-                    {/* Cotización del Dólar — click en todo el div para actualizar */}
-                    <div
-                        onClick={() => { if (!isManualCotizacion && cotizacion !== null) handleBuscarCotizacion(); }}
-                        className={`rounded-2xl py-4 px-5 flex flex-col items-center justify-center gap-1 transition-all duration-300
-                            ${!isManualCotizacion && cotizacion !== null ? 'cursor-pointer hover:shadow-lg' : ''}`}
-                        style={cotFlash
-                            ? { background: 'linear-gradient(135deg, #006E97, #007daa)', boxShadow: '0 4px 14px rgba(0,110,151,0.35)', color: '#fff' }
-                            : { background: 'linear-gradient(135deg, #00AEEF, #00c6ff)', color: '#fff' }}
+                    {/* Botón Realizar Pago */}
+                    <button
+                        onClick={handleRealizarPago}
+                        className={`${moneda === 'UYU' ? 'bg-brand-cyan hover:bg-brand-cyan/90' : 'bg-brand-magenta hover:bg-brand-magenta/90'} text-white font-bold py-10 px-6 rounded-2xl border border-transparent shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-all hover:scale-[1.02] active:scale-[0.97] text-xl uppercase tracking-wider whitespace-nowrap flex items-center justify-center gap-3`}
                     >
-                        <h3 className={`text-xs font-bold uppercase tracking-wider transition-colors duration-300 ${cotFlash ? 'text-white/80' : 'text-white/70'}`}>Cotización</h3>
-
-                        {cotizacion !== null ? (
-                            <>
-                                <p className="text-lg font-black text-white tracking-tight">
-                                    US$ 1 <span className="text-white/50 font-medium mx-1">=</span> $ {Number(cotizacion).toFixed(2)}
-                                </p>
-                                {cotizacionFecha && (
-                                    <p className="text-[10px] text-white/50">
-                                        {cotizacionFecha.toLocaleDateString('es-UY')} {cotizacionFecha.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit' })}
-                                    </p>
-                                )}
-                            </>
-                        ) : (
-                            <p className="text-sm text-white/60">Click para buscar cotización</p>
-                        )}
-
-                        {(isManualCotizacion || cotizacion === null) && (
-                            <div className="flex items-center gap-2 mt-1" onClick={(e) => e.stopPropagation()}>
-                                <input
-                                    type="number"
-                                    value={manualCotizacion}
-                                    onChange={(e) => setManualCotizacion(e.target.value)}
-                                    placeholder="42.50"
-                                    className="w-24 border-2 border-amber-300 rounded-xl px-2 py-1.5 font-bold text-center text-sm focus:border-blue-500 outline-none bg-amber-50"
-                                />
-                                <button
-                                    onClick={handleSetManualCotizacion}
-                                    className="bg-amber-500 hover:bg-amber-600 text-white font-bold py-1.5 px-3 rounded-xl text-xs transition-all"
-                                >
-                                    OK
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                        <CreditCard size={24} /> Realizar Pago
+                    </button>
 
                     {/* Detalle del Retiro */}
-                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col flex-1">
+                    <div className="bg-white rounded-2xl border border-transparent shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-5 flex flex-col flex-1">
                     {selectedRetiro ? (
                         <>
                             {/* Header del retiro — sin total duplicado */}

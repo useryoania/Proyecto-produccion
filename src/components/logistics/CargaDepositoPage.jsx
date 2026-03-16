@@ -495,7 +495,7 @@ const CargaDepositoPage = () => {
                     <PackageSearch className="text-[#409cf9]" size={16} /> Validaciones
                 </h2>
 
-                <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 max-h-[80vh] overflow-y-auto pr-1 pb-10 scrollbar-thin scrollbar-thumb-slate-300 auto-rows-max">
+                <div className="grid grid-cols-2 gap-2 max-h-[80vh] overflow-y-auto pr-1 pb-10 scrollbar-thin scrollbar-thumb-slate-300 auto-rows-max">
                     {codes.slice().reverse().filter(c => c.value.trim() !== '').map((code, idx) => {
                         const isError = code.status === 'error' || code.status === 'wsp_error';
                         const isWspSuccess = code.status === 'wsp_success';
@@ -566,28 +566,28 @@ const CargaDepositoPage = () => {
                                         <div className="mt-3 flex flex-col gap-2" onClick={e => e.stopPropagation()}
                                         >                                            {/* Info parseada */}
                                             {code.parsed && (
-                                                <div className="grid grid-cols-2 gap-x-3 gap-y-2 bg-white/70 rounded-lg p-2.5 border border-slate-100 text-sm">
+                                                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 bg-white/70 rounded-lg p-2 border border-slate-100 text-xs">
                                                     <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><User size={10} /> Cliente</span>
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><User size={10} /> Cliente</span>
                                                         <span className="text-slate-800 font-semibold truncate">{code.parsed.CodigoCliente}
                                                             {code.parsed.IDCliente && code.parsed.IDCliente !== 'N/A' && (
-                                                                <span className="ml-1 text-[10px] font-normal text-slate-500 bg-slate-200 px-1 py-[1.5px] rounded-[3px]">ID: {code.parsed.IDCliente}</span>
+                                                                <span className="ml-1 text-[9px] font-normal text-slate-500 bg-slate-200 px-1 py-[1px] rounded-[3px]">ID: {code.parsed.IDCliente}</span>
                                                             )}
                                                         </span>
                                                     </div>
                                                     <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><ShoppingBag size={10} /> Producto</span>
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><ShoppingBag size={10} /> Producto</span>
                                                         <span className="text-slate-800 font-semibold truncate">{code.parsed.ProductoNombre}</span>
                                                     </div>
                                                     <div className="flex flex-col gap-0.5 col-span-2">
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Tag size={10} /> Trabajo</span>
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Tag size={10} /> Trabajo</span>
                                                         <span className="text-slate-700 italic truncate">{code.parsed.NombreTrabajo || 'Sin Descripción'}</span>
                                                     </div>
                                                     <div className="flex items-center justify-between col-span-2 border-t pt-2 border-slate-200 flex-wrap gap-2">
-                                                        <span className="text-slate-800 font-black text-base">Cant: {code.parsed.Cantidad}</span>
+                                                        <span className="text-slate-800 font-black text-sm">Cant: {code.parsed.Cantidad}</span>
                                                         <span className="text-slate-700 font-semibold text-xs">{modosMap[code.parsed.IdModo] || `M-${code.parsed.IdModo}`}</span>
                                                         {code.parsed.CostoFinal != null && (
-                                                            <span className="bg-emerald-50 border border-emerald-200 rounded-md px-2 py-0.5 text-emerald-800 font-black text-sm">
+                                                            <span className="bg-emerald-50 border border-emerald-200 rounded-md px-2 py-0.5 text-emerald-800 font-black text-xs">
                                                                 {code.parsed.Moneda || '$U'} {Number(code.parsed.CostoFinal).toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                             </span>
                                                         )}

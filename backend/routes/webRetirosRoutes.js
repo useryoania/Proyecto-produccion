@@ -12,6 +12,7 @@ router.post('/pay-link', verifyToken, webRetirosController.createHandyPaymentLin
 router.post('/payment', verifyToken, webRetirosController.createHandyPaymentLinkForRetiro);
 router.get('/locales', verifyToken, webRetirosController.getAllLocalRetiros);
 router.get('/mis-retiros', verifyToken, webRetirosController.getMyRetirosPendientes);
+router.get('/mis-retiros/historial', verifyToken, webRetirosController.getMyRetirosHistorial);
 router.get('/pagos-online', verifyToken, webRetirosController.getPagosOnline);
 
 // RUTAS API PARA ESTANTES FÍSICOS
