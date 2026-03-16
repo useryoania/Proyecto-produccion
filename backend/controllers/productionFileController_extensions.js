@@ -1,3 +1,4 @@
+const logger = require('../utils/logger');
 
 /**
  * 7. Buscar Órdenes Entregadas/Finalizadas para Reposición (Atención al Cliente)
@@ -32,7 +33,7 @@ const getCompletedOrdersForReplacement = async (req, res) => {
         res.json(result.recordset);
 
     } catch (error) {
-        console.error("Error getCompletedOrdersForReplacement:", error);
+        logger.error("Error getCompletedOrdersForReplacement:", error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -150,7 +151,7 @@ const createCustomerReplacementOrder = async (req, res) => {
 
     } catch (error) {
         if (transaction) await transaction.rollback();
-        console.error("Error createCustomerReplacementOrder:", error);
+        logger.error("Error createCustomerReplacementOrder:", error);
         res.status(500).json({ error: error.message });
     }
 };

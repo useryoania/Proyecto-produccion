@@ -2,6 +2,7 @@ require('dotenv').config();
 const { getPool, sql } = require('../config/db');
 const localFileService = require('../services/localFileService');
 const n8nService = require('../services/n8nService');
+const logger = require('../utils/logger');
 
 // --- HELPERS IA (Estrategia Gemini Pro) ---
 async function callGeminiREST(prompt, apiKey) {
@@ -34,17 +35,17 @@ async function callGeminiREST(prompt, apiKey) {
             if (!response.ok) throw new Error(`${attempt.model}: ${data.error?.message || response.statusText}`);
 
             if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-                console.log(`✅ [IA CONNECT] Éxito con: ${attempt.model}`);
+                logger.info(`✅ [IA CONNECT] Éxito con: ${attempt.model}`);
                 return data.candidates[0].content.parts[0].text;
             }
 
         } catch (err) {
-            console.warn(`❌ Falló ${attempt.model}: ${err.message}`);
+            logger.warn(`❌ Falló ${attempt.model}: ${err.message}`);
             lastError = err;
         }
     }
 
-    console.error("❌ MURIERON TODOS LOS MODELOS IA.");
+    logger.error("❌ MURIERON TODOS LOS MODELOS IA.");
     return null;
 }
 
@@ -52,7 +53,7 @@ async function callGeminiREST(prompt, apiKey) {
 exports.handleChatMessage = async (req, res) => {
     try {
         const { message, userId, mode } = req.body;
-        console.log(`[CHAT] User: ${userId} | Mode: ${mode} | Msg: "${message}"`);
+        logger.info(`[CHAT] User: ${userId} | Mode: ${mode} | Msg: "${message}"`);
 
         let API_KEY = process.env.GEMINI_API_KEY || "";
         let responseText = null;
@@ -70,7 +71,7 @@ exports.handleChatMessage = async (req, res) => {
 
         // 2. LOGICA FAIL-SAFE
         if (!responseText) {
-            console.warn("⚠️ IA Muerta en Planificación. Activando Cerebro de Respaldo.");
+            logger.warn("⚠️ IA Muerta en Planificación. Activando Cerebro de Respaldo.");
             if (mode === 'drive') {
                 const cleanQuery = message.replace(/buscar|manual|procedimiento|guia/gi, '').trim();
                 actionPlan = { action: "SEARCH_LOCAL", query: cleanQuery || message };
@@ -88,20 +89,20 @@ exports.handleChatMessage = async (req, res) => {
         if (actionPlan.action === 'SEARCH_LOCAL' || actionPlan.action === 'SEARCH_DRIVE') {
             try {
                 // 1. INTENTO CON N8N (Google Drive / Flujo Externo)
-                console.log("🔄 Intentando búsqueda vía n8n...");
+                logger.info("🔄 Intentando búsqueda vía n8n...");
                 const n8nResult = await n8nService.searchInDrive(actionPlan.query);
 
                 if (n8nResult && n8nResult !== "ERROR_N8N_OFFLINE") {
                     toolOutput = n8nResult;
-                    console.log("✅ Datos obtenidos desde n8n.");
+                    logger.info("✅ Datos obtenidos desde n8n.");
                 } else {
                     // 2. FALLBACK A LOCAL (Si n8n está apagado o falla)
-                    console.log("⚠️ n8n no disponible. Usando búsqueda local.");
+                    logger.info("⚠️ n8n no disponible. Usando búsqueda local.");
                     toolOutput = await localFileService.searchFiles(actionPlan.query);
                 }
 
             } catch (err) {
-                console.warn("⚠️ Error n8n, cayendo a local:", err.message);
+                logger.warn("⚠️ Error n8n, cayendo a local:", err.message);
                 try {
                     toolOutput = await localFileService.searchFiles(actionPlan.query);
                 } catch (e) { toolOutput = "Error Local: " + e.message; }
@@ -125,7 +126,7 @@ exports.handleChatMessage = async (req, res) => {
 
         // INTENTO DE RESUMEN CON IA
         if (API_KEY.length > 20) {
-            console.log("📝 Intentando resumir con IA...");
+            logger.info("📝 Intentando resumir con IA...");
             const finalPrompt = `Analiza la siguiente BIBLIOTECA y responde la pregunta.
             
             BIBLIOTECA:
@@ -143,20 +144,20 @@ exports.handleChatMessage = async (req, res) => {
             const finalReply = await callGeminiREST(finalPrompt, API_KEY);
 
             if (finalReply) {
-                console.log("✅ RESUMEN GENERADO EXITOSAMENTE.");
+                logger.info("✅ RESUMEN GENERADO EXITOSAMENTE.");
                 return res.json({ reply: finalReply });
             }
         }
 
         // Si falló el resumen, mandamos el texto crudo (fe de erratas)
         // PERO LIMPIAMOS EL HTML PARA QUE SEA LEGIBLE
-        console.warn("⚠️ Falló el resumen IA. Enviando texto limpio.");
+        logger.warn("⚠️ Falló el resumen IA. Enviando texto limpio.");
         const cleanOutput = toolOutput.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
 
         res.json({ reply: "⚠️ **(Sin IA - Texto Extraído)**\n\n" + cleanOutput.substring(0, 4000) + "..." });
 
     } catch (error) {
-        console.error("FATAL CHAT:", error);
+        logger.error("FATAL CHAT:", error);
         res.json({ reply: "❌ Error Fatal: " + error.message });
     }
 };

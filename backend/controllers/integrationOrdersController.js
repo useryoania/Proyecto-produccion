@@ -3,6 +3,7 @@ const driveService = require('../services/driveService');
 const fileProcessingService = require('../services/fileProcessingService');
 const axios = require('axios');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const logger = require('../utils/logger');
 
 // --- CONSTANTES Y MAPEOS ---
 const SERVICE_TO_AREA_MAP = {
@@ -23,14 +24,14 @@ const SERVICE_TO_AREA_MAP = {
 
 // --- CONTROLADOR DE INTEGRACIÓN (Planilla) ---
 exports.createPlanillaOrder = async (req, res) => {
-    console.log("📥 [IntegrationOrder] Iniciando proceso de creación desde Planilla...");
-    // console.log("Payload recibido:", JSON.stringify(req.body, null, 2));
+    logger.info("📥 [IntegrationOrder] Iniciando proceso de creación desde Planilla...");
+    // logger.info("Payload recibido:", JSON.stringify(req.body, null, 2));
 
     // --- DEBUG SOLICITADO POR EL USUARIO ---
-    console.log("=========================================================");
-    console.log("🚨 NUEVO PEDIDO LLEGANDO DESDE GOOGLE SHEETS / WEB:");
-    console.log(JSON.stringify(req.body, null, 2));
-    console.log("=========================================================");
+    logger.info("=========================================================");
+    logger.info("🚨 NUEVO PEDIDO LLEGANDO DESDE GOOGLE SHEETS / WEB:");
+    logger.info(JSON.stringify(req.body, null, 2));
+    logger.info("=========================================================");
 
     // --- 1. DATOS BÁSICOS & ADAPTACIÓN DE FORMATO ---
     const {
@@ -66,7 +67,7 @@ exports.createPlanillaOrder = async (req, res) => {
 
     // Lógica de Búsqueda por Nombre/ID String (ej: "LAY12")
     if (!codCliente && clienteInfo && clienteInfo.id) {
-        console.log(`🔍 Buscando cliente por ID/Nombre: '${clienteInfo.id}'...`);
+        logger.info(`🔍 Buscando cliente por ID/Nombre: '${clienteInfo.id}'...`);
         try {
             const clientSearch = await pool.request()
                 .input('Val', sql.NVarChar, clienteInfo.id.trim())
@@ -83,15 +84,15 @@ exports.createPlanillaOrder = async (req, res) => {
                 // USAR IDCliente (RXDSUBLIMACION) como nombre principal SOLO SI TIENE CONTENIDO. Si es espacio, usar Nombre.
                 nombreCliente = (c.IDCliente && c.IDCliente.trim().length > 0) ? c.IDCliente : c.Nombre;
                 idClienteReact = c.IDReact;
-                console.log(`✅ Cliente encontrado: ${nombreCliente} (Ref DB: ${c.Nombre})`);
+                logger.info(`✅ Cliente encontrado: ${nombreCliente} (Ref DB: ${c.Nombre})`);
 
                 if (!idClienteReact) {
-                    console.warn(`⚠️ Cliente '${nombreCliente}' encontrado pero SIN IDReact.`);
+                    logger.warn(`⚠️ Cliente '${nombreCliente}' encontrado pero SIN IDReact.`);
                     // NO invalidamos la orden. Permitimos que entre con CodCliente aunque falte IDReact.
                     observacionesValidacion.push(`Cliente existe (Cod: ${codCliente}) pero sin IDReact.`);
                 }
             } else {
-                console.warn(`⚠️ Cliente '${clienteInfo.id}' no encontrado.`);
+                logger.warn(`⚠️ Cliente '${clienteInfo.id}' no encontrado.`);
                 esValido = false;
                 observacionesValidacion.push(`Cliente '${clienteInfo.id}' no encontrado en BD.`);
 
@@ -100,7 +101,7 @@ exports.createPlanillaOrder = async (req, res) => {
                 idClienteReact = null;
             }
         } catch (errSearch) {
-            console.error("Error buscando cliente:", errSearch);
+            logger.error("Error buscando cliente:", errSearch);
             esValido = false;
             observacionesValidacion.push("Error interno al buscar cliente.");
 
@@ -155,7 +156,7 @@ exports.createPlanillaOrder = async (req, res) => {
         }
 
         if (codigoExterno) {
-            // console.log(`ℹ️ [Integration] Usando Código Externo de Planilla: ${codigoExterno}`);
+            // logger.info(`ℹ️ [Integration] Usando Código Externo de Planilla: ${codigoExterno}`);
             codigoOrdenFinal = codigoExterno;
 
             // LÓGICA NoDocERP: "SOLO EL CODIGO" (Pedido explícito del usuario)
@@ -294,7 +295,7 @@ exports.createPlanillaOrder = async (req, res) => {
         const mapArt = {};
 
         if (codesToLookup.length > 0) {
-            console.log(`🔍 [Integration] Buscando Artículos: ${JSON.stringify(codesToLookup)}`);
+            logger.info(`🔍 [Integration] Buscando Artículos: ${JSON.stringify(codesToLookup)}`);
             try {
                 const request = pool.request();
                 // Usamos VarChar para máxima compatibilidad (SQL Server convierte automáticamente si la columna es INT)
@@ -304,7 +305,7 @@ exports.createPlanillaOrder = async (req, res) => {
                 // Consulta explícita
                 const artRes = await request.query(`SELECT IDProdReact, CodArticulo FROM Articulos WHERE ${clauses}`);
 
-                console.log(`🔍 [Integration] Resultados DB Articulos encontrados: ${artRes.recordset.length}`);
+                logger.info(`🔍 [Integration] Resultados DB Articulos encontrados: ${artRes.recordset.length}`);
 
                 artRes.recordset.forEach(r => {
                     // Guardamos en el mapa. Usamos String para asegurar match con keys
@@ -312,7 +313,7 @@ exports.createPlanillaOrder = async (req, res) => {
                 });
 
             } catch (errLookup) {
-                console.warn("⚠️ Error buscando IDProdReact:", errLookup.message);
+                logger.warn("⚠️ Error buscando IDProdReact:", errLookup.message);
                 observacionesValidacion.push("Error DB buscando producto: " + errLookup.message);
                 // No invalidamos toda la orden por esto, pero marcamos warning
             }
@@ -327,9 +328,9 @@ exports.createPlanillaOrder = async (req, res) => {
                 // Chequeo estricto de null/undefined (por si el ID es 0)
                 if (foundId !== undefined && foundId !== null) {
                     exec.idProductoReact = foundId;
-                    console.log(`✅ IDProductoReact asignado: ${foundId} para Art: ${exec.codArticulo}`);
+                    logger.info(`✅ IDProductoReact asignado: ${foundId} para Art: ${exec.codArticulo}`);
                 } else {
-                    console.warn(`⚠️ IDProductoReact NO encontrado para CodArt ${exec.codArticulo}. (Buscado como: '${key}')`);
+                    logger.warn(`⚠️ IDProductoReact NO encontrado para CodArt ${exec.codArticulo}. (Buscado como: '${key}')`);
                     // Solo invalidamos si es CRÍTICO. El usuario indica que DEBERÍA estar.
                     // Si no está, lo dejamos pasar pero sin ID, o fallamos?
                     // Según el reclamo del usuario ("COMO ME VAS A DECIR QUE NO..."), prefiere que funcione si está.
@@ -542,7 +543,7 @@ exports.createPlanillaOrder = async (req, res) => {
 
             await transaction.commit();
 
-            console.log("✅ [IntegrationOrder] Pedido creado:", generatedOrders);
+            logger.info("✅ [IntegrationOrder] Pedido creado:", generatedOrders);
             res.status(201).json({
                 success: true,
                 message: "Orden creada exitosamente (Integra V2)",
@@ -553,17 +554,17 @@ exports.createPlanillaOrder = async (req, res) => {
             });
 
         } catch (errTrx) {
-            console.error("❌ SQL Transaction Error (Original Cause):", errTrx);
+            logger.error("❌ SQL Transaction Error (Original Cause):", errTrx);
             try {
                 await transaction.rollback();
             } catch (rbError) {
-                console.warn("⚠️ Rollback failed (likely already aborted):", rbError.message);
+                logger.warn("⚠️ Rollback failed (likely already aborted):", rbError.message);
             }
             throw errTrx; // Re-throw original error
         }
 
     } catch (err) {
-        console.error("❌ IntegrationOrder Error:", err);
+        logger.error("❌ IntegrationOrder Error:", err);
         res.status(500).json({ error: "Error al crear pedido de integración: " + err.message });
     }
 };

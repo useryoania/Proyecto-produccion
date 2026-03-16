@@ -1,5 +1,6 @@
 const { Resend } = require("resend");
 const jwt = require('jsonwebtoken');
+const logger = require('../utils/logger');
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-macrosoft-production';
@@ -16,14 +17,14 @@ exports.sendMail = async (to, subject, html) => {
             html
         });
         if (error) {
-            console.error('[Email] Error:', error);
+            logger.error('[Email] Error:', error);
             return false;
         }
-        console.log(`[Email] Enviado a ${to}: ${subject}`);
+        logger.info(`[Email] Enviado a ${to}: ${subject}`);
         return true;
 
     } catch (err) {
-        console.error('[Email] Exception:', err.message);
+        logger.error('[Email] Exception:', err.message);
         return false;
     }
 };

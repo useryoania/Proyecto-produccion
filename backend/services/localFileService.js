@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const mammoth = require('mammoth');
 const pdf = require('pdf-parse');
+const logger = require('../utils/logger');
 
 const MANUALS_DIR = path.join(__dirname, '../../Manuales');
 
@@ -37,7 +38,7 @@ async function extractText(filePath) {
             return fs.readFileSync(filePath, 'utf8');
         }
     } catch (e) {
-        console.error(`Error leyendo ${filePath}:`, e.message);
+        logger.error(`Error leyendo ${filePath}:`, e.message);
         return "";
     }
     return "";
@@ -56,7 +57,7 @@ exports.getAllFilesContent = async () => {
         let fullLibraryContext = "";
         let fileCount = 0;
 
-        // console.log(`📚 [LocalService] Cargando biblioteca completa (${allFiles.length} archivos docx/pdf/txt)...`);
+        // logger.info(`📚 [LocalService] Cargando biblioteca completa (${allFiles.length} archivos docx/pdf/txt)...`);
 
         for (const filePath of allFiles) {
             const ext = path.extname(filePath).toLowerCase();
@@ -73,7 +74,7 @@ exports.getAllFilesContent = async () => {
 
         if (fileCount === 0) return "⚠️ No se encontraron documentos válidos en la carpeta Manuales.";
 
-        console.log(`📚 [LocalService] Biblioteca OK: ${fileCount} docs cargados. Total caracteres: ${fullLibraryContext.length}.`);
+        logger.info(`📚 [LocalService] Biblioteca OK: ${fileCount} docs cargados. Total caracteres: ${fullLibraryContext.length}.`);
         return fullLibraryContext;
 
     } catch (error) {

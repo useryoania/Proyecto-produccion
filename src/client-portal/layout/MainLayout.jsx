@@ -5,6 +5,7 @@ import { apiClient } from '../api/apiClient';
 import {
     Factory,
     User,
+    UserPen,
     Package,
     LogOut,
     Menu,
@@ -12,7 +13,8 @@ import {
     Truck,
     Crown,
     ChevronDown,
-    CreditCard
+    CreditCard,
+    History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SERVICES_LIST } from '../constants/services';
@@ -172,8 +174,9 @@ export const MainLayout = ({ children }) => {
                     </div> */}
 
                     {/* <NavItem to="/portal/factory" icon={Factory} label="Fábrica / Estado" /> */}
-                    <NavItem to="/portal/pickup" icon={Truck} label="Retiro de Pedidos" />
+                    <NavItem to="/portal/pickup" icon={Package} label="Retiro de Pedidos" />
                     <NavItem to="/portal/payments" icon={CreditCard} label="Pagos Pendientes" />
+                    <NavItem to="/portal/history" icon={History} label="Historial" />
 
                     {/* <div className="pt-4 mt-4 border-t border-zinc-800">
                         <Link to="/portal/club">
@@ -206,7 +209,9 @@ export const MainLayout = ({ children }) => {
 
             {/* Mobile Header */}
             <div className="md:hidden fixed top-0 w-full bg-custom-dark backdrop-blur-md text-zinc-100 z-30 px-4 py-3 flex justify-between items-center shadow-lg border-b border-brand-dark">
-                <div className="flex items-center gap-2 text-custom-yellow">
+                <div className="flex items-center gap-3">
+                    <Logo className="h-8 w-auto text-white mt-2" />
+                    <div className="w-px h-8 bg-zinc-700"></div>
                     <span className="font-bold text-zinc-100">AUTOGESTIÓN</span>
                 </div>
                 <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 rounded-lg hover:text-custom-magenta">
@@ -225,10 +230,11 @@ export const MainLayout = ({ children }) => {
                     >
                         <div className="flex flex-col gap-2">
                             {/* <NavItem to="/portal" icon={Package} label="Servicios" /> */}
-                            <NavItem to="/portal/profile/edit" icon={User} label="Mi Perfil" />
+                            <NavItem to="/portal/profile/edit" icon={UserPen} label="Mi Perfil" />
                             {/* <NavItem to="/portal/factory" icon={Factory} label="Fábrica / Estado" /> */}
-                            <NavItem to="/portal/pickup" icon={Truck} label="Retiro de Pedidos" />
+                            <NavItem to="/portal/pickup" icon={Package} label="Retiro de Pedidos" />
                             <NavItem to="/portal/payments" icon={CreditCard} label="Pagos Pendientes" />
+                            <NavItem to="/portal/history" icon={History} label="Historial de Pedidos" />
                             {/* <NavItem to="/portal/club" icon={Crown} label="Club Member" /> */}
 
                             <button onClick={logout} className="mt-8 flex items-center gap-3 px-4 py-3 text-brand-magenta">
@@ -242,7 +248,7 @@ export const MainLayout = ({ children }) => {
             {/* Main Content */}
             <main className="flex-1 overflow-y-auto relative scrollbar-thin bg-zinc-900">
                 <div className="md:hidden h-16"></div> {/* Spacer for mobile header */}
-                <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-full">
+                <div className="p-4 pb-20 md:p-8 md:pb-8 max-w-7xl mx-auto min-h-full">
                     {children}
                 </div>
             </main>

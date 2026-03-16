@@ -1,4 +1,5 @@
 const { sql, getPool } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Obtener Logs
 const getLogs = async (req, res) => {
@@ -29,7 +30,7 @@ const getLogs = async (req, res) => {
         const result = await request.query(query);
         res.json(result.recordset);
     } catch (e) {
-        console.error("Error getting Logs:", e);
+        logger.error("Error getting Logs:", e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -49,7 +50,7 @@ const resolveLog = async (req, res) => {
 
         res.json({ success: true });
     } catch (e) {
-        console.error("Error resolving log:", e);
+        logger.error("Error resolving log:", e);
         res.status(500).json({ error: e.message });
     }
 };

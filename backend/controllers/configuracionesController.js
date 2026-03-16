@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 exports.getConfiguraciones = async (req, res) => {
     try {
@@ -6,7 +7,7 @@ exports.getConfiguraciones = async (req, res) => {
         const result = await pool.request().query("SELECT * FROM ConfiguracionesSync ORDER BY NombreProceso");
         res.json(result.recordset);
     } catch (error) {
-        console.error("Error obteniendo configuraciones:", error);
+        logger.error("Error obteniendo configuraciones:", error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -27,7 +28,7 @@ exports.updateConfiguracion = async (req, res) => {
 
         res.json({ success: true, message: `Configuración ${ProcesoID} actualizada correctamente a ${Activo}` });
     } catch (error) {
-        console.error("Error actualizando configuracion:", error);
+        logger.error("Error actualizando configuracion:", error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -47,7 +48,7 @@ exports.setPlanillaRow = async (req, res) => {
         const axios = require('axios');
         try {
             const scriptUrl = `${PLANILLA_URL}?action=setRow&area=${area}&value=${encodeURIComponent(rowNumber)}`;
-            console.log("Setting planilla row via:", scriptUrl);
+            logger.info("Setting planilla row via:", scriptUrl);
 
             const response = await axios.get(scriptUrl);
 
@@ -57,12 +58,12 @@ exports.setPlanillaRow = async (req, res) => {
 
             res.json({ success: true, message: `Propiedad actualizada. La lectura se reiniciará desde la fila ${rowNumber}.`, scriptResponse: response.data });
         } catch (scriptErr) {
-            console.error("Error contactando Apps Script:", scriptErr);
+            logger.error("Error contactando Apps Script:", scriptErr);
             throw new Error("No se pudo contactar al servidor de Google Apps Script. " + scriptErr.message);
         }
 
     } catch (error) {
-        console.error("Error setPlanillaRow:", error);
+        logger.error("Error setPlanillaRow:", error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -85,11 +86,11 @@ exports.getPlanillaRow = async (req, res) => {
             // If the script does not have this logic yet, handle fallback gracefully
             res.json({ success: true, currentRow: response.data.currentRow || '' });
         } catch (scriptErr) {
-            console.error("Error obteniendo fila desde Apps Script:", scriptErr);
+            logger.error("Error obteniendo fila desde Apps Script:", scriptErr);
             throw new Error("No se pudo leer la fila actual.");
         }
     } catch (error) {
-        console.error("Error getPlanillaRow:", error);
+        logger.error("Error getPlanillaRow:", error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -107,7 +108,7 @@ exports.isProcessActive = async (procesoID) => {
         }
         return false; // Si no existe, lo apagamos por seguridad
     } catch (err) {
-        console.error(`Error verificando estado del proceso ${procesoID}:`, err);
+        logger.error(`Error verificando estado del proceso ${procesoID}:`, err);
         return false; // Ante duda, no ejecutar
     }
 };
@@ -122,6 +123,6 @@ exports.updateProcessLog = async (procesoID, estado, mensaje = '') => {
             .input('Msg', sql.NVarChar(sql.MAX), mensaje)
             .query("UPDATE ConfiguracionesSync SET UltimaEjecucion = GETDATE(), UltimoEstado = @Estado, MensajeError = @Msg WHERE ProcesoID = @ProcesoID");
     } catch (err) {
-        console.error(`Error guardando log de proceso ${procesoID}:`, err);
+        logger.error(`Error guardando log de proceso ${procesoID}:`, err);
     }
 };

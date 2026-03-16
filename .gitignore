@@ -34,3 +34,4 @@ backend/token.json
 
 # Carpetas de dependencias adicionales
 backend/node_modules/
+logs/

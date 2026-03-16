@@ -1,4 +1,5 @@
-import { useState, useMemo, Suspense, lazy } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
+import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck } from 'lucide-react';
 import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
@@ -46,7 +47,104 @@ const EntregaPedidosView = lazy(() => import('../pages/customer-service/EntregaP
 const DepositoDashboard = lazy(() => import('../logistics/DepositoDashboard'));
 
 // ============================================
-// 1. COMPONENTE NAVNODE (Mejorado)
+// 1. LUCIDE ICON MAP (override FA icons)
+// ============================================
+const lucideIconMapRaw = {
+    'dashboard': LayoutDashboard,
+    'logística wms': Warehouse,
+    'logistica wms': Warehouse,
+    'producción': Printer,
+    'produccion': Printer,
+    'informes': ClipboardList,
+    'sys admin': Terminal,
+    'gestión clientes': CircleUserRound,
+    'gestion clientes': CircleUserRound,
+    'gestión productos': Tags,
+    'gestion productos': Tags,
+    'gestión de productos': Tags,
+    'gestion de productos': Tags,
+    'atención al cliente': Headset,
+    'atencion al cliente': Headset,
+    'gestión de precios': Calculator,
+    'gestion de precios': Calculator,
+    'administración': Landmark,
+    'administracion': Landmark,
+    // Producción sub-items
+    'dtf': Shirt,
+    'eco uv': Sun,
+    'ecouv': Sun,
+    'terminaciones eco uv': Sparkles,
+    'terminaciones ecouv': Sparkles,
+    'terminacionesecouv': Sparkles,
+    'sublimación': Flame,
+    'sublimacion': Flame,
+    'corte': Scissors,
+    'costura': Pen,
+    'estampado': Shapes,
+    'bordado': PenLine,
+    'impresión': Printer,
+    'impresion': Printer,
+    'generar etiquetas': QrCode,
+    'tpu': ShieldBan,
+    'impresión directa': PrinterCheck,
+    'impresion directa': PrinterCheck,
+    'historial de lotes': History,
+    // Logística WMS sub-items
+    'dashboard depósito': LayoutGrid,
+    'dashboard deposito': LayoutGrid,
+    'ingreso/aviso de órdenes': PackagePlus,
+    'ingreso/aviso de ordenes': PackagePlus,
+    'ingreso/ aviso de ordenes': PackagePlus,
+    'ingreso/ aviso de órdenes': PackagePlus,
+    'empaquetado de retiros': PackageCheck,
+    'gestión de encomiendas': Truck,
+    'gestion de encomiendas': Truck,
+    'gestión de encomiendas y cadeteria': Truck,
+    'gestion de encomiendas y cadeteria': Truck,
+    'gestión de encomiendas y cadetería': Truck,
+    'gestion de encomiendas y cadetería': Truck,
+    'buscar/actualizar órdenes': FileSearch,
+    'buscar/actualizar ordenes': FileSearch,
+    'buscar/actualizar ordenes de retiro': FileSearch,
+    'buscar/actualizar órdenes de retiro': FileSearch,
+    'inventario': Boxes,
+    'control logístico': Waypoints,
+    'control logistico': Waypoints,
+    'enviar a react': Send,
+    'inventario de insumos': Package,
+    'inventarios de insumo': ClipboardCheck,
+    'insumos': Package,
+    'control de transporte': Bus,
+    'control transporte': Bus,
+    // Sys Admin sub-items
+    'gestion menu': Menu,
+    'usuarios': Users,
+    'gestión de roles': Shield,
+    'gestion de roles': Shield,
+    'auditoría': Eye,
+    'auditoria': Eye,
+    'configuración': Settings,
+    'configuracion': Settings,
+    'admin db': Database,
+    'depurar clientes': UserX,
+    // Atención al Cliente sub-items
+    'ingreso materiales': PackagePlus,
+    'reposiciones': RefreshCw,
+    // Gestión de Precios sub-items
+    'precios estándar': BadgeDollarSign,
+    'precios estandar': BadgeDollarSign,
+    'perfiles de precios': Layers,
+    'catálogo por cliente': BookOpen,
+    'catalogo por cliente': BookOpen,
+    // Administración sub-items
+    'caja': Banknote,
+    'pagos online por la web (handy)': CreditCard,
+    'autorizaciones de pagos': ShieldCheck,
+};
+const getLucideIcon = (name) => lucideIconMapRaw[name?.toLowerCase?.()?.trim?.()?.replace(/\s+/g, ' ')];
+
+// ============================================
+// 2. COMPONENTE NAVNODE (Mejorado)
 // ============================================
 const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, isCollapsed, setIsCollapsed }) => {
     const hasChildren = item.children && item.children.length > 0;
@@ -54,8 +152,7 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
     const isChildActive = hasChildren && item.children.some(c => location.pathname === c.Ruta || (c.Ruta && location.pathname.startsWith(c.Ruta + '/')));
     const isSelected = location.pathname === item.Ruta || (hasChildren && isChildActive);
 
-    const baseClasses = "flex items-center mx-2 mb-2 rounded-lg cursor-pointer select-none transition-all duration-200 group relative";
-    const paddingLeft = isCollapsed ? '12px' : `${12 + (level * 12)}px`;
+    const baseClasses = "flex items-center mx-2 rounded-md cursor-pointer select-none transition-all duration-200 group relative";
 
     return (
         <div className="w-full">
@@ -63,13 +160,13 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                 className={`
                     ${baseClasses}
                     ${isSelected
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-500/30"
-                        : "text-slate-100 opacity-70 hover:opacity-100 hover:bg-zinc-800 hover:text-white hover:scale-[1.05]"
+                        ? "bg-brand-cyan text-white shadow-md shadow-brand-cyan/30"
+                        : "text-slate-100 opacity-70 hover:opacity-100 hover:bg-zinc-800 hover:text-white"
                     }
-                    ${!isCollapsed ? 'py-2.5' : 'py-3 justify-center'}
+                    py-2.5
                 `}
                 style={{
-                    paddingLeft: !isCollapsed ? paddingLeft : undefined,
+                    paddingLeft: !isCollapsed && level > 0 ? `${level * 12}px` : undefined,
                 }}
                 onClick={() => {
                     if (hasChildren) {
@@ -84,26 +181,27 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                 }}
                 title={isCollapsed ? item.Nombre : ''}
             >
-                <div className={`
-                    flex items-center justify-center 
-                    ${isCollapsed ? 'w-full' : 'w-6 mr-3'} 
-                    text-base transition-transform duration-300 group-hover:scale-110
-                `}>
-                    <i className={`
-                        fa-solid ${item.Icono || (hasChildren ? 'fa-folder' : 'fa-circle')} 
-                        ${isSelected ? "text-white" : "text-slate-300 group-hover:text-blue-500"}
-                    `}></i>
+
+                <div className="w-12 flex-shrink-0 flex items-center justify-center text-base group-hover:scale-110 transition-transform duration-300">
+                    {getLucideIcon(item.Nombre) ? (
+                        (() => { const LucideIcon = getLucideIcon(item.Nombre); return <LucideIcon size={22} className={isSelected ? 'text-white' : 'text-slate-300 group-hover:text-brand-cyan'} />; })()
+                    ) : (
+                        <i className={`
+                            fa-solid ${item.Icono || (hasChildren ? 'fa-folder' : 'fa-circle')} 
+                            ${isSelected ? "text-white" : "text-slate-300 group-hover:text-brand-cyan"}
+                        `}></i>
+                    )}
                 </div>
 
                 {!isCollapsed && (
                     <>
-                        <span className={`flex-1 text-xs font-medium tracking-wide truncate ${isSelected ? 'text-white' : 'text-slate-100'}`}>
+                        <span className={`flex-1 text-xs font-medium tracking-wide whitespace-nowrap ${isSelected ? 'text-white' : 'text-slate-100'}`}>
                             {item.Nombre}
                         </span>
 
                         {hasChildren && (
                             <i className={`
-                                fa-solid fa-chevron-right text-[10px] mr-2 transition-transform duration-300
+                                fa-solid fa-chevron-right text-[10px] mr-4 transition-transform duration-300
                                 ${isOpen ? "rotate-90" : ""}
                                 ${isSelected ? "text-blue-500" : "text-slate-100"}
                             `}></i>
@@ -118,6 +216,7 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                 style={{
                     maxHeight: hasChildren && isOpen && !isCollapsed ? '1000px' : '0px',
                     opacity: hasChildren && isOpen && !isCollapsed ? 1 : 0,
+                    transform: hasChildren && isOpen && !isCollapsed ? 'translateY(0)' : 'translateY(-8px)',
                 }}
             >
                 {hasChildren && (
@@ -150,7 +249,19 @@ const MainAppContent = ({ menuItems = [] }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const [openMenus, setOpenMenus] = useState({});
-    const [isCollapsed, setIsCollapsed] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(true);
+
+    const handleSidebarEnter = useCallback(() => setIsCollapsed(false), []);
+    const handleSidebarLeave = useCallback(() => setIsCollapsed(true), []);
+
+    // Dynamic sidebar width based on which parent is expanded
+    const expandedWidth = useMemo(() => {
+        const openIds = Object.entries(openMenus).filter(([, v]) => v).map(([k]) => Number(k));
+        const openNames = openIds.map(id => menuItems.find(m => m.IdModulo === id)?.Nombre?.toLowerCase() || '');
+        if (openNames.some(n => n.includes('logística wms') || n.includes('logistica wms'))) return 380;
+        if (openNames.some(n => n.includes('administración') || n.includes('administracion'))) return 350;
+        return 300;
+    }, [openMenus, menuItems]);
 
     console.log(`[MainAppContent] Render! Path: ${location.pathname}, Key: ${location.key}`);
 
@@ -240,15 +351,20 @@ const MainAppContent = ({ menuItems = [] }) => {
                 }}
             />
             <Navbar />
-            <div className="flex flex-1 overflow-hidden">
+            <div className="flex flex-1 overflow-hidden relative">
+                {/* Spacer to reserve collapsed sidebar width */}
+                <div className="w-16 flex-shrink-0" />
                 <aside
                     className={`
-                        flex flex-col bg-zinc-900 border-r border-zinc-700 shadow-xl z-20
-                        transition-all duration-300 ease-in-out h-full
-                        ${isCollapsed ? "w-20" : "w-[280px]"}
+                        flex flex-col bg-custom-dark z-[100]
+                        transition-all duration-300 ease-in-out h-full absolute left-0 top-0
+                        ${isCollapsed ? "w-16" : ""}
                     `}
+                    style={!isCollapsed ? { width: expandedWidth } : undefined}
+                    onMouseEnter={handleSidebarEnter}
+                    onMouseLeave={handleSidebarLeave}
                 >
-                    <div className="flex items-center justify-around px-4 border-b border-zinc-700 bg-zinc-900 min-h-[64px]">
+                    <div className="hidden items-center justify-around px-4 border-b border-zinc-700 bg-custom-dark min-h-[64px]">
                         {!isCollapsed && (
                             <div className="flex px-2 items-center justify-between">
                                 <button
@@ -259,46 +375,32 @@ const MainAppContent = ({ menuItems = [] }) => {
                                     <i className={`fa-solid ${Object.values(openMenus).some(v => v) ? 'fa-angles-up' : 'fa-angles-down'} `}></i>
                                 </button>
                             </div>
-
                         )}
-                        <button
-                            className={`
-                                flex items-center justify-center 
-                                hover:text-blue-500 transition-colors
-                                ${isCollapsed ? 'mx-auto text-slate-100' : 'text-slate-100'}
-                            `}
-                            onClick={() => setIsCollapsed(!isCollapsed)}
-                            title={isCollapsed ? "Expandir Panel" : "Colapsar Panel"}
-                        >
-                            <i className={`fa-solid ${isCollapsed ? 'fa-angles-right' : 'fa-angles-left'}`}></i>
-                        </button>
                     </div>
 
 
 
-                    <nav className="flex-1 overflow-y-auto p-3 custom-scrollbar space-y-2 uppercase">
-                        {menuTree.map(node => (
-                            <NavNode
-                                key={node.IdModulo}
-                                item={node}
-                                openMenus={openMenus}
-                                toggleMenu={toggleMenu}
-                                navigate={navigate}
-                                location={location}
-                                isCollapsed={isCollapsed}
-                                setIsCollapsed={setIsCollapsed}
-                            />
+                    <nav className={`flex-1 overflow-y-auto overflow-x-hidden pt-4 pb-2 ${isCollapsed ? '' : 'pr-1'} custom-scrollbar space-y-1 uppercase`}>
+                        {menuTree.map((node, idx) => (
+                            <div key={node.IdModulo}>
+                                {idx > 0 && <div className="mx-4 my-1 border-t border-zinc-700/50" />}
+                                <NavNode
+                                    item={node}
+                                    openMenus={openMenus}
+                                    toggleMenu={toggleMenu}
+                                    navigate={navigate}
+                                    location={location}
+                                    isCollapsed={isCollapsed}
+                                    setIsCollapsed={setIsCollapsed}
+                                />
+                            </div>
                         ))}
                     </nav>
 
-                    {!isCollapsed && (
-                        <div className="p-3 border-t border-zinc-700 text-center bg-zinc-900">
-                            <p className="text-[10px] text-slate-300 font-mono">v1.0.5 Producción</p>
-                        </div>
-                    )}
+
                 </aside>
 
-                <main className="flex-1 overflow-hidden relative bg-slate-50/50 w-full">
+                <main className="flex-1 overflow-hidden relative bg-slate-100 w-full">
                     <div className="absolute inset-0 overflow-y-auto p-6 scroll-smooth">
                         <Suspense fallback={
                             <div className="flex items-center justify-center h-full ">

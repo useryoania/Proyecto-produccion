@@ -30,7 +30,9 @@
     "resend": "^6.9.2",
     "sharp": "^0.34.5",
     "socket.io": "^4.8.2",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
     "@vitejs/plugin-basic-ssl": "^2.1.4",

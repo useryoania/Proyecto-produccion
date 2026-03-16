@@ -1,11 +1,12 @@
 const { sql, getPool } = require('../config/db');
+const logger = require('../utils/logger');
 
 // --- EXPORTAR/CREAR CLIENTE EN DB LOCAL ---
 // Retorna { success: true, reactId: '...', reactCode: '...' } o { success: false }
 exports.exportClientToReact = async (clientData) => {
     // clientData debe tener: Nombre, CodCliente, TelefonoTrabajo, Email, NombreFantasia, CioRuc, Direccion
     try {
-        console.log("[SyncClient] Creando cliente en DB local:", clientData.Nombre);
+        logger.info("[SyncClient] Creando cliente en DB local:", clientData.Nombre);
         const pool = await getPool();
 
         // Verificar si ya existe
@@ -15,7 +16,7 @@ exports.exportClientToReact = async (clientData) => {
 
         if (check.recordset.length > 0) {
             const existing = check.recordset[0];
-            console.log(`[SyncClient] Cliente ya existe: CodCliente=${existing.CodCliente}`);
+            logger.info(`[SyncClient] Cliente ya existe: CodCliente=${existing.CodCliente}`);
             return { success: true, reactCode: existing.IDCliente || String(existing.CodCliente), reactId: existing.IDReact || String(existing.CodCliente), fullRes: existing };
         }
 
@@ -35,11 +36,11 @@ exports.exportClientToReact = async (clientData) => {
             `);
 
         const created = result.recordset[0];
-        console.log(`[SyncClient] Creado en DB local. CodCliente: ${created.CodCliente}`);
+        logger.info(`[SyncClient] Creado en DB local. CodCliente: ${created.CodCliente}`);
         return { success: true, reactCode: String(created.CodCliente), reactId: String(created.CodCliente), fullRes: created };
 
     } catch (error) {
-        console.error("[SyncClient] Export Error:", error.message);
+        logger.error("[SyncClient] Export Error:", error.message);
         return { success: false, error: error.message };
     }
 };
@@ -56,7 +57,7 @@ exports.updateLocalLink = async (codCliente, reactCode, reactId) => {
             .query(`UPDATE dbo.Clientes SET IDCliente = @CR, IDReact = @IR WHERE CodCliente = @CC`);
         return true;
     } catch (e) {
-        console.error("[SyncClient] Link Error:", e.message);
+        logger.error("[SyncClient] Link Error:", e.message);
         return false;
     }
 };
@@ -83,10 +84,10 @@ exports.createLocalClientSimple = async (erpClientData) => {
             .input('N', sql.NVarChar(200), erpClientData.Nombre)
             .query(`INSERT INTO dbo.Clientes (CodCliente, Nombre) VALUES (@C, @N)`);
 
-        console.log(`[SyncClient] Cliente local creado: ${erpClientData.CodCliente}`);
+        logger.info(`[SyncClient] Cliente local creado: ${erpClientData.CodCliente}`);
         return { CodCliente: erpClientData.CodCliente, Nombre: erpClientData.Nombre };
     } catch (e) {
-        console.error("[SyncClient] Create Local Error:", e.message);
+        logger.error("[SyncClient] Create Local Error:", e.message);
         return null;
     }
 };

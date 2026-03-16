@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 exports.getAll = async (req, res) => {
     try {
@@ -6,7 +7,7 @@ exports.getAll = async (req, res) => {
         const result = await pool.request().query('SELECT IdRol, NombreRol, Descripcion FROM Roles');
         res.json(result.recordset);
     } catch (err) {
-        console.error('Error getting roles:', err);
+        logger.error('Error getting roles:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -22,7 +23,7 @@ exports.create = async (req, res) => {
 
         res.json({ success: true, message: 'Rol creado exitosamente', IdRol: result.recordset[0].IdRol });
     } catch (err) {
-        console.error('Error creating role:', err);
+        logger.error('Error creating role:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -39,7 +40,7 @@ exports.update = async (req, res) => {
             .query('UPDATE Roles SET NombreRol = @NombreRol, Descripcion = @Descripcion WHERE IdRol = @IdRol');
         res.json({ success: true, message: 'Rol actualizado exitosamente' });
     } catch (err) {
-        console.error('Error updating role:', err);
+        logger.error('Error updating role:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -64,7 +65,7 @@ exports.delete = async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error('Error deleting role:', err);
+        logger.error('Error deleting role:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -78,7 +79,7 @@ exports.getPermissions = async (req, res) => {
             .query('SELECT IdModulo FROM PermisosRoles WHERE IdRol = @IdRol');
         res.json(result.recordset.map(r => r.IdModulo));
     } catch (err) {
-        console.error('Error getting permissions:', err);
+        logger.error('Error getting permissions:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -115,7 +116,7 @@ exports.updatePermissions = async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error('Error updating permissions:', err);
+        logger.error('Error updating permissions:', err);
         res.status(500).json({ error: err.message });
     }
 };

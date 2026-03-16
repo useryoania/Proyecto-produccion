@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Obtener Slots de una Máquina
 exports.getMachineSlots = async (req, res) => {
@@ -24,7 +25,7 @@ exports.getMachineSlots = async (req, res) => {
 
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error getting slots:", err);
+        logger.error("Error getting slots:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -137,7 +138,7 @@ exports.handleSlotAction = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error slot action:", err);
+        logger.error("Error slot action:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -210,7 +211,7 @@ exports.getAvailableBobbins = async (req, res) => {
         res.json(result.recordset);
 
     } catch (err) {
-        console.error("Error getting available bobbins:", err);
+        logger.error("Error getting available bobbins:", err);
         res.status(500).json({ error: err.message });
     }
 };

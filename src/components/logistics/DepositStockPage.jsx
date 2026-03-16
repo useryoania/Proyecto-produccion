@@ -365,7 +365,7 @@ const DepositStockPage = () => {
     return (
         <div className="min-h-screen bg-[#f8fafc] p-0 font-sans">
             {/* NAVIGATION-FIRST HEADER */}
-            <div className="sticky top-0 z-[100] bg-white/95 backdrop-blur-2xl border-b border-slate-200 shadow-sm px-10 py-4">
+            <div className="sticky top-0 z-[30] bg-white/95 backdrop-blur-2xl border-b border-slate-200 shadow-sm px-10 py-4">
                 <div className="max-w-[1800px] mx-auto flex items-center gap-10">
                     {/* FAR LEFT: BACK BUTTON */}
                     <div className="w-14 min-w-[56px]">

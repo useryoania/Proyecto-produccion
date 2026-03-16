@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 exports.getActiveContent = async (req, res) => {
     try {
@@ -6,7 +7,7 @@ exports.getActiveContent = async (req, res) => {
         const result = await pool.request().query("SELECT * FROM ContenidoWeb WHERE Activo = 1 ORDER BY Orden ASC");
         res.json({ success: true, data: result.recordset });
     } catch (error) {
-        console.error("Error getting active content:", error);
+        logger.error("Error getting active content:", error);
         res.status(500).json({ success: false, error: "Error retrieving content." });
     }
 };
@@ -18,7 +19,7 @@ exports.getAllContent = async (req, res) => {
         const result = await pool.request().query("SELECT * FROM ContenidoWeb ORDER BY Tipo, Orden ASC");
         res.json({ success: true, data: result.recordset });
     } catch (error) {
-        console.error("Error getting all content:", error);
+        logger.error("Error getting all content:", error);
         res.status(500).json({ success: false, error: "Error retrieving content." });
     }
 };
@@ -39,7 +40,7 @@ exports.createContent = async (req, res) => {
 
         res.json({ success: true, message: "Contenido creado." });
     } catch (error) {
-        console.error("Error creating content:", error);
+        logger.error("Error creating content:", error);
         res.status(500).json({ success: false, error: "Error creating content." });
     }
 };
@@ -68,7 +69,7 @@ exports.updateContent = async (req, res) => {
 
         res.json({ success: true, message: "Contenido actualizado." });
     } catch (error) {
-        console.error("Error updating content:", error);
+        logger.error("Error updating content:", error);
         res.status(500).json({ success: false, error: "Error updating content." });
     }
 };
@@ -82,7 +83,7 @@ exports.deleteContent = async (req, res) => {
             .query("DELETE FROM ContenidoWeb WHERE ID = @id");
         res.json({ success: true, message: "Contenido eliminado." });
     } catch (error) {
-        console.error("Error deleting content:", error);
+        logger.error("Error deleting content:", error);
         res.status(500).json({ success: false, error: "Error deleting content." });
     }
 };

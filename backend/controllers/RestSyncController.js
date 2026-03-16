@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { sql, getPool } = require('../config/db');
 const fileProcessingService = require('../services/fileProcessingService');
+const logger = require('../utils/logger');
 
 // Semáforo para evitar ejecuciones superpuestas del scheduler
 let isProcessing = false;
@@ -11,7 +12,7 @@ const emitLog = (io, message, type = 'info') => {
         io.emit('sync:log', { message, type, timestamp: new Date() });
     }
     const icon = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
-    console.log(`${icon} [Sync] ${message}`);
+    logger.info(`${icon} [Sync] ${message}`);
 };
 
 // --- LÓGICA MAESTRA DE SINCRONIZACIÓN (V3 FINAL - APLANADO + LOOKAHEAD AVANZADO) ---
@@ -79,7 +80,7 @@ const syncOrdersLogic = async (io) => {
                 const detRes = await axios.get(`${API_BASE}/api/pedidos/${p.NroFact}/con_sublineas`);
                 if (detRes.data?.data) detalle = detRes.data.data;
             } catch (e) {
-                console.warn(`⚠️ Error detalle ${p.NroFact}. Usando cabecera.`);
+                logger.warn(`⚠️ Error detalle ${p.NroFact}. Usando cabecera.`);
             }
 
             // Usar NroFact como prioridad por solicitud de usuario (72 en lugar de 75)
@@ -264,13 +265,13 @@ const syncOrdersLogic = async (io) => {
                     existentes.add(r.CodArticulo);
                     if (r.IDProdReact) mapaReactProducts[r.CodArticulo] = r.IDProdReact;
                 });
-            } catch (e) { console.error("Error checking articles", e); }
+            } catch (e) { logger.error("Error checking articles", e); }
 
             // B. Crear Faltantes
             const codigosParaCrear = Array.from(allCodArtsParams.keys()).filter(c => !existentes.has(c));
 
             if (codigosParaCrear.length > 0) {
-                console.log(`[SyncAuth] Creando ${codigosParaCrear.length} artículos nuevos automáticamente...`);
+                logger.info(`[SyncAuth] Creando ${codigosParaCrear.length} artículos nuevos automáticamente...`);
                 for (const nuevoCod of codigosParaCrear) {
                     const data = allCodArtsParams.get(nuevoCod);
                     try {
@@ -288,7 +289,7 @@ const syncOrdersLogic = async (io) => {
 
                         logAlert('INFO', 'PRODUCTO', 'Artículo creado automáticamente desde importación', nuevoCod, { desc: data.Desc });
                     } catch (errCrear) {
-                        console.error(`Error creando articulo ${nuevoCod}`, errCrear);
+                        logger.error(`Error creando articulo ${nuevoCod}`, errCrear);
                     }
                 }
             }
@@ -310,7 +311,7 @@ const syncOrdersLogic = async (io) => {
                     .query("SELECT TOP 1 1 FROM Ordenes WHERE NoDocERP = @erp");
 
                 if (checkDup.recordset.length > 0) {
-                    console.log(`⚠️ Pedido ${docData.nroDoc} ya existe en DB. Saltando importación para evitar duplicados.`);
+                    logger.info(`⚠️ Pedido ${docData.nroDoc} ya existe en DB. Saltando importación para evitar duplicados.`);
                     continue;
                 }
 
@@ -366,7 +367,7 @@ const syncOrdersLogic = async (io) => {
                     }
 
                     // Debug Log
-                    console.log(`[SyncEnum] Ord: ${docData.nroDoc} (${i + 1}/${totalDocOrdenes}) - Area: ${areaID} - Buscando destino...`);
+                    logger.info(`[SyncEnum] Ord: ${docData.nroDoc} (${i + 1}/${totalDocOrdenes}) - Area: ${areaID} - Buscando destino...`);
 
                     // Escanear hacia adelante saltando hermanos del mismo grupo productivo
                     for (let k = i + 1; k < totalDocOrdenes; k++) {
@@ -378,7 +379,7 @@ const syncOrdersLogic = async (io) => {
                         if (nextOrd.areaID !== areaID) {
                             nextService = nextOrd.areaID;
                             foundDestino = true;
-                            // console.log(`   -> Next Found: ${nextService} (Diff Area)`);
+                            // logger.info(`   -> Next Found: ${nextService} (Diff Area)`);
                             break;
                         }
 
@@ -389,7 +390,7 @@ const syncOrdersLogic = async (io) => {
                         if (isNextExtra) {
                             nextService = 'TERMINACION';
                             foundDestino = true;
-                            // console.log(`   -> Next Found: TERMINACION (Service Extra)`);
+                            // logger.info(`   -> Next Found: TERMINACION (Service Extra)`);
                             break;
                         }
                     }
@@ -400,7 +401,7 @@ const syncOrdersLogic = async (io) => {
                             const descExt = matGroup.itemsExtras.map(e => e.desc.toUpperCase()).join(' ');
                             if (descExt.includes('INSTALACION') || descExt.includes('COLOCACION')) {
                                 nextService = 'INSTALACION';
-                                // console.log(`   -> Next Found: INSTALACION (Item Extra)`);
+                                // logger.info(`   -> Next Found: INSTALACION (Item Extra)`);
                             }
                         }
                     }
@@ -414,7 +415,7 @@ const syncOrdersLogic = async (io) => {
 
                     // DEBUG UM
                     if (umReal === 'u' && matGroup.itemsProductivos.length > 0) {
-                        console.warn(`[SyncUM] Aviso: UM es 'u' para items productivos en Orden ${codigoOrden}. StockArt no trajo UM?`);
+                        logger.warn(`[SyncUM] Aviso: UM es 'u' para items productivos en Orden ${codigoOrden}. StockArt no trajo UM?`);
                     }
 
                     let magVal = 0;
@@ -521,25 +522,25 @@ const syncOrdersLogic = async (io) => {
             await transaction.commit();
             let committed = true; // BANDERA DE SEGURIDAD
 
-            console.log(`✅ EXITO SYNC V3. Creadas: ${generatedCodes.length}`);
+            logger.info(`✅ EXITO SYNC V3. Creadas: ${generatedCodes.length}`);
             if (io && generatedCodes.length) io.emit('server:ordersUpdated', { count: generatedCodes.length });
 
             // ASYNC: Procesamiento de Archivos
             if (createdOrderIds.length > 0) {
-                console.log(`🚀 [RestSync] Enviando ordenes a Procesador de Archivos...`);
+                logger.info(`🚀 [RestSync] Enviando ordenes a Procesador de Archivos...`);
                 // Envolver en try-catch síncrono por si acaso
-                try { fileProcessingService.processOrderList(createdOrderIds, io); } catch (e) { console.error("FileProc Error launch:", e); }
+                try { fileProcessingService.processOrderList(createdOrderIds, io); } catch (e) { logger.error("FileProc Error launch:", e); }
             }
 
             // ASYNC: Sincronización de Clientes
             try {
-                processAsyncClientSync(pedidosAgrupados).catch(err => console.error("[AsyncClientSync] Error fatal:", err));
-            } catch (e) { console.error("AsyncClient launch error:", e); }
+                processAsyncClientSync(pedidosAgrupados).catch(err => logger.error("[AsyncClientSync] Error fatal:", err));
+            } catch (e) { logger.error("AsyncClient launch error:", e); }
 
             // ASYNC: Desvinculación/Vinculación de Productos (Robustez)
             try {
-                processAsyncProductUpdate(createdOrderIds).catch(err => console.error("[AsyncProdSync] Error fatal:", err));
-            } catch (e) { console.error("AsyncProd launch error:", e); }
+                processAsyncProductUpdate(createdOrderIds).catch(err => logger.error("[AsyncProdSync] Error fatal:", err));
+            } catch (e) { logger.error("AsyncProd launch error:", e); }
 
             return { success: true, count: generatedCodes.length };
 
@@ -554,7 +555,7 @@ const syncOrdersLogic = async (io) => {
         }
 
     } catch (e) {
-        console.error("❌ CRITICAL SYNC ERROR:", e.message);
+        logger.error("❌ CRITICAL SYNC ERROR:", e.message);
         return { success: false, error: e.message };
     } finally {
         isProcessing = false;
@@ -565,7 +566,7 @@ const syncOrdersLogic = async (io) => {
 const syncClientsService = require('../services/syncClientsService');
 
 async function processAsyncClientSync(pedidosAgrupados) {
-    console.log("--- INICIO SYNC CLIENTES ASYNC ---");
+    logger.info("--- INICIO SYNC CLIENTES ASYNC ---");
     const { getPool, sql } = require('../config/db'); // Ensure scope
 
     // Iterar documentos únicos
@@ -574,11 +575,11 @@ async function processAsyncClientSync(pedidosAgrupados) {
         const codCliente = doc.codCliente;
 
         if (!codCliente) {
-            console.log(`[SyncClient] Orden ${docId} sin CodCliente en JSON. Saltando.`);
+            logger.info(`[SyncClient] Orden ${docId} sin CodCliente en JSON. Saltando.`);
             continue;
         }
 
-        console.log(`[SyncClient] Procesando Cliente ${codCliente} para Orden ${docId}`);
+        logger.info(`[SyncClient] Procesando Cliente ${codCliente} para Orden ${docId}`);
 
         try {
             // 1. Buscar Local
@@ -586,14 +587,14 @@ async function processAsyncClientSync(pedidosAgrupados) {
             let reactId = null;
 
             if (localClient) {
-                console.log(`   -> Encontrado Local: ${localClient.Nombre}. IDReact: ${localClient.IDReact || 'NULL'}`);
+                logger.info(`   -> Encontrado Local: ${localClient.Nombre}. IDReact: ${localClient.IDReact || 'NULL'}`);
 
                 // Si ya tiene IDReact, usalo
                 if (localClient.IDReact) {
                     reactId = localClient.IDReact;
                 } else {
                     // Si no tiene vinculación, intentar crear/vincular en React
-                    console.log(`   -> Sin IDReact. Intentando exportar...`);
+                    logger.info(`   -> Sin IDReact. Intentando exportar...`);
                     const resReact = await syncClientsService.exportClientToReact(localClient);
                     if (resReact.success) {
                         reactId = resReact.reactId;
@@ -602,7 +603,7 @@ async function processAsyncClientSync(pedidosAgrupados) {
                 }
             } else {
                 // NO existe local -> Crear Local -> Exportar React
-                console.log(`   -> NO EXISTE LOCAL. Creando...`);
+                logger.info(`   -> NO EXISTE LOCAL. Creando...`);
                 // Mapear datos minimos del doc
                 const erpData = {
                     CodCliente: codCliente,
@@ -633,19 +634,19 @@ async function processAsyncClientSync(pedidosAgrupados) {
                 if (reactId) reqUp.input('R', sql.VarChar, String(reactId));
 
                 await reqUp.query(queryUpdate);
-                console.log(`   -> Ordenes actualizadas con CodCliente=${codCliente}, ReactID=${reactId || 'N/A'}`);
+                logger.info(`   -> Ordenes actualizadas con CodCliente=${codCliente}, ReactID=${reactId || 'N/A'}`);
             }
 
         } catch (errOne) {
-            console.error(`[SyncClient] Error procesando ${codCliente}:`, errOne.message);
+            logger.error(`[SyncClient] Error procesando ${codCliente}:`, errOne.message);
         }
     }
-    console.log("--- FIN SYNC CLIENTES ASYNC ---");
+    logger.info("--- FIN SYNC CLIENTES ASYNC ---");
 }
 
 async function processAsyncProductUpdate(orderIds) {
     if (!orderIds || orderIds.length === 0) return;
-    console.log(`[AsyncProd] --- INICIO SYNC PRODUCTOS ASYNC (${orderIds.length} ordenes) ---`);
+    logger.info(`[AsyncProd] --- INICIO SYNC PRODUCTOS ASYNC (${orderIds.length} ordenes) ---`);
     const { getPool } = require('../config/db');
     try {
         const pool = await getPool();
@@ -663,11 +664,11 @@ async function processAsyncProductUpdate(orderIds) {
               AND (O.IdProductoReact IS NULL OR O.IdProductoReact = 0)
               AND A.IDProdReact IS NOT NULL AND A.IDProdReact <> 0
         `);
-        console.log(`[AsyncProd] Ordenes actualizadas con IDProdReact: ${res.rowsAffected}`);
+        logger.info(`[AsyncProd] Ordenes actualizadas con IDProdReact: ${res.rowsAffected}`);
     } catch (e) {
-        console.error("[AsyncProd] Error:", e.message);
+        logger.error("[AsyncProd] Error:", e.message);
     }
-    console.log("[AsyncProd] --- FIN SYNC PRODUCTOS ASYNC ---");
+    logger.info("[AsyncProd] --- FIN SYNC PRODUCTOS ASYNC ---");
 }
 
 

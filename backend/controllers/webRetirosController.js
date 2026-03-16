@@ -5,6 +5,7 @@ const { marcarEntregado, registrarPago } = require('../services/retiroService');
 
 // Importar funciones del controller de órdenes de retiro local
 const ordenesRetiroController = require('./ordenesRetiroController');
+const logger = require('../utils/logger');
 
 /**
  * Endpoint nativo para recibir y registrar directamente un retiro web.
@@ -38,7 +39,7 @@ exports.crearRetiro = async (req, res) => {
         res.status(201).json({ success: true, message: 'Retiro actualizado en OrdenesRetiro', id: OrdIdRetiro });
 
     } catch (err) {
-        console.error("Error al registrar retiro web local:", err);
+        logger.error("Error al registrar retiro web local:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -62,7 +63,7 @@ exports.reportarPagoRetiro = async (req, res) => {
         const ordenRetiroId = parseInt(ordenRetiro.replace(/^R-0*/, ''), 10);
         if (isNaN(ordenRetiroId)) return res.status(400).json({ error: "ordenRetiro inválido" });
 
-        console.log(`[REPORTAR PAGO] Procesando pago directo para ${ordenRetiro} (ID: ${ordenRetiroId})`);
+        logger.info(`[REPORTAR PAGO] Procesando pago directo para ${ordenRetiro} (ID: ${ordenRetiroId})`);
 
         // Validar que exista la orden
         const ordRetResult = await pool.request()
@@ -101,7 +102,7 @@ exports.reportarPagoRetiro = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error al reportar pago:", err);
+        logger.error("Error al reportar pago:", err);
         res.status(500).json({ error: "Fallo al procesar el pago", details: err.message });
     }
 };
@@ -125,6 +126,9 @@ exports.getAllLocalRetiros = async (req, res) => {
                 c.Nombre AS NombreCliente,
                 fe.Nombre AS LugarRetiro,
                 COALESCE(ag.Nombre, r.AgenciaOtra) AS AgenciaNombre,
+                r.DireccionEnvio,
+                r.DepartamentoEnvio,
+                r.LocalidadEnvio,
                 (
                     SELECT STRING_AGG(od.OrdCodigoOrden, ',')
                     FROM RelOrdenesRetiroOrdenes rel WITH(NOLOCK)
@@ -147,7 +151,7 @@ exports.getAllLocalRetiros = async (req, res) => {
         const result = await pool.request().query(query);
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error get_local_retiros:", err);
+        logger.error("Error get_local_retiros:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -219,7 +223,7 @@ exports.getMyRetirosPendientes = async (req, res) => {
 
         res.json(Object.values(retirosMap));
     } catch (err) {
-        console.error("Error get_my_retiros_pendientes:", err);
+        logger.error("Error get_my_retiros_pendientes:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -308,13 +312,13 @@ exports.createHandyPaymentLinkForRetiro = async (req, res) => {
                 .input('Ref', sql.VarChar(200), result.transactionId)
                 .query(`UPDATE OrdenesRetiro SET ReferenciaPagoOnline = @Ref WHERE OReIdOrdenRetiro = @OReId`);
         } catch (dbErr) {
-            console.warn("[HANDY RETIRO] No se pudo actualizar ReferenciaPagoOnline:", dbErr.message);
+            logger.warn("[HANDY RETIRO] No se pudo actualizar ReferenciaPagoOnline:", dbErr.message);
         }
 
         return res.json({ success: true, url: result.url, transactionId: result.transactionId });
 
     } catch (err) {
-        console.error("Error creating Handy link for Retiro:", err.response?.data || err.message);
+        logger.error("Error creating Handy link for Retiro:", err.response?.data || err.message);
         res.status(500).json({ error: err.response?.data?.message || err.message });
     }
 };
@@ -446,7 +450,7 @@ exports.asignarRetiroAEstante = async (req, res) => {
                     `);
             }
 
-            console.log(`[PRONTO] OK ${ordenRetiro}`);
+            logger.info(`[PRONTO] OK ${ordenRetiro}`);
 
             await transaction.commit();
 
@@ -514,7 +518,7 @@ exports.marcarRetiroEntregado = async (req, res) => {
             for (const ord of ordenesDeRetiro) {
                 const OReId = parseInt(ord.replace(/^R-0*/, ''), 10);
                 if (isNaN(OReId)) continue;
-                console.log(`[ENTREGADO MULTIPLE] ${ord} -> ${OReId}`);
+                logger.info(`[ENTREGADO MULTIPLE] ${ord} -> ${OReId}`);
                 await marcarEntregado(transaction, OReId, new Date(fechaEntrega), UsuarioAlta);
             }
 
@@ -532,7 +536,7 @@ exports.marcarRetiroEntregado = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error al entregar:", err);
+        logger.error("Error al entregar:", err);
         res.status(500).json({ error: "Fallo en la entrega general", details: err.message });
     }
 };
@@ -578,8 +582,8 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
             // Extraemos solo los dígitos finales
             for (const ord of ordenesParaEntregar) {
                 const OReId = parseInt((ord || '').replace(/^[A-Za-z]+-0*/, ''), 10);
-                if (isNaN(OReId)) { console.warn(`[ENTREGADO] OReId invalido para: ${ord}`); continue; }
-                console.log(`[ENTREGADO MULTIPLE] ${ord} -> OReId ${OReId}`);
+                if (isNaN(OReId)) { logger.warn(`[ENTREGADO] OReId invalido para: ${ord}`); continue; }
+                logger.info(`[ENTREGADO MULTIPLE] ${ord} -> OReId ${OReId}`);
                 await marcarEntregado(transaction, OReId, new Date(fechaEntrega), UsuarioAlta);
             }
 
@@ -597,7 +601,7 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error al entregar selección múltiple:", err);
+        logger.error("Error al entregar selección múltiple:", err);
         res.status(500).json({ error: "Fallo en la entrega múltiple", details: err.message });
     }
 };
@@ -961,7 +965,7 @@ exports.getPagosOnline = async (req, res) => {
         const result = await request.query(queryStr);
         res.json(result.recordset);
     } catch (err) {
-        console.error("[PAGOS ONLINE] Error fetching Handy Transactions:", err);
+        logger.error("[PAGOS ONLINE] Error fetching Handy Transactions:", err);
         res.status(500).json({ error: "Fallo al traer pagos online", details: err.message });
     }
 };
@@ -999,7 +1003,7 @@ exports.marcarExcepcional = async (req, res) => {
 
         res.json({ message: "Retiro registrado como deuda y autorizado exitosamente." });
     } catch (err) {
-        console.error("[EXCEPCIONAL] Error al guardar retiro excepcional:", err);
+        logger.error("[EXCEPCIONAL] Error al guardar retiro excepcional:", err);
         res.status(500).json({ error: "Fallo al registrar retiro excepcional", details: err.message });
     }
 };
@@ -1059,7 +1063,7 @@ exports.getExcepciones = async (req, res) => {
         }));
         res.json(data);
     } catch (err) {
-        console.error("[EXCEPCIONES] Error al obtener excepciones de deuda:", err);
+        logger.error("[EXCEPCIONES] Error al obtener excepciones de deuda:", err);
         res.status(500).json({ error: "Fallo al obtener retiros excepcionales", details: err.message });
     }
 };
@@ -1096,7 +1100,7 @@ exports.gestionarExcepcion = async (req, res) => {
 
         res.json({ success: true, message: 'Estado actualizado correctamente.' });
     } catch (err) {
-        console.error("[EXCEPCION GESTION] Error al actualizar estado:", err);
+        logger.error("[EXCEPCION GESTION] Error al actualizar estado:", err);
         res.status(500).json({ error: "Fallo al actualizar la excepción", details: err.message });
     }
 };
@@ -1157,7 +1161,76 @@ exports.seedConfigEstantes = async (req, res) => {
         }
 
     } catch (err) {
-        console.error('[SEED ESTANTES] Error:', err);
+        logger.error('[SEED ESTANTES] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+/**
+ * Historial completo de retiros de un cliente (todos los estados)
+ */
+exports.getMyRetirosHistorial = async (req, res) => {
+    try {
+        const codCliente = req.user?.codCliente || req.user?.id;
+        if (!codCliente) return res.status(401).json({ error: "Usuario sin código de cliente" });
+
+        const pool = await getPool();
+        const query = `
+            SELECT 
+                COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR) AS OrdIdRetiro,
+                r.OReCostoTotalOrden AS Monto,
+                r.MonIdMoneda AS Moneda,
+                r.OReEstadoActual AS Estado,
+                r.CodCliente,
+                r.OReFechaAlta AS Fecha,
+                r.FormaRetiro,
+                fe.Nombre AS LugarRetiro,
+                COALESCE(ag.Nombre, r.AgenciaOtra) AS AgenciaNombre,
+                o.OrdCodigoOrden,
+                o.OrdNombreTrabajo,
+                o.OrdCostoFinal,
+                m.MonSimbolo
+            FROM OrdenesRetiro r WITH(NOLOCK)
+            LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
+            LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
+            LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+            LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
+            WHERE r.CodCliente = @codCliente
+            ORDER BY r.OReFechaAlta DESC
+        `;
+        const result = await pool.request()
+            .input('codCliente', sql.Int, parseInt(codCliente, 10))
+            .query(query);
+
+        // Group by retiro
+        const retirosMap = {};
+        for (const row of result.recordset) {
+            if (!retirosMap[row.OrdIdRetiro]) {
+                retirosMap[row.OrdIdRetiro] = {
+                    OrdIdRetiro: row.OrdIdRetiro,
+                    Monto: row.Monto,
+                    Moneda: row.Moneda,
+                    Estado: row.Estado,
+                    Fecha: row.Fecha,
+                    FormaRetiro: row.FormaRetiro,
+                    LugarRetiro: row.LugarRetiro,
+                    AgenciaNombre: row.AgenciaNombre,
+                    Ordenes: []
+                };
+            }
+            if (row.OrdCodigoOrden) {
+                retirosMap[row.OrdIdRetiro].Ordenes.push({
+                    codigo: row.OrdCodigoOrden,
+                    nombre: row.OrdNombreTrabajo || row.OrdCodigoOrden,
+                    costo: parseFloat(row.OrdCostoFinal) || 0,
+                    moneda: row.MonSimbolo || '$'
+                });
+            }
+        }
+
+        res.json(Object.values(retirosMap));
+    } catch (err) {
+        logger.error("Error get_my_retiros_historial:", err);
         res.status(500).json({ error: err.message });
     }
 };

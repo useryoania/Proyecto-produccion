@@ -1,8 +1,9 @@
 const { getPool } = require('../config/db');
+const logger = require('../utils/logger');
 
 const safe = async (fn, fallback, label) => {
     try { return await fn(); }
-    catch (e) { console.error(`[DASHBOARD] ${label}:`, e.message); return fallback; }
+    catch (e) { logger.error(`[DASHBOARD] ${label}:`, e.message); return fallback; }
 };
 
 /**
@@ -131,7 +132,7 @@ exports.getDepositoDashboard = async (req, res) => {
         });
 
     } catch (err) {
-        console.error('[DASHBOARD DEPÓSITO] Error general:', err);
+        logger.error('[DASHBOARD DEPÓSITO] Error general:', err);
         res.status(500).json({ error: err.message });
     }
 };

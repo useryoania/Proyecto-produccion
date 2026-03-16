@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 exports.getByUser = async (req, res) => {
     try {
@@ -39,7 +40,7 @@ exports.getByUser = async (req, res) => {
 
         res.json(menuData);
     } catch (err) {
-        console.error('❌ ERROR EN GETBYUSER (Direct Query):', err);
+        logger.error('❌ ERROR EN GETBYUSER (Direct Query):', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -57,7 +58,7 @@ exports.getAll = async (req, res) => {
         `);
         res.json(result.recordset);
     } catch (err) {
-        console.error('Error getAll:', err);
+        logger.error('Error getAll:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -78,7 +79,7 @@ exports.create = async (req, res) => {
             `);
         res.json({ success: true, message: 'Modulo creado' });
     } catch (err) {
-        console.error('Error create:', err);
+        logger.error('Error create:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -103,7 +104,7 @@ exports.update = async (req, res) => {
             `);
         res.json({ success: true, message: 'Modulo actualizado' });
     } catch (err) {
-        console.error('Error update:', err);
+        logger.error('Error update:', err);
         res.status(500).json({ error: err.message });
     }
 };

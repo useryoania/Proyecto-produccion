@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // ==========================================
 // 1. OBTENER INVENTARIO (POR AREA)
@@ -64,7 +65,7 @@ exports.getInventoryByArea = async (req, res) => {
 
         res.json(inventory);
     } catch (err) {
-        console.error("Error getInventoryByArea:", err);
+        logger.error("Error getInventoryByArea:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -121,7 +122,7 @@ exports.addStock = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error addStock:", err);
+        logger.error("Error addStock:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -163,7 +164,7 @@ exports.registerConsumption = async (poolInstance, bobinaId, metrosUsados, loteP
                 `);
         }
     } catch (e) {
-        console.error("Error registrando consumo:", e);
+        logger.error("Error registrando consumo:", e);
     }
 };
 
@@ -244,7 +245,7 @@ exports.closeBobina = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error closeBobina:", err);
+        logger.error("Error closeBobina:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -295,7 +296,7 @@ exports.adjustBobina = async (req, res) => {
             throw inner;
         }
     } catch (err) {
-        console.error("Error adjustBobina:", err);
+        logger.error("Error adjustBobina:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -321,7 +322,7 @@ exports.getBobinaHistory = async (req, res) => {
 
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error history:", err);
+        logger.error("Error history:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -580,7 +581,7 @@ exports.getInventoryReport = async (req, res) => {
         res.json(data);
 
     } catch (err) {
-        console.error("Error getInventoryReport:", err);
+        logger.error("Error getInventoryReport:", err);
         res.status(500).json({ error: err.message });
     }
 };

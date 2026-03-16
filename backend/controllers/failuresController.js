@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // =====================================================================
 // 1. OBTENER MÁQUINAS (Desde ConfigEquipos)
@@ -19,7 +20,7 @@ exports.getMachinesByArea = async (req, res) => {
             `);
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error getMachines:", err);
+        logger.error("Error getMachines:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -70,7 +71,7 @@ exports.createFailureType = async (req, res) => {
 
         res.json({ success: true, message: 'Catálogo actualizado' });
     } catch (err) {
-        console.error("Error crear tipo falla:", err);
+        logger.error("Error crear tipo falla:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -112,7 +113,7 @@ exports.createTicket = async (req, res) => {
 
     } catch (err) {
         if (transaction) await transaction.rollback();
-        console.error("Error creando ticket:", err);
+        logger.error("Error creando ticket:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -145,7 +146,7 @@ exports.getHistory = async (req, res) => {
         
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error historial:", err);
+        logger.error("Error historial:", err);
         res.status(500).json({ error: err.message });
     }
 };

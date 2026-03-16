@@ -1,6 +1,7 @@
 const sql = require('mssql');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+const logger = require('../utils/logger');
 
 const config = {
     user: process.env.DB_USER,
@@ -33,18 +34,18 @@ const getPool = async () => {
         poolPromise = new sql.ConnectionPool(config)
             .connect()
             .then(pool => {
-                console.log('✅ Conectado a MSSQL');
+                logger.info('✅ Conectado a MSSQL');
                 return pool;
             })
             .catch(err => {
-                console.error('❌ Error conectando a MSSQL:', err);
+                logger.error('❌ Error conectando a MSSQL:', err);
                 poolPromise = null; // Reset promise on error
                 throw err;
             });
 
         return await poolPromise;
     } catch (err) {
-        console.error('❌ Error en getPool:', err);
+        logger.error('❌ Error en getPool:', err);
         throw err;
     }
 };

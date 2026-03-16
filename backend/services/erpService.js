@@ -1,4 +1,5 @@
 const axios = require('axios');
+const logger = require('../utils/logger');
 
 // 👇 AQUÍ ESTÁ EL CAMBIO: Nueva ruta confirmada
 // 👇 AQUÍ ESTÁ EL CAMBIO: Nueva ruta confirmada
@@ -6,7 +7,7 @@ const ERP_API_URL = `${process.env.ERP_SECONDARY_API_URL || 'http://localhost:30
 
 exports.fetchErpOrders = async () => {
     try {
-        console.log(`🔌 Conectando a: ${ERP_API_URL}`);
+        logger.info(`🔌 Conectando a: ${ERP_API_URL}`);
         const response = await axios.get(ERP_API_URL);
 
         // Verificamos si la respuesta tiene la propiedad 'data'
@@ -17,11 +18,11 @@ exports.fetchErpOrders = async () => {
             // Por si el ERP devuelve el array directo sin envoltorio "data"
             return response.data;
         } else {
-            console.warn("⚠️ Estructura de respuesta inesperada del ERP:", response.data);
+            logger.warn("⚠️ Estructura de respuesta inesperada del ERP:", response.data);
             return [];
         }
     } catch (error) {
-        console.error(`❌ Error conectando al ERP (${ERP_API_URL}):`, error.message);
+        logger.error(`❌ Error conectando al ERP (${ERP_API_URL}):`, error.message);
         throw new Error("No se pudo conectar con el ERP");
     }
 };

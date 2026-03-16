@@ -1,5 +1,6 @@
 const { sql, getPool } = require('../config/db');
 const { logAlert } = require('../services/alertsService');
+const logger = require('../utils/logger');
 
 exports.updateLocalProduct = async (req, res) => {
     const { codArticulo, descripcion, codStock, grupo, supFlia, mostrar, anchoImprimible, llevaPapel } = req.body;
@@ -33,7 +34,7 @@ exports.updateLocalProduct = async (req, res) => {
 
         res.json({ success: true, message: "Producto actualizado correctamente" });
     } catch (e) {
-        console.error("Error updateLocalProduct:", e);
+        logger.error("Error updateLocalProduct:", e);
         res.status(500).json({ error: e.message });
     }
 };

@@ -4,6 +4,7 @@
  * y webOrdersController (web), eliminando duplicación de código.
  */
 const { sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 /**
  * Determina el estado inicial del retiro según el tipo de cliente.
@@ -312,7 +313,7 @@ async function registrarPago(transaction, { ordenRetiroId, metodoPagoId, monedaI
                 VALUES (@ordenRetiroId, 4, GETDATE(), @usuarioId);
             `);
 
-        console.log(`[AUTO-PAGO] OrdenRetiro R-${ordenRetiroId} marcada como Abonada automáticamente.`);
+        logger.info(`[AUTO-PAGO] OrdenRetiro R-${ordenRetiroId} marcada como Abonada automáticamente.`);
     }
 
     return { pagoId };

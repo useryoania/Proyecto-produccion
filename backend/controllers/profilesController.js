@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // --- PERFILES ---
 
@@ -115,7 +116,7 @@ const getAllCustomersWithProfile = async (req, res) => {
 
     // Version: Devolver solo asignaciones (ClienteID -> PerfilID)
     try {
-        console.log("Fetching customer assignments with PerfilesIDs...");
+        logger.info("Fetching customer assignments with PerfilesIDs...");
         const pool = await getPool();
         const result = await pool.request().query(`
             SELECT 
@@ -127,7 +128,7 @@ const getAllCustomersWithProfile = async (req, res) => {
         `);
         res.json(result.recordset);
     } catch (e) {
-        console.error("SQL Error in getAllCustomersWithProfile:", e); // Log detallado
+        logger.error("SQL Error in getAllCustomersWithProfile:", e); // Log detallado
         res.status(500).json({ error: e.message, code: e.code }); // Retornar detalle
     }
 };
@@ -174,7 +175,7 @@ const assignProfileToCustomer = async (req, res) => {
 
         res.json({ success: true });
     } catch (e) {
-        console.error("Error assigning profile:", e);
+        logger.error("Error assigning profile:", e);
         res.status(500).json({ error: e.message });
     }
 };

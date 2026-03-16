@@ -1,4 +1,5 @@
 const { sql, getPool } = require('../config/db');
+const logger = require('../utils/logger');
 
 /**
  * Registra una alerta en IntegrationLogs
@@ -24,9 +25,9 @@ async function logAlert(nivel, entidad, mensaje, referenciaId = null, datosObjet
                 VALUES (@Nivel, @Entidad, @Mensaje, @Ref, @Json, 'PENDIENTE')
             `);
 
-        console.log(`[ALERT][${nivel}] ${mensaje}`);
+        logger.info(`[ALERT][${nivel}] ${mensaje}`);
     } catch (e) {
-        console.error("Error writing IntegrationLog:", e);
+        logger.error("Error writing IntegrationLog:", e);
     }
 }
 

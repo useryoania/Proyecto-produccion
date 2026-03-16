@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Crear solicitud
 exports.createRequest = async (req, res) => {
@@ -19,7 +20,7 @@ exports.createRequest = async (req, res) => {
             `);
         res.json({ success: true });
     } catch (err) {
-        console.error(err);
+        logger.error(err);
         res.status(500).json({ error: err.message });
     }
 };

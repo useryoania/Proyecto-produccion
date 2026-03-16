@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Obtener Tiempos de Entrega
 exports.getAllDeliveryTimes = async (req, res) => {
@@ -7,7 +8,7 @@ exports.getAllDeliveryTimes = async (req, res) => {
         const result = await pool.request().query("SELECT * FROM dbo.ConfiguracionTiemposEntrega ORDER BY Prioridad ASC");
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error getting delivery times:", err);
+        logger.error("Error getting delivery times:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -26,7 +27,7 @@ exports.createDeliveryTime = async (req, res) => {
 
         res.json({ success: true, message: 'Tiempo de entrega creado' });
     } catch (err) {
-        console.error("Error creating delivery time:", err);
+        logger.error("Error creating delivery time:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -49,7 +50,7 @@ exports.updateDeliveryTime = async (req, res) => {
 
         res.json({ success: true, message: 'Tiempo de entrega actualizado' });
     } catch (err) {
-        console.error("Error updating delivery time:", err);
+        logger.error("Error updating delivery time:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -65,7 +66,7 @@ exports.deleteDeliveryTime = async (req, res) => {
 
         res.json({ success: true, message: 'Tiempo de entrega eliminado' });
     } catch (err) {
-        console.error("Error deleting delivery time:", err);
+        logger.error("Error deleting delivery time:", err);
         res.status(500).json({ error: err.message });
     }
 };

@@ -1,6 +1,7 @@
 const { sql, getPool } = require('../config/db');
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('../middleware/asyncHandler');
+const logger = require('../utils/logger');
 const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-macrosoft-production';
 
 // ===================================
@@ -15,7 +16,7 @@ exports.login = asyncHandler(async (req, res) => {
         return res.status(400).json({ success: false, message: 'ID Cliente requerido' });
     }
 
-    console.log(`🔐 [LOGIN ATTEMPT] Identifier: '${identifier}' (Pattern: '${identifier.trim()}')`);
+    logger.info(`🔐 [LOGIN ATTEMPT] Identifier: '${identifier}' (Pattern: '${identifier.trim()}')`);
 
     const pool = await getPool();
 
@@ -28,10 +29,10 @@ exports.login = asyncHandler(async (req, res) => {
             WHERE LTRIM(RTRIM(IDCliente)) = @Val
         `);
 
-    console.log(`🔐 [LOGIN RESULT] Matches found: ${result.recordset.length}`);
+    logger.info(`🔐 [LOGIN RESULT] Matches found: ${result.recordset.length}`);
 
     if (result.recordset.length === 0) {
-        console.warn(`❌ Login Failed: User not found for '${identifier}'`);
+        logger.warn(`❌ Login Failed: User not found for '${identifier}'`);
         return res.status(401).json({ success: false, message: 'Usuario incorrecto: No se encontró el cliente.' });
     }
 
@@ -149,7 +150,7 @@ exports.register = asyncHandler(async (req, res) => {
                 vendedorId = vendedorResult.recordset[0]?.ID || null;
             }
         } catch (err) {
-            console.warn('⚠️ Error auto-assigning vendedor:', err.message);
+            logger.warn('⚠️ Error auto-assigning vendedor:', err.message);
             // Non-blocking: registration continues without vendedor
         }
     }

@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // =====================================================================
 // 1. OBTENER LISTA DE ÁREAS (Para el Sidebar)
@@ -40,7 +41,7 @@ exports.getAllAreas = async (req, res) => {
         // Retornamos directamente, el front usa AreaID y Nombre
         res.json(result.recordset);
     } catch (err) {
-        console.error("❌ Error en getAllAreas:", err.message);
+        logger.error("❌ Error en getAllAreas:", err.message);
         res.status(500).json({ error: "Error cargando áreas." });
     }
 };
@@ -80,7 +81,7 @@ exports.getAreaDetails = async (req, res) => {
             estados: estados.recordset
         });
     } catch (err) {
-        console.error("Error en getDetails:", err);
+        logger.error("Error en getDetails:", err);
         // Respuesta segura para evitar crash en frontend
         res.json({ equipos: [], insumos: [], columnas: [], estados: [] });
     }
@@ -105,10 +106,10 @@ exports.addPrinter = async (req, res) => {
             .query("INSERT INTO dbo.ConfigEquipos (AreaID, Nombre, Activo, Capacidad, Velocidad, Estado, EstadoProceso) VALUES (@AreaID, @Nombre, 1, @Capacidad, @Velocidad, @Estado, @EstadoProceso)");
         res.json({ success: true, message: 'Equipo agregado' });
     } catch (err) {
-        console.error("❌ ERROR CRÍTICO AL AGREGAR EQUIPO:");
-        console.error("Datos recibidos:", { areaId, nombre, capacidad, velocidad, estado, estadoProceso });
-        console.error("Mensaje de error SQL:", err.message);
-        console.error("Stack trace:", err.stack);
+        logger.error("❌ ERROR CRÍTICO AL AGREGAR EQUIPO:");
+        logger.error("Datos recibidos:", { areaId, nombre, capacidad, velocidad, estado, estadoProceso });
+        logger.error("Mensaje de error SQL:", err.message);
+        logger.error("Stack trace:", err.stack);
         res.status(500).json({ error: err.message });
     }
 };
@@ -163,7 +164,7 @@ exports.addStatus = async (req, res) => {
 
         res.json({ success: true, message: 'Estado agregado' });
     } catch (err) {
-        console.error("Error adding status:", err);
+        logger.error("Error adding status:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -192,7 +193,7 @@ exports.updateStatus = async (req, res) => {
             `);
         res.json({ success: true, message: 'Estado actualizado' });
     } catch (err) {
-        console.error("Error updating status:", err);
+        logger.error("Error updating status:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -212,7 +213,7 @@ exports.deleteStatus = async (req, res) => {
             res.status(404).json({ error: 'Estado no encontrado' });
         }
     } catch (err) {
-        console.error("Error deleting status:", err);
+        logger.error("Error deleting status:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -295,7 +296,7 @@ exports.deletePrinter = async (req, res) => {
             res.status(404).json({ error: 'Equipo no encontrado' });
         }
     } catch (err) {
-        console.error("Error deleting printer:", err);
+        logger.error("Error deleting printer:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -334,7 +335,7 @@ exports.updatePrinter = async (req, res) => {
 
         res.json({ success: true, message: 'Equipo actualizado' });
     } catch (err) {
-        console.error("Error updating printer:", err);
+        logger.error("Error updating printer:", err);
         res.status(500).json({ error: err.message });
     }
 };

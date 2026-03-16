@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Controlador para obtener las órdenes
 const getOrdenesByFilter = async (req, res) => {
@@ -90,7 +91,7 @@ const getOrdenesByFilter = async (req, res) => {
     }
     if (subMarca) {
       // SubMarca is no longer supported with the new Articulos structure because it does not exist there
-      console.log("SubMarca filter ignored as it is no longer supported with Articulos.");
+      logger.info("SubMarca filter ignored as it is no longer supported with Articulos.");
     }
 
     query += ` ORDER BY o.OrdIdOrden DESC`;
@@ -106,7 +107,7 @@ const getOrdenesByFilter = async (req, res) => {
 
     res.json(orders);
   } catch (err) {
-    console.error('Error al obtener los datos:', err);
+    logger.error('Error al obtener los datos:', err);
     res.status(500).json({ error: 'Error al obtener los datos', msg: err?.message, stack: err?.stack });
   }
 };
@@ -149,7 +150,7 @@ const getOrdenByCodigo = async (req, res) => {
 
     res.json(result.recordset[0]);
   } catch (err) {
-    console.error('Error al obtener la orden:', err);
+    logger.error('Error al obtener la orden:', err);
     res.status(500).json({ error: 'Error al obtener la orden' });
   }
 };
@@ -370,7 +371,7 @@ const createOrden = async (req, res) => {
     res.status(201).json({ message: 'Orden creada correctamente', idOrden: newOrderId });
 
   } catch (err) {
-    console.error('Error al crear la orden:', err);
+    logger.error('Error al crear la orden:', err);
     res.status(500).json({ error: 'Error al crear la orden: ' + err.message });
   }
 };
@@ -426,7 +427,7 @@ o.OrdIdOrden AS IdOrden,
 
     res.json(result.recordset);
   } catch (err) {
-    console.error('Error al obtener las órdenes por estados:', err);
+    logger.error('Error al obtener las órdenes por estados:', err);
     res.status(500).json({ error: 'Error al obtener las órdenes por estados' });
   }
 };
@@ -481,7 +482,7 @@ VALUES(@orderId, @estadoId, @fecha, @usuario);
 
     res.status(200).json({ message: 'Órdenes actualizadas al nuevo estado' });
   } catch (err) {
-    console.error('Error al actualizar el estado de las órdenes:', err);
+    logger.error('Error al actualizar el estado de las órdenes:', err);
 
     if (transaction) {
       try {
@@ -548,7 +549,7 @@ o.OrdIdOrden,
     res.json(result.recordset);
 
   } catch (err) {
-    console.error('Error al obtener las órdenes por cliente:', err);
+    logger.error('Error al obtener las órdenes por cliente:', err);
     res.status(500).json({ error: 'Error al obtener las órdenes por cliente' });
   }
 };
@@ -565,7 +566,7 @@ const getEstadosOrdenes = async (req, res) => {
 
     res.json(result.recordset);
   } catch (err) {
-    console.error('Error al obtener estados de órdenes:', err);
+    logger.error('Error al obtener estados de órdenes:', err);
     res.status(500).json({ error: 'Error al obtener estados de órdenes' });
   }
 };
@@ -591,7 +592,7 @@ const updateExportacion = async (req, res) => {
 
     res.json({ message: 'Órdenes actualizadas correctamente.' });
   } catch (error) {
-    console.error('Error al actualizar las órdenes exportadas:', error);
+    logger.error('Error al actualizar las órdenes exportadas:', error);
     res.status(500).json({ message: 'Error al actualizar las órdenes exportadas.' });
   }
 };
@@ -625,7 +626,7 @@ const eliminarOrdenes = async (req, res) => {
 
     res.status(200).json({ message: "Órdenes eliminadas correctamente" });
   } catch (err) {
-    console.error("Error al eliminar órdenes:", err);
+    logger.error("Error al eliminar órdenes:", err);
 
     if (transaction) {
       try {
@@ -643,7 +644,7 @@ const getModosOrdenes = async (req, res) => {
     const result = await pool.request().query('SELECT MOrIdModoOrden, MOrNombreModo FROM ModosOrdenes WITH(NOLOCK)');
     res.json(result.recordset);
   } catch (err) {
-    console.error('Error al obtener los modos de órdenes:', err);
+    logger.error('Error al obtener los modos de órdenes:', err);
     res.status(500).json({ error: 'Error al obtener los modos de órdenes' });
   }
 };
@@ -697,7 +698,7 @@ const parseQROrden = async (req, res) => {
     });
 
   } catch (err) {
-    console.error('Error en parseQROrden:', err);
+    logger.error('Error en parseQROrden:', err);
     return res.status(500).json({ valid: false, error: 'Error interno validando: ' + err.message });
   }
 };
@@ -726,7 +727,7 @@ const updatePhoneAndResendWsp = async (req, res) => {
 
     res.json({ success: true, message: 'Teléfono actualizado. La orden fue reenviada a la cola de avisos.' });
   } catch (err) {
-    console.error('Error en updatePhoneAndResendWsp:', err);
+    logger.error('Error en updatePhoneAndResendWsp:', err);
     res.status(500).json({ error: 'Falla interna del servidor.' });
   }
 };
@@ -787,7 +788,7 @@ const getPendingWspOrders = async (req, res) => {
 
     res.json(parsedData);
   } catch (err) {
-    console.error('Error en getPendingWspOrders:', err);
+    logger.error('Error en getPendingWspOrders:', err);
     res.status(500).json({ error: 'Falla interna del servidor.' });
   }
 };
@@ -809,7 +810,7 @@ const omitirWsp = async (req, res) => {
       `);
     res.json({ success: true });
   } catch (err) {
-    console.error('Error en omitirWsp:', err);
+    logger.error('Error en omitirWsp:', err);
     res.status(500).json({ error: err.message });
   }
 };

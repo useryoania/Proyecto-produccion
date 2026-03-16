@@ -302,7 +302,6 @@ const printRetiroLabel = (items) => {
     const telefono = item.CliTelefono ? item.CliTelefono.trim() : '';
     const depto = item.departamentoEnvio || '';
     const localidad = item.localidadEnvio || '';
-    const ubicacion = [depto, localidad].filter(Boolean).join(' — ');
     const direccion = item.direccionEnvio || '';
     const agencia = item.agenciaNombre || '';
     const ordenRetiro = item.displayLabel || item.ordenDeRetiro || '';
@@ -318,14 +317,13 @@ const printRetiroLabel = (items) => {
           <div class="badge">DESTINATARIO</div>
           <div class="dest-nombre">${nombre}</div>
           ${telefono ? `<div class="dest-row"><span class="icon">&#9742;</span> ${telefono}</div>` : ''}
-          ${ubicacion ? `<div class="dest-row"><span class="icon">&#9872;</span> ${ubicacion}</div>` : ''}
-          ${direccion ? `<div class="dest-row"><span class="icon">&#9962;</span> ${direccion}</div>` : ''}
-          ${agencia ? `<div class="agencia-pill">&#9654; ${agencia}</div>` : ''}
+          ${depto ? `<div style="font-size:26px;font-weight:900;color:#111;text-transform:uppercase;line-height:1.2;">${depto}</div>` : ''}
+          ${localidad ? `<div style="font-size:26px;font-weight:900;color:#111;text-transform:uppercase;line-height:1.2;margin-bottom:4px;">${localidad}</div>` : ''}
+          ${direccion ? `<div style="font-size:20px;font-weight:800;color:#222;line-height:1.3;margin-bottom:4px;">${direccion}</div>` : ''}
+          ${agencia ? `<div class="agencia-pill">AGENCIA &gt; ${agencia}</div>` : ''}
         </div>
 
-        <div class="divider-area">
-          <div class="divider-line"></div>
-          <div class="scissors">&#9986;</div>
+        <div class="divider-area" style="padding-top:0;margin-top:-4px;">
           <div class="divider-line"></div>
         </div>
 
@@ -469,18 +467,18 @@ const printRetiroLabel = (items) => {
       margin-bottom: 6px;
     }
     .rem-nombre {
-      font-size: 15px;
+      font-size: 20px;
       font-weight: 900;
       text-transform: uppercase;
       letter-spacing: 2px;
       color: #333;
-      margin-bottom: 2px;
+      margin-bottom: 4px;
     }
     .rem-row {
-      font-size: 11px;
-      font-weight: 600;
-      color: #666;
-      line-height: 1.5;
+      font-size: 14px;
+      font-weight: 700;
+      color: #555;
+      line-height: 1.6;
     }
 
     @media print {
@@ -574,6 +572,9 @@ const WebRetirosPage = () => {
             pagoHandy: !!r.ReferenciaPago,
             lugarRetiro: r.LugarRetiro || null,
             agenciaNombre: r.AgenciaNombre || null,
+            direccionEnvio: r.DireccionEnvio || null,
+            departamentoEnvio: r.DepartamentoEnvio || null,
+            localidadEnvio: r.LocalidadEnvio || null,
             orders: r.BultosJSON ? JSON.parse(r.BultosJSON) :
               (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() })) : [])
           }));
@@ -660,6 +661,9 @@ const WebRetirosPage = () => {
                 pagoHandy: !!r.ReferenciaPago,
                 lugarRetiro: r.LugarRetiro || null,
                 agenciaNombre: r.AgenciaNombre || null,
+                direccionEnvio: r.DireccionEnvio || null,
+                departamentoEnvio: r.DepartamentoEnvio || null,
+                localidadEnvio: r.LocalidadEnvio || null,
                 orders: r.BultosJSON ? JSON.parse(r.BultosJSON) :
                   (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() })) : [])
               }));
@@ -1292,6 +1296,9 @@ const WebRetirosPage = () => {
                   fechaAlta: o.fechaAlta || o.FechaAlta || null,
                   lugarRetiro: o.lugarRetiro || 'Web',
                   agenciaNombre: o.agenciaNombre || null,
+                  direccionEnvio: o.direccionEnvio || null,
+                  departamentoEnvio: o.departamentoEnvio || null,
+                  localidadEnvio: o.localidadEnvio || null,
                   totalCost: o.monto ? `${o.moneda} ${Number(o.monto).toFixed(2)}` : '-',
                   orders: o.orders,
                   pagoHandy: o.pagoHandy,
@@ -1309,6 +1316,9 @@ const WebRetirosPage = () => {
                   fechaAlta: o.fechaAlta || o.FechaAlta || null,
                   lugarRetiro: o.lugarRetiro || '-',
                   agenciaNombre: o.agenciaNombre || null,
+                  direccionEnvio: o.direccionEnvio || null,
+                  departamentoEnvio: o.departamentoEnvio || null,
+                  localidadEnvio: o.localidadEnvio || null,
                   totalCost: (o.totalCost && o.totalCost !== 'NaN') ? o.totalCost : (o.montopagorealizado || '-'),
                   orders: (o.orders || []).map(sub => ({
                     orderNumber: sub.orderNumber || sub.codigoOrden,

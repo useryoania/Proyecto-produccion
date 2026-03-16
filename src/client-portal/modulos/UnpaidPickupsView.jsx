@@ -74,8 +74,8 @@ export const UnpaidPickupsView = () => {
             <div className="flex items-center gap-3 mb-2">
                 <CreditCard size={48} strokeWidth={1} className="text-brand-gold" />
                 <div>
-                    <h2 className="text-3xl font-bold text-zinc-300 uppercase tracking-tight">Pagos <span className="text-custom-cyan">Pendientes</span></h2>
-                    <p className="text-zinc-500 uppercase text-sm">Retiros pendientes de pago.</p>
+                    <h2 className="text-lg font-bold text-zinc-300 uppercase tracking-tight">Pagos <span className="text-custom-cyan">Pendientes</span></h2>
+                    <p className="text-zinc-500 uppercase text-xs">Retiros pendientes de pago.</p>
                 </div>
             </div>
 
@@ -90,7 +90,7 @@ export const UnpaidPickupsView = () => {
                     </p>
                 </div>
             ) : (
-                <div className="grid gap-6">
+                <div className="grid gap-3">
                     {retiros.map((retiro) => {
                         let bultos = [];
                         try {
@@ -98,65 +98,56 @@ export const UnpaidPickupsView = () => {
                         } catch (e) { }
 
                         return (
-                            <div key={retiro.OrdIdRetiro} className="overflow-hidden rounded-xl bg-brand-dark border border-zinc-800 hover:border-zinc-700 transition-all shadow-lg shadow-black/20">
-                                <div className="p-6 md:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                                    <div className="flex-1 space-y-4">
-                                        <div className="flex items-center gap-3">
-                                            <span className="px-3 py-1 bg-amber-900/30 text-amber-400 text-xs font-bold uppercase tracking-wider rounded-lg border border-amber-700/40">
-                                                Pendiente de Pago
-                                            </span>
-                                            <span className="text-sm font-bold text-zinc-500">
-                                                {new Date(retiro.Fecha).toLocaleDateString()}
-                                            </span>
-                                        </div>
+                            <div key={retiro.OrdIdRetiro} className="overflow-hidden rounded-xl bg-brand-dark border border-zinc-800 hover:border-zinc-700 transition-all pt-3 px-4 pb-4 space-y-3">
+                                {/* Header row */}
+                                <div className="flex items-center justify-between">
+                                    <span className="text-base font-black text-custom-cyan uppercase tracking-tight">{retiro.OrdIdRetiro}</span>
+                                    <span className="px-2 py-0.5 bg-amber-900/30 text-amber-400 text-[10px] font-bold uppercase tracking-wider rounded-full border border-amber-700/40">
+                                        Pendiente de Pago
+                                    </span>
+                                    <span className="text-xs text-zinc-500">
+                                        {new Date(retiro.Fecha).toLocaleDateString()}
+                                    </span>
+                                </div>
 
-                                        <div>
-                                            <h3 className="text-2xl font-black text-zinc-200 uppercase italic tracking-tight">
-                                                ORDEN: <span className="text-custom-cyan">{retiro.OrdIdRetiro}</span>
-                                            </h3>
-                                            <p className="text-sm text-zinc-500 mt-1 flex items-center gap-2">
-                                                <Package size={16} /> {bultos.length} artículo(s) en esta orden
-                                            </p>
-                                        </div>
-
-                                        {bultos.length > 0 && (
-                                            <div className="bg-custom-dark p-4 rounded-xl border border-zinc-800 space-y-2">
-                                                {bultos.slice(0, 3).map((b, i) => (
-                                                    <div key={i} className="flex justify-between text-sm">
-                                                        <span className="text-zinc-400 truncate max-w-[250px]" title={b.desc}>{b.desc || b.orderNumber}</span>
-                                                        <span className="font-bold text-custom-cyan">${b.amount}</span>
-                                                    </div>
-                                                ))}
-                                                {bultos.length > 3 && (
-                                                    <div className="text-xs text-zinc-600 pt-2 border-t border-zinc-800 mt-2">
-                                                        + {bultos.length - 3} artículos más
-                                                    </div>
-                                                )}
+                                {/* Orders list - full width */}
+                                {bultos.length > 0 && (
+                                    <div className="bg-custom-dark p-3 rounded-lg border border-zinc-800 space-y-1.5">
+                                        {bultos.slice(0, 3).map((b, i) => (
+                                            <div key={i} className="flex justify-between text-sm">
+                                                <span className="text-zinc-400 truncate mr-3" title={b.desc}>{b.desc || b.orderNumber}</span>
+                                                <span className="font-bold text-custom-cyan shrink-0">${b.amount}</span>
+                                            </div>
+                                        ))}
+                                        {bultos.length > 3 && (
+                                            <div className="text-xs text-zinc-600 pt-2 border-t border-zinc-800 mt-2">
+                                                + {bultos.length - 3} artículos más
                                             </div>
                                         )}
                                     </div>
+                                )}
 
-                                    <div className="w-full md:w-auto flex flex-col items-center md:items-end gap-6 md:p-0">
-                                        <div className="text-center md:text-right">
-                                            <p className="text-xs uppercase font-bold text-zinc-500 tracking-widest mb-1">Total a Pagar</p>
-                                            <p className="text-4xl font-black text-zinc-100">
-                                                <span className="text-2xl text-zinc-500 mr-2">{retiro.Moneda === 'USD' ? 'US$' : '$'}</span>
-                                                {Number(retiro.Monto || 0).toFixed(2)}
-                                            </p>
-                                        </div>
-
-                                        <CustomButton
-                                            onClick={() => handlePay(retiro)}
-                                            isLoading={payingId === retiro.OrdIdRetiro}
-                                            disabled={payingId !== null}
-                                            icon={CreditCard}
-                                            className="w-full md:w-auto px-8 py-4 !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
-                                            whileHover={{ scale: 1 }}
-                                            whileTap={{ scale: 1 }}
-                                        >
-                                            Pagar Online
-                                        </CustomButton>
+                                {/* Total + Pay button */}
+                                <div className="flex items-center justify-between gap-3 pt-2 border-t border-zinc-800">
+                                    <div>
+                                        <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Total</p>
+                                        <p className="text-lg font-black text-zinc-100">
+                                            <span className="text-xs text-zinc-500 mr-1">{retiro.Moneda === 'USD' ? 'US$' : '$'}</span>
+                                            {Number(retiro.Monto || 0).toFixed(2)}
+                                        </p>
                                     </div>
+
+                                    <CustomButton
+                                        onClick={() => handlePay(retiro)}
+                                        isLoading={payingId === retiro.OrdIdRetiro}
+                                        disabled={payingId !== null}
+                                        icon={CreditCard}
+                                        className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
+                                        whileHover={{ scale: 1 }}
+                                        whileTap={{ scale: 1 }}
+                                    >
+                                        Pagar Online
+                                    </CustomButton>
                                 </div>
                             </div>
                         );

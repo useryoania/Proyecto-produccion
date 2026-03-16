@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Obtener todas las rutas con sus pasos
 exports.getWorkflows = async (req, res) => {
@@ -98,7 +99,7 @@ exports.deleteWorkflow = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error deleting workflow:", err);
+        logger.error("Error deleting workflow:", err);
         res.status(500).json({ error: err.message });
     }
 };

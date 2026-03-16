@@ -1,4 +1,5 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 // Obtener cotizaciones de la fecha actual
 const getCotizacionesHoy = async (req, res) => {
@@ -21,7 +22,7 @@ const getCotizacionesHoy = async (req, res) => {
       cotizaciones,
     });
   } catch (error) {
-    console.error('Error al obtener las cotizaciones:', error);
+    logger.error('Error al obtener las cotizaciones:', error);
     res.status(500).json({ error: 'Error al obtener las cotizaciones' });
   }
 };
@@ -56,7 +57,7 @@ const insertCotizacion = async (req, res) => {
 
     res.status(201).json({ message: 'Cotización insertada exitosamente.' });
   } catch (error) {
-    console.error('Error al insertar la cotización:', error);
+    logger.error('Error al insertar la cotización:', error);
     res.status(500).json({ error: 'Hubo un error al intentar insertar la cotización.' });
   }
 };
@@ -86,11 +87,11 @@ const fetchFromBCU = async (req, res) => {
       .query(`INSERT INTO Cotizaciones (CotIdCotizacion, CotFecha, CotDolar)
               VALUES ((SELECT ISNULL(MAX(CotIdCotizacion),0)+1 FROM Cotizaciones), GETDATE(), @cot)`);
 
-    console.log(`[COTIZACION] ✅ On-demand: compra=$U ${cot.compra} / venta=$U ${cot.venta}`);
+    logger.info(`[COTIZACION] ✅ On-demand: compra=$U ${cot.compra} / venta=$U ${cot.venta}`);
     res.json({ cotizacion: cot.venta, compra: cot.compra, interbancario: cot.interbancario, source: 'bcu' });
 
   } catch (error) {
-    console.error('[COTIZACION] Error fetching from BCU:', error.message);
+    logger.error('[COTIZACION] Error fetching from BCU:', error.message);
     res.status(500).json({ error: 'No se pudo obtener la cotización del BCU. Ingrese manualmente.' });
   }
 };

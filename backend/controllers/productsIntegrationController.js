@@ -2,6 +2,7 @@ const { sql, getPool } = require('../config/db');
 const axios = require('axios');
 const https = require('https');
 const { logAlert } = require('../services/alertsService');
+const logger = require('../utils/logger');
 
 // 1. Obtener Articulos Locales (Izquierda)
 const getLocalArticles = async (req, res) => {
@@ -18,7 +19,7 @@ const getLocalArticles = async (req, res) => {
         `);
         res.json(result.recordset);
     } catch (e) {
-        console.error("Error getLocalArticles:", e);
+        logger.error("Error getLocalArticles:", e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -43,7 +44,7 @@ const getRemoteProducts = async (req, res) => {
         `);
         res.json(result.recordset);
     } catch (e) {
-        console.error("Error getRemoteProducts:", e.message);
+        logger.error("Error getRemoteProducts:", e.message);
         res.status(500).json({ error: "Error al obtener productos", details: e.message });
     }
 };
@@ -67,7 +68,7 @@ const linkProduct = async (req, res) => {
 
         res.json({ success: true, message: "Vinculado correctamente" });
     } catch (e) {
-        console.error("Error linkProduct:", e);
+        logger.error("Error linkProduct:", e);
         logAlert('ERROR', 'PRODUCTO', 'Fallo al vincular producto', codArticulo, { error: e.message });
         res.status(500).json({ error: e.message });
     }
@@ -89,7 +90,7 @@ const unlinkProduct = async (req, res) => {
 
         res.json({ success: true, message: "Desvinculado correctamente" });
     } catch (e) {
-        console.error("Error unlinkProduct:", e);
+        logger.error("Error unlinkProduct:", e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -127,7 +128,7 @@ const updateLocalProduct = async (req, res) => {
 
         res.json({ success: true, message: "Producto actualizado correctamente" });
     } catch (e) {
-        console.error("Error updateLocalProduct:", e);
+        logger.error("Error updateLocalProduct:", e);
         res.status(500).json({ error: e.message });
     }
 };

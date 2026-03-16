@@ -1,4 +1,5 @@
 const { sql, getPool } = require('../config/db');
+const logger = require('../utils/logger');
 
 /**
  * Obtiene la lista de equipos/máquinas disponibles.
@@ -28,7 +29,7 @@ const getEquipos = async (req, res) => {
         res.json(result.recordset);
     } catch (err) {
         // Fallback: Si no existe tabla Maquinas, devolver error controlado o lista vacía
-        console.warn("No se pudo obtener equipos (posible falta de tabla Maquinas):", err.message);
+        logger.warn("No se pudo obtener equipos (posible falta de tabla Maquinas):", err.message);
 
         // Retornamos lista vacía o Mock por ahora si falla la tabla
         res.json([]);

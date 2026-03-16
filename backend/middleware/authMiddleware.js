@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const logger = require('../utils/logger');
 
 // Clave secreta para firmar el token (Idealmente en .env, fallback seguro para dev)
 const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-macrosoft-production';
@@ -37,7 +38,7 @@ exports.verifyToken = (req, res, next) => {
         });
 
     } catch (error) {
-        console.error('Error en verifyToken middleware:', error);
+        logger.error('Error en verifyToken middleware:', error);
         return res.status(500).json({ message: 'Error interno de autenticación.' });
     }
 };

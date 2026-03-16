@@ -1,8 +1,9 @@
 const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
 
 exports.getBoard = async (req, res) => {
     let { area } = req.query;
-    console.log("--- Cargando Tablero para Área:", area);
+    logger.info("--- Cargando Tablero para Área:", area);
     // if (area === 'DF') area = 'DTF'; // DISABLED: User requested no forced conversion
 
     try {
@@ -125,7 +126,7 @@ exports.getBoard = async (req, res) => {
         res.json({ machines: finalMachines, pendingRolls });
 
     } catch (err) {
-        console.error("❌ ERROR SQL:", err.message);
+        logger.error("❌ ERROR SQL:", err.message);
         res.status(500).json({ error: err.message });
     }
 };
@@ -152,7 +153,7 @@ exports.assignRoll = async (req, res) => {
         return res.status(400).json({ error: "No se indicaron rollos para asignar." });
     }
 
-    console.log(`[assignRoll-Kanban] Request received. Rolls: [${targets.join(', ')}], MachineID: ${machineId}`);
+    logger.info(`[assignRoll-Kanban] Request received. Rolls: [${targets.join(', ')}], MachineID: ${machineId}`);
 
     let transaction;
     try {
@@ -197,7 +198,7 @@ exports.assignRoll = async (req, res) => {
         res.json({ success: true, machineStatus });
     } catch (err) {
         if (transaction) await transaction.rollback();
-        console.error("❌ ERROR AL ASIGNAR (Kanban):", err.message);
+        logger.error("❌ ERROR AL ASIGNAR (Kanban):", err.message);
         res.status(500).json({ error: err.message });
     }
 };
@@ -207,7 +208,7 @@ exports.unassignRoll = async (req, res) => {
     const userId = req.user ? req.user.id : (req.body.userId || 1);
     const ip = req.ip || req.connection.remoteAddress;
 
-    console.log(`[unassignRoll-Kanban] Request received. RollID: ${rollId}`);
+    logger.info(`[unassignRoll-Kanban] Request received. RollID: ${rollId}`);
     try {
         const pool = await getPool();
         const transaction = new sql.Transaction(pool);
@@ -240,7 +241,7 @@ exports.unassignRoll = async (req, res) => {
         await transaction.commit();
         res.json({ success: true });
     } catch (err) {
-        console.error("❌ ERROR AL DESASIGNAR:", err.message);
+        logger.error("❌ ERROR AL DESASIGNAR:", err.message);
         res.status(500).json({ error: err.message });
     }
 };

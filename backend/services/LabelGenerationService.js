@@ -1,4 +1,5 @@
 const { sql, getPool } = require('../config/db');
+const logger = require('../utils/logger');
 
 class LabelGenerationService {
 
@@ -122,7 +123,7 @@ class LabelGenerationService {
             }
 
             await transaction.commit();
-            console.log(`[LabelService] Exito. ${totalBultos} bultos generados para Orden ${ordenId}.`);
+            logger.info(`[LabelService] Exito. ${totalBultos} bultos generados para Orden ${ordenId}.`);
 
             return { success: true, totalBultos };
 

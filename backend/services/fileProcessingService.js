@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { PDFDocument } = require('pdf-lib');
+const logger = require('../utils/logger');
 
 // --- HELPERS ---
 const downloadStream = async (url, filepath) => {
@@ -41,7 +42,7 @@ const getDriveId = (url) => {
 const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
     if (!orderIds || orderIds.length === 0) return;
 
-    console.log(`⚡ [FileProcessing] Iniciando procesamiento asíncrono para ${orderIds.length} órdenes...` + (targetFileIds ? ` (Target Files: ${targetFileIds.length})` : ''));
+    logger.info(`⚡ [FileProcessing] Iniciando procesamiento asíncrono para ${orderIds.length} órdenes...` + (targetFileIds ? ` (Target Files: ${targetFileIds.length})` : ''));
 
     setImmediate(async () => {
         try {
@@ -61,7 +62,7 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
             `);
 
             const files = filesRes.recordset;
-            console.log(`   📂[FileProcessing] Encontrados ${files.length} archivos totales en las órdenes.`);
+            logger.info(`   📂[FileProcessing] Encontrados ${files.length} archivos totales en las órdenes.`);
 
             if (files.length === 0) return;
 
@@ -88,7 +89,7 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
                 });
             }
 
-            console.log(`   🎯[FileProcessing] Archivos a procesar realmente: ${processedFiles.length}`);
+            logger.info(`   🎯[FileProcessing] Archivos a procesar realmente: ${processedFiles.length}`);
 
             const rootDir = 'C:\\ORDENES';
 
@@ -98,7 +99,7 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
                     const areaFolder = (file.AreaID || 'GENERAL').trim().toUpperCase().replace(/[<>:"/\\|?*]/g, '');
                     const targetDir = path.join(rootDir, areaFolder);
                     if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
-                    console.log(`      Medio: ${file.NombreArchivo} (ID: ${file.ArchivoID})...`);
+                    logger.info(`      Medio: ${file.NombreArchivo} (ID: ${file.ArchivoID})...`);
 
                     // A. Descargar / Verificar Local
                     // Sanitizar: Reemplazar slash / por guion - (para "1/1" -> "1-1") y borrar chars prohibidos
@@ -129,9 +130,9 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
                         if (existingName === baseName) {
                             destPath = file.RutaLocal;
                             needsDownload = false;
-                            console.log(`      ✅ Usando copia local existente(Nombre correcto): ${destPath}`);
+                            logger.info(`      ✅ Usando copia local existente(Nombre correcto): ${destPath}`);
                         } else {
-                            console.log(`      ⚠️ RutaLocal existe pero nombre difiere.Se generará nuevo con nombre correcto.`);
+                            logger.info(`      ⚠️ RutaLocal existe pero nombre difiere.Se generará nuevo con nombre correcto.`);
                         }
                     }
 
@@ -158,7 +159,7 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
                                     if (stats.size < 200000) {
                                         const content = fs.readFileSync(tempPath, 'utf8');
                                         if (content.toLowerCase().includes('<!doctype html') || content.includes('Virus scan') || content.includes('virus')) {
-                                            console.log(`      🔄 Drive Virus Scan Warning detectado. Buscando bypass...`);
+                                            logger.info(`      🔄 Drive Virus Scan Warning detectado. Buscando bypass...`);
                                             let confirmToken = null;
                                             const match = content.match(/confirm=([a-zA-Z0-9_\-]+)/);
                                             if (match) confirmToken = match[1];
@@ -167,10 +168,10 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
                                                 if (matchForm) confirmToken = matchForm[1];
                                             }
                                             if (confirmToken) {
-                                                console.log(`      🚀 Token encontrado: ${confirmToken}. Reintentando descarga...`);
+                                                logger.info(`      🚀 Token encontrado: ${confirmToken}. Reintentando descarga...`);
                                                 await downloadStream(`${sourcePath}&confirm=${confirmToken}`, tempPath);
                                             } else {
-                                                console.log(`      ⚠️ Token no encontrado explícitamente. Probando bypass genérico (confirm=t)...`);
+                                                logger.info(`      ⚠️ Token no encontrado explícitamente. Probando bypass genérico (confirm=t)...`);
                                                 await downloadStream(`${sourcePath}&confirm=t`, tempPath);
                                             }
                                         }
@@ -179,11 +180,11 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
                             } else if (fs.existsSync(sourcePath)) {
                                 fs.copyFileSync(sourcePath, tempPath);
                             } else {
-                                console.warn(`      ⚠️ Source not found: ${sourcePath}`);
+                                logger.warn(`      ⚠️ Source not found: ${sourcePath}`);
                                 continue;
                             }
                         } catch (dlErr) {
-                            console.warn(`      ⚠️ Download Error ${file.ArchivoID}: ${dlErr.message}`);
+                            logger.warn(`      ⚠️ Download Error ${file.ArchivoID}: ${dlErr.message}`);
                             continue;
                         }
 
@@ -268,7 +269,7 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
                                     measureDone = true;
                                 }
                             } catch (pdfErr) {
-                                console.warn(`      ⚠️ PDF-LIB failed (${pdfErr.message}). Trying fallback to Image...`);
+                                logger.warn(`      ⚠️ PDF-LIB failed (${pdfErr.message}). Trying fallback to Image...`);
                             }
                         }
 
@@ -281,12 +282,12 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
 
                     } catch (measureErr) {
                         const headDump = tempBuffer ? tempBuffer.slice(0, 60).toString().replace(/[\r\n]+/g, ' ') : 'null';
-                        console.warn(`      ⚠️ Error midiendo archivo ${file.ArchivoID}: ${measureErr.message} | HEAD: ${headDump}`);
+                        logger.warn(`      ⚠️ Error midiendo archivo ${file.ArchivoID}: ${measureErr.message} | HEAD: ${headDump}`);
                     }
 
                     // E. Actualizar BD si tenemos medidas válidas
                     if (widthM > 0 && heightM > 0) {
-                        console.log(`      ✅ Medidas obtenidas: ${widthM.toFixed(2)}m x ${heightM.toFixed(2)}m`);
+                        logger.info(`      ✅ Medidas obtenidas: ${widthM.toFixed(2)}m x ${heightM.toFixed(2)}m`);
 
                         let valorMetros = heightM; // Default ML
                         const matUpper = (file.Material || '').toUpperCase();
@@ -328,15 +329,15 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
                     }
 
                 } catch (fileErr) {
-                    console.error(`      ❌ Error procesando archivo ${file.ArchivoID}:`, fileErr.message);
+                    logger.error(`      ❌ Error procesando archivo ${file.ArchivoID}:`, fileErr.message);
                 }
             }
 
-            console.log(`⚡ [FileProcessing] Proceso finalizado.`);
+            logger.info(`⚡ [FileProcessing] Proceso finalizado.`);
             if (io) io.emit('server:ordersUpdated', { count: 1 }); // Refresh general
 
         } catch (err) {
-            console.error("❌ [FileProcessing] Error general:", err);
+            logger.error("❌ [FileProcessing] Error general:", err);
         }
     });
 };
@@ -361,6 +362,6 @@ exports.processFiles = async (fileIds, io) => {
             await processOrderListInternal(orderIds, io, fileIds);
         }
     } catch (err) {
-        console.error("Error processFiles:", err);
+        logger.error("Error processFiles:", err);
     }
 };

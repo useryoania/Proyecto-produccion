@@ -2,6 +2,7 @@ const { sql, getPool } = require('../config/db');
 const PricingService = require('../services/pricingService');
 const LabelGenerationService = require('../services/LabelGenerationService');
 const driveService = require('../services/driveService');
+const logger = require('../utils/logger');
 
 /**
  * 1. Obtiene las Órdenes de un Rollo (o todas, o filtradas)
@@ -26,7 +27,7 @@ const getOrdenes = async (req, res) => {
         // Si estamos en Control View y NO se seleccionó un rollo específico (Todos), 
         // devolvemos VACÍO para obligar al usuario a seleccionar un rollo.
         if (isControlView && cleanRoll === '') {
-            console.log("[getOrdenes] Control View 'Todos' selected -> Returning empty list to force selection.");
+            logger.info("[getOrdenes] Control View 'Todos' selected -> Returning empty list to force selection.");
             return res.json([]);
         }
 
@@ -36,7 +37,7 @@ const getOrdenes = async (req, res) => {
         const searchTerm = (search && search !== 'undefined' && search.trim() !== '') ? `%${search.trim()}%` : null;
 
         // Debug Log
-        console.log(`Getting Ordenes: Search="${searchTerm}", Rollo="${cleanRoll}", Area="${cleanArea}", CtxControl=${isControlView}, ApplyFilter=${applyControlFilter}`);
+        logger.info(`Getting Ordenes: Search="${searchTerm}", Rollo="${cleanRoll}", Area="${cleanArea}", CtxControl=${isControlView}, ApplyFilter=${applyControlFilter}`);
 
         const query = `
         SELECT
@@ -109,7 +110,7 @@ O.RolloID ASC,
 
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error en getOrdenes:", err);
+        logger.error("Error en getOrdenes:", err);
         res.status(500).json({ error: 'Error al obtener órdenes', message: err.message, details: err.toString() });
     }
 };
@@ -128,7 +129,7 @@ const getArchivosPorOrden = async (req, res) => {
 
         const pool = await getPool();
 
-        // console.log(`Getting Archivos for OrdenID: ${ordenId} `);
+        // logger.info(`Getting Archivos for OrdenID: ${ordenId} `);
 
         // 1. Obtener Archivos y Servicios (UNION)
         let queryStr = `
@@ -218,7 +219,7 @@ const getArchivosPorOrden = async (req, res) => {
         res.json(mappedArchivos);
 
     } catch (err) {
-        console.error("Error en getArchivosPorOrden:", err);
+        logger.error("Error en getArchivosPorOrden:", err);
         res.status(500).json({ error: 'Error al obtener archivos', message: err.message });
     }
 };
@@ -547,7 +548,7 @@ BEGIN
                                     WHERE CodigoOrden = @CodeParent AND Estado = 'Retenido';
 END
     `);
-                        } catch (e) { console.error("Error liberando madre", e); }
+                        } catch (e) { logger.error("Error liberando madre", e); }
                     }
                 }
             }
@@ -555,7 +556,7 @@ END
         if (orderCompleted) {
             // Ya no calculamos bultos manualmente aquí dentro de la transacción.
             // Delegamos todo al servicio post-commit.
-            console.log(`[postControlArchivo] Orden ${ordenId} COMPLETADA. Commiteando transacción principal y generando etiquetas...`);
+            logger.info(`[postControlArchivo] Orden ${ordenId} COMPLETADA. Commiteando transacción principal y generando etiquetas...`);
         }
 
         await transaction.commit(); // COMMIT PRINCIPAL
@@ -576,19 +577,19 @@ END
                 }
 
                 if (magVal > 0) {
-                    console.log(`[postControlArchivo] Llamando LabelGenerationService para Orden ${ordenId}...`);
+                    logger.info(`[postControlArchivo] Llamando LabelGenerationService para Orden ${ordenId}...`);
                     const labelResult = await LabelGenerationService.regenerateLabelsForOrder(ordenId, (req.user?.id || 1), (req.user?.usuario || 'Sistema'));
                     if (labelResult.success) {
                         totalBultos = labelResult.totalBultos; // Para devolver en el JSON
-                        console.log(`[postControlArchivo] Etiquetas generadas OK: ${totalBultos}`);
+                        logger.info(`[postControlArchivo] Etiquetas generadas OK: ${totalBultos}`);
                     } else {
-                        console.warn(`[postControlArchivo] Fallo generación etiquetas: ${labelResult.error}`);
+                        logger.warn(`[postControlArchivo] Fallo generación etiquetas: ${labelResult.error}`);
                     }
                 } else {
-                    console.log(`[postControlArchivo] Magnitud 0, saltando etiquetas.`);
+                    logger.info(`[postControlArchivo] Magnitud 0, saltando etiquetas.`);
                 }
             } catch (eLabels) {
-                console.error(`[postControlArchivo] Error generando etiquetas post-control: ${eLabels.message}`);
+                logger.error(`[postControlArchivo] Error generando etiquetas post-control: ${eLabels.message}`);
             }
         }
 
@@ -603,7 +604,7 @@ END
         if (transaction) {
             try { await transaction.rollback(); } catch (e) { }
         }
-        console.error("Error en postControlArchivo:", err);
+        logger.error("Error en postControlArchivo:", err);
         res.status(500).json({ error: 'Error al controlar archivo', message: err.message, details: err.toString() });
     }
 };
@@ -628,7 +629,7 @@ const getTiposFalla = async (req, res) => {
         const result = await request.query(query);
         res.json(result.recordset);
     } catch (err) {
-        console.error("Error getTiposFalla:", err);
+        logger.error("Error getTiposFalla:", err);
         res.status(500).json({ error: 'Error al obtener tipos de falla' });
     }
 };
@@ -641,7 +642,7 @@ const regenerateEtiquetas = async (req, res) => {
 
     if (!ordenId) return res.status(400).json({ error: 'OrdenID es requerido' });
 
-    console.log(`[regenerateEtiquetas] Iniciando para Orden: ${ordenId} (User: ${userName})`);
+    logger.info(`[regenerateEtiquetas] Iniciando para Orden: ${ordenId} (User: ${userName})`);
 
     try {
         const cantidad = req.body.cantidad ? parseInt(req.body.cantidad) : null;
@@ -658,7 +659,7 @@ const regenerateEtiquetas = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("[regenerateEtiquetas] Error critico:", error);
+        logger.error("[regenerateEtiquetas] Error critico:", error);
         res.status(500).json({ error: "Error interno regenerando etiquetas: " + error.message });
     }
 };
@@ -678,11 +679,11 @@ const viewDriveFile = async (req, res) => {
         const fileId = fileIdMatch ? fileIdMatch[0] : null;
 
         if (!fileId) {
-            console.error("No se pudo identificar el FileID en:", url);
+            logger.error("No se pudo identificar el FileID en:", url);
             return res.status(400).send('No se pudo identificar el FileID de Drive');
         }
 
-        console.log(`[Proxy] Solicitando archivo a Drive. ID: ${fileId}`);
+        logger.info(`[Proxy] Solicitando archivo a Drive. ID: ${fileId}`);
 
         // Usamos la versión nueva que trae metadata (nombre, size, mimeType real)
         const { stream, mimeType, name, size } = await driveService.getFileStream(fileId);
@@ -702,7 +703,7 @@ const viewDriveFile = async (req, res) => {
             };
             if (mimeMap[ext]) {
                 finalMimeType = mimeMap[ext];
-                console.log(`[Proxy] MIME Type corregido por extensión (.${ext}): ${finalMimeType}`);
+                logger.info(`[Proxy] MIME Type corregido por extensión (.${ext}): ${finalMimeType}`);
             }
         }
 
@@ -715,13 +716,13 @@ const viewDriveFile = async (req, res) => {
         res.setHeader('Content-Disposition', `inline; filename="${safeName}"`);
 
         stream.on('error', (err) => {
-            console.error("Error en stream del proxy:", err);
+            logger.error("Error en stream del proxy:", err);
             if (!res.headersSent) res.status(500).send('Error durante la transmisión del archivo');
         });
 
         stream.pipe(res);
     } catch (error) {
-        console.error("Error en viewDriveFile proxy:", error);
+        logger.error("Error en viewDriveFile proxy:", error);
 
         if (error.code === 404) {
             return res.status(404).send('Archivo no encontrado en Drive o falta de permisos (Scope limitado). Por favor re-autoriza el acceso.');
@@ -884,7 +885,7 @@ const updateFileCopyCount = async (req, res) => {
 
     } catch (err) {
         if (transaction) await transaction.rollback();
-        console.error("Error updateFileCopyCount:", err);
+        logger.error("Error updateFileCopyCount:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -922,7 +923,7 @@ const getCompletedOrdersForReplacement = async (req, res) => {
         res.json(result.recordset);
 
     } catch (error) {
-        console.error("Error getCompletedOrdersForReplacement:", error);
+        logger.error("Error getCompletedOrdersForReplacement:", error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -1044,7 +1045,7 @@ const createCustomerReplacementOrder = async (req, res) => {
                         INSERT INTO FallasProduccion(OrdenID, ArchivoID, AreaID, FechaFalla, TipoFalla, CantidadFalla, Observaciones)
                         VALUES(@OldID, @FileID, @AreaID, GETDATE(), 1, @Metros, @Obs) 
                     `);
-            } catch (e) { console.log('FallasProduccion insert failed (ignoring):', e.message); }
+            } catch (e) { logger.info('FallasProduccion insert failed (ignoring):', e.message); }
         }
 
         // Actualizar contador archivos orden nueva
@@ -1053,7 +1054,7 @@ const createCustomerReplacementOrder = async (req, res) => {
                 .input('Total', sql.Int, totalFiles)
                 .input('ID', sql.Int, newOrderId)
                 .query("UPDATE Ordenes SET ArchivosCount = @Total WHERE OrdenID = @ID");
-        } catch (e) { console.log('Update ArchivosCount failed (ignoring):', e.message); }
+        } catch (e) { logger.info('Update ArchivosCount failed (ignoring):', e.message); }
 
         // 4. Clonar Órdenes de Servicios Relacionados (Si existen)
         const relatedOrderIds = req.body.relatedOrderIds || [];
@@ -1100,7 +1101,7 @@ const createCustomerReplacementOrder = async (req, res) => {
 
     } catch (error) {
         if (transaction) await transaction.rollback();
-        console.error("Error createCustomerReplacementOrder:", error);
+        logger.error("Error createCustomerReplacementOrder:", error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -1137,7 +1138,7 @@ const getRelatedOrders = async (req, res) => {
         res.json(relatedRes.recordset);
 
     } catch (error) {
-        console.error("Error getRelatedOrders:", error);
+        logger.error("Error getRelatedOrders:", error);
         res.status(500).json({ error: error.message });
     }
 };

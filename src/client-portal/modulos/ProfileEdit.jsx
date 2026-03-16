@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { GlassCard } from '../pautas/GlassCard';
 import { CustomButton } from '../pautas/CustomButton';
-import { User, Mail, ArrowLeft, Save } from 'lucide-react';
+import { User, UserPen, Mail, Save } from 'lucide-react';
 import { apiClient } from '../api/apiClient';
 import { ClientFormFields, Field, useNomenclators, inputClass } from '../../components/shared/ClientFormFields';
 
@@ -108,15 +108,16 @@ export const ProfileEdit = () => {
     if (!user) return null;
 
     return (
-        <div className="max-w-lg mx-auto space-y-6 animate-fade-in">
-            <div className="flex items-center gap-3">
-                <button onClick={() => navigate('/portal/pickup')} className="p-2 hover:bg-zinc-800 rounded-lg transition-colors">
-                    <ArrowLeft size={20} className="text-brand-cyan" />
-                </button>
-                <h2 className="text-2xl font-bold text-zinc-100">Editar Datos</h2>
+        <div className="max-w-lg mx-auto space-y-3 animate-fade-in">
+            <div className="flex items-center gap-3 mb-2">
+                <UserPen size={48} strokeWidth={1} className="text-brand-gold" />
+                <div>
+                    <h2 className="text-lg font-bold text-zinc-300 uppercase">Editar <span className="text-custom-cyan">Datos</span></h2>
+                    <p className="text-zinc-500 uppercase text-xs">Tu información personal.</p>
+                </div>
             </div>
 
-            <div className="p-8 bg-custom-dark rounded-xl">
+            <div className="p-4 bg-custom-dark rounded-xl">
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                     {/* ID de Cliente (read-only) */}
                     <Field label="ID de Cliente" icon={User}>
@@ -159,7 +160,7 @@ export const ProfileEdit = () => {
                             Cancelar
                         </CustomButton>
                         <CustomButton type="submit" isLoading={saving} icon={Save} className="flex-1 !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5" whileHover={{ scale: 1 }} whileTap={{ scale: 1 }}>
-                            Guardar Cambios
+                            Guardar
                         </CustomButton>
                     </div>
                 </form>

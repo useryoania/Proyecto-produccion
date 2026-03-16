@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
-import { Package, RefreshCw, CheckCircle, Search, ArrowLeft } from 'lucide-react';
+import { Package, RefreshCw, CheckCircle, Search, ArrowLeft, Delete, Check } from 'lucide-react';
+import { Logo } from '../../../components/Logo';
+import Swal from 'sweetalert2';
+import Lottie from 'lottie-react';
+import confettiAnim from '../../../assets/animations/confetti.json';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
-const BASE_PREFIXES = ['SB', 'DF', 'UVDF', 'ECOUV', 'TWC', 'EMB', 'EST', 'TP', 'IMD'];
-const STANDALONE_PREFIXES = ['PRO', 'VEN'];
+const BASE_PREFIXES = ['SB', 'DF', 'UVDF', 'ECOUV', 'TWC', 'EMB', 'TP', 'IMD', 'PRO', 'VEN'];
 
 // Print ticket (same format as WebRetirosPage)
 const printTotemTicket = ({ ordenRetiro, client, orders, totalCost }) => {
@@ -112,7 +115,19 @@ export const TotemDashboard = ({ onLogout }) => {
     const [prefix, setPrefix] = useState('');
     const [number, setNumber] = useState('');
     const [searching, setSearching] = useState(false);
-    const [searchError, setSearchError] = useState('');
+
+    const Toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3000,
+        timerProgressBar: true,
+        background: '#212121',
+        color: '#f4f4f5',
+        customClass: { popup: 'border border-[#00bcd4]/40 !rounded-xl', title: 'uppercase' },
+        showClass: { popup: 'swal2-noanimation', backdrop: 'swal2-noanimation' },
+        hideClass: { popup: '', backdrop: '' },
+    });
 
     // Results state
     const [client, setClient] = useState(null);
@@ -122,22 +137,23 @@ export const TotemDashboard = ({ onLogout }) => {
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState('');
 
-    const fullCode = prefix ? `${externalMode && BASE_PREFIXES.includes(prefix) ? externalMode : ''}${prefix}-${number}` : number;
+    const NON_EXTERNAL_PREFIXES = ['PRO', 'VEN'];
+    const fullCode = prefix ? `${externalMode && !NON_EXTERNAL_PREFIXES.includes(prefix) ? externalMode : ''}${prefix}-${number}` : number;
 
     const handlePrefix = (p) => {
-        if (STANDALONE_PREFIXES.includes(p)) setExternalMode('');
+        if (['PRO', 'VEN'].includes(p)) setExternalMode('');
         setPrefix(p);
-        setSearchError('');
+
     };
 
     const handleKey = (key) => {
-        setSearchError('');
+
         if (key === 'DEL') {
             setNumber(prev => prev.slice(0, -1));
         } else if (key === 'CLEAR') {
             setNumber('');
             setPrefix('');
-            setXMode(false);
+            setExternalMode('');
         } else if (number.length < 10) {
             setNumber(prev => prev + key);
         }
@@ -145,11 +161,11 @@ export const TotemDashboard = ({ onLogout }) => {
 
     const handleSearch = async () => {
         if (!prefix || !number) {
-            setSearchError('Seleccioná un prefijo e ingresá el número');
+            Toast.fire({ icon: 'warning', title: 'Seleccioná un prefijo e ingresá el número' });
             return;
         }
         setSearching(true);
-        setSearchError('');
+
         try {
             const res = await fetch(`${API_BASE}/web-orders/totem-lookup`, {
                 method: 'POST',
@@ -162,10 +178,10 @@ export const TotemDashboard = ({ onLogout }) => {
                 setOrders(data.orders || []);
                 setSelectedOrders([]);
             } else {
-                setSearchError(data.message || 'Orden no encontrada');
+                Toast.fire({ icon: 'error', title: data.message || 'Orden no encontrada' });
             }
         } catch (err) {
-            setSearchError('Error de conexión');
+            Toast.fire({ icon: 'error', title: 'Error de conexión' });
         } finally {
             setSearching(false);
         }
@@ -238,11 +254,14 @@ export const TotemDashboard = ({ onLogout }) => {
     // Success screen
     if (success) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-screen text-center gap-4">
-                <CheckCircle size={80} strokeWidth={1.5} className="text-green-400" />
-                <h2 className="text-4xl font-extrabold text-green-400">¡Retiro creado!</h2>
-                <p className="text-xl text-white/70">Un operario te atenderá en breve.</p>
-                <p className="text-sm text-white/30 mt-3">¡Gracias por tu preferencia!</p>
+            <div className="flex flex-col items-center justify-center min-h-screen text-center gap-4 uppercase relative">
+                <div className="absolute inset-0 pointer-events-none">
+                    <Lottie animationData={confettiAnim} loop={2} style={{ width: '100%', height: '100%' }} />
+                </div>
+                <CheckCircle size={80} strokeWidth={1.5} className="text-custom-cyan" />
+                <h2 className="text-4xl font-extrabold text-custom-cyan">¡Retiro creado!</h2>
+                <p className="text-xl text-white/70 mt-2">Nuestro equipo te atenderá a la brevedad.</p>
+                <p className="text-sm text-white/30 -mt-2">¡Gracias por tu preferencia!</p>
             </div>
         );
     }
@@ -263,6 +282,7 @@ export const TotemDashboard = ({ onLogout }) => {
                     <h2 className="text-2xl md:text-3xl font-bold">
                         Hola, {client.company || client.name}
                     </h2>
+                    <Logo className="h-10 w-auto text-white mt-2" />
                 </div>
 
                 {/* Error */}
@@ -289,7 +309,7 @@ export const TotemDashboard = ({ onLogout }) => {
                         <div className="w-[80%] mx-auto flex flex-col gap-2">
                             {/* Select all */}
                             <div
-                                className="flex items-center gap-3 px-5 py-3 mb-1 rounded-xl cursor-pointer transition-all bg-white/[0.03] border border-white/[0.06] active:bg-white/[0.08]"
+                                className="flex items-center gap-3 px-5 py-3 mb-1 cursor-pointer transition-all border-b border-white/[0.06] hover:text-white/70"
                                 onClick={selectAll}
                             >
                                 <div className="flex-shrink-0 text-blue-400">
@@ -310,8 +330,8 @@ export const TotemDashboard = ({ onLogout }) => {
                                 <div className="w-[26px] flex-shrink-0" />
                                 <div className="w-36 flex-shrink-0">Orden</div>
                                 <div className="flex-1">Descripción</div>
-                                <div className="w-24 flex-shrink-0 text-right">Cantidad</div>
-                                <div className="w-28 flex-shrink-0 text-right">Costo</div>
+                                <div className="w-24 flex-shrink-0 text-center">Cantidad</div>
+                                <div className="w-28 flex-shrink-0 text-right">Importe</div>
                             </div>
                             {sortedOrders.map(order => (
                                 <div
@@ -342,7 +362,7 @@ export const TotemDashboard = ({ onLogout }) => {
                                     </div>
 
                                     {/* Quantity */}
-                                    <div className="w-24 flex-shrink-0 text-right">
+                                    <div className="w-24 flex-shrink-0 text-center">
                                         <span className="text-sm text-white/50">{order.quantity}</span>
                                     </div>
 
@@ -366,7 +386,7 @@ export const TotemDashboard = ({ onLogout }) => {
 
                             {/* Retirar button */}
                             <button
-                                className="mt-6 w-full flex items-center justify-center gap-3 px-8 py-4 rounded-xl text-xl font-bold bg-gradient-to-r from-blue-500 to-brand-500 text-white transition-all active:scale-[0.97] disabled:opacity-30 uppercase"
+                                className="mt-6 w-1/2 mx-auto flex items-center justify-center gap-3 px-8 py-4 rounded-xl text-xl font-bold bg-brand-cyan text-white transition-all active:scale-[0.97] disabled:opacity-30 uppercase"
                                 onClick={createPickup}
                                 disabled={creating || selectedOrders.length === 0}
                             >
@@ -396,8 +416,8 @@ export const TotemDashboard = ({ onLogout }) => {
                 </div>
 
                 <div className="border-t border-white/10 my-2" />
-                {/* External prefix toggles + standalone prefixes */}
-                <div className="flex items-center gap-2 py-3">
+                {/* External prefix toggles */}
+                <div className="flex items-center gap-4 py-3">
                     <button
                         className={`w-10 py-1.5 rounded-lg text-sm font-bold border-2 transition-all text-center ${externalMode === 'X'
                             ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
@@ -416,20 +436,19 @@ export const TotemDashboard = ({ onLogout }) => {
                     >
                         R
                     </button>
+                    <button
+                        className={`w-10 py-1.5 rounded-lg text-sm font-bold border-2 transition-all text-center ${externalMode === 'RX'
+                            ? 'bg-green-500/20 border-green-500/50 text-green-400'
+                            : 'bg-white/[0.04] border-white/10 text-white/40'
+                            }`}
+                        onClick={() => setExternalMode(externalMode === 'RX' ? '' : 'RX')}
+                    >
+                        RX
+                    </button>
                     <span className="text-white/30 text-xs uppercase tracking-tight">Prefijo externo</span>
                     <div className="flex-1" />
-                    {STANDALONE_PREFIXES.map(p => (
-                        <button
-                            key={p}
-                            className={`w-14 py-1.5 rounded-lg text-sm font-bold border-2 transition-all text-center ${prefix === p
-                                ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
-                                : 'bg-white/[0.04] border-white/10 text-white/40'
-                                }`}
-                            onClick={() => handlePrefix(p)}
-                        >
-                            {p}
-                        </button>
-                    ))}
+                    <Logo className="h-10 w-auto text-white mt-2" />
+                    <div className="flex-1" />
                 </div>
                 <div className="border-t border-white/10 my-2" />
 
@@ -444,7 +463,7 @@ export const TotemDashboard = ({ onLogout }) => {
                                 }`}
                             onClick={() => handlePrefix(p)}
                         >
-                            {externalMode ? `${externalMode}${p}` : p}
+                            {externalMode && !['PRO', 'VEN'].includes(p) ? `${externalMode}${p}` : p}
                         </button>
                     ))}
                 </div>
@@ -453,7 +472,7 @@ export const TotemDashboard = ({ onLogout }) => {
                 <div className="mb-5 flex items-center gap-2">
                     {prefix && (
                         <div className="text-xl font-bold text-blue-400 whitespace-nowrap">
-                            {externalMode && BASE_PREFIXES.includes(prefix) ? `${externalMode}${prefix}` : prefix}-
+                            {externalMode && !['PRO', 'VEN'].includes(prefix) ? `${externalMode}${prefix}` : prefix}-
                         </div>
                     )}
                     <div className="flex-1 bg-black/30 border border-white/10 rounded-xl px-4 py-2.5 text-center text-xl font-bold tracking-[4px] min-h-[36px] text-white">
@@ -461,33 +480,29 @@ export const TotemDashboard = ({ onLogout }) => {
                     </div>
                 </div>
 
-                {/* Error */}
-                {searchError && (
-                    <div className="bg-red-500/15 border border-red-500/30 text-red-300 rounded-xl px-3 py-2 text-center text-sm mb-2">
-                        {searchError}
-                    </div>
-                )}
+
 
                 {/* Numpad */}
                 <div className="grid grid-cols-3 gap-2 mb-5">
                     {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'CLEAR', '0', 'DEL'].map(key => (
                         <button
                             key={key}
-                            className={`rounded-xl py-2 text-lg font-semibold border transition-all active:scale-95 ${key === 'CLEAR' || key === 'DEL'
-                                ? 'bg-white/[0.04] border-white/10 text-white/60 text-sm'
-                                : 'bg-white/[0.08] border-white/10 text-white hover:bg-white/[0.12]'
+                            className={`rounded-xl py-2 text-2xl font-semibold border transition-all active:scale-95 flex items-center justify-center ${key === 'CLEAR' || key === 'DEL'
+                                ? 'bg-white/[0.04] border-white/10 text-white/60 text-xl'
+                                : 'bg-white/[0.08] border-white/10 text-white hover:bg-white/[0.12] active:bg-custom-cyan/15 active:border-custom-cyan active:shadow-[0_0_15px_rgba(0,188,212,0.5)]'
                                 }`}
                             onClick={() => handleKey(key)}
                             disabled={searching}
+                            style={{ touchAction: 'manipulation' }}
                         >
-                            {key === 'DEL' ? '⌫' : key === 'CLEAR' ? 'C' : key}
+                            {key === 'DEL' ? <Delete size={28} /> : key === 'CLEAR' ? 'C' : key}
                         </button>
                     ))}
                 </div>
 
                 {/* Search button */}
                 <button
-                    className="w-full py-2.5 rounded-xl text-lg font-bold bg-custom-magenta text-white transition-all active:scale-[0.97] disabled:opacity-40 flex items-center justify-center gap-2 uppercase"
+                    className="w-full py-2.5 rounded-xl text-lg font-bold bg-brand-cyan text-white transition-all active:scale-[0.97] disabled:opacity-40 flex items-center justify-center gap-2 uppercase"
                     onClick={handleSearch}
                     disabled={searching || !prefix || !number}
                 >

@@ -1,5 +1,6 @@
 const { sql, getPool } = require('../config/db');
 const jwt = require('jsonwebtoken');
+const logger = require('../utils/logger');
 const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-macrosoft-production';
 
 // =====================================================================
@@ -7,7 +8,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-macrosoft-production';
 // =====================================================================
 exports.login = async (req, res) => {
     const { username, password } = req.body;
-    console.log(`[LOGIN ATTEMPT] Username: ${username}, Password provided: ${password ? 'YES' : 'NO'}`);
+    logger.info(`[LOGIN ATTEMPT] Username: ${username}, Password provided: ${password ? 'YES' : 'NO'}`);
 
     try {
         const pool = await getPool();
@@ -38,7 +39,7 @@ exports.login = async (req, res) => {
                     .input('Details', sql.NVarChar, 'Success')
                     .input('IPAddress', sql.NVarChar, req.ip)
                     .execute('sp_RegistrarAccion');
-            } catch (logErr) { console.warn("Error logging login:", logErr.message); }
+            } catch (logErr) { logger.warn("Error logging login:", logErr.message); }
 
             // GENERATE TOKEN (ADMIN)
             const token = jwt.sign(
@@ -165,7 +166,7 @@ exports.login = async (req, res) => {
         res.status(401).json({ success: false, message: 'Credenciales inválidas o usuario inexistente.' });
 
     } catch (err) {
-        console.error('[LOGIN ERROR] SQL Error:', err);
+        logger.error('[LOGIN ERROR] SQL Error:', err);
         res.status(500).send({ message: err.message });
     }
 };
@@ -192,7 +193,7 @@ exports.googleLogin = async (req, res) => {
         const payload = ticket.getPayload();
         const googleEmail = payload.email;
 
-        console.log(`[GOOGLE LOGIN] Email: ${googleEmail}`);
+        logger.info(`[GOOGLE LOGIN] Email: ${googleEmail}`);
 
         const pool = await getPool();
 
@@ -256,7 +257,7 @@ exports.googleLogin = async (req, res) => {
         });
 
     } catch (err) {
-        console.error('[GOOGLE LOGIN ERROR]', err);
+        logger.error('[GOOGLE LOGIN ERROR]', err);
         res.status(500).json({ success: false, message: 'Error al verificar cuenta de Google.' });
     }
 };
@@ -326,7 +327,7 @@ exports.register = async (req, res) => {
         });
 
     } catch (err) {
-        console.error('[REGISTER ERROR]', err);
+        logger.error('[REGISTER ERROR]', err);
         res.status(500).json({ success: false, message: 'Error al registrar usuario.', error: err.message });
     }
 };

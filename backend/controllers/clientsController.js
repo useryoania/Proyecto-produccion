@@ -1,10 +1,12 @@
 const { getPool, sql } = require('../config/db');
 const axios = require('axios');
+const logger = require('../utils/logger');
+
 const ERP_API_BASE = process.env.ERP_API_URL;
 
 // Google Sheets service (carga protegida)
 let sheetsService = null;
-try { sheetsService = require('../services/sheetsService'); } catch(e) { console.warn('[clientsController] sheetsService no disponible:', e.message); }
+try { sheetsService = require('../services/sheetsService'); } catch (e) { console.warn('[clientsController] sheetsService no disponible:', e.message); }
 
 // Cache para el Token de la API Macrosoft
 let macrosoftAuthToken = null;
@@ -18,7 +20,7 @@ async function getMacrosoftToken() {
         const username = process.env.MACROSOFT_API_USER || 'user';
         const password = process.env.MACROSOFT_API_PASSWORD || '1234';
 
-        console.log(`[MACROSOFT AUTH] Solicitando token a ${ERP_API_BASE}/authenticate`);
+        logger.info(`[MACROSOFT AUTH] Solicitando token a ${ERP_API_BASE}/authenticate`);
         const res = await axios.post(`${ERP_API_BASE}/authenticate`, { username, password });
 
         // Asumiendo que el token viene en res.data.token (o simplemente es el texto JWT retornado)
@@ -33,7 +35,7 @@ async function getMacrosoftToken() {
         }
 
         if (!token) {
-            console.warn('[MACROSOFT AUTH] No se logró parsear el token, se devuelve data completo (podría ser objeto)', res.data);
+            logger.warn('[MACROSOFT AUTH] No se logró parsear el token, se devuelve data completo (podría ser objeto)', res.data);
             token = res.data; // fallback en caso que de todas formas funcionase
         }
 
@@ -41,7 +43,7 @@ async function getMacrosoftToken() {
         macrosoftTokenExp = Date.now() + 1000 * 60 * 55; // 55 mins caché
         return token;
     } catch (err) {
-        console.error("[MACROSOFT AUTH] Error obteniendo token:", err.message);
+        logger.error("[MACROSOFT AUTH] Error obteniendo token:", err.message);
         return null;
     }
 }
@@ -66,7 +68,7 @@ exports.getMacrosoftClientData = async (req, res) => {
         }
         res.json(result.recordset[0]);
     } catch (error) {
-        console.error('[getMacrosoftClientData] Error:', error.message);
+        logger.error('[getMacrosoftClientData] Error:', error.message);
         res.status(500).json({ error: error.message });
     }
 };
@@ -116,11 +118,11 @@ exports.getAllReactClients = async (req, res) => {
             ORDER BY cr.CliNombreApellido ASC
         `);
 
-        console.log(`[getAllReactClients] Devolviendo ${result.recordset.length} clientes React sin vincular`);
+        logger.info(`[getAllReactClients] Devolviendo ${result.recordset.length} clientes React sin vincular`);
         res.set('Cache-Control', 'no-store');
         res.json(result.recordset);
     } catch (error) {
-        console.error("Error getAllReactClients:", error.message);
+        logger.error("Error getAllReactClients:", error.message);
         res.status(500).json({ error: "Error al obtener clientes: " + error.message });
     }
 };
@@ -138,24 +140,24 @@ exports.getMacrosoftPage = async (req, res) => {
             params: { page }
         });
 
-        const data   = Array.isArray(msRes.data?.data) ? msRes.data.data : (Array.isArray(msRes.data) ? msRes.data : []);
-        const pages  = msRes.data?.pages  ?? 1;
+        const data = Array.isArray(msRes.data?.data) ? msRes.data.data : (Array.isArray(msRes.data) ? msRes.data : []);
+        const pages = msRes.data?.pages ?? 1;
         const length = msRes.data?.length ?? data.length;
 
         // Trimear strings con padding
         const trimStr = v => typeof v === 'string' ? v.trim() || null : v;
         const cleaned = data.map(c => ({
-            CodCliente:       c.CodCliente,
-            Nombre:           trimStr(c.Nombre),
-            NombreFantasia:   trimStr(c.NombreFantasia),
+            CodCliente: c.CodCliente,
+            Nombre: trimStr(c.Nombre),
+            NombreFantasia: trimStr(c.NombreFantasia),
             DireccionTrabajo: trimStr(c.DireccionTrabajo),
-            TelefonoTrabajo:  trimStr(c.TelefonoTrabajo),
-            CioRuc:           trimStr(c.CioRuc),
-            Cedula:           trimStr(c.Cedula),
-            Celular:          trimStr(c.Celular),
-            Email:            trimStr(c.Email),
-            Moneda:           c.Moneda,
-            TiposPrecios:     c.TiposPrecios,
+            TelefonoTrabajo: trimStr(c.TelefonoTrabajo),
+            CioRuc: trimStr(c.CioRuc),
+            Cedula: trimStr(c.Cedula),
+            Celular: trimStr(c.Celular),
+            Email: trimStr(c.Email),
+            Moneda: c.Moneda,
+            TiposPrecios: c.TiposPrecios,
         }));
 
         // Si es página 1 devolver el set de CodCliente locales (para que el frontend detecte vínculos)
@@ -203,10 +205,10 @@ exports.getAllMacrosoftClients = async (req, res) => {
 
         // Extraer array y metadatos de paginación
         const extractBatch = (d) => {
-            if (Array.isArray(d))             return d;
-            if (Array.isArray(d?.data))       return d.data;
-            if (Array.isArray(d?.clientes))   return d.clientes;
-            if (Array.isArray(d?.items))      return d.items;
+            if (Array.isArray(d)) return d;
+            if (Array.isArray(d?.data)) return d.data;
+            if (Array.isArray(d?.clientes)) return d.clientes;
+            if (Array.isArray(d?.items)) return d.items;
             // Si el objeto tiene una clave con array grande, buscarla
             if (d && typeof d === 'object') {
                 for (const k of Object.keys(d)) {
@@ -216,9 +218,9 @@ exports.getAllMacrosoftClients = async (req, res) => {
             return [];
         };
 
-        const batch1    = extractBatch(firstRes.data);
+        const batch1 = extractBatch(firstRes.data);
         const totalPages = firstRes.data?.pages ?? firstRes.data?.totalPages ?? firstRes.data?.last_page ?? 1;
-        const perPage    = firstRes.data?.length ?? firstRes.data?.per_page ?? batch1.length ?? 30;
+        const perPage = firstRes.data?.length ?? firstRes.data?.per_page ?? batch1.length ?? 30;
 
         console.log(`[MS API] Página 1/${totalPages}: ${batch1.length} clientes (perPage=${perPage})`);
 
@@ -236,7 +238,7 @@ exports.getAllMacrosoftClients = async (req, res) => {
                             headers, timeout: 20000,
                             params: { page: p }
                         }).then(r => ({ page: p, batch: extractBatch(r.data) }))
-                          .catch(e => { console.warn(`[MS API] Página ${p} falló:`, e.message); return { page: p, batch: [] }; })
+                            .catch(e => { console.warn(`[MS API] Página ${p} falló:`, e.message); return { page: p, batch: [] }; })
                     );
                 }
                 const results = await Promise.all(requests);
@@ -277,22 +279,22 @@ exports.getAllMacrosoftClients = async (req, res) => {
         // 4. Enriquecer con vínculo local + limpiar strings con espacios (padding de la API)
         const trimStr = (v) => (typeof v === 'string' ? v.trim() || null : v);
         const enriched = clientes.map(c => ({
-            CodCliente:          c.CodCliente,
-            Nombre:              trimStr(c.Nombre),
-            NombreFantasia:      trimStr(c.NombreFantasia),
-            DireccionTrabajo:    trimStr(c.DireccionTrabajo),
+            CodCliente: c.CodCliente,
+            Nombre: trimStr(c.Nombre),
+            NombreFantasia: trimStr(c.NombreFantasia),
+            DireccionTrabajo: trimStr(c.DireccionTrabajo),
             DireccionParticular: trimStr(c.DireccionParticular),
-            TelefonoTrabajo:     trimStr(c.TelefonoTrabajo),
-            TelefonoParticular:  trimStr(c.TelefonoParticular),
-            CioRuc:              trimStr(c.CioRuc),
-            Cedula:              trimStr(c.Cedula),
-            Celular:             trimStr(c.Celular),
-            Email:               trimStr(c.Email),
-            Moneda:              c.Moneda,
-            TiposPrecios:        c.TiposPrecios,
-            Descuento:           c.Descuento,
+            TelefonoTrabajo: trimStr(c.TelefonoTrabajo),
+            TelefonoParticular: trimStr(c.TelefonoParticular),
+            CioRuc: trimStr(c.CioRuc),
+            Cedula: trimStr(c.Cedula),
+            Celular: trimStr(c.Celular),
+            Email: trimStr(c.Email),
+            Moneda: c.Moneda,
+            TiposPrecios: c.TiposPrecios,
+            Descuento: c.Descuento,
             // Vínculo local
-            EsVinculado:    vinculadosMap[String(c.CodCliente)] ? 1 : 0,
+            EsVinculado: vinculadosMap[String(c.CodCliente)] ? 1 : 0,
             CodClienteLocal: vinculadosMap[String(c.CodCliente)] || null,
         }));
 
@@ -301,34 +303,8 @@ exports.getAllMacrosoftClients = async (req, res) => {
         res.json({ data: enriched, total: enriched.length });
 
     } catch (error) {
-        console.error('[getAllMacrosoftClients] Error llamando API Macrosoft:', error.message);
-        // Fallback: intentar con ClientesReact local si la API externa falla
-        try {
-            console.warn('[getAllMacrosoftClients] Usando fallback ClientesReact local...');
-            const pool = await getPool();
-            const result = await pool.request().query(`
-                SELECT TOP 200
-                    cr.CliIdCliente      AS IdCliente,
-                    cr.CliCodigoCliente  AS CodigoCliente,
-                    cr.CliNombreApellido AS NombreCliente,
-                    cr.CliNombreEmpresa  AS EmpresaCliente,
-                    cr.CliCelular        AS Telefono,
-                    cr.CliMail           AS Email,
-                    cr.CliDocumento      AS Rut,
-                    cr.CliDireccion      AS Direccion,
-                    CASE WHEN loc.CodCliente IS NOT NULL THEN 1 ELSE 0 END AS EsVinculado,
-                    loc.CodCliente  AS CodClienteLocal
-                FROM ClientesReact cr WITH(NOLOCK)
-                LEFT JOIN dbo.Clientes loc WITH(NOLOCK)
-                    ON CAST(loc.IDReact AS VARCHAR) = CAST(cr.CliIdCliente AS VARCHAR)
-                    OR loc.IDCliente = cr.CliCodigoCliente
-                ORDER BY cr.CliNombreApellido ASC
-            `);
-            res.set('Cache-Control', 'no-store');
-            res.json({ data: result.recordset, total: result.recordset.length, fallback: true });
-        } catch (fallbackErr) {
-            res.status(500).json({ error: error.message });
-        }
+        logger.error('[getAllMacrosoftClients] Error:', error.message);
+        res.status(500).json({ error: error.message });
     }
 };
 
@@ -378,14 +354,14 @@ exports.createClient = async (req, res) => {
         let nextId = null;
         if (codCliente) {
             nextId = parseInt(codCliente);
-            console.log("Usando ID Legacy forzado:", nextId);
+            logger.info("Usando ID Legacy forzado:", nextId);
         } else if (idReact && !isNaN(parseInt(idReact))) {
             nextId = parseInt(idReact);
-            console.log("Usando ID React como CodCliente Local:", nextId);
+            logger.info("Usando ID React como CodCliente Local:", nextId);
         } else {
             const idQuery = await pool.request().query("SELECT ISNULL(MAX(CodCliente), 0) + 1 as NextID FROM dbo.Clientes");
             nextId = idQuery.recordset[0].NextID;
-            console.log("Generado nuevo CodCliente Auto:", nextId);
+            logger.info("Generado nuevo CodCliente Auto:", nextId);
         }
 
         const result = await pool.request()
@@ -406,8 +382,8 @@ exports.createClient = async (req, res) => {
 
         res.json(result.recordset[0]);
     } catch (err) {
-        console.error("[CreateClient ERROR]", err);
-        console.error("Full Body:", req.body);
+        logger.error("[CreateClient ERROR]", err);
+        logger.error("Full Body:", req.body);
         res.status(500).json({ error: "DB Error: " + err.message });
     }
 };
@@ -469,7 +445,7 @@ exports.getAllClients = async (req, res) => {
         const result = await request.query(query);
         res.json(result.recordset);
     } catch (err) {
-        console.error('getAllClients error:', err.message);
+        logger.error('getAllClients error:', err.message);
         res.status(500).json({ error: err.message });
     }
 };
@@ -480,7 +456,7 @@ exports.updateClientLink = async (req, res) => {
     const { codCliente } = req.params;
     const { codigoReact, idReact } = req.body;
 
-    console.log(`[LINK] Intentando vincular LocalID=${codCliente} con ReactCode=${codigoReact}, ReactID=${idReact}`);
+    logger.info(`[LINK] Intentando vincular LocalID=${codCliente} con ReactCode=${codigoReact}, ReactID=${idReact}`);
 
     try {
         const pool = await getPool();
@@ -496,7 +472,7 @@ exports.updateClientLink = async (req, res) => {
 
         res.json({ success: true, message: 'Vinculación con React actualizada correctamente' });
     } catch (err) {
-        console.error("[LINK ERROR] Falló SQL Update:", err);
+        logger.error("[LINK ERROR] Falló SQL Update:", err);
         res.status(500).json({ error: "Error al actualizar base de datos: " + err.message });
     }
 };
@@ -506,7 +482,7 @@ exports.updateClientLinkMacrosoft = async (req, res) => {
     const { codCliente } = req.params;
     const { codReferencia } = req.body;
 
-    console.log(`[LINK MACROSOFT] Intentando vincular LocalID=${codCliente} con CodReferencia=${codReferencia}`);
+    logger.info(`[LINK MACROSOFT] Intentando vincular LocalID=${codCliente} con CodReferencia=${codReferencia}`);
 
     try {
         const pool = await getPool();
@@ -521,7 +497,7 @@ exports.updateClientLinkMacrosoft = async (req, res) => {
 
         res.json({ success: true, message: 'Vinculación con Macrosoft actualizada correctamente' });
     } catch (err) {
-        console.error("[LINK MACROSOFT ERROR] Falló SQL Update:", err);
+        logger.error("[LINK MACROSOFT ERROR] Falló SQL Update:", err);
         res.status(500).json({ error: "Error al actualizar base de datos: " + err.message });
     }
 };
@@ -540,7 +516,7 @@ exports.importReactClient = async (req, res) => {
     const nombreFinal = (EmpresaCliente || NombreCliente || '').trim() || 'Sin Nombre';
     const fantasiaFinal = (NombreCliente || '').trim();
 
-    console.log('[IMPORT] Importando desde ClientesReact:', { nombreFinal, CodigoCliente, IdCliente });
+    logger.info('[IMPORT] Importando desde ClientesReact:', { nombreFinal, CodigoCliente, IdCliente });
 
     try {
         const pool = await getPool();
@@ -589,7 +565,7 @@ exports.importReactClient = async (req, res) => {
         res.json({ success: true, alreadyExists: false, client: result.recordset[0] });
 
     } catch (err) {
-        console.error('[IMPORT ERROR]', err);
+        logger.error('[IMPORT ERROR]', err);
         res.status(500).json({ error: 'Error creando cliente local: ' + err.message });
     }
 };
@@ -599,7 +575,7 @@ exports.importReactClient = async (req, res) => {
 exports.createReactClient = async (req, res) => {
     const client = req.body;
     try {
-        console.log("[createReactClient] Creando cliente directamente en DB local:", client.Nombre);
+        logger.info("[createReactClient] Creando cliente directamente en DB local:", client.Nombre);
         const pool = await getPool();
         const safeString = (val) => (val !== undefined && val !== null && val !== '') ? String(val) : null;
 
@@ -631,7 +607,7 @@ exports.createReactClient = async (req, res) => {
             `);
 
         const created = result.recordset[0];
-        console.log(`[createReactClient] Cliente creado: CodCliente=${created.CodCliente}`);
+        logger.info(`[createReactClient] Cliente creado: CodCliente=${created.CodCliente}`);
 
         res.json({
             success: true,
@@ -639,7 +615,7 @@ exports.createReactClient = async (req, res) => {
             message: "Cliente creado en DB local"
         });
     } catch (error) {
-        console.error("Error createReactClient:", error.message);
+        logger.error("Error createReactClient:", error.message);
         res.status(500).json({ error: "Error interno al crear cliente: " + error.message });
     }
 };
@@ -647,7 +623,7 @@ exports.createReactClient = async (req, res) => {
 exports.createMacrosoftClient = async (req, res) => {
     const client = req.body;
     try {
-        console.log("Iniciando exportación a Macrosoft:", client.Nombre);
+        logger.info("Iniciando exportación a Macrosoft:", client.Nombre);
 
         const token = await getMacrosoftToken();
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -699,7 +675,7 @@ exports.createMacrosoftClient = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error exportando a Macrosoft:", error.message);
+        logger.error("Error exportando a Macrosoft:", error.message);
         res.status(500).json({ error: "Fallo conexión API Macrosoft" });
     }
 };
@@ -726,12 +702,12 @@ exports.searchClientUnified = async (req, res) => {
             `);
 
         if (localRes.recordset.length > 0) {
-            console.log(`[Unified] Encontrado en Local: ${term}`);
+            logger.info(`[Unified] Encontrado en Local: ${term}`);
             return res.json({ source: 'local', client: localRes.recordset[0], found: true });
         }
 
         // 2. Búsqueda en ClientesReact (tabla local, antes era API externa)
-        console.log(`[Unified] No en local. Buscando en ClientesReact: ${term}`);
+        logger.info(`[Unified] No en local. Buscando en ClientesReact: ${term}`);
         const reactRes = await pool.request()
             .input('Term2', sql.VarChar(200), term)
             .query(`
@@ -758,14 +734,14 @@ exports.searchClientUnified = async (req, res) => {
             `);
 
         if (reactRes.recordset.length > 0) {
-            console.log(`[Unified] Encontrado en ClientesReact: ${term}`);
+            logger.info(`[Unified] Encontrado en ClientesReact: ${term}`);
             return res.json({ source: 'react', client: reactRes.recordset[0], found: true });
         }
 
         return res.json({ found: false, message: 'No encontrado en Local ni en ClientesReact' });
 
     } catch (error) {
-        console.error('Error Unified Search:', error);
+        logger.error('Error Unified Search:', error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -872,7 +848,7 @@ exports.updateClient = async (req, res) => {
 
         res.json({ success: true, message: 'Cliente actualizado correctamente' });
     } catch (e) {
-        console.error('Error updateClient:', e);
+        logger.error('Error updateClient:', e);
         res.status(500).json({ error: e.message });
     }
 };
@@ -928,7 +904,7 @@ exports.getDuplicateClients = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Error getDuplicateClients:", err);
+        logger.error("Error getDuplicateClients:", err);
         res.status(500).json({ error: "DB Error: " + err.message });
     }
 };
@@ -951,7 +927,7 @@ exports.deleteClient = async (req, res) => {
 
         res.json({ success: true, message: "Cliente eliminado correctamente" });
     } catch (err) {
-        console.error("Error deleteClient:", err);
+        logger.error("Error deleteClient:", err);
         res.status(500).json({ error: "No se puede eliminar porque posiblemente tenga datos asociados en ordenes o facturas. " + err.message });
     }
 };
@@ -966,7 +942,7 @@ exports.getTiposClientes = async (req, res) => {
         const result = await pool.request().query('SELECT TClIdTipoCliente, TClDescripcion FROM TiposClientes WITH(NOLOCK) ORDER BY TClIdTipoCliente ASC');
         res.json(result.recordset);
     } catch (error) {
-        console.error('Error al obtener Tipos de Clientes:', error);
+        logger.error('Error al obtener Tipos de Clientes:', error);
         res.status(500).json({ message: 'Error al obtener Tipos de Clientes', error: error.message });
     }
 };
@@ -995,7 +971,7 @@ exports.getCatalogs = async (req, res) => {
             vendedores: vendedores.recordset,
         });
     } catch (error) {
-        console.error('Error getCatalogs:', error);
+        logger.error('Error getCatalogs:', error);
         res.status(500).json({ error: error.message });
     }
 };
@@ -1080,13 +1056,13 @@ exports.updateMacrosoftClient = async (req, res) => {
         const token = await getMacrosoftToken();
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         const payload = {
-            CodCliente:       codReferencia,
-            Nombre:           client.Nombre           || undefined,
-            NombreFantasia:   client.NombreFantasia    || undefined,
-            CioRuc:           client.CioRuc            || undefined,
-            DireccionTrabajo: client.DireccionTrabajo  || undefined,
-            TelefonoTrabajo:  client.TelefonoTrabajo   || undefined,
-            Email:            client.Email             || undefined,
+            CodCliente: codReferencia,
+            Nombre: client.Nombre || undefined,
+            NombreFantasia: client.NombreFantasia || undefined,
+            CioRuc: client.CioRuc || undefined,
+            DireccionTrabajo: client.DireccionTrabajo || undefined,
+            TelefonoTrabajo: client.TelefonoTrabajo || undefined,
+            Email: client.Email || undefined,
         };
         const response = await axios.put(`${ERP_API_BASE}/clientes/${codReferencia}`, payload, { headers });
         res.json({ success: true, data: response.data });

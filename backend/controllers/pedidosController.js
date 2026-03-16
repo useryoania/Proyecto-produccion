@@ -1,4 +1,5 @@
 const { sql, getPool } = require('../config/db');
+const logger = require('../utils/logger');
 
 /**
  * Obtiene métricas del PEDIDO (Agrupación por NoDocERP).
@@ -102,7 +103,7 @@ const getPedidoMetrics = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Error en getPedidoMetrics:", err);
+        logger.error("Error en getPedidoMetrics:", err);
         res.status(500).json({ error: 'Error al obtener métricas de pedido', message: err.message });
     }
 };

@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../config/db');
 const moment = require('moment-timezone');
 const { crearRetiro, marcarEntregado } = require('../services/retiroService');
+const logger = require('../utils/logger');
 
 const createOrdenRetiro = async (req, res) => {
   const { orders, totalCost, lugarRetiro, direccion, departamento, localidad, agenciaId } = req.body;
@@ -57,7 +58,7 @@ const createOrdenRetiro = async (req, res) => {
     if (transaction) {
       try { await transaction.rollback(); } catch (e) { }
     }
-    console.error('Error al crear la orden de retiro:', err);
+    logger.error('Error al crear la orden de retiro:', err);
     res.status(500).json({ error: 'Error al crear la orden de retiro' });
   }
 };
@@ -188,7 +189,7 @@ const getOrdenesRetiroPorEstados = async (req, res) => {
     const result = await request.query(query);
     res.json(processRetirosRows(result.recordset));
   } catch (err) {
-    console.error('Error al obtener las órdenes de retiro:', err);
+    logger.error('Error al obtener las órdenes de retiro:', err);
     res.status(500).json({ error: 'Error' });
   }
 };
@@ -314,7 +315,7 @@ const ordenesRetiroCaja = async (req, res) => {
     const result = await request.query(query);
     res.status(200).json(processRetirosRows(result.recordset));
   } catch (err) {
-    console.error('[CAJA ERROR]', err);
+    logger.error('[CAJA ERROR]', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -350,7 +351,7 @@ const getOrdenesRetiroPasarPorCaja = async (req, res) => {
     const result = await pool.request().query(`${getOrdenesRetiroQueryBase} WHERE r.ORePasarPorCaja = 1`);
     res.status(200).json(processRetirosRows(result.recordset));
   } catch (err) {
-    console.error('[PASAR CAJA ERROR]', err);
+    logger.error('[PASAR CAJA ERROR]', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -438,7 +439,7 @@ const getOrdenesRetiroPorLugar = async (req, res) => {
     const result = await request.query(query);
     res.json(processRetirosRows(result.recordset));
   } catch (err) {
-    console.error('[DESPACHOS LUGAR] Error:', err);
+    logger.error('[DESPACHOS LUGAR] Error:', err);
     res.status(500).json({ error: 'Error al cargar despachos' });
   }
 };
@@ -462,7 +463,7 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
       // Soporta todos los prefijos: R-, RL-, RW-, RT-, etc.
       const OReIdOrdenRetiro = parseInt((ordenDeRetiro || '').replace(/^[A-Za-z]+-0*/, ''), 10);
       if (isNaN(OReIdOrdenRetiro)) {
-        console.warn(`[ENTREGA] ID inválido para: ${ordenDeRetiro}`);
+        logger.warn(`[ENTREGA] ID inválido para: ${ordenDeRetiro}`);
         continue;
       }
 
@@ -525,7 +526,7 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
     }
   } catch (err) {
     if (transaction) try { await transaction.rollback(); } catch (e) { }
-    console.error("Error al marcar despacho entregado:", err);
+    logger.error("Error al marcar despacho entregado:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -678,7 +679,7 @@ const buscarParaMostrador = async (req, res) => {
 
     return res.json({ retiroRows, sinRetiro });
   } catch (err) {
-    console.error('[MOSTRADOR] Error búsqueda:', err);
+    logger.error('[MOSTRADOR] Error búsqueda:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -721,7 +722,7 @@ const backfillLugarRetiro = async (req, res) => {
       message: `Se actualizaron ${result.rowsAffected[0]} órdenes con su lugar de retiro.`
     });
   } catch (err) {
-    console.error('[BACKFILL LugarRetiro] Error:', err);
+    logger.error('[BACKFILL LugarRetiro] Error:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -769,7 +770,7 @@ const getTodasSinRetiro = async (req, res) => {
 
     return res.json({ sinRetiro: result.recordset });
   } catch (err) {
-    console.error('[SIN RETIRO] Error:', err);
+    logger.error('[SIN RETIRO] Error:', err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -798,7 +799,7 @@ const getClienteEnvioDatos = async (req, res) => {
       defaultAgenciaId: cliData.recordset[0]?.AgenciaID || null
     });
   } catch (err) {
-    console.error('[ENVIO CLIENTE] Error:', err);
+    logger.error('[ENVIO CLIENTE] Error:', err);
     res.status(500).json({ error: err.message });
   }
 };

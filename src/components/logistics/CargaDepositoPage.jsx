@@ -58,6 +58,8 @@ const CargaDepositoPage = () => {
     const inputRefs = useRef({});
     // Timers de debounce por fila — cancela la validación anterior si el scanner sigue enviando
     const debounceTimers = useRef({});
+    // Timestamp del último caracter recibido por fila (para detectar scanner rápido)
+    const lastCharTime = useRef({});
 
     // ─── PERSISTENCIA AUTOMÁTICA ────────────────────────────────────────────────
     // Guardar en localStorage cada vez que cambian los códigos
@@ -203,8 +205,37 @@ const CargaDepositoPage = () => {
 
     const handleInput = (id, value) => {
         const trimmedValue = value.trim();
+        const now = Date.now();
 
         setCodes(prev => {
+            // ── SCANNER MERGE: si esta fila estaba vacía y recibió input muy rápido
+            // después de otra fila, es porque el scanner partió el código con un Enter ──
+            const currentRow = prev.find(c => c.id === id);
+            const currentIndex = prev.indexOf(currentRow);
+            if (currentRow && currentRow.value === '' && trimmedValue !== '' && currentIndex > 0) {
+                const prevRow = prev[currentIndex - 1];
+                const timeSincePrev = now - (lastCharTime.current[prevRow.id] || 0);
+                // Si la fila anterior recibió input hace menos de 300ms, es un split del scanner
+                if (timeSincePrev < 300 && prevRow.value !== '' && prevRow.status !== 'error') {
+                    const merged = prevRow.value + trimmedValue;
+                    // Cancelar validación anterior de la fila previa
+                    if (debounceTimers.current[prevRow.id]) clearTimeout(debounceTimers.current[prevRow.id]);
+                    debounceTimers.current[prevRow.id] = setTimeout(() => {
+                        delete debounceTimers.current[prevRow.id];
+                        validateQRCode(prevRow.id, merged);
+                    }, 400);
+                    lastCharTime.current[prevRow.id] = now;
+                    // Mergear al anterior y limpiar esta fila
+                    return prev.map(c => {
+                        if (c.id === prevRow.id) return { ...c, value: merged, status: 'validating', message: 'Verificando orden...', parsed: null };
+                        if (c.id === id) return { ...c, value: '', status: 'idle', message: '', parsed: null };
+                        return c;
+                    });
+                }
+            }
+
+            lastCharTime.current[id] = now;
+
             const isDuplicate = prev.some(c => c.value === trimmedValue && c.id !== id && trimmedValue !== '');
 
             const newCodes = prev.map(c => {
@@ -213,7 +244,6 @@ const CargaDepositoPage = () => {
                         return { ...c, value: trimmedValue, status: 'error', message: 'Este código ya fue escaneado en esta tanda.', parsed: null };
                     } else if (trimmedValue !== '' && c.value !== trimmedValue) {
                         // Debounce con cancelación: espera 400ms sin cambios antes de validar
-                        // Esto evita que el scanner, que envía char a char, valide con código incompleto
                         if (debounceTimers.current[id]) clearTimeout(debounceTimers.current[id]);
                         debounceTimers.current[id] = setTimeout(() => {
                             delete debounceTimers.current[id];
@@ -251,10 +281,18 @@ const CargaDepositoPage = () => {
     };
 
     const handleKeyDown = (e, codeId) => {
+        // Trackear tiempo de cada tecla para detectar scanner rápido
+        if (e.key.length === 1) {
+            lastCharTime.current[codeId] = Date.now();
+        }
+
         if (e.key === 'Enter' || e.key === 'Tab') {
             e.preventDefault();
             // Si el escáner aún está enviando caracteres (debounce activo), ignorar el Enter
             if (debounceTimers.current[codeId]) return;
+            // Si el Enter llegó muy rápido después del último carácter (<200ms), es un Enter del scanner a mitad de lectura
+            const timeSinceLastChar = Date.now() - (lastCharTime.current[codeId] || 0);
+            if (timeSinceLastChar < 200) return;
 
             const current = codes.find(c => c.id === codeId);
             // Si el código tiene error, Enter re-dispara la validación
@@ -495,7 +533,7 @@ const CargaDepositoPage = () => {
                     <PackageSearch className="text-[#409cf9]" size={16} /> Validaciones
                 </h2>
 
-                <div className="grid grid-cols-2 xl:grid-cols-3 gap-2 max-h-[80vh] overflow-y-auto pr-1 pb-10 scrollbar-thin scrollbar-thumb-slate-300 auto-rows-max">
+                <div className="grid grid-cols-2 gap-2 max-h-[80vh] overflow-y-auto pr-1 pb-10 scrollbar-thin scrollbar-thumb-slate-300 auto-rows-max">
                     {codes.slice().reverse().filter(c => c.value.trim() !== '').map((code, idx) => {
                         const isError = code.status === 'error' || code.status === 'wsp_error';
                         const isWspSuccess = code.status === 'wsp_success';
@@ -566,28 +604,28 @@ const CargaDepositoPage = () => {
                                         <div className="mt-3 flex flex-col gap-2" onClick={e => e.stopPropagation()}
                                         >                                            {/* Info parseada */}
                                             {code.parsed && (
-                                                <div className="grid grid-cols-2 gap-x-3 gap-y-2 bg-white/70 rounded-lg p-2.5 border border-slate-100 text-sm">
+                                                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 bg-white/70 rounded-lg p-2 border border-slate-100 text-xs">
                                                     <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><User size={10} /> Cliente</span>
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><User size={10} /> Cliente</span>
                                                         <span className="text-slate-800 font-semibold truncate">{code.parsed.CodigoCliente}
                                                             {code.parsed.IDCliente && code.parsed.IDCliente !== 'N/A' && (
-                                                                <span className="ml-1 text-[10px] font-normal text-slate-500 bg-slate-200 px-1 py-[1.5px] rounded-[3px]">ID: {code.parsed.IDCliente}</span>
+                                                                <span className="ml-1 text-[9px] font-normal text-slate-500 bg-slate-200 px-1 py-[1px] rounded-[3px]">ID: {code.parsed.IDCliente}</span>
                                                             )}
                                                         </span>
                                                     </div>
                                                     <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><ShoppingBag size={10} /> Producto</span>
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><ShoppingBag size={10} /> Producto</span>
                                                         <span className="text-slate-800 font-semibold truncate">{code.parsed.ProductoNombre}</span>
                                                     </div>
                                                     <div className="flex flex-col gap-0.5 col-span-2">
-                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Tag size={10} /> Trabajo</span>
+                                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Tag size={10} /> Trabajo</span>
                                                         <span className="text-slate-700 italic truncate">{code.parsed.NombreTrabajo || 'Sin Descripción'}</span>
                                                     </div>
                                                     <div className="flex items-center justify-between col-span-2 border-t pt-2 border-slate-200 flex-wrap gap-2">
-                                                        <span className="text-slate-800 font-black text-base">Cant: {code.parsed.Cantidad}</span>
+                                                        <span className="text-slate-800 font-black text-sm">Cant: {code.parsed.Cantidad}</span>
                                                         <span className="text-slate-700 font-semibold text-xs">{modosMap[code.parsed.IdModo] || `M-${code.parsed.IdModo}`}</span>
                                                         {code.parsed.CostoFinal != null && (
-                                                            <span className="bg-emerald-50 border border-emerald-200 rounded-md px-2 py-0.5 text-emerald-800 font-black text-sm">
+                                                            <span className="bg-emerald-50 border border-emerald-200 rounded-md px-2 py-0.5 text-emerald-800 font-black text-xs">
                                                                 {code.parsed.Moneda || '$U'} {Number(code.parsed.CostoFinal).toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                                             </span>
                                                         )}

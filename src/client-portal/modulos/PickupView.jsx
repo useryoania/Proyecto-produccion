@@ -5,7 +5,8 @@ import Lottie from 'lottie-react';
 import loadingAnim from '../../assets/animations/loading.json';
 import { useAuth } from '../auth/AuthContext';
 import { apiClient } from '../api/apiClient'; // Assuming user comes from here
-import { CheckCircle, AlertCircle, ChevronRight, Truck, CreditCard, Download, MapPin, MapPinCheck, Package, PackageCheck, Trash2, Plus, ArrowLeft } from 'lucide-react';
+import { CheckCircle, AlertCircle, ChevronRight, Truck, CreditCard, Download, MapPin, MapPinCheck, Package, PackageCheck, PackageOpen, Trash2, Plus, ArrowLeft } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 import { CustomButton } from '../pautas/CustomButton';
 import { CustomSelect } from '../pautas/CustomSelect';
@@ -52,9 +53,11 @@ export const PickupView = () => {
     const [newLocalidad, setNewLocalidad] = useState('');
     const [loadingShipping, setLoadingShipping] = useState(false);
     const addAddressRef = useRef(null);
+    const encomiendaRef = useRef(null);
     const creatingRef = useRef(false);
 
     useEffect(() => {
+        if (step !== 'selection') return;
         const loadPickupOrders = async () => {
             setFetching(true);
             try {
@@ -78,7 +81,7 @@ export const PickupView = () => {
             }
         };
         loadPickupOrders();
-    }, []);
+    }, [step]);
 
     // Persist selected orders in sessionStorage
     useEffect(() => {
@@ -296,13 +299,13 @@ export const PickupView = () => {
         return (
             <div className="animate-fade-in flex flex-col min-h-[80vh]">
                 {/* Header */}
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 mb-2">
                     <CheckCircle size={48} strokeWidth={1} className="text-green-400" />
                     <div>
-                        <h2 className="text-3xl font-bold text-zinc-300 uppercase tracking-tight">
+                        <h2 className="text-lg font-bold text-zinc-300 uppercase">
                             Retiro <span className="text-custom-cyan">RW-{pickupCode}</span>
                         </h2>
-                        <p className="text-zinc-500 uppercase text-sm">
+                        <p className="text-zinc-500 uppercase text-xs">
                             {confirmedWithoutPayment ? 'Creado — Pendiente de pago' : 'Habilitado'}
                         </p>
                     </div>
@@ -311,37 +314,48 @@ export const PickupView = () => {
                 {/* Código de retiro — centrado */}
                 <div className="flex-1 flex flex-col items-center justify-center gap-4">
                     <p className="text-zinc-500 text-xs text-center max-w-sm uppercase">
-                        Mostrá este código en nuestro local para retirar tu pedido.
+                        Podés abonar desde <span className="text-custom-cyan font-bold">Pagos Pendientes</span> y luego retirar con este código.
                     </p>
 
-                    <div className="max-w-xs w-full rounded-xl bg-brand-dark border border-zinc-700 py-6 text-center">
-                        <p className="text-xs uppercase tracking-widest text-zinc-500 font-bold mb-2">Código de Retiro</p>
-                        <p className="text-5xl font-mono font-black text-custom-cyan tracking-widest">RW-{pickupCode}</p>
+                    <div className="max-w-xs w-full rounded-xl bg-brand-dark border border-zinc-700 pt-5 pb-7 px-6 flex flex-col items-center gap-4">
+                        <p className="text-5xl font-mono font-black text-custom-cyan tracking-wider text-center">RW-{pickupCode}</p>
+                        <div className="bg-white rounded-xl p-3">
+                            <QRCodeSVG
+                                value={`RW-${pickupCode}`}
+                                size={160}
+                                fgColor="#18181b"
+                                bgColor="#ffffff"
+                            />
+                        </div>
                     </div>
+
+                    <p className="text-zinc-500 text-xs text-center max-w-sm uppercase">
+                        O acercate a nuestro local para abonar y retirar tu pedido.
+                    </p>
                 </div>
 
                 {/* Botones */}
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-stretch gap-3 mt-auto">
                     <CustomButton
                         onClick={() => downloadReceipt(pickupCode)}
                         variant="secondary"
                         icon={Download}
-                        className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-zinc-600 hover:!bg-brand-dark/50"
+                        className="w-1/2 md:w-auto !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
                         whileHover={{ scale: 1 }}
                         whileTap={{ scale: 1 }}
                     >
-                        Descargar Comprobante
+                        Comprobante
                     </CustomButton>
 
                     <CustomButton
                         onClick={() => { setStep('selection'); setSelectedOrders([]); setConfirmedWithoutPayment(false); }}
                         variant="secondary"
                         icon={ArrowLeft}
-                        className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!border-brand-cyan hover:!bg-brand-cyan/5"
+                        className="w-1/2 md:w-auto !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
                         whileHover={{ scale: 1 }}
                         whileTap={{ scale: 1 }}
                     >
-                        Volver a retiros
+                        Volver
                     </CustomButton>
                 </div>
             </div>
@@ -425,42 +439,39 @@ export const PickupView = () => {
 
     if (step === 'confirmation') return (
         <div className="animate-fade-in space-y-6">
-            <button onClick={() => { setSelectedOrders([]); sessionStorage.removeItem('pickup_selected'); setStep('selection'); }} className="mb-2 flex items-center text-zinc-500 hover:text-zinc-300 transition-colors">
-                <ChevronRight className="rotate-180" size={20} /> Volver
-            </button>
 
             {/* Header */}
             <div className="flex items-center gap-3 mb-2">
                 <PackageCheck size={48} strokeWidth={1} className="text-brand-gold" />
                 <div>
-                    <h2 className="text-3xl font-bold text-zinc-300 uppercase tracking-tight">Nuevo <span className="text-custom-cyan">Retiro</span></h2>
-                    <p className="text-zinc-500 uppercase text-sm">Revisá los datos y elegí forma de envío para confirmar.</p>
+                    <h2 className="text-lg font-bold text-zinc-300 uppercase">Nuevo <span className="text-custom-cyan">Retiro</span></h2>
+                    <p className="text-zinc-500 uppercase text-xs">Revisá los datos y elegí forma de envío para confirmar.</p>
                 </div>
             </div>
 
             {/* Resumen de órdenes */}
-            <div className="overflow-hidden rounded-xl shadow-lg shadow-black/20">
-                <div className="p-5 border-b border-zinc-700 bg-custom-dark">
+            <div className="overflow-hidden rounded-xl bg-brand-dark border border-zinc-800">
+                <div className="p-4 border-b border-zinc-800">
                     <h3 className="font-bold text-zinc-100 uppercase text-xs tracking-wider">Órdenes Seleccionadas</h3>
                 </div>
-                <div className="divide-y divide-zinc-800">
+                <div className="p-3 space-y-1.5">
                     {selectedOrdersData.map(o => (
-                        <div key={o.id} className="p-4 flex justify-between items-center bg-brand-dark">
-                            <div>
-                                <span className="font-mono font-bold text-sm text-zinc-100">{o.id}</span>
-                                <p className="text-sm text-zinc-400 mt-0.5">{o.desc}</p>
+                        <div key={o.id} className="flex justify-between items-center py-1.5 px-3 rounded-lg bg-custom-dark">
+                            <div className="min-w-0">
+                                <p className="text-sm font-semibold text-custom-cyan truncate">{o.id}</p>
+                                <p className="text-xs text-zinc-500 truncate">{o.desc}</p>
                             </div>
-                            <span className="font-bold text-custom-cyan">
-                                {o.currency === 'USD' ? 'US$' : '$'} {(o.amount || 0).toFixed(2)}
+                            <span className="font-bold text-custom-cyan shrink-0 ml-3">
+                                <span className="text-xs text-zinc-500 mr-0.5">{o.currency === 'USD' ? 'US$' : '$'}</span>{(o.amount || 0).toFixed(2)}
                             </span>
                         </div>
                     ))}
                 </div>
-                <div className="p-5 border-t border-zinc-700 bg-custom-dark flex justify-between items-center">
-                    <span className="font-bold text-zinc-500 uppercase text-sm">Total</span>
-                    <span className="text-2xl font-black text-zinc-100">
-                        {activeCurrency === 'USD' ? 'US$' : '$'} {(totalAmount || 0).toFixed(2)}
-                    </span>
+                <div className="flex items-center justify-between p-4 border-t border-zinc-800">
+                    <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Total</p>
+                    <p className="text-lg font-black text-zinc-100">
+                        <span className="text-xs text-zinc-500 mr-1">{activeCurrency === 'USD' ? 'US$' : '$'}</span>{(totalAmount || 0).toFixed(2)}
+                    </p>
                 </div>
             </div>
 
@@ -486,7 +497,12 @@ export const PickupView = () => {
                                     name="formaEnvio"
                                     value={f.ID}
                                     checked={selectedFormaEnvio === f.ID}
-                                    onChange={() => setSelectedFormaEnvio(f.ID)}
+                                    onChange={() => {
+                                        setSelectedFormaEnvio(f.ID);
+                                        if (f.Nombre?.toLowerCase().includes('encomienda')) {
+                                            setTimeout(() => encomiendaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+                                        }
+                                    }}
                                     className="sr-only"
                                 />
                                 {f.Nombre}
@@ -496,7 +512,7 @@ export const PickupView = () => {
 
                     {/* Si es encomienda: agencia + dirección */}
                     {isEncomienda && (
-                        <div className="space-y-4 pt-2">
+                        <div ref={encomiendaRef} className="space-y-4 pt-2">
                             {/* Agencia */}
                             <div>
                                 <label className="block text-sm font-bold text-zinc-500 mb-2 uppercase">Agencia</label>
@@ -707,7 +723,7 @@ export const PickupView = () => {
             )}
 
             {/* Botones finales */}
-            <div className="flex justify-end items-center gap-3">
+            <div className="flex justify-between items-stretch gap-3">
                     <CustomButton
                         onClick={async () => {
                             const code = await handleCreatePickup();
@@ -721,11 +737,11 @@ export const PickupView = () => {
                         disabled={!selectedFormaEnvio || needsAddress}
                         variant="secondary"
                         icon={PackageCheck}
-                        className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-brand-gold/40 hover:!border-brand-gold hover:!bg-brand-gold/5"
+                        className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
                         whileHover={{ scale: 1 }}
                         whileTap={{ scale: 1 }}
                     >
-                        Retiro sin pagar
+                        Pagar después
                     </CustomButton>
 
                     {totalAmount > 0 && (
@@ -739,7 +755,7 @@ export const PickupView = () => {
                             disabled={!selectedFormaEnvio || needsAddress}
                             variant="primary"
                             icon={CreditCard}
-                            className="py-3 px-8 text-lg !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!bg-brand-cyan/5 hover:!border-brand-cyan"
+                            className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
                             whileHover={{ scale: 1 }}
                             whileTap={{ scale: 1 }}
                         >
@@ -758,11 +774,19 @@ export const PickupView = () => {
             <div className="flex items-center gap-3 mb-2">
                 <Package size={48} strokeWidth={1} className="text-brand-gold" />
                 <div>
-                    <h2 className="text-3xl font-bold text-zinc-300 uppercase">Gestión de <span className="text-custom-cyan">Retiros</span></h2>
-                    <p className="text-zinc-500 uppercase text-sm">Selecciona las órdenes que deseas retirar.</p>
+                    <h2 className="text-lg font-bold text-zinc-300 uppercase">Gestión de <span className="text-custom-cyan">Retiros</span></h2>
+                    <p className="text-zinc-500 uppercase text-xs">Selecciona las órdenes que deseas retirar.</p>
                 </div>
             </div>
 
+            {readyOrders.length === 0 ? (
+                <div className="p-8 text-center text-zinc-500">
+                    <PackageOpen size={48} className="mx-auto mb-3 opacity-30" />
+                    <p className="text-sm font-medium">No hay órdenes disponibles para retiro</p>
+                    <p className="text-xs text-zinc-600 mt-1">Cuando tus órdenes estén listas, aparecerán aquí.</p>
+                </div>
+            ) : (
+            <>
             <div className="overflow-hidden rounded-xl shadow-lg shadow-black/20">
                 {/* Desktop: Tabla */}
                 <div className="hidden md:block">
@@ -770,15 +794,12 @@ export const PickupView = () => {
                         <thead className="bg-custom-dark border-b border-zinc-700">
                             <tr>
                                 <th className="py-4 px-4 w-14 text-center">
-                                    <input
-                                        type="checkbox"
-                                        className="w-5 h-5 rounded border-zinc-600 cursor-pointer accent-[#006E97]"
-                                        checked={readyOrders.length > 0 && selectedOrders.length === readyOrders.length}
-                                        onChange={() => {
+                                    <div
+                                        className="flex items-center justify-center cursor-pointer text-blue-400"
+                                        onClick={() => {
                                             if (selectedOrders.length === readyOrders.length) {
                                                 setSelectedOrders([]);
                                             } else {
-                                                // Seleccionar todas de la misma moneda que la primera
                                                 const firstCurrency = readyOrders[0]?.currency;
                                                 const allSameCurrency = readyOrders.every(o => o.currency === firstCurrency);
                                                 if (allSameCurrency) {
@@ -788,7 +809,13 @@ export const PickupView = () => {
                                                 }
                                             }
                                         }}
-                                    />
+                                    >
+                                        {readyOrders.length > 0 && selectedOrders.length === readyOrders.length ? (
+                                            <CheckCircle size={22} />
+                                        ) : (
+                                            <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                        )}
+                                    </div>
                                 </th>
                                 <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Orden ID</th>
                                 <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider">Descripción</th>
@@ -807,16 +834,15 @@ export const PickupView = () => {
                                     className={`border-b border-zinc-800 transition-all cursor-pointer ${selectedOrders.includes(order.id) ? 'bg-[#1a2c30] shadow-[inset_3px_0_0_#006E97]' : 'bg-brand-dark hover:bg-[#1a1a1a]'}`}
                                 >
                                     <td className="py-4 px-4 border-r border-zinc-800">
-                                        <div className="flex items-center justify-center h-full">
-                                            <input
-                                                type="checkbox"
-                                                className="w-5 h-5 rounded border-zinc-600 cursor-pointer accent-[#006E97]"
-                                                checked={selectedOrders.includes(order.id)}
-                                                readOnly
-                                            />
+                                        <div className="flex items-center justify-center h-full text-blue-400">
+                                            {selectedOrders.includes(order.id) ? (
+                                                <CheckCircle size={22} />
+                                            ) : (
+                                                <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                            )}
                                         </div>
                                     </td>
-                                    <td className="p-4 font-mono font-medium text-sm text-zinc-100 border-r border-zinc-800 text-center">{order.id}</td>
+                                    <td className="p-4 font-black text-base text-custom-cyan border-r border-zinc-800 text-center">{order.id}</td>
                                     <td className="p-4 text-sm text-zinc-300 border-r border-zinc-800">{order.desc}</td>
                                     <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.article || '-'}</td>
                                     <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.quantityStr || order.quantity || '-'}</td>
@@ -842,59 +868,58 @@ export const PickupView = () => {
                 </div>
 
                 {/* Mobile: Cards */}
-                <div className="md:hidden divide-y divide-zinc-800">
+                <div className="md:hidden space-y-3">
                     {readyOrders.map((order, idx) => (
                         <div
                             key={`mobile-${order.id}-${idx}`}
                             onClick={() => handleToggleOrder(order.id)}
-                            className={`p-4 flex items-start gap-3 cursor-pointer transition-all ${selectedOrders.includes(order.id) ? 'bg-[#1a2c30] shadow-[inset_3px_0_0_#006E97]' : 'bg-brand-dark hover:bg-[#1a1a1a]'}`}
+                            className={`overflow-hidden rounded-xl border transition-all pt-3 px-4 pb-4 space-y-3 cursor-pointer ${selectedOrders.includes(order.id) ? 'bg-[#1a2c30] border-brand-cyan/30' : 'bg-brand-dark border-zinc-800 hover:border-zinc-700'}`}
                         >
-                            <input
-                                type="checkbox"
-                                className="w-5 h-5 mt-0.5 rounded border-zinc-600 cursor-pointer accent-[#006E97]"
-                                checked={selectedOrders.includes(order.id)}
-                                readOnly
-                            />
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2 mb-1">
-                                    <span className="font-mono font-bold text-sm text-zinc-100">{order.id}</span>
-                                    {/* <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${order.isPaid ? 'text-green-400' : 'text-custom-cyan'}`}>
-                                        {order.status}
-                                    </span> */}
-                                </div>
-                                <p className="text-sm text-zinc-400 truncate">{order.desc}</p>
-                                <div className="flex items-center justify-between mt-2 text-xs text-zinc-500">
-                                    <span>{order.date}</span>
-                                    <span className="font-medium">
-                                        {order.isPaid ? (
-                                            <span className="text-green-400 flex items-center gap-1">
-                                                <CheckCircle size={12} /> Pagado
-                                            </span>
-                                        ) : (
-                                            <span className="text-custom-cyan">{`${order.currency === 'USD' ? 'US$' : '$'} ${(order.amount || 0).toFixed(2)}`}</span>
-                                        )}
+                            {/* Header row */}
+                            <div className="flex items-center justify-between">
+                                <span className="text-base font-black text-custom-cyan uppercase tracking-tight">{order.id}</span>
+                                {order.isPaid ? (
+                                    <span className="px-2 py-0.5 bg-green-900/30 text-green-400 text-[10px] font-bold uppercase tracking-wider rounded-full border border-green-700/40">
+                                        Pagado
+                                    </span>
+                                ) : (
+                                    <span className="px-2 py-0.5 bg-cyan-900/30 text-cyan-400 text-[10px] font-bold uppercase tracking-wider rounded-full border border-cyan-700/40">
+                                        Disponible para retiro
+                                    </span>
+                                )}
+                                <span className="text-xs text-zinc-500">{order.date}</span>
+                            </div>
+
+                            {/* Description full width */}
+                            <div className="bg-custom-dark p-3 rounded-lg border border-zinc-800">
+                                <div className="flex justify-between text-sm">
+                                    <span className="text-zinc-400 truncate mr-3">{order.desc}</span>
+                                    <span className="font-bold text-custom-cyan shrink-0">
+                                        {order.currency === 'USD' ? 'US$' : '$'} {(order.amount || 0).toFixed(2)}
                                     </span>
                                 </div>
                             </div>
-                        </div>
+
+                            </div>
                     ))}
                 </div>
+            </div>
 
-                <div className="p-6 bg-custom-dark border-t border-brand-dark flex flex-col md:flex-row justify-between items-center gap-4">
-                    <div className="text-custom-cyan">
+                <div className="mt-3 border-t border-zinc-800">
+                    <p className="text-sm text-zinc-500 px-4 pt-3">
                         <span className="font-bold text-zinc-200">{selectedOrders.length}</span> órdenes seleccionadas
-                    </div>
-
-                    <div className="flex items-center gap-6">
-                        <div className="text-right">
-                            <p className="text-xs text-custom-cyan uppercase font-bold">Total a Pagar</p>
-                            <p className="text-2xl font-bold text-zinc-200">
-                                {activeCurrency === 'USD' ? 'US$' : '$'} {(totalAmount || 0).toFixed(2)}
+                    </p>
+                    <div className="flex items-center justify-between gap-3 p-4">
+                        <div>
+                            <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Total</p>
+                            <p className="text-lg font-black text-zinc-100">
+                                <span className="text-xs text-zinc-500 mr-1">{activeCurrency === 'USD' ? 'US$' : '$'}</span>
+                                {(totalAmount || 0).toFixed(2)}
                             </p>
                         </div>
+
                         <CustomButton
                             onClick={async () => {
-                                // Cargar datos de envío (NO crear retiro aún)
                                 setLoadingShipping(true);
                                 try {
                                     const res = await apiClient.get('/web-orders/shipping-data');
@@ -908,8 +933,6 @@ export const PickupView = () => {
                                     console.error('Error cargando datos de envío:', e);
                                 }
                                 setLoadingShipping(false);
-
-                                // Ir a confirmación (el retiro se crea al confirmar)
                                 setStep('confirmation');
                                 window.scrollTo({ top: 0, behavior: 'smooth' });
                             }}
@@ -917,8 +940,7 @@ export const PickupView = () => {
                             isLoading={loading || loadingShipping}
                             variant="primary"
                             icon={ChevronRight}
-                            className="py-3 px-6 !bg-transparent !text-zinc-100 !shadow-none border border-brand-cyan/40 hover:!bg-brand-cyan/5 hover:!border-brand-cyan"
-                            style={{}}
+                            className="w-1/2 md:w-auto !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
                             whileHover={{ scale: 1 }}
                             whileTap={{ scale: 1 }}
                         >
@@ -926,7 +948,9 @@ export const PickupView = () => {
                         </CustomButton>
                     </div>
                 </div>
-            </div>
+
+            </>
+            )}
 
             {user?.hasCredit && (
                 <div className="flex items-center gap-3 p-4 bg-green-50 text-green-800 rounded-lg border border-green-200">

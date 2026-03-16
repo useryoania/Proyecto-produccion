@@ -4,6 +4,7 @@ const path = require('path');
 const sharp = require('sharp');
 const { PDFDocument } = require('pdf-lib');
 const fileProcessingService = require('../services/fileProcessingService');
+const logger = require('../utils/logger');
 
 // --- HELPERS CONSTANTS ---
 const pointsToCm = (points) => (points / 72) * 2.54;
@@ -53,7 +54,7 @@ exports.toggleRollStatus = async (req, res) => {
         const userId = req.user ? req.user.id : (req.body.userId || 1);
         const ip = req.ip || req.connection.remoteAddress;
 
-        console.log(`[toggleRollStatus] START - RollID: ${rollId}, Action: ${action}`);
+        logger.info(`[toggleRollStatus] START - RollID: ${rollId}, Action: ${action}`);
 
         // Basic Validation
         if (!rollId || !action) {
@@ -104,7 +105,7 @@ exports.toggleRollStatus = async (req, res) => {
 
                 if (slotRes.recordset.length > 0) {
                     const activeBobinaId = slotRes.recordset[0].BobinaMontadaID;
-                    console.log(`[toggleRollStatus] Auto-assigning Bobina ${activeBobinaId} from Machine Slot to Roll ${rollId}`);
+                    logger.info(`[toggleRollStatus] Auto-assigning Bobina ${activeBobinaId} from Machine Slot to Roll ${rollId}`);
 
                     await new sql.Request(transaction)
                         .input('NewBID', sql.Int, activeBobinaId)
@@ -114,7 +115,7 @@ exports.toggleRollStatus = async (req, res) => {
                     // Actualizamos currentRoll para que el resto de la lógica (si la hubiera) tenga el ID
                     currentRoll.BobinaID = activeBobinaId;
                 } else {
-                    console.warn(`[toggleRollStatus] Warning: Machine ${currentRoll.MaquinaID} has no bobina mounted in slots. Starting Roll ${rollId} without specific BobinaID.`);
+                    logger.warn(`[toggleRollStatus] Warning: Machine ${currentRoll.MaquinaID} has no bobina mounted in slots. Starting Roll ${rollId} without specific BobinaID.`);
                 }
                 // ============================
 
@@ -213,12 +214,12 @@ exports.toggleRollStatus = async (req, res) => {
 
         } catch (err) {
             if (transaction) await transaction.rollback();
-            console.error("Error toggleRollStatus:", err);
+            logger.error("Error toggleRollStatus:", err);
             // Important: Return JSON error so frontend (Axios) can display it nicely
             res.status(500).json({ error: err.message });
         }
     } catch (outerErr) {
-        console.error("❌ CRITICAL UNCAUGHT ERROR in toggleRollStatus:", outerErr);
+        logger.error("❌ CRITICAL UNCAUGHT ERROR in toggleRollStatus:", outerErr);
         // Ensure response is sent if not already
         if (!res.headersSent) {
             res.status(500).json({ error: "Critical Error: " + outerErr.message });
@@ -276,7 +277,7 @@ exports.registerFileAction = async (req, res) => {
 // ==========================================
 exports.assignRoll = async (req, res) => {
     const { rollId, machineId } = req.body;
-    console.log(`[assignRoll] Request received. RollID: ${rollId}, MachineID: ${machineId}`);
+    logger.info(`[assignRoll] Request received. RollID: ${rollId}, MachineID: ${machineId}`);
 
     let transaction;
     try {
@@ -290,7 +291,7 @@ exports.assignRoll = async (req, res) => {
         const mid = machineId || null;
 
         // 2. Actualizar Rollo
-        console.log(`[assignRoll] Updating Roll ${rollId} with MaquinaID=${mid}, EstadoEnArea=${machineStatus}...`);
+        logger.info(`[assignRoll] Updating Roll ${rollId} with MaquinaID=${mid}, EstadoEnArea=${machineStatus}...`);
         // Parse RID safely
         let finalRollId = rollId;
         if (!isNaN(parseInt(rollId))) finalRollId = parseInt(rollId);
@@ -304,10 +305,10 @@ exports.assignRoll = async (req, res) => {
             .query(`UPDATE dbo.Rollos 
                              SET MaquinaID = @MID
                              WHERE RolloID = @RID`);
-        console.log(`[assignRoll] Roll updated. Rows affected: ${rollRes.rowsAffected}`);
+        logger.info(`[assignRoll] Roll updated. Rows affected: ${rollRes.rowsAffected}`);
 
         // 3. Actualizar Ordenes asociadas al Rollo
-        console.log(`[assignRoll] Updating Orders for Roll ${rollId} with MaquinaID=${mid}, EstadoenArea=${machineStatus}...`);
+        logger.info(`[assignRoll] Updating Orders for Roll ${rollId} with MaquinaID=${mid}, EstadoenArea=${machineStatus}...`);
         const reqOrders = new sql.Request(transaction);
         const orderRes = await reqOrders.input('MID', sql.Int, mid)
             .input('StatusArea', sql.VarChar, machineStatus)
@@ -318,24 +319,24 @@ exports.assignRoll = async (req, res) => {
                                    EstadoenArea = @StatusArea 
                                WHERE RolloID = @RID`);
 
-        console.log(`[assignRoll] Orders updated. Rows affected: ${orderRes.rowsAffected}`);
+        logger.info(`[assignRoll] Orders updated. Rows affected: ${orderRes.rowsAffected}`);
         if (orderRes.rowsAffected[0] === 0) {
-            console.warn(`⚠️ ALERTA: No se actualizaron órdenes para el Rollo ${rollId}. Verificar integridad referencial.`);
+            logger.warn(`⚠️ ALERTA: No se actualizaron órdenes para el Rollo ${rollId}. Verificar integridad referencial.`);
         }
 
         await transaction.commit();
-        console.log(`[assignRoll] Transaction committed successfully.`);
+        logger.info(`[assignRoll] Transaction committed successfully.`);
         res.json({ success: true, machineStatus });
     } catch (err) {
         if (transaction) await transaction.rollback();
-        console.error("Error en assignRoll:", err);
+        logger.error("Error en assignRoll:", err);
         res.status(500).json({ error: err.message });
     }
 };
 
 exports.unassignRoll = async (req, res) => {
     const { rollId } = req.body;
-    console.log(`[unassignRoll] Request received. RollID: ${rollId}`);
+    logger.info(`[unassignRoll] Request received. RollID: ${rollId}`);
     let transaction;
     try {
         const pool = await getPool();
@@ -350,12 +351,12 @@ exports.unassignRoll = async (req, res) => {
 
         if (checkRes.recordset.length === 0) {
             await transaction.rollback();
-            console.error(`[unassignRoll] ❌ Rollo no encontrado. ID buscado: ${rollId}`);
+            logger.error(`[unassignRoll] ❌ Rollo no encontrado. ID buscado: ${rollId}`);
             return res.status(404).json({ error: `No se encontró el rollo con ID: ${rollId}` });
         }
 
         const currentRoll = checkRes.recordset[0];
-        console.log(`[unassignRoll] Rollo encontrado: ${currentRoll.Nombre} (Estado: ${currentRoll.Estado}, MaquinaID: ${currentRoll.MaquinaID})`);
+        logger.info(`[unassignRoll] Rollo encontrado: ${currentRoll.Nombre} (Estado: ${currentRoll.Estado}, MaquinaID: ${currentRoll.MaquinaID})`);
 
         // Si está 'En maquina', está corriendo. Debe pausarse antes de devolver.
         if (currentRoll.Estado === 'En maquina') {
@@ -364,7 +365,7 @@ exports.unassignRoll = async (req, res) => {
         }
 
         // 2. Desmontar Rollo
-        console.log(`[unassignRoll] Unmounting Roll ${rollId}...`);
+        logger.info(`[unassignRoll] Unmounting Roll ${rollId}...`);
         const rollRes = await new sql.Request(transaction)
             .input('RID', sql.VarChar(50), String(rollId))
             .query(`UPDATE dbo.Rollos 
@@ -384,18 +385,18 @@ exports.unassignRoll = async (req, res) => {
 
         await transaction.commit();
         res.json({ success: true, message: `Rollo ${currentRoll.Nombre} desmontado correctamente.` });
-        console.log(`[unassignRoll] Transaction committed successfully.`);
+        logger.info(`[unassignRoll] Transaction committed successfully.`);
         res.json({ success: true });
     } catch (err) {
         if (transaction) await transaction.rollback();
-        console.error("Error en unassignRoll:", err);
+        logger.error("Error en unassignRoll:", err);
         res.status(500).json({ error: err.message });
     }
 };
 
 exports.getOrderDetails = async (req, res) => {
     const { orderId } = req.query;
-    console.log(`[productionController] Obteniendo detalles para OrderID: ${orderId}`);
+    logger.info(`[productionController] Obteniendo detalles para OrderID: ${orderId}`);
     try {
         const pool = await getPool();
         // Frontend fetch expects direct array of files
@@ -404,7 +405,7 @@ exports.getOrderDetails = async (req, res) => {
             .input('ID', sql.Int, orderId)
             .query("SELECT * FROM dbo.ArchivosOrden WHERE OrdenID = @ID");
 
-        console.log(`[productionController] Archivos encontrados: ${files.recordset.length}`);
+        logger.info(`[productionController] Archivos encontrados: ${files.recordset.length}`);
 
         const mappedFiles = files.recordset.map(archivo => {
             if (archivo.RutaAlmacenamiento && archivo.RutaAlmacenamiento.includes('drive.google.com')) {
@@ -419,7 +420,7 @@ exports.getOrderDetails = async (req, res) => {
         // Return only the files array
         res.json(mappedFiles);
     } catch (err) {
-        console.error(`[productionController] Error: ${err.message}`);
+        logger.error(`[productionController] Error: ${err.message}`);
         res.status(500).json({ error: err.message });
     }
 };
@@ -455,7 +456,7 @@ exports.magicSort = async (req, res) => {
     try {
         const pool = await getPool();
 
-        console.log("--- INICIANDO SECUENCIA MAGIC SORT (SECUENCIAL) ---");
+        logger.info("--- INICIANDO SECUENCIA MAGIC SORT (SECUENCIAL) ---");
 
         // ---------------------------------------------------------
         // PASO 0: PREPARACIÓN Y CLASIFICACIÓN
@@ -541,7 +542,7 @@ exports.magicSort = async (req, res) => {
                         await new sql.Request(transaction).input('BID', sql.Int, assignedBobinaId).query("UPDATE InventarioBobinas SET Estado = 'En Uso' WHERE BobinaID = @BID");
                     }
                 }
-            } catch (e) { console.warn("Bobina auto-assign warning:", e.message); }
+            } catch (e) { logger.warn("Bobina auto-assign warning:", e.message); }
 
             // 1.2 Crear Rollo (ESTADO: ABIERTO - MESA DE ARMADO)
             const displayId = Math.floor(Math.random() * 1000);
@@ -585,7 +586,7 @@ exports.magicSort = async (req, res) => {
             const machine = mRes.recordset[0];
 
             if (!machine) {
-                console.log(`[MagicSort] No se encontró máquina para Rollo ${rollId} (KW: ${machineKeyword}). Se queda en Mesa de Armado.`);
+                logger.info(`[MagicSort] No se encontró máquina para Rollo ${rollId} (KW: ${machineKeyword}). Se queda en Mesa de Armado.`);
                 return false;
             }
 
@@ -654,7 +655,7 @@ exports.magicSort = async (req, res) => {
         }
 
     } catch (err) {
-        console.error("Error MagicSort:", err);
+        logger.error("Error MagicSort:", err);
         res.status(500).json({ error: err.message });
     }
 };

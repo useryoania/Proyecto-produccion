@@ -11,6 +11,9 @@ export default defineConfig({
     outDir: 'backend/public',
     emptyOutDir: true,
   },
+  esbuild: {
+    drop: ['console', 'debugger'],
+  },
   optimizeDeps: {
     include: ['ag-grid-community', 'ag-grid-react', 'jspdf', 'jspdf-autotable']
   },

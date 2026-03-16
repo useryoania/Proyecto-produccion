@@ -1,14 +1,15 @@
+const logger = require('./utils/logger');
 const express = require('express');
-console.log('--- SERVER RESTARTED V32 (NAMING: ARCHIVO X DE Y) AT ' + new Date().toISOString() + ' ---');
+logger.info('--- SERVER RESTARTED V32 (NAMING: ARCHIVO X DE Y) AT ' + new Date().toISOString() + ' ---');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
-console.log("---------------------------------------------------------");
-console.log("🔑 [SERVER STARTUP] Verificando Variables de Entorno:");
-console.log("   PORT:", process.env.PORT);
-console.log("   GEMINI_KEY:", process.env.GEMINI_API_KEY ? "Cargada ✅ (" + process.env.GEMINI_API_KEY.substring(0, 5) + "...)" : "❌ NO DETECTADA");
-console.log("---------------------------------------------------------");
+logger.info("---------------------------------------------------------");
+logger.info("🔑 [SERVER STARTUP] Verificando Variables de Entorno:");
+logger.info("   PORT:", process.env.PORT);
+logger.info("   GEMINI_KEY:", process.env.GEMINI_API_KEY ? "Cargada ✅ (" + process.env.GEMINI_API_KEY.substring(0, 5) + "...)" : "❌ NO DETECTADA");
+logger.info("---------------------------------------------------------");
 
 // --- IMPORTACIÓN DEL SCHEDULER ---
 const { startAutoSync } = require('./scheduler'); // Asegúrate de crear este archivo
@@ -45,7 +46,7 @@ app.use(express.json({ limit: '200mb' }));
 
 // 🔍 DEBUG: LOG REQUESTS (Silenced to reduce noise)
 app.use((req, res, next) => {
-    // console.log(`📡 INCOMING: ${req.method} ${req.url}`);
+    // logger.info(`📡 INCOMING: ${req.method} ${req.url}`);
     next();
 });
 
@@ -117,31 +118,31 @@ app.use('/api/production', require('./routes/productionRoutes'));
 app.use('/api/machine-control', require('./routes/machineControlRoutes')); // CONTROL PANEL INSUMOS
 try {
     app.use('/api/finishing', require('./routes/ecoUvFinishingRoutes'));
-} catch (e) { console.error("❌ Error loading finishing routes:", e); }
+} catch (e) { logger.error("❌ Error loading finishing routes:", e); }
 
 try {
     app.use('/api/products-integration', require('./routes/productsIntegrationRoutes'));
-} catch (e) { console.error("❌ Error loading product integration routes:", e); }
+} catch (e) { logger.error("❌ Error loading product integration routes:", e); }
 
 try {
     app.use('/api/integration-logs', require('./routes/integrationLogsRoutes'));
-} catch (e) { console.error("❌ Error loading log routes:", e); }
+} catch (e) { logger.error("❌ Error loading log routes:", e); }
 
 try {
     app.use('/api/special-prices', require('./routes/specialPricesRoutes'));
-} catch (e) { console.error("❌ Error loading special prices routes:", e); }
+} catch (e) { logger.error("❌ Error loading special prices routes:", e); }
 
 try {
     app.use('/api/prices', require('./routes/pricesRoutes'));
-} catch (e) { console.error("❌ Error loading base prices routes:", e); }
+} catch (e) { logger.error("❌ Error loading base prices routes:", e); }
 
 try {
     app.use('/api/profiles', require('./routes/profilesRoutes'));
-} catch (e) { console.error("❌ Error loading profiles routes:", e); }
+} catch (e) { logger.error("❌ Error loading profiles routes:", e); }
 
 try {
     app.use('/api/clients', require('./routes/clientsRoutes'));
-} catch (e) { console.error("❌ Error loading clients routes:", e); }
+} catch (e) { logger.error("❌ Error loading clients routes:", e); }
 
 app.use('/api/chat', require('./routes/chatRoutes'));
 // checkout routes deshabilitado por ahora
@@ -165,14 +166,14 @@ app.set('socketio', io);
 
 io.on('connection', (socket) => {
     // Log nivel silly para no saturar, pero útil para debug inicial
-    // console.log('🔌 Socket Connect:', socket.id); 
+    // logger.info('🔌 Socket Connect:', socket.id); 
 
     socket.on('error', (err) => {
-        console.error("❌ Socket Error:", err);
+        logger.error("❌ Socket Error:", err);
     });
 
     socket.on('disconnect', (reason) => {
-        // console.log('❌ Socket Disconnect:', socket.id, reason);
+        // logger.info('❌ Socket Disconnect:', socket.id, reason);
     });
 });
 
@@ -200,7 +201,7 @@ app.get('/api/drive-callback', async (req, res) => {
 // --- SERVIR FRONTEND EN PRODUCCIÓN ---
 const publicPath = path.join(__dirname, 'public');
 if (require('fs').existsSync(publicPath)) {
-    console.log('📂 Sirviendo archivos estáticos desde:', publicPath);
+    logger.info('📂 Sirviendo archivos estáticos desde:', publicPath);
     app.use(express.static(publicPath));
 
     // Cualquier ruta que no sea API, devuelve el index.html (SPA)
@@ -209,7 +210,7 @@ if (require('fs').existsSync(publicPath)) {
         res.sendFile(path.join(publicPath, 'index.html'));
     });
 } else {
-    console.log('⚠️ No se encontró la carpeta "public". Ejecuta "npm run build" en el frontend y copia el contenido de "dist" a "backend/public".');
+    logger.info('⚠️ No se encontró la carpeta "public". Ejecuta "npm run build" en el frontend y copia el contenido de "dist" a "backend/public".');
 }
 
 // ─── GLOBAL ERROR HANDLER ───
@@ -217,7 +218,7 @@ app.use((err, req, res, next) => {
     const status = err.status || 500;
     const isProduction = process.env.NODE_ENV === 'production';
 
-    console.error(`💥 [ERROR] ${req.method} ${req.originalUrl}`, {
+    logger.error(`💥 [ERROR] ${req.method} ${req.originalUrl}`, {
         status,
         message: err.message,
         ...(isProduction ? {} : { stack: err.stack })
@@ -231,31 +232,31 @@ app.use((err, req, res, next) => {
 
 // ─── PROCESS-LEVEL ERROR HANDLERS ───
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('⚠️ [Unhandled Rejection]', reason);
+    logger.error('⚠️ [Unhandled Rejection]', reason);
 });
 
 process.on('uncaughtException', (err) => {
-    console.error('💀 [Uncaught Exception]', err);
+    logger.error('💀 [Uncaught Exception]', err);
     server.close(() => process.exit(1));
 });
 
 
 // --- INICIO DEL SERVIDOR Y SCHEDULER ---
 server.listen(PORT, async () => {
-    console.log(`🚀 Servidor backend + Socket.io corriendo en puerto ${PORT}`);
+    logger.info(`🚀 Servidor backend + Socket.io corriendo en puerto ${PORT}`);
 
     // Iniciamos la sincronización automática después de que el servidor suba
     try {
-        // startAutoSync(io).catch(err => console.error("❌ Scheduler Start Error:", err));
-        // console.log(`⏱️ Sistema de sincronización automática activado.`);
-        console.log(`ℹ️ [Sync] Sincronización con ERP desactivada (Pedidos vía WEB activos).`);
+        // startAutoSync(io).catch(err => logger.error("❌ Scheduler Start Error:", err));
+        // logger.info(`⏱️ Sistema de sincronización automática activado.`);
+        logger.info(`ℹ️ [Sync] Sincronización con ERP desactivada (Pedidos vía WEB activos).`);
 
         // ACTIVAR CRON PLANILLAS
         try {
             require('./cron/planillaSync');
-            console.log("⏱️ [CRON] Sincronización de Planillas ACTIVADA");
+            logger.info("⏱️ [CRON] Sincronización de Planillas ACTIVADA");
         } catch (e) {
-            console.error("❌ [CRON] Error cargando PlanillaSync:", e.message);
+            logger.error("❌ [CRON] Error cargando PlanillaSync:", e.message);
         }
 
         // ACTIVAR CRON WSP AVISOS
@@ -263,7 +264,7 @@ server.listen(PORT, async () => {
             const { startWspJob } = require('./jobs/wspAvisos.job');
             startWspJob(io);
         } catch (e) {
-            console.error("❌ [CRON] Error cargando WspAvisos:", e.message);
+            logger.error("❌ [CRON] Error cargando WspAvisos:", e.message);
         }
 
         // ACTIVAR CRON COTIZACIÓN BCU (USD/UYU automático)
@@ -271,10 +272,10 @@ server.listen(PORT, async () => {
             const { startCotizacionJob } = require('./jobs/cotizacionBCU.job');
             startCotizacionJob();
         } catch (e) {
-            console.error("❌ [CRON] Error cargando CotizacionBCU:", e.message);
+            logger.error("❌ [CRON] Error cargando CotizacionBCU:", e.message);
         }
 
     } catch (error) {
-        console.error("❌ Error al iniciar el Scheduler:", error.message);
+        logger.error("❌ Error al iniciar el Scheduler:", error.message);
     }
 });
