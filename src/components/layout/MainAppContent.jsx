@@ -39,6 +39,7 @@ const VerificarPagosOnlineView = lazy(() => import('../pages/VerificarPagosOnlin
 const ExcepcionesDeudaView = lazy(() => import('../pages/ExcepcionesDeudaView'));
 const CargaDepositoPage = lazy(() => import('../logistics/CargaDepositoPage'));
 const VerificarCodigoPage = lazy(() => import('../logistics/VerificarCodigoPage'));
+const CuadreDiarioView = lazy(() => import('../pages/CuadreDiarioView'));
 const DuplicateClientsPage = lazy(() => import('../pages/admin/DuplicateClientsPage'));
 const OrderSearchPage = lazy(() => import('../logistics/OrderSearchPage'));
 const EntregaPedidosView = lazy(() => import('../pages/customer-service/EntregaPedidosView'));
@@ -332,6 +333,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/produccion/etiquetas" element={<LabelGenerationPage />} />
                                 <Route path="/caja/pagos" element={<CargaPagosView />} />
                                 <Route path="/caja/pagos-online" element={<VerificarPagosOnlineView />} />
+                                <Route path="/caja/cuadre" element={<CuadreDiarioView />} />
                                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
                             </Routes>
                         </Suspense>
@@ -395,6 +397,8 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/logistica/retiros-web') return <WebRetirosPage />;
     if (menuItem.Ruta === '/logistica/dashboard-deposito') return <DepositoDashboard />;
     if (menuItem.Ruta === '/caja/pagos' || menuItem.Ruta.toLowerCase() === '/caja/pagos/') return <CargaPagosView />;
+    if (menuItem.Ruta === '/caja/cuadre') return <CuadreDiarioView />;
+
 
     // NEW: Historial de Lotes
     if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;

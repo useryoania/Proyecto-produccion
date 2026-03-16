@@ -1,6 +1,10 @@
 const { getPool, sql } = require('../config/db');
-const axios = require('axios'); // Importar axios para el proxy
+const axios = require('axios');
 const ERP_API_BASE = process.env.ERP_API_URL;
+
+// Google Sheets service (carga protegida)
+let sheetsService = null;
+try { sheetsService = require('../services/sheetsService'); } catch(e) { console.warn('[clientsController] sheetsService no disponible:', e.message); }
 
 // Cache para el Token de la API Macrosoft
 let macrosoftAuthToken = null;
@@ -121,63 +125,210 @@ exports.getAllReactClients = async (req, res) => {
     }
 };
 
-// Obtener todos los clientes de ClientesReact (paginado/búsqueda) — reemplaza la llamada a API externa
-exports.getAllMacrosoftClients = async (req, res) => {
-    const { q, page = 1, pageSize = 50 } = req.query;
+// ─── Página individual de Macrosoft (para carga progresiva desde el frontend) ───
+exports.getMacrosoftPage = async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
     try {
-        const pool = await getPool();
-        const request = pool.request();
-        let where = '1=1';
+        const token = await getMacrosoftToken();
+        if (!token) return res.status(502).json({ error: 'No se pudo obtener token de Macrosoft' });
 
-        if (q) {
-            where = `(
-                CliNombreApellido LIKE @q
-                OR CliNombreEmpresa LIKE @q
-                OR CliCodigoCliente LIKE @q
-                OR CliMail LIKE @q
-                OR CliDocumento LIKE @q
-            )`;
-            request.input('q', sql.VarChar(200), `%${q}%`);
+        const msRes = await axios.get(`${ERP_API_BASE}/clientes`, {
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: 15000,
+            params: { page }
+        });
+
+        const data   = Array.isArray(msRes.data?.data) ? msRes.data.data : (Array.isArray(msRes.data) ? msRes.data : []);
+        const pages  = msRes.data?.pages  ?? 1;
+        const length = msRes.data?.length ?? data.length;
+
+        // Trimear strings con padding
+        const trimStr = v => typeof v === 'string' ? v.trim() || null : v;
+        const cleaned = data.map(c => ({
+            CodCliente:       c.CodCliente,
+            Nombre:           trimStr(c.Nombre),
+            NombreFantasia:   trimStr(c.NombreFantasia),
+            DireccionTrabajo: trimStr(c.DireccionTrabajo),
+            TelefonoTrabajo:  trimStr(c.TelefonoTrabajo),
+            CioRuc:           trimStr(c.CioRuc),
+            Cedula:           trimStr(c.Cedula),
+            Celular:          trimStr(c.Celular),
+            Email:            trimStr(c.Email),
+            Moneda:           c.Moneda,
+            TiposPrecios:     c.TiposPrecios,
+        }));
+
+        // Si es página 1 devolver el set de CodCliente locales (para que el frontend detecte vínculos)
+        // CLAVE: dbo.Clientes.CodCliente == Macrosoft API CodCliente (son el mismo campo)
+        let vinculadosMap = null;
+        if (page === 1) {
+            const pool = await getPool();
+            const localRes = await pool.request().query(`
+                SELECT CodCliente, CodReferencia
+                FROM dbo.Clientes WITH(NOLOCK)
+            `);
+            vinculadosMap = {};
+            localRes.recordset.forEach(loc => {
+                // Existencia: si el CodCliente local == CodCliente Macrosoft → está vinculado
+                const key = String(loc.CodCliente || '').trim();
+                if (key) vinculadosMap[key] = 1;  // 1 = existe en local
+            });
+            console.log(`[getMacrosoftPage] ${Object.keys(vinculadosMap).length} clientes en local`);
         }
 
-        const offset = (parseInt(page) - 1) * parseInt(pageSize);
-        request.input('offset', sql.Int, offset);
-        request.input('pageSize', sql.Int, parseInt(pageSize));
-
-        const result = await request.query(`
-            SELECT 
-                CliIdCliente    AS IdCliente,
-                CliCodigoCliente AS CodigoCliente,
-                CliNombreApellido AS NombreCliente,
-                CliNombreEmpresa  AS EmpresaCliente,
-                CliCelular       AS Telefono,
-                CliMail          AS Email,
-                CliDocumento     AS Rut,
-                CliLocalidad     AS Localidad,
-                CliDireccion     AS Direccion,
-                CliAgencia       AS Agencia,
-                TClIdTipoCliente,
-                LReIdLugarRetiro,
-                CliFechaAlta
-            FROM ClientesReact WITH(NOLOCK)
-            WHERE ${where}
-            ORDER BY CliNombreApellido ASC
-            OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY
-        `);
-
-        const countResult = await pool.request()
-            .query(`SELECT COUNT(*) AS total FROM ClientesReact WITH(NOLOCK) WHERE ${where}`);
-
         res.set('Cache-Control', 'no-store');
-        res.json({
-            data: result.recordset,
-            total: countResult.recordset[0].total,
-            page: parseInt(page),
-            pageSize: parseInt(pageSize)
+        res.json({ data: cleaned, page, pages, length, vinculadosMap });
+
+    } catch (err) {
+        console.error(`[getMacrosoftPage] Error página ${page}:`, err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// Obtener todos los clientes desde la API real de Macrosoft + vínculo local
+exports.getAllMacrosoftClients = async (req, res) => {
+    const { q } = req.query;
+    try {
+        // 1. Obtener token y llamar a la API Macrosoft real
+        const token = await getMacrosoftToken();
+        if (!token) return res.status(502).json({ error: 'No se pudo obtener token de Macrosoft' });
+
+        const headers = { Authorization: `Bearer ${token}` };
+
+        // 1. Primera llamada para saber cuántas páginas hay
+        const firstRes = await axios.get(`${ERP_API_BASE}/clientes`, {
+            headers, timeout: 20000,
+            params: { page: 1 }
         });
+
+        // Extraer array y metadatos de paginación
+        const extractBatch = (d) => {
+            if (Array.isArray(d))             return d;
+            if (Array.isArray(d?.data))       return d.data;
+            if (Array.isArray(d?.clientes))   return d.clientes;
+            if (Array.isArray(d?.items))      return d.items;
+            // Si el objeto tiene una clave con array grande, buscarla
+            if (d && typeof d === 'object') {
+                for (const k of Object.keys(d)) {
+                    if (Array.isArray(d[k]) && d[k].length > 0) return d[k];
+                }
+            }
+            return [];
+        };
+
+        const batch1    = extractBatch(firstRes.data);
+        const totalPages = firstRes.data?.pages ?? firstRes.data?.totalPages ?? firstRes.data?.last_page ?? 1;
+        const perPage    = firstRes.data?.length ?? firstRes.data?.per_page ?? batch1.length ?? 30;
+
+        console.log(`[MS API] Página 1/${totalPages}: ${batch1.length} clientes (perPage=${perPage})`);
+
+        let clientes = [...batch1];
+
+        // 2. Buscar el resto de páginas en lotes paralelos de 10
+        if (totalPages > 1) {
+            const CONCURRENCY = 10;
+            for (let start = 2; start <= totalPages; start += CONCURRENCY) {
+                const end = Math.min(start + CONCURRENCY - 1, totalPages);
+                const requests = [];
+                for (let p = start; p <= end; p++) {
+                    requests.push(
+                        axios.get(`${ERP_API_BASE}/clientes`, {
+                            headers, timeout: 20000,
+                            params: { page: p }
+                        }).then(r => ({ page: p, batch: extractBatch(r.data) }))
+                          .catch(e => { console.warn(`[MS API] Página ${p} falló:`, e.message); return { page: p, batch: [] }; })
+                    );
+                }
+                const results = await Promise.all(requests);
+                results.sort((a, b) => a.page - b.page);
+                results.forEach(({ page: p, batch }) => {
+                    clientes = clientes.concat(batch);
+                    if (batch.length > 0) console.log(`[MS API] Página ${p}: +${batch.length} (total: ${clientes.length})`);
+                });
+            }
+        }
+
+        console.log(`[MS API] ✓ Total final: ${clientes.length} clientes de ${totalPages} páginas`);
+
+        // 2. Cruzar con tabla local — CodCliente local == CodCliente Macrosoft
+        const pool = await getPool();
+        const localRes = await pool.request().query(`
+            SELECT CodCliente, CodReferencia
+            FROM dbo.Clientes WITH(NOLOCK)
+        `);
+        // CLAVE: dbo.Clientes.CodCliente == Macrosoft CodCliente (mismo campo)
+        const vinculadosMap = {};
+        localRes.recordset.forEach(loc => {
+            const key = String(loc.CodCliente || '').trim();
+            if (key) vinculadosMap[key] = 1;  // 1 = existe en local
+        });
+        console.log(`[getAllMacrosoftClients] ${Object.keys(vinculadosMap).length} clientes en local`);
+
+        // 3. Filtro por búsqueda (lado servidor ya no aplica, lo hace el frontend)
+        //    pero si viene q, filtramos antes de devolver para reducir payload
+        if (q) {
+            const t = q.toLowerCase();
+            clientes = clientes.filter(c =>
+                [c.Nombre, c.NombreFantasia, c.CioRuc, c.TelefonoTrabajo, c.Email, String(c.CodCliente || '')]
+                    .some(v => String(v || '').toLowerCase().includes(t))
+            );
+        }
+
+        // 4. Enriquecer con vínculo local + limpiar strings con espacios (padding de la API)
+        const trimStr = (v) => (typeof v === 'string' ? v.trim() || null : v);
+        const enriched = clientes.map(c => ({
+            CodCliente:          c.CodCliente,
+            Nombre:              trimStr(c.Nombre),
+            NombreFantasia:      trimStr(c.NombreFantasia),
+            DireccionTrabajo:    trimStr(c.DireccionTrabajo),
+            DireccionParticular: trimStr(c.DireccionParticular),
+            TelefonoTrabajo:     trimStr(c.TelefonoTrabajo),
+            TelefonoParticular:  trimStr(c.TelefonoParticular),
+            CioRuc:              trimStr(c.CioRuc),
+            Cedula:              trimStr(c.Cedula),
+            Celular:             trimStr(c.Celular),
+            Email:               trimStr(c.Email),
+            Moneda:              c.Moneda,
+            TiposPrecios:        c.TiposPrecios,
+            Descuento:           c.Descuento,
+            // Vínculo local
+            EsVinculado:    vinculadosMap[String(c.CodCliente)] ? 1 : 0,
+            CodClienteLocal: vinculadosMap[String(c.CodCliente)] || null,
+        }));
+
+        console.log(`[getAllMacrosoftClients] API Macrosoft devolvió ${clientes.length} clientes, ${Object.keys(vinculadosMap).length} vinculados localmente`);
+        res.set('Cache-Control', 'no-store');
+        res.json({ data: enriched, total: enriched.length });
+
     } catch (error) {
-        console.error('[getAllMacrosoftClients] Error:', error.message);
-        res.status(500).json({ error: error.message });
+        console.error('[getAllMacrosoftClients] Error llamando API Macrosoft:', error.message);
+        // Fallback: intentar con ClientesReact local si la API externa falla
+        try {
+            console.warn('[getAllMacrosoftClients] Usando fallback ClientesReact local...');
+            const pool = await getPool();
+            const result = await pool.request().query(`
+                SELECT TOP 200
+                    cr.CliIdCliente      AS IdCliente,
+                    cr.CliCodigoCliente  AS CodigoCliente,
+                    cr.CliNombreApellido AS NombreCliente,
+                    cr.CliNombreEmpresa  AS EmpresaCliente,
+                    cr.CliCelular        AS Telefono,
+                    cr.CliMail           AS Email,
+                    cr.CliDocumento      AS Rut,
+                    cr.CliDireccion      AS Direccion,
+                    CASE WHEN loc.CodCliente IS NOT NULL THEN 1 ELSE 0 END AS EsVinculado,
+                    loc.CodCliente  AS CodClienteLocal
+                FROM ClientesReact cr WITH(NOLOCK)
+                LEFT JOIN dbo.Clientes loc WITH(NOLOCK)
+                    ON CAST(loc.IDReact AS VARCHAR) = CAST(cr.CliIdCliente AS VARCHAR)
+                    OR loc.IDCliente = cr.CliCodigoCliente
+                ORDER BY cr.CliNombreApellido ASC
+            `);
+            res.set('Cache-Control', 'no-store');
+            res.json({ data: result.recordset, total: result.recordset.length, fallback: true });
+        } catch (fallbackErr) {
+            res.status(500).json({ error: error.message });
+        }
     }
 };
 
@@ -846,5 +997,152 @@ exports.getCatalogs = async (req, res) => {
     } catch (error) {
         console.error('Error getCatalogs:', error);
         res.status(500).json({ error: error.message });
+    }
+};
+
+// -------------------------------------------------------------------
+// ÁRBOL — clientes agrupados por vendedor o tipo de cliente
+// -------------------------------------------------------------------
+exports.getClientsTree = async (req, res) => {
+    const { group = 'vendedor' } = req.query;
+    try {
+        const pool = await getPool();
+        const result = await pool.request().query(`
+            SELECT
+                c.CliIdCliente, c.CodCliente, c.Nombre, c.NombreFantasia,
+                c.IDCliente, c.CioRuc, c.IDReact, c.CodReferencia,
+                c.Email, c.TelefonoTrabajo, c.DireccionTrabajo,
+                c.ESTADO, c.VendedorID, c.TClIdTipoCliente,
+                tc.TClDescripcion AS TipoClienteNombre,
+                t.Nombre AS VendedorNombre
+            FROM dbo.Clientes c WITH(NOLOCK)
+            LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+            LEFT JOIN Trabajadores  t  WITH(NOLOCK) ON TRY_CAST(t.Cedula AS NVARCHAR(50)) = c.VendedorID
+            ORDER BY c.Nombre ASC
+        `);
+
+        const clients = result.recordset;
+        const tree = {};
+
+        if (group === 'vendedor') {
+            clients.forEach(c => {
+                const key = c.VendedorNombre?.trim() || 'Sin Vendedor';
+                if (!tree[key]) tree[key] = { label: key, groupKey: c.VendedorID || '__none__', clients: [] };
+                tree[key].clients.push(c);
+            });
+        } else {
+            clients.forEach(c => {
+                const key = c.TipoClienteNombre?.trim() || 'Sin Tipo';
+                if (!tree[key]) tree[key] = { label: key, groupKey: c.TClIdTipoCliente || '__none__', clients: [] };
+                tree[key].clients.push(c);
+            });
+        }
+
+        res.json({ groups: Object.values(tree).sort((a, b) => a.label.localeCompare(b.label)) });
+    } catch (err) {
+        console.error('getClientsTree error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// Actualización rápida desde el árbol (cambia vendedor o tipo)
+exports.quickUpdateClient = async (req, res) => {
+    const { codCliente } = req.params;
+    const { VendedorID, TClIdTipoCliente } = req.body;
+    try {
+        const pool = await getPool();
+        const safeStr = (v) => (v !== undefined && v !== null && v !== '') ? String(v) : null;
+        const safeInt = (v) => (v !== undefined && v !== null && v !== '') ? parseInt(v) : null;
+        await pool.request()
+            .input('CC', sql.Int, parseInt(codCliente))
+            .input('Vend', sql.NVarChar(20), safeStr(VendedorID))
+            .input('Tipo', sql.Int, safeInt(TClIdTipoCliente))
+            .query(`
+                UPDATE dbo.Clientes SET
+                    VendedorID       = CASE WHEN @Vend IS NOT NULL THEN @Vend ELSE VendedorID END,
+                    TClIdTipoCliente = CASE WHEN @Tipo IS NOT NULL THEN @Tipo ELSE TClIdTipoCliente END
+                WHERE CodCliente = @CC
+            `);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('quickUpdateClient error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// -------------------------------------------------------------------
+// MACROSOFT — Actualizar cliente existente vía API
+// -------------------------------------------------------------------
+exports.updateMacrosoftClient = async (req, res) => {
+    const { codReferencia } = req.params;
+    const client = req.body;
+    try {
+        const token = await getMacrosoftToken();
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const payload = {
+            CodCliente:       codReferencia,
+            Nombre:           client.Nombre           || undefined,
+            NombreFantasia:   client.NombreFantasia    || undefined,
+            CioRuc:           client.CioRuc            || undefined,
+            DireccionTrabajo: client.DireccionTrabajo  || undefined,
+            TelefonoTrabajo:  client.TelefonoTrabajo   || undefined,
+            Email:            client.Email             || undefined,
+        };
+        const response = await axios.put(`${ERP_API_BASE}/clientes/${codReferencia}`, payload, { headers });
+        res.json({ success: true, data: response.data });
+    } catch (err) {
+        console.error('[updateMacrosoftClient] Error:', err.message);
+        res.status(500).json({ error: 'Error actualizando en Macrosoft: ' + err.message });
+    }
+};
+
+// ─── GOOGLE SHEETS ────────────────────────────────────────────────────────────
+
+const svcGuard = (res) => {
+    if (!sheetsService) { res.status(503).json({ error: 'Google Sheets service no disponible' }); return false; }
+    return true;
+};
+
+// GET /clients/sheets/all
+exports.sheetsGetAll = async (req, res) => {
+    if (!svcGuard(res)) return;
+    try {
+        const rows = await sheetsService.getAllRows();
+        res.json(rows);
+    } catch (err) {
+        console.error('[sheetsGetAll] Error:', err.message);
+        const status = err.message.startsWith('NO_TOKEN') || err.message.startsWith('NO_SHEETS') ? 401 : 500;
+        res.status(status).json({ error: err.message });
+    }
+};
+
+// GET /clients/sheets/search?idreact=XXX
+exports.sheetsSearch = async (req, res) => {
+    if (!svcGuard(res)) return;
+    const { idreact } = req.query;
+    if (!idreact) return res.status(400).json({ error: 'Falta ?idreact=' });
+    try {
+        const result = await sheetsService.findRowByIDReact(idreact);
+        if (!result) return res.status(404).json({ error: 'No encontrado' });
+        res.json(result);
+    } catch (err) {
+        console.error('[sheetsSearch] Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// POST /clients/sheets/update — { idreact, data }
+exports.sheetsUpdate = async (req, res) => {
+    if (!svcGuard(res)) return;
+    const { idreact, data } = req.body;
+    if (!idreact || !data) return res.status(400).json({ error: 'Faltan campos: idreact, data' });
+    try {
+        const found = await sheetsService.findRowByIDReact(idreact);
+        if (!found) return res.status(404).json({ error: `IDReact ${idreact} no encontrado` });
+        const result = await sheetsService.updateRow(found.rowIndex, data);
+        res.json({ success: true, ...result });
+    } catch (err) {
+        console.error('[sheetsUpdate] Error:', err.message);
+        res.status(500).json({ error: err.message });
     }
 };

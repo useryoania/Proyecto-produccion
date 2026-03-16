@@ -70,6 +70,8 @@ app.use('/api/users', require('./routes/usersRoutes'));
 app.use('/api/audit', require('./routes/auditRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));
+app.use('/api/google', require('./routes/googleAuthRoutes'));
+
 
 const webAuthRoutes = require('./routes/webAuthRoutes');
 const webOrdersRoutes = require('./routes/webOrdersRoutes'); // Nueva ruta Pedidos Web

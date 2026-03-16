@@ -604,6 +604,288 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
 
 
 /**
+ * Cuadre diario: retiros entregados con situación de pago
+ * Estados entregado: 7 = Entregado sin pago / 8 = Entregado con pago
+ */
+exports.getCuadreDiario = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { startDate, endDate, clientFilter, estado } = req.query;
+        const request = pool.request();
+
+        // Fecha default: hoy si no se especifica
+        const hoy = new Date().toISOString().split('T')[0];
+        const desde = startDate || hoy;
+        const hasta = endDate || hoy;
+
+        request.input('Desde', sql.Date, desde);
+        request.input('Hasta', sql.Date, hasta);
+
+        let whereExtra = '';
+        if (clientFilter) {
+            whereExtra += ` AND (c.Nombre LIKE '%' + @ClientFilter + '%' OR CAST(c.IDCliente AS VARCHAR) LIKE '%' + @ClientFilter + '%')`;
+            request.input('ClientFilter', sql.NVarChar, clientFilter);
+        }
+        // Filtro por situación de pago
+        let estadoFilter = '';
+        if (estado === 'pagado')     estadoFilter = `AND p.PagIdPago IS NOT NULL`;
+        if (estado === 'deuda')      estadoFilter = `AND p.PagIdPago IS NULL AND rcd.Id IS NOT NULL`;
+        if (estado === 'sin_pago')   estadoFilter = `AND p.PagIdPago IS NULL AND rcd.Id IS NULL`;
+
+        const queryStr = `
+            SELECT
+                ISNULL(orr.FormaRetiro, 'R') + '-' + CAST(orr.OReIdOrdenRetiro AS VARCHAR) AS OrdenRetiro,
+                orr.OReIdOrdenRetiro,
+                orr.OReEstadoActual AS EstadoRetiro,
+                CASE orr.OReEstadoActual
+                    WHEN 7 THEN 'Entregado'
+                    WHEN 8 THEN 'Entregado (con pago)'
+                    ELSE 'Entregado'
+                END AS DescEstado,
+                orr.OReFechaEstadoActual AS FechaEntrega,
+                -- Cliente
+                c.Nombre AS NombreCliente,
+                c.IDCliente AS CodigoCliente,
+                tc.TClDescripcion AS TipoCliente,
+                -- Pago
+                p.PagIdPago,
+                p.PagFechaPago AS FechaPago,
+                p.PagMontoPago AS MontoPago,
+                mon.MonSimbolo AS MonedaPago,
+                mp.MPaDescripcionMetodo AS MetodoPago,
+                -- Deuda autorizada
+                rcd.Id AS DeudaId,
+                rcd.Monto AS MontoDeuda,
+                rcd.Explicacion AS DeudaExplicacion,
+                rcd.Estado AS DeudaEstado,
+                -- Cantidad y detalle de órdenes
+                (SELECT COUNT(*) FROM OrdenesDeposito od WITH(NOLOCK) WHERE od.OReIdOrdenRetiro = orr.OReIdOrdenRetiro) AS CantOrdenes,
+                (
+                    SELECT od.OrdCodigoOrden AS codigo,
+                           art.Descripcion AS producto,
+                           CAST(od.OrdCantidad AS DECIMAL(10,2)) AS cantidad,
+                           CAST(od.OrdCostoFinal AS FLOAT) AS monto,
+                           monOd.MonSimbolo AS moneda,
+                           mo.MOrNombreModo AS modo
+                    FROM OrdenesDeposito od WITH(NOLOCK)
+                    LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = od.ProIdProducto
+                    LEFT JOIN Monedas monOd WITH(NOLOCK) ON monOd.MonIdMoneda = od.MonIdMoneda
+                    LEFT JOIN ModosOrdenes mo WITH(NOLOCK) ON mo.MOrIdModoOrden = od.MOrIdModoOrden
+                    WHERE od.OReIdOrdenRetiro = orr.OReIdOrdenRetiro
+                    FOR JSON PATH
+                ) AS OrdenesJSON
+            FROM OrdenesRetiro orr WITH(NOLOCK)
+            -- Cliente vía OrdenesDeposito
+            OUTER APPLY (
+                SELECT TOP 1 od.CliIdCliente
+                FROM OrdenesDeposito od WITH(NOLOCK)
+                WHERE od.OReIdOrdenRetiro = orr.OReIdOrdenRetiro
+                ORDER BY od.OrdIdOrden
+            ) od_c
+            LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = od_c.CliIdCliente
+            LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+            -- Pago
+            LEFT JOIN Pagos p WITH(NOLOCK) ON p.PagIdPago = orr.PagIdPago
+            LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = p.PagIdMonedaPago
+            LEFT JOIN MetodosPagos mp WITH(NOLOCK) ON mp.MPaIdMetodoPago = p.MPaIdMetodoPago
+            -- Deuda autorizada: extrae el número del OrdenRetiro almacenado (puede ser "R-478", "RW-478" o "478")
+            LEFT JOIN RetirosConDeuda rcd WITH(NOLOCK)
+                ON TRY_CAST(
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                        ISNULL(rcd.OrdenRetiro, ''),
+                    'RW-',''),'RT-',''),'RL-',''),'PW-',''),'R-','')
+                AS INT) = orr.OReIdOrdenRetiro
+            WHERE orr.OReEstadoActual IN (7, 8)
+              AND CAST(orr.OReFechaEstadoActual AS DATE) >= @Desde
+              AND CAST(orr.OReFechaEstadoActual AS DATE) <= @Hasta
+              ${whereExtra}
+              ${estadoFilter}
+            ORDER BY orr.OReFechaEstadoActual DESC
+        `;
+
+        const result = await request.query(queryStr);
+        const data = result.recordset.map(row => ({
+            ...row,
+            Ordenes: row.OrdenesJSON ? JSON.parse(row.OrdenesJSON) : [],
+            SituacionPago: row.PagIdPago ? 'pagado'
+                         : row.DeudaId   ? 'deuda'
+                         :                 'sin_pago'
+        }));
+        res.json(data);
+    } catch (err) {
+        console.error('[CUADRE DIARIO] Error:', err);
+        res.status(500).json({ error: 'Fallo al obtener cuadre diario', details: err.message });
+    }
+};
+
+/**
+ * Historial completo de pagos (todos los métodos)
+ */
+exports.getHistorialPagos = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { startDate, endDate, clientFilter, orderFilter, metodoPago } = req.query;
+        const request = pool.request();
+
+        let queryStr = `
+            SELECT TOP 1000
+                p.PagIdPago AS Id,
+                p.PagFechaPago AS Fecha,
+                p.PagMontoPago AS Monto,
+                mon.MonSimbolo AS Moneda,
+                mp.MPaDescripcionMetodo AS MetodoPago,
+                -- Orden de retiro vinculada
+                COALESCE(orr.FormaRetiro, 'R') + '-' + CAST(orr.OReIdOrdenRetiro AS VARCHAR) AS OrdenRetiro,
+                -- Cliente
+                c.Nombre AS NombreCliente,
+                c.IDCliente AS CodigoCliente,
+                tc.TClDescripcion AS TipoCliente,
+                -- Órdenes que componen el retiro (JSON)
+                -- Busca por PagIdPago directo (pagos manuales) O por retiro cuando PagIdPago no está seteado (Handy)
+                (
+                    SELECT od.OrdCodigoOrden AS codigo,
+                           art.Descripcion AS producto,
+                           CAST(od.OrdCantidad AS DECIMAL(10,2)) AS cantidad,
+                           CAST(od.OrdCostoFinal AS FLOAT) AS monto,
+                           monOd.MonSimbolo AS moneda,
+                           mo.MOrNombreModo AS modo
+                    FROM OrdenesDeposito od WITH(NOLOCK)
+                    LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = od.ProIdProducto
+                    LEFT JOIN Monedas monOd WITH(NOLOCK) ON monOd.MonIdMoneda = od.MonIdMoneda
+                    LEFT JOIN ModosOrdenes mo WITH(NOLOCK) ON mo.MOrIdModoOrden = od.MOrIdModoOrden
+                    WHERE od.PagIdPago = p.PagIdPago
+                       OR (orr.OReIdOrdenRetiro IS NOT NULL
+                           AND od.OReIdOrdenRetiro = orr.OReIdOrdenRetiro
+                           AND od.PagIdPago IS NULL)
+                    FOR JSON PATH
+                ) AS OrdenesJSON,
+                -- Cantidad de órdenes (misma lógica dual)
+                (SELECT COUNT(*) FROM OrdenesDeposito od WITH(NOLOCK)
+                 WHERE od.PagIdPago = p.PagIdPago
+                    OR (orr.OReIdOrdenRetiro IS NOT NULL
+                        AND od.OReIdOrdenRetiro = orr.OReIdOrdenRetiro
+                        AND od.PagIdPago IS NULL)
+                ) AS CantOrdenes,
+                p.PagRutaComprobante AS Comprobante
+            FROM Pagos p WITH(NOLOCK)
+            LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = p.PagIdMonedaPago
+            LEFT JOIN MetodosPagos mp WITH(NOLOCK) ON mp.MPaIdMetodoPago = p.MPaIdMetodoPago
+            LEFT JOIN OrdenesRetiro orr WITH(NOLOCK) ON orr.PagIdPago = p.PagIdPago
+            OUTER APPLY (
+                -- Ruta 1: cliente vía OrdenesDeposito.PagIdPago (pagos manuales)
+                SELECT TOP 1 od.CliIdCliente
+                FROM OrdenesDeposito od WITH(NOLOCK)
+                WHERE od.PagIdPago = p.PagIdPago
+                ORDER BY od.OrdIdOrden
+            ) od_c1
+            OUTER APPLY (
+                -- Ruta 2: cliente vía OrdenRetiro→OrdenesDeposito.OReIdOrdenRetiro (pagos Handy)
+                SELECT TOP 1 od2.CliIdCliente
+                FROM OrdenesDeposito od2 WITH(NOLOCK)
+                WHERE od2.OReIdOrdenRetiro = orr.OReIdOrdenRetiro
+                ORDER BY od2.OrdIdOrden
+            ) od_c2
+            LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = COALESCE(od_c1.CliIdCliente, od_c2.CliIdCliente)
+            LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+            WHERE 1=1
+        `;
+
+        if (startDate) {
+            queryStr += ` AND CAST(p.PagFechaPago AS DATE) >= @StartDate`;
+            request.input('StartDate', sql.Date, startDate);
+        }
+        if (endDate) {
+            queryStr += ` AND CAST(p.PagFechaPago AS DATE) <= @EndDate`;
+            request.input('EndDate', sql.Date, endDate);
+        }
+        if (clientFilter) {
+            queryStr += ` AND (c.Nombre LIKE '%' + @ClientFilter + '%' OR CAST(c.IDCliente AS VARCHAR) LIKE '%' + @ClientFilter + '%')`;
+            request.input('ClientFilter', sql.NVarChar, clientFilter);
+        }
+        if (orderFilter) {
+            queryStr += ` AND (COALESCE(orr.FormaRetiro, 'R') + '-' + CAST(orr.OReIdOrdenRetiro AS VARCHAR) LIKE '%' + @OrderFilter + '%')`;
+            request.input('OrderFilter', sql.NVarChar, orderFilter);
+        }
+        if (metodoPago) {
+            queryStr += ` AND mp.MPaIdMetodoPago = @MetodoPago`;
+            request.input('MetodoPago', sql.Int, parseInt(metodoPago));
+        }
+
+        queryStr += ` ORDER BY p.PagFechaPago DESC`;
+        const result = await request.query(queryStr);
+
+        const data = result.recordset.map(row => ({
+            ...row,
+            Ordenes: row.OrdenesJSON ? JSON.parse(row.OrdenesJSON) : []
+        }));
+        res.json(data);
+    } catch (err) {
+        console.error('[HISTORIAL PAGOS] Error:', err);
+        res.status(500).json({ error: 'Fallo al obtener historial de pagos', details: err.message });
+    }
+};
+
+/**
+ * Pagos Online fallidos / no exitosos (Handy)
+ */
+exports.getPagosOnlineFallidos = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { startDate, endDate, clientFilter } = req.query;
+        const request = pool.request();
+
+        let queryStr = `
+            SELECT TOP 500
+                h.Id, h.TransactionId, h.PaymentUrl,
+                h.TotalAmount, h.Currency,
+                h.OrdersJson, h.CodCliente,
+                h.Status, h.IssuerName,
+                h.PaidAt, h.WebhookReceivedAt, h.CreatedAt,
+                c.Nombre AS NombreCliente,
+                -- Orden de retiro con prefijo real de la BD (no hardcodeado)
+                CASE
+                    WHEN orr_h.OReIdOrdenRetiro IS NOT NULL
+                    THEN ISNULL(orr_h.FormaRetiro, 'R') + '-' + CAST(orr_h.OReIdOrdenRetiro AS VARCHAR)
+                    ELSE NULL
+                END AS OrdenRetiroFormatted
+            FROM HandyTransactions h
+            LEFT JOIN Clientes c ON CAST(h.CodCliente AS VARCHAR) = CAST(c.CodCliente AS VARCHAR)
+            OUTER APPLY (
+                -- Extrae el numero del ordenRetiro del JSON y busca el FormaRetiro real
+                SELECT TOP 1 orr2.OReIdOrdenRetiro, orr2.FormaRetiro
+                FROM OrdenesRetiro orr2 WITH(NOLOCK)
+                WHERE orr2.OReIdOrdenRetiro = TRY_CAST(
+                    REPLACE(REPLACE(REPLACE(
+                        ISNULL(JSON_VALUE(h.OrdersJson, '$.ordenRetiro'), ''),
+                    'RW-',''),'R-',''),'PW-','')
+                AS INT)
+            ) orr_h
+            WHERE LOWER(ISNULL(h.Status, '')) NOT IN ('paid', 'pagado', 'success', 'approved')
+        `;
+
+        if (startDate) {
+            queryStr += ` AND CAST(h.CreatedAt AS DATE) >= @StartDate`;
+            request.input('StartDate', sql.Date, startDate);
+        }
+        if (endDate) {
+            queryStr += ` AND CAST(h.CreatedAt AS DATE) <= @EndDate`;
+            request.input('EndDate', sql.Date, endDate);
+        }
+        if (clientFilter) {
+            queryStr += ` AND (c.Nombre LIKE '%' + @ClientFilter + '%' OR CAST(h.CodCliente AS VARCHAR) LIKE '%' + @ClientFilter + '%')`;
+            request.input('ClientFilter', sql.NVarChar, clientFilter);
+        }
+
+        queryStr += ` ORDER BY h.CreatedAt DESC`;
+        const result = await request.query(queryStr);
+        res.json(result.recordset);
+    } catch (err) {
+        console.error('[PAGOS FALLIDOS] Error:', err);
+        res.status(500).json({ error: 'Fallo al obtener pagos fallidos', details: err.message });
+    }
+};
+
+/**
  * Traer Transacciones de Handy
  */
 exports.getPagosOnline = async (req, res) => {
@@ -625,9 +907,25 @@ exports.getPagosOnline = async (req, res) => {
                 h.PaidAt,
                 h.WebhookReceivedAt,
                 h.CreatedAt,
-                c.Nombre as NombreCliente
+                c.Nombre as NombreCliente,
+                -- Orden de retiro con prefijo real de la BD (no hardcodeado)
+                CASE
+                    WHEN orr_h.OReIdOrdenRetiro IS NOT NULL
+                    THEN ISNULL(orr_h.FormaRetiro, 'R') + '-' + CAST(orr_h.OReIdOrdenRetiro AS VARCHAR)
+                    ELSE NULL
+                END AS OrdenRetiroFormatted
             FROM HandyTransactions h
             LEFT JOIN Clientes c ON CAST(h.CodCliente AS VARCHAR) = CAST(c.CodCliente AS VARCHAR)
+            OUTER APPLY (
+                -- Extrae el numero del ordenRetiro del JSON y busca el FormaRetiro real
+                SELECT TOP 1 orr2.OReIdOrdenRetiro, orr2.FormaRetiro
+                FROM OrdenesRetiro orr2 WITH(NOLOCK)
+                WHERE orr2.OReIdOrdenRetiro = TRY_CAST(
+                    REPLACE(REPLACE(REPLACE(
+                        ISNULL(JSON_VALUE(h.OrdersJson, '$.ordenRetiro'), ''),
+                    'RW-',''),'R-',''),'PW-','')
+                AS INT)
+            ) orr_h
             WHERE 1=1
         `;
 
@@ -716,16 +1014,50 @@ exports.getExcepciones = async (req, res) => {
             SELECT 
                 e.Id, e.OrdenRetiro, e.CodigoCliente, 
                 COALESCE(e.NombreCliente, c.Nombre) AS NombreCliente,
-                e.Monto, e.UsuarioAutorizador, e.Explicacion,
+                e.Monto,
+                orr.OReCostoTotalOrden AS MontoOrden,
+                orr.MonIdMoneda AS Moneda,
+                e.UsuarioAutorizador, e.Explicacion,
                 e.Estado, e.Gestionado, e.Fecha, e.FechaGestion,
                 e.UsuarioGestion, e.NotaGestion,
-                u.Nombre AS NombreAutorizador
+                u.Nombre AS NombreAutorizador,
+                tc.TClDescripcion AS TipoCliente,
+                -- Detalle de órdenes como JSON
+                (
+                    SELECT od.OrdCodigoOrden AS codigo,
+                           art.Descripcion AS producto,
+                           CAST(od.OrdCantidad AS DECIMAL(10,2)) AS cantidad,
+                           CAST(od.OrdCostoFinal AS FLOAT) AS monto,
+                           mon.MonSimbolo AS moneda,
+                           mo.MOrNombreModo AS modo,
+                           od.OrdEstadoActual AS estado
+                    FROM RelOrdenesRetiroOrdenes rel WITH(NOLOCK)
+                    JOIN OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = rel.OrdIdOrden
+                    LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = od.MonIdMoneda
+                    LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = od.ProIdProducto
+                    LEFT JOIN ModosOrdenes mo WITH(NOLOCK) ON mo.MOrIdModoOrden = od.MOrIdModoOrden
+                    WHERE rel.OReIdOrdenRetiro = orr.OReIdOrdenRetiro
+                    FOR JSON PATH
+                ) AS OrdenesJSON,
+                -- Cantidad de órdenes
+                (
+                    SELECT COUNT(*)
+                    FROM RelOrdenesRetiroOrdenes rel WITH(NOLOCK)
+                    WHERE rel.OReIdOrdenRetiro = orr.OReIdOrdenRetiro
+                ) AS CantOrdenes
             FROM RetirosConDeuda e
             LEFT JOIN Clientes c ON CAST(e.CodigoCliente AS VARCHAR) = CAST(c.IDCliente AS VARCHAR)
             LEFT JOIN Usuarios u ON u.IdUsuario = e.UsuarioAutorizador
+            LEFT JOIN OrdenesRetiro orr ON COALESCE(orr.FormaRetiro, 'R') + '-' + CAST(orr.OReIdOrdenRetiro AS VARCHAR) = e.OrdenRetiro
+            LEFT JOIN TiposClientes tc ON tc.TClIdTipoCliente = c.TClIdTipoCliente
             ORDER BY e.Fecha DESC
         `);
-        res.json(result.recordset);
+        // Parsear OrdenesJSON de string a array
+        const data = result.recordset.map(row => ({
+            ...row,
+            Ordenes: row.OrdenesJSON ? JSON.parse(row.OrdenesJSON) : []
+        }));
+        res.json(data);
     } catch (err) {
         console.error("[EXCEPCIONES] Error al obtener excepciones de deuda:", err);
         res.status(500).json({ error: "Fallo al obtener retiros excepcionales", details: err.message });

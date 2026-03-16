@@ -1,491 +1,419 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import './ClientsIntegration.css';
 import { toast } from 'sonner';
 import api from '../../services/apiClient';
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
-const Sel = ({ label, name, value, onChange, options, idKey = 'ID', nameKey = 'Nombre', placeholder = '— Sin asignar —' }) => (
-    <div>
-        <label className="block text-xs font-bold text-slate-500 mb-1">{label}</label>
-        <select
-            name={name}
-            value={value ?? ''}
-            onChange={onChange}
-            className="w-full p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 text-sm bg-white"
-        >
-            <option value="">{placeholder}</option>
-            {options.map(o => (
-                <option key={o[idKey]} value={o[idKey]}>{o[nameKey]}</option>
-            ))}
-        </select>
-    </div>
-);
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const AVATAR_COLORS = ['#4f46e5','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#2563eb','#be185d'];
+const getAvatarColor = (name) => { const s = String(name ?? ''); return AVATAR_COLORS[(s.charCodeAt(0) || 0) % AVATAR_COLORS.length]; };
+const getInitials    = (name) => { const s = String(name ?? '').trim(); return s.split(/\s+/).slice(0,2).map(w=>w[0]?.toUpperCase()||'').join('') || '?'; };
 
-const Txt = ({ label, name, value, onChange, type = 'text', colSpan = '' }) => (
-    <div className={colSpan}>
-        <label className="block text-xs font-bold text-slate-500 mb-1">{label}</label>
-        <input
-            type={type}
-            name={name}
-            value={value ?? ''}
-            onChange={onChange}
-            className="w-full p-2 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 text-sm"
-        />
-    </div>
-);
+const DUP_COLORS = { Email:'#dc2626', TelefonoTrabajo:'#d97706', Nombre:'#7c3aed', IDCliente:'#0891b2', IDReact:'#059669', CodCliente:'#db2777' };
 
-// ─── Modal de Edición ─────────────────────────────────────────────────────────
-const EditClientDialog = ({ isOpen, onClose, client, onSave, catalogs }) => {
+const statusColor = (s) => s === 'ACTIVO' ? 'green' : s === 'INACTIVO' ? 'red' : s === 'BLOQUEADO' ? 'amber' : 'slate';
+
+function Badge({ children, color = 'slate' }) {
+    return <span className={`ci-badge ${color}`}>{children}</span>;
+}
+
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+function Avatar({ name, size = 34 }) {
+    const bg = getAvatarColor(name);
+    return (
+        <div className="ci-avatar" style={{ background: bg, width: size, height: size, fontSize: size * .36 }}>
+            {getInitials(name)}
+        </div>
+    );
+}
+
+// ─── Modal ABM ────────────────────────────────────────────────────────────────
+function ClientModal({ client, catalogs, onClose, onSaved }) {
+    const isNew = !client?.CodCliente;
     const [form, setForm] = useState({});
+    const [saving, setSaving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
-        if (client) {
-            setForm({
-                // Identificación
-                Nombre: client.Nombre?.trim() || '',
-                NombreFantasia: client.NombreFantasia?.trim() || '',
-                IDCliente: client.IDCliente?.trim() || '',
-                CioRuc: client.CioRuc?.trim() || '',
-                CodReferencia: client.CodReferencia ?? '',
-                IDReact: client.IDReact ?? '',
-                // Contacto
-                TelefonoTrabajo: client.TelefonoTrabajo?.trim() || '',
-                Email: client.Email?.trim() || '',
-                // Dirección
-                DireccionTrabajo: client.DireccionTrabajo?.trim() || '',
-                // Clasificación
-                TClIdTipoCliente: client.TClIdTipoCliente ?? '',
-                // Ubicación
-                DepartamentoID: client.DepartamentoID ?? '',
-                LocalidadID: client.LocalidadID ?? '',
-                AgenciaID: client.AgenciaID ?? '',
-                FormaEnvioID: client.FormaEnvioID ?? '',
-                // Comercial
-                VendedorID: client.VendedorID || '',
-                // Estado / Web
-                ESTADO: client.ESTADO?.trim() || '',
-                WebActive: client.WebActive != null ? !!client.WebActive : true,
-            });
-        }
+        setForm(client ? { ...client } : { Nombre:'', NombreFantasia:'', IDCliente:'', CioRuc:'', TelefonoTrabajo:'', Email:'', DireccionTrabajo:'', TClIdTipoCliente:'', VendedorID:'', DepartamentoID:'', LocalidadID:'', AgenciaID:'', FormaEnvioID:'', ESTADO:'ACTIVO', WebActive:true });
     }, [client]);
 
-    if (!isOpen) return null;
+    const set = f => e => setForm(p => ({...p, [f]: e.target.type==='checkbox' ? e.target.checked : e.target.value}));
+    const locs = useMemo(() => form.DepartamentoID ? (catalogs.localidades||[]).filter(l=>String(l.DepartamentoID)===String(form.DepartamentoID)) : (catalogs.localidades||[]), [form.DepartamentoID, catalogs.localidades]);
 
-    const handleChange = (e) => {
-        const { name, value, type, checked } = e.target;
-        setForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    const handleSave = async () => {
+        if (!form.Nombre?.trim()) return toast.error('El nombre es obligatorio');
+        setSaving(true);
+        try {
+            if (isNew) await api.post('/clients', { nombre:form.Nombre, telefono:form.TelefonoTrabajo, email:form.Email, direccion:form.DireccionTrabajo, ruc:form.CioRuc, nombreFantasia:form.NombreFantasia });
+            else await api.put(`/clients/${client.CodCliente}`, form);
+            toast.success(isNew ? 'Cliente creado ✓' : 'Cliente actualizado ✓');
+            onSaved(); onClose();
+        } catch(e) { toast.error(e.response?.data?.error || 'Error guardando'); }
+        finally { setSaving(false); }
     };
 
-    const localidadesFiltradas = form.DepartamentoID
-        ? (catalogs.localidades || []).filter(l => String(l.DepartamentoID) === String(form.DepartamentoID))
-        : (catalogs.localidades || []);
+    const handleDelete = async () => {
+        if (!window.confirm(`¿Eliminar "${client.Nombre}"? Esta acción no se puede deshacer.`)) return;
+        setDeleting(true);
+        try {
+            await api.delete(`/clients/${client.CodCliente}`);
+            toast.success('Cliente eliminado');
+            onSaved(); onClose();
+        } catch(e) { toast.error(e.response?.data?.error || 'No se pudo eliminar'); }
+        finally { setDeleting(false); }
+    };
 
-    const Section = ({ label, color = 'indigo', children }) => (
-        <section>
-            <p className={`text-[10px] font-bold text-${color}-400 uppercase tracking-widest mb-3 border-b border-${color}-100 pb-1`}>{label}</p>
-            {children}
-        </section>
+    const F = ({label, field, type='text', readOnly=false, cls=''}) => (
+        <div className={`ci-field ${cls}`}>
+            <label>{label}</label>
+            <input type={type} value={form[field]??''} onChange={set(field)} readOnly={readOnly} />
+        </div>
+    );
+    const S = ({label, field, options=[], idKey='ID', nameKey='Nombre', cls=''}) => (
+        <div className={`ci-field ${cls}`}>
+            <label>{label}</label>
+            <select value={form[field]??''} onChange={set(field)}>
+                <option value="">— Sin asignar —</option>
+                {options.map(o=><option key={o[idKey]} value={o[idKey]}>{o[nameKey]}</option>)}
+            </select>
+        </div>
     );
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-y-auto animate-fade-in">
-
-                {/* Cabecera */}
-                <div className="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between rounded-t-2xl z-10">
+        <div className="ci-overlay" onClick={onClose}>
+            <div className="ci-modal" onClick={e=>e.stopPropagation()}>
+                <div className="ci-modal-header">
                     <div>
-                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                            <i className="fa-solid fa-pen-to-square text-indigo-600"></i>
-                            Editar Cliente
-                        </h3>
-                        <p className="text-xs text-slate-400">
-                            ID: <strong>{client?.CliIdCliente}</strong>
-                            {' · '}Cód: <strong>{client?.CodCliente}</strong>
-                            {client?.IDReact && <> · IDReact: <strong>{client.IDReact}</strong></>}
-                        </p>
+                        <div className="ci-modal-title">{isNew ? '+ Nuevo Cliente' : `Editar: ${client.Nombre}`}</div>
+                        {!isNew && <div className="ci-modal-sub">CodCliente: {client.CodCliente} · IDReact: {client.IDReact||'—'}</div>}
                     </div>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 transition">
-                        <i className="fa-solid fa-times"></i>
-                    </button>
+                    <button className="ci-modal-close" onClick={onClose}>✕</button>
                 </div>
-
-                <div className="px-6 py-4 space-y-5">
-
-                    {/* ── IDENTIFICACIÓN ── */}
-                    <Section label="Identificación" color="indigo">
-                        <div className="grid grid-cols-2 gap-3">
-                            <Txt label="Nombre / Razón Social *" name="Nombre" value={form.Nombre} onChange={handleChange} colSpan="col-span-2" />
-                            <Txt label="Nombre Fantasía" name="NombreFantasia" value={form.NombreFantasia} onChange={handleChange} />
-                            <Txt label="ID Cliente (código interno)" name="IDCliente" value={form.IDCliente} onChange={handleChange} />
-                            <Txt label="RUC / C.I." name="CioRuc" value={form.CioRuc} onChange={handleChange} />
-                            <Txt label="Cód. Referencia" name="CodReferencia" value={form.CodReferencia} onChange={handleChange} type="number" />
+                <div className="ci-modal-body">
+                    <div>
+                        <div className="ci-modal-section-title">Identificación</div>
+                        <div className="ci-field-grid">
+                            <F label="Nombre / Razón Social *" field="Nombre" cls="full"/>
+                            <F label="Nombre Fantasía" field="NombreFantasia"/>
+                            <F label="ID Cliente" field="IDCliente"/>
+                            <F label="RUC / C.I." field="CioRuc"/>
+                            <F label="IDReact" field="IDReact" readOnly={!isNew}/>
+                            <F label="CodReferencia (Macrosoft)" field="CodReferencia"/>
                         </div>
-                    </Section>
-
-                    {/* ── CONTACTO ── */}
-                    <Section label="Contacto" color="sky">
-                        <div className="grid grid-cols-2 gap-3">
-                            <Txt label="Teléfono" name="TelefonoTrabajo" value={form.TelefonoTrabajo} onChange={handleChange} />
-                            <Txt label="Email" name="Email" value={form.Email} onChange={handleChange} type="email" />
-                            <Txt label="Dirección" name="DireccionTrabajo" value={form.DireccionTrabajo} onChange={handleChange} colSpan="col-span-2" />
+                    </div>
+                    <div>
+                        <div className="ci-modal-section-title">Contacto</div>
+                        <div className="ci-field-grid">
+                            <F label="Teléfono" field="TelefonoTrabajo"/>
+                            <F label="Email" field="Email" type="email"/>
+                            <F label="Dirección" field="DireccionTrabajo" cls="full"/>
                         </div>
-                    </Section>
-
-                    {/* ── UBICACIÓN ── */}
-                    <Section label="Ubicación" color="teal">
-                        <div className="grid grid-cols-2 gap-3">
-                            <Sel
-                                label="Departamento"
-                                name="DepartamentoID"
-                                value={form.DepartamentoID}
-                                onChange={(e) => setForm(prev => ({ ...prev, DepartamentoID: e.target.value, LocalidadID: '' }))}
-                                options={catalogs.departamentos || []}
-                            />
-                            <Sel
-                                label="Localidad"
-                                name="LocalidadID"
-                                value={form.LocalidadID}
-                                onChange={handleChange}
-                                options={localidadesFiltradas}
-                            />
-                            <Sel
-                                label="Agencia de Envío"
-                                name="AgenciaID"
-                                value={form.AgenciaID}
-                                onChange={handleChange}
-                                options={catalogs.agencias || []}
-                            />
-                            <Sel
-                                label="Forma de Envío"
-                                name="FormaEnvioID"
-                                value={form.FormaEnvioID}
-                                onChange={handleChange}
-                                options={catalogs.formasEnvio || []}
-                            />
-                        </div>
-                    </Section>
-
-                    {/* ── CLASIFICACIÓN ── */}
-                    <Section label="Clasificación" color="purple">
-                        <div className="grid grid-cols-2 gap-3">
-                            <Sel
-                                label="Tipo de Cliente"
-                                name="TClIdTipoCliente"
-                                value={form.TClIdTipoCliente}
-                                onChange={handleChange}
-                                options={catalogs.tiposClientes || []}
-                                idKey="TClIdTipoCliente"
-                                nameKey="TClDescripcion"
-                            />
-                            <Sel
-                                label="Vendedor"
-                                name="VendedorID"
-                                value={form.VendedorID}
-                                onChange={handleChange}
-                                options={catalogs.vendedores || []}
-                                idKey="Cedula"
-                                nameKey="Nombre"
-                            />
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 mb-1">Estado</label>
-                                <select name="ESTADO" value={form.ESTADO ?? ''} onChange={handleChange}
-                                    className="w-full p-2 border border-slate-200 rounded-lg outline-none text-sm focus:ring-2 focus:ring-purple-400/30 focus:border-purple-400">
+                    </div>
+                    <div>
+                        <div className="ci-modal-section-title">Clasificación</div>
+                        <div className="ci-field-grid">
+                            <S label="Tipo de Cliente" field="TClIdTipoCliente" options={catalogs.tiposClientes||[]}/>
+                            <S label="Vendedor" field="VendedorID" options={catalogs.vendedores||[]} idKey="Cedula"/>
+                            <div className="ci-field">
+                                <label>Estado</label>
+                                <select value={form.ESTADO??''} onChange={set('ESTADO')}>
                                     <option value="">— Sin asignar —</option>
                                     <option value="ACTIVO">ACTIVO</option>
                                     <option value="INACTIVO">INACTIVO</option>
                                     <option value="BLOQUEADO">BLOQUEADO</option>
                                 </select>
                             </div>
-                            <div className="flex items-center gap-3 mt-5 bg-slate-50 rounded-lg p-3">
-                                <input type="checkbox" id="wa-toggle" name="WebActive"
-                                    checked={!!form.WebActive} onChange={handleChange}
-                                    className="w-4 h-4 accent-indigo-600" />
-                                <label htmlFor="wa-toggle" className="text-sm font-medium text-slate-700">Web Activo</label>
+                            <div className="ci-field" style={{display:'flex',alignItems:'center',gap:8,paddingTop:22}}>
+                                <input type="checkbox" id="wa-chk" checked={!!form.WebActive} onChange={set('WebActive')} style={{width:16,height:16,accentColor:'#4f46e5'}}/>
+                                <label htmlFor="wa-chk" style={{textTransform:'none',fontSize:13,fontWeight:600,color:'#374151',marginBottom:0}}>Web Activo</label>
                             </div>
                         </div>
-                    </Section>
-
+                    </div>
+                    <div>
+                        <div className="ci-modal-section-title">Ubicación</div>
+                        <div className="ci-field-grid">
+                            <S label="Departamento" field="DepartamentoID" options={catalogs.departamentos||[]} cls="" />
+                            <S label="Localidad" field="LocalidadID" options={locs}/>
+                            <S label="Agencia Envío" field="AgenciaID" options={catalogs.agencias||[]}/>
+                            <S label="Forma de Envío" field="FormaEnvioID" options={catalogs.formasEnvio||[]}/>
+                        </div>
+                    </div>
                 </div>
-
-                {/* Footer */}
-                <div className="sticky bottom-0 bg-white border-t border-slate-100 px-6 py-4 flex justify-end gap-2 rounded-b-2xl">
-                    <button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-50 rounded-lg text-sm font-medium">Cancelar</button>
-                    <button onClick={() => onSave(form)} className="px-5 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg text-sm font-bold shadow flex items-center gap-2">
-                        <i className="fa-solid fa-save"></i> Guardar Cambios
-                    </button>
+                <div className="ci-modal-footer">
+                    {!isNew && (
+                        <button onClick={handleDelete} disabled={deleting}
+                            style={{marginRight:'auto',padding:'9px 16px',background:'none',border:'1.5px solid #fca5a5',borderRadius:8,color:'#dc2626',fontWeight:700,fontSize:13,cursor:'pointer',display:'flex',alignItems:'center',gap:6,transition:'all .15s'}}
+                            onMouseEnter={e=>{e.currentTarget.style.background='#fee2e2';}}
+                            onMouseLeave={e=>{e.currentTarget.style.background='none';}}
+                        >
+                            {deleting ? '🗑 Eliminando…' : '🗑 Eliminar cliente'}
+                        </button>
+                    )}
+                    <button className="ci-btn-cancel" onClick={onClose}>Cancelar</button>
+                    <button className="ci-btn-save" onClick={handleSave} disabled={saving}>{saving?'Guardando…':isNew?'Crear Cliente':'Guardar Cambios'}</button>
                 </div>
             </div>
         </div>
     );
-};
+}
 
-
-
-// ─── Componente Principal ─────────────────────────────────────────────────────
-const ClientsIntegration = () => {
-    const [clientsLocal, setClientsLocal] = useState([]);
-    const [clientsReact, setClientsReact] = useState([]);
-    const [clientsMacrosoft, setClientsMacrosoft] = useState([]);
-    const [catalogs, setCatalogs] = useState({ localidades: [], departamentos: [], agencias: [], formasEnvio: [], tiposClientes: [], vendedores: [] });
-
-    const [loadingLocal, setLoadingLocal] = useState(true);
-    const [loadingReact, setLoadingReact] = useState(true);
-    const [loadingMacrosoft, setLoadingMacrosoft] = useState(true);
-
-    // Vista: 'table' | 'cards'
-    const [viewMode, setViewMode] = useState('table');
-
-    // Búsquedas y filtros
-    const [searchTerm, setSearchTerm] = useState('');
-    const [localFilter, setLocalFilter] = useState('all');
-    const [reactSearch, setReactSearch] = useState('');
-
-    // Ordenamiento tabla
+// ─── TAB 1: TABLA / KANBAN ────────────────────────────────────────────────────
+function TabTabla({ catalogs }) {
+    const [clients, setClients] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [filterEstado, setFilterEstado] = useState('');
+    const [filterTipo, setFilterTipo] = useState('');
+    const [filterVinculo, setFilterVinculo] = useState('');
+    const [viewMode, setViewMode] = useState('kanban');
     const [sortCol, setSortCol] = useState('Nombre');
     const [sortDir, setSortDir] = useState('asc');
+    const [editing, setEditing] = useState(null);
+    const [filterDup, setFilterDup] = useState('');   // '' | 'all' | campo específico
+    const [focusDup, setFocusDup] = useState(null);   // { field, value } — ver solo hermanitos
 
-    // Edición y vinculación
-    const [editingClient, setEditingClient] = useState(null);
-    const [selectedLocalClient, setSelectedLocalClient] = useState(null);
+    const load = useCallback(async () => {
+        setLoading(true);
+        try { const r = await api.get('/clients'); setClients(r.data||[]); }
+        catch { toast.error('Error cargando clientes'); }
+        finally { setLoading(false); }
+    }, []);
 
-    useEffect(() => { loadAllData(); }, []);
+    useEffect(() => { load(); }, [load]);
 
-    // Debounce búsqueda React
-    useEffect(() => {
-        const t = setTimeout(() => loadReactClients(reactSearch), 400);
-        return () => clearTimeout(t);
-    }, [reactSearch]);
-
-    const loadAllData = () => {
-        loadLocalClients();
-        loadReactClients();
-        loadMacrosoftClients();
-        loadCatalogs();
-    };
-
-    const loadCatalogs = async () => {
-        try {
-            const res = await api.get('/clients/catalogs');
-            setCatalogs(res.data || {});
-        } catch (e) { console.error('Error cargando catálogos', e); }
-    };
-
-    const loadLocalClients = async () => {
-        try {
-            setLoadingLocal(true);
-            const res = await api.get('/clients');
-            setClientsLocal(res.data || []);
-        } catch (e) { console.error('Error cargando locales', e); }
-        finally { setLoadingLocal(false); }
-    };
-
-    const loadReactClients = async (q = '') => {
-        try {
-            setLoadingReact(true);
-            const params = q ? `?q=${encodeURIComponent(q)}` : '';
-            const res = await api.get(`/clients/react-list${params}&t=${Date.now()}`);
-            setClientsReact(Array.isArray(res.data) ? res.data : []);
-        } catch (e) { console.error('Error cargando React', e); }
-        finally { setLoadingReact(false); }
-    };
-
-    const loadMacrosoftClients = async () => {
-        try {
-            setLoadingMacrosoft(true);
-            const res = await api.get(`/clients/macrosoft-list?t=${Date.now()}`);
-            setClientsMacrosoft(Array.isArray(res.data) ? res.data : []);
-        } catch (e) { console.error('Error cargando Macrosoft', e); }
-        finally { setLoadingMacrosoft(false); }
-    };
-
-    const handleUpdateClient = async (formData) => {
-        try {
-            if (!editingClient) return;
-            await api.put(`/clients/${editingClient.CodCliente}`, formData);
-            toast.success('Cliente actualizado correctamente');
-            setClientsLocal(prev => prev.map(c =>
-                c.CodCliente === editingClient.CodCliente ? { ...c, ...formData } : c
-            ));
-            setEditingClient(null);
-        } catch (e) {
-            console.error(e);
-            toast.error('Error al actualizar cliente');
-        }
-    };
-
-    const handleExportToReact = async (c) => { if (!confirm(`¿Crear "${c.Nombre}" en React?`)) return; try { const r = await api.post('/clients/export-react', c); if (r.data.success) { toast.success(r.data.message); loadAllData(); } } catch { toast.error('Error exportando a React'); } };
-    const handleExportToMacrosoft = async (c) => { if (!confirm(`¿Crear "${c.Nombre}" en Macrosoft?`)) return; try { const r = await api.post('/clients/export-macrosoft', c); if (r.data.success) { toast.success(r.data.message); loadAllData(); } } catch { toast.error('Error exportando a Macrosoft'); } };
-
-    const handleImportToLocal = async (ext, source) => {
-        if (!confirm(`¿Importar "${ext.NombreCliente || ext.Nombre}" desde ${source}?`)) return;
-        const payload = source === 'React'
-            ? { nombre: ext.NombreCliente, nombreFantasia: ext.EmpresaCliente, ruc: ext.Rut, telefono: ext.Telefono, email: ext.Email, direccion: ext.Direccion, codReact: ext.CodigoCliente, idReact: ext.IdCliente }
-            : { nombre: ext.Nombre, nombreFantasia: ext.NombreFantasia, ruc: ext.CioRuc, telefono: ext.TelefonoTrabajo, email: ext.Email, direccion: ext.DireccionParticular };
-        try { await api.post('/clients', payload); toast.success('Importado!'); loadLocalClients(); }
-        catch { toast.error('Error importando'); }
-    };
-
-    const handleLinkReact = async (local, react) => {
-        if (!confirm(`¿Vincular "${local.Nombre}" con "${react.NombreCliente}"?`)) return;
-        try {
-            await api.put(`/clients/${local.CodCliente}/link`, { codigoReact: react.CodigoCliente, idReact: react.IdCliente });
-            toast.success('Vinculado con React!'); setSelectedLocalClient(null); loadAllData();
-        } catch { toast.error('Error vinculando'); }
-    };
-
-    const handleLinkMacrosoft = async (local, ms) => {
-        if (!confirm(`¿Vincular "${local.Nombre}" con "${ms.Nombre || ms.CliNombreApellido}"?`)) return;
-        try {
-            await api.put(`/clients/${local.CodCliente}/link-macrosoft`, { codReferencia: ms.CodCliente || ms.IdCliente });
-            toast.success('Vinculado con Macrosoft!'); setSelectedLocalClient(null); loadAllData();
-        } catch { toast.error('Error vinculando'); }
-    };
-
-    // ── Filtrado / Búsqueda ────────────────────────────────────────────────
-    const term = searchTerm.toLowerCase();
-
-    const filterLocal = useMemo(() => clientsLocal.filter(c => {
-        const hasReact = !!c.CodigoReact;
-        const hasMS = !!c.CodReferencia;
-        if (localFilter === 'no-react' && hasReact) return false;
-        if (localFilter === 'no-macrosoft' && hasMS) return false;
-        if (localFilter === 'no-both' && (hasReact || hasMS)) return false;
-        if (!term) return true;
-        return c.Nombre?.toLowerCase().includes(term)
-            || String(c.CodCliente).includes(term)
-            || c.CioRuc?.toLowerCase().includes(term)
-            || c.Email?.toLowerCase().includes(term)
-            || c.TelefonoTrabajo?.toLowerCase().includes(term);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [clientsLocal, localFilter, term]);
-
-    // Ordenamiento para la tabla
-    const sortedLocal = useMemo(() => {
-        return [...filterLocal].sort((a, b) => {
-            const av = a[sortCol] ?? '';
-            const bv = b[sortCol] ?? '';
-            const cmp = String(av).localeCompare(String(bv), 'es', { numeric: true });
-            return sortDir === 'asc' ? cmp : -cmp;
+    const dupSets = useMemo(() => {
+        const dup = {};
+        ['Email','TelefonoTrabajo','Nombre','IDCliente','IDReact'].forEach(f => {
+            const vals = {};
+            clients.forEach(c => { const v=String(c[f]??'').trim().toLowerCase(); if(!v)return; vals[v]=(vals[v]||0)+1; });
+            Object.entries(vals).forEach(([v,cnt]) => { if(cnt>1) clients.filter(c=>String(c[f]??'').trim().toLowerCase()===v).forEach(c=>{ if(!dup[c.CodCliente])dup[c.CodCliente]=new Set(); dup[c.CodCliente].add(f); }); });
         });
-    }, [filterLocal, sortCol, sortDir]);
+        return dup;
+    }, [clients]);
 
-    const toggleSort = (col) => {
-        if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-        else { setSortCol(col); setSortDir('asc'); }
+    // Manejador para click en etiqueta de duplicado: filtra hermanitos
+    const handleDupTagClick = (e, c, field) => {
+        e.stopPropagation();
+        const val = String(c[field] ?? '').trim().toLowerCase();
+        if (!val) return;
+        setFocusDup(prev =>
+            prev && prev.field === field && prev.value === val ? null
+            : { field, value: val, label: c[field] }
+        );
     };
-    const SortIcon = ({ col }) => sortCol !== col ? <i className="fa-solid fa-sort text-slate-300 ml-1 text-[10px]"></i>
-        : sortDir === 'asc' ? <i className="fa-solid fa-sort-up text-indigo-500 ml-1 text-[10px]"></i>
-            : <i className="fa-solid fa-sort-down text-indigo-500 ml-1 text-[10px]"></i>;
 
-    // ── Render ─────────────────────────────────────────────────────────────
+
+    const filtered = useMemo(() => {
+        const t = search.toLowerCase();
+        return clients.filter(c => {
+            // Modo hermanitos: mostrar solo los que comparten el mismo valor en el mismo campo
+            if (focusDup) {
+                return String(c[focusDup.field] ?? '').trim().toLowerCase() === focusDup.value;
+            }
+            if (filterEstado && c.ESTADO !== filterEstado) return false;
+            if (filterTipo && String(c.TClIdTipoCliente) !== filterTipo) return false;
+            if (filterVinculo === 'no-react' && c.IDReact) return false;
+            if (filterVinculo === 'no-macrosoft' && c.CodReferencia) return false;
+            if (filterDup === 'all' && !dupSets[c.CodCliente]) return false;
+            if (filterDup && filterDup !== 'all') {
+                const dups = dupSets[c.CodCliente];
+                if (!dups || !dups.has(filterDup)) return false;
+            }
+            if (!t) return true;
+            return [c.Nombre,c.Email,c.TelefonoTrabajo,c.CioRuc,String(c.CodCliente),c.IDCliente].some(v=>v?.toLowerCase().includes(t));
+        });
+    }, [clients, search, filterEstado, filterTipo, filterVinculo, filterDup, dupSets, focusDup]);
+
+    const sorted = useMemo(() => [...filtered].sort((a,b)=>{
+        const cmp=String(a[sortCol]??'').localeCompare(String(b[sortCol]??''),'es',{numeric:true});
+        return sortDir==='asc'?cmp:-cmp;
+    }), [filtered, sortCol, sortDir]);
+
+    const toggleSort = col => { if(sortCol===col)setSortDir(d=>d==='asc'?'desc':'asc'); else{setSortCol(col);setSortDir('asc');} };
+
+    const dupCount = Object.keys(dupSets).length;
+    const activeCount = clients.filter(c=>c.ESTADO==='ACTIVO').length;
+    const linkedCount = clients.filter(c=>c.IDReact).length;
+
     return (
-        <div className="flex flex-col h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
-
-            {/* ── Header ── */}
-            <div className="bg-white px-4 py-3 shadow-sm border-b border-slate-200 flex flex-wrap gap-3 items-center justify-between">
-                <div className="relative flex-1 min-w-[220px] max-w-xl">
-                    <i className="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                    <input
-                        type="text"
-                        placeholder="Buscar por nombre, RUC, email, teléfono..."
-                        className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-400/30 focus:border-indigo-400 outline-none text-sm"
-                        value={searchTerm}
-                        onChange={e => setSearchTerm(e.target.value)}
-                    />
-                </div>
-
-                <select value={localFilter} onChange={e => setLocalFilter(e.target.value)}
-                    className="text-xs p-2 border border-slate-200 rounded-xl outline-none bg-white text-slate-600 shadow-sm">
-                    <option value="all">Todos los clientes</option>
-                    <option value="no-react">⚠️ Sin vínculo React</option>
-                    <option value="no-macrosoft">⚠️ Sin vínculo Macrosoft</option>
-                    <option value="no-both">⚠️ Sin ningún vínculo</option>
-                </select>
-
-                {/* Toggle vista */}
-                <div className="flex bg-slate-100 rounded-xl p-1 gap-1">
-                    <button onClick={() => setViewMode('table')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${viewMode === 'table' ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>
-                        <i className="fa-solid fa-table mr-1"></i> Tabla
-                    </button>
-                    <button onClick={() => setViewMode('cards')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${viewMode === 'cards' ? 'bg-white shadow text-indigo-700' : 'text-slate-500 hover:text-slate-700'}`}>
-                        <i className="fa-solid fa-grip mr-1"></i> Integración
-                    </button>
-                </div>
-
-                <a href="/admin/duplicate-clients" target="_blank"
-                    className="flex items-center gap-2 bg-amber-50 border border-amber-200 text-amber-700 px-3 py-2 rounded-xl font-bold text-xs transition hover:bg-amber-100">
-                    <i className="fa-solid fa-users-slash"></i> Duplicados
-                </a>
+        <div style={{display:'flex',flexDirection:'column',flex:1,overflow:'hidden',gap:0}}>
+            {/* Stats */}
+            <div className="ci-stats">
+                <div className="ci-stat-card"><span className="ci-stat-num">{clients.length}</span><span className="ci-stat-label">Total</span></div>
+                <div className="ci-stat-card success"><span className="ci-stat-num">{activeCount}</span><span className="ci-stat-label">Activos</span></div>
+                <div className="ci-stat-card"><span className="ci-stat-num">{linkedCount}</span><span className="ci-stat-label">Con React</span></div>
+                {dupCount > 0 && <div
+                    className={`ci-stat-card danger`}
+                    onClick={() => setFilterDup(f => f === 'all' ? '' : 'all')}
+                    style={{cursor:'pointer', outline: filterDup==='all' ? '2px solid #dc2626' : 'none', outlineOffset:2}}>
+                    <span className="ci-stat-num">{dupCount}</span>
+                    <span className="ci-stat-label">{filterDup==='all' ? '✓ filtrado' : 'Duplicados'}</span>
+                </div>}
+                <span style={{marginLeft:'auto',fontSize:12,color:'#888',fontWeight:600,alignSelf:'center'}}>{sorted.length} visible{sorted.length!==1?'s':''}</span>
             </div>
 
-            {/* ── VISTA TABLA ── */}
-            {viewMode === 'table' && (
-                <div className="flex-1 overflow-hidden flex flex-col">
-                    <div className="px-4 pt-2 pb-1 flex items-center gap-3 text-xs text-slate-500">
-                        <span className="font-bold text-slate-700">{sortedLocal.length}</span> clientes
-                        {loadingLocal && <span><i className="fa-solid fa-spinner fa-spin mr-1"></i>cargando...</span>}
+            {/* Toolbar */}
+            <div className="ci-toolbar">
+                <input className="ci-search" type="text" placeholder="Buscar nombre, email, teléfono, RUC..." value={search} onChange={e=>setSearch(e.target.value)}/>
+                <select className="ci-select" value={filterEstado} onChange={e=>setFilterEstado(e.target.value)}>
+                    <option value="">Estado: Todos</option>
+                    {['ACTIVO','INACTIVO','BLOQUEADO'].map(s=><option key={s}>{s}</option>)}
+                </select>
+                <select className="ci-select" value={filterTipo} onChange={e=>setFilterTipo(e.target.value)}>
+                    <option value="">Tipo: Todos</option>
+                    {(catalogs.tiposClientes||[]).map(t=><option key={t.ID} value={t.ID}>{t.Nombre}</option>)}
+                </select>
+                <select className="ci-select" value={filterVinculo} onChange={e=>setFilterVinculo(e.target.value)}>
+                    <option value="">Vínculos: Todos</option>
+                    <option value="no-react">⚠ Sin React</option>
+                    <option value="no-macrosoft">⚠ Sin Macrosoft</option>
+                </select>
+                <select className="ci-select" value={filterDup} onChange={e=>setFilterDup(e.target.value)}
+                    style={filterDup ? {borderColor:'#dc2626',color:'#dc2626',fontWeight:700} : {}}>
+                    <option value="">Duplicados: Todos</option>
+                    <option value="all">⚠ Solo duplicados</option>
+                    {Object.keys(DUP_COLORS).map(f=><option key={f} value={f}>Dup por {f}</option>)}
+                </select>
+                <div className="ci-view-toggle">
+                    <button className={`ci-view-btn ${viewMode==='kanban'?'active':''}`} onClick={()=>setViewMode('kanban')}>⊞ Tarjetas</button>
+                    <button className={`ci-view-btn ${viewMode==='table'?'active':''}`} onClick={()=>setViewMode('table')}>☰ Tabla</button>
+                </div>
+                <button className="ci-btn-primary" onClick={()=>setEditing({})}>+ Nuevo Cliente</button>
+            </div>
+
+            {/* Banner modo hermanitos */}
+            {focusDup && (
+                <div style={{display:'flex',alignItems:'center',gap:10,padding:'8px 28px',background:'#1e1b4b',color:'#fff',fontSize:13,fontWeight:600,flexShrink:0}}>
+                    <span style={{opacity:.7}}>Mostrando hermanitos de</span>
+                    <span style={{background:`${DUP_COLORS[focusDup.field]}33`,border:`1px solid ${DUP_COLORS[focusDup.field]}`,borderRadius:6,padding:'2px 10px',color:DUP_COLORS[focusDup.field],fontWeight:800}}>
+                        {focusDup.field}: &quot;{focusDup.label}&quot;
+                    </span>
+                    <span style={{opacity:.7,fontSize:11}}>({sorted.length} clientes)</span>
+                    <button onClick={()=>setFocusDup(null)} style={{marginLeft:'auto',background:'rgba(255,255,255,.15)',border:'none',borderRadius:6,color:'#fff',padding:'4px 12px',cursor:'pointer',fontWeight:700,fontSize:12}}
+                    >✕ Limpiar</button>
+                </div>
+            )}
+            {/* Dup legend */}
+            {!focusDup && dupCount > 0 && (
+                <div className="ci-dup-legend">
+                    <span>Duplicados detectados — hacé clic en una etiqueta para ver sus hermanitos:</span>
+                    {Object.entries(DUP_COLORS).map(([f,c])=>(<span key={f} style={{display:'flex',alignItems:'center',gap:4}}><span className="ci-dup-dot" style={{background:c}}/>{f}</span>))}
+                </div>
+            )}
+
+            {/* Content */}
+            <div className="ci-content">
+                {loading && <p style={{textAlign:'center',padding:40,color:'#888'}}>Cargando clientes…</p>}
+
+                {/* KANBAN */}
+                {!loading && viewMode==='kanban' && (
+                    <div className="ci-kanban">
+                        {sorted.length===0 && <p style={{gridColumn:'1/-1',textAlign:'center',padding:40,color:'#aaa'}}>Sin resultados</p>}
+                        {sorted.map(c => {
+                            const dups = dupSets[c.CodCliente];
+                            const firstDupField = dups ? [...dups][0] : null;
+                            return (
+                                <div key={c.CodCliente} className={`ci-card ${dups?'dup-card':''}`}
+                                    style={dups?{'--dup-color':DUP_COLORS[firstDupField]}:{}}
+                                    onClick={()=>setEditing(c)}>
+                                    <div className="ci-card-header">
+                                        <Avatar name={c.Nombre} size={38}/>
+                                        <div className="ci-card-info">
+                                            <div className="ci-card-name">{c.Nombre}</div>
+                                            <div className="ci-card-sub">{c.NombreFantasia || `Cód: ${c.CodCliente}`}</div>
+                                        </div>
+                                        {c.ESTADO && <Badge color={statusColor(c.ESTADO)}>{c.ESTADO}</Badge>}
+                                    </div>
+                                    {dups && (
+                                        <div className="ci-dup-tags">
+                                            {[...dups].map(f=>(
+                                                <span key={f} className="ci-dup-tag"
+                                                    onClick={e=>handleDupTagClick(e,c,f)}
+                                                    style={{background:`${DUP_COLORS[f]}22`,color:DUP_COLORS[f],cursor:'pointer',border:`1px solid ${DUP_COLORS[f]}55`}}
+                                                    title={`Clic para ver todos con el mismo ${f}`}>
+                                                    🔍 {f}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="ci-card-body">
+                                        {c.TelefonoTrabajo && <div className="ci-card-row"><span className="ci-card-row-icon">📞</span>{c.TelefonoTrabajo}</div>}
+                                        {c.Email && <div className="ci-card-row"><span className="ci-card-row-icon">✉</span><span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.Email}</span></div>}
+                                        {c.TipoClienteNombre && <div className="ci-card-row"><span className="ci-card-row-icon">🏷</span>{c.TipoClienteNombre}</div>}
+                                        {c.VendedorNombre && <div className="ci-card-row"><span className="ci-card-row-icon">👤</span>{c.VendedorNombre}</div>}
+                                    </div>
+                                    <div className="ci-card-footer">
+                                        <div style={{display:'flex',gap:5}}>
+                                            <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,
+                                                background: c.IDReact ? '#dcfce7' : '#f1f5f9',
+                                                color: c.IDReact ? '#15803d' : '#94a3b8',
+                                                border: c.IDReact ? '1px solid #bbf7d0' : '1px dashed #cbd5e1'
+                                            }}>📊 Planilla</span>
+                                            <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:20,
+                                                background: c.CodReferencia ? '#ede9fe' : '#f1f5f9',
+                                                color: c.CodReferencia ? '#7c3aed' : '#94a3b8',
+                                                border: c.CodReferencia ? '1px solid #ddd6fe' : '1px dashed #cbd5e1'
+                                            }}>🖥 Macrosoft</span>
+                                        </div>
+                                        <span style={{fontSize:10,color:'#bbb',fontWeight:600}}>#{c.CodCliente}</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
-                    <div className="flex-1 overflow-auto px-4 pb-4">
-                        <table className="w-full border-collapse text-sm">
-                            <thead className="sticky top-0 z-10">
-                                <tr className="bg-slate-100 text-left">
-                                    {[
-                                        ['CodCliente', 'ID', 'w-16'],
-                                        ['Nombre', 'Nombre', 'min-w-[180px]'],
-                                        ['CioRuc', 'RUC', 'w-36'],
-                                        ['TelefonoTrabajo', 'Teléfono', 'w-32'],
-                                        ['Email', 'Email', 'min-w-[160px]'],
-                                        ['TipoClienteNombre', 'Tipo', 'w-28'],
-                                        ['VendedorNombre', 'Vendedor', 'w-32'],
-                                        ['LocalidadNombre', 'Localidad', 'w-28'],
-                                        ['ESTADO', 'Estado', 'w-24'],
-                                    ].map(([col, lbl, w]) => (
-                                        <th key={col} className={`${w} px-3 py-2.5 text-xs font-bold text-slate-500 uppercase tracking-wide cursor-pointer select-none whitespace-nowrap border-b border-slate-200 hover:bg-slate-200 transition`}
-                                            onClick={() => toggleSort(col)}>
-                                            {lbl}<SortIcon col={col} />
-                                        </th>
+                )}
+
+                {/* TABLE */}
+                {!loading && viewMode==='table' && (
+                    <div className="ci-table-wrap">
+                        <table className="ci-table">
+                            <thead>
+                                <tr>
+                                    {[['CodCliente','Cód','w-16'],['Nombre','Nombre',''],['IDCliente','ID Cliente',''],['CioRuc','RUC',''],['TelefonoTrabajo','Teléfono',''],['Email','Email',''],['TipoClienteNombre','Tipo',''],['VendedorNombre','Vendedor',''],['ESTADO','Estado','']].map(([col,lbl])=>(
+                                        <th key={col} onClick={()=>toggleSort(col)}>{lbl}{sortCol===col?(sortDir==='asc'?' ↑':' ↓'):''}</th>
                                     ))}
-                                    <th className="w-24 px-3 py-2.5 text-xs font-bold text-slate-500 uppercase tracking-wide border-b border-slate-200">Vínculos</th>
-                                    <th className="w-16 px-3 py-2.5 border-b border-slate-200"></th>
+                                    <th>Vínculos</th><th/>
                                 </tr>
                             </thead>
                             <tbody>
-                                {sortedLocal.length === 0 && !loadingLocal && (
-                                    <tr><td colSpan={11} className="text-center py-12 text-slate-400 text-sm">Sin resultados</td></tr>
-                                )}
-                                {sortedLocal.map((c, i) => {
-                                    const hasReact = !!c.CodigoReact;
-                                    const hasMS = !!c.CodReferencia;
+                                {sorted.length===0 && <tr><td colSpan={11} style={{textAlign:'center',padding:40,color:'#aaa'}}>Sin resultados</td></tr>}
+                                {sorted.map((c,i)=>{
+                                    const dups=dupSets[c.CodCliente];
+                                    const firstDup=dups?[...dups][0]:null;
                                     return (
-                                        <tr key={c.CodCliente}
-                                            onClick={() => setEditingClient(c)}
-                                            className={`cursor-pointer border-b border-slate-100 transition-colors hover:bg-indigo-50/60 ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'}`}>
-                                            <td className="px-3 py-2 text-slate-400 font-mono text-xs">{c.CodCliente}</td>
-                                            <td className="px-3 py-2 font-medium text-slate-800 max-w-[220px] truncate">{c.Nombre}</td>
-                                            <td className="px-3 py-2 text-slate-500 text-xs font-mono">{c.CioRuc || '—'}</td>
-                                            <td className="px-3 py-2 text-slate-500 text-xs">{c.TelefonoTrabajo || '—'}</td>
-                                            <td className="px-3 py-2 text-slate-500 text-xs truncate max-w-[180px]">{c.Email || '—'}</td>
-                                            <td className="px-3 py-2 text-slate-500 text-xs">{c.TipoClienteNombre || '—'}</td>
-                                            <td className="px-3 py-2 text-slate-500 text-xs">{c.VendedorNombre || '—'}</td>
-                                            <td className="px-3 py-2 text-slate-500 text-xs">{c.LocalidadNombre || '—'}</td>
-                                            <td className="px-3 py-2">
-                                                {c.ESTADO ? (
-                                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${c.ESTADO === 'ACTIVO' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'}`}>{c.ESTADO}</span>
-                                                ) : <span className="text-slate-300 text-xs">—</span>}
-                                            </td>
-                                            <td className="px-3 py-2">
-                                                <div className="flex gap-1.5">
-                                                    <span title="React" className={`text-[13px] ${hasReact ? 'text-purple-600' : 'text-slate-200'}`}><i className="fa-brands fa-react"></i></span>
-                                                    <span title="Macrosoft" className={`text-[13px] ${hasMS ? 'text-emerald-600' : 'text-slate-200'}`}><i className="fa-solid fa-server"></i></span>
+                                        <tr key={c.CodCliente} onClick={()=>setEditing(c)}
+                                            className={dups?'dup-row':''} style={dups?{'--dup-color':DUP_COLORS[firstDup]}:{background:i%2?'#fafafe':'#fff'}}>
+                                            <td style={{color:'#999',fontFamily:'monospace',fontSize:11}}>{c.CodCliente}</td>
+                                            <td>
+                                                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                                                    <Avatar name={c.Nombre} size={28}/>
+                                                    <div>
+                                                        <div style={{fontWeight:600,fontSize:13}}>{c.Nombre}</div>
+                                                        {dups && (
+                                        <div className="ci-dup-tags">
+                                            {[...dups].map(f=>(
+                                                <span key={f} className="ci-dup-tag"
+                                                    onClick={e=>handleDupTagClick(e,c,f)}
+                                                    style={{background:`${DUP_COLORS[f]}22`,color:DUP_COLORS[f],cursor:'pointer',border:`1px solid ${DUP_COLORS[f]}55`}}
+                                                    title={`Clic para ver todos con el mismo ${f}`}>
+                                                    🔍 {f}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                                    </div>
                                                 </div>
                                             </td>
-                                            <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
-                                                <button onClick={() => setEditingClient(c)}
-                                                    className="text-slate-400 hover:text-indigo-600 transition p-1 rounded hover:bg-indigo-50">
-                                                    <i className="fa-solid fa-pen-to-square text-xs"></i>
-                                                </button>
+                                            <td style={{fontSize:12,color:'#666'}}>{c.IDCliente||'—'}</td>
+                                            <td style={{fontSize:12,color:'#666'}}>{c.CioRuc||'—'}</td>
+                                            <td style={{fontSize:12,color:'#666'}}>{c.TelefonoTrabajo||'—'}</td>
+                                            <td style={{fontSize:12,color:'#666',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.Email||'—'}</td>
+                                            <td style={{fontSize:12}}>{c.TipoClienteNombre||'—'}</td>
+                                            <td style={{fontSize:12}}>{c.VendedorNombre||'—'}</td>
+                                            <td>{c.ESTADO?<Badge color={statusColor(c.ESTADO)}>{c.ESTADO}</Badge>:'—'}</td>
+                                            <td><div style={{display:'flex',gap:4}}><span style={{fontSize:13,color:c.IDReact?'#7c3aed':'#e2e8f0'}} title="React">⚛</span><span style={{fontSize:13,color:c.CodReferencia?'#059669':'#e2e8f0'}} title="Macrosoft">🖧</span></div></td>
+                                            <td onClick={e=>e.stopPropagation()}>
+                                                <button onClick={async()=>{if(!confirm(`¿Eliminar "${c.Nombre}"?`))return;try{await api.delete(`/clients/${c.CodCliente}`);toast.success('Eliminado');load();}catch(e){toast.error(e.response?.data?.error||'No se pudo eliminar');}}} style={{background:'none',border:'none',cursor:'pointer',color:'#fca5a5',fontSize:14,padding:4}} title="Eliminar">🗑</button>
                                             </td>
                                         </tr>
                                     );
@@ -493,140 +421,563 @@ const ClientsIntegration = () => {
                             </tbody>
                         </table>
                     </div>
-                </div>
-            )}
+                )}
+            </div>
 
-            {/* ── VISTA CARDS / INTEGRACIÓN ── */}
-            {viewMode === 'cards' && (
-                <div className="flex-1 flex overflow-hidden p-4 gap-4">
-
-                    {/* Columna 1: Locales */}
-                    <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                        <div className="p-4 border-b border-slate-100 bg-blue-50/50 flex flex-col gap-2">
-                            <div className="flex justify-between items-center">
-                                <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                                    <i className="fa-solid fa-database text-blue-600"></i> Locales
-                                </h2>
-                                <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded-full">{filterLocal.length}</span>
-                            </div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
-                            {loadingLocal ? <div className="text-center p-4 text-slate-400 text-sm"><i className="fa-solid fa-spinner fa-spin"></i> Cargando...</div> :
-                                filterLocal.length === 0 ? <div className="text-center p-4 text-slate-400 text-xs">Sin resultados</div> :
-                                    filterLocal.map(c => {
-                                        const isSelected = selectedLocalClient?.CodCliente === c.CodCliente;
-                                        const hasReact = !!c.CodigoReact;
-                                        const hasMS = !!c.CodReferencia;
-                                        return (
-                                            <div key={c.CodCliente}
-                                                onClick={() => { if (isSelected) { setSelectedLocalClient(null); setSearchTerm(''); } else { setSelectedLocalClient(c); setSearchTerm(c.CioRuc?.trim() || c.Nombre || ''); } }}
-                                                className={`bg-white border rounded-xl p-3 shadow-sm hover:shadow-md transition group cursor-pointer ${isSelected ? 'border-2 border-indigo-500 bg-indigo-50' : 'border-slate-200'}`}>
-                                                <div className="flex justify-between items-start mb-1">
-                                                    <h3 className={`font-bold text-sm truncate ${isSelected ? 'text-indigo-800' : 'text-slate-800'}`}>{c.Nombre}</h3>
-                                                    <button onClick={e => { e.stopPropagation(); setEditingClient(c); }} className="text-slate-400 hover:text-indigo-600 transition shrink-0 ml-2">
-                                                        <i className="fa-solid fa-pen-to-square text-xs"></i>
-                                                    </button>
-                                                </div>
-                                                <div className="text-[11px] text-slate-500 grid grid-cols-2 gap-1">
-                                                    <span><b>ID:</b> {c.CodCliente}</span>
-                                                    <span className="truncate"><b>Doc:</b> {c.CioRuc || '—'}</span>
-                                                    <span><b>Tel:</b> {c.TelefonoTrabajo || '—'}</span>
-                                                    <span className="truncate"><b>Email:</b> {c.Email || '—'}</span>
-                                                </div>
-                                                <div className="mt-2 flex gap-3 text-xs">
-                                                    <span className={`flex items-center gap-1 ${hasReact ? 'text-purple-600 font-bold' : 'text-slate-300'}`}><i className="fa-brands fa-react"></i></span>
-                                                    <span className={`flex items-center gap-1 ${hasMS ? 'text-emerald-600 font-bold' : 'text-slate-300'}`}><i className="fa-solid fa-server"></i></span>
-                                                </div>
-                                                {isSelected && <div className="mt-2 text-center text-[10px] font-bold text-indigo-600 animate-pulse bg-indigo-100 rounded py-1">Seleccionado → elige a quién vincular ➡️</div>}
-                                            </div>
-                                        );
-                                    })}
-                        </div>
-                    </div>
-
-                    {/* Columna 2: API React (ClientesReact sin vincular) */}
-                    <div className={`flex-1 flex flex-col bg-white rounded-2xl shadow-sm border overflow-hidden transition-all ${selectedLocalClient ? 'border-purple-300 ring-2 ring-purple-100' : 'border-slate-200'}`}>
-                        <div className="p-4 border-b border-slate-100 bg-purple-50/50">
-                            <div className="flex justify-between items-center mb-2">
-                                <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                                    <i className="fa-brands fa-react text-purple-600"></i> API React
-                                    <span className="text-[10px] font-normal text-purple-400">(sin vincular)</span>
-                                </h2>
-                                <span className="bg-purple-100 text-purple-800 text-xs font-bold px-2 py-1 rounded-full">{clientsReact.length}</span>
-                            </div>
-                            <input type="text" placeholder="Buscar en ClientesReact..."
-                                className="w-full text-xs p-1.5 border border-purple-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-400 bg-white"
-                                value={reactSearch} onChange={e => setReactSearch(e.target.value)} />
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
-                            {loadingReact ? <div className="text-center p-4 text-slate-400 text-sm"><i className="fa-solid fa-spinner fa-spin"></i></div> :
-                                clientsReact.length === 0 ? <div className="text-center p-4 text-slate-400 text-xs">Sin resultados sin vincular</div> :
-                                    clientsReact.map(c => (
-                                        <div key={c.IdCliente} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm hover:shadow-md hover:border-purple-300 transition group relative">
-                                            <h3 className="font-bold text-slate-800 text-sm mb-1 truncate">{c.NombreCliente || c.EmpresaCliente || '—'}</h3>
-                                            {c.EmpresaCliente && c.NombreCliente !== c.EmpresaCliente && <p className="text-[10px] text-slate-400 truncate mb-1">{c.EmpresaCliente}</p>}
-                                            <div className="text-[11px] text-slate-600 space-y-0.5 bg-purple-50/30 p-2 rounded">
-                                                <p><b>Cód:</b> {c.CodigoCliente || '—'}</p>
-                                                <p><b>Doc:</b> {c.Rut || '—'}</p>
-                                                <p><b>Tel:</b> {c.Telefono || '—'}</p>
-                                            </div>
-                                            <div className="absolute top-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition">
-                                                {selectedLocalClient
-                                                    ? <button onClick={() => handleLinkReact(selectedLocalClient, c)} className="bg-purple-600 hover:bg-purple-700 shadow text-white px-2 py-1 rounded text-[10px] font-bold"><i className="fa-solid fa-link mr-1"></i>Vincular</button>
-                                                    : <button onClick={() => handleImportToLocal(c, 'React')} className="bg-blue-600 hover:bg-blue-700 shadow text-white px-2 py-1 rounded text-[10px] font-bold"><i className="fa-solid fa-file-import mr-1"></i>A Local</button>
-                                                }
-                                            </div>
-                                        </div>
-                                    ))}
-                        </div>
-                    </div>
-
-                    {/* Columna 3: Macrosoft */}
-                    <div className={`flex-1 flex flex-col bg-white rounded-2xl shadow-sm border overflow-hidden transition-all ${selectedLocalClient ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-slate-200'}`}>
-                        <div className="p-4 border-b border-slate-100 bg-emerald-50/50 flex justify-between items-center">
-                            <h2 className="font-bold text-slate-800 flex items-center gap-2">
-                                <i className="fa-solid fa-server text-emerald-600"></i> API Macrosoft
-                            </h2>
-                            <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-1 rounded-full">{clientsMacrosoft.length}</span>
-                        </div>
-                        <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
-                            {loadingMacrosoft ? <div className="text-center p-4 text-slate-400 text-sm"><i className="fa-solid fa-spinner fa-spin"></i></div> :
-                                clientsMacrosoft.length === 0 ? <div className="text-center p-4 text-slate-400 text-xs">Sin resultados</div> :
-                                    clientsMacrosoft.map(c => {
-                                        const nom = c.Nombre || c.CliNombreApellido;
-                                        const cod = c.CodCliente || c.IdCliente;
-                                        return (
-                                            <div key={cod} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm hover:shadow-md hover:border-emerald-300 transition group relative">
-                                                <h3 className="font-bold text-slate-800 text-sm mb-1 truncate">{nom}</h3>
-                                                <div className="text-[11px] text-slate-600 space-y-0.5 bg-emerald-50/30 p-2 rounded">
-                                                    <p><b>ID MS:</b> {cod}</p>
-                                                    <p><b>RUC:</b> {c.CioRuc || c.Rut || '—'}</p>
-                                                    <p><b>Tel:</b> {c.TelefonoTrabajo || c.Telefono || '—'}</p>
-                                                </div>
-                                                <div className="absolute top-2 right-2 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition">
-                                                    {selectedLocalClient
-                                                        ? <button onClick={() => handleLinkMacrosoft(selectedLocalClient, c)} className="bg-emerald-600 hover:bg-emerald-700 shadow text-white px-2 py-1 rounded text-[10px] font-bold"><i className="fa-solid fa-link mr-1"></i>Vincular</button>
-                                                        : <button onClick={() => handleImportToLocal(c, 'Macrosoft')} className="bg-blue-600 hover:bg-blue-700 shadow text-white px-2 py-1 rounded text-[10px] font-bold"><i className="fa-solid fa-file-import mr-1"></i>A Local</button>
-                                                    }
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal edición */}
-            <EditClientDialog
-                isOpen={!!editingClient}
-                onClose={() => setEditingClient(null)}
-                client={editingClient}
-                onSave={handleUpdateClient}
-                catalogs={catalogs}
-            />
+            {editing!==null && <ClientModal client={Object.keys(editing).length===0?null:editing} catalogs={catalogs} onClose={()=>setEditing(null)} onSaved={load}/>}
         </div>
     );
-};
+}
 
-export default ClientsIntegration;
+// ─── TAB 2: ÁRBOL ─────────────────────────────────────────────────────────────
+function TabArbol({ catalogs }) {
+    const [groupBy, setGroupBy] = useState('vendedor');
+    const [groups, setGroups] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [expanded, setExpanded] = useState(new Set());
+    const [search, setSearch] = useState('');
+    const [quickEdit, setQuickEdit] = useState(null);
+    const [quickVal, setQuickVal] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        try {
+            const r = await api.get(`/clients/tree?group=${groupBy}`);
+            setGroups(r.data.groups||[]);
+            if(r.data.groups?.length) setExpanded(new Set([r.data.groups[0].label]));
+        } catch { toast.error('Error cargando árbol'); }
+        finally { setLoading(false); }
+    }, [groupBy]);
+
+    useEffect(() => { load(); }, [load]);
+
+    const filteredGroups = useMemo(() => {
+        if(!search) return groups;
+        const t=search.toLowerCase();
+        return groups.map(g=>({...g,clients:g.clients.filter(c=>[c.Nombre,c.Email,c.TelefonoTrabajo].some(v=>v?.toLowerCase().includes(t)))})).filter(g=>g.clients.length>0);
+    }, [groups, search]);
+
+    const toggle = label => setExpanded(p=>{ const n=new Set(p); n.has(label)?n.delete(label):n.add(label); return n; });
+
+    const opts = groupBy==='vendedor' ? (catalogs.vendedores||[]).map(v=>({id:v.Cedula,label:v.Nombre})) : (catalogs.tiposClientes||[]).map(t=>({id:t.ID,label:t.Nombre}));
+
+    const saveQuick = async () => {
+        setSaving(true);
+        try {
+            await api.patch(`/clients/${quickEdit.CodCliente}/quick`, groupBy==='vendedor'?{VendedorID:quickVal}:{TClIdTipoCliente:quickVal});
+            toast.success('Actualizado ✓'); setQuickEdit(null); load();
+        } catch(e) { toast.error(e.response?.data?.error||'Error'); }
+        finally { setSaving(false); }
+    };
+
+    const totalClients = groups.reduce((s,g)=>s+g.clients.length, 0);
+
+    return (
+        <div style={{display:'flex',flexDirection:'column',flex:1,overflow:'hidden',gap:0}}>
+            <div className="ci-stats">
+                <div className="ci-stat-card"><span className="ci-stat-num">{totalClients}</span><span className="ci-stat-label">Clientes</span></div>
+                <div className="ci-stat-card"><span className="ci-stat-num">{groups.length}</span><span className="ci-stat-label">Grupos</span></div>
+            </div>
+            <div className="ci-toolbar">
+                <div className="ci-view-toggle">
+                    {[['vendedor','👤 Por Vendedor'],['tipo','🏷 Por Tipo']].map(([v,l])=>(
+                        <button key={v} className={`ci-view-btn ${groupBy===v?'active':''}`} onClick={()=>setGroupBy(v)}>{l}</button>
+                    ))}
+                </div>
+                <input className="ci-search" type="text" placeholder="Buscar cliente..." value={search} onChange={e=>setSearch(e.target.value)} style={{maxWidth:280}}/>
+                <button onClick={load} style={{background:'none',border:'1.5px solid #e2e8f0',borderRadius:8,padding:'7px 12px',cursor:'pointer',color:'#666',fontSize:13}} title="Recargar">↺ Recargar</button>
+            </div>
+            <div className="ci-content">
+                <div className="ci-tree">
+                    {loading && <p style={{textAlign:'center',padding:40,color:'#888'}}>Cargando…</p>}
+                    {!loading && filteredGroups.map(g => (
+                        <div key={g.label} className="ci-tree-group">
+                            <div className={`ci-tree-header ${expanded.has(g.label)?'open':''}`} onClick={()=>toggle(g.label)}>
+                                <div className="ci-tree-label">
+                                    <span className={`ci-tree-arrow ${expanded.has(g.label)?'open':''}`}>▶</span>
+                                    <Avatar name={g.label} size={30}/>
+                                    {g.label}
+                                </div>
+                                <span className="ci-tree-count">{g.clients.length} clientes</span>
+                            </div>
+                            {expanded.has(g.label) && g.clients.map(c => (
+                                <div key={c.CodCliente} className="ci-tree-client">
+                                    <div className="ci-tree-client-info">
+                                        <Avatar name={c.Nombre} size={32}/>
+                                        <div>
+                                            <div style={{fontWeight:600,fontSize:13,color:'#1e1b4b'}}>{c.Nombre}</div>
+                                            <div style={{fontSize:11,color:'#888',display:'flex',gap:8,marginTop:2}}>
+                                                {c.TelefonoTrabajo && <span>📞 {c.TelefonoTrabajo}</span>}
+                                                {c.Email && <span>✉ {c.Email}</span>}
+                                                {c.ESTADO && <Badge color={statusColor(c.ESTADO)}>{c.ESTADO}</Badge>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button className="ci-tree-edit-btn" onClick={()=>{setQuickEdit(c);setQuickVal(groupBy==='vendedor'?(c.VendedorID||''):(c.TClIdTipoCliente||''));}}>
+                                        ✏ Cambiar {groupBy==='vendedor'?'Vendedor':'Tipo'}
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {quickEdit && (
+                <div className="ci-overlay" onClick={()=>setQuickEdit(null)}>
+                    <div style={{background:'#fff',borderRadius:16,padding:28,width:340,boxShadow:'0 20px 60px rgba(0,0,0,.2)'}} onClick={e=>e.stopPropagation()}>
+                        <div style={{fontWeight:800,fontSize:16,color:'#1e1b4b',marginBottom:4}}>Cambiar {groupBy==='vendedor'?'Vendedor':'Tipo'}</div>
+                        <div style={{fontSize:12,color:'#888',marginBottom:16}}>{quickEdit.Nombre}</div>
+                        <select value={quickVal} onChange={e=>setQuickVal(e.target.value)} style={{width:'100%',padding:'9px 12px',border:'1.5px solid #e2e8f0',borderRadius:8,fontSize:13,marginBottom:16,outline:'none',fontFamily:'Inter,sans-serif'}}>
+                            <option value="">— Sin asignar —</option>
+                            {opts.map(o=><option key={o.id} value={o.id}>{o.label}</option>)}
+                        </select>
+                        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                            <button className="ci-btn-cancel" onClick={()=>setQuickEdit(null)}>Cancelar</button>
+                            <button className="ci-btn-save" onClick={saveQuick} disabled={saving}>{saving?'…':'Guardar'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── TAB 3: PLANILLA ──────────────────────────────────────────────────────────
+function TabPlanilla() {
+    const [auth,      setAuth]      = useState(null);   // null=checking, true, false
+    const [sheetRows, setSheetRows] = useState([]);
+    const [loading,   setLoading]   = useState(false);
+    const [q,         setQ]         = useState('');
+
+    const loadAll = useCallback(async () => {
+        setLoading(true);
+        try {
+            const r = await api.get('/clients/sheets/all');
+            setSheetRows(r.data || []);
+        } catch(e) {
+            const msg = e.response?.data?.error || 'Error cargando planilla';
+            if (e.response?.status === 401) setAuth(false);
+            else toast.error(msg);
+        } finally { setLoading(false); }
+    }, []);
+
+    useEffect(() => {
+        api.get('/google/status')
+            .then(r => { setAuth(r.data.authorized); if (r.data.authorized) loadAll(); })
+            .catch(() => setAuth(false));
+    }, [loadAll]);
+
+    const doAuth = async () => {
+        const r = await api.get('/google/auth');
+        window.open(r.data.authUrl, '_blank', 'width=600,height=700');
+        toast.info('Autorizá en la ventana nueva, luego presioná ↺ Recargar.');
+    };
+
+    const filtered = useMemo(() => {
+        if (!q) return sheetRows;
+        const t = q.toLowerCase();
+        return sheetRows.filter(r =>
+            [r.IDCliente, r.Nombre, r.Telefono, r.Email, r.CioRuc, r.IDReact, r.Departamento, r.Localidad]
+                .some(v => String(v || '').toLowerCase().includes(t))
+        );
+    }, [sheetRows, q]);
+
+    // Stats
+    const conEmail  = sheetRows.filter(r => r.Email).length;
+    const conRuc    = sheetRows.filter(r => r.CioRuc).length;
+    const conIDReact = sheetRows.filter(r => r.IDReact).length;
+
+    if (auth === null) return <div style={{textAlign:'center',padding:60,color:'#888'}}>Verificando conexión Google…</div>;
+
+    if (!auth) return (
+        <div className="ci-auth-prompt">
+            <div style={{fontSize:56}}>📊</div>
+            <div style={{fontSize:18,fontWeight:800,color:'#1e1b4b'}}>Google Sheets no autorizado</div>
+            <div style={{fontSize:13,color:'#888',maxWidth:340,textAlign:'center'}}>
+                Necesitás autorizar el acceso para poder leer la planilla de clientes.
+            </div>
+            <button className="ci-btn-primary" style={{marginLeft:0}} onClick={doAuth}>
+                🔐 Autorizar Google Sheets
+            </button>
+        </div>
+    );
+
+    return (
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            {/* Stats */}
+            <div className="ci-stats">
+                <div className="ci-stat-card">
+                    <span className="ci-stat-num">{sheetRows.length}</span>
+                    <span className="ci-stat-label">📋 Total filas</span>
+                </div>
+                <div className="ci-stat-card" style={{borderColor:'#bfdbfe',background:'#eff6ff'}}>
+                    <span className="ci-stat-num" style={{color:'#1d4ed8'}}>{conIDReact}</span>
+                    <span className="ci-stat-label">🔗 Con IDReact</span>
+                </div>
+                <div className="ci-stat-card" style={{borderColor:'#bbf7d0',background:'#f0fdf4'}}>
+                    <span className="ci-stat-num" style={{color:'#15803d'}}>{conEmail}</span>
+                    <span className="ci-stat-label">📧 Con Email</span>
+                </div>
+                <div className="ci-stat-card" style={{borderColor:'#fde68a',background:'#fefce8'}}>
+                    <span className="ci-stat-num" style={{color:'#b45309'}}>{conRuc}</span>
+                    <span className="ci-stat-label">🪪 Con RUC/CI</span>
+                </div>
+            </div>
+
+            {/* Toolbar */}
+            <div style={{display:'flex',gap:8,alignItems:'center',background:'#fff',borderRadius:12,padding:14,border:'1.5px solid #e2e8f0',boxShadow:'0 1px 4px rgba(0,0,0,.05)'}}>
+                <input className="ci-search" value={q} onChange={e=>setQ(e.target.value)}
+                    placeholder="Buscar nombre, teléfono, email, RUC, IDReact…"
+                    style={{flex:1,maxWidth:'none'}}/>
+                <span style={{fontSize:12,color:'#888',whiteSpace:'nowrap',fontWeight:600}}>
+                    {filtered.length} / {sheetRows.length} filas
+                </span>
+                {!auth && (
+                    <button onClick={doAuth} style={{background:'#fef9c3',border:'1.5px solid #fde68a',borderRadius:8,padding:'7px 14px',fontWeight:700,fontSize:12,color:'#b45309',cursor:'pointer'}}>
+                        🔐 Re-autorizar
+                    </button>
+                )}
+                <button onClick={loadAll} disabled={loading}
+                    style={{background:'#f0eeff',border:'none',borderRadius:8,padding:'8px 14px',fontWeight:700,fontSize:13,color:'#4f46e5',cursor:'pointer',opacity:loading?.6:1}}>
+                    {loading ? '…' : '↺ Recargar'}
+                </button>
+            </div>
+
+            {loading ? (
+                <div style={{textAlign:'center',padding:40,color:'#888'}}>Cargando planilla Google Sheets…</div>
+            ) : (
+                <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2e8f0',overflow:'auto',boxShadow:'0 1px 4px rgba(0,0,0,.05)'}}>
+                    <table className="ci-table">
+                        <thead><tr>
+                            <th>IDReact</th>
+                            <th>ID Cliente</th>
+                            <th>Nombre</th>
+                            <th>Teléfono</th>
+                            <th>Email</th>
+                            <th>RUC/CI</th>
+                            <th>Departamento</th>
+                            <th>Localidad</th>
+                            <th>Forma Envío</th>
+                        </tr></thead>
+                        <tbody>
+                            {filtered.length === 0 && (
+                                <tr><td colSpan={9} style={{textAlign:'center',padding:30,color:'#aaa'}}>
+                                    {sheetRows.length === 0 ? 'La planilla está vacía o no se cargaron los datos.' : 'Sin resultados para esa búsqueda.'}
+                                </td></tr>
+                            )}
+                            {filtered.map((r, i) => (
+                                <tr key={i} style={{background:i%2?'#fafafe':'#fff'}}>
+                                    <td>
+                                        <span style={{fontSize:11,fontFamily:'monospace',background:'#ede9fe',color:'#7c3aed',padding:'2px 7px',borderRadius:4,fontWeight:700}}>
+                                            {r.IDReact || '—'}
+                                        </span>
+                                    </td>
+                                    <td style={{fontSize:12,color:'#666'}}>{r.IDCliente || '—'}</td>
+                                    <td style={{fontWeight:600,fontSize:13}}>
+                                        <div style={{display:'flex',alignItems:'center',gap:8}}>
+                                            <div style={{width:28,height:28,borderRadius:7,background:AVATAR_COLORS[(r.Nombre?.charCodeAt(0)||0)%AVATAR_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:11,fontWeight:800,flexShrink:0}}>
+                                                {r.Nombre?.[0]?.toUpperCase() || '?'}
+                                            </div>
+                                            {r.Nombre || '—'}
+                                        </div>
+                                    </td>
+                                    <td style={{fontSize:12,color:'#666'}}>{r.Telefono || '—'}</td>
+                                    <td style={{fontSize:12,color:'#666',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                                        {r.Email ? <a href={`mailto:${r.Email}`} style={{color:'#4f46e5',textDecoration:'none'}}>{r.Email}</a> : '—'}
+                                    </td>
+                                    <td style={{fontSize:12,color:'#666'}}>{r.CioRuc || '—'}</td>
+                                    <td style={{fontSize:12,color:'#666'}}>{r.Departamento || '—'}</td>
+                                    <td style={{fontSize:12,color:'#666'}}>{r.Localidad || '—'}</td>
+                                    <td style={{fontSize:12,color:'#666'}}>
+                                        {r.FormaEnvio
+                                            ? <span style={{background:'#f0f9ff',color:'#0369a1',padding:'1px 6px',borderRadius:4,fontSize:11,fontWeight:600}}>{r.FormaEnvio}</span>
+                                            : '—'}
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── TAB 4: MACROSOFT ─────────────────────────────────────────────────────────
+function TabMacrosoft({ msClients = [], loading = false, onReload }) {
+    const [q,          setQ]          = useState('');
+    const [moneda,     setMoneda]     = useState('all');   // 'all' | 'uy' | 'usd'
+    const [vinculo,    setVinculo]    = useState('all');   // 'all' | 'si' | 'no'
+
+    const filtered = useMemo(() => {
+        let list = msClients;
+        // Filtro moneda
+        if (moneda === 'uy')  list = list.filter(c => c.Moneda === 1);
+        if (moneda === 'usd') list = list.filter(c => c.Moneda === 2);
+        // Filtro vínculo
+        if (vinculo === 'si') list = list.filter(c =>  c.EsVinculado);
+        if (vinculo === 'no') list = list.filter(c => !c.EsVinculado);
+        // Filtro texto
+        if (q) {
+            const t = q.toLowerCase();
+            list = list.filter(c =>
+                [c.Nombre, c.NombreFantasia, c.CioRuc, c.TelefonoTrabajo, c.Email, String(c.CodCliente||''), String(c.CodClienteLocal||'')]
+                    .some(v => String(v||'').toLowerCase().includes(t))
+            );
+        }
+        return list;
+    }, [msClients, q, moneda, vinculo]);
+
+    // Campos de la API real
+    const gn = c => c.Nombre || c.NombreFantasia || '—';
+    const gr = c => c.CioRuc || '—';
+    const gt = c => c.TelefonoTrabajo || '—';
+    const gc = c => String(c.CodCliente || '');
+
+
+    // Helper para botones pill
+    const Pill = ({ active, onClick, children, color='#4f46e5', bg='#eef0ff', activeBg, activeColor }) => (
+        <button onClick={onClick} style={{
+            padding:'5px 13px', borderRadius:20, border:'none', cursor:'pointer', fontSize:12, fontWeight:700,
+            background: active ? (activeBg||color) : bg,
+            color: active ? (activeColor||'#fff') : color,
+            transition:'all .15s', boxShadow: active ? `0 2px 6px ${color}55` : 'none',
+        }}>{children}</button>
+    );
+
+    return (
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            {/* Toolbar: buscador + filtros pill */}
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center',background:'#fff',borderRadius:12,padding:'12px 14px',border:'1.5px solid #e2e8f0',boxShadow:'0 1px 4px rgba(0,0,0,.05)'}}>
+                <input className="ci-search" value={q} onChange={e=>setQ(e.target.value)}
+                    placeholder="Buscar nombre, fantasía, RUC, teléfono…"
+                    style={{flex:1,minWidth:200,maxWidth:'none'}}/>
+
+                {/* Separador */}
+                <div style={{width:1,height:22,background:'#e2e8f0',margin:'0 4px'}}/>
+
+                {/* Filtro moneda */}
+                <span style={{fontSize:11,fontWeight:700,color:'#9ca3af',textTransform:'uppercase',letterSpacing:.5}}>Moneda:</span>
+                <Pill active={moneda==='all'} onClick={()=>setMoneda('all')} color='#6366f1' bg='#f5f3ff'>Todos</Pill>
+                <Pill active={moneda==='uy'}  onClick={()=>setMoneda('uy')}  color='#1d4ed8' bg='#eff6ff' activeBg='#1d4ed8'>🇺🇾 UY</Pill>
+                <Pill active={moneda==='usd'} onClick={()=>setMoneda('usd')} color='#15803d' bg='#f0fdf4' activeBg='#15803d'>💵 USD</Pill>
+
+                {/* Separador */}
+                <div style={{width:1,height:22,background:'#e2e8f0',margin:'0 4px'}}/>
+
+                {/* Filtro vínculo */}
+                <span style={{fontSize:11,fontWeight:700,color:'#9ca3af',textTransform:'uppercase',letterSpacing:.5}}>Vínculo:</span>
+                <Pill active={vinculo==='all'} onClick={()=>setVinculo('all')} color='#6366f1' bg='#f5f3ff'>Todos</Pill>
+                <Pill active={vinculo==='si'}  onClick={()=>setVinculo('si')}  color='#15803d' bg='#f0fdf4' activeBg='#15803d'>✓ Vinculados</Pill>
+                <Pill active={vinculo==='no'}  onClick={()=>setVinculo('no')}  color='#dc2626' bg='#fff5f5' activeBg='#dc2626'>✗ Sin vínculo</Pill>
+
+                <span style={{fontSize:12,color:'#888',whiteSpace:'nowrap',fontWeight:600}}>{filtered.length} / {msClients.length}</span>
+            </div>
+            {loading ? <div style={{textAlign:'center',padding:40,color:'#888'}}>Cargando clientes Macrosoft…</div> : (
+                <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2e8f0',overflow:'auto',boxShadow:'0 1px 4px rgba(0,0,0,.05)'}}>
+                    <table className="ci-table">
+                        <thead><tr><th>Cód MS</th><th>CodRef</th><th>Nombre</th><th style={{color:'#9ca3af'}}>Fantasía</th><th>RUC/CI</th><th>Teléfono</th><th>Email</th><th>Dirección</th></tr></thead>
+                        <tbody>
+                            {filtered.length===0 && <tr><td colSpan={8} style={{textAlign:'center',padding:30,color:'#aaa'}}>Sin resultados</td></tr>}
+                            {filtered.map((c,i)=>(
+                                <tr key={i} style={{background:i%2?'#fafafe':'#fff'}}>
+                                    <td><span style={{fontSize:11,fontFamily:'monospace',color:'#999'}}>{gc(c)||'—'}</span></td>
+                                    <td>
+                                        {c.EsVinculado
+                                            ? <span style={{fontSize:11,background:'#dcfce7',color:'#15803d',padding:'2px 8px',borderRadius:4,fontWeight:700}}>✓ local</span>
+                                            : <span style={{fontSize:11,color:'#d1d5db',fontStyle:'italic'}}>sin vínculo</span>}
+                                    </td>
+                                    <td style={{fontWeight:600,fontSize:13}}>
+                                        <div style={{display:'flex',alignItems:'center',gap:8}}>
+                                            <div style={{width:28,height:28,borderRadius:7,background:AVATAR_COLORS[(gn(c).charCodeAt(0)||0)%AVATAR_COLORS.length],display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:11,fontWeight:800,flexShrink:0}}>
+                                                {gn(c)[0]?.toUpperCase()||'?'}
+                                            </div>
+                                            {gn(c)}
+                                        </div>
+                                    </td>
+                                    <td style={{fontSize:11,color:'#9ca3af',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={c.NombreFantasia||''}>
+                                        {c.NombreFantasia || <span style={{color:'#e5e7eb'}}>—</span>}
+                                    </td>
+                                    <td style={{fontSize:12,color:'#666'}}>{gr(c)}</td>
+                                    <td style={{fontSize:12,color:'#666'}}>{gt(c)}</td>
+                                    <td style={{fontSize:12,color:'#666',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.Email||'—'}</td>
+                                    <td style={{fontSize:12,color:'#666',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.DireccionTrabajo||c.Direccion||'—'}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── PRINCIPAL ────────────────────────────────────────────────────────────────
+
+export default function ClientsIntegration() {
+    const [tab, setTab] = useState('tabla');
+    const [catalogs, setCatalogs] = useState({ localidades:[], departamentos:[], agencias:[], formasEnvio:[], tiposClientes:[], vendedores:[] });
+    const [msClients, setMsClients]   = useState([]);
+    const [msLoading, setMsLoading]   = useState(true);
+    const [msProgress, setMsProgress] = useState({ current: 0, total: 0 }); // para barra de progreso
+    const msAbortRef = useRef(null);  // para cancelar si el usuario recarga
+
+    const loadMacrosoft = useCallback(async () => {
+        // Cancelar carga anterior si existe
+        if (msAbortRef.current) msAbortRef.current = false;
+        const runId = {};
+        msAbortRef.current = runId;
+
+        setMsLoading(true);
+        setMsClients([]);
+        setMsProgress({ current: 0, total: 0 });
+
+        try {
+            // Página 1 → saber cuántas páginas hay + mapa de vinculados locales
+            const first = await api.get('/clients/macrosoft-page', { params: { page: 1 } });
+            if (msAbortRef.current !== runId) return;
+
+            const totalPages   = first.data.pages  || 1;
+            const vinculadosMap = first.data.vinculadosMap || {};
+
+            const enrich = (batch) => batch.map(c => ({
+                ...c,
+                EsVinculado:    vinculadosMap[String(c.CodCliente)] ? 1 : 0,
+                CodClienteLocal: vinculadosMap[String(c.CodCliente)] || null,
+            }));
+
+            // Mostrar página 1 de inmediato
+            setMsClients(enrich(first.data.data || []));
+            setMsProgress({ current: 1, total: totalPages });
+
+            // Resto de páginas: de 5 en 5 en paralelo
+            const CONCURRENCY = 5;
+            for (let start = 2; start <= totalPages; start += CONCURRENCY) {
+                if (msAbortRef.current !== runId) return; // cancelado
+                const end = Math.min(start + CONCURRENCY - 1, totalPages);
+                const pages = [];
+                for (let p = start; p <= end; p++) pages.push(p);
+
+                const results = await Promise.all(
+                    pages.map(p => api.get('/clients/macrosoft-page', { params: { page: p } })
+                        .then(r => ({ p, data: r.data.data || [] }))
+                        .catch(() => ({ p, data: [] }))
+                    )
+                );
+
+                if (msAbortRef.current !== runId) return;
+
+                results.sort((a, b) => a.p - b.p);
+                setMsClients(prev => {
+                    let acc = [...prev];
+                    results.forEach(({ data }) => { acc = acc.concat(enrich(data)); });
+                    return acc;
+                });
+                setMsProgress({ current: end, total: totalPages });
+            }
+
+        } catch(e) {
+            toast.error('Error cargando clientes Macrosoft');
+        } finally {
+            if (msAbortRef.current === runId) {
+                setMsLoading(false);
+                msAbortRef.current = null;
+            }
+        }
+    }, []);
+
+    useEffect(() => {
+        api.get('/clients/catalogs')
+            .then(r => setCatalogs(r.data || {}))
+            .catch(() => toast.error('Error cargando catálogos'));
+        loadMacrosoft();
+    }, [loadMacrosoft]);
+
+    const msProgressPct = msProgress.total > 0 ? Math.round((msProgress.current / msProgress.total) * 100) : 0;
+
+    const TABS = [
+        { id:'tabla',     icon:'📋', label:'Clientes' },
+        { id:'arbol',     icon:'👤', label:'Vendedores/Tipo' },
+        { id:'planilla',  icon:'📊', label:'Planilla' },
+        { id:'macrosoft', icon:'🖥', label: msLoading
+            ? (msProgress.total > 0 ? `Macrosoft (${msClients.length}/~${msProgress.total * 30})` : 'Macrosoft…')
+            : `Macrosoft (${msClients.length})` },
+    ];
+
+    // Stats rápidas para el header (Macrosoft)
+    const msConVinculo = msClients.filter(c => c.EsVinculado).length;
+    const msSinVinculo = msClients.length - msConVinculo;
+    const msUY  = msClients.filter(c => c.Moneda === 1).length;
+    const msUSD = msClients.filter(c => c.Moneda === 2).length;
+
+    const MsBadge = ({ label, value, color, bg }) => (
+        <span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:11,fontWeight:700,
+            background:bg||'#f3f4f6',color:color||'#374151',padding:'3px 10px',borderRadius:20,
+            border:`1px solid ${color||'#d1d5db'}22`}}>
+            <span style={{opacity:.7}}>{label}</span>
+            <span style={{fontFamily:'monospace',fontSize:12}}>{value}</span>
+        </span>
+    );
+
+    return (
+        <div className="ci-root">
+            <div className="ci-header">
+                <div className="ci-header-top">
+                    <span style={{fontSize:24}}>👥</span>
+                    <span className="ci-title">Gestión de Clientes</span>
+                    {/* Barra de progreso Macrosoft */}
+                    {msLoading && (
+                        <div style={{marginLeft:12,display:'flex',flexDirection:'column',gap:3,minWidth:200}}>
+                            <div style={{display:'flex',alignItems:'center',gap:6}}>
+                                <span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:'#7c3aed',animation:'pulse 1s infinite',flexShrink:0}}/>
+                                <span style={{fontSize:11,color:'#7c3aed',fontWeight:700}}>
+                                    {msProgress.total > 0
+                                        ? `Macrosoft: ${msClients.length} clientes (pág ${msProgress.current}/${msProgress.total})`
+                                        : 'Conectando Macrosoft…'}
+                                </span>
+                            </div>
+                            {msProgress.total > 0 && (
+                                <div style={{height:4,background:'#ede9fe',borderRadius:4,overflow:'hidden'}}>
+                                    <div style={{height:'100%',background:'#7c3aed',borderRadius:4,width:`${msProgressPct}%`,transition:'width .3s ease'}}/>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+                <div className="ci-tabs" style={{display:'flex',alignItems:'center',gap:0,flexWrap:'wrap'}}>
+                    {TABS.map(t=>(
+                        <button key={t.id} className={`ci-tab ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id)}>
+                            {t.icon} {t.label}
+                        </button>
+                    ))}
+                    {/* Métricas + Recargar cuando tab=macrosoft */}
+                    {tab === 'macrosoft' && (
+                        <div style={{display:'flex',gap:6,marginLeft:'auto',paddingRight:4,flexWrap:'wrap',alignItems:'center'}}>
+                            {!msLoading && msClients.length > 0 && <>
+                                <MsBadge label="🇺🇾" value={msUY}        color="#1d4ed8" bg="#eff6ff" />
+                                <MsBadge label="💵" value={msUSD}       color="#15803d" bg="#f0fdf4" />
+                                <MsBadge label="✓"  value={msConVinculo} color="#15803d" bg="#dcfce7" />
+                                <MsBadge label="✕"  value={msSinVinculo} color="#dc2626" bg="#fef2f2" />
+                            </>}
+                            <button onClick={loadMacrosoft} disabled={msLoading}
+                                style={{background:'#f0eeff',border:'none',borderRadius:8,padding:'5px 13px',
+                                    fontWeight:700,fontSize:12,color:'#4f46e5',cursor:'pointer',
+                                    opacity:msLoading?.6:1,display:'flex',alignItems:'center',gap:4}}>
+                                {msLoading ? '…' : '↺ Recargar'}
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
+                {tab==='tabla'     && <TabTabla     catalogs={catalogs}/>}
+                {tab==='arbol'     && <TabArbol     catalogs={catalogs}/>}
+                {tab==='planilla'  && <div style={{flex:1,overflow:'auto',padding:'20px 28px'}}><TabPlanilla /></div>}
+                {tab==='macrosoft' && <div style={{flex:1,overflow:'auto',padding:'20px 28px'}}><TabMacrosoft msClients={msClients} loading={msLoading} onReload={loadMacrosoft}/></div>}
+            </div>
+        </div>
+    );
+}
