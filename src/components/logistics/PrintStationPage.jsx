@@ -72,6 +72,14 @@ const PrintStationPage = () => {
         <tr><td class="bold">Lugar:</td><td>${retiro.lugarRetiro || '-'}</td></tr>
         <tr><td class="bold">Fecha:</td><td>${fecha}</td></tr>
     </table>
+    ${retiro.direccionEnvio || retiro.agenciaNombre || retiro.departamentoEnvio || retiro.localidadEnvio ? `
+    <div class="line"></div>
+    <div class="bold" style="margin:3px 0">DATOS DE ENVÍO:</div>
+    <table>
+        ${retiro.agenciaNombre ? `<tr><td class="bold">Agencia:</td><td>${retiro.agenciaNombre}</td></tr>` : ''}
+        ${retiro.direccionEnvio ? `<tr><td class="bold">Dirección:</td><td>${retiro.direccionEnvio}</td></tr>` : ''}
+        ${retiro.departamentoEnvio || retiro.localidadEnvio ? `<tr><td class="bold">Ubicación:</td><td>${[retiro.departamentoEnvio, retiro.localidadEnvio].filter(Boolean).join(' — ')}</td></tr>` : ''}
+    </table>` : ''}
     <div class="line"></div>
     <div class="bold" style="margin:3px 0">ÓRDENES:</div>
     <table>${ordenesHTML || '<tr><td style="font-size:11px;color:#666">Sin detalle</td></tr>'}</table>

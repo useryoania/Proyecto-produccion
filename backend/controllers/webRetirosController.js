@@ -126,6 +126,9 @@ exports.getAllLocalRetiros = async (req, res) => {
                 c.Nombre AS NombreCliente,
                 fe.Nombre AS LugarRetiro,
                 COALESCE(ag.Nombre, r.AgenciaOtra) AS AgenciaNombre,
+                r.DireccionEnvio,
+                r.DepartamentoEnvio,
+                r.LocalidadEnvio,
                 (
                     SELECT STRING_AGG(od.OrdCodigoOrden, ',')
                     FROM RelOrdenesRetiroOrdenes rel WITH(NOLOCK)

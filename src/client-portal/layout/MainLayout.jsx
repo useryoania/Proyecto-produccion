@@ -248,7 +248,7 @@ export const MainLayout = ({ children }) => {
             {/* Main Content */}
             <main className="flex-1 overflow-y-auto relative scrollbar-thin bg-zinc-900">
                 <div className="md:hidden h-16"></div> {/* Spacer for mobile header */}
-                <div className="p-4 md:p-8 max-w-7xl mx-auto min-h-full">
+                <div className="p-4 pb-20 md:p-8 md:pb-8 max-w-7xl mx-auto min-h-full">
                     {children}
                 </div>
             </main>
