@@ -41,7 +41,7 @@ const PrintStationPage = () => {
 
     // Generar HTML del ticket térmico
     const generateTicketHTML = useCallback((retiro) => {
-        const fecha = new Date().toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const fecha = new Date().toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
         const ordenes = retiro.orders || [];
         const ordenesHTML = ordenes.map(o =>
             `<tr><td style="padding:2px 0;font-size:11px">${o.orderNumber || o.id || '-'}</td><td style="padding:2px 0;font-size:11px;text-align:right">${o.orderCosto || ''}</td></tr>`
@@ -50,46 +50,35 @@ const PrintStationPage = () => {
         return `<!DOCTYPE html>
 <html><head><style>
     @page { margin: 0; size: 80mm auto; }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Courier New', monospace; width: 80mm; padding: 4mm; font-size: 12px; }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-weight: bold; }
+    body { font-family: 'Courier New', monospace; width: 80mm; padding: 4mm; font-size: 14px; font-weight: bold; }
     .center { text-align: center; }
-    .bold { font-weight: bold; }
-    .line { border-top: 1px dashed #000; margin: 4px 0; }
+    .line { border-top: 2px dashed #000; margin: 6px 0; }
     table { width: 100%; border-collapse: collapse; }
-    td { vertical-align: top; }
-    .header { font-size: 16px; font-weight: bold; letter-spacing: 1px; }
-    .retiro-id { font-size: 20px; font-weight: bold; margin: 6px 0; }
-    .footer { font-size: 9px; color: #666; margin-top: 8px; }
+    td { vertical-align: top; font-weight: bold; padding: 2px 0; }
+    .header { font-size: 18px; font-weight: 900; letter-spacing: 2px; }
+    .retiro-id { font-size: 22px; font-weight: 900; margin: 6px 0; }
 </style></head><body>
     <div class="center header">USER</div>
-    <div class="center" style="font-size:10px;margin-bottom:4px">COMPROBANTE DE RETIRO</div>
+    <div class="center" style="font-size:11px;margin-bottom:4px;font-weight:bold;">COMPROBANTE DE RETIRO</div>
     <div class="line"></div>
     <div class="center retiro-id">${retiro.ordenDeRetiro || 'N/A'}</div>
     <div class="line"></div>
     <table>
-        <tr><td class="bold">Cliente:</td><td>${retiro.CliNombre || retiro.CliCodigoCliente || '-'}</td></tr>
-        <tr><td class="bold">Código:</td><td>${retiro.CliCodigoCliente || '-'}</td></tr>
-        <tr><td class="bold">Lugar:</td><td>${retiro.lugarRetiro || '-'}</td></tr>
-        <tr><td class="bold">Fecha:</td><td>${fecha}</td></tr>
-    </table>
-    ${retiro.direccionEnvio || retiro.agenciaNombre || retiro.departamentoEnvio || retiro.localidadEnvio ? `
-    <div class="line"></div>
-    <div class="bold" style="margin:3px 0">DATOS DE ENVÍO:</div>
-    <table>
-        ${retiro.agenciaNombre ? `<tr><td class="bold">Agencia:</td><td>${retiro.agenciaNombre}</td></tr>` : ''}
-        ${retiro.direccionEnvio ? `<tr><td class="bold">Dirección:</td><td>${retiro.direccionEnvio}</td></tr>` : ''}
-        ${retiro.departamentoEnvio || retiro.localidadEnvio ? `<tr><td class="bold">Ubicación:</td><td>${[retiro.departamentoEnvio, retiro.localidadEnvio].filter(Boolean).join(' — ')}</td></tr>` : ''}
-    </table>` : ''}
-    <div class="line"></div>
-    <div class="bold" style="margin:3px 0">ÓRDENES:</div>
-    <table>${ordenesHTML || '<tr><td style="font-size:11px;color:#666">Sin detalle</td></tr>'}</table>
-    <div class="line"></div>
-    <table>
-        <tr><td class="bold" style="font-size:14px">TOTAL:</td><td style="font-size:14px;text-align:right;font-weight:bold">$ ${retiro.totalCost || '0.00'}</td></tr>
+        <tr><td>Cliente:</td><td>${retiro.CliNombre || retiro.CliCodigoCliente || '-'}</td></tr>
+        <tr><td>Lugar:</td><td>${retiro.lugarRetiro || '-'}</td></tr>
+        <tr><td>Fecha:</td><td>${fecha}</td></tr>
     </table>
     <div class="line"></div>
-    <div class="center footer">${fecha}</div>
-    <div style="height:10mm"></div>
+    <div style="margin:3px 0;font-size:13px;">ÓRDENES:</div>
+    <table>${ordenesHTML || '<tr><td style="font-size:12px;">Sin detalle</td></tr>'}</table>
+    <div class="line"></div>
+    <table>
+        <tr><td style="font-size:16px;">TOTAL:</td><td style="font-size:16px;text-align:right;">$ ${retiro.totalCost || '0.00'}</td></tr>
+    </table>
+    <div class="line"></div>
+
+    <div style="height:25mm"></div>
 </body></html>`;
     }, []);
 
@@ -136,7 +125,7 @@ const PrintStationPage = () => {
             addLog('Nuevo retiro detectado — cargando datos...', 'info', null, 'package');
 
             if (soundEnabled && audioRef.current) {
-                audioRef.current.play().catch(() => {});
+                audioRef.current.play().catch(() => { });
             }
 
             try {
