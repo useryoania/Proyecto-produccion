@@ -13,7 +13,7 @@ const logger = require('../utils/logger');
 const BCU_SOAP_URL = 'https://cotizaciones.bcu.gub.uy/wscotizaciones/servlet/awsbcucotizaciones';
 const BCU_SOAP_ACTION = 'Cotizaaction/AWSBCUCOTIZACIONES.Execute';
 const SPREAD_COMPRA = 0.9945;
-const SPREAD_VENTA  = 1.0242;
+const SPREAD_VENTA = 1.0242;
 
 function buildBCUSoapRequest(fechaDesde, fechaHasta) {
     return '<?xml version="1.0" encoding="utf-8"?>' +
@@ -61,7 +61,7 @@ async function fetchCotizacionBCU() {
 
             if (isFinite(interbancario) && interbancario > 1) {
                 const compra = parseFloat((interbancario * SPREAD_COMPRA).toFixed(2));
-                const venta  = parseFloat((interbancario * SPREAD_VENTA).toFixed(2));
+                const venta = parseFloat((interbancario * SPREAD_VENTA).toFixed(2));
                 logger.info(`[COTIZACION] BCU ${fecha}: interbancario=${interbancario} → compra=${compra}, venta=${venta}`);
                 return { interbancario, compra, venta };
             }
