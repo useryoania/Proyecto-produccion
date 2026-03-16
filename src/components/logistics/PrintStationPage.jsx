@@ -46,7 +46,7 @@ const PrintStationPage = () => {
         const ordenesHTML = ordenes.map(o =>
             `<tr><td style="padding:2px 0;font-size:11px">${o.orderNumber || o.id || '-'}</td><td style="padding:2px 0;font-size:11px;text-align:right">${o.orderCosto || ''}</td></tr>`
         ).join('');
-
+        const simbolo = ordenes.length > 0 ? (ordenes[0].simbolo || '$') : '$';
         return `<!DOCTYPE html>
 <html><head><style>
     @page { margin: 0; size: 80mm auto; }
@@ -74,7 +74,7 @@ const PrintStationPage = () => {
     <table>${ordenesHTML || '<tr><td style="font-size:12px;">Sin detalle</td></tr>'}</table>
     <div class="line"></div>
     <table>
-        <tr><td style="font-size:16px;">TOTAL:</td><td style="font-size:16px;text-align:right;">$ ${retiro.totalCost || '0.00'}</td></tr>
+        <tr><td style="font-size:16px;">TOTAL:</td><td style="font-size:16px;text-align:right;">${simbolo} ${retiro.totalCost || '0.00'}</td></tr>
     </table>
     <div class="line"></div>
 
