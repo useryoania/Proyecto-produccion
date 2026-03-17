@@ -61,32 +61,29 @@ async function generateReceipt(data, codCliente) {
     // Load logo
     try {
         const img = new Image();
-        img.crossOrigin = 'anonymous';
         await new Promise((resolve, reject) => {
             img.onload = resolve;
             img.onerror = reject;
             img.src = '/assets/images/logo.png';
         });
-        // Aspect ratio: keep height ~12, calculate width
         const ratio = img.width / img.height;
         const h = 12;
         const w = h * ratio;
         doc.addImage(img, 'PNG', 20, 14, w, h);
-    } catch {
-        // Logo not available, skip
+    } catch (e) {
+        console.warn('[COMPROBANTE] No se pudo cargar logo.png:', e);
     }
     // Load PAGADO stamp for later use
     let stampImg = null;
     if (data.status === 'Pagado') {
         try {
             stampImg = new Image();
-            stampImg.crossOrigin = 'anonymous';
             await new Promise((resolve, reject) => {
                 stampImg.onload = resolve;
                 stampImg.onerror = reject;
                 stampImg.src = '/assets/images/pagado-stamp.png';
             });
-        } catch { stampImg = null; }
+        } catch (e) { console.warn('[COMPROBANTE] No se pudo cargar pagado-stamp.png:', e); stampImg = null; }
     }
 
     doc.setFontSize(9);
