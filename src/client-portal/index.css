@@ -23,7 +23,7 @@
   --font-heading: 'DM Sans', sans-serif;
 
   --glass-bg: rgba(33, 33, 33, 0.85);
-  --glass-border: rgba(0, 110, 151, 0.3);
+  --glass-border: rgba(63, 63, 70, 0.6);
   --glass-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
   --glass-blur: blur(12px);
 }

@@ -15,9 +15,14 @@ export const SERVICES_LIST = [
         dbId: '1.1',
         areaId: 'SB',
         codOrden: 'SB',
-        label: 'Sublimación x Metro',
-        desc: 'Transferencia de tinta por calor en telas poliéster.',
+        label: 'Sublimación',
+        desc: 'Estampado por calor en poliéster.',
         icon: Palette,
+        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSemmGLC_EfGOGmj4kTfl3ciB53GY62R57EmKuJNh8nDtKvQNA/viewform',
+        formEntries: {
+            clienteId: 'entry.262281569',
+            terminos: { id: 'entry.36260443', value: 'Acepto' }
+        },
 
         // Configuration
         config: {
@@ -58,8 +63,13 @@ export const SERVICES_LIST = [
         areaId: 'DF',
         codOrden: 'DF',
         label: 'DTF (Direct to Film)',
-        desc: 'Impresión digital directa sobre film para transferencia.',
+        desc: 'Transferencia digital sobre film.',
         icon: Layers,
+        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSclGdB5XurRZjulUhx3aNwSZvXD1WvXvi1Z9sVJxyL-YToDOg/viewform',
+        formEntries: {
+            clienteId: 'entry.1901865367',
+            terminos: { id: 'entry.263737237', value: 'Acepto' }
+        },
 
         config: {
             variantMode: 'select', // User selects from dropdown (fetched from DF: DF)
@@ -79,9 +89,14 @@ export const SERVICES_LIST = [
         dbId: '1.3',
         areaId: 'ECOUV',
         codOrden: 'ECOUV',
-        label: 'Impresión Digital (EcoUV)',
-        desc: 'Alta resolución y durabilidad UV.',
+        label: 'EcoUV',
+        desc: 'Impresión UV alta resolución.',
         icon: ImageIcon,
+        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSciNCn6SjH57kR-QeRmXqLK4pOnRrk9PaKZyiiKOqc_kkCvPw/viewform',
+        formEntries: {
+            clienteId: 'entry.1901865367',
+            terminos: { id: 'entry.261786299', value: 'Acepto' }
+        },
 
         config: {
             variantMode: 'fixed',
@@ -109,6 +124,10 @@ export const SERVICES_LIST = [
         label: 'Bordado',
         desc: 'Personalización con hilos.',
         icon: Scissors,
+        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLScnxn6xsaMriuLadczeEoWJzQ4fmmeKaFwQutpJoBqi8vRI1A/viewform',
+        formEntries: {
+            clienteId: 'entry.217602422'
+        },
 
         config: {
             variantMode: 'select', // Enable variant fetch
@@ -124,27 +143,27 @@ export const SERVICES_LIST = [
             { id: 'EST', label: 'Servicio de Estampado' }
         ]
     },
-    {
-        // 1.5 EST - Estampado
-        id: 'estampado',
-        dbId: '1.5',
-        areaId: 'EST',
-        codOrden: 'EST',
-        label: 'Servicio de Estampado',
-        desc: 'Aplicación de estampas con plancha.',
-        icon: Layers,
-
-        config: {
-            variantMode: 'select', // Enable variant fetch
-            materialMode: 'single', // Enable material fetch
-            requiresProductionFiles: false, // Uses custom specialized UI
-            defaultCodArt: '110',      // <--- CENTRALIZADO AQUÍ
-            defaultCodStock: '1.1.5.1' // <--- CENTRALIZADO AQUÍ
-        },
-        complementaryOptions: [
-            { id: 'EMB', label: 'Servicio de Bordado', hasFile: true, fullWidth: true, inputLabel: 'Adjuntar Ponchado/Logo' }
-        ]
-    },
+    // {
+    //     // 1.5 EST - Estampado
+    //     id: 'estampado',
+    //     dbId: '1.5',
+    //     areaId: 'EST',
+    //     codOrden: 'EST',
+    //     label: 'Servicio de Estampado',
+    //     desc: 'Aplicación de estampas con plancha.',
+    //     icon: Layers,
+    //
+    //     config: {
+    //         variantMode: 'select',
+    //         materialMode: 'single',
+    //         requiresProductionFiles: false,
+    //         defaultCodArt: '110',
+    //         defaultCodStock: '1.1.5.1'
+    //     },
+    //     complementaryOptions: [
+    //         { id: 'EMB', label: 'Servicio de Bordado', hasFile: true, fullWidth: true, inputLabel: 'Adjuntar Ponchado/Logo' }
+    //     ]
+    // },
     {
         // 1.6 TWC - Corte (Usually a complementary service but can be standalone?)
         // Table says visible: True. Mapped as 'corte' usually.
@@ -152,9 +171,13 @@ export const SERVICES_LIST = [
         dbId: '1.6',
         areaId: 'TWC', // Group Internal: TWC
         codOrden: 'TWC', // Corrected per user feedback
-        label: 'Servicio de Corte',
-        desc: 'Corte láser o tizada manual.',
+        label: 'Corte',
+        desc: 'Corte láser y tizada.',
         icon: Zap,
+        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSc-WAW7vfEbCIzLQt7Ty18d4ckEdzvHz6Fnqk4xe0NTqmmHVA/viewform',
+        formEntries: {
+            clienteId: 'entry.217602422'
+        },
 
         config: {
             variantMode: 'fixed', // Fixed to Corte
@@ -179,8 +202,12 @@ export const SERVICES_LIST = [
         areaId: 'TPU',
         codOrden: 'TPU',
         label: 'TPU',
-        desc: 'Aplicaciones en poliuretano.',
+        desc: 'Etiquetas y parches en PU.',
         icon: Box,
+        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSfGsRWRkshDjsW5AsQD0oIJiKo_oR15x8mjSA0DnEhtsxv5AA/viewform',
+        formEntries: {
+            clienteId: 'entry.1683355647'
+        },
 
         config: {
             variantMode: 'fixed',
@@ -206,9 +233,14 @@ export const SERVICES_LIST = [
         dbId: '1.11',
         areaId: 'DIRECTA',
         codOrden: 'IMD',
-        label: 'Impresión Directa 3.20m',
-        desc: 'Gigantografía y gran formato.',
+        label: 'Directa 3.20m',
+        desc: 'Gigantografía gran formato.',
         icon: Printer,
+        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLScVwNflx459s7Tk6EyfittLRwkzGhjTIu4FakV5NU72QOCAgQ/viewform',
+        formEntries: {
+            clienteId: 'entry.262281569',
+            terminos: { id: 'entry.36260443', value: 'Acepto' }
+        },
 
         config: {
             variantMode: 'fixed',
@@ -230,33 +262,33 @@ export const SERVICES_LIST = [
             { id: 'EST', label: 'Estampado (Planchado en USER)', fullWidth: true }
         ]
     },
-    {
-        // 1.12 DIRECTA ALGODON
-        id: 'directa_algodon',
-        dbId: '1.12',
-        areaId: 'DIRECTA',
-        codOrden: 'IMD',
-        label: 'Impresión Directa Algodón',
-        desc: 'Impresión sobre tela de algodón.',
-        icon: Printer,
-
-        config: {
-            variantMode: 'fixed',
-            fixedVariant: '1.1.12.1',
-            materialMode: 'single',
-            requiresProductionFiles: true,
-            disableItemNote: true,
-            hasCuttingWorkflow: true,
-            templateButtons: [
-                { label: 'DESCARGAR PLANILLA DE PEDIDO ROPA', url: 'https://drive.google.com/uc?export=download&id=1_u6vdtCQJZxjM-DgH6RhsamqV4EhtoHw' },
-                { label: 'DESCARGAR PLANILLA DE PEDIDO VARIOS', url: 'https://drive.google.com/uc?export=download&id=1yKe8DbrUyGKm2_Je6dOc3or67BDotnjl' }
-            ]
-        },
-        complementaryOptions: [
-            { id: 'TWC', label: 'Corte Láser / Tizada', hasFile: false, fullWidth: true },
-            { id: 'TWT', label: 'Confección / Costura', hasInput: false, fullWidth: true },
-            { id: 'EMB', label: 'Servicio de Bordado', hasFile: true, fullWidth: true, inputLabel: 'Adjuntar Ponchado/Logo' },
-            { id: 'EST', label: 'Estampado (Planchado en USER)', fullWidth: true }
-        ]
-    }
+    // {
+    //     // 1.12 DIRECTA ALGODON
+    //     id: 'directa_algodon',
+    //     dbId: '1.12',
+    //     areaId: 'DIRECTA',
+    //     codOrden: 'IMD',
+    //     label: 'Impresión Directa Algodón',
+    //     desc: 'Impresión sobre tela de algodón.',
+    //     icon: Printer,
+    //
+    //     config: {
+    //         variantMode: 'fixed',
+    //         fixedVariant: '1.1.12.1',
+    //         materialMode: 'single',
+    //         requiresProductionFiles: true,
+    //         disableItemNote: true,
+    //         hasCuttingWorkflow: true,
+    //         templateButtons: [
+    //             { label: 'DESCARGAR PLANILLA DE PEDIDO ROPA', url: 'https://drive.google.com/uc?export=download&id=1_u6vdtCQJZxjM-DgH6RhsamqV4EhtoHw' },
+    //             { label: 'DESCARGAR PLANILLA DE PEDIDO VARIOS', url: 'https://drive.google.com/uc?export=download&id=1yKe8DbrUyGKm2_Je6dOc3or67BDotnjl' }
+    //         ]
+    //     },
+    //     complementaryOptions: [
+    //         { id: 'TWC', label: 'Corte Láser / Tizada', hasFile: false, fullWidth: true },
+    //         { id: 'TWT', label: 'Confección / Costura', hasInput: false, fullWidth: true },
+    //         { id: 'EMB', label: 'Servicio de Bordado', hasFile: true, fullWidth: true, inputLabel: 'Adjuntar Ponchado/Logo' },
+    //         { id: 'EST', label: 'Estampado (Planchado en USER)', fullWidth: true }
+    //     ]
+    // }
 ];

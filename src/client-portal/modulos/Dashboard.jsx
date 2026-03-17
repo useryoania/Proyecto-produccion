@@ -3,11 +3,13 @@ import { GlassCard } from '../pautas/GlassCard';
 import { CustomButton } from '../pautas/CustomButton';
 import { SERVICES_LIST } from '../constants/services';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 import { apiClient } from '../api/apiClient';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Package } from 'lucide-react';
 
 export const Dashboard = () => {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [visibleConfig, setVisibleConfig] = useState(null); // null = cargando/desconocido
     const [loading, setLoading] = useState(true);
 
@@ -51,10 +53,11 @@ export const Dashboard = () => {
 
     return (
         <div className="animate-fade-in space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3 mb-2">
+                <Package size={48} strokeWidth={1} className="text-brand-gold" />
                 <div>
-                    <h2 className="text-3xl font-bold text-neutral-800 tracking-tight">Servicios Disponibles</h2>
-                    <p className="text-zinc-500">Selecciona una categoría para comenzar</p>
+                    <h2 className="text-lg font-bold text-zinc-300 uppercase">Servicios <span className="text-custom-cyan">Disponibles</span></h2>
+                    <p className="text-zinc-500 uppercase text-xs">Seleccioná una categoría para comenzar.</p>
                 </div>
             </div>
 
@@ -72,19 +75,31 @@ export const Dashboard = () => {
                     return (
                         <GlassCard
                             key={service.id}
-                            className="group cursor-pointer hover:border-amber-400/50 transition-all duration-300 hover:shadow-xl"
-                            onClick={() => navigate(`/portal/order/${service.id}`)}
-                            whileHover={{ y: -5 }}
+                            className="cursor-pointer transition-all duration-300 h-full md:aspect-square flex flex-col justify-center"
+                            onClick={() => {
+                                if (service.externalUrl) {
+                                    const params = new URLSearchParams();
+                                    params.append('usp', 'pp_url');
+                                    if (service.formEntries) {
+                                        if (service.formEntries.clienteId && user?.idCliente) {
+                                            params.append(service.formEntries.clienteId, user.idCliente);
+                                        }
+                                        if (service.formEntries.terminos) {
+                                            params.append(service.formEntries.terminos.id, service.formEntries.terminos.value);
+                                        }
+                                    }
+                                    window.open(`${service.externalUrl}?${params.toString()}`, '_blank');
+                                } else {
+                                    navigate(`/portal/order/${service.id}`);
+                                }
+                            }}
                         >
-                            <div className="mb-4 p-3 bg-zinc-100 rounded-xl w-fit group-hover:bg-amber-100 group-hover:text-amber-600 transition-colors">
-                                <Icon size={32} />
+                            <div className="flex flex-col items-center gap-2 mb-2">
+                                <Icon size={28} strokeWidth={1.5} className="text-amber-500" />
+                                <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wide text-center">{service.label}</h3>
                             </div>
-                            <h3 className="text-xl font-bold text-zinc-800 mb-2">{service.label}</h3>
-                            <p className="text-sm text-zinc-500 line-clamp-2">{service.desc}</p>
-
-                            <div className="mt-4 flex items-center text-xs font-bold text-amber-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                                INICIAR PEDIDO &rarr;
-                            </div>
+                            <div className="border-t border-zinc-700/50 my-2"></div>
+                            <p className="text-xs text-zinc-500 uppercase line-clamp-1 md:line-clamp-none text-center">{service.desc}</p>
                         </GlassCard>
                     );
                 })}
