@@ -213,8 +213,8 @@ const RegisterPage = () => {
                     />
                 </div>
 
-                <div className="relative bg-custom-dark p-10 rounded-3xl w-full overflow-hidden">
-                    <div className="flex flex-col items-center mb-6">
+                <div className="relative bg-custom-dark pt-4 px-10 pb-10 md:px-8 md:pb-8 rounded-3xl w-full overflow-hidden">
+                    <div className="flex flex-col items-center mb-6 md:mt-4 md:mb-6">
                         <Logo className="h-32 w-auto text-white" />
                     </div>
 
@@ -402,7 +402,7 @@ const RegisterPage = () => {
 
                         <Button
                             type="submit"
-                            className="w-full py-3.5 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
+                            className="w-full py-2.5 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
                             isLoading={isLoading}
                         >
                             Crear Cuenta
