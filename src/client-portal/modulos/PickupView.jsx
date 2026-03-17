@@ -277,6 +277,11 @@ export const PickupView = () => {
             const res = await apiClient.post('/web-retiros/payment', payload);
 
             if (res.success && res.url) {
+                // Limpiar estado antes de redirigir para que el back-button no muestre datos viejos
+                sessionStorage.removeItem('pickup_selected');
+                sessionStorage.removeItem('pickup_code');
+                setSelectedOrders([]);
+                setPickupCode(null);
                 window.open(res.url, '_blank');
                 window.location.href = `/portal/payment-status?txId=${res.transactionId}`;
             } else {
@@ -437,7 +442,13 @@ export const PickupView = () => {
         } catch (e) { console.error(e); }
     };
 
-    if (step === 'confirmation') return (
+    if (step === 'confirmation') {
+        // Guard: si no hay órdenes seleccionadas (ej: volvió con back-button después de pagar), redirigir
+        if (selectedOrdersData.length === 0) {
+            setStep('selection');
+            return null;
+        }
+        return (
         <div className="animate-fade-in space-y-6">
 
             {/* Header */}
@@ -765,6 +776,7 @@ export const PickupView = () => {
             </div>
         </div>
     );
+    }
 
     // ========================
     // STEP: SELECTION (default)
