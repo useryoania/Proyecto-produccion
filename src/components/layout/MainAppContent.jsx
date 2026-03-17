@@ -500,7 +500,17 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/logistica/dashboard-deposito') return <DepositoDashboard />;
     if (menuItem.Ruta === '/caja/pagos' || menuItem.Ruta.toLowerCase() === '/caja/pagos/') return <CargaPagosView />;
     if (menuItem.Ruta === '/caja/cuadre') return <CuadreDiarioView />;
-
+    if (menuItem.Ruta === '/logistica/verificar-codigo') return <VerificarCodigoPage />;
+    if (menuItem.Ruta === '/logistica/carga-deposito') return <CargaDepositoPage />;
+    if (menuItem.Ruta === '/admin/duplicados') return <DuplicateClientsPage />;
+    if (menuItem.Ruta === '/logistica/precios') return <SpecialPrices />;
+    if (menuItem.Ruta === '/admin/precios-base') return <BasePrices />;
+    if (menuItem.Ruta === '/admin/perfiles-precio') return <PriceProfiles />;
+    if (menuItem.Ruta === '/logistica/transporte') return <TransportControlPage />;
+    if (menuItem.Ruta === '/logistica/buscar-ordenes') return <OrderSearchPage />;
+    if (menuItem.Ruta === '/logistica/orden-integral') return <IntegralOrderView />;
+    if (menuItem.Ruta === '/caja/verificar-pagos') return <VerificarPagosOnlineView />;
+    if (menuItem.Ruta === '/admin/excepciones-deuda') return <ExcepcionesDeudaView />;
 
     // NEW: Historial de Lotes
     if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;

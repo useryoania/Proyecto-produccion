@@ -97,7 +97,7 @@ function ClientModal({ client, catalogs, onClose, onSaved }) {
                             <F label="Nombre Fantasía" field="NombreFantasia"/>
                             <F label="ID Cliente" field="IDCliente"/>
                             <F label="RUC / C.I." field="CioRuc"/>
-                            <F label="IDReact" field="IDReact" readOnly={!isNew}/>
+                            <F label="IDReact" field="IDReact"/>
                             <F label="CodReferencia (Macrosoft)" field="CodReferencia"/>
                         </div>
                     </div>
@@ -237,23 +237,36 @@ function TabTabla({ catalogs }) {
 
     return (
         <div style={{display:'flex',flexDirection:'column',flex:1,overflow:'hidden',gap:0}}>
-            {/* Stats */}
-            <div className="ci-stats">
-                <div className="ci-stat-card"><span className="ci-stat-num">{clients.length}</span><span className="ci-stat-label">Total</span></div>
-                <div className="ci-stat-card success"><span className="ci-stat-num">{activeCount}</span><span className="ci-stat-label">Activos</span></div>
-                <div className="ci-stat-card"><span className="ci-stat-num">{linkedCount}</span><span className="ci-stat-label">Con React</span></div>
-                {dupCount > 0 && <div
-                    className={`ci-stat-card danger`}
-                    onClick={() => setFilterDup(f => f === 'all' ? '' : 'all')}
-                    style={{cursor:'pointer', outline: filterDup==='all' ? '2px solid #dc2626' : 'none', outlineOffset:2}}>
-                    <span className="ci-stat-num">{dupCount}</span>
-                    <span className="ci-stat-label">{filterDup==='all' ? '✓ filtrado' : 'Duplicados'}</span>
-                </div>}
-                <span style={{marginLeft:'auto',fontSize:12,color:'#888',fontWeight:600,alignSelf:'center'}}>{sorted.length} visible{sorted.length!==1?'s':''}</span>
-            </div>
-
-            {/* Toolbar */}
+            {/* Toolbar + Stats en una sola fila */}
             <div className="ci-toolbar">
+                {/* Stats como badges compactos */}
+                <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
+                    <span style={{display:'inline-flex',flexDirection:'column',alignItems:'center',background:'#f1f5f9',borderRadius:8,padding:'3px 10px',minWidth:46}}>
+                        <span style={{fontWeight:800,fontSize:14,lineHeight:1.2,color:'#1e293b'}}>{clients.length}</span>
+                        <span style={{fontSize:9,color:'#64748b',fontWeight:600,textTransform:'uppercase',letterSpacing:.5}}>Total</span>
+                    </span>
+                    <span style={{display:'inline-flex',flexDirection:'column',alignItems:'center',background:'#dcfce7',borderRadius:8,padding:'3px 10px',minWidth:46}}>
+                        <span style={{fontWeight:800,fontSize:14,lineHeight:1.2,color:'#15803d'}}>{activeCount}</span>
+                        <span style={{fontSize:9,color:'#16a34a',fontWeight:600,textTransform:'uppercase',letterSpacing:.5}}>Activos</span>
+                    </span>
+                    <span style={{display:'inline-flex',flexDirection:'column',alignItems:'center',background:'#ede9fe',borderRadius:8,padding:'3px 10px',minWidth:46}}>
+                        <span style={{fontWeight:800,fontSize:14,lineHeight:1.2,color:'#7c3aed'}}>{linkedCount}</span>
+                        <span style={{fontSize:9,color:'#7c3aed',fontWeight:600,textTransform:'uppercase',letterSpacing:.5}}>React</span>
+                    </span>
+                    {dupCount > 0 && (
+                        <span
+                            onClick={() => setFilterDup(f => f === 'all' ? '' : 'all')}
+                            style={{display:'inline-flex',flexDirection:'column',alignItems:'center',background: filterDup==='all'?'#dc2626':'#fee2e2',borderRadius:8,padding:'3px 10px',minWidth:46,cursor:'pointer',outline: filterDup==='all'?'2px solid #dc2626':'none',outlineOffset:2}}>
+                            <span style={{fontWeight:800,fontSize:14,lineHeight:1.2,color: filterDup==='all'?'#fff':'#dc2626'}}>{dupCount}</span>
+                            <span style={{fontSize:9,color: filterDup==='all'?'#fecaca':'#dc2626',fontWeight:600,textTransform:'uppercase',letterSpacing:.5}}>{filterDup==='all'?'✓ dup':'Dups'}</span>
+                        </span>
+                    )}
+                    <span style={{fontSize:11,color:'#94a3b8',fontWeight:500,whiteSpace:'nowrap'}}>{sorted.length} visibles</span>
+                </div>
+
+                <div style={{width:1,height:28,background:'#e2e8f0',flexShrink:0}}/>
+
+                {/* Filtros */}
                 <input className="ci-search" type="text" placeholder="Buscar nombre, email, teléfono, RUC..." value={search} onChange={e=>setSearch(e.target.value)}/>
                 <select className="ci-select" value={filterEstado} onChange={e=>setFilterEstado(e.target.value)}>
                     <option value="">Estado: Todos</option>
