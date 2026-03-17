@@ -753,15 +753,14 @@ exports.updateClient = async (req, res) => {
         Nombre, NombreFantasia, IDCliente, CioRuc, IDReact, CodReferencia,
         // Contacto
         TelefonoTrabajo, Email,
-        // Direcciones
-        DireccionTrabajo, CliDireccion,
+        // Dirección
+        DireccionTrabajo,
         // Clasificación
-        Tipo, TiposPrecios, TClIdTipoCliente, Moneda,
-        // Geo (texto heredado + FK)
-        Localidad, Agencia,
+        TClIdTipoCliente,
+        // Geo FK
         DepartamentoID, LocalidadID, AgenciaID, FormaEnvioID,
         // Comercial
-        VendedorID, IDClientePlanilla,
+        VendedorID,
         // Estado / Web
         ESTADO, WebActive,
     } = req.body;
@@ -772,77 +771,45 @@ exports.updateClient = async (req, res) => {
         const pool = await getPool();
         const safeStr = (val, max = 500) => (val !== undefined && val !== null) ? String(val).substring(0, max) : null;
         const safeInt = (val) => (val !== undefined && val !== null && val !== '') ? parseInt(val) : null;
-        const safeSI = (val) => (val !== undefined && val !== null && val !== '') ? parseInt(val) : null; // smallint
 
         await pool.request()
-            // Identificación
-            .input('CC', sql.Int, safeInt(codCliente))
-            .input('Nom', sql.Char(150), safeStr(Nombre, 150))
-            .input('Fan', sql.Char(150), safeStr(NombreFantasia, 150))
-            .input('IDCli', sql.VarChar(255), safeStr(IDCliente, 255))
-            .input('Ruc', sql.Char(20), safeStr(CioRuc, 20))
-            .input('CReact', sql.NVarChar(50), safeStr(IDReact ? String(IDReact) : null, 50))
-            .input('IReact', sql.Int, safeInt(IDReact))
-            .input('CRef', sql.Int, safeInt(CodReferencia))
-            // Contacto
-            .input('Tel', sql.Char(20), safeStr(TelefonoTrabajo, 20))
-            .input('Mail', sql.Char(40), safeStr(Email, 40))
-            // Direcciones
-            .input('DirTrab', sql.Char(80), safeStr(DireccionTrabajo, 80))
-            .input('Dir', sql.NVarChar(500), safeStr(CliDireccion, 500))
-            // Clasificación
-            .input('Tipo', sql.Int, safeInt(Tipo))
-            .input('TipPre', sql.SmallInt, safeSI(TiposPrecios))
-            .input('TipCli', sql.Int, safeInt(TClIdTipoCliente))
-            .input('Mon', sql.Int, safeInt(Moneda))
-            // Geo texto
-            .input('Loc', sql.NVarChar(200), safeStr(Localidad, 200))
-            .input('Age', sql.NVarChar(200), safeStr(Agencia, 200))
-            // Geo FK
-            .input('DepID', sql.Int, safeInt(DepartamentoID))
-            .input('LocID', sql.Int, safeInt(LocalidadID))
-            .input('AgeID', sql.Int, safeInt(AgenciaID))
-            .input('FEnvID', sql.Int, safeInt(FormaEnvioID))
-            // Comercial
-            .input('Vend', sql.NVarChar(20), safeStr(VendedorID, 20))
-            .input('IPlan', sql.VarChar(255), safeStr(IDClientePlanilla, 255))
-            // Estado / Web
-            .input('Est', sql.NVarChar(10), safeStr(ESTADO, 10))
-            .input('WA', sql.Bit, WebActive != null ? (WebActive ? 1 : 0) : null)
+            .input('CC',     sql.Int,          safeInt(codCliente))
+            .input('Nom',    sql.Char(150),     safeStr(Nombre, 150))
+            .input('Fan',    sql.Char(150),     safeStr(NombreFantasia, 150))
+            .input('IDCli',  sql.VarChar(255),  safeStr(IDCliente, 255))
+            .input('Ruc',    sql.Char(20),      safeStr(CioRuc, 20))
+            .input('IReact', sql.NVarChar(100), IDReact != null ? String(IDReact) : null)
+            .input('CRef',   sql.Int,           safeInt(CodReferencia))
+            .input('Tel',    sql.Char(20),      safeStr(TelefonoTrabajo, 20))
+            .input('Mail',   sql.Char(40),      safeStr(Email, 40))
+            .input('DirTrab',sql.Char(80),      safeStr(DireccionTrabajo, 80))
+            .input('TipCli', sql.Int,           safeInt(TClIdTipoCliente))
+            .input('DepID',  sql.Int,           safeInt(DepartamentoID))
+            .input('LocID',  sql.Int,           safeInt(LocalidadID))
+            .input('AgeID',  sql.Int,           safeInt(AgenciaID))
+            .input('FEnvID', sql.Int,           safeInt(FormaEnvioID))
+            .input('Vend',   sql.NVarChar(20),  safeStr(VendedorID, 20))
+            .input('Est',    sql.NVarChar(10),  safeStr(ESTADO, 10))
+            .input('WA',     sql.Bit,           WebActive != null ? (WebActive ? 1 : 0) : null)
             .query(`
                 UPDATE dbo.Clientes SET
-                    -- Identificación
-                    Nombre            = COALESCE(@Nom,    Nombre),
-                    NombreFantasia    = COALESCE(@Fan,    NombreFantasia),
-                    IDCliente         = COALESCE(@IDCli,  IDCliente),
-                    CioRuc            = COALESCE(@Ruc,    CioRuc),
-                    IDReact           = COALESCE(@IReact, IDReact),
-                    CodReferencia     = @CRef,
-                    -- Contacto
-                    TelefonoTrabajo   = COALESCE(@Tel,    TelefonoTrabajo),
-                    Email             = COALESCE(@Mail,   Email),
-                    -- Direcciones
-                    DireccionTrabajo  = COALESCE(@DirTrab, DireccionTrabajo),
-                    CliDireccion      = COALESCE(@Dir,    CliDireccion),
-                    -- Clasificación
-                    Tipo              = COALESCE(@Tipo,   Tipo),
-                    TiposPrecios      = COALESCE(@TipPre, TiposPrecios),
-                    TClIdTipoCliente  = COALESCE(@TipCli, TClIdTipoCliente),
-                    Moneda            = COALESCE(@Mon,    Moneda),
-                    -- Geo texto (se actualiza siempre si se manda)
-                    Localidad         = COALESCE(@Loc,    Localidad),
-                    Agencia           = COALESCE(@Age,    Agencia),
-                    -- Geo FK
-                    DepartamentoID    = COALESCE(@DepID,  DepartamentoID),
-                    LocalidadID       = COALESCE(@LocID,  LocalidadID),
-                    AgenciaID         = COALESCE(@AgeID,  AgenciaID),
-                    FormaEnvioID      = COALESCE(@FEnvID, FormaEnvioID),
-                    -- Comercial
-                    VendedorID        = COALESCE(@Vend,   VendedorID),
-                    IDClientePlanilla = COALESCE(@IPlan,  IDClientePlanilla),
-                    -- Estado / Web
-                    ESTADO            = COALESCE(@Est,    ESTADO),
-                    WebActive         = COALESCE(@WA,     WebActive)
+                    Nombre           = COALESCE(@Nom,    Nombre),
+                    NombreFantasia   = COALESCE(@Fan,    NombreFantasia),
+                    IDCliente        = COALESCE(@IDCli,  IDCliente),
+                    CioRuc           = COALESCE(@Ruc,    CioRuc),
+                    IDReact          = COALESCE(@IReact, IDReact),
+                    CodReferencia    = @CRef,
+                    TelefonoTrabajo  = COALESCE(@Tel,    TelefonoTrabajo),
+                    Email            = COALESCE(@Mail,   Email),
+                    DireccionTrabajo = COALESCE(@DirTrab, DireccionTrabajo),
+                    TClIdTipoCliente = COALESCE(@TipCli, TClIdTipoCliente),
+                    DepartamentoID   = COALESCE(@DepID,  DepartamentoID),
+                    LocalidadID      = COALESCE(@LocID,  LocalidadID),
+                    AgenciaID        = COALESCE(@AgeID,  AgenciaID),
+                    FormaEnvioID     = COALESCE(@FEnvID, FormaEnvioID),
+                    VendedorID       = COALESCE(@Vend,   VendedorID),
+                    ESTADO           = COALESCE(@Est,    ESTADO),
+                    WebActive        = COALESCE(@WA,     WebActive)
                 WHERE CodCliente = @CC
             `);
 
