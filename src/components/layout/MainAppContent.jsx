@@ -138,7 +138,7 @@ const lucideIconMapRaw = {
     'catalogo por cliente': BookOpen,
     // Administración sub-items
     'caja': Banknote,
-    'pagos online por la web (handy)': CreditCard,
+    'pagos': CreditCard,
     'autorizaciones de pagos': ShieldCheck,
 };
 const getLucideIcon = (name) => lucideIconMapRaw[name?.toLowerCase?.()?.trim?.()?.replace(/\s+/g, ' ')];

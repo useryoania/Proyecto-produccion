@@ -57,7 +57,7 @@ const ForgotPasswordPage = () => {
             `}</style>
 
             {/* Card wrapper with animated CMY border */}
-            <div className="relative w-full max-w-md rounded-3xl z-10">
+            <div className="relative w-full max-w-md md:max-w-sm rounded-3xl z-10">
                 {/* Animated gradient border - only on md+ */}
                 <div className="hidden md:block absolute -inset-[2px] rounded-3xl overflow-hidden">
                     <div
@@ -69,8 +69,8 @@ const ForgotPasswordPage = () => {
                     />
                 </div>
 
-                <div className="relative bg-custom-dark p-10 rounded-3xl w-full overflow-hidden">
-                    <div className="flex flex-col items-center mb-6">
+                <div className="relative bg-custom-dark pt-4 px-5 pb-10 md:px-8 md:pb-8 rounded-3xl w-full overflow-hidden">
+                    <div className="flex flex-col items-center mb-6 md:mt-4">
                         <Logo className="h-32 w-auto text-white" />
                         <h2 className="text-xl font-bold text-zinc-100">Recuperar contraseña</h2>
                         <p className="text-sm text-zinc-100 text-center mt-1">Ingresá tu email y te enviaremos un enlace para restablecer tu contraseña</p>
@@ -85,7 +85,7 @@ const ForgotPasswordPage = () => {
                                 </div>
                                 <input
                                     type="email"
-                                    className="w-full pl-10 pr-4 py-3 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500"
+                                    className="w-full pl-10 pr-4 py-2.5 md:py-2 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
                                     placeholder="tu@email.com"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
@@ -109,7 +109,7 @@ const ForgotPasswordPage = () => {
 
                         <Button
                             type="submit"
-                            className="w-full py-3.5 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
+                            className="w-full py-2.5 md:py-2 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2 md:text-sm"
                             isLoading={isLoading}
                         >
                             Enviar enlace de recuperación
