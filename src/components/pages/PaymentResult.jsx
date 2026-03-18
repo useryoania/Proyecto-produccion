@@ -5,6 +5,8 @@ import { Logo } from '../Logo';
 import { useAuth } from '../../client-portal/auth/AuthContext';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import logoSrc from '../../assets/images/logo.png';
+import pagadoStampSrc from '../../assets/images/pagado-stamp.png';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -64,7 +66,7 @@ async function generateReceipt(data, codCliente) {
         await new Promise((resolve, reject) => {
             img.onload = resolve;
             img.onerror = reject;
-            img.src = '/assets/images/logo.png';
+            img.src = logoSrc;
         });
         const ratio = img.width / img.height;
         const h = 12;
@@ -81,7 +83,7 @@ async function generateReceipt(data, codCliente) {
             await new Promise((resolve, reject) => {
                 stampImg.onload = resolve;
                 stampImg.onerror = reject;
-                stampImg.src = '/assets/images/pagado-stamp.png';
+                stampImg.src = pagadoStampSrc;
             });
         } catch (e) { console.warn('[COMPROBANTE] No se pudo cargar pagado-stamp.png:', e); stampImg = null; }
     }

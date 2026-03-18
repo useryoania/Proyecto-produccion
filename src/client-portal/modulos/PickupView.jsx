@@ -319,7 +319,7 @@ export const PickupView = () => {
                 {/* Código de retiro — centrado */}
                 <div className="flex-1 flex flex-col items-center justify-center gap-4">
                     <p className="text-zinc-500 text-xs text-center max-w-sm uppercase">
-                        Podés abonar desde <span className="text-custom-cyan font-bold">Pagos Pendientes</span> y luego retirar con este código.
+                        Para retirar podés abonar desde <span className="text-custom-cyan font-bold">Pagos Pendientes</span>.
                     </p>
 
                     <div className="max-w-xs w-full rounded-xl bg-brand-dark border border-zinc-700 pt-5 pb-7 px-6 flex flex-col items-center gap-4">
@@ -335,7 +335,7 @@ export const PickupView = () => {
                     </div>
 
                     <p className="text-zinc-500 text-xs text-center max-w-sm uppercase">
-                        O acercate a nuestro local para abonar y retirar tu pedido.
+                        O acercarte a nuestro local y abonar en <span className="text-custom-cyan font-bold">caja</span>.
                     </p>
                 </div>
 
@@ -449,292 +449,291 @@ export const PickupView = () => {
             return null;
         }
         return (
-        <div className="animate-fade-in space-y-6">
+            <div className="animate-fade-in space-y-6">
 
-            {/* Header */}
-            <div className="flex items-center gap-3 mb-2">
-                <PackageCheck size={48} strokeWidth={1} className="text-brand-gold" />
-                <div>
-                    <h2 className="text-lg font-bold text-zinc-300 uppercase">Nuevo <span className="text-custom-cyan">Retiro</span></h2>
-                    <p className="text-zinc-500 uppercase text-xs">Revisá los datos y elegí forma de envío para confirmar.</p>
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-2">
+                    <PackageCheck size={48} strokeWidth={1} className="text-brand-gold" />
+                    <div>
+                        <h2 className="text-lg font-bold text-zinc-300 uppercase">Nuevo <span className="text-custom-cyan">Retiro</span></h2>
+                        <p className="text-zinc-500 uppercase text-xs">Revisá los datos y elegí forma de envío para confirmar.</p>
+                    </div>
                 </div>
-            </div>
 
-            {/* Resumen de órdenes */}
-            <div className="overflow-hidden rounded-xl bg-brand-dark border border-zinc-800">
-                <div className="p-4 border-b border-zinc-800">
-                    <h3 className="font-bold text-zinc-100 uppercase text-xs tracking-wider">Órdenes Seleccionadas</h3>
-                </div>
-                <div className="p-3 space-y-1.5">
-                    {selectedOrdersData.map(o => (
-                        <div key={o.id} className="flex justify-between items-center py-1.5 px-3 rounded-lg bg-custom-dark">
-                            <div className="min-w-0">
-                                <p className="text-sm font-semibold text-custom-cyan truncate">{o.id}</p>
-                                <p className="text-xs text-zinc-500 truncate">{o.desc}</p>
+                {/* Resumen de órdenes */}
+                <div className="overflow-hidden rounded-xl bg-brand-dark border border-zinc-800">
+                    <div className="p-4 border-b border-zinc-800">
+                        <h3 className="font-bold text-zinc-100 uppercase text-xs tracking-wider">Órdenes Seleccionadas</h3>
+                    </div>
+                    <div className="p-3 space-y-1.5">
+                        {selectedOrdersData.map(o => (
+                            <div key={o.id} className="flex justify-between items-center py-1.5 px-3 rounded-lg bg-custom-dark">
+                                <div className="min-w-0">
+                                    <p className="text-sm font-semibold text-custom-cyan truncate">{o.id}</p>
+                                    <p className="text-xs text-zinc-500 truncate">{o.desc}</p>
+                                </div>
+                                <span className="font-bold text-custom-cyan shrink-0 ml-3">
+                                    <span className="text-xs text-zinc-500 mr-0.5">{o.currency === 'USD' ? 'US$' : '$'}</span>{(o.amount || 0).toFixed(2)}
+                                </span>
                             </div>
-                            <span className="font-bold text-custom-cyan shrink-0 ml-3">
-                                <span className="text-xs text-zinc-500 mr-0.5">{o.currency === 'USD' ? 'US$' : '$'}</span>{(o.amount || 0).toFixed(2)}
-                            </span>
-                        </div>
-                    ))}
-                </div>
-                <div className="flex items-center justify-between p-4 border-t border-zinc-800">
-                    <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Total</p>
-                    <p className="text-lg font-black text-zinc-100">
-                        <span className="text-xs text-zinc-500 mr-1">{activeCurrency === 'USD' ? 'US$' : '$'}</span>{(totalAmount || 0).toFixed(2)}
-                    </p>
-                </div>
-            </div>
-
-            {/* Forma de envío */}
-            {shippingData && (
-                <div className="space-y-5 p-6 rounded-xl bg-custom-dark shadow-lg shadow-black/20">
-                    <h3 className="font-bold text-zinc-100 flex items-center gap-2 uppercase text-xs tracking-wider">
-                        <Truck size={24} strokeWidth={2} className="text-brand-gold" /> Forma de Envío
-                    </h3>
-
-                    <div className="flex flex-col md:flex-row gap-3">
-                        {shippingData.formasEnvio.map(f => (
-                            <label
-                                key={f.ID}
-                                className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 cursor-pointer transition-all text-sm font-bold uppercase tracking-wide ${
-                                    selectedFormaEnvio === f.ID
-                                        ? 'border-brand-cyan bg-brand-cyan/10 text-zinc-100'
-                                        : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
-                                }`}
-                            >
-                                <input
-                                    type="radio"
-                                    name="formaEnvio"
-                                    value={f.ID}
-                                    checked={selectedFormaEnvio === f.ID}
-                                    onChange={() => {
-                                        setSelectedFormaEnvio(f.ID);
-                                        if (f.Nombre?.toLowerCase().includes('encomienda')) {
-                                            setTimeout(() => encomiendaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
-                                        }
-                                    }}
-                                    className="sr-only"
-                                />
-                                {f.Nombre}
-                            </label>
                         ))}
                     </div>
+                    <div className="flex items-center justify-between p-4 border-t border-zinc-800">
+                        <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Total</p>
+                        <p className="text-lg font-black text-zinc-100">
+                            <span className="text-xs text-zinc-500 mr-1">{activeCurrency === 'USD' ? 'US$' : '$'}</span>{(totalAmount || 0).toFixed(2)}
+                        </p>
+                    </div>
+                </div>
 
-                    {/* Si es encomienda: agencia + dirección */}
-                    {isEncomienda && (
-                        <div ref={encomiendaRef} className="space-y-4 pt-2">
-                            {/* Agencia */}
-                            <div>
-                                <label className="block text-sm font-bold text-zinc-500 mb-2 uppercase">Agencia</label>
-                                <CustomSelect
-                                    value={selectedAgencia}
-                                    onChange={(val) => { setSelectedAgencia(Number(val)); if (Number(val) !== -1) setCustomAgencia(''); }}
-                                    options={[
-                                        ...shippingData.agencias.map(a => ({ value: a.ID, label: a.Nombre })),
-                                        { value: -1, label: 'Otra...' }
-                                    ]}
-                                    placeholder="Seleccionar agencia..."
-                                />
-                                {selectedAgencia === -1 && (
+                {/* Forma de envío */}
+                {shippingData && (
+                    <div className="space-y-5 p-6 rounded-xl bg-custom-dark shadow-lg shadow-black/20">
+                        <h3 className="font-bold text-zinc-100 flex items-center gap-2 uppercase text-xs tracking-wider">
+                            <Truck size={24} strokeWidth={2} className="text-brand-gold" /> Forma de Envío
+                        </h3>
+
+                        <div className="flex flex-col md:flex-row gap-3">
+                            {shippingData.formasEnvio.map(f => (
+                                <label
+                                    key={f.ID}
+                                    className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 cursor-pointer transition-all text-sm font-bold uppercase tracking-wide ${selectedFormaEnvio === f.ID
+                                        ? 'border-brand-cyan bg-brand-cyan/10 text-zinc-100'
+                                        : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
+                                        }`}
+                                >
                                     <input
-                                        type="text"
-                                        value={customAgencia}
-                                        onChange={(e) => setCustomAgencia(e.target.value)}
-                                        placeholder="Especifique la agencia..."
-                                        className="mt-2 w-full bg-brand-dark border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan outline-none transition-all"
+                                        type="radio"
+                                        name="formaEnvio"
+                                        value={f.ID}
+                                        checked={selectedFormaEnvio === f.ID}
+                                        onChange={() => {
+                                            setSelectedFormaEnvio(f.ID);
+                                            if (f.Nombre?.toLowerCase().includes('encomienda')) {
+                                                setTimeout(() => encomiendaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+                                            }
+                                        }}
+                                        className="sr-only"
                                     />
-                                )}
-                            </div>
+                                    {f.Nombre}
+                                </label>
+                            ))}
+                        </div>
 
-                            {/* Dirección */}
-                            <div>
-                                <label className="block text-sm font-bold text-zinc-500 mb-2 uppercase">Dirección de Envío <span className="text-zinc-600 font-normal">({(shippingData.direccionesGuardadas?.length || 0) + (shippingData.defaultDireccion ? 1 : 0)}/3)</span></label>
-                                {(shippingData.defaultDireccion || shippingData.direccionesGuardadas?.length > 0) ? (
-                                    <div className="space-y-2">
-                                        {/* Dirección principal */}
-                                        {shippingData.defaultDireccion && (
-                                            <label
-                                                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selectedDireccion === shippingData.defaultDireccion ? 'border-brand-cyan/40 bg-brand-cyan/5' : 'border-zinc-700 hover:border-zinc-500'}`}
-                                                onClick={() => setSelectedDireccion(shippingData.defaultDireccion)}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    {selectedDireccion === shippingData.defaultDireccion
-                                                        ? <MapPinCheck size={24} strokeWidth={1.5} className="flex-shrink-0 text-custom-cyan" />
-                                                        : <MapPin size={24} strokeWidth={1.5} className="flex-shrink-0 text-zinc-500" />
-                                                    }
-                                                    <div className="flex flex-col justify-center">
-                                                        <span className="text-sm font-bold text-zinc-200">Principal</span>
-                                                        <p className="text-sm text-zinc-400">{shippingData.defaultDireccion}</p>
-                                                    </div>
-                                                </div>
-                                            </label>
-                                        )}
-
-                                        {/* Dept/Loc pickers for default address */}
-                                        {isDefaultAddress && (
-                                            <div className="grid grid-cols-2 gap-3 mt-2 ml-9">
-                                                <CustomSelect
-                                                    value={defaultDepto}
-                                                    onChange={(val) => {
-                                                        setDefaultDepto(val);
-                                                        const dept = shippingData.departamentos?.find(d => d.Nombre === val);
-                                                        const locs = dept ? shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID) : [];
-                                                        setDefaultLocalidad(locs?.length === 1 ? locs[0].Nombre : '');
-                                                    }}
-                                                    options={[
-                                                        { value: '', label: 'Departamento...' },
-                                                        ...(shippingData.departamentos?.map(d => ({ value: d.Nombre, label: d.Nombre })) || [])
-                                                    ]}
-                                                    placeholder="Departamento..."
-                                                    size="small"
-                                                />
-                                                <CustomSelect
-                                                    value={defaultLocalidad}
-                                                    onChange={(val) => setDefaultLocalidad(val)}
-                                                    options={[
-                                                        { value: '', label: 'Localidad...' },
-                                                        ...(() => {
-                                                            const dept = shippingData.departamentos?.find(d => d.Nombre === defaultDepto);
-                                                            if (!dept) return [];
-                                                            return shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID).map(l => ({ value: l.Nombre, label: l.Nombre })) || [];
-                                                        })()
-                                                    ]}
-                                                    placeholder="Localidad..."
-                                                    size="small"
-                                                    disabled={!defaultDepto}
-                                                />
-                                            </div>
-                                        )}
-
-                                        {/* Direcciones guardadas */}
-                                        {shippingData.direccionesGuardadas?.map((d, idx) => (
-                                            <div
-                                                key={d.ID}
-                                                className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selectedDireccion === d.Direccion ? 'border-brand-cyan/40 bg-brand-cyan/5' : 'border-zinc-700 hover:border-zinc-500'}`}
-                                                onClick={() => setSelectedDireccion(d.Direccion)}
-                                            >
-                                                <div className="flex items-center gap-3">
-                                                    {selectedDireccion === d.Direccion
-                                                        ? <MapPinCheck size={24} strokeWidth={1.5} className="flex-shrink-0 text-custom-cyan" />
-                                                        : <MapPin size={24} strokeWidth={1.5} className="flex-shrink-0 text-zinc-500" />
-                                                    }
-                                                    <div className="flex flex-col justify-center">
-                                                        <span className="text-sm font-bold text-zinc-200">{d.Alias || 'Dirección guardada'}</span>
-                                                        <p className="text-sm text-zinc-400">
-                                                            {d.Direccion}
-                                                            {d.Ciudad ? `, ${d.Ciudad}` : ''}
-                                                            {d.Localidad ? ` (${d.Localidad})` : ''}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                {(idx > 0 || shippingData.defaultDireccion) && (
-                                                    <button
-                                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteAddress(d.ID); }}
-                                                        className="text-zinc-600 hover:text-brand-magenta transition-colors p-1"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="text-sm text-zinc-500 italic">No tenés direcciones guardadas. Agregá una abajo.</p>
-                                )}
-                            </div>
-
-                            {/* Agregar nueva dirección */}
-                            {((shippingData.direccionesGuardadas?.length || 0) + (shippingData.defaultDireccion ? 1 : 0)) < 3 && (
+                        {/* Si es encomienda: agencia + dirección */}
+                        {isEncomienda && (
+                            <div ref={encomiendaRef} className="space-y-4 pt-2">
+                                {/* Agencia */}
                                 <div>
-                                    {!showAddAddress ? (
-                                        <button
-                                            onClick={() => { setShowAddAddress(true); setTimeout(() => addAddressRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100); }}
-                                            className="flex items-center gap-2 text-sm font-bold text-zinc-500 hover:text-zinc-300 transition-colors"
-                                        >
-                                            <Plus size={16} /> Agregar nueva dirección
-                                        </button>
-                                    ) : (
-                                        <div ref={addAddressRef} className="space-y-3 p-4 bg-custom-dark rounded-xl border border-zinc-700">
-                                            <input
-                                                type="text"
-                                                placeholder='Alias (ej: "Oficina")'
-                                                value={newAlias}
-                                                onChange={e => setNewAlias(e.target.value)}
-                                                className="w-full p-2.5 border border-zinc-700 rounded-lg text-sm bg-brand-dark text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand-cyan/30"
-                                            />
-                                            <input
-                                                type="text"
-                                                placeholder="Dirección completa"
-                                                value={newDireccion}
-                                                onChange={e => setNewDireccion(e.target.value)}
-                                                className="w-full p-2.5 border border-zinc-700 rounded-lg text-sm bg-brand-dark text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand-cyan/30"
-                                            />
-                                            <div className="grid grid-cols-2 gap-3">
-                                                <CustomSelect
-                                                    value={newCiudad}
-                                                    onChange={(val) => {
-                                                        setNewCiudad(val);
-                                                        // Auto-seleccionar si hay una sola localidad
-                                                        const dept = shippingData.departamentos?.find(d => d.Nombre === val);
-                                                        const locs = dept ? shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID) : [];
-                                                        setNewLocalidad(locs?.length === 1 ? locs[0].Nombre : '');
-                                                    }}
-                                                    options={[
-                                                        { value: '', label: 'Departamento...' },
-                                                        ...(shippingData.departamentos?.map(d => ({ value: d.Nombre, label: d.Nombre })) || [])
-                                                    ]}
-                                                    placeholder="Departamento..."
-                                                    size="small"
-                                                    direction="up"
-                                                />
-                                                <CustomSelect
-                                                    value={newLocalidad}
-                                                    onChange={(val) => setNewLocalidad(val)}
-                                                    options={[
-                                                        { value: '', label: 'Localidad...' },
-                                                        ...(() => {
-                                                            const dept = shippingData.departamentos?.find(d => d.Nombre === newCiudad);
-                                                            if (!dept) return [];
-                                                            return shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID).map(l => ({ value: l.Nombre, label: l.Nombre })) || [];
-                                                        })()
-                                                    ]}
-                                                    placeholder="Localidad..."
-                                                    size="small"
-                                                    direction="up"
-                                                    disabled={!newCiudad}
-                                                />
-                                            </div>
-                                            <div className="flex gap-2">
-                                                <CustomButton onClick={handleAddAddress} variant="primary" className="text-sm py-2 px-4 !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5" whileHover={{ scale: 1 }} whileTap={{ scale: 1 }}>
-                                                    Guardar
-                                                </CustomButton>
-                                                <button onClick={() => { setShowAddAddress(false); setNewAlias(''); setNewDireccion(''); setNewCiudad(''); setNewLocalidad(''); }} className="text-sm text-zinc-500 hover:text-zinc-300">
-                                                    Cancelar
-                                                </button>
-                                            </div>
-                                        </div>
+                                    <label className="block text-sm font-bold text-zinc-500 mb-2 uppercase">Agencia</label>
+                                    <CustomSelect
+                                        value={selectedAgencia}
+                                        onChange={(val) => { setSelectedAgencia(Number(val)); if (Number(val) !== -1) setCustomAgencia(''); }}
+                                        options={[
+                                            ...shippingData.agencias.map(a => ({ value: a.ID, label: a.Nombre })),
+                                            { value: -1, label: 'Otra...' }
+                                        ]}
+                                        placeholder="Seleccionar agencia..."
+                                    />
+                                    {selectedAgencia === -1 && (
+                                        <input
+                                            type="text"
+                                            value={customAgencia}
+                                            onChange={(e) => setCustomAgencia(e.target.value)}
+                                            placeholder="Especifique la agencia..."
+                                            className="mt-2 w-full bg-brand-dark border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan outline-none transition-all"
+                                        />
                                     )}
                                 </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            )}
 
-            {/* Aviso de dirección requerida */}
-            {needsAddress && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-brand-gold/10 border border-brand-gold/30 text-brand-gold text-sm font-semibold">
-                    <AlertCircle size={16} />
-                    {needsDeptLoc
-                        ? 'Seleccioná departamento y localidad para la dirección principal.'
-                        : 'Seleccioná o agregá una dirección de envío para continuar.'
-                    }
-                </div>
-            )}
+                                {/* Dirección */}
+                                <div>
+                                    <label className="block text-sm font-bold text-zinc-500 mb-2 uppercase">Dirección de Envío <span className="text-zinc-600 font-normal">({(shippingData.direccionesGuardadas?.length || 0) + (shippingData.defaultDireccion ? 1 : 0)}/3)</span></label>
+                                    {(shippingData.defaultDireccion || shippingData.direccionesGuardadas?.length > 0) ? (
+                                        <div className="space-y-2">
+                                            {/* Dirección principal */}
+                                            {shippingData.defaultDireccion && (
+                                                <label
+                                                    className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selectedDireccion === shippingData.defaultDireccion ? 'border-brand-cyan/40 bg-brand-cyan/5' : 'border-zinc-700 hover:border-zinc-500'}`}
+                                                    onClick={() => setSelectedDireccion(shippingData.defaultDireccion)}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        {selectedDireccion === shippingData.defaultDireccion
+                                                            ? <MapPinCheck size={24} strokeWidth={1.5} className="flex-shrink-0 text-custom-cyan" />
+                                                            : <MapPin size={24} strokeWidth={1.5} className="flex-shrink-0 text-zinc-500" />
+                                                        }
+                                                        <div className="flex flex-col justify-center">
+                                                            <span className="text-sm font-bold text-zinc-200">Principal</span>
+                                                            <p className="text-sm text-zinc-400">{shippingData.defaultDireccion}</p>
+                                                        </div>
+                                                    </div>
+                                                </label>
+                                            )}
 
-            {/* Botones finales */}
-            <div className="flex justify-between items-stretch gap-3">
+                                            {/* Dept/Loc pickers for default address */}
+                                            {isDefaultAddress && (
+                                                <div className="grid grid-cols-2 gap-3 mt-2 ml-9">
+                                                    <CustomSelect
+                                                        value={defaultDepto}
+                                                        onChange={(val) => {
+                                                            setDefaultDepto(val);
+                                                            const dept = shippingData.departamentos?.find(d => d.Nombre === val);
+                                                            const locs = dept ? shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID) : [];
+                                                            setDefaultLocalidad(locs?.length === 1 ? locs[0].Nombre : '');
+                                                        }}
+                                                        options={[
+                                                            { value: '', label: 'Departamento...' },
+                                                            ...(shippingData.departamentos?.map(d => ({ value: d.Nombre, label: d.Nombre })) || [])
+                                                        ]}
+                                                        placeholder="Departamento..."
+                                                        size="small"
+                                                    />
+                                                    <CustomSelect
+                                                        value={defaultLocalidad}
+                                                        onChange={(val) => setDefaultLocalidad(val)}
+                                                        options={[
+                                                            { value: '', label: 'Localidad...' },
+                                                            ...(() => {
+                                                                const dept = shippingData.departamentos?.find(d => d.Nombre === defaultDepto);
+                                                                if (!dept) return [];
+                                                                return shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID).map(l => ({ value: l.Nombre, label: l.Nombre })) || [];
+                                                            })()
+                                                        ]}
+                                                        placeholder="Localidad..."
+                                                        size="small"
+                                                        disabled={!defaultDepto}
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {/* Direcciones guardadas */}
+                                            {shippingData.direccionesGuardadas?.map((d, idx) => (
+                                                <div
+                                                    key={d.ID}
+                                                    className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${selectedDireccion === d.Direccion ? 'border-brand-cyan/40 bg-brand-cyan/5' : 'border-zinc-700 hover:border-zinc-500'}`}
+                                                    onClick={() => setSelectedDireccion(d.Direccion)}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        {selectedDireccion === d.Direccion
+                                                            ? <MapPinCheck size={24} strokeWidth={1.5} className="flex-shrink-0 text-custom-cyan" />
+                                                            : <MapPin size={24} strokeWidth={1.5} className="flex-shrink-0 text-zinc-500" />
+                                                        }
+                                                        <div className="flex flex-col justify-center">
+                                                            <span className="text-sm font-bold text-zinc-200">{d.Alias || 'Dirección guardada'}</span>
+                                                            <p className="text-sm text-zinc-400">
+                                                                {d.Direccion}
+                                                                {d.Ciudad ? `, ${d.Ciudad}` : ''}
+                                                                {d.Localidad ? ` (${d.Localidad})` : ''}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    {(idx > 0 || shippingData.defaultDireccion) && (
+                                                        <button
+                                                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteAddress(d.ID); }}
+                                                            className="text-zinc-600 hover:text-brand-magenta transition-colors p-1"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-zinc-500 italic">No tenés direcciones guardadas. Agregá una abajo.</p>
+                                    )}
+                                </div>
+
+                                {/* Agregar nueva dirección */}
+                                {((shippingData.direccionesGuardadas?.length || 0) + (shippingData.defaultDireccion ? 1 : 0)) < 3 && (
+                                    <div>
+                                        {!showAddAddress ? (
+                                            <button
+                                                onClick={() => { setShowAddAddress(true); setTimeout(() => addAddressRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100); }}
+                                                className="flex items-center gap-2 text-sm font-bold text-zinc-500 hover:text-zinc-300 transition-colors"
+                                            >
+                                                <Plus size={16} /> Agregar nueva dirección
+                                            </button>
+                                        ) : (
+                                            <div ref={addAddressRef} className="space-y-3 p-4 bg-custom-dark rounded-xl border border-zinc-700">
+                                                <input
+                                                    type="text"
+                                                    placeholder='Alias (ej: "Oficina")'
+                                                    value={newAlias}
+                                                    onChange={e => setNewAlias(e.target.value)}
+                                                    className="w-full p-2.5 border border-zinc-700 rounded-lg text-sm bg-brand-dark text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand-cyan/30"
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Dirección completa"
+                                                    value={newDireccion}
+                                                    onChange={e => setNewDireccion(e.target.value)}
+                                                    className="w-full p-2.5 border border-zinc-700 rounded-lg text-sm bg-brand-dark text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand-cyan/30"
+                                                />
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <CustomSelect
+                                                        value={newCiudad}
+                                                        onChange={(val) => {
+                                                            setNewCiudad(val);
+                                                            // Auto-seleccionar si hay una sola localidad
+                                                            const dept = shippingData.departamentos?.find(d => d.Nombre === val);
+                                                            const locs = dept ? shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID) : [];
+                                                            setNewLocalidad(locs?.length === 1 ? locs[0].Nombre : '');
+                                                        }}
+                                                        options={[
+                                                            { value: '', label: 'Departamento...' },
+                                                            ...(shippingData.departamentos?.map(d => ({ value: d.Nombre, label: d.Nombre })) || [])
+                                                        ]}
+                                                        placeholder="Departamento..."
+                                                        size="small"
+                                                        direction="up"
+                                                    />
+                                                    <CustomSelect
+                                                        value={newLocalidad}
+                                                        onChange={(val) => setNewLocalidad(val)}
+                                                        options={[
+                                                            { value: '', label: 'Localidad...' },
+                                                            ...(() => {
+                                                                const dept = shippingData.departamentos?.find(d => d.Nombre === newCiudad);
+                                                                if (!dept) return [];
+                                                                return shippingData.localidades?.filter(l => l.DepartamentoID === dept.ID).map(l => ({ value: l.Nombre, label: l.Nombre })) || [];
+                                                            })()
+                                                        ]}
+                                                        placeholder="Localidad..."
+                                                        size="small"
+                                                        direction="up"
+                                                        disabled={!newCiudad}
+                                                    />
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <CustomButton onClick={handleAddAddress} variant="primary" className="text-sm py-2 px-4 !bg-transparent !text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5" whileHover={{ scale: 1 }} whileTap={{ scale: 1 }}>
+                                                        Guardar
+                                                    </CustomButton>
+                                                    <button onClick={() => { setShowAddAddress(false); setNewAlias(''); setNewDireccion(''); setNewCiudad(''); setNewLocalidad(''); }} className="text-sm text-zinc-500 hover:text-zinc-300">
+                                                        Cancelar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Aviso de dirección requerida */}
+                {needsAddress && (
+                    <div className="flex items-center gap-2 p-3 rounded-xl bg-brand-gold/10 border border-brand-gold/30 text-brand-gold text-sm font-semibold">
+                        <AlertCircle size={16} />
+                        {needsDeptLoc
+                            ? 'Seleccioná departamento y localidad para la dirección principal.'
+                            : 'Seleccioná o agregá una dirección de envío para continuar.'
+                        }
+                    </div>
+                )}
+
+                {/* Botones finales */}
+                <div className="flex justify-between items-stretch gap-3">
                     <CustomButton
                         onClick={async () => {
                             const code = await handleCreatePickup();
@@ -773,9 +772,9 @@ export const PickupView = () => {
                             Pagar ahora
                         </CustomButton>
                     )}
+                </div>
             </div>
-        </div>
-    );
+        );
     }
 
     // ========================
@@ -798,170 +797,170 @@ export const PickupView = () => {
                     <p className="text-xs text-zinc-600 mt-1">Cuando tus órdenes estén listas, aparecerán aquí.</p>
                 </div>
             ) : (
-            <>
-            <div className="overflow-hidden rounded-xl shadow-lg shadow-black/20">
-                {/* Desktop: Tabla */}
-                <div className="hidden md:block">
-                    <table className="w-full text-left border-collapse">
-                        <thead className="bg-custom-dark border-b border-zinc-700">
-                            <tr>
-                                <th className="py-4 px-4 w-14 text-center">
-                                    <div
-                                        className="flex items-center justify-center cursor-pointer text-blue-400"
-                                        onClick={() => {
-                                            if (selectedOrders.length === readyOrders.length) {
-                                                setSelectedOrders([]);
-                                            } else {
-                                                const firstCurrency = readyOrders[0]?.currency;
-                                                const allSameCurrency = readyOrders.every(o => o.currency === firstCurrency);
-                                                if (allSameCurrency) {
-                                                    setSelectedOrders(readyOrders.map(o => o.id));
-                                                } else {
-                                                    alert("⚠️ Hay órdenes en distintas monedas. Seleccionalas manualmente.");
-                                                }
-                                            }
-                                        }}
-                                    >
-                                        {readyOrders.length > 0 && selectedOrders.length === readyOrders.length ? (
-                                            <CheckCircle size={22} />
-                                        ) : (
-                                            <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
-                                        )}
-                                    </div>
-                                </th>
-                                <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Orden ID</th>
-                                <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider">Descripción</th>
-                                <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Artículos</th>
-                                <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Cantidad</th>
-                                <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Fecha</th>
-                                <th className="p-4 pr-6 text-xs font-bold text-zinc-100 text-right uppercase tracking-wider">Importe</th>
-                                {/* <th className="p-4 text-sm font-bold text-zinc-100 text-center">Estado</th> */}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {readyOrders.map((order, idx) => (
-                                <tr
-                                    key={`${order.id}-${idx}`}
-                                    onClick={() => handleToggleOrder(order.id)}
-                                    className={`border-b border-zinc-800 transition-all cursor-pointer ${selectedOrders.includes(order.id) ? 'bg-[#1a2c30] shadow-[inset_3px_0_0_#006E97]' : 'bg-brand-dark hover:bg-[#1a1a1a]'}`}
-                                >
-                                    <td className="py-4 px-4 border-r border-zinc-800">
-                                        <div className="flex items-center justify-center h-full text-blue-400">
-                                            {selectedOrders.includes(order.id) ? (
-                                                <CheckCircle size={22} />
-                                            ) : (
-                                                <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
-                                            )}
-                                        </div>
-                                    </td>
-                                    <td className="p-4 font-black text-base text-custom-cyan border-r border-zinc-800 text-center">{order.id}</td>
-                                    <td className="p-4 text-sm text-zinc-300 border-r border-zinc-800">{order.desc}</td>
-                                    <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.article || '-'}</td>
-                                    <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.quantityStr || order.quantity || '-'}</td>
-                                    <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.date}</td>
-                                    <td className="p-4 pr-6 text-right font-medium">
-                                        {order.isPaid ? (
-                                            <span className="text-green-400 flex items-center justify-end gap-1">
-                                                <CheckCircle size={14} /> Pagado
-                                            </span>
-                                        ) : (
-                                            <span className="text-custom-cyan">{`${order.currency === 'USD' ? 'US$' : '$'} ${(order.amount || 0).toFixed(2)}`}</span>
-                                        )}
-                                    </td>
-                                    {/* <td className="p-4 text-center">
+                <>
+                    <div className="overflow-hidden rounded-xl shadow-lg shadow-black/20">
+                        {/* Desktop: Tabla */}
+                        <div className="hidden md:block">
+                            <table className="w-full text-left border-collapse">
+                                <thead className="bg-custom-dark border-b border-zinc-700">
+                                    <tr>
+                                        <th className="py-4 px-4 w-14 text-center">
+                                            <div
+                                                className="flex items-center justify-center cursor-pointer text-blue-400"
+                                                onClick={() => {
+                                                    if (selectedOrders.length === readyOrders.length) {
+                                                        setSelectedOrders([]);
+                                                    } else {
+                                                        const firstCurrency = readyOrders[0]?.currency;
+                                                        const allSameCurrency = readyOrders.every(o => o.currency === firstCurrency);
+                                                        if (allSameCurrency) {
+                                                            setSelectedOrders(readyOrders.map(o => o.id));
+                                                        } else {
+                                                            alert("⚠️ Hay órdenes en distintas monedas. Seleccionalas manualmente.");
+                                                        }
+                                                    }
+                                                }}
+                                            >
+                                                {readyOrders.length > 0 && selectedOrders.length === readyOrders.length ? (
+                                                    <CheckCircle size={22} />
+                                                ) : (
+                                                    <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                                )}
+                                            </div>
+                                        </th>
+                                        <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Orden ID</th>
+                                        <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider">Descripción</th>
+                                        <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Artículos</th>
+                                        <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Cantidad</th>
+                                        <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Fecha</th>
+                                        <th className="p-4 pr-6 text-xs font-bold text-zinc-100 text-right uppercase tracking-wider">Importe</th>
+                                        {/* <th className="p-4 text-sm font-bold text-zinc-100 text-center">Estado</th> */}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {readyOrders.map((order, idx) => (
+                                        <tr
+                                            key={`${order.id}-${idx}`}
+                                            onClick={() => handleToggleOrder(order.id)}
+                                            className={`border-b border-zinc-800 transition-all cursor-pointer ${selectedOrders.includes(order.id) ? 'bg-[#1a2c30] shadow-[inset_3px_0_0_#006E97]' : 'bg-brand-dark hover:bg-[#1a1a1a]'}`}
+                                        >
+                                            <td className="py-4 px-4 border-r border-zinc-800">
+                                                <div className="flex items-center justify-center h-full text-blue-400">
+                                                    {selectedOrders.includes(order.id) ? (
+                                                        <CheckCircle size={22} />
+                                                    ) : (
+                                                        <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="p-4 font-black text-base text-custom-cyan border-r border-zinc-800 text-center">{order.id}</td>
+                                            <td className="p-4 text-sm text-zinc-300 border-r border-zinc-800">{order.desc}</td>
+                                            <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.article || '-'}</td>
+                                            <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.quantityStr || order.quantity || '-'}</td>
+                                            <td className="p-4 text-sm text-zinc-400 border-r border-zinc-800 text-center">{order.date}</td>
+                                            <td className="p-4 pr-6 text-right font-medium">
+                                                {order.isPaid ? (
+                                                    <span className="text-green-400 flex items-center justify-end gap-1">
+                                                        <CheckCircle size={14} /> Pagado
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-custom-cyan">{`${order.currency === 'USD' ? 'US$' : '$'} ${(order.amount || 0).toFixed(2)}`}</span>
+                                                )}
+                                            </td>
+                                            {/* <td className="p-4 text-center">
                                         <span className={`text-xs px-3 py-1 rounded-full font-bold ${order.isPaid ? 'text-green-400' : 'text-custom-cyan'}`}>
                                             {order.status}
                                         </span>
                                     </td> */}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Mobile: Cards */}
-                <div className="md:hidden space-y-3">
-                    {readyOrders.map((order, idx) => (
-                        <div
-                            key={`mobile-${order.id}-${idx}`}
-                            onClick={() => handleToggleOrder(order.id)}
-                            className={`overflow-hidden rounded-xl border transition-all pt-3 px-4 pb-4 space-y-3 cursor-pointer ${selectedOrders.includes(order.id) ? 'bg-[#1a2c30] border-brand-cyan/30' : 'bg-brand-dark border-zinc-800 hover:border-zinc-700'}`}
-                        >
-                            {/* Header row */}
-                            <div className="flex items-center justify-between">
-                                <span className="text-base font-black text-custom-cyan uppercase tracking-tight">{order.id}</span>
-                                {order.isPaid ? (
-                                    <span className="px-2 py-0.5 bg-green-900/30 text-green-400 text-[10px] font-bold uppercase tracking-wider rounded-full border border-green-700/40">
-                                        Pagado
-                                    </span>
-                                ) : (
-                                    <span className="px-2 py-0.5 bg-cyan-900/30 text-cyan-400 text-[10px] font-bold uppercase tracking-wider rounded-full border border-cyan-700/40">
-                                        Disponible para retiro
-                                    </span>
-                                )}
-                                <span className="text-xs text-zinc-500">{order.date}</span>
-                            </div>
-
-                            {/* Description full width */}
-                            <div className="bg-custom-dark p-3 rounded-lg border border-zinc-800">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-zinc-400 truncate mr-3">{order.desc}</span>
-                                    <span className="font-bold text-custom-cyan shrink-0">
-                                        {order.currency === 'USD' ? 'US$' : '$'} {(order.amount || 0).toFixed(2)}
-                                    </span>
-                                </div>
-                            </div>
-
-                            </div>
-                    ))}
-                </div>
-            </div>
-
-                <div className="mt-3 border-t border-zinc-800">
-                    <p className="text-sm text-zinc-500 px-4 pt-3">
-                        <span className="font-bold text-zinc-200">{selectedOrders.length}</span> órdenes seleccionadas
-                    </p>
-                    <div className="flex items-center justify-between gap-3 p-4">
-                        <div>
-                            <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Total</p>
-                            <p className="text-lg font-black text-zinc-100">
-                                <span className="text-xs text-zinc-500 mr-1">{activeCurrency === 'USD' ? 'US$' : '$'}</span>
-                                {(totalAmount || 0).toFixed(2)}
-                            </p>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
 
-                        <CustomButton
-                            onClick={async () => {
-                                setLoadingShipping(true);
-                                try {
-                                    const res = await apiClient.get('/web-orders/shipping-data');
-                                    if (res.success) {
-                                        setShippingData(res.data);
-                                        setSelectedFormaEnvio(null);
-                                        setSelectedAgencia(res.data.defaultAgenciaID || res.data.agencias[0]?.ID);
-                                        setSelectedDireccion(res.data.defaultDireccion || '');
-                                    }
-                                } catch (e) {
-                                    console.error('Error cargando datos de envío:', e);
-                                }
-                                setLoadingShipping(false);
-                                setStep('confirmation');
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                            }}
-                            disabled={selectedOrders.length === 0}
-                            isLoading={loading || loadingShipping}
-                            variant="primary"
-                            icon={ChevronRight}
-                            className="w-1/2 md:w-auto !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
-                            whileHover={{ scale: 1 }}
-                            whileTap={{ scale: 1 }}
-                        >
-                            Crear Retiro
-                        </CustomButton>
-                    </div>
-                </div>
+                        {/* Mobile: Cards */}
+                        <div className="md:hidden space-y-3">
+                            {readyOrders.map((order, idx) => (
+                                <div
+                                    key={`mobile-${order.id}-${idx}`}
+                                    onClick={() => handleToggleOrder(order.id)}
+                                    className={`overflow-hidden rounded-xl border transition-all pt-3 px-4 pb-4 space-y-3 cursor-pointer ${selectedOrders.includes(order.id) ? 'bg-[#1a2c30] border-brand-cyan/30' : 'bg-brand-dark border-zinc-800 hover:border-zinc-700'}`}
+                                >
+                                    {/* Header row */}
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-base font-black text-custom-cyan uppercase tracking-tight">{order.id}</span>
+                                        {order.isPaid ? (
+                                            <span className="px-2 py-0.5 bg-green-900/30 text-green-400 text-[10px] font-bold uppercase tracking-wider rounded-full border border-green-700/40">
+                                                Pagado
+                                            </span>
+                                        ) : (
+                                            <span className="px-2 py-0.5 bg-cyan-900/30 text-cyan-400 text-[10px] font-bold uppercase tracking-wider rounded-full border border-cyan-700/40">
+                                                Disponible para retiro
+                                            </span>
+                                        )}
+                                        <span className="text-xs text-zinc-500">{order.date}</span>
+                                    </div>
 
-            </>
+                                    {/* Description full width */}
+                                    <div className="bg-custom-dark p-3 rounded-lg border border-zinc-800">
+                                        <div className="flex justify-between text-sm">
+                                            <span className="text-zinc-400 truncate mr-3">{order.desc}</span>
+                                            <span className="font-bold text-custom-cyan shrink-0">
+                                                {order.currency === 'USD' ? 'US$' : '$'} {(order.amount || 0).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="mt-3 border-t border-zinc-800">
+                        <p className="text-sm text-zinc-500 px-4 pt-3">
+                            <span className="font-bold text-zinc-200">{selectedOrders.length}</span> órdenes seleccionadas
+                        </p>
+                        <div className="flex items-center justify-between gap-3 p-4">
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Total</p>
+                                <p className="text-lg font-black text-zinc-100">
+                                    <span className="text-xs text-zinc-500 mr-1">{activeCurrency === 'USD' ? 'US$' : '$'}</span>
+                                    {(totalAmount || 0).toFixed(2)}
+                                </p>
+                            </div>
+
+                            <CustomButton
+                                onClick={async () => {
+                                    setLoadingShipping(true);
+                                    try {
+                                        const res = await apiClient.get('/web-orders/shipping-data');
+                                        if (res.success) {
+                                            setShippingData(res.data);
+                                            setSelectedFormaEnvio(null);
+                                            setSelectedAgencia(res.data.defaultAgenciaID || res.data.agencias[0]?.ID);
+                                            setSelectedDireccion(res.data.defaultDireccion || '');
+                                        }
+                                    } catch (e) {
+                                        console.error('Error cargando datos de envío:', e);
+                                    }
+                                    setLoadingShipping(false);
+                                    setStep('confirmation');
+                                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                disabled={selectedOrders.length === 0}
+                                isLoading={loading || loadingShipping}
+                                variant="primary"
+                                icon={ChevronRight}
+                                className="w-1/2 md:w-auto !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
+                                whileHover={{ scale: 1 }}
+                                whileTap={{ scale: 1 }}
+                            >
+                                Crear Retiro
+                            </CustomButton>
+                        </div>
+                    </div>
+
+                </>
             )}
 
             {user?.hasCredit && (
