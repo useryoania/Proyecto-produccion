@@ -296,10 +296,10 @@ const ordenesRetiroCaja = async (req, res) => {
     }
 
     // Regla: todo lo que tiene sub-orden sin pagar y no está cerrado
-    // Excluye: 5=Entregado, 6=Cancelado, 9=Autorizado (ya gestionado por caja)
+    // Excluye: 5=Entregado, 6=Cancelado
     const query = `
       ${getOrdenesRetiroQueryBase}
-      WHERE r.OReEstadoActual NOT IN (5, 6, 9)
+      WHERE r.OReEstadoActual NOT IN (5, 6)
       AND EXISTS (
         SELECT 1 FROM OrdenesDeposito od2 WITH(NOLOCK)
         WHERE od2.OReIdOrdenRetiro = r.OReIdOrdenRetiro

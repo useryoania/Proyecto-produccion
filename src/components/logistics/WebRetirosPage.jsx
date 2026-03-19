@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import Swal from 'sweetalert2';
 import {
   Package, Search, Check, AlertCircle, ArrowLeft, CheckCircle,
   Truck, Loader2, LayoutGrid, MapPin, Clock, Printer, Tag,
@@ -759,7 +760,7 @@ const WebRetirosPage = () => {
     // Fetch fresh data from the server to ensure payment status is up-to-date
     let freshRetiros = [];
     try {
-      const { data } = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4,7,8');
+      const { data } = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4,7,8,9');
       freshRetiros = Array.isArray(data) ? data : [];
     } catch (e) { console.warn('No se pudo verificar estado actual de retiros:', e); }
 
@@ -783,13 +784,14 @@ const WebRetirosPage = () => {
     // Verificar autorización: pagada o estado 9 (Autorizado)
     for (const item of listEnriquecida) {
       const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
+      const retiroFull = freshRetiros.find(o => o.ordenDeRetiro === ordenStr) || apiOrders.find(o => o.ordenDeRetiro === ordenStr) || otrosRetiros.find(o => o.ordenDeRetiro === ordenStr);
 
       const isPagado = retiroFull?.pagorealizado === 1 || item.Pagado;
       const estadoStr = (typeof retiroFull?.estado === 'string' ? retiroFull.estado : '').toLowerCase();
       const isAutorizado = retiroFull?.estadoNumerico === 9 || estadoStr === 'autorizado' || item.estadoNumerico === 9;
 
       if (!isPagado && !isAutorizado) {
-        alert(`La orden ${ordenStr} no está pagada ni autorizada.\nDebe pasar por Caja para ser entregada.`);
+        Swal.fire({ toast: true, position: 'top', icon: 'warning', title: `${ordenStr} no está pagada ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000 });
         return;
       }
     }
