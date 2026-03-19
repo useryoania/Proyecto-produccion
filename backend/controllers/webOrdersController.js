@@ -1366,13 +1366,14 @@ exports.getPickupOrders = async (req, res) => {
                     c.IDCliente AS IdCliente,
                     c.TelefonoTrabajo AS Celular,
                     tc.TClDescripcion AS TipoCliente,
-                    -- tc.TClIdTipoCliente AS IdTipoCliente,
-                    m.MonSimbolo
+                    m.MonSimbolo,
+                    LTRIM(RTRIM(art.Descripcion)) AS Producto
                 FROM OrdenesDeposito o WITH(NOLOCK)
                 LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
                 LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                 LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
                 LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
+                LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = o.ProIdProducto
                 WHERE c.IDCliente = @idCliente
                 AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar')
                 AND o.OReIdOrdenRetiro IS NULL
@@ -1435,7 +1436,8 @@ exports.getPickupOrders = async (req, res) => {
                 quantityStr: o.Cantidad ? String(o.Cantidad) : '1',
                 clientId: o.IdCliente || 'N/A',
                 contact: o.Celular ? o.Celular.trim() : '',
-                clientType: o.TipoCliente ? String(o.TipoCliente).trim() : 'Comun'
+                clientType: o.TipoCliente ? String(o.TipoCliente).trim() : 'Comun',
+                article: o.Producto || null
             };
         });
 
@@ -1712,6 +1714,7 @@ exports.createPickupOrder = async (req, res) => {
                     LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                     WHERE c.IDCliente = @idCliente
                     AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar')
+                    AND o.OReIdOrdenRetiro IS NULL
                 `);
 
             for (const o of ordersResult.recordset) {

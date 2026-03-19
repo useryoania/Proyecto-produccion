@@ -116,7 +116,7 @@ export const PickupView = () => {
             if (orderToAdd && selectedOrders.length > 0) {
                 const firstSelected = readyOrders.find(o => o.id === selectedOrders[0]);
                 if (firstSelected && orderToAdd.currency !== firstSelected.currency) {
-                    alert("⚠️ No es posible mezclar pagos en Dólares y Pesos Uruguayos en una misma transacción.\n\nPor favor, selecciona únicamente órdenes que compartan la misma moneda (ej: solo Dólares o solo Pesos) para poder redirigirte a la pasarela.");
+                    Swal.fire({ icon: 'warning', title: 'Monedas diferentes', text: 'No es posible mezclar pagos en Dólares y Pesos Uruguayos en una misma transacción. Seleccioná únicamente órdenes que compartan la misma moneda.', background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
                     return; // Bloquea la selección mixta
                 }
             }
@@ -234,12 +234,12 @@ export const PickupView = () => {
                 sessionStorage.setItem('pickup_code', String(code));
                 return code;
             } else {
-                alert(res.error || "Error al crear retiro");
+                Swal.fire({ icon: 'error', title: 'Error', text: res.error || 'Error al crear retiro', background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
                 return null;
             }
         } catch (error) {
             console.error(error);
-            alert("Error al conectar con el servidor: " + error.message);
+            Swal.fire({ icon: 'error', title: 'Error de conexión', text: 'Error al conectar con el servidor: ' + error.message, background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
             return null;
         } finally {
             creatingRef.current = false;
@@ -250,7 +250,7 @@ export const PickupView = () => {
     const handleProceed = async (codeOverride) => {
         const retiroCode = codeOverride || pickupCode;
         if (!retiroCode) {
-            alert('No hay retiro creado.');
+            Swal.fire({ icon: 'warning', title: 'Sin retiro', text: 'No hay retiro creado.', background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
             return;
         }
         setLoading(true);
@@ -285,11 +285,11 @@ export const PickupView = () => {
                 window.open(res.url, '_blank');
                 window.location.href = `/portal/payment-status?txId=${res.transactionId}`;
             } else {
-                alert("No se pudo generar el link de pago: " + (res.error || ""));
+                Swal.fire({ icon: 'error', title: 'Error de pago', text: 'No se pudo generar el link de pago' + (res.error ? ': ' + res.error : ''), background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
             }
         } catch (err) {
             console.error("Error al ir a pagar:", err);
-            alert("Ocurrió un error al contactar la pasarela de pagos.");
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Ocurrió un error al contactar la pasarela de pagos.', background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
         } finally {
             setLoading(false);
         }
@@ -408,9 +408,9 @@ export const PickupView = () => {
                 setNewLocalidad('');
                 setShowAddAddress(false);
             } else {
-                alert(res.error || 'Error al guardar');
+                Swal.fire({ icon: 'error', title: 'Error', text: res.error || 'Error al guardar', background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
             }
-        } catch (e) { alert('Error al guardar dirección'); }
+        } catch (e) { Swal.fire({ icon: 'error', title: 'Error', text: 'Error al guardar dirección', background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } }); }
     };
 
     const handleDeleteAddress = async (id) => {
@@ -744,7 +744,7 @@ export const PickupView = () => {
                             sessionStorage.removeItem('pickup_code');
                         }}
                         isLoading={loading}
-                        disabled={!selectedFormaEnvio || needsAddress}
+                        disabled={loading || !selectedFormaEnvio || needsAddress}
                         variant="secondary"
                         icon={PackageCheck}
                         className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
@@ -762,7 +762,7 @@ export const PickupView = () => {
                                 await handleProceed(code);
                             }}
                             isLoading={loading}
-                            disabled={!selectedFormaEnvio || needsAddress}
+                            disabled={loading || !selectedFormaEnvio || needsAddress}
                             variant="primary"
                             icon={CreditCard}
                             className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
@@ -816,7 +816,7 @@ export const PickupView = () => {
                                                         if (allSameCurrency) {
                                                             setSelectedOrders(readyOrders.map(o => o.id));
                                                         } else {
-                                                            alert("⚠️ Hay órdenes en distintas monedas. Seleccionalas manualmente.");
+                                                            Swal.fire({ toast: true, position: 'top', icon: 'warning', title: 'Hay órdenes en distintas monedas. Seleccionalas manualmente.', showConfirmButton: false, timer: 3000, background: '#212121', color: '#e4e4e7', customClass: { popup: 'rounded-xl border border-zinc-700' } });
                                                         }
                                                     }
                                                 }}
@@ -830,7 +830,7 @@ export const PickupView = () => {
                                         </th>
                                         <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Orden ID</th>
                                         <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider">Descripción</th>
-                                        <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Artículos</th>
+                                        <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Producto</th>
                                         <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Cantidad</th>
                                         <th className="p-4 text-xs font-bold text-zinc-100 uppercase tracking-wider text-center">Fecha</th>
                                         <th className="p-4 pr-6 text-xs font-bold text-zinc-100 text-right uppercase tracking-wider">Importe</th>

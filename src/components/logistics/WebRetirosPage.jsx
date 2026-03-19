@@ -3,6 +3,7 @@ import {
   Package, Search, Check, AlertCircle, ArrowLeft, CheckCircle,
   Truck, Loader2, LayoutGrid, MapPin, Clock, Printer, Tag
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/api'; // Axios instance base
 import { io } from 'socket.io-client';
 
@@ -526,6 +527,19 @@ const WebRetirosPage = () => {
   const [deliveryBarcodeInput, setDeliveryBarcodeInput] = React.useState('');
   const [deliverySelectedOrders, setDeliverySelectedOrders] = React.useState({});
 
+  // Cerrar modales con ESC
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key !== 'Escape') return;
+      if (excepcionDelivery) { setExcepcionDelivery(null); setAdminPassword(''); setExcepcionExplicacion(''); }
+      else if (confirmDelivery) { setConfirmDelivery(null); }
+      else if (ubicationMode) { setUbicationMode(false); }
+      else if (selectedRetiro) { setSelectedRetiro(null); }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [excepcionDelivery, confirmDelivery, ubicationMode, selectedRetiro]);
+
   // 1. Conexión WebSocket para Tiempo Real
   useEffect(() => {
     const socket = io(import.meta.env.VITE_API_URL || window.location.origin, {
@@ -686,6 +700,11 @@ const WebRetirosPage = () => {
 
   // 3. Acciones del Operario
   const handleSelectRetiro = (o) => {
+    // RT- retiros: ir directo al modal de entrega, sin pasar por OrderDetail
+    if ((o.ordenDeRetiro || '').startsWith('RT-')) {
+      triggerEntregar('FUERA DE ESTANTE', o);
+      return;
+    }
     setSelectedRetiro(o);
     setScannedBultos({});
     setUbicationMode(false);
@@ -758,14 +777,23 @@ const WebRetirosPage = () => {
     }
   };
 
-  const triggerEntregar = (id, dataOrDataList) => {
+  const triggerEntregar = async (id, dataOrDataList) => {
     const list = Array.isArray(dataOrDataList) ? dataOrDataList : [dataOrDataList];
+
+    // Fetch fresh data from the server to ensure payment status is up-to-date
+    let freshRetiros = [];
+    try {
+      const { data } = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4,7,8');
+      freshRetiros = Array.isArray(data) ? data : [];
+    } catch (e) { console.warn('No se pudo verificar estado actual de retiros:', e); }
 
     // Enriquecer cada item del estante con los orders del retiro completo
     // (los items del estante solo tienen OrdenRetiro/CodigoCliente, sin orders[])
     const listEnriquecida = list.map(item => {
       const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
-      const retiroFull = apiOrders.find(o => o.ordenDeRetiro === ordenStr)
+      const retiroFresh = freshRetiros.find(o => o.ordenDeRetiro === ordenStr);
+      const retiroFull = retiroFresh
+        || apiOrders.find(o => o.ordenDeRetiro === ordenStr)
         || otrosRetiros.find(o => o.ordenDeRetiro === ordenStr);
       return {
         ...item,
@@ -782,7 +810,10 @@ const WebRetirosPage = () => {
 
     for (const item of listEnriquecida) {
       const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
-      const retiroFull = apiOrders.find(o => o.ordenDeRetiro === ordenStr) || otrosRetiros.find(o => o.ordenDeRetiro === ordenStr);
+      const retiroFresh = freshRetiros.find(o => o.ordenDeRetiro === ordenStr);
+      const retiroFull = retiroFresh
+        || apiOrders.find(o => o.ordenDeRetiro === ordenStr)
+        || otrosRetiros.find(o => o.ordenDeRetiro === ordenStr);
       let isAuthorized = false;
 
       if (retiroFull) {
@@ -949,17 +980,13 @@ const WebRetirosPage = () => {
     };
 
     return (
-      <div className="bg-white rounded-[24px] shadow-sm p-8 max-w-2xl mx-auto border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
-        <div className="flex justify-between items-start mb-6">
-          <button onClick={() => setSelectedRetiro(null)} className="p-3 bg-slate-100 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-            <ArrowLeft size={24} />
-          </button>
-          <div className="text-right">
-            <span className="text-[10px] font-bold text-blue-500 tracking-wider uppercase">Detalle Envio Web</span>
-            <h2 className="text-3xl font-black text-slate-800 mt-1">{selectedRetiro.pagoHandy ? selectedRetiro.ordenDeRetiro.replace('R-', 'PW-') : selectedRetiro.ordenDeRetiro}</h2>
-            <p className="text-slate-400 font-medium uppercase text-sm mt-1">{selectedRetiro.idcliente}</p>
-          </div>
-        </div>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={() => setSelectedRetiro(null)}>
+      <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+        <h3 className="text-2xl font-black text-slate-800 mb-2 tracking-tight">Asignar a Estante</h3>
+        <p className="text-slate-500 mb-4 font-medium">
+          Orden de retiro: <strong className="text-blue-600">{selectedRetiro.pagoHandy ? selectedRetiro.ordenDeRetiro.replace('R-', 'PW-') : selectedRetiro.ordenDeRetiro}</strong>
+          <span className="ml-2 text-slate-400">· {selectedRetiro.idcliente}</span>
+        </p>
 
         <form onSubmit={handleScanSubmit} className="mb-6 relative">
           <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -970,49 +997,53 @@ const WebRetirosPage = () => {
             type="text"
             value={barcodeInput}
             onChange={(e) => setBarcodeInput(e.target.value)}
-            className="block w-full pl-12 pr-16 py-4 border-2 border-slate-200 rounded-xl bg-slate-50 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white text-lg font-bold transition-all text-slate-700"
-            placeholder="Escanee el bulto aquí..."
+            className="block w-full pl-12 pr-16 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white font-medium transition-all text-slate-700"
+            placeholder="Escanee el bulto aquí (opcional manual)..."
             autoFocus
           />
-          <button type="submit" className="absolute inset-y-2 right-2 px-4 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-blue-700">OK</button>
+          <button type="submit" className="absolute inset-y-1.5 right-1.5 px-4 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-blue-700">OK</button>
         </form>
 
-        <div className="grid gap-3 mb-8 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Checklist de Bultos</p>
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-6 max-h-48 overflow-y-auto">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Checklist de Bultos</p>
+          <ul className="space-y-2">
           {selectedRetiro.orders?.map(o => (
-            <div key={o.orderNumber}
+            <li key={o.orderNumber}
               onClick={() => toggle(o.orderNumber)}
-              className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${scannedBultos[o.orderNumber] ? 'bg-green-50 border-green-500 shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300'}`}>
-              <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-lg ${scannedBultos[o.orderNumber] ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
-                  <Package size={20} />
-                </div>
-                <div>
-                  <div className="text-lg font-bold text-slate-700">{o.orderNumber}</div>
-                  <div className="text-[10px] font-medium text-slate-400 uppercase">Verificado automáticamente</div>
-                </div>
+              className={`flex items-center gap-3 text-sm font-bold cursor-pointer transition-all p-3 rounded-xl border-2 shadow-sm ${scannedBultos[o.orderNumber] ? 'bg-green-50/80 border-green-400 text-green-800' : 'bg-white border-slate-200 text-slate-700'}`}>
+              <div className={`p-1.5 rounded-md ${scannedBultos[o.orderNumber] ? 'bg-green-500/10' : 'bg-slate-100'}`}>
+                <Package size={16} className={scannedBultos[o.orderNumber] ? 'text-green-600' : 'text-blue-500'} />
               </div>
-              {scannedBultos[o.orderNumber] ? <CheckCircle className="text-green-500" size={24} /> : <div className="w-6 h-6 rounded-full border-2 border-slate-300" />}
-            </div>
+              {o.orderNumber}
+              {scannedBultos[o.orderNumber] ? <CheckCircle className="text-green-500 ml-auto" size={20} /> : <div className="w-5 h-5 rounded-full border-2 border-slate-300 ml-auto" />}
+            </li>
           ))}
+          </ul>
         </div>
 
         <div className="flex gap-4">
-          <button onClick={() => setSelectedRetiro(null)} className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-xl font-bold hover:bg-slate-200 transition-all">Cancelar</button>
+          <button
+            onClick={() => setSelectedRetiro(null)}
+            className="flex-[0.8] py-3 px-4 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+          >
+            Cancelar
+          </button>
           <button
             disabled={!allChecked}
             onClick={() => setUbicationMode(true)}
-            className="flex-[2] py-4 bg-blue-600 text-white rounded-xl font-bold text-lg shadow-md shadow-blue-200 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            className="flex-[1.2] py-3 px-4 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 disabled:bg-slate-300 disabled:text-white disabled:shadow-none disabled:cursor-not-allowed transition-all shadow-md shadow-blue-200 flex items-center justify-center gap-2"
           >
-            Asignar a Estante
+            <LayoutGrid size={20} /> Asignar a Estante
           </button>
         </div>
+      </div>
       </div>
     );
   };
 
   const UbicationGrid = () => (
-    <div className="max-w-5xl mx-auto animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4 py-8" onClick={() => setUbicationMode(false)}>
+    <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-2xl font-black text-slate-800">Mapa del Depósito</h2>
@@ -1091,6 +1122,7 @@ const WebRetirosPage = () => {
           </div>
         ))}
       </div>
+    </div>
     </div>
   );
 
@@ -1195,7 +1227,7 @@ const WebRetirosPage = () => {
       {/* VISTA PRINCIPAL */}
       {!loading || apiOrders.length > 0 || otrosRetiros.length > 0 ? (
         view === 'empaque' ? (
-          !selectedRetiro ? (
+          <>
             <div className="animate-in fade-in duration-300">
               <div className="relative mb-6">
                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
@@ -1396,6 +1428,7 @@ const WebRetirosPage = () => {
 
                         {/* Grid de tarjetas pequeñas */}
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                          <AnimatePresence>
                           {items.map(item => {
                             const handleClick = () => {
                               if (item._isWeb) {
@@ -1431,10 +1464,16 @@ const WebRetirosPage = () => {
                             const timeColor = diffMin > 480 ? 'text-rose-600 font-black' : 'text-slate-700 font-bold';
 
                             return (
-                              <button
+                              <motion.button
                                 key={item._key}
+                                layout
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.85, y: 10 }}
+                                whileHover={{ y: -2, boxShadow: '0 10px 25px -5px rgb(0 0 0 / 0.1)' }}
+                                transition={{ duration: 0.25 }}
                                 onClick={handleClick}
-                                className="group relative bg-white rounded-2xl border border-slate-200 p-4 text-left hover:border-blue-300 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 flex flex-col gap-2 overflow-hidden"
+                                className="group relative bg-white rounded-2xl border border-slate-200 p-4 text-left hover:border-blue-300 transition-colors duration-150 flex flex-col gap-2 overflow-hidden"
                               >
                                 {/* Barra de color superior */}
                                 <div className={`absolute top-0 left-0 right-0 h-1 ${meta.dot} rounded-t-2xl`} />
@@ -1504,9 +1543,10 @@ const WebRetirosPage = () => {
                                     )}
                                   </div>
                                 </div>
-                              </button>
+                              </motion.button>
                             );
                           })}
+                          </AnimatePresence>
                         </div>
                       </div>
                     ))}
@@ -1514,9 +1554,11 @@ const WebRetirosPage = () => {
                 );
               })()}
             </div>
-          ) : (
+          {/* OrderDetail / UbicationGrid as overlay modals */}
+          {selectedRetiro && (
             ubicationMode ? <UbicationGrid /> : <OrderDetail />
-          )
+          )}
+          </>
         ) : (
           /* VISTA MOSTRADOR - MATRIZ DE ESTANTERÍA */
           <div className="animate-in fade-in duration-300">
@@ -1664,6 +1706,7 @@ const WebRetirosPage = () => {
                     </span>
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                    <AnimatePresence>
                     {otrosRetiros
                       .filter(o => {
                         if (!searchTerm) return true;
@@ -1685,7 +1728,15 @@ const WebRetirosPage = () => {
                         const d = Math.floor(diffMin / 1440), h = Math.floor((diffMin % 1440) / 60), m = diffMin % 60;
                         const timeStr = d > 0 ? `${d}d` : h > 0 ? `${h}h ${m}m` : `${m}m`;
                         return (
-                          <div key={o.ordenDeRetiro} className="relative bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-2 overflow-hidden">
+                          <motion.div
+                            key={o.ordenDeRetiro}
+                            layout
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.85, y: 10 }}
+                            transition={{ duration: 0.25 }}
+                            className="relative bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-2 overflow-hidden"
+                          >
                             <div className={`absolute top-0 left-0 right-0 h-1 ${dotColor} rounded-t-2xl`} />
                             <div className="font-black text-slate-800 text-sm tracking-tight mt-1">{o.ordenDeRetiro}</div>
                             <div className="text-[10px] font-bold text-slate-400 uppercase truncate">{o.CliCodigoCliente || o.CliNombre}</div>
@@ -1702,10 +1753,10 @@ const WebRetirosPage = () => {
                             >
                               Entregar
                             </button>
-                          </div>
+                          </motion.div>
                         );
-                      })
-                    }
+                      })}
+                    </AnimatePresence>
                   </div>
                 </div>
               )}
@@ -1725,11 +1776,13 @@ const WebRetirosPage = () => {
       {/* CONFIRMATION MODAL FOR DELIVERY */}
       {
         confirmDelivery && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-            <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={() => setConfirmDelivery(null)}>
+            <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
               <h3 className="text-2xl font-black text-slate-800 mb-2 tracking-tight">Confirmar Entrega</h3>
               <p className="text-slate-500 mb-4 font-medium">
-                Ubicación a entregar: <strong className="text-blue-600">{confirmDelivery.id}</strong>
+                {confirmDelivery.id === 'FUERA DE ESTANTE'
+                  ? <>Orden de retiro: <strong className="text-blue-600">{confirmDelivery.dataList[0]?.ordenDeRetiro || confirmDelivery.dataList[0]?.OrdenRetiro}</strong><span className="ml-2 text-slate-400">· {confirmDelivery.dataList[0]?.CliNombre || confirmDelivery.dataList[0]?.idcliente || confirmDelivery.dataList[0]?.CodigoCliente || ''}</span></>
+                  : <>Ubicación a entregar: <strong className="text-blue-600">{confirmDelivery.id}</strong></>}
               </p>
 
               {/* SELECCIÓN DE ÓRDENES MULTPLES */}

@@ -117,7 +117,7 @@ export const HistorialView = () => {
                         const isOpen = expanded[retiro.OrdIdRetiro];
 
                         return (
-                            <div key={retiro.OrdIdRetiro} className="bg-custom-dark rounded-xl overflow-hidden">
+                            <div key={retiro.OrdIdRetiro} className="bg-brand-dark rounded-xl overflow-hidden">
                                 {/* Retiro Header */}
                                 <button
                                     onClick={() => toggleExpand(retiro.OrdIdRetiro)}
@@ -139,7 +139,7 @@ export const HistorialView = () => {
                                                 <span className="flex flex-col items-end">
                                                     <span className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest">Total</span>
                                                     <span className="text-sm font-black text-zinc-100">
-                                                        <span className="text-xs text-zinc-500 mr-0.5">$</span>{Number(retiro.Monto).toLocaleString('es-UY', { minimumFractionDigits: 2 })}
+                                                        <span className="text-xs text-zinc-500 mr-0.5">{retiro.Moneda == 2 || String(retiro.Moneda).toUpperCase().includes('USD') ? 'US$' : '$'}</span>{Number(retiro.Monto).toLocaleString('es-UY', { minimumFractionDigits: 2 })}
                                                     </span>
                                                 </span>
                                             )}
@@ -155,28 +155,49 @@ export const HistorialView = () => {
                                 <div
                                     className="overflow-hidden transition-all duration-300 ease-in-out"
                                     style={{
-                                        maxHeight: isOpen ? `${(retiro.Ordenes?.length || 0) * 60 + 60}px` : '0px',
+                                        maxHeight: isOpen ? '2000px' : '0px',
                                         opacity: isOpen ? 1 : 0,
                                     }}
                                 >
                                     <div className="px-4 pb-3 pt-3 border-t border-zinc-800">
                                         {retiro.LugarRetiro && (
                                             <p className="text-xs text-zinc-500 py-2">
-                                                <span className="text-zinc-400 font-medium">Retiro:</span> {retiro.LugarRetiro}
-                                                {retiro.AgenciaNombre && ` — ${retiro.AgenciaNombre}`}
+                                                <span className="text-zinc-400 font-medium">{retiro.LugarRetiro}</span>{retiro.AgenciaNombre ? ` (${retiro.AgenciaNombre})` : ''}
                                             </p>
                                         )}
                                         {retiro.Ordenes?.length > 0 ? (
-                                            <div className="space-y-1.5">
+                                            <div className="space-y-1">
+                                                {/* Header */}
+                                                <div className="hidden md:grid grid-cols-[1fr_1.2fr_0.6fr_0.6fr] gap-2 px-3 py-1">
+                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Orden</span>
+                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Producto</span>
+                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider text-center">Cantidad</span>
+                                                    <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider text-right">Importe</span>
+                                                </div>
                                                 {retiro.Ordenes.map((ord, i) => (
-                                                    <div key={i} className="flex items-center justify-between py-1.5 px-3 rounded-lg bg-zinc-800/50">
-                                                        <div className="min-w-0">
+                                                    <div key={i} className="py-1.5 px-3 rounded-lg bg-zinc-800/50">
+                                                        {/* Desktop: grid */}
+                                                        <div className="hidden md:grid grid-cols-[1fr_1.2fr_0.6fr_0.6fr] gap-2 items-center">
                                                             <p className="text-sm font-semibold text-zinc-200 truncate">{ord.codigo}</p>
-                                                            <p className="text-xs text-zinc-500 truncate">{ord.nombre}</p>
+                                                            <p className="text-xs text-zinc-400 truncate">{ord.producto || '-'}</p>
+                                                            <p className="text-xs text-zinc-400 text-center">{ord.cantidad || '-'}</p>
+                                                            <span className="text-sm font-bold text-custom-cyan text-right">
+                                                                {ord.moneda} {ord.costo.toLocaleString('es-UY', { minimumFractionDigits: 2 })}
+                                                            </span>
                                                         </div>
-                                                        <span className="text-sm font-bold text-custom-cyan shrink-0 ml-3">
-                                                            {ord.moneda} {ord.costo.toLocaleString('es-UY', { minimumFractionDigits: 2 })}
-                                                        </span>
+                                                        {/* Mobile: stacked */}
+                                                        <div className="md:hidden">
+                                                            <div className="flex items-center justify-between">
+                                                                <p className="text-sm font-semibold text-zinc-200 truncate">{ord.codigo}</p>
+                                                                <span className="text-sm font-bold text-custom-cyan shrink-0 ml-3">
+                                                                    {ord.moneda} {ord.costo.toLocaleString('es-UY', { minimumFractionDigits: 2 })}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-3 mt-1">
+                                                                {ord.producto && <span className="text-[11px] text-zinc-400 truncate">{ord.producto}</span>}
+                                                                {ord.cantidad && <span className="text-[11px] text-zinc-500 shrink-0">Cant: {ord.cantidad}</span>}
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 ))}
                                             </div>

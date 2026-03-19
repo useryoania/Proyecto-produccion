@@ -35,6 +35,26 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
         throw new Error('No se proporcionaron órdenes válidas para el retiro.');
     }
 
+    // ── VALIDACIÓN: excluir órdenes que ya pertenecen a un retiro activo ──
+    const checkParams = ordIds.map((_, i) => `@dup${i}`).join(',');
+    const dupReq = transaction.request();
+    ordIds.forEach((id, i) => dupReq.input(`dup${i}`, sql.Int, id));
+    const dupRes = await dupReq.query(`
+        SELECT OrdIdOrden FROM OrdenesDeposito WITH(NOLOCK)
+        WHERE OrdIdOrden IN (${checkParams})
+          AND OReIdOrdenRetiro IS NOT NULL
+          AND OrdEstadoActual NOT IN (6, 9)
+    `);
+    const yaAsignadas = new Set(dupRes.recordset.map(r => r.OrdIdOrden));
+    const ordIdsLibres = ordIds.filter(id => !yaAsignadas.has(id));
+    if (ordIdsLibres.length === 0) {
+        throw new Error('Todas las órdenes seleccionadas ya pertenecen a un retiro activo.');
+    }
+    if (yaAsignadas.size > 0) {
+        logger.warn(`[crearRetiro] ${yaAsignadas.size} orden(es) ya asignadas a otro retiro, se excluyen: ${[...yaAsignadas].join(', ')}`);
+    }
+    ordIds = ordIdsLibres;
+
     // Determinar estado del retiro y CodCliente según tipo de cliente (lógica centralizada)
     const tipoRes = await transaction.request()
         .input('OrdId', sql.Int, ordIds[0])

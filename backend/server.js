@@ -1,9 +1,9 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const logger = require('./utils/logger');
 const express = require('express');
 logger.info('--- SERVER RESTARTED V32 (NAMING: ARCHIVO X DE Y) AT ' + new Date().toISOString() + ' ---');
 const cors = require('cors');
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 logger.info("---------------------------------------------------------");
 logger.info("🔑 [SERVER STARTUP] Verificando Variables de Entorno:");

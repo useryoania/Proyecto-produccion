@@ -1189,12 +1189,15 @@ exports.getMyRetirosHistorial = async (req, res) => {
                 o.OrdCodigoOrden,
                 o.OrdNombreTrabajo,
                 o.OrdCostoFinal,
-                m.MonSimbolo
+                o.OrdCantidad,
+                m.MonSimbolo,
+                LTRIM(RTRIM(art.Descripcion)) AS Producto
             FROM OrdenesRetiro r WITH(NOLOCK)
             LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
             LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
             LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
             LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
+            LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = o.ProIdProducto
             WHERE r.CodCliente = @codCliente
             ORDER BY r.OReFechaAlta DESC
         `;
@@ -1223,7 +1226,9 @@ exports.getMyRetirosHistorial = async (req, res) => {
                     codigo: row.OrdCodigoOrden,
                     nombre: row.OrdNombreTrabajo || row.OrdCodigoOrden,
                     costo: parseFloat(row.OrdCostoFinal) || 0,
-                    moneda: row.MonSimbolo || '$'
+                    moneda: row.MonSimbolo || '$',
+                    producto: row.Producto || null,
+                    cantidad: row.OrdCantidad || null
                 });
             }
         }

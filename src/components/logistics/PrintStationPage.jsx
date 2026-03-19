@@ -16,7 +16,7 @@ const PrintStationPage = () => {
         try { const s = localStorage.getItem('ps_soundEnabled'); return s !== null ? s === 'true' : true; } catch { return true; }
     });
     const [copies, setCopies] = useState(() => {
-        try { return parseInt(localStorage.getItem('ps_copies')) || 2; } catch { return 2; }
+        try { return parseInt(localStorage.getItem('ps_copies')) || 1; } catch { return 1; }
     });
     const iframeRef = useRef(null);
     const audioRef = useRef(null);
@@ -58,7 +58,7 @@ const PrintStationPage = () => {
         };
     }, [addLog]);
 
-    // Generar HTML del ticket térmico
+    // Generar HTML del ticket térmico (2 copias en una sola impresión)
     const generateTicketHTML = useCallback((retiro) => {
         const fecha = new Date().toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
         const ordenes = retiro.orders || [];
@@ -66,18 +66,9 @@ const PrintStationPage = () => {
             `<tr><td style="padding:2px 0;font-size:11px">${o.orderNumber || o.id || '-'}</td><td style="padding:2px 0;font-size:11px;text-align:right">${o.orderCosto || ''}</td></tr>`
         ).join('');
         const simbolo = ordenes.length > 0 ? (ordenes[0].simbolo || '$') : '$';
-        return `<!DOCTYPE html>
-<html><head><style>
-    @page { margin: 0; size: 80mm auto; }
-    * { margin: 0; padding: 0; box-sizing: border-box; font-weight: bold; }
-    body { font-family: 'Courier New', monospace; width: 80mm; padding: 4mm; font-size: 14px; font-weight: bold; }
-    .center { text-align: center; }
-    .line { border-top: 2px dashed #000; margin: 6px 0; }
-    table { width: 100%; border-collapse: collapse; }
-    td { vertical-align: top; font-weight: bold; padding: 2px 0; }
-    .header { font-size: 18px; font-weight: 900; letter-spacing: 2px; }
-    .retiro-id { font-size: 22px; font-weight: 900; margin: 6px 0; }
-</style></head><body>
+
+        // Bloque de una copia del ticket
+        const copiaHTML = `
     <div class="center header">USER</div>
     <div class="center" style="font-size:11px;margin-bottom:4px;font-weight:bold;">COMPROBANTE DE RETIRO</div>
     <div class="line"></div>
@@ -95,16 +86,48 @@ const PrintStationPage = () => {
     <table>
         <tr><td style="font-size:16px;">TOTAL:</td><td style="font-size:16px;text-align:right;">${simbolo} ${retiro.totalCost || '0.00'}</td></tr>
     </table>
-    <div class="line"></div>
+    <div class="line"></div>`;
 
-    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
-    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
-    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
-    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
-    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
-    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
-    <div style="border-top:3px solid #000;width:100%"></div>
-    <div style="height:2mm"><span style="font-size:1px;color:#000">.</span></div>
+        return `<!DOCTYPE html>
+<html><head><style>
+    @page { margin: 0; size: 80mm auto; }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-weight: bold; }
+    body { font-family: 'Courier New', monospace; width: 80mm; padding: 4mm; font-size: 14px; font-weight: bold; }
+    .center { text-align: center; }
+    .line { border-top: 2px dashed #000; margin: 6px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    td { vertical-align: top; font-weight: bold; padding: 2px 0; }
+    .header { font-size: 18px; font-weight: 900; letter-spacing: 2px; }
+    .retiro-id { font-size: 22px; font-weight: 900; margin: 6px 0; }
+    .divider { border-top: 3px dashed #000; margin: 0; }
+    .check-row { display: flex; justify-content: space-around; align-items: center; font-size: 13px; font-weight: 900; }
+    .check-item { display: flex; align-items: center; gap: 6px; }
+    .checkbox { display: inline-block; width: 20px; height: 20px; border: 2px solid #000; }
+</style></head><body>
+
+    <!-- COPIA 1 -->
+    ${copiaHTML}
+
+    <!-- SEPARADOR -->
+    <div style="height:20mm"><span style="font-size:1px;color:#000">.</span></div>
+    <div class="divider"></div>
+    <div style="height:20mm"><span style="font-size:1px;color:#000">.</span></div>
+
+    <!-- COPIA 2 -->
+    ${copiaHTML}
+
+    <!-- PIE CON CHECKBOXES -->
+    <div style="height:6mm"><span style="font-size:1px;color:#000">.</span></div>
+    <div style="text-align:center;font-size:14px;font-weight:900;">Retiro</div>
+    <div style="height:3mm"><span style="font-size:1px;color:#000">.</span></div>
+    <div class="check-row">
+        <span class="check-item">Cliente <span class="checkbox"></span></span>
+        <span class="check-item">Otro <span class="checkbox"></span></span>
+    </div>
+    <div style="height:16mm"><span style="font-size:1px;color:#000">.</span></div>
+    <div style="text-align:center;font-size:13px;font-weight:900;">Firma _________________________</div>
+    <div style="height:8mm"><span style="font-size:1px;color:#000">.</span></div>
+
 </body></html>`;
     }, []);
 
@@ -154,28 +177,38 @@ const PrintStationPage = () => {
             }
 
             try {
-                const res = await api.get('/apiordenesRetiro/estados?estados=1,2,3');
+                const res = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4');
                 const retiros = res.data;
                 if (retiros && retiros.length > 0) {
-                    const ultimo = retiros.sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta))[0];
-                    const retiroId = ultimo.ordenDeRetiro;
+                    // Sort newest first, filter only retiros created in the last 3 minutes and not yet printed
+                    const ahora = Date.now();
+                    const sorted = retiros.sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta));
+                    const nuevos = sorted.filter(r => {
+                        if (printedIdsRef.current.has(r.ordenDeRetiro)) return false;
+                        const edad = ahora - new Date(r.fechaAlta).getTime();
+                        return edad < 3 * 60 * 1000; // Solo últimos 3 minutos
+                    });
 
-                    // Deduplicación: no reimprimir si ya se imprimió
-                    if (printedIdsRef.current.has(retiroId)) {
-                        addLog(`Retiro ${retiroId} ya fue impreso — omitido`, 'info', null, 'package');
+                    if (nuevos.length === 0) {
+                        addLog('Todos los retiros recientes ya fueron impresos — omitidos', 'info', null, 'package');
                         return;
                     }
 
-                    printedIdsRef.current.add(retiroId);
+                    for (const retiro of nuevos) {
+                        const retiroId = retiro.ordenDeRetiro;
+                        printedIdsRef.current.add(retiroId);
+                        addLog(`Imprimiendo retiro ${retiroId} (${copies} copias)...`, 'info', retiro, 'printer');
+                        printTicket(retiro);
+                        // Small delay between prints to avoid overlapping
+                        if (nuevos.length > 1) await new Promise(r => setTimeout(r, 1500));
+                    }
+
                     // Mantener solo los últimos 200 IDs para no crecer indefinidamente
                     if (printedIdsRef.current.size > 200) {
                         const arr = [...printedIdsRef.current];
                         printedIdsRef.current = new Set(arr.slice(arr.length - 200));
                     }
                     try { localStorage.setItem('ps_printedIds', JSON.stringify([...printedIdsRef.current])); } catch {}
-
-                    addLog(`Imprimiendo retiro ${retiroId} (${copies} copias)...`, 'info', ultimo, 'printer');
-                    printTicket(ultimo);
                 } else {
                     addLog('No se encontraron retiros recientes para imprimir', 'error', null, 'warning');
                 }

@@ -65,7 +65,7 @@ const realizarPago = async (req, res) => {
 
     const pagoId = pagoResult.recordset[0].PagIdPago;
 
-    // ── 2. Actualizar OrdenRetiro (solo si tiene retiro) ──────────────────────
+      // ── 2. Actualizar OrdenRetiro (solo si tiene retiro) ──────────────────────
     if (tieneRetiro) {
       await transaction.request()
         .input('ordenRetiroId', sql.Int, ordenRetiroId)
@@ -87,6 +87,18 @@ const realizarPago = async (req, res) => {
         .query(`
           INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
           VALUES (@ordenRetiroId, @nuevoEstado, GETDATE(), @usuarioId);
+        `);
+
+      // Actualizar OcupacionEstantes.Pagado si el retiro está en un estante
+      await transaction.request()
+        .input('ordenRetiroId', sql.Int, ordenRetiroId)
+        .query(`
+          UPDATE OcupacionEstantes SET Pagado = 1
+          WHERE OrdenRetiro IN (
+            SELECT COALESCE(r.FormaRetiro, 'R') + '-' + CAST(r.OReIdOrdenRetiro AS VARCHAR)
+            FROM OrdenesRetiro r WITH(NOLOCK)
+            WHERE r.OReIdOrdenRetiro = @ordenRetiroId
+          );
         `);
     }
 

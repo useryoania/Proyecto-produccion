@@ -60,32 +60,44 @@ async function generateReceipt(data, codCliente) {
     const doc = new jsPDF();
     const pageW = doc.internal.pageSize.getWidth();
 
+    // Helper: convert image URL to base64 data URL via canvas
+    const toBase64 = (src) => new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+            resolve({ dataUrl: canvas.toDataURL('image/png'), width: img.naturalWidth, height: img.naturalHeight });
+        };
+        img.onerror = () => resolve(null);
+        img.src = src;
+    });
+
     // Load logo
     try {
-        const img = new Image();
-        await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = reject;
-            img.src = logoSrc;
-        });
-        const ratio = img.width / img.height;
-        const h = 12;
-        const w = h * ratio;
-        doc.addImage(img, 'PNG', 20, 14, w, h);
+        const logoData = await toBase64(logoSrc);
+        if (logoData) {
+            const ratio = logoData.width / logoData.height;
+            const h = 12;
+            const w = h * ratio;
+            doc.addImage(logoData.dataUrl, 'PNG', 20, 14, w, h);
+        }
     } catch (e) {
         console.warn('[COMPROBANTE] No se pudo cargar logo.png:', e);
     }
     // Load PAGADO stamp for later use
-    let stampImg = null;
+    let stampDataUrl = null;
+    let stampRatio = 1;
     if (data.status === 'Pagado') {
         try {
-            stampImg = new Image();
-            await new Promise((resolve, reject) => {
-                stampImg.onload = resolve;
-                stampImg.onerror = reject;
-                stampImg.src = pagadoStampSrc;
-            });
-        } catch (e) { console.warn('[COMPROBANTE] No se pudo cargar pagado-stamp.png:', e); stampImg = null; }
+            const stampData = await toBase64(pagadoStampSrc);
+            if (stampData) {
+                stampDataUrl = stampData.dataUrl;
+                stampRatio = stampData.width / stampData.height;
+            }
+        } catch (e) { console.warn('[COMPROBANTE] No se pudo cargar pagado-stamp.png:', e); }
     }
 
     doc.setFontSize(9);
@@ -209,12 +221,12 @@ async function generateReceipt(data, codCliente) {
     doc.text(totalAmount, pageW - 20, y, { align: 'right' });
 
     // PAGADO stamp at total height, left side
-    if (stampImg) {
+    if (stampDataUrl) {
         const stampW = 35;
-        const stampH = stampW * (stampImg.height / stampImg.width);
+        const stampH = stampW / stampRatio;
         doc.saveGraphicsState();
         doc.setGState(new doc.GState({ opacity: 0.5 }));
-        doc.addImage(stampImg, 'PNG', pageW / 3 - stampW / 2, y - stampH / 2 + 2, stampW, stampH);
+        doc.addImage(stampDataUrl, 'PNG', pageW / 3 - stampW / 2, y - stampH / 2 + 2, stampW, stampH);
         doc.restoreGraphicsState();
     }
 
