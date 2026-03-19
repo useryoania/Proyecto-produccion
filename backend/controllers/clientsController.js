@@ -871,7 +871,7 @@ exports.updateClient = async (req, res) => {
             .input('IDCli',  sql.VarChar(255),  safeStr(IDCliente, 255))
             .input('Ruc',    sql.Char(20),      safeStr(CioRuc, 20))
             .input('IReact', sql.NVarChar(100), IDReact != null ? String(IDReact) : null)
-            .input('CRef',   sql.Int,           safeInt(CodReferencia))
+            .input('CRef',   sql.BigInt,        safeInt(CodReferencia))
             .input('Tel',    sql.Char(20),      safeStr(TelefonoTrabajo, 20))
             .input('Mail',   sql.Char(40),      safeStr(Email, 40))
             .input('DirTrab',sql.Char(80),      safeStr(DireccionTrabajo, 80))

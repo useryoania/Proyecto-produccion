@@ -496,14 +496,14 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
         let nombreCliente = null;
         if (codCliente) {
           const cliRes = await transaction.request()
-            .input('cod', sql.VarChar, codCliente)
+            .input('cod', sql.VarChar, String(codCliente || ''))
             .query(`SELECT TOP 1 LTRIM(RTRIM(Nombre)) AS Nombre FROM Clientes WITH(NOLOCK) WHERE IDCliente = @cod`);
           nombreCliente = cliRes.recordset[0]?.Nombre || null;
         }
 
         await transaction.request()
           .input('orden', sql.VarChar, ordenDeRetiro)
-          .input('cli', sql.VarChar, codCliente)
+          .input('cli', sql.VarChar, String(codCliente || ''))
           .input('nomCli', sql.NVarChar, nombreCliente)
           .input('monto', sql.Decimal, monto)
           .input('usr', sql.Int, UsuarioAlta)

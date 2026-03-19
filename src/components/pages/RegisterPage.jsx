@@ -213,7 +213,7 @@ const RegisterPage = () => {
                     />
                 </div>
 
-                <div className="relative bg-custom-dark pt-4 px-10 pb-10 md:px-8 md:pb-8 rounded-3xl w-full overflow-hidden">
+                <div className="relative bg-custom-dark pt-4 px-5 pb-10 md:px-8 md:pb-8 rounded-3xl w-full overflow-hidden">
                     <div className="flex flex-col items-center mb-6 md:mt-4 md:mb-6">
                         <Logo className="h-32 w-auto text-white" />
                     </div>
@@ -266,114 +266,113 @@ const RegisterPage = () => {
 
                         {/* Vendedor checkbox + SweetAlert picker */}
                         <div className={`bg-brand-dark border border-brand-cyan rounded-2xl p-4 space-y-3 ${!form.departamentoId || !form.localidadId ? 'opacity-50' : ''}`}>
-                            <label className={`flex items-center gap-3 select-none ${!form.departamentoId || !form.localidadId ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
-                                <input
-                                    type="checkbox"
-                                    checked={hadVendedor}
-                                    disabled={!form.departamentoId || !form.localidadId}
-                                    onChange={async (e) => {
-                                        if (e.target.checked) {
-                                            if (vendedores.length === 0) {
-                                                Swal.fire({ title: 'Sin asesores', text: 'No hay asesores disponibles para este departamento.', icon: 'info', background: '#212121', color: '#f4f4f5' });
-                                                return;
-                                            }
-                                            // Build HTML grid with photos
-                                            const isMobile = window.innerWidth < 768;
-                                            const grid = vendedores.map(v => {
-                                                const imgUrl = `/assets/images/asesores/${v.Cedula}.svg`;
-                                                const firstName = v.Nombre.split(' ')[0];
-                                                if (isMobile) {
-                                                    return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 14px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;">
-                                                        <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:72px;height:72px;border-radius:50%;object-fit:cover" /><div style="width:72px;height:72px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:24px">${firstName.charAt(0)}</div>
-                                                        <span style="font-weight:600;color:#f4f4f5;font-size:14px;text-transform:uppercase;letter-spacing:0.05em;text-align:center">${firstName}</span>
-                                                    </div>`;
-                                                } else {
-                                                    return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px 16px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;flex:1;min-width:140px;max-width:180px;">
-                                                        <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:96px;height:96px;border-radius:50%;object-fit:cover" /><div style="width:96px;height:96px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:30px">${firstName.charAt(0)}</div>
-                                                        <span style="font-weight:600;color:#f4f4f5;font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:0.05em">${firstName}</span>
-                                                    </div>`;
-                                                }
-                                            });
-                                            const separator = isMobile ? '<hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);width:60%;margin:0 auto" />' : '';
-                                            const gridHtml = grid.join(separator);
-
-                                            const selected = await new Promise((resolve) => {
-                                                Swal.fire({
-                                                    title: 'SELECCIONÁ TU ASESOR',
-                                                    html: `<div style="display:flex;${isMobile ? 'flex-direction:column;align-items:center;' : 'flex-wrap:wrap;justify-content:center;'}gap:12px;padding:8px">${gridHtml}</div>`,
-                                                    showConfirmButton: false,
-                                                    showCancelButton: false,
-                                                    showCloseButton: isMobile,
-                                                    background: '#19181B',
-                                                    color: '#f4f4f5',
-                                                    width: isMobile ? '100vw' : 'auto',
-                                                    padding: isMobile ? '1rem 0' : undefined,
-                                                    customClass: { popup: isMobile ? 'swal-mobile-full' : '' },
-                                                    didOpen: () => {
-                                                        if (isMobile) {
-                                                            const popup = Swal.getPopup();
-                                                            popup.style.borderRadius = '0';
-                                                            popup.style.margin = '0';
-                                                            popup.style.position = 'fixed';
-                                                            popup.style.top = '0';
-                                                            popup.style.left = '0';
-                                                            popup.style.width = '100vw';
-                                                            popup.style.height = '100vh';
-                                                            popup.style.display = 'flex';
-                                                            popup.style.flexDirection = 'column';
-                                                            // Center the options container vertically
-                                                            const htmlContainer = popup.querySelector('.swal2-html-container');
-                                                            if (htmlContainer) {
-                                                                htmlContainer.style.flex = '1';
-                                                                htmlContainer.style.display = 'flex';
-                                                                htmlContainer.style.alignItems = 'center';
-                                                                htmlContainer.style.justifyContent = 'center';
-                                                            }
-                                                            // Position close button bottom-right
-                                                            const closeBtn = popup.querySelector('.swal2-close');
-                                                            if (closeBtn) {
-                                                                closeBtn.style.position = 'absolute';
-                                                                closeBtn.style.top = '10px';
-                                                                closeBtn.style.right = '20px';
-                                                                closeBtn.style.top = 'auto';
-                                                                closeBtn.style.fontSize = '36px';
-                                                                closeBtn.style.color = '#ec008c';
-                                                            }
-                                                            // Shrink title on mobile
-                                                            const title = popup.querySelector('.swal2-title');
-                                                            if (title) {
-                                                                title.style.fontSize = '24px';
-                                                            }
-                                                        }
-                                                        const items = Swal.getPopup().querySelectorAll('.swal-asesor');
-                                                        items.forEach(el => {
-                                                            el.addEventListener('mouseenter', () => { el.style.background = '#2a2a2a'; });
-                                                            el.addEventListener('mouseleave', () => { el.style.background = 'transparent'; });
-                                                            el.addEventListener('click', () => {
-                                                                resolve({ id: el.dataset.id, nombre: el.dataset.nombre });
-                                                                Swal.close();
-                                                            });
-                                                        });
-                                                    },
-                                                }).then((result) => {
-                                                    if (result.dismiss) resolve(null);
-                                                });
-                                            });
-
-                                            if (selected) {
-                                                setHadVendedor(true);
-                                                setSelectedVendedorId(selected.id);
-                                                setSelectedVendedorName(selected.nombre);
-                                            }
-                                            // If cancelled, don't check
-                                        } else {
-                                            setHadVendedor(false);
-                                            setSelectedVendedorId('');
-                                            setSelectedVendedorName('');
+                            <label className={`flex items-center gap-3 select-none ${!form.departamentoId || !form.localidadId ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                                onClick={async () => {
+                                    if (!form.departamentoId || !form.localidadId) return;
+                                    if (!hadVendedor) {
+                                        if (vendedores.length === 0) {
+                                            Swal.fire({ title: 'Sin asesores', text: 'No hay asesores disponibles para este departamento.', icon: 'info', background: '#212121', color: '#f4f4f5' });
+                                            return;
                                         }
-                                    }}
-                                    className="w-4 h-4 rounded border-brand-cyan text-custom-cyan focus:ring-custom-cyan disabled:cursor-not-allowed"
-                                />
+                                        // Build HTML grid with photos
+                                        const isMobile = window.innerWidth < 768;
+                                        const grid = vendedores.map(v => {
+                                            const imgUrl = `/assets/images/asesores/${v.Cedula}.svg`;
+                                            const firstName = v.Nombre.split(' ')[0];
+                                            if (isMobile) {
+                                                return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 14px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;">
+                                                    <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:72px;height:72px;border-radius:50%;object-fit:cover" /><div style="width:72px;height:72px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:24px">${firstName.charAt(0)}</div>
+                                                    <span style="font-weight:600;color:#f4f4f5;font-size:14px;text-transform:uppercase;letter-spacing:0.05em;text-align:center">${firstName}</span>
+                                                </div>`;
+                                            } else {
+                                                return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px 16px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;flex:1;min-width:140px;max-width:180px;">
+                                                    <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:96px;height:96px;border-radius:50%;object-fit:cover" /><div style="width:96px;height:96px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:30px">${firstName.charAt(0)}</div>
+                                                    <span style="font-weight:600;color:#f4f4f5;font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:0.05em">${firstName}</span>
+                                                </div>`;
+                                            }
+                                        });
+                                        const separator = isMobile ? '<hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);width:60%;margin:0 auto" />' : '';
+                                        const gridHtml = grid.join(separator);
+
+                                        const selected = await new Promise((resolve) => {
+                                            Swal.fire({
+                                                title: 'SELECCIONÁ TU ASESOR',
+                                                html: `<div style="display:flex;${isMobile ? 'flex-direction:column;align-items:center;' : 'flex-wrap:wrap;justify-content:center;'}gap:12px;padding:8px">${gridHtml}</div>`,
+                                                showConfirmButton: false,
+                                                showCancelButton: false,
+                                                showCloseButton: isMobile,
+                                                background: '#19181B',
+                                                color: '#f4f4f5',
+                                                width: isMobile ? '100vw' : 'auto',
+                                                padding: isMobile ? '1rem 0' : undefined,
+                                                customClass: { popup: isMobile ? 'swal-mobile-full' : '' },
+                                                didOpen: () => {
+                                                    if (isMobile) {
+                                                        const popup = Swal.getPopup();
+                                                        popup.style.borderRadius = '0';
+                                                        popup.style.margin = '0';
+                                                        popup.style.position = 'fixed';
+                                                        popup.style.top = '0';
+                                                        popup.style.left = '0';
+                                                        popup.style.width = '100vw';
+                                                        popup.style.height = '100vh';
+                                                        popup.style.display = 'flex';
+                                                        popup.style.flexDirection = 'column';
+                                                        const htmlContainer = popup.querySelector('.swal2-html-container');
+                                                        if (htmlContainer) {
+                                                            htmlContainer.style.flex = '1';
+                                                            htmlContainer.style.display = 'flex';
+                                                            htmlContainer.style.alignItems = 'center';
+                                                            htmlContainer.style.justifyContent = 'center';
+                                                        }
+                                                        const closeBtn = popup.querySelector('.swal2-close');
+                                                        if (closeBtn) {
+                                                            closeBtn.style.position = 'absolute';
+                                                            closeBtn.style.top = '10px';
+                                                            closeBtn.style.right = '20px';
+                                                            closeBtn.style.top = 'auto';
+                                                            closeBtn.style.fontSize = '36px';
+                                                            closeBtn.style.color = '#ec008c';
+                                                        }
+                                                        const title = popup.querySelector('.swal2-title');
+                                                        if (title) {
+                                                            title.style.fontSize = '24px';
+                                                        }
+                                                    }
+                                                    const items = Swal.getPopup().querySelectorAll('.swal-asesor');
+                                                    items.forEach(el => {
+                                                        el.addEventListener('mouseenter', () => { el.style.background = '#2a2a2a'; });
+                                                        el.addEventListener('mouseleave', () => { el.style.background = 'transparent'; });
+                                                        el.addEventListener('click', () => {
+                                                            resolve({ id: el.dataset.id, nombre: el.dataset.nombre });
+                                                            Swal.close();
+                                                        });
+                                                    });
+                                                },
+                                            }).then((result) => {
+                                                if (result.dismiss) resolve(null);
+                                            });
+                                        });
+
+                                        if (selected) {
+                                            setHadVendedor(true);
+                                            setSelectedVendedorId(selected.id);
+                                            setSelectedVendedorName(selected.nombre);
+                                        }
+                                    } else {
+                                        setHadVendedor(false);
+                                        setSelectedVendedorId('');
+                                        setSelectedVendedorName('');
+                                    }
+                                }}
+                            >
+                                <div className="flex items-center justify-center text-custom-cyan">
+                                    {hadVendedor ? (
+                                        <CheckCircle2 size={22} />
+                                    ) : (
+                                        <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                    )}
+                                </div>
                                 <span className="text-sm font-semibold text-zinc-300">¿Fuiste atendido por algún asesor?</span>
                             </label>
 

@@ -113,18 +113,21 @@ export const MainLayout = ({ children }) => {
                     {/* 1. Mi Perfil (Primero según maqueta) */}
                     <NavItem to="/portal/profile/edit" icon={User} label="Mi Perfil" />
 
-                    {/* 2. Servicios (Collapsible) */}
-                    {/* <div className="space-y-1">
+                    {/* 2. Servicios (Link directo a catálogo) */}
+                    <NavItem to="/portal" icon={Package} label="Servicios" />
+
+                    {/* --- Servicios Collapsible (comentado temporalmente) ---
+                    <div className="space-y-1">
                         <button
                             onClick={() => setIsServicesOpen(!isServicesOpen)}
-                            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${location.pathname.includes('/order') || location.pathname === '/'
-                                ? 'bg-zinc-800 text-white'
-                                : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+                            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all text-sm ${isServicesOpen || location.pathname.includes('/order') || location.pathname === '/portal'
+                                ? 'text-zinc-100 border border-brand-cyan/40 bg-brand-cyan/5'
+                                : 'text-zinc-500 border border-zinc-800 hover:border-zinc-600 hover:text-zinc-300 hover:bg-brand-dark/50'
                                 }`}
                         >
                             <div className="flex items-center gap-3">
-                                <Package size={20} />
-                                <span className="font-medium">Servicios</span>
+                                <Package size={20} strokeWidth={1.5} />
+                                <span className="font-medium tracking-wide">Servicios</span>
                             </div>
                             <ChevronDown
                                 size={16}
@@ -140,11 +143,13 @@ export const MainLayout = ({ children }) => {
                                     exit={{ height: 0, opacity: 0 }}
                                     className="overflow-hidden"
                                 >
-                                    <div className="pl-4 space-y-1 border-l-2 border-zinc-800 ml-4 mt-1">
+                                    <div className="space-y-1.5 ml-2 mt-2">
                                         <Link
                                             to="/portal"
                                             onClick={() => setIsMobileMenuOpen(false)}
-                                            className={`block w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${location.pathname === '/portal' ? 'text-amber-400 bg-zinc-800/50 font-medium' : 'text-zinc-500 hover:text-zinc-300'
+                                            className={`block w-full text-left px-3 py-2.5 text-xs rounded-xl transition-all uppercase tracking-wide ${location.pathname === '/portal'
+                                                ? 'text-zinc-100 border border-brand-cyan/40 bg-brand-cyan/5 font-bold'
+                                                : 'text-zinc-500 border border-zinc-800 hover:border-zinc-600 hover:text-zinc-300'
                                                 }`}
                                         >
                                             Ver Catálogo Completo
@@ -158,9 +163,9 @@ export const MainLayout = ({ children }) => {
                                                     key={service.id}
                                                     to={`/portal/order/${service.id}`}
                                                     onClick={() => setIsMobileMenuOpen(false)}
-                                                    className={`block w-full text-left px-3 py-2 text-sm rounded-lg transition-colors ${location.pathname === `/portal/order/${service.id}`
-                                                        ? 'text-white bg-zinc-800 font-medium'
-                                                        : 'text-zinc-500 hover:text-zinc-300'
+                                                    className={`block w-full text-left px-3 py-2.5 text-xs rounded-xl transition-all uppercase tracking-wide ${location.pathname === `/portal/order/${service.id}`
+                                                        ? 'text-zinc-100 border border-brand-cyan/40 bg-brand-cyan/5 font-bold'
+                                                        : 'text-zinc-500 border border-zinc-800 hover:border-zinc-600 hover:text-zinc-300'
                                                         }`}
                                                 >
                                                     {service.label}
@@ -171,7 +176,8 @@ export const MainLayout = ({ children }) => {
                                 </motion.div>
                             )}
                         </AnimatePresence>
-                    </div> */}
+                    </div>
+                    --- Fin Servicios Collapsible --- */}
 
                     {/* <NavItem to="/portal/factory" icon={Factory} label="Fábrica / Estado" /> */}
                     <NavItem to="/portal/pickup" icon={Package} label="Retiro de Pedidos" />
@@ -229,8 +235,8 @@ export const MainLayout = ({ children }) => {
                         className="md:hidden fixed inset-0 bg-custom-dark z-20 pt-20 px-4 pb-4 overflow-y-auto"
                     >
                         <div className="flex flex-col gap-2">
-                            {/* <NavItem to="/portal" icon={Package} label="Servicios" /> */}
                             <NavItem to="/portal/profile/edit" icon={UserPen} label="Mi Perfil" />
+                            <NavItem to="/portal" icon={Package} label="Servicios" />
                             {/* <NavItem to="/portal/factory" icon={Factory} label="Fábrica / Estado" /> */}
                             <NavItem to="/portal/pickup" icon={Package} label="Retiro de Pedidos" />
                             <NavItem to="/portal/payments" icon={CreditCard} label="Pagos Pendientes" />

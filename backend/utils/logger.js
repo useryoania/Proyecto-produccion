@@ -2,7 +2,7 @@ const winston = require('winston');
 require('winston-daily-rotate-file');
 const path = require('path');
 
-const logsDir = path.join(__dirname, '..', 'logs');
+const logsDir = process.env.LOGS_PATH || path.join(__dirname, '..', 'logs');
 
 // Formato timestamp DD/MM/YYYY HH:mm:ss
 const timestampFormat = winston.format.timestamp({

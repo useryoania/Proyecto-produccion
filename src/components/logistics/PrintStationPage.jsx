@@ -6,12 +6,31 @@ import { Logo } from '../Logo';
 
 const PrintStationPage = () => {
     const [connected, setConnected] = useState(socket.connected);
-    const [logs, setLogs] = useState([]);
-    const [printCount, setPrintCount] = useState(0);
-    const [soundEnabled, setSoundEnabled] = useState(true);
-    const [copies, setCopies] = useState(2);
+    const [logs, setLogs] = useState(() => {
+        try { const s = localStorage.getItem('ps_logs'); return s ? JSON.parse(s) : []; } catch { return []; }
+    });
+    const [printCount, setPrintCount] = useState(() => {
+        try { return parseInt(localStorage.getItem('ps_printCount')) || 0; } catch { return 0; }
+    });
+    const [soundEnabled, setSoundEnabled] = useState(() => {
+        try { const s = localStorage.getItem('ps_soundEnabled'); return s !== null ? s === 'true' : true; } catch { return true; }
+    });
+    const [copies, setCopies] = useState(() => {
+        try { return parseInt(localStorage.getItem('ps_copies')) || 2; } catch { return 2; }
+    });
     const iframeRef = useRef(null);
     const audioRef = useRef(null);
+    const printedIdsRef = useRef(() => {
+        try { const s = localStorage.getItem('ps_printedIds'); return s ? new Set(JSON.parse(s)) : new Set(); } catch { return new Set(); }
+    });
+    // Lazy-init the Set (ref initializer returns a function, evaluate it once)
+    if (typeof printedIdsRef.current === 'function') printedIdsRef.current = printedIdsRef.current();
+
+    // Persist state to localStorage
+    useEffect(() => { try { localStorage.setItem('ps_logs', JSON.stringify(logs)); } catch {} }, [logs]);
+    useEffect(() => { try { localStorage.setItem('ps_printCount', String(printCount)); } catch {} }, [printCount]);
+    useEffect(() => { try { localStorage.setItem('ps_soundEnabled', String(soundEnabled)); } catch {} }, [soundEnabled]);
+    useEffect(() => { try { localStorage.setItem('ps_copies', String(copies)); } catch {} }, [copies]);
 
     // Sonido de notificación
     useEffect(() => {
@@ -78,7 +97,14 @@ const PrintStationPage = () => {
     </table>
     <div class="line"></div>
 
-    <div style="height:25mm"></div>
+    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
+    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
+    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
+    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
+    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
+    <div style="height:5mm"><span style="font-size:1px;color:#000">.</span></div>
+    <div style="border-top:3px solid #000;width:100%"></div>
+    <div style="height:2mm"><span style="font-size:1px;color:#000">.</span></div>
 </body></html>`;
     }, []);
 
@@ -116,8 +142,7 @@ const PrintStationPage = () => {
             setPrintCount(prev => prev + 1);
         })();
     }, [copies, generateTicketHTML, addLog]);
-
-    // Escuchar eventos de nuevo retiro
+    // Escuchar eventos de nuevo retiro (con deduplicación)
     useEffect(() => {
         const handleRetiroUpdate = async (data) => {
             if (data?.type !== 'nuevo_retiro') return;
@@ -129,13 +154,27 @@ const PrintStationPage = () => {
             }
 
             try {
-                // Fetch los últimos retiros y tomar el más reciente
                 const res = await api.get('/apiordenesRetiro/estados?estados=1,2,3');
                 const retiros = res.data;
                 if (retiros && retiros.length > 0) {
-                    // Ordenar por fecha descendente y tomar el primero
                     const ultimo = retiros.sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta))[0];
-                    addLog(`Imprimiendo retiro ${ultimo.ordenDeRetiro} (${copies} copias)...`, 'info', ultimo, 'printer');
+                    const retiroId = ultimo.ordenDeRetiro;
+
+                    // Deduplicación: no reimprimir si ya se imprimió
+                    if (printedIdsRef.current.has(retiroId)) {
+                        addLog(`Retiro ${retiroId} ya fue impreso — omitido`, 'info', null, 'package');
+                        return;
+                    }
+
+                    printedIdsRef.current.add(retiroId);
+                    // Mantener solo los últimos 200 IDs para no crecer indefinidamente
+                    if (printedIdsRef.current.size > 200) {
+                        const arr = [...printedIdsRef.current];
+                        printedIdsRef.current = new Set(arr.slice(arr.length - 200));
+                    }
+                    try { localStorage.setItem('ps_printedIds', JSON.stringify([...printedIdsRef.current])); } catch {}
+
+                    addLog(`Imprimiendo retiro ${retiroId} (${copies} copias)...`, 'info', ultimo, 'printer');
                     printTicket(ultimo);
                 } else {
                     addLog('No se encontraron retiros recientes para imprimir', 'error', null, 'warning');

@@ -3,6 +3,143 @@ const driveService = require('../services/driveService');
 const axios = require('axios');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib')
 const logger = require('../utils/logger');
+const fs = require('fs');
+const path = require('path');
+
+
+// ──────────────────────────────────────────────────
+// HELPER: Generar comprobante PDF y guardarlo en disco
+// ──────────────────────────────────────────────────
+async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalAmount, currency, currencySymbol, paymentMethod, paidAt, codCliente }) {
+    try {
+        const doc = await PDFDocument.create();
+        const page = doc.addPage([595.28, 841.89]); // A4
+        const { width } = page.getSize();
+        const font = await doc.embedFont(StandardFonts.Helvetica);
+        const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
+
+        const drawCentered = (text, y, size, f) => {
+            const tw = f.widthOfTextAtSize(text, size);
+            page.drawText(text, { x: (width - tw) / 2, y, size, font: f, color: rgb(0.1, 0.1, 0.1) });
+        };
+        const drawLeft = (text, x, y, size, f, color) => {
+            page.drawText(text, { x, y, size, font: f, color: color || rgb(0.1, 0.1, 0.1) });
+        };
+        const drawRight = (text, x, y, size, f, color) => {
+            const tw = f.widthOfTextAtSize(text, size);
+            page.drawText(text, { x: x - tw, y, size, font: f, color: color || rgb(0.1, 0.1, 0.1) });
+        };
+
+        let y = 780;
+
+        // Título
+        drawCentered('COMPROBANTE DE PAGO', y, 18, fontBold);
+        y -= 30;
+
+        // Transaction ID
+        drawRight(transactionId || '', width - 50, y, 9, font, rgb(0.55, 0.55, 0.55));
+        y -= 10;
+
+        // Separador
+        page.drawLine({ start: { x: 50, y }, end: { x: width - 50, y }, thickness: 0.5, color: rgb(0.78, 0.78, 0.78) });
+        y -= 25;
+
+        // Fecha
+        const fechaStr = paidAt ? new Date(paidAt).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : new Date().toLocaleDateString('es-UY');
+        drawRight(fechaStr, width - 50, y, 9, font, rgb(0.47, 0.47, 0.47));
+
+        // Código de retiro y cliente: siempre con prefijo PW-
+        const rawId = String(ordenRetiro || '').replace(/^R-/i, '').replace(/^PW-/i, '').replace(/^RW-/i, '');
+        const retiroCode = rawId ? `PW-${rawId}` : '-';
+        drawLeft('CÓDIGO DE RETIRO', 50, y, 9, fontBold);
+        y -= 16;
+        drawLeft(retiroCode, 50, y, 14, fontBold);
+        y -= 22;
+
+        drawLeft('CÓDIGO DE CLIENTE', 50, y, 9, fontBold);
+        y -= 16;
+        drawLeft(String(codCliente || '-'), 50, y, 14, fontBold);
+        y -= 28;
+
+        // Medio de pago
+        drawLeft('MEDIO DE PAGO', 50, y, 9, font, rgb(0.47, 0.47, 0.47));
+        drawRight(String(paymentMethod || '-').toUpperCase(), width - 50, y, 10, fontBold);
+        y -= 25;
+
+        // Detalle de pedidos
+        if (orders && orders.length > 0) {
+            // Header
+            page.drawRectangle({ x: 50, y: y - 5, width: width - 100, height: 18, color: rgb(0.1, 0.1, 0.1) });
+            drawLeft('PEDIDO', 54, y, 8, fontBold, rgb(1, 1, 1));
+            drawRight('IMPORTE', width - 54, y, 8, fontBold, rgb(1, 1, 1));
+            y -= 22;
+
+            orders.forEach((o, i) => {
+                if (i % 2 === 0) {
+                    page.drawRectangle({ x: 50, y: y - 5, width: width - 100, height: 18, color: rgb(0.96, 0.96, 0.96) });
+                } else {
+                    page.drawRectangle({ x: 50, y: y - 5, width: width - 100, height: 18, color: rgb(0.83, 0.83, 0.85) });
+                }
+                drawLeft(String(o.id || o.desc || ''), 54, y, 10, font);
+                drawRight(`${currencySymbol || '$'} ${Number(o.amount || 0).toFixed(2)}`, width - 54, y, 10, fontBold);
+                y -= 18;
+            });
+            y -= 10;
+        }
+
+        // Total
+        page.drawLine({ start: { x: 50, y }, end: { x: width - 50, y }, thickness: 0.5, color: rgb(0.78, 0.78, 0.78) });
+        y -= 20;
+        drawRight('TOTAL:', width - 130, y, 12, fontBold);
+        drawRight(`${currencySymbol || '$'} ${Number(totalAmount).toFixed(2)}`, width - 50, y, 12, fontBold, rgb(0.02, 0.59, 0.41));
+        y -= 14;
+        drawRight(currency === 840 ? 'USD' : 'UYU', width - 50, y, 10, font);
+
+        // Sello PAGADO (a la izquierda del total)
+        let stampDrawn = false;
+        try {
+            const stampPath = path.join(__dirname, '..', '..', 'public', 'assets', 'images', 'pagado-stamp.png');
+            if (fs.existsSync(stampPath)) {
+                const stampBytes = fs.readFileSync(stampPath);
+                const stampImage = await doc.embedPng(stampBytes);
+                const stampWidth = 120;
+                const stampHeight = stampWidth * (stampImage.height / stampImage.width);
+                page.drawImage(stampImage, {
+                    x: 50,
+                    y: y - stampHeight + 10,
+                    width: stampWidth,
+                    height: stampHeight,
+                    opacity: 0.7
+                });
+                stampDrawn = true;
+            }
+        } catch (stampErr) {
+            logger.warn('[HANDY RECEIPT] No se pudo agregar sello PAGADO:', stampErr.message);
+        }
+        if (!stampDrawn) {
+            drawLeft('PAGADO', 50, y, 18, fontBold, rgb(0.02, 0.59, 0.41));
+        }
+
+        // Footer
+        drawCentered('ESTE COMPROBANTE FUE GENERADO AUTOMATICAMENTE.', 40, 8, font);
+
+        // Guardar en disco (usa COMPROBANTES_PATH del .env o la carpeta local por defecto)
+        const baseDir = process.env.COMPROBANTES_PATH || path.join(__dirname, '..', 'comprobantes');
+        const dir = path.join(baseDir, 'handy');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+        const fileName = `comprobante-${retiroCode}.pdf`;
+        const filePath = path.join(dir, fileName);
+        const pdfBytes = await doc.save();
+        fs.writeFileSync(filePath, pdfBytes);
+
+        logger.info(`[HANDY RECEIPT] Comprobante guardado: ${filePath}`);
+        return filePath;
+    } catch (err) {
+        logger.error('[HANDY RECEIPT] Error generando comprobante:', err.message);
+        return null;
+    }
+}
 
 // ===================================
 // TOTEM: VERIFICAR IP (SIN AUTH)
@@ -1912,6 +2049,19 @@ exports.handyWebhook = async (req, res) => {
                         }
 
                         logger.info(`[HANDY WEBHOOK] ✅ Pago registrado en DB: PagoId=${pagoId}, OrdenRetiro=${ordenRetiroId}`);
+
+                        // Generar comprobante PDF y guardarlo en disco
+                        generateHandyReceipt({
+                            transactionId,
+                            ordenRetiro: storedOrdenRetiro,
+                            orders,
+                            totalAmount: tx.TotalAmount,
+                            currency: tx.Currency,
+                            currencySymbol: tx.Currency === 840 ? 'US$' : '$',
+                            paymentMethod: issuerName,
+                            paidAt: new Date(),
+                            codCliente: tx.CodCliente
+                        }).catch(e => logger.error('[HANDY WEBHOOK] Error guardando comprobante:', e.message));
                     } else {
                         logger.warn('[HANDY WEBHOOK] No se pudo parsear ordenRetiroId:', payloadPago.ordenRetiro);
                     }

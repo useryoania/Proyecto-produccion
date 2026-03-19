@@ -1168,7 +1168,7 @@ exports.marcarExcepcional = async (req, res) => {
             return res.status(400).json({ error: "Debe ingresar una justificación/explicación obligatoria." });
         }
 
-        if (password !== process.env.CONTRAAUTORIZO) {
+        if (password !== process.env.BYPASS) {
             return res.status(403).json({ error: "Contraseña incorrecta." });
         }
 

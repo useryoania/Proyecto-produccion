@@ -121,13 +121,18 @@ function createPerRecipientThrottle(minIntervalMs) {
     };
 }
 
+const _warnedNoCelular = new Set();
+
 async function procesarUnaOrdenWsp(io, r, pool, throttle) {
     const codigoOrden = r.OrdCodigoOrden || "-";
     const toReal = normalizePhone(r.TelefonoTrabajo);
     const to = FORCE_TEST_TO ? normalizePhone(WA_TEST_TO) : toReal;
 
     if (!to) {
-        logger.warn(`[WHATSAPP JOB] ${codigoOrden} sin celular válido.`);
+        if (!_warnedNoCelular.has(codigoOrden)) {
+            logger.warn(`[WHATSAPP JOB] ${codigoOrden} sin celular válido.`);
+            _warnedNoCelular.add(codigoOrden);
+        }
         if (io) io.emit("actualizado_wsp", { codigoOrden: r.OrdCodigoOrden, ordId: r.OrdIdOrden, status: 'error', reason: 'Número de teléfono inválido o vacío' });
         return;
     }
