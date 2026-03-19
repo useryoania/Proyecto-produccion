@@ -27,7 +27,7 @@ function Avatar({ name, size = 34 }) {
 }
 
 // ─── Modal ABM ────────────────────────────────────────────────────────────────
-function ClientModal({ client, catalogs, onClose, onSaved }) {
+function ClientModal({ client, catalogs, onClose, onSaved, onDeleted }) {
     const isNew = !client?.CodCliente;
     const [form, setForm] = useState({});
     const [saving, setSaving] = useState(false);
@@ -44,10 +44,34 @@ function ClientModal({ client, catalogs, onClose, onSaved }) {
         if (!form.Nombre?.trim()) return toast.error('El nombre es obligatorio');
         setSaving(true);
         try {
-            if (isNew) await api.post('/clients', { nombre:form.Nombre, telefono:form.TelefonoTrabajo, email:form.Email, direccion:form.DireccionTrabajo, ruc:form.CioRuc, nombreFantasia:form.NombreFantasia });
-            else await api.put(`/clients/${client.CodCliente}`, form);
+            if (isNew) {
+                // Al crear: envía TODOS los campos del formulario al backend
+                const r = await api.post('/clients', {
+                    nombre:         form.Nombre,
+                    nombreFantasia: form.NombreFantasia,
+                    telefono:       form.TelefonoTrabajo,
+                    email:          form.Email,
+                    direccion:      form.DireccionTrabajo,
+                    ruc:            form.CioRuc,
+                    idCliente:      form.IDCliente,
+                    idReact:        form.IDReact,
+                    codReferencia:  form.CodReferencia,
+                    tipoCliente:    form.TClIdTipoCliente,
+                    vendedorId:     form.VendedorID,
+                    estado:         form.ESTADO || 'ACTIVO',
+                    departamentoId: form.DepartamentoID,
+                    localidadId:    form.LocalidadID,
+                    agenciaId:      form.AgenciaID,
+                    formaEnvioId:   form.FormaEnvioID,
+                    webActive:      form.WebActive ? 1 : 0,
+                });
+                onSaved(r.data);
+            } else {
+                const r = await api.put(`/clients/${client.CodCliente}`, form);
+                onSaved(r.data || { ...client, ...form });
+            }
             toast.success(isNew ? 'Cliente creado ✓' : 'Cliente actualizado ✓');
-            onSaved(); onClose();
+            onClose();
         } catch(e) { toast.error(e.response?.data?.error || 'Error guardando'); }
         finally { setSaving(false); }
     };
@@ -58,26 +82,35 @@ function ClientModal({ client, catalogs, onClose, onSaved }) {
         try {
             await api.delete(`/clients/${client.CodCliente}`);
             toast.success('Cliente eliminado');
-            onSaved(); onClose();
+            onDeleted(client.CodCliente);
+            onClose();
         } catch(e) { toast.error(e.response?.data?.error || 'No se pudo eliminar'); }
         finally { setDeleting(false); }
     };
 
-    const F = ({label, field, type='text', readOnly=false, cls=''}) => (
+
+// ─── Helpers de campo reutilizables (FUERA del modal para evitar remounts) ────
+// IMPORTANTE: si se definen dentro del componente, React los trata como nuevos
+// tipos en cada render y desmonta/remonta el input → pérdida de foco al tipear.
+function ModalField({ label, field, type='text', readOnly=false, cls='', form, onChange }) {
+    return (
         <div className={`ci-field ${cls}`}>
             <label>{label}</label>
-            <input type={type} value={form[field]??''} onChange={set(field)} readOnly={readOnly} />
+            <input type={type} value={form[field]??''} onChange={onChange(field)} readOnly={readOnly} />
         </div>
     );
-    const S = ({label, field, options=[], idKey='ID', nameKey='Nombre', cls=''}) => (
+}
+function ModalSelect({ label, field, options=[], idKey='ID', nameKey='Nombre', cls='', form, onChange }) {
+    return (
         <div className={`ci-field ${cls}`}>
             <label>{label}</label>
-            <select value={form[field]??''} onChange={set(field)}>
+            <select value={form[field]??''} onChange={onChange(field)}>
                 <option value="">— Sin asignar —</option>
                 {options.map(o=><option key={o[idKey]} value={o[idKey]}>{o[nameKey]}</option>)}
             </select>
         </div>
     );
+}
 
     return (
         <div className="ci-overlay" onClick={onClose}>
@@ -93,27 +126,27 @@ function ClientModal({ client, catalogs, onClose, onSaved }) {
                     <div>
                         <div className="ci-modal-section-title">Identificación</div>
                         <div className="ci-field-grid">
-                            <F label="Nombre / Razón Social *" field="Nombre" cls="full"/>
-                            <F label="Nombre Fantasía" field="NombreFantasia"/>
-                            <F label="ID Cliente" field="IDCliente"/>
-                            <F label="RUC / C.I." field="CioRuc"/>
-                            <F label="IDReact" field="IDReact"/>
-                            <F label="CodReferencia (Macrosoft)" field="CodReferencia"/>
+                            <ModalField label="Nombre / Razón Social *" field="Nombre" cls="full" form={form} onChange={set}/>
+                            <ModalField label="Nombre Fantasía" field="NombreFantasia" form={form} onChange={set}/>
+                            <ModalField label="ID Cliente" field="IDCliente" form={form} onChange={set}/>
+                            <ModalField label="RUC / C.I." field="CioRuc" form={form} onChange={set}/>
+                            <ModalField label="IDReact" field="IDReact" form={form} onChange={set}/>
+                            <ModalField label="CodReferencia (Macrosoft)" field="CodReferencia" form={form} onChange={set}/>
                         </div>
                     </div>
                     <div>
                         <div className="ci-modal-section-title">Contacto</div>
                         <div className="ci-field-grid">
-                            <F label="Teléfono" field="TelefonoTrabajo"/>
-                            <F label="Email" field="Email" type="email"/>
-                            <F label="Dirección" field="DireccionTrabajo" cls="full"/>
+                            <ModalField label="Teléfono" field="TelefonoTrabajo" form={form} onChange={set}/>
+                            <ModalField label="Email" field="Email" type="email" form={form} onChange={set}/>
+                            <ModalField label="Dirección" field="DireccionTrabajo" cls="full" form={form} onChange={set}/>
                         </div>
                     </div>
                     <div>
                         <div className="ci-modal-section-title">Clasificación</div>
                         <div className="ci-field-grid">
-                            <S label="Tipo de Cliente" field="TClIdTipoCliente" options={catalogs.tiposClientes||[]}/>
-                            <S label="Vendedor" field="VendedorID" options={catalogs.vendedores||[]} idKey="Cedula"/>
+                            <ModalSelect label="Tipo de Cliente" field="TClIdTipoCliente" options={catalogs.tiposClientes||[]} form={form} onChange={set}/>
+                            <ModalSelect label="Vendedor" field="VendedorID" options={catalogs.vendedores||[]} idKey="Cedula" form={form} onChange={set}/>
                             <div className="ci-field">
                                 <label>Estado</label>
                                 <select value={form.ESTADO??''} onChange={set('ESTADO')}>
@@ -130,12 +163,12 @@ function ClientModal({ client, catalogs, onClose, onSaved }) {
                         </div>
                     </div>
                     <div>
-                        <div className="ci-modal-section-title">Ubicación</div>
+                        <div className="ci-modal-section-title">Ubicación y Envío</div>
                         <div className="ci-field-grid">
-                            <S label="Departamento" field="DepartamentoID" options={catalogs.departamentos||[]} cls="" />
-                            <S label="Localidad" field="LocalidadID" options={locs}/>
-                            <S label="Agencia Envío" field="AgenciaID" options={catalogs.agencias||[]}/>
-                            <S label="Forma de Envío" field="FormaEnvioID" options={catalogs.formasEnvio||[]}/>
+                            <ModalSelect label="Departamento" field="DepartamentoID" options={catalogs.departamentos||[]} form={form} onChange={set}/>
+                            <ModalSelect label="Localidad" field="LocalidadID" options={locs} form={form} onChange={set}/>
+                            <ModalSelect label="Agencia Envío" field="AgenciaID" options={catalogs.agencias||[]} form={form} onChange={set}/>
+                            <ModalSelect label="Forma de Envío" field="FormaEnvioID" options={catalogs.formasEnvio||[]} form={form} onChange={set}/>
                         </div>
                     </div>
                 </div>
@@ -157,42 +190,29 @@ function ClientModal({ client, catalogs, onClose, onSaved }) {
     );
 }
 
-// ─── TAB 1: TABLA / KANBAN ────────────────────────────────────────────────────
-function TabTabla({ catalogs }) {
-    const [clients, setClients] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [search, setSearch] = useState('');
+// ─── TAB 1: Lista memoizada (NO se re-renderiza cuando el modal abre/cierra) ───
+const TabTablaList = React.memo(function TabTablaList({ catalogs, onEdit, clients, setClients, loading }) {
+    const [search, setSearch]             = useState('');
     const [filterEstado, setFilterEstado] = useState('');
-    const [filterTipo, setFilterTipo] = useState('');
+    const [filterTipo, setFilterTipo]     = useState('');
     const [filterVinculo, setFilterVinculo] = useState('');
-    const [viewMode, setViewMode] = useState('kanban');
-    const [sortCol, setSortCol] = useState('Nombre');
-    const [sortDir, setSortDir] = useState('asc');
-    const [editing, setEditing] = useState(null);
-    const [filterDup, setFilterDup] = useState('');   // '' | 'all' | campo específico
-    const [focusDup, setFocusDup] = useState(null);   // { field, value } — ver solo hermanitos
-
-    const load = useCallback(async () => {
-        setLoading(true);
-        try { const r = await api.get('/clients'); setClients(r.data||[]); }
-        catch { toast.error('Error cargando clientes'); }
-        finally { setLoading(false); }
-    }, []);
-
-    useEffect(() => { load(); }, [load]);
+    const [viewMode, setViewMode]         = useState('kanban');
+    const [sortCol, setSortCol]           = useState('Nombre');
+    const [sortDir, setSortDir]           = useState('asc');
+    const [filterDup, setFilterDup]       = useState('');
+    const [focusDup, setFocusDup]         = useState(null);
 
     const dupSets = useMemo(() => {
+        const fields = ['Email','TelefonoTrabajo','Nombre','IDCliente','IDReact'];
+        const counts = {};
+        fields.forEach(f => { counts[f] = {}; });
+        clients.forEach(c => { fields.forEach(f => { const v=String(c[f]??'').trim().toLowerCase(); if(v) counts[f][v]=(counts[f][v]||0)+1; }); });
         const dup = {};
-        ['Email','TelefonoTrabajo','Nombre','IDCliente','IDReact'].forEach(f => {
-            const vals = {};
-            clients.forEach(c => { const v=String(c[f]??'').trim().toLowerCase(); if(!v)return; vals[v]=(vals[v]||0)+1; });
-            Object.entries(vals).forEach(([v,cnt]) => { if(cnt>1) clients.filter(c=>String(c[f]??'').trim().toLowerCase()===v).forEach(c=>{ if(!dup[c.CodCliente])dup[c.CodCliente]=new Set(); dup[c.CodCliente].add(f); }); });
-        });
+        clients.forEach(c => { fields.forEach(f => { const v=String(c[f]??'').trim().toLowerCase(); if(v && counts[f][v]>1){ if(!dup[c.CodCliente])dup[c.CodCliente]=new Set(); dup[c.CodCliente].add(f); } }); });
         return dup;
     }, [clients]);
 
-    // Manejador para click en etiqueta de duplicado: filtra hermanitos
-    const handleDupTagClick = (e, c, field) => {
+    const handleDupTagClick = useCallback((e, c, field) => {
         e.stopPropagation();
         const val = String(c[field] ?? '').trim().toLowerCase();
         if (!val) return;
@@ -200,7 +220,7 @@ function TabTabla({ catalogs }) {
             prev && prev.field === field && prev.value === val ? null
             : { field, value: val, label: c[field] }
         );
-    };
+    }, []);
 
 
     const filtered = useMemo(() => {
@@ -229,40 +249,15 @@ function TabTabla({ catalogs }) {
         return sortDir==='asc'?cmp:-cmp;
     }), [filtered, sortCol, sortDir]);
 
-    const toggleSort = col => { if(sortCol===col)setSortDir(d=>d==='asc'?'desc':'asc'); else{setSortCol(col);setSortDir('asc');} };
+    const toggleSort = useCallback(col => { if(sortCol===col)setSortDir(d=>d==='asc'?'desc':'asc'); else{setSortCol(col);setSortDir('asc');} }, [sortCol]);
 
     const dupCount = Object.keys(dupSets).length;
-    const activeCount = clients.filter(c=>c.ESTADO==='ACTIVO').length;
-    const linkedCount = clients.filter(c=>c.IDReact).length;
 
     return (
         <div style={{display:'flex',flexDirection:'column',flex:1,overflow:'hidden',gap:0}}>
-            {/* Toolbar + Stats en una sola fila */}
+            {/* Toolbar */}
             <div className="ci-toolbar">
-                {/* Stats como badges compactos */}
-                <div style={{display:'flex',gap:6,alignItems:'center',flexShrink:0}}>
-                    <span style={{display:'inline-flex',flexDirection:'column',alignItems:'center',background:'#f1f5f9',borderRadius:8,padding:'3px 10px',minWidth:46}}>
-                        <span style={{fontWeight:800,fontSize:14,lineHeight:1.2,color:'#1e293b'}}>{clients.length}</span>
-                        <span style={{fontSize:9,color:'#64748b',fontWeight:600,textTransform:'uppercase',letterSpacing:.5}}>Total</span>
-                    </span>
-                    <span style={{display:'inline-flex',flexDirection:'column',alignItems:'center',background:'#dcfce7',borderRadius:8,padding:'3px 10px',minWidth:46}}>
-                        <span style={{fontWeight:800,fontSize:14,lineHeight:1.2,color:'#15803d'}}>{activeCount}</span>
-                        <span style={{fontSize:9,color:'#16a34a',fontWeight:600,textTransform:'uppercase',letterSpacing:.5}}>Activos</span>
-                    </span>
-                    <span style={{display:'inline-flex',flexDirection:'column',alignItems:'center',background:'#ede9fe',borderRadius:8,padding:'3px 10px',minWidth:46}}>
-                        <span style={{fontWeight:800,fontSize:14,lineHeight:1.2,color:'#7c3aed'}}>{linkedCount}</span>
-                        <span style={{fontSize:9,color:'#7c3aed',fontWeight:600,textTransform:'uppercase',letterSpacing:.5}}>React</span>
-                    </span>
-                    {dupCount > 0 && (
-                        <span
-                            onClick={() => setFilterDup(f => f === 'all' ? '' : 'all')}
-                            style={{display:'inline-flex',flexDirection:'column',alignItems:'center',background: filterDup==='all'?'#dc2626':'#fee2e2',borderRadius:8,padding:'3px 10px',minWidth:46,cursor:'pointer',outline: filterDup==='all'?'2px solid #dc2626':'none',outlineOffset:2}}>
-                            <span style={{fontWeight:800,fontSize:14,lineHeight:1.2,color: filterDup==='all'?'#fff':'#dc2626'}}>{dupCount}</span>
-                            <span style={{fontSize:9,color: filterDup==='all'?'#fecaca':'#dc2626',fontWeight:600,textTransform:'uppercase',letterSpacing:.5}}>{filterDup==='all'?'✓ dup':'Dups'}</span>
-                        </span>
-                    )}
-                    <span style={{fontSize:11,color:'#94a3b8',fontWeight:500,whiteSpace:'nowrap'}}>{sorted.length} visibles</span>
-                </div>
+                <span style={{fontSize:11,color:'#94a3b8',fontWeight:500,whiteSpace:'nowrap'}}>{sorted.length} clientes</span>
 
                 <div style={{width:1,height:28,background:'#e2e8f0',flexShrink:0}}/>
 
@@ -291,7 +286,7 @@ function TabTabla({ catalogs }) {
                     <button className={`ci-view-btn ${viewMode==='kanban'?'active':''}`} onClick={()=>setViewMode('kanban')}>⊞ Tarjetas</button>
                     <button className={`ci-view-btn ${viewMode==='table'?'active':''}`} onClick={()=>setViewMode('table')}>☰ Tabla</button>
                 </div>
-                <button className="ci-btn-primary" onClick={()=>setEditing({})}>+ Nuevo Cliente</button>
+                <button className="ci-btn-primary" onClick={()=>onEdit({})}>+ Nuevo Cliente</button>
             </div>
 
             {/* Banner modo hermanitos */}
@@ -328,7 +323,7 @@ function TabTabla({ catalogs }) {
                             return (
                                 <div key={c.CodCliente} className={`ci-card ${dups?'dup-card':''}`}
                                     style={dups?{'--dup-color':DUP_COLORS[firstDupField]}:{}}
-                                    onClick={()=>setEditing(c)}>
+                                    onClick={()=>onEdit(c)}>
                                     <div className="ci-card-header">
                                         <Avatar name={c.Nombre} size={38}/>
                                         <div className="ci-card-info">
@@ -394,7 +389,7 @@ function TabTabla({ catalogs }) {
                                     const dups=dupSets[c.CodCliente];
                                     const firstDup=dups?[...dups][0]:null;
                                     return (
-                                        <tr key={c.CodCliente} onClick={()=>setEditing(c)}
+                                        <tr key={c.CodCliente} onClick={()=>onEdit(c)}
                                             className={dups?'dup-row':''} style={dups?{'--dup-color':DUP_COLORS[firstDup]}:{background:i%2?'#fafafe':'#fff'}}>
                                             <td style={{color:'#999',fontFamily:'monospace',fontSize:11}}>{c.CodCliente}</td>
                                             <td>
@@ -426,7 +421,15 @@ function TabTabla({ catalogs }) {
                                             <td>{c.ESTADO?<Badge color={statusColor(c.ESTADO)}>{c.ESTADO}</Badge>:'—'}</td>
                                             <td><div style={{display:'flex',gap:4}}><span style={{fontSize:13,color:c.IDReact?'#7c3aed':'#e2e8f0'}} title="React">⚛</span><span style={{fontSize:13,color:c.CodReferencia?'#059669':'#e2e8f0'}} title="Macrosoft">🖧</span></div></td>
                                             <td onClick={e=>e.stopPropagation()}>
-                                                <button onClick={async()=>{if(!confirm(`¿Eliminar "${c.Nombre}"?`))return;try{await api.delete(`/clients/${c.CodCliente}`);toast.success('Eliminado');load();}catch(e){toast.error(e.response?.data?.error||'No se pudo eliminar');}}} style={{background:'none',border:'none',cursor:'pointer',color:'#fca5a5',fontSize:14,padding:4}} title="Eliminar">🗑</button>
+                                                <button onClick={async e=>{
+                                                    e.stopPropagation();
+                                                    if(!confirm(`¿Eliminar "${c.Nombre}"?`))return;
+                                                    try{
+                                                        await api.delete(`/clients/${c.CodCliente}`);
+                                                        toast.success('Eliminado');
+                                                        setClients(prev=>prev.filter(x=>x.CodCliente!==c.CodCliente));
+                                                    }catch(err){toast.error(err.response?.data?.error||'No se pudo eliminar');}
+                                                }} style={{background:'none',border:'none',cursor:'pointer',color:'#fca5a5',fontSize:14,padding:4}} title="Eliminar">🗑</button>
                                             </td>
                                         </tr>
                                     );
@@ -437,8 +440,61 @@ function TabTabla({ catalogs }) {
                 )}
             </div>
 
-            {editing!==null && <ClientModal client={Object.keys(editing).length===0?null:editing} catalogs={catalogs} onClose={()=>setEditing(null)} onSaved={load}/>}
         </div>
+    );
+});
+
+// ─── TAB 1: WRAPPER liviano (solo maneja editing + clientes) ──────────────────
+// Al cambiar editing solo este wrapper re-renderiza.
+// TabTablaList (React.memo) no se toca → CERO parpadeo de cards.
+function TabTabla({ catalogs }) {
+    const [clients, setClients] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [editing, setEditing] = useState(null);
+
+    const load = useCallback(async (silent = false) => {
+        if (!silent) setLoading(true);
+        try { const r = await api.get('/clients'); setClients(r.data || []); }
+        catch { toast.error('Error cargando clientes'); }
+        finally { if (!silent) setLoading(false); }
+    }, []);
+
+    useEffect(() => { load(false); }, [load]);
+
+    const handleSaved = useCallback((savedClient) => {
+        if (!savedClient) { load(true); return; }
+        setClients(prev => {
+            const idx = prev.findIndex(c => c.CodCliente === savedClient.CodCliente);
+            if (idx >= 0) { const next=[...prev]; next[idx]=savedClient; return next; }
+            return [savedClient, ...prev];
+        });
+    }, [load]);
+
+    const handleDeleted = useCallback((codCliente) => {
+        setClients(prev => prev.filter(c => c.CodCliente !== codCliente));
+    }, []);
+
+    const onEdit = useCallback((c) => setEditing(c), []);
+
+    return (
+        <>
+            <TabTablaList
+                catalogs={catalogs}
+                onEdit={onEdit}
+                clients={clients}
+                setClients={setClients}
+                loading={loading}
+            />
+            {editing !== null && (
+                <ClientModal
+                    client={Object.keys(editing).length === 0 ? null : editing}
+                    catalogs={catalogs}
+                    onClose={() => setEditing(null)}
+                    onSaved={handleSaved}
+                    onDeleted={handleDeleted}
+                />
+            )}
+        </>
     );
 }
 
@@ -488,10 +544,6 @@ function TabArbol({ catalogs }) {
 
     return (
         <div style={{display:'flex',flexDirection:'column',flex:1,overflow:'hidden',gap:0}}>
-            <div className="ci-stats">
-                <div className="ci-stat-card"><span className="ci-stat-num">{totalClients}</span><span className="ci-stat-label">Clientes</span></div>
-                <div className="ci-stat-card"><span className="ci-stat-num">{groups.length}</span><span className="ci-stat-label">Grupos</span></div>
-            </div>
             <div className="ci-toolbar">
                 <div className="ci-view-toggle">
                     {[['vendedor','👤 Por Vendedor'],['tipo','🏷 Por Tipo']].map(([v,l])=>(
@@ -828,111 +880,20 @@ function TabMacrosoft({ msClients = [], loading = false, onReload }) {
 }
 
 // ─── PRINCIPAL ────────────────────────────────────────────────────────────────
-
 export default function ClientsIntegration() {
     const [tab, setTab] = useState('tabla');
     const [catalogs, setCatalogs] = useState({ localidades:[], departamentos:[], agencias:[], formasEnvio:[], tiposClientes:[], vendedores:[] });
-    const [msClients, setMsClients]   = useState([]);
-    const [msLoading, setMsLoading]   = useState(true);
-    const [msProgress, setMsProgress] = useState({ current: 0, total: 0 }); // para barra de progreso
-    const msAbortRef = useRef(null);  // para cancelar si el usuario recarga
-
-    const loadMacrosoft = useCallback(async () => {
-        // Cancelar carga anterior si existe
-        if (msAbortRef.current) msAbortRef.current = false;
-        const runId = {};
-        msAbortRef.current = runId;
-
-        setMsLoading(true);
-        setMsClients([]);
-        setMsProgress({ current: 0, total: 0 });
-
-        try {
-            // Página 1 → saber cuántas páginas hay + mapa de vinculados locales
-            const first = await api.get('/clients/macrosoft-page', { params: { page: 1 } });
-            if (msAbortRef.current !== runId) return;
-
-            const totalPages   = first.data.pages  || 1;
-            const vinculadosMap = first.data.vinculadosMap || {};
-
-            const enrich = (batch) => batch.map(c => ({
-                ...c,
-                EsVinculado:    vinculadosMap[String(c.CodCliente)] ? 1 : 0,
-                CodClienteLocal: vinculadosMap[String(c.CodCliente)] || null,
-            }));
-
-            // Mostrar página 1 de inmediato
-            setMsClients(enrich(first.data.data || []));
-            setMsProgress({ current: 1, total: totalPages });
-
-            // Resto de páginas: de 5 en 5 en paralelo
-            const CONCURRENCY = 5;
-            for (let start = 2; start <= totalPages; start += CONCURRENCY) {
-                if (msAbortRef.current !== runId) return; // cancelado
-                const end = Math.min(start + CONCURRENCY - 1, totalPages);
-                const pages = [];
-                for (let p = start; p <= end; p++) pages.push(p);
-
-                const results = await Promise.all(
-                    pages.map(p => api.get('/clients/macrosoft-page', { params: { page: p } })
-                        .then(r => ({ p, data: r.data.data || [] }))
-                        .catch(() => ({ p, data: [] }))
-                    )
-                );
-
-                if (msAbortRef.current !== runId) return;
-
-                results.sort((a, b) => a.p - b.p);
-                setMsClients(prev => {
-                    let acc = [...prev];
-                    results.forEach(({ data }) => { acc = acc.concat(enrich(data)); });
-                    return acc;
-                });
-                setMsProgress({ current: end, total: totalPages });
-            }
-
-        } catch(e) {
-            toast.error('Error cargando clientes Macrosoft');
-        } finally {
-            if (msAbortRef.current === runId) {
-                setMsLoading(false);
-                msAbortRef.current = null;
-            }
-        }
-    }, []);
 
     useEffect(() => {
         api.get('/clients/catalogs')
             .then(r => setCatalogs(r.data || {}))
             .catch(() => toast.error('Error cargando catálogos'));
-        loadMacrosoft();
-    }, [loadMacrosoft]);
-
-    const msProgressPct = msProgress.total > 0 ? Math.round((msProgress.current / msProgress.total) * 100) : 0;
+    }, []);
 
     const TABS = [
-        { id:'tabla',     icon:'📋', label:'Clientes' },
-        { id:'arbol',     icon:'👤', label:'Vendedores/Tipo' },
-        { id:'planilla',  icon:'📊', label:'Planilla' },
-        { id:'macrosoft', icon:'🖥', label: msLoading
-            ? (msProgress.total > 0 ? `Macrosoft (${msClients.length}/~${msProgress.total * 30})` : 'Macrosoft…')
-            : `Macrosoft (${msClients.length})` },
+        { id:'tabla', icon:'📋', label:'Clientes' },
+        { id:'arbol', icon:'👤', label:'Vendedores/Tipo' },
     ];
-
-    // Stats rápidas para el header (Macrosoft)
-    const msConVinculo = msClients.filter(c => c.EsVinculado).length;
-    const msSinVinculo = msClients.length - msConVinculo;
-    const msUY  = msClients.filter(c => c.Moneda === 1).length;
-    const msUSD = msClients.filter(c => c.Moneda === 2).length;
-
-    const MsBadge = ({ label, value, color, bg }) => (
-        <span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:11,fontWeight:700,
-            background:bg||'#f3f4f6',color:color||'#374151',padding:'3px 10px',borderRadius:20,
-            border:`1px solid ${color||'#d1d5db'}22`}}>
-            <span style={{opacity:.7}}>{label}</span>
-            <span style={{fontFamily:'monospace',fontSize:12}}>{value}</span>
-        </span>
-    );
 
     return (
         <div className="ci-root">
@@ -940,56 +901,19 @@ export default function ClientsIntegration() {
                 <div className="ci-header-top">
                     <span style={{fontSize:24}}>👥</span>
                     <span className="ci-title">Gestión de Clientes</span>
-                    {/* Barra de progreso Macrosoft */}
-                    {msLoading && (
-                        <div style={{marginLeft:12,display:'flex',flexDirection:'column',gap:3,minWidth:200}}>
-                            <div style={{display:'flex',alignItems:'center',gap:6}}>
-                                <span style={{display:'inline-block',width:7,height:7,borderRadius:'50%',background:'#7c3aed',animation:'pulse 1s infinite',flexShrink:0}}/>
-                                <span style={{fontSize:11,color:'#7c3aed',fontWeight:700}}>
-                                    {msProgress.total > 0
-                                        ? `Macrosoft: ${msClients.length} clientes (pág ${msProgress.current}/${msProgress.total})`
-                                        : 'Conectando Macrosoft…'}
-                                </span>
-                            </div>
-                            {msProgress.total > 0 && (
-                                <div style={{height:4,background:'#ede9fe',borderRadius:4,overflow:'hidden'}}>
-                                    <div style={{height:'100%',background:'#7c3aed',borderRadius:4,width:`${msProgressPct}%`,transition:'width .3s ease'}}/>
-                                </div>
-                            )}
-                        </div>
-                    )}
                 </div>
-                <div className="ci-tabs" style={{display:'flex',alignItems:'center',gap:0,flexWrap:'wrap'}}>
+                <div className="ci-tabs">
                     {TABS.map(t=>(
                         <button key={t.id} className={`ci-tab ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id)}>
                             {t.icon} {t.label}
                         </button>
                     ))}
-                    {/* Métricas + Recargar cuando tab=macrosoft */}
-                    {tab === 'macrosoft' && (
-                        <div style={{display:'flex',gap:6,marginLeft:'auto',paddingRight:4,flexWrap:'wrap',alignItems:'center'}}>
-                            {!msLoading && msClients.length > 0 && <>
-                                <MsBadge label="🇺🇾" value={msUY}        color="#1d4ed8" bg="#eff6ff" />
-                                <MsBadge label="💵" value={msUSD}       color="#15803d" bg="#f0fdf4" />
-                                <MsBadge label="✓"  value={msConVinculo} color="#15803d" bg="#dcfce7" />
-                                <MsBadge label="✕"  value={msSinVinculo} color="#dc2626" bg="#fef2f2" />
-                            </>}
-                            <button onClick={loadMacrosoft} disabled={msLoading}
-                                style={{background:'#f0eeff',border:'none',borderRadius:8,padding:'5px 13px',
-                                    fontWeight:700,fontSize:12,color:'#4f46e5',cursor:'pointer',
-                                    opacity:msLoading?.6:1,display:'flex',alignItems:'center',gap:4}}>
-                                {msLoading ? '…' : '↺ Recargar'}
-                            </button>
-                        </div>
-                    )}
                 </div>
             </div>
 
             <div style={{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}>
-                {tab==='tabla'     && <TabTabla     catalogs={catalogs}/>}
-                {tab==='arbol'     && <TabArbol     catalogs={catalogs}/>}
-                {tab==='planilla'  && <div style={{flex:1,overflow:'auto',padding:'20px 28px'}}><TabPlanilla /></div>}
-                {tab==='macrosoft' && <div style={{flex:1,overflow:'auto',padding:'20px 28px'}}><TabMacrosoft msClients={msClients} loading={msLoading} onReload={loadMacrosoft}/></div>}
+                {tab==='tabla' && <TabTabla catalogs={catalogs}/>}
+                {tab==='arbol' && <TabArbol catalogs={catalogs}/>}
             </div>
         </div>
     );

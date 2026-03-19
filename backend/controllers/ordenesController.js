@@ -12,7 +12,8 @@ const getOrdenesByFilter = async (req, res) => {
       fechaHasta,
       codigoOrden,
       subMarca,
-      tipoCliente
+      tipoCliente,
+      numeroRetiro
     } = req.query;
 
     let query = `
@@ -87,6 +88,18 @@ const getOrdenesByFilter = async (req, res) => {
       } else {
         query += ` AND c.TClIdTipoCliente = @tipoCliente`;
         request.input("tipoCliente", tipoCliente);
+      }
+    }
+    if (numeroRetiro) {
+      // Extraer solo la parte numérica si viene con prefijo tipo RL-123, R-123, RT-123, etc.
+      const soloNumero = String(numeroRetiro).replace(/^[A-Za-z\-]+/, '').trim();
+      if (soloNumero && !isNaN(soloNumero)) {
+        query += ` AND o.OReIdOrdenRetiro = @numeroRetiro`;
+        request.input("numeroRetiro", parseInt(soloNumero, 10));
+      } else {
+        // Búsqueda por texto en el código si no es numérico puro
+        query += ` AND CAST(o.OReIdOrdenRetiro AS NVARCHAR) LIKE '%' + @numeroRetiro + '%'`;
+        request.input("numeroRetiro", String(numeroRetiro).trim());
       }
     }
     if (subMarca) {

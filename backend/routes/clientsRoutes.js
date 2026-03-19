@@ -25,6 +25,8 @@ router.get('/sheets/search', controller.sheetsSearch);   // ?idreact=123
 router.post('/sheets/update',controller.sheetsUpdate);   // { idreact, data }
 
 // ── Crear ────────────────────────────────────────────────────────────────────
+// Endpoint público (protegido por x-api-key header, sin JWT)
+router.post('/external-create', controller.createExternalClient);
 router.post('/',                controller.createClient);
 router.post('/import-react',    controller.importReactClient);
 router.post('/export-react',    controller.createReactClient);

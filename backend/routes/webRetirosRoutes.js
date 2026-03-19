@@ -21,6 +21,8 @@ router.get('/cuadre-diario', verifyToken, webRetirosController.getCuadreDiario);
 // RUTAS API PARA ESTANTES FÍSICOS
 router.get('/estantes', verifyToken, webRetirosController.obtenerMapaEstantes);
 router.post('/estantes/asignar', verifyToken, webRetirosController.asignarRetiroAEstante);
+router.delete('/estantes/desasignar', verifyToken, webRetirosController.desasignarRetiroDeEstante);
+router.post('/estantes/mover', verifyToken, webRetirosController.moverRetiroEntreEstantes);
 router.delete('/estantes/liberar/:ubicacionId', verifyToken, webRetirosController.marcarRetiroEntregado);
 router.post('/estantes/liberar-multiple', verifyToken, webRetirosController.marcarRetiroEntregadoMultiple);
 router.post('/estantes/config/seed', verifyToken, webRetirosController.seedConfigEstantes);
@@ -28,5 +30,7 @@ router.post('/estantes/config/seed', verifyToken, webRetirosController.seedConfi
 router.post('/excepcional', verifyToken, webRetirosController.marcarExcepcional);
 router.get('/excepciones', verifyToken, webRetirosController.getExcepciones);
 router.put('/excepciones/:id/gestionar', verifyToken, webRetirosController.gestionarExcepcion);
+
+router.post('/autorizar', verifyToken, webRetirosController.autorizarRetiro);
 
 module.exports = router;
