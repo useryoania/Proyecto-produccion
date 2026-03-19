@@ -324,14 +324,17 @@ exports.searchClients = async (req, res) => {
 
 // Crear Cliente
 exports.createClient = async (req, res) => {
-    const { nombre, telefono, email, direccion, ruc, nombreFantasia, codReact, idReact, codCliente } = req.body;
+    const {
+        nombre, telefono, email, direccion, ruc, nombreFantasia,
+        codReact, idReact, codCliente, codReferencia,
+        // Campos nuevos enviados por el form completo
+        idCliente, tipoCliente, vendedorId, estado,
+        departamentoId, localidadId, agenciaId, formaEnvioId, webActive
+    } = req.body;
     try {
         const pool = await getPool();
 
-        // Verificar si existe
-        // ... (misma lógica de check, omitida para brevedad si no la toco? No, debo reemplazar todo el bloque si uso replace)
-        // Usaré un bloque más grande para reemplazar todo.
-
+        // Verificar si ya existe por nombre exacto
         const check = await pool.request()
             .input('Nombre', sql.NVarChar(200), nombre)
             .query("SELECT COUNT(*) as count FROM dbo.Clientes WHERE Nombre = @Nombre");
@@ -343,14 +346,10 @@ exports.createClient = async (req, res) => {
             return res.json(existing.recordset[0]);
         }
 
-        // Insertar nuevo FULL
-        // Sanitizar inputs para evitar errores de tipo
         const safeString = (val) => (val !== undefined && val !== null && val !== '') ? String(val) : null;
+        const safeInt    = (val) => (val !== undefined && val !== null && val !== '') ? parseInt(val) : null;
 
-        // Determinar ID Local:
-        // Si el usuario quiere usar el ID Externo (React) como ID Local
-        // Determinar ID Local:
-        // Prioridad: 1. ID Legacy Forzado (codCliente) | 2. ID React | 3. Auto-generado
+        // Determinar CodCliente
         let nextId = null;
         if (codCliente) {
             nextId = parseInt(codCliente);
@@ -365,19 +364,36 @@ exports.createClient = async (req, res) => {
         }
 
         const result = await pool.request()
-            .input('NextId', sql.Int, nextId)
-            .input('Nombre', sql.NVarChar(200), safeString(nombre))
-            .input('Telefono', sql.NVarChar(50), safeString(telefono))
-            .input('Email', sql.NVarChar(200), safeString(email))
-            .input('Direccion', sql.NVarChar(500), safeString(direccion))
-            .input('Ruc', sql.NVarChar(50), safeString(ruc))
-            .input('Fantasia', sql.NVarChar(200), safeString(nombreFantasia))
-            .input('CodReact', sql.NVarChar(50), safeString(codReact))
-            .input('IdReact', sql.NVarChar(50), safeString(idReact))
+            .input('NextId',         sql.Int,           nextId)
+            .input('Nombre',         sql.NVarChar(200), safeString(nombre))
+            .input('Telefono',       sql.NVarChar(50),  safeString(telefono))
+            .input('Email',          sql.NVarChar(200), safeString(email))
+            .input('Direccion',      sql.NVarChar(500), safeString(direccion))
+            .input('Ruc',            sql.NVarChar(50),  safeString(ruc))
+            .input('Fantasia',       sql.NVarChar(200), safeString(nombreFantasia))
+            .input('IdReact',        sql.NVarChar(50),  safeString(idReact))
+            .input('CodRef',         sql.NVarChar(50),  safeString(codReferencia || codReact))
+            .input('IDCliente',      sql.VarChar(255),  safeString(idCliente))
+            .input('TipoCliente',    sql.Int,           safeInt(tipoCliente))
+            .input('VendedorId',     sql.NVarChar(20),  safeString(vendedorId))
+            .input('Estado',         sql.NVarChar(10),  safeString(estado) || 'ACTIVO')
+            .input('DepartamentoId', sql.Int,           safeInt(departamentoId))
+            .input('LocalidadId',    sql.Int,           safeInt(localidadId))
+            .input('AgenciaId',      sql.Int,           safeInt(agenciaId))
+            .input('FormaEnvioId',   sql.Int,           safeInt(formaEnvioId))
+            .input('WebActive',      sql.Bit,           webActive ? 1 : 0)
             .query(`
-                INSERT INTO dbo.Clientes (CodCliente, Nombre, TelefonoTrabajo, Email, CioRuc, NombreFantasia, IDCliente, IDReact) 
-                OUTPUT INSERTED.* 
-                VALUES (@NextId, @Nombre, @Telefono, @Email, @Ruc, @Fantasia, @CodReact, @IdReact)
+                INSERT INTO dbo.Clientes
+                    (CodCliente, Nombre, TelefonoTrabajo, Email, DireccionTrabajo, CioRuc,
+                     NombreFantasia, IDCliente, IDReact, CodReferencia,
+                     TClIdTipoCliente, VendedorID, ESTADO,
+                     DepartamentoID, LocalidadID, AgenciaID, FormaEnvioID, WebActive)
+                OUTPUT INSERTED.*
+                VALUES
+                    (@NextId, @Nombre, @Telefono, @Email, @Direccion, @Ruc,
+                     @Fantasia, @IDCliente, @IdReact, @CodRef,
+                     @TipoCliente, @VendedorId, @Estado,
+                     @DepartamentoId, @LocalidadId, @AgenciaId, @FormaEnvioId, @WebActive)
             `);
 
         res.json(result.recordset[0]);
@@ -385,6 +401,82 @@ exports.createClient = async (req, res) => {
         logger.error("[CreateClient ERROR]", err);
         logger.error("Full Body:", req.body);
         res.status(500).json({ error: "DB Error: " + err.message });
+    }
+};
+
+// ─── ENDPOINT PÚBLICO: Crear cliente desde sistema externo ────────────────────
+// POST /api/clients/external-create
+// Header: x-api-key: <EXTERNAL_API_KEY del .env>
+// Body: { Nombre*, NombreFantasia, TelefonoTrabajo, Email, CioRuc, IDCliente, IDReact, DireccionTrabajo, TClIdTipoCliente, VendedorID, ESTADO }
+// Retorna: { success, CodCliente, CliIdCliente, alreadyExists }
+exports.createExternalClient = async (req, res) => {
+    // 1. Validar API Key
+    const apiKey = req.headers['x-api-key'];
+    const validKey = process.env.EXTERNAL_API_KEY;
+    if (!validKey || apiKey !== validKey) {
+        return res.status(401).json({ error: 'API Key inválida o no configurada' });
+    }
+
+    const {
+        Nombre, NombreFantasia, TelefonoTrabajo, Email, CioRuc,
+        IDCliente, IDReact, DireccionTrabajo,
+        TClIdTipoCliente, VendedorID, ESTADO
+    } = req.body;
+
+    if (!Nombre?.trim()) {
+        return res.status(400).json({ error: 'El campo Nombre es obligatorio' });
+    }
+
+    try {
+        const pool = await getPool();
+        const safe = (v, max = 200) => (v != null && v !== '') ? String(v).substring(0, max) : null;
+
+        // 2. Verificar si ya existe por Nombre exacto
+        const checkNom = await pool.request()
+            .input('N', sql.NVarChar(200), Nombre.trim())
+            .query(`SELECT CodCliente FROM dbo.Clientes WHERE LTRIM(RTRIM(Nombre)) = LTRIM(RTRIM(@N))`);
+
+        if (checkNom.recordset.length > 0) {
+            const existingId = checkNom.recordset[0].CodCliente;
+            logger.info(`[EXT CREATE] Cliente ya existe: "${Nombre}" → CodCliente=${existingId}`);
+            return res.json({ success: true, alreadyExists: true, CodCliente: existingId, CliIdCliente: existingId });
+        }
+
+        // 3. Generar CodCliente
+        const idRow = await pool.request().query(`SELECT ISNULL(MAX(CodCliente), 0) + 1 AS NextID FROM dbo.Clientes`);
+        const nextId = idRow.recordset[0].NextID;
+
+        // 4. Insertar
+        const result = await pool.request()
+            .input('CodCliente',      sql.Int,          nextId)
+            .input('Nombre',          sql.NVarChar(200), safe(Nombre, 200))
+            .input('NombreFantasia',  sql.NVarChar(200), safe(NombreFantasia, 200))
+            .input('TelefonoTrabajo', sql.Char(20),      safe(TelefonoTrabajo, 20))
+            .input('Email',           sql.Char(40),      safe(Email, 40))
+            .input('CioRuc',          sql.Char(20),      safe(CioRuc, 20))
+            .input('IDCliente',       sql.VarChar(255),  safe(IDCliente, 255))
+            .input('IDReact',         sql.NVarChar(100), safe(IDReact, 100))
+            .input('DireccionTrabajo',sql.Char(80),      safe(DireccionTrabajo, 80))
+            .input('TClIdTipoCliente',sql.Int,           TClIdTipoCliente ? parseInt(TClIdTipoCliente) : null)
+            .input('VendedorID',      sql.NVarChar(20),  safe(VendedorID, 20))
+            .input('ESTADO',          sql.NVarChar(10),  safe(ESTADO, 10) || 'ACTIVO')
+            .query(`
+                INSERT INTO dbo.Clientes
+                    (CodCliente, Nombre, NombreFantasia, TelefonoTrabajo, Email, CioRuc,
+                     IDCliente, IDReact, DireccionTrabajo, TClIdTipoCliente, VendedorID, ESTADO)
+                OUTPUT INSERTED.CodCliente
+                VALUES
+                    (@CodCliente, @Nombre, @NombreFantasia, @TelefonoTrabajo, @Email, @CioRuc,
+                     @IDCliente, @IDReact, @DireccionTrabajo, @TClIdTipoCliente, @VendedorID, @ESTADO)
+            `);
+
+        const newId = result.recordset[0].CodCliente;
+        logger.info(`[EXT CREATE] Cliente creado: "${Nombre}" → CodCliente=${newId}`);
+        return res.status(201).json({ success: true, alreadyExists: false, CodCliente: newId, CliIdCliente: newId });
+
+    } catch (err) {
+        logger.error('[EXT CREATE] Error:', err.message);
+        return res.status(500).json({ error: 'Error interno: ' + err.message });
     }
 };
 

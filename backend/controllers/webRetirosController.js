@@ -471,6 +471,187 @@ exports.asignarRetiroAEstante = async (req, res) => {
 };
 
 /**
+ * DESASIGNAR RETIRO DE ESTANTE
+ * Revierte al estado que tenía la orden ANTES del empaquetado (7/8), consultando el historial.
+ * DELETE /web-retiros/estantes/desasignar
+ * Body: { ordenRetiro: "RT-0018" }
+ */
+exports.desasignarRetiroDeEstante = async (req, res) => {
+    const { ordenRetiro } = req.body;
+    if (!ordenRetiro) return res.status(400).json({ error: 'Falta ordenRetiro' });
+
+    try {
+        const pool = await getPool();
+
+        // 1. Extraer ID numérico
+        const numMatch = (ordenRetiro || '').match(/(\d+)$/);
+        const OReId = numMatch ? parseInt(numMatch[1], 10) : NaN;
+        if (isNaN(OReId)) return res.status(400).json({ error: `ID inválido: ${ordenRetiro}` });
+
+        // 2. Verificar que existe en el estante
+        const check = await pool.request()
+            .input('Ord', sql.VarChar(50), ordenRetiro)
+            .query('SELECT TOP 1 EstanteID, Seccion, Posicion FROM OcupacionEstantes WHERE OrdenRetiro = @Ord');
+
+        if (check.recordset.length === 0) {
+            return res.status(404).json({ error: `La orden ${ordenRetiro} no está asignada a ningún estante` });
+        }
+
+        // 3. Leer estado actual + PagIdPago
+        const estadoRes = await pool.request()
+            .input('ID', sql.Int, OReId)
+            .query(`
+                SELECT TOP 1 OReEstadoActual, PagIdPago
+                FROM OrdenesRetiro WITH(NOLOCK)
+                WHERE OReIdOrdenRetiro = @ID
+            `);
+
+        const estadoActual = estadoRes.recordset[0]?.OReEstadoActual ?? 7;
+        const tienePago    = !!estadoRes.recordset[0]?.PagIdPago;
+
+        // 4. Recuperar el estado previo al empaquetado desde el historial
+        //    (el último estado que NO sea 7 ni 8, antes de que se empaquetara)
+        const histRes = await pool.request()
+            .input('ID', sql.Int, OReId)
+            .query(`
+                SELECT TOP 1 EORIdEstadoOrden
+                FROM HistoricoEstadosOrdenesRetiro WITH(NOLOCK)
+                WHERE OReIdOrdenRetiro = @ID
+                  AND EORIdEstadoOrden NOT IN (7, 8)
+                ORDER BY HEOFechaEstado DESC
+            `);
+
+        // Estado previo real (1=Ingresado, 3=Abonado de antemano, 4=Abonado, etc.)
+        const estadoPrevio = histRes.recordset[0]?.EORIdEstadoOrden ?? null;
+
+        // Lógica de reversión:
+        //  - Si hay historial previo al empaquetado → usar ese estado exacto
+        //  - Si no hay historial pero tiene pago (PagIdPago) → estado 3 (Abonado)
+        //  - Si no hay historial y sin pago → estado 1 (Ingresado)
+        let estadoReversion;
+        let descReversion;
+
+        if (estadoPrevio !== null) {
+            estadoReversion = estadoPrevio;
+            // Describir el estado para el log/respuesta
+            const descMap = { 1: 'Ingresado', 3: 'Abonado de antemano', 4: 'Abonado', 5: 'Listo para retirar' };
+            descReversion = descMap[estadoReversion] ?? `Estado ${estadoReversion}`;
+        } else {
+            // Fallback sin historial
+            estadoReversion = tienePago ? 3 : 1;
+            descReversion   = tienePago ? 'Abonado (sin historial previo)' : 'Ingresado';
+        }
+
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 5. Eliminar de OcupacionEstantes
+            await new sql.Request(transaction)
+                .input('Ord', sql.VarChar(50), ordenRetiro)
+                .query('DELETE FROM OcupacionEstantes WHERE OrdenRetiro = @Ord');
+
+            // 6. Revertir estado + registrar en historial
+            const fechaAhora = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
+            const UsuarioAlta = req.user?.id || 70;
+            await new sql.Request(transaction)
+                .input('ID',    sql.Int,      OReId)
+                .input('EstID', sql.Int,      estadoReversion)
+                .input('Fec',   sql.DateTime, new Date(fechaAhora))
+                .input('Usr',   sql.Int,      UsuarioAlta)
+                .query(`
+                    UPDATE OrdenesRetiro
+                    SET OReEstadoActual = @EstID, OReFechaEstadoActual = @Fec
+                    WHERE OReIdOrdenRetiro = @ID;
+                    INSERT INTO HistoricoEstadosOrdenesRetiro
+                        (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+                    VALUES (@ID, @EstID, @Fec, @Usr);
+                `);
+
+            await transaction.commit();
+
+            const io = req.app.get('socketio');
+            if (io) io.emit('retiros:update', { type: 'desasignado', ordenRetiro });
+
+            logger.info(`[DESASIGNAR] ${ordenRetiro} (antes: ${estadoActual}, previo historial: ${estadoPrevio ?? 'N/A'}, pago: ${tienePago}) → revertido a ${estadoReversion} (${descReversion})`);
+            res.json({
+                success: true,
+                message: `${ordenRetiro} desasignado. Estado revertido a: ${descReversion}`,
+                estadoReversion
+            });
+
+        } catch (innerErr) {
+            try { await transaction.rollback(); } catch (_) {}
+            throw innerErr;
+        }
+
+    } catch (err) {
+        logger.error('[DESASIGNAR] Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+/**
+ * MOVER RETIRO ENTRE CASILLAS (Drag & Drop)
+ * POST /web-retiros/estantes/mover
+ * Body: { ordenRetiro, destEstanteId, destSeccion, destPosicion }
+ */
+exports.moverRetiroEntreEstantes = async (req, res) => {
+    const { ordenRetiro, destEstanteId, destSeccion, destPosicion } = req.body;
+    if (!ordenRetiro || !destEstanteId || destSeccion == null || destPosicion == null) {
+        return res.status(400).json({ error: 'Faltan parámetros: ordenRetiro, destEstanteId, destSeccion, destPosicion' });
+    }
+
+    try {
+        const pool = await getPool();
+        const destUbicacionId = `${destEstanteId}-${destSeccion}-${destPosicion}`;
+
+        // Validar que la casilla destino no tenga órdenes de otro cliente
+        const ordEnDest = await pool.request()
+            .input('estId', sql.Char, destEstanteId)
+            .input('sec',   sql.Int,  parseInt(destSeccion))
+            .input('pos',   sql.Int,  parseInt(destPosicion))
+            .query('SELECT TOP 1 CodigoCliente FROM OcupacionEstantes WHERE EstanteID = @estId AND Seccion = @sec AND Posicion = @pos');
+
+        if (ordEnDest.recordset.length > 0) {
+            // Obtener cliente de la orden a mover
+            const ordSrc = await pool.request()
+                .input('Ord', sql.VarChar(50), ordenRetiro)
+                .query('SELECT TOP 1 CodigoCliente FROM OcupacionEstantes WHERE OrdenRetiro = @Ord');
+            const clienteSrc = (ordSrc.recordset[0]?.CodigoCliente || '').trim().toLowerCase();
+            const clienteDest = (ordEnDest.recordset[0]?.CodigoCliente || '').trim().toLowerCase();
+            if (clienteSrc && clienteDest && clienteSrc !== clienteDest) {
+                return res.status(409).json({ error: 'No se puede mover: la casilla destino tiene órdenes de otro cliente.' });
+            }
+        }
+
+        // Mover: actualizar EstanteID, Seccion, Posicion en OcupacionEstantes
+        await pool.request()
+            .input('Ord',      sql.VarChar(50), ordenRetiro)
+            .input('DestEst',  sql.Char,        destEstanteId)
+            .input('DestSec',  sql.Int,          parseInt(destSeccion))
+            .input('DestPos',  sql.Int,          parseInt(destPosicion))
+            .query(`
+                UPDATE OcupacionEstantes SET
+                    EstanteID = @DestEst,
+                    Seccion   = @DestSec,
+                    Posicion  = @DestPos
+                WHERE OrdenRetiro = @Ord
+            `);
+
+        const io = req.app.get('socketio');
+        if (io) io.emit('retiros:update', { type: 'estado', ordenRetiro });
+
+        logger.info(`[MOVER] ${ordenRetiro} → ${destUbicacionId}`);
+        res.json({ success: true, message: `${ordenRetiro} movido a ${destUbicacionId}` });
+
+    } catch (err) {
+        logger.error('[MOVER] Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+/**
  * ENTREGAR AL CLIENTE
  */
 exports.marcarRetiroEntregado = async (req, res) => {
@@ -1034,12 +1215,14 @@ exports.getExcepciones = async (req, res) => {
                            CAST(od.OrdCostoFinal AS FLOAT) AS monto,
                            mon.MonSimbolo AS moneda,
                            mo.MOrNombreModo AS modo,
-                           od.OrdEstadoActual AS estado
+                           od.OrdEstadoActual AS estado,
+                           eo.EOrNombreEstado AS estadoNombre
                     FROM RelOrdenesRetiroOrdenes rel WITH(NOLOCK)
                     JOIN OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = rel.OrdIdOrden
                     LEFT JOIN Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = od.MonIdMoneda
                     LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = od.ProIdProducto
                     LEFT JOIN ModosOrdenes mo WITH(NOLOCK) ON mo.MOrIdModoOrden = od.MOrIdModoOrden
+                    LEFT JOIN EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = od.OrdEstadoActual
                     WHERE rel.OReIdOrdenRetiro = orr.OReIdOrdenRetiro
                     FOR JSON PATH
                 ) AS OrdenesJSON,
@@ -1239,3 +1422,97 @@ exports.getMyRetirosHistorial = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+/**
+ * AUTORIZAR RETIRO SIN PAGO — Estado 9
+ * POST /web-retiros/autorizar
+ * Body: { ordenRetiro: "RT-0018", nota?: "..." }
+ */
+exports.autorizarRetiro = async (req, res) => {
+    const { ordenRetiro, nota } = req.body;
+    if (!ordenRetiro) return res.status(400).json({ error: 'Falta ordenRetiro' });
+    if (!nota || !nota.trim()) return res.status(400).json({ error: 'La observación/nota es obligatoria para autorizar sin pago' });
+
+    try {
+        const pool = await getPool();
+        const numMatch = (ordenRetiro || '').match(/(\d+)$/);
+        const OReId = numMatch ? parseInt(numMatch[1], 10) : NaN;
+        if (isNaN(OReId)) return res.status(400).json({ error: `ID inválido: ${ordenRetiro}` });
+
+        // Traer datos del retiro para RetirosConDeuda
+        const check = await pool.request()
+            .input('ID', sql.Int, OReId)
+            .query(`
+                SELECT TOP 1
+                    r.OReEstadoActual,
+                    r.OReCostoTotalOrden,
+                    r.CodCliente,
+                    COALESCE(LTRIM(RTRIM(c.Nombre)), LTRIM(RTRIM(cr.Nombre))) AS NombreCli,
+                    COALESCE(c.IDCliente, cr.IDCliente) AS CodigoCli
+                FROM OrdenesRetiro r WITH(NOLOCK)
+                LEFT JOIN OrdenesDeposito od WITH(NOLOCK) ON od.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+                LEFT JOIN Clientes c  WITH(NOLOCK) ON c.CliIdCliente = od.CliIdCliente
+                LEFT JOIN Clientes cr WITH(NOLOCK) ON cr.CodCliente  = r.CodCliente
+                WHERE r.OReIdOrdenRetiro = @ID
+            `);
+
+        if (check.recordset.length === 0) return res.status(404).json({ error: `Orden ${ordenRetiro} no encontrada` });
+
+        const estadoActual = check.recordset[0].OReEstadoActual;
+        if (estadoActual === 5) return res.status(409).json({ error: 'La orden ya fue entregada' });
+        if (estadoActual === 9) return res.status(409).json({ error: 'La orden ya está autorizada (estado 9)' });
+
+        const UsuarioAlta  = req.user?.id || 70;
+        const fecha        = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
+        const monto        = parseFloat(check.recordset[0].OReCostoTotalOrden) || 0;
+        const codCliente   = check.recordset[0].CodigoCli || check.recordset[0].CodCliente || null;
+        const nomCliente   = check.recordset[0].NombreCli || null;
+
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. Cambiar estado a 9 (Autorizado) + historial
+            await new sql.Request(transaction)
+                .input('ID',  sql.Int,      OReId)
+                .input('Fec', sql.DateTime, new Date(fecha))
+                .input('Usr', sql.Int,      UsuarioAlta)
+                .query(`
+                    UPDATE OrdenesRetiro
+                    SET OReEstadoActual = 9, OReFechaEstadoActual = @Fec
+                    WHERE OReIdOrdenRetiro = @ID;
+                    INSERT INTO HistoricoEstadosOrdenesRetiro
+                        (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+                    VALUES (@ID, 9, @Fec, @Usr);
+                `);
+
+            // 2. Registrar en RetirosConDeuda (misma tabla del modal viejo)
+            await new sql.Request(transaction)
+                .input('orden',  sql.VarChar,        ordenRetiro)
+                .input('cli',    sql.VarChar,        codCliente)
+                .input('nomCli', sql.NVarChar(200),  nomCliente)
+                .input('monto',  sql.Float,          monto)
+                .input('usr',    sql.Int,            UsuarioAlta)
+                .input('expl',   sql.NVarChar(500),  nota.trim())
+                .query(`
+                    INSERT INTO RetirosConDeuda
+                        (OrdenRetiro, CodigoCliente, NombreCliente, Monto, UsuarioAutorizador, Explicacion, Estado, Gestionado)
+                    VALUES (@orden, @cli, @nomCli, @monto, @usr, @expl, 'Pendiente', 0)
+                `);
+
+            await transaction.commit();
+            const io = req.app.get('socketio');
+            if (io) io.emit('retiros:update', { type: 'autorizado', ordenRetiro });
+            logger.info(`[AUTORIZAR] ${ordenRetiro} → Estado 9. User: ${UsuarioAlta}. Nota: ${nota}`);
+            res.json({ success: true, message: `${ordenRetiro} autorizado para entrega sin pago` });
+
+        } catch (innerErr) {
+            try { await transaction.rollback(); } catch (_) {}
+            throw innerErr;
+        }
+    } catch (err) {
+        logger.error('[AUTORIZAR] Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+

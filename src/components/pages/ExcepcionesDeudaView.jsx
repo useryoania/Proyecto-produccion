@@ -461,9 +461,22 @@ const ExcepcionesDeudaView = () => {
                                                                                 {o.moneda || '$'} {Number(o.monto || 0).toLocaleString()}
                                                                             </td>
                                                                             <td className="px-4 py-2.5 text-center">
-                                                                                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold">
-                                                                                    E{o.estado}
-                                                                                </span>
+                                                                                {(() => {
+                                                                                    const nombre = o.estadoNombre || `E${o.estado}`;
+                                                                                    const lower  = nombre.toLowerCase();
+                                                                                    const cls = lower.includes('entregad')
+                                                                                        ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                                                                                        : lower.includes('cancel')
+                                                                                        ? 'bg-rose-100 text-rose-700 border-rose-200'
+                                                                                        : lower.includes('pronto') || lower.includes('listo')
+                                                                                        ? 'bg-blue-100 text-blue-700 border-blue-200'
+                                                                                        : 'bg-slate-100 text-slate-600 border-slate-200';
+                                                                                    return (
+                                                                                        <span className={`text-xs px-2 py-0.5 rounded-full border font-bold ${cls}`}>
+                                                                                            {nombre}
+                                                                                        </span>
+                                                                                    );
+                                                                                })()}
                                                                             </td>
                                                                         </tr>
                                                                     ))}

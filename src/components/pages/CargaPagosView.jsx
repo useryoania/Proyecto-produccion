@@ -4,7 +4,7 @@ import api, { SOCKET_URL } from '../../services/apiClient';
 import { io } from 'socket.io-client';
 import {
     DollarSign, CreditCard, Search, X, CheckCircle, AlertTriangle,
-    RefreshCw, Loader2, User, Phone, Package, FileText, Filter, SearchAlert
+    RefreshCw, Loader2, User, Phone, Package, FileText, Filter, ShieldCheck
 } from 'lucide-react';
 import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
 
@@ -37,6 +37,9 @@ export const CargaGestionPagosView = () => {
     // Filtros
     const [filtroTipoCliente, setFiltroTipoCliente] = useState('todos');
     const [incluirSemanales, setIncluirSemanales] = useState(false);
+    const [autorizando, setAutorizando] = useState(false);
+    const [observacionAutorizo, setObservacionAutorizo] = useState('');
+    const [modalAutorizar, setModalAutorizar] = useState(false);
 
     const [socketInstance, setSocketInstance] = useState(null);
 
@@ -54,11 +57,6 @@ export const CargaGestionPagosView = () => {
         };
     }, []);
 
-    // Refetch cuando cambian filtros
-    useEffect(() => {
-        fetchOrders();
-    }, [filtroTipoCliente, incluirSemanales]);
-
     // ─── FETCH ────────────────────────────────────────────
     const fetchOrders = async () => {
         try {
@@ -75,6 +73,9 @@ export const CargaGestionPagosView = () => {
             console.error("Error fetching orders:", e);
         }
     };
+
+    // Refetch cuando cambian filtros
+    useEffect(() => { fetchOrders(); }, [filtroTipoCliente, incluirSemanales]);
 
     const fetchData = async () => {
         setLoading(true);
@@ -254,6 +255,29 @@ export const CargaGestionPagosView = () => {
         } catch (err) {
             console.error(err);
             alert("Error al procesar el pago.");
+        }
+    };
+
+    // ─── AUTORIZAR SIN PAGO (Estado 9) ───────────────────
+    const handleAutorizarSinPago = async () => {
+        if (!selectedRetiro) return alert('Seleccione una orden para autorizar.');
+        if (!observacionAutorizo.trim()) return alert('Debe ingresar una observación para autorizar sin pago.');
+
+        setAutorizando(true);
+        try {
+            await api.post('/web-retiros/autorizar', {
+                ordenRetiro: selectedRetiro.ordenDeRetiro,
+                nota: observacionAutorizo.trim()
+            });
+            alert(`✅ Orden ${selectedRetiro.ordenDeRetiro} autorizada para entrega sin pago.`);
+            setSelectedRetiro(null);
+            setMonto('');
+            setObservacionAutorizo('');
+            fetchOrders();
+        } catch (err) {
+            alert('Error: ' + (err.response?.data?.error || err.message));
+        } finally {
+            setAutorizando(false);
         }
     };
 
@@ -509,12 +533,19 @@ export const CargaGestionPagosView = () => {
                         </div>
                     </div>
 
+
+                    {/* <p className="text-[10px] text-slate-400 mb-3 leading-tight">
+                Muestra retiros <strong>con cobro pendiente</strong> (Ingresado, Pasar por caja, Abonado de antemano con saldo, Empaquetado sin abonar).
+                Los <strong>semanales</strong> se excluyen por defecto. El filtro consulta al servidor al cambiar.
+            </p> */}
+
                     {/* Filtros por tipo de cliente */}
                     <div className="flex items-center gap-1.5 mb-3 flex-wrap">
                         <Filter size={18} className="text-slate-400" />
                         {[
                             { val: 'todos', label: 'Todos' },
                             { val: '1', label: 'Comunes' },
+                            { val: '2', label: 'Semanales' },
                             { val: '3', label: 'Rollo Adelantado' },
                         ].map(f => (
                             <button
@@ -529,23 +560,8 @@ export const CargaGestionPagosView = () => {
                                 {f.label}
                             </button>
                         ))}
-                        <label
-                            className="flex items-center gap-1.5 text-xs text-slate-500 ml-2 cursor-pointer select-none"
-                            onClick={() => setIncluirSemanales(!incluirSemanales)}
-                        >
-                            {incluirSemanales ? (
-                                <CheckCircle size={20} className="text-brand-cyan" />
-                            ) : (
-                                <div className="w-5 h-5 rounded-full border-2 border-slate-300" />
-                            )}
-                            Semanales
-                        </label>
-                        <span className="ml-auto text-xs text-brand-cyan font-bold uppercase">{filteredRetiros.length} retiros</span>
+                        <span className="ml-auto text-xs text-brand-cyan font-black">{filteredRetiros.length} retiros</span>
                     </div>
-                    {/* <p className="text-[10px] text-slate-400 mb-3 leading-tight">
-                Muestra retiros <strong>con cobro pendiente</strong> (Ingresado, Pasar por caja, Abonado de antemano con saldo, Empaquetado sin abonar).
-                Los <strong>semanales</strong> se excluyen por defecto. El filtro consulta al servidor al cambiar.
-            </p> */}
 
                     {/* Lista de retiros — chips compactos */}
                     <div className="grid grid-cols-3 gap-1 overflow-y-auto max-h-[60vh] pr-1">
@@ -576,13 +592,15 @@ export const CargaGestionPagosView = () => {
                 {/* PANEL DERECHO: Cotización + Detalle del Retiro */}
                 <div className="flex flex-col gap-4">
 
-                    {/* Botón Realizar Pago */}
-                    <button
-                        onClick={handleRealizarPago}
-                        className={`${moneda === 'UYU' ? 'bg-brand-cyan hover:bg-brand-cyan/90' : 'bg-brand-magenta hover:bg-brand-magenta/90'} text-white font-bold py-10 px-6 rounded-2xl border border-transparent shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-all hover:scale-[1.02] active:scale-[0.97] text-xl uppercase tracking-wider whitespace-nowrap flex items-center justify-center gap-3`}
-                    >
-                        <CreditCard size={24} /> Realizar Pago
-                    </button>
+                    {/* Botones: Realizar Pago + Autorizar sin pago */}
+                    <div className="flex gap-3">
+                        <button
+                            onClick={handleRealizarPago}
+                            className={`${moneda === 'UYU' ? 'bg-brand-cyan hover:bg-brand-cyan/90' : 'bg-brand-magenta hover:bg-brand-magenta/90'} text-white font-bold py-8 px-6 rounded-2xl border border-transparent shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-all hover:scale-[1.02] active:scale-[0.97] text-xl uppercase tracking-wider whitespace-nowrap flex items-center justify-center gap-3 flex-1`}
+                        >
+                            <CreditCard size={24} /> Realizar Pago
+                        </button>
+                    </div>
 
                     {/* Detalle del Retiro */}
                     <div className="bg-white rounded-2xl border border-transparent shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-5 flex flex-col flex-1">
@@ -628,47 +646,47 @@ export const CargaGestionPagosView = () => {
 
                             {/* Sub-órdenes */}
                             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Órdenes del retiro</h3>
-                            <div className="flex flex-col gap-2 overflow-y-auto max-h-[50vh] pr-1">
+                            <div className="flex flex-col gap-2 overflow-y-auto max-h-[40vh] pr-1">
                                 {getOrdenes(selectedRetiro).length > 0 ? (
                                     getOrdenes(selectedRetiro).map((po, i) => {
-                                        const costStr = po.orderCosto || "";
-                                        const curSym = po.monedaId === 2 ? 'US$' : '$';
+                                        const costStr  = po.orderCosto || "";
+                                        const curSym   = po.monedaId === 2 ? 'US$' : '$';
                                         const rawValor = parseFloat(costStr.replace(/[^0-9.-]+/g, "")) || 0;
-                                        const isPaid = po.orderIdMetodoPago !== null || po.orderPago !== null;
+                                        const isPaid   = po.orderIdMetodoPago !== null || po.orderPago !== null;
 
                                         let valorConvertidoDest = "";
-                                        if (moneda === 'UYU' && curSym === 'US$' && cotizacion) {
+                                        if (moneda === 'UYU' && curSym === 'US$' && cotizacion)
                                             valorConvertidoDest = ` ($ ${(rawValor * cotizacion).toFixed(2)})`;
-                                        }
-                                        if (moneda === 'USD' && curSym === '$' && cotizacion) {
+                                        if (moneda === 'USD' && curSym === '$' && cotizacion)
                                             valorConvertidoDest = ` (US$ ${(rawValor / cotizacion).toFixed(2)})`;
-                                        }
 
                                         return (
                                             <div
                                                 key={i}
-                                                className={`p-3 rounded-xl border-2 flex items-center justify-between transition-all
+                                                className={`px-3 py-2 rounded-xl border-2 flex items-center justify-between gap-2 transition-all
                                                 ${isPaid ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-200 bg-white'}`}
                                             >
-                                                <div className="flex items-center gap-3">
-                                                    {isPaid ? (
-                                                        <CheckCircle size={18} className="text-emerald-500 shrink-0" />
-                                                    ) : (
-                                                        <AlertTriangle size={18} className="text-amber-500 shrink-0" />
-                                                    )}
-                                                    <div>
-                                                        <span className="font-bold text-sm text-slate-800">{po.orderNumber || `Item ${i + 1}`}</span>
-                                                        <span className={`ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                            {isPaid ? 'Pagado' : po.orderEstado || 'Pendiente'}
+                                                {/* Icono + nombre + estado de pago inline */}
+                                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                    {isPaid
+                                                        ? <CheckCircle size={15} className="text-emerald-500 shrink-0" />
+                                                        : <AlertTriangle size={15} className="text-amber-500 shrink-0" />}
+                                                    <span className="font-bold text-sm text-slate-800 truncate">
+                                                        {po.orderNumber || `Item ${i + 1}`}
+                                                    </span>
+                                                    {po.orderCantidad != null && (
+                                                        <span className="text-[10px] text-slate-400 font-semibold shrink-0">
+                                                            Cant: <strong className="text-slate-600">{po.orderCantidad % 1 === 0 ? po.orderCantidad : po.orderCantidad.toFixed(2)}</strong>
                                                         </span>
-                                                        {po.orderCantidad != null && (
-                                                            <span className="ml-2 text-[10px] text-slate-400 font-semibold">
-                                                                Cant: <strong className="text-slate-600">{po.orderCantidad % 1 === 0 ? po.orderCantidad : po.orderCantidad.toFixed(2)}</strong>
-                                                            </span>
-                                                        )}
-                                                    </div>
+                                                    )}
                                                 </div>
-                                                <div className="text-right">
+                                                {/* Badge pago inline */}
+                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full shrink-0
+                                                    ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                                                    {isPaid ? '✓ Pagada' : '✗ Sin pago'}
+                                                </span>
+                                                {/* Monto */}
+                                                <div className="text-right shrink-0">
                                                     <p className="font-black text-sm text-slate-800">{curSym} {rawValor.toFixed(2)}</p>
                                                     {valorConvertidoDest && <p className="text-xs text-slate-400">{valorConvertidoDest}</p>}
                                                 </div>
@@ -679,6 +697,21 @@ export const CargaGestionPagosView = () => {
                                     <p className="text-slate-400 text-sm text-center py-4">No hay detalles de órdenes.</p>
                                 )}
                             </div>
+
+                            {/* Botón Autorizar sin pago — abre modal */}
+                            {getOrdenes(selectedRetiro).some(o => o.orderIdMetodoPago === null && o.orderPago === null) && (
+                                <div className="mt-3 pt-3 border-t border-slate-200">
+                                    <button
+                                        onClick={() => { setObservacionAutorizo(''); setModalAutorizar(true); }}
+                                        className="w-full bg-amber-500 hover:bg-amber-600 text-white text-xs font-black py-2.5 rounded-xl transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <ShieldCheck size={14} /> Autorizar sin pago
+                                    </button>
+                                </div>
+                            )}
+
+
+
                         </>
                     ) : (
                         <div className="flex flex-col items-center justify-center flex-1 text-slate-300">
@@ -687,9 +720,92 @@ export const CargaGestionPagosView = () => {
                             <p className="text-sm mt-1">Haga clic en un retiro de la lista izquierda</p>
                         </div>
                     )}
-                    </div>  {/* cierra detalle del retiro */}
-                </div>  {/* cierra col-span-3 wrapper */}
-            </div>
+                                </div>  {/* cierra detalle del retiro */}
+                            </div>  {/* cierra col-span-3 wrapper */}
+                        </div>
+
+                        {/* ─── MODAL AUTORIZAR SIN PAGO ─── */}
+                        {modalAutorizar && selectedRetiro && (() => {
+                            const sinPago = getOrdenes(selectedRetiro).filter(o => o.orderIdMetodoPago === null && o.orderPago === null);
+                            const tipoCliente = selectedRetiro.TClDescripcion || 'Desconocido';
+                            return (
+                                <div
+                                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+                                    onClick={() => setModalAutorizar(false)}
+                                >
+                                    <div
+                                        className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-amber-200"
+                                        onClick={e => e.stopPropagation()}
+                                    >
+                                        {/* Encabezado */}
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div>
+                                                <h3 className="text-xl font-black text-slate-800">Autorizar sin cobrar</h3>
+                                                <p className="text-sm text-slate-500">{selectedRetiro.ordenDeRetiro} — {selectedRetiro.CliNombre}</p>
+                                            </div>
+                                            <button onClick={() => setModalAutorizar(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                                        </div>
+
+                                        {/* Tipo de cliente pre-cargado */}
+                                        <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 mb-4 flex items-center gap-3">
+                                            <Package size={16} className="text-slate-400 shrink-0" />
+                                            <div>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase">Tipo de cliente</p>
+                                                <p className="text-sm font-black text-slate-700">{tipoCliente}</p>
+                                            </div>
+                                            <div className="ml-auto">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase">Sin pago</p>
+                                                <p className="text-sm font-black text-rose-600 text-right">{sinPago.length} {sinPago.length === 1 ? 'orden' : 'órdenes'}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Órdenes sin pago (resumen) */}
+                                        <div className="flex flex-col gap-1 mb-4 max-h-32 overflow-y-auto">
+                                            {sinPago.map((o, i) => {
+                                                const v = parseFloat((o.orderCosto || '').replace(/[^0-9.-]+/g, '')) || 0;
+                                                const sym = o.monedaId === 2 ? 'US$' : '$';
+                                                return (
+                                                    <div key={i} className="flex items-center justify-between bg-rose-50 border border-rose-100 rounded-lg px-3 py-1.5 text-sm">
+                                                        <span className="font-bold text-slate-700">{o.orderNumber}</span>
+                                                        <span className="text-xs text-rose-600 font-bold">✗ Sin pago</span>
+                                                        <span className="font-black text-slate-800">{sym} {v.toFixed(2)}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Observaciones */}
+                                        <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Observaciones <span className="text-rose-500">*</span></label>
+                                        <textarea
+                                            rows={3}
+                                            value={observacionAutorizo}
+                                            onChange={e => setObservacionAutorizo(e.target.value)}
+                                            autoFocus
+                                            placeholder={`Motivo de autorizar sin cobrar (${tipoCliente})...`}
+                                            className="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 resize-none mb-4 text-slate-700"
+                                        />
+
+                                        {/* Botones */}
+                                        <div className="flex gap-3">
+                                            <button
+                                                onClick={() => setModalAutorizar(false)}
+                                                className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                onClick={handleAutorizarSinPago}
+                                                disabled={autorizando || !observacionAutorizo.trim()}
+                                                className="flex-[2] py-3 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-black rounded-xl transition-all flex items-center justify-center gap-2"
+                                            >
+                                                <ShieldCheck size={16}/>
+                                                {autorizando ? 'Autorizando...' : 'Confirmar autorización'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
             {/* ─── MODAL DE BÚSQUEDA (SITUACIÓN DE PAGO) ── */}
             {
@@ -715,15 +831,20 @@ export const CargaGestionPagosView = () => {
                                             return Object.values(groups).map(g => (
                                                 <div key={g.OReIdOrdenRetiro} className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-2">
                                                     <div className="flex items-center justify-between mb-2">
-                                                        <span className="font-black text-blue-700">R-{String(g.OReIdOrdenRetiro).padStart(4, '0')}</span>
+                                                        <span className="font-black text-blue-700">
+                                                            {g.FormaRetiro || 'R'}-{String(g.OReIdOrdenRetiro).padStart(4, '0')}
+                                                        </span>
                                                         <span className="text-xs font-bold text-slate-500">{g.estadoRetiro} • {g.lugarRetiro}</span>
                                                     </div>
                                                     <p className="text-xs text-slate-500 mb-2">{g.CliNombre} ({g.CliCodigo}) — {g.TClDescripcion}</p>
                                                     {g.orders.map((o, i) => (
-                                                        <div key={i} className="flex items-center justify-between py-1 border-t border-slate-200 text-sm">
-                                                            <span className="font-semibold">{o.OrdCodigoOrden}</span>
-                                                            <span className={`text-xs font-bold ${o.estadoOrden === 'Entregado' || o.estadoOrden === 'Cancelado' ? 'text-slate-400' : 'text-slate-700'}`}>{o.estadoOrden}</span>
-                                                            <span className="font-bold">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</span>
+                                                        <div key={i} className="flex items-center justify-between py-1 border-t border-slate-200 text-sm gap-2">
+                                                            <span className="font-semibold flex-1">{o.OrdCodigoOrden}</span>
+                                                            <span className={`text-xs font-bold ${o.estadoOrden === 'Entregado' || o.estadoOrden === 'Cancelado' ? 'text-slate-400' : 'text-slate-600'}`}>{o.estadoOrden}</span>
+                                                            <span className={`text-xs font-black px-1.5 py-0.5 rounded ${o.Pagada ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                                                                {o.Pagada ? '✓ Pagada' : '✗ Sin pago'}
+                                                            </span>
+                                                            <span className="font-bold text-slate-700">{o.MonSimbolo} {parseFloat(o.OrdCostoFinal || 0).toFixed(2)}</span>
                                                         </div>
                                                     ))}
                                                 </div>

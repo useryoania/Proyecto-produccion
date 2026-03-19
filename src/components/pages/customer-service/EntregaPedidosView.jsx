@@ -113,6 +113,7 @@ const EntregaPedidosView = () => {
     const [selectedEncomiendas, setSelectedEncomiendas] = useState(new Set());
     const [showAlertaAuth, setShowAlertaAuth] = useState(false);
     const [pendingDelivery, setPendingDelivery] = useState(null);
+    const [filtroLogistica, setFiltroLogistica] = useState(''); // buscador inline en tab Logística
 
     // Modal: Generar Retiro desde Órdenes sin Retiro
     const [retiroModal, setRetiroModal] = useState(null); // { ordenes: [] } | null
@@ -216,7 +217,7 @@ const EntregaPedidosView = () => {
 
             let url;
             if (!lugar || lugar === 'todas') {
-                url = `/apiordenesRetiro/estados?estados=1,2,3,4,7,8${pagas ? '&pagas=true' : ''}${nopagas ? '&no_pagas=true' : ''}`;
+                url = `/apiordenesRetiro/estados?estados=1,2,3,4,7,8,9${pagas ? '&pagas=true' : ''}${nopagas ? '&no_pagas=true' : ''}`;
             } else {
                 url = `/apiordenesRetiro/lugar/${lugar}?pagas=${pagas}&no_pagas=${nopagas}`;
             }
@@ -394,23 +395,27 @@ const EntregaPedidosView = () => {
             return toast.warning('Selecciona al menos una orden para entregar.');
         }
 
-        // ¿Requiere autorización?
-        const requiereAuth = Array.from(selectedEncomiendas).some(ordenCodigo => {
+        // Verificar si alguna orden seleccionada está sin pago y sin autorización (estado 9)
+        const sinPagoSinAutorizar = Array.from(selectedEncomiendas).filter(ordenCodigo => {
             const orden = encomiendas.find(e => e.ordenDeRetiro === ordenCodigo);
             if (!orden) return false;
-            const esNoPaga = orden.pagorealizado === 0;
-            const requierePass = (orden.TClIdTipoCliente !== 2 && orden.TClIdTipoCliente !== 3);
-            return esNoPaga && requierePass;
+            const noPaga      = orden.pagorealizado === 0;
+            const autorizada  = orden.OReEstadoActual === 9 || orden.estado === 9;
+            return noPaga && !autorizada;
         });
 
-        if (requiereAuth) {
-            // Guardar el payload pendiente y mostrar el modal custom
-            setPendingDelivery({ ordenesParaEntregar: Array.from(selectedEncomiendas) });
-            setShowAlertaAuth(true);
+        if (sinPagoSinAutorizar.length > 0) {
+            // No se puede entregar — debe pasar por Caja (pagar o autorizar)
+            toast.error(
+                `${sinPagoSinAutorizar.length > 1
+                    ? `${sinPagoSinAutorizar.length} órdenes no están pagas ni autorizadas`
+                    : `"${sinPagoSinAutorizar[0]}" no está paga ni autorizada`}. Debe pasar por Caja.`,
+                { duration: 5000 }
+            );
             return;
         }
 
-        // Sin autorización requerida → entregar directo
+        // Todas pagas o autorizadas → entregar directamente
         await ejecutarEntrega(Array.from(selectedEncomiendas), null, null);
     };
 
@@ -427,6 +432,17 @@ const EntregaPedidosView = () => {
         } finally {
             setLoading(false);
         }
+    };
+
+    // Entregar una sola orden (desde el botón por renglón) con la misma lógica de bloqueo
+    const ejecutarEntregarUna = (ordenCodigo, enc) => {
+        const noPaga     = enc.pagorealizado === 0;
+        const autorizada = enc.OReEstadoActual === 9 || enc.estado === 9;
+        if (noPaga && !autorizada) {
+            toast.error(`"${ordenCodigo}" no está paga ni autorizada. Debe pasar por Caja.`, { duration: 5000 });
+            return;
+        }
+        ejecutarEntrega([ordenCodigo], null, null);
     };
 
 
@@ -781,6 +797,18 @@ const EntregaPedidosView = () => {
                         </div>
                     </div>
 
+                    {/* Buscador rápido dentro de Logística */}
+                    <div className="mb-4 relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                            type="text"
+                            placeholder="Filtrar por orden, cliente o estado..."
+                            value={filtroLogistica}
+                            onChange={e => setFiltroLogistica(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-400 focus:bg-white transition-all"
+                        />
+                    </div>
+
                     <div className="overflow-x-auto rounded-xl border border-slate-200">
                         <table className="w-full text-left border-collapse text-sm">
                             <thead>
@@ -798,10 +826,24 @@ const EntregaPedidosView = () => {
                                     <th className="p-4">Total Importe</th>
                                     <th className="p-4">Estado / Lugar</th>
                                     <th className="p-4 text-center">Pago</th>
+                                    <th className="p-4 text-center">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {encomiendas.map((enc, i) => {
+                                {(filtroLogistica.trim()
+                                    ? encomiendas.filter(enc => {
+                                        const q = filtroLogistica.toLowerCase();
+                                        return (
+                                            (enc.ordenDeRetiro || '').toLowerCase().includes(q) ||
+                                            (enc.CliCodigoCliente || '').toLowerCase().includes(q) ||
+                                            (enc.CliNombre || '').toLowerCase().includes(q) ||
+                                            (enc.estado || '').toLowerCase().includes(q) ||
+                                            (enc.lugarRetiro || '').toLowerCase().includes(q) ||
+                                            (enc.orders || []).some(o => (o.orderNumber || '').toLowerCase().includes(q))
+                                        );
+                                    })
+                                    : encomiendas
+                                ).map((enc, i) => {
                                     const isExpanded = expandedRows.has(enc.ordenDeRetiro);
                                     const isSelected = selectedEncomiendas.has(enc.ordenDeRetiro);
                                     const clienteEsComun = enc.TClIdTipoCliente !== 2 && enc.TClIdTipoCliente !== 3;
@@ -852,21 +894,64 @@ const EntregaPedidosView = () => {
                                                 </td>
                                                 <td className="p-4 text-center">
                                                     {enc.pagorealizado === 1 ?
-                                                        <div className="inline-flex flex-col items-center">
-                                                            <span className="text-green-700 font-black bg-green-100 px-3 py-1 rounded-md text-xs tracking-wider shadow-sm border border-green-200">
-                                                                PAGADO
-                                                            </span>
-                                                        </div>
+                                                        <span className="text-green-700 font-black bg-green-100 px-3 py-1 rounded-md text-xs tracking-wider shadow-sm border border-green-200">PAGADO</span>
+                                                        : (enc.OReEstadoActual === 9) ?
+                                                        <span className="text-amber-700 font-black bg-amber-100 px-3 py-1 rounded-md text-xs tracking-wider shadow-sm border border-amber-300">AUTORIZADO</span>
                                                         :
-                                                        <div className="inline-flex flex-col items-center">
-                                                            <span className="text-red-600 font-black bg-red-100 px-3 py-1 rounded-md text-xs tracking-wider shadow-sm border border-red-200">
-                                                                PENDIENTE
-                                                            </span>
-                                                            {clienteEsComun && (
-                                                                <i className="fa-solid fa-lock text-slate-400 mt-1" title="Requiere Autorización"></i>
-                                                            )}
-                                                        </div>
+                                                        <span className="text-red-600 font-black bg-red-100 px-3 py-1 rounded-md text-xs tracking-wider shadow-sm border border-red-200">PENDIENTE</span>
                                                     }
+                                                </td>
+                                                {/* Acciones por fila */}
+                                                <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
+                                                    <div className="flex items-center gap-1.5 justify-center">
+                                                        <button
+                                                            title="Imprimir etiqueta"
+                                                            onClick={() => {
+                                                                const labelsHtml = (() => {
+                                                                    const nombre = enc.CliNombre || enc.CliCodigoCliente || '-';
+                                                                    const telefono = enc.CliTelefono ? enc.CliTelefono.trim() : '';
+                                                                    const depto = enc.departamentoEnvio || '';
+                                                                    const localidad = enc.localidadEnvio || '';
+                                                                    const ubicacion = [depto, localidad].filter(Boolean).join(' — ');
+                                                                    const direccion = enc.direccionEnvio || '';
+                                                                    const agencia = enc.agenciaNombre || '';
+                                                                    return `<div class="label">
+                                                                        <div class="header-bar"><span class="logo">USER</span><span class="orden-code">${enc.ordenDeRetiro}</span></div>
+                                                                        <div class="dest-section">
+                                                                            <div class="badge">DESTINATARIO</div>
+                                                                            <div class="dest-nombre">${nombre}</div>
+                                                                            ${telefono ? `<div class="dest-row"><span class="icon">&#9742;</span> ${telefono}</div>` : ''}
+                                                                            ${ubicacion ? `<div class="dest-row"><span class="icon">&#9872;</span> ${ubicacion}</div>` : ''}
+                                                                            ${direccion ? `<div class="dest-row"><span class="icon">&#9962;</span> ${direccion}</div>` : ''}
+                                                                            ${agencia ? `<div class="agencia-pill">&#9654; ${agencia}</div>` : ''}
+                                                                        </div>
+                                                                        <div class="divider-area"><div class="divider-line"></div><div class="scissors">&#9986;</div><div class="divider-line"></div></div>
+                                                                        <div class="rem-section">
+                                                                            <div class="badge rem-badge">REMITENTE</div>
+                                                                            <div class="rem-nombre">USER</div>
+                                                                            <div class="rem-row">Arenal Grande 2667</div>
+                                                                            <div class="rem-row">Montevideo, Uruguay</div>
+                                                                        </div>
+                                                                    </div>`;
+                                                                })();
+                                                                const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Etiqueta</title>
+                                                                <style>@page{size:10cm 15cm;margin:0;}*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Segoe UI',Arial,sans-serif;background:#f5f5f5;}.label{width:10cm;height:15cm;background:#fff;border:2px solid #222;display:flex;flex-direction:column;overflow:hidden;}.header-bar{background:#1a1a1a;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}.logo{font-size:16px;font-weight:900;letter-spacing:3px;text-transform:uppercase;}.orden-code{font-size:16px;font-weight:900;font-family:'Courier New',monospace;}.dest-section{flex:1;padding:16px 20px 10px;display:flex;flex-direction:column;}.badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#fff;background:#1a1a1a;padding:3px 10px;border-radius:3px;margin-bottom:10px;width:fit-content;}.dest-nombre{font-size:22px;font-weight:900;text-transform:uppercase;line-height:1.15;margin-bottom:10px;color:#111;border-bottom:2px solid #eee;padding-bottom:8px;}.dest-row{font-size:13px;font-weight:600;color:#333;margin-bottom:4px;}.dest-row .icon{display:inline-block;width:18px;color:#888;}.agencia-pill{margin-top:10px;font-size:14px;font-weight:800;color:#1a1a1a;background:#f0f0f0;border:1.5px solid #ccc;padding:6px 14px;border-radius:6px;display:inline-block;}.divider-area{display:flex;align-items:center;padding:0 16px;gap:8px;}.divider-line{flex:1;border-top:2px dashed #aaa;}.scissors{font-size:16px;color:#aaa;}.rem-section{padding:10px 20px 14px;background:#fafafa;border-top:1px solid #eee;}.rem-badge{background:#666;margin-bottom:6px;}.rem-nombre{font-size:14px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#333;margin-bottom:2px;}.rem-row{font-size:11px;font-weight:600;color:#666;line-height:1.5;}@media print{body{background:#fff;}}</style></head><body>${labelsHtml}</body></html>`;
+                                                                const win = window.open('', '_blank', 'width=420,height=620');
+                                                                if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => win.print(), 400); }
+                                                            }}
+                                                            className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg transition-colors"
+                                                        >
+                                                            <Tag size={14} />
+                                                        </button>
+                                                        <button
+                                                            title="Entregar esta orden"
+                                                            onClick={() => ejecutarEntregarUna(enc.ordenDeRetiro, enc)}
+                                                            disabled={loading}
+                                                            className="p-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg transition-colors disabled:opacity-40"
+                                                        >
+                                                            <CheckCircle size={14} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                             {/* Fila expandible con sub-órdenes */}
@@ -1001,21 +1086,7 @@ const EntregaPedidosView = () => {
                                     >
                                         <RefreshCcw size={14} className={loadingMostradorAll ? 'animate-spin' : ''} /> Actualizar
                                     </button>
-                                    <button
-                                        title="Asigna el lugar de retiro del cliente a todas las órdenes que tienen ese campo vacío"
-                                        onClick={async () => {
-                                            try {
-                                                const res = await api.post('/apiordenesRetiro/backfill-lugar');
-                                                toast.success(`✅ ${res.data.message}`);
-                                                loadTodasSinRetiro(filtroLugarMostrador);
-                                            } catch (err) {
-                                                toast.error('Error al actualizar: ' + (err.response?.data?.error || err.message));
-                                            }
-                                        }}
-                                        className="bg-white/10 hover:bg-white/20 text-white font-bold px-3 py-2 rounded-xl border border-white/20 text-sm flex items-center gap-1"
-                                    >
-                                        ⚡ Asignar lugar a órdenes sin lugar
-                                    </button>
+
                                 </div>
                             </div>
 

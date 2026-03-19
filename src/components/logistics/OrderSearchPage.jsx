@@ -20,7 +20,8 @@ const OrderSearchPage = () => {
         fechaDesde: '',
         fechaHasta: '',
         codigoOrden: '',
-        tipoCliente: ''
+        tipoCliente: '',
+        numeroRetiro: ''
     });
 
     const [nuevoEstado, setNuevoEstado] = useState('');
@@ -69,6 +70,7 @@ const OrderSearchPage = () => {
             currentFilters.fechaDesde ||
             currentFilters.fechaHasta ||
             currentFilters.tipoCliente ||
+            currentFilters.numeroRetiro ||
             (currentFilters.estados && currentFilters.estados.length > 0);
 
         if (!hasFilters) {
@@ -87,6 +89,7 @@ const OrderSearchPage = () => {
             if (currentFilters.fechaDesde) queryParams.append("fechaDesde", currentFilters.fechaDesde);
             if (currentFilters.fechaHasta) queryParams.append("fechaHasta", currentFilters.fechaHasta);
             if (currentFilters.tipoCliente) queryParams.append("tipoCliente", currentFilters.tipoCliente);
+            if (currentFilters.numeroRetiro) queryParams.append("numeroRetiro", currentFilters.numeroRetiro);
             if (currentFilters.estados && currentFilters.estados.length > 0) {
                 currentFilters.estados.forEach(est => queryParams.append("estado", est));
             }
@@ -122,7 +125,8 @@ const OrderSearchPage = () => {
             fechaDesde: '',
             fechaHasta: '',
             codigoOrden: '',
-            tipoCliente: ''
+            tipoCliente: '',
+            numeroRetiro: ''
         });
         setOrders([]);
         setSelectedOrders(new Set());
@@ -201,57 +205,67 @@ const OrderSearchPage = () => {
         }
     };
 
+    // ─── Estado para el modal de confirmación de re-exportación ────────────────
+    const [reexportConfirm, setReexportConfirm] = useState(null); // null | { yaExportadas, pendientes, exportables }
+
     const handleDownloadExcel = async () => {
         if (orders.length === 0) {
             toast.warning('No hay órdenes para exportar.');
             return;
         }
 
-        // Solo las no exportadas aún
-        const pendientes = orders.filter(o => o.ExportadoOdoo === false || o.ExportadoOdoo === null);
+        const yaExportadas = orders.filter(o => o.ExportadoOdoo === true || o.ExportadoOdoo === 1);
+        const pendientes   = orders.filter(o => o.ExportadoOdoo === false || o.ExportadoOdoo === null);
 
-        if (pendientes.length === 0) {
-            toast.info('No hay órdenes pendientes de exportación a Odoo. Todas ya fueron exportadas.');
+        // Si hay órdenes ya exportadas → mostrar confirmación custom antes de seguir
+        if (yaExportadas.length > 0) {
+            setReexportConfirm({ yaExportadas, pendientes });
             return;
         }
 
-        // Detectar las que no tienen ProCodigoOdooProducto configurado
-        const sinCodigo = pendientes.filter(o => !o.ProCodigoOdooProducto || o.ProCodigoOdooProducto.trim() === '');
+        await doExport(pendientes);
+    };
+
+    // Ejecuta la exportación real (llamada desde handleDownloadExcel o desde el modal de confirmación)
+    const doExport = async (aExportar) => {
+        setReexportConfirm(null);
+
+        if (aExportar.length === 0) {
+            toast.info('No hay órdenes pendientes de exportación.');
+            return;
+        }
+
+        // Detectar las que no tienen ProCodigoOdooProducto (solo aviso, no bloquean)
+        const sinCodigo = aExportar.filter(o => !o.ProCodigoOdooProducto || o.ProCodigoOdooProducto.trim() === '');
         if (sinCodigo.length > 0) {
-            const codigos = sinCodigo.map(o => o.CodigoOrden).join(', ');
-            toast.warning(`${sinCodigo.length} orden(es) no tienen Código Odoo de Producto configurado y serán omitidas: ${codigos}`);
+            toast.warning(`${sinCodigo.length} orden(es) sin Código Odoo: la celda quedará vacía, podés completarla a mano en Excel.`);
         }
 
-        // Solo exportar las que SÍ tienen código Odoo
-        const exportables = pendientes.filter(o => o.ProCodigoOdooProducto && o.ProCodigoOdooProducto.trim() !== '');
-
-        if (exportables.length === 0) {
-            toast.error('Ninguna orden pendiente tiene el Código Odoo de Producto configurado. Actualizá la tabla Articulos primero.');
-            return;
-        }
+        // Helper: trim seguro para strings
+        const t = (v) => (typeof v === 'string' ? v.trim() : v);
 
         try {
-            const filas = exportables.map(order => ({
-                'Líneas del pedido/Producto': order.ProCodigoOdooProducto + (order.Modo === 'Normal' ? 'N' : order.Modo === 'Urgente' ? 'U' : ''),
-                'Referencia del pedido': order.CodigoOrden,
-                'Líneas del pedido/Cantidad': order.Cantidad ? parseFloat(order.Cantidad) : 0,
-                'Cliente': order.IdCliente,
-                'Referencia cliente': order.NombreTrabajo,
-                'Modo': order.Modo,
+            const filas = aExportar.map(order => ({
+                'Líneas del pedido/Producto': order.ProCodigoOdooProducto
+                    ? t(order.ProCodigoOdooProducto) + (t(order.Modo) === 'Normal' ? 'N' : t(order.Modo) === 'Urgente' ? 'U' : '')
+                    : '',
+                'Referencia del pedido':       t(order.CodigoOrden),
+                'Líneas del pedido/Cantidad':  order.Cantidad ? parseFloat(order.Cantidad) : 0,
+                'Cliente':                     t(order.IdCliente),
+                'Referencia cliente':          t(order.NombreTrabajo),
+                'Modo':                        t(order.Modo),
             }));
 
             const worksheet = utils.json_to_sheet(filas);
-            const workbook = utils.book_new();
+            const workbook  = utils.book_new();
             utils.book_append_sheet(workbook, worksheet, 'Órdenes');
             writeFile(workbook, `Ordenes_Odoo_${new Date().toISOString().slice(0,10)}.xlsx`);
 
-            // Marcar como exportadas en la DB (solo las que efectivamente se exportaron)
-            const orderIds = exportables.map(o => o.IdOrden);
+            // Marcar como exportadas en la DB
+            const orderIds = aExportar.map(o => o.IdOrden);
             await api.post('/apiordenes/actualizarExportacion', { orderIds });
 
-            toast.success(`✅ ${exportables.length} orden(es) exportadas y marcadas como exportadas en el servidor.`);
-
-            // Recargar para reflejar el cambio de ExportadoOdoo
+            toast.success(`✅ ${aExportar.length} orden(es) exportadas y marcadas correctamente.`);
             fetchAllOrders(filters);
 
         } catch (error) {
@@ -296,7 +310,7 @@ const OrderSearchPage = () => {
 
             {/* Main Filters Module (Like Old View) */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Código Cliente</label>
                         <input
@@ -354,6 +368,17 @@ const OrderSearchPage = () => {
                                 </option>
                             ))}
                         </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">N° Retiro</label>
+                        <input
+                            type="text"
+                            name="numeroRetiro"
+                            value={filters.numeroRetiro}
+                            onChange={handleFilterChange}
+                            placeholder="Ej. RL-1234"
+                            className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 font-medium transition-all"
+                        />
                     </div>
                 </div>
 
@@ -649,6 +674,81 @@ const OrderSearchPage = () => {
                                 </div>
 
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Modal de confirmación: órdenes ya exportadas */}
+            {reexportConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-in zoom-in-95 duration-200 overflow-hidden">
+                        {/* Header */}
+                        <div className="flex items-center gap-3 p-5 bg-amber-50 border-b border-amber-200">
+                            <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                                <Download className="text-amber-600" size={20} />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-black text-amber-800">Órdenes ya exportadas detectadas</h3>
+                                <p className="text-xs text-amber-600 font-medium mt-0.5">
+                                    {reexportConfirm.yaExportadas.length} orden(es) de tu búsqueda ya fueron exportadas anteriormente.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Lista de ya exportadas */}
+                        <div className="p-5 max-h-56 overflow-y-auto">
+                            <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-3">
+                                Órdenes con exportación previa:
+                            </p>
+                            <div className="flex flex-col gap-1.5">
+                                {reexportConfirm.yaExportadas.map(o => {
+                                    const fechaOrden = o.FechaIngresoOrden
+                                        ? new Date(o.FechaIngresoOrden).toLocaleString('es-UY', {
+                                            day: '2-digit', month: '2-digit', year: 'numeric',
+                                            hour: '2-digit', minute: '2-digit'
+                                          })
+                                        : '—';
+                                    return (
+                                        <div key={o.IdOrden} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                                            <span className="font-black text-slate-700 text-sm">{o.CodigoOrden}</span>
+                                            <span className="text-xs text-amber-600 font-bold">📅 {fechaOrden}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        {/* Info pendientes */}
+                        {reexportConfirm.pendientes.length > 0 && (
+                            <div className="px-5 pb-3">
+                                <p className="text-xs text-slate-500 font-medium bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                                    También hay <strong className="text-blue-700">{reexportConfirm.pendientes.length}</strong> orden(es) <em>pendientes</em> (nunca exportadas).
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Botones */}
+                        <div className="flex gap-2 p-5 pt-2 border-t border-slate-100">
+                            <button
+                                onClick={() => setReexportConfirm(null)}
+                                className="flex-1 py-2.5 rounded-lg bg-slate-100 text-slate-600 font-black text-sm hover:bg-slate-200 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            {reexportConfirm.pendientes.length > 0 && (
+                                <button
+                                    onClick={() => doExport(reexportConfirm.pendientes)}
+                                    className="flex-1 py-2.5 rounded-lg bg-blue-600 text-white font-black text-sm hover:bg-blue-700 transition-colors"
+                                >
+                                    Solo pendientes ({reexportConfirm.pendientes.length})
+                                </button>
+                            )}
+                            <button
+                                onClick={() => doExport([...reexportConfirm.yaExportadas, ...reexportConfirm.pendientes])}
+                                className="flex-1 py-2.5 rounded-lg bg-amber-500 text-white font-black text-sm hover:bg-amber-600 transition-colors"
+                            >
+                                Re-exportar todo ({reexportConfirm.yaExportadas.length + reexportConfirm.pendientes.length})
+                            </button>
                         </div>
                     </div>
                 </div>
