@@ -295,11 +295,11 @@ const ordenesRetiroCaja = async (req, res) => {
       filtroTipo = 'AND COALESCE(tc.TClIdTipoCliente, tcr.TClIdTipoCliente) = @TipoCliente';
     }
 
-    // Regla: todo lo que tiene sub-orden sin pagar y no está cerrado
-    // Excluye: 5=Entregado, 6=Cancelado
+    // Excluye solo cancelados. El EXISTS ... PagIdPago IS NULL se encarga de filtrar por pago.
+    // Estado 5 (Entregado) y 9 (Autorizado) se incluyen si tienen deuda pendiente.
     const query = `
       ${getOrdenesRetiroQueryBase}
-      WHERE r.OReEstadoActual NOT IN (5, 6)
+      WHERE r.OReEstadoActual NOT IN (6)
       AND EXISTS (
         SELECT 1 FROM OrdenesDeposito od2 WITH(NOLOCK)
         WHERE od2.OReIdOrdenRetiro = r.OReIdOrdenRetiro

@@ -7,6 +7,7 @@ import {
     RefreshCw, Loader2, User, Phone, Package, FileText, Filter, ShieldCheck
 } from 'lucide-react';
 import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
+import Swal from 'sweetalert2';
 
 export const CargaGestionPagosView = () => {
     const { user } = useAuth();
@@ -269,7 +270,13 @@ export const CargaGestionPagosView = () => {
                 ordenRetiro: selectedRetiro.ordenDeRetiro,
                 nota: observacionAutorizo.trim()
             });
-            alert(`✅ Orden ${selectedRetiro.ordenDeRetiro} autorizada para entrega sin pago.`);
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success',
+                title: `Orden ${selectedRetiro.ordenDeRetiro} Autorizada.`,
+                showConfirmButton: false, timer: 3000,
+                showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
+                hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
+            });
+            setModalAutorizar(false);
             setSelectedRetiro(null);
             setMonto('');
             setObservacionAutorizo('');

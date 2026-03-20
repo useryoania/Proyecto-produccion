@@ -249,7 +249,9 @@ async function registrarPago(transaction, { ordenRetiroId, metodoPagoId, monedaI
         .input('pagoId', sql.Int, pagoId)
         .query(`
             UPDATE OrdenesRetiro 
-            SET PagIdPago = @pagoId, OReEstadoActual = @nuevoEstado, OReFechaEstadoActual = GETDATE(), ORePasarPorCaja = 0
+            SET PagIdPago = @pagoId, 
+                OReEstadoActual = CASE WHEN OReEstadoActual = 5 THEN 5 ELSE @nuevoEstado END,
+                OReFechaEstadoActual = GETDATE(), ORePasarPorCaja = 0
             WHERE OReIdOrdenRetiro = @ordenRetiroId;
         `);
 
@@ -325,9 +327,11 @@ async function registrarPago(transaction, { ordenRetiroId, metodoPagoId, monedaI
             .input('usuarioId', sql.Int, usuarioId)
             .query(`
                 UPDATE OrdenesRetiro 
-                SET PagIdPago = @pagoId, OReEstadoActual = 4, OReFechaEstadoActual = GETDATE(), ORePasarPorCaja = 0
+                SET PagIdPago = @pagoId, 
+                    OReEstadoActual = CASE WHEN OReEstadoActual = 5 THEN 5 ELSE 4 END,
+                    OReFechaEstadoActual = GETDATE(), ORePasarPorCaja = 0
                 WHERE OReIdOrdenRetiro = @ordenRetiroId
-                  AND (PagIdPago IS NULL OR PagIdPago = 0);
+                  AND (PagIdPago IS NULL OR PagIdPago = 0 OR OReEstadoActual = 5);
 
                 INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
                 VALUES (@ordenRetiroId, 4, GETDATE(), @usuarioId);

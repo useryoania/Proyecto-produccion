@@ -325,28 +325,26 @@ const MainAppContent = ({ menuItems = [] }) => {
     return (
         <div className="flex flex-col h-screen bg-slate-50 font-sans">
             <Toaster
-                position="top-center"
-                richColors
-                closeButton
+                position="top-right"
+                expand
+                gap={8}
                 theme="light"
                 toastOptions={{
-                    className: 'bg-white/95 backdrop-blur-sm border border-slate-100 shadow-2xl rounded-2xl p-4 !py-4',
+                    className: 'shadow-xl rounded-xl',
                     classNames: {
-                        toast: 'group toast group-[.toaster]:bg-white group-[.toaster]:text-slate-800 group-[.toaster]:border-slate-200 group-[.toaster]:shadow-2xl group-[.toaster]:rounded-2xl',
-                        title: 'text-slate-900 font-bold text-sm',
+                        toast: 'group toast group-[.toaster]:bg-white group-[.toaster]:text-slate-800 group-[.toaster]:border-slate-200 group-[.toaster]:shadow-xl group-[.toaster]:rounded-xl',
+                        title: 'text-slate-800 font-semibold text-sm',
                         description: 'text-slate-500 text-xs font-medium',
-                        actionButton: 'bg-indigo-600 text-white font-bold rounded-lg px-3 py-2',
-                        cancelButton: 'bg-slate-100 text-slate-500 font-bold rounded-lg px-3 py-2',
-                        error: 'bg-red-50 border-red-100 text-red-600',
-                        success: 'bg-green-50 border-green-100 text-green-600',
-                        warning: 'bg-orange-50 border-orange-100 text-orange-600',
-                        info: 'bg-blue-50 border-blue-100 text-blue-600',
+                        error: '!bg-red-50 !border-red-500 !text-red-500',
+                        success: '!bg-emerald-50 !border-emerald-500 !text-emerald-500',
+                        warning: '!bg-yellow-50 !border-yellow-500 !text-yellow-600',
+                        info: '!bg-blue-50 !border-blue-500 !text-blue-500',
                     },
                     style: {
                         background: 'white',
-                        border: '1px solid #E2E8F0',
-                        borderRadius: '16px',
-                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '12px',
+                        boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1)',
                     }
                 }}
             />

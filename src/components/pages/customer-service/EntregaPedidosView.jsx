@@ -406,12 +406,13 @@ const EntregaPedidosView = () => {
 
         if (sinPagoSinAutorizar.length > 0) {
             // No se puede entregar — debe pasar por Caja (pagar o autorizar)
-            toast.error(
-                `${sinPagoSinAutorizar.length > 1
-                    ? `${sinPagoSinAutorizar.length} órdenes no están pagas ni autorizadas`
-                    : `"${sinPagoSinAutorizar[0]}" no está paga ni autorizada`}. Debe pasar por Caja.`,
-                { duration: 5000 }
-            );
+            Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: sinPagoSinAutorizar.length > 1
+                ? `${sinPagoSinAutorizar.length} órdenes no están pagas ni autorizadas. Debe pasar por Caja.`
+                : `"${sinPagoSinAutorizar[0]}" no está paga ni autorizada. Debe pasar por Caja.`,
+                showConfirmButton: false, timer: 4000,
+                showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
+                hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
+            });
             return;
         }
 
@@ -424,7 +425,12 @@ const EntregaPedidosView = () => {
         try {
             const payload = { ordenesParaEntregar: ordenes, password, observacion };
             const response = await api.post('/apiordenesRetiro/despachos/entregar-autorizado', payload);
-            toast.success(response.data.message || 'Órdenes entregadas correctamente.');
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success',
+                title: response.data.message || 'Órdenes entregadas correctamente.',
+                showConfirmButton: false, timer: 3000,
+                showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
+                hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
+            });
             loadDespachos();
         } catch (error) {
             const errorMsg = error.response?.data?.error || 'Error al procesar la entrega.';
@@ -439,7 +445,10 @@ const EntregaPedidosView = () => {
         const noPaga     = enc.pagorealizado === 0;
         const autorizada = enc.OReEstadoActual === 9 || enc.estado === 9;
         if (noPaga && !autorizada) {
-            toast.error(`"${ordenCodigo}" no está paga ni autorizada. Debe pasar por Caja.`, { duration: 5000 });
+            Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: `"${ordenCodigo}" no está paga ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
+                showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
+                hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
+            });
             return;
         }
         ejecutarEntrega([ordenCodigo], null, null);
@@ -816,9 +825,10 @@ const EntregaPedidosView = () => {
                                     <th className="p-4 w-10 text-center">
                                         <input
                                             type="checkbox"
-                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                                             checked={selectedEncomiendas.size === encomiendas.length && encomiendas.length > 0}
                                             onChange={toggleAllEncomiendas}
+                                            disabled={!lugaresRetiro.some(lr => String(lr.LReIdLugarRetiro) === filtroLugar && /encomienda|agencia/i.test(lr.LReNombreLugar))}
                                         />
                                     </th>
                                     <th className="p-4">Orden Retiro</th>

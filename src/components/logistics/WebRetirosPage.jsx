@@ -3,7 +3,7 @@ import Swal from 'sweetalert2';
 import {
   Package, Search, Check, AlertCircle, ArrowLeft, CheckCircle,
   Truck, Loader2, LayoutGrid, MapPin, Clock, Printer, Tag,
-  XCircle, MoveHorizontal
+  XCircle, MoveHorizontal, X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/api'; // Axios instance base
@@ -858,6 +858,55 @@ const WebRetirosPage = () => {
     }
   };
 
+  // Entrega directa desde estante (doble clic) — sin abrir control de bultos
+  const directEntregar = async (ubicacionId, dataList) => {
+    const list = Array.isArray(dataList) ? dataList : [dataList];
+
+    // Fetch fresh data
+    let freshRetiros = [];
+    try {
+      const { data } = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4,7,8,9');
+      freshRetiros = Array.isArray(data) ? data : [];
+    } catch (e) { console.warn('No se pudo verificar estado actual de retiros:', e); }
+
+    // Verificar pago/autorización
+    for (const item of list) {
+      const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
+      const retiroFull = freshRetiros.find(o => o.ordenDeRetiro === ordenStr) || apiOrders.find(o => o.ordenDeRetiro === ordenStr);
+      const isPagado = retiroFull?.pagorealizado === 1 || item.Pagado;
+      const isAutorizado = retiroFull?.estadoNumerico === 9 || (retiroFull?.estado || '').toLowerCase() === 'autorizado' || item.estadoNumerico === 9;
+      if (!isPagado && !isAutorizado) {
+        Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: `${ordenStr} no está pagada ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
+          showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' }, hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
+        });
+        return;
+      }
+    }
+
+    const ordenesParaEntregar = list.map(item => item.OrdenRetiro || item.ordenDeRetiro);
+
+    // Optimismo UI
+    setOcupacionEstantes(prev => {
+      const next = { ...prev };
+      if (next[ubicacionId]) {
+        const remaining = next[ubicacionId].filter(item => !ordenesParaEntregar.includes(item.OrdenRetiro || item.ordenDeRetiro));
+        if (remaining.length === 0) delete next[ubicacionId];
+        else next[ubicacionId] = remaining;
+      }
+      return next;
+    });
+
+    try {
+      await api.post('/web-retiros/estantes/liberar-multiple', { ubicacionId, ordenesParaEntregar });
+      Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Entregado correctamente.', showConfirmButton: false, timer: 2500,
+        showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' }, hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
+      });
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Error al entregar');
+      fetchAllData(false);
+    }
+  };
+
   // Quita la orden del estante y la devuelve a la lista de empaque (sin marcar como entregada)
   const handleDesasignar = async (ordenRetiro, ubicacionId) => {
     if (!ordenRetiro || !ubicacionId) return;
@@ -1602,7 +1651,7 @@ const WebRetirosPage = () => {
                               <span className="text-[9px] font-black text-slate-400 uppercase">Sec</span>
                               <span className="text-sm font-black text-blue-600">{s + 1}</span>
                             </div>
-                            <div className="grid grid-cols-5 flex-1 gap-1.5">
+                            <div className="grid grid-cols-5 flex-1 gap-3">
                               {[...Array(est.posiciones)].map((_, p) => {
                                 const id = `${est.id}-${s + 1}-${p + 1}`;
                                 const dataList = ocupacionEstantes[id] || [];
@@ -1649,9 +1698,13 @@ const WebRetirosPage = () => {
                                 const slotColors = getSlotColors();
 
                                 return (
-                                  <div
+                                  <motion.div
                                     id={`box-${id}`}
-                                    key={p}
+                                    key={`${p}-${dataList.map(d => d.OrdenRetiro).join(',')}`}
+                                    initial={isOccupied ? { opacity: 0, scale: 0.85 } : false}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    whileHover={{ scale: 1.08 }}
+                                    transition={{ duration: 0.2 }}
                                     draggable={isOccupied}
                                     onDragStart={isOccupied ? (e) => {
                                       setIsDragging(true);
@@ -1662,7 +1715,7 @@ const WebRetirosPage = () => {
                                     onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverSlot(id); }}
                                     onDragLeave={(e) => { e.preventDefault(); setDragOverSlot(prev => prev === id ? null : prev); }}
                                     onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDrop(id); setDragOverSlot(null); }}
-                                    className={`h-14 rounded-xl border-2 transition-all flex flex-col items-center justify-center gap-0.5 relative group overflow-hidden
+                                    className={`h-14 rounded-xl border-2 transition-colors flex flex-col items-center justify-center gap-0.5 relative group overflow-hidden cursor-pointer
                                         ${isOccupied
                                           ? `${slotColors.bg} ${slotColors.border} shadow-sm`
                                           : 'bg-white border-dashed border-slate-200'}
@@ -1671,6 +1724,7 @@ const WebRetirosPage = () => {
                                         ${dragOverSlot === id && !isOccupied ? 'border-blue-400 bg-blue-50 scale-105' : ''}
                                         ${dragOverSlot === id && isOccupied ? 'ring-2 ring-blue-400' : ''}
                                       `}
+                                      onDoubleClick={() => { if (isOccupied) directEntregar(id, dataList); }}
                                   >
                                     {isOccupied ? (
                                       <>
@@ -1682,16 +1736,12 @@ const WebRetirosPage = () => {
                                           </div>
                                         )}
 
-                                        <div className={`absolute inset-0 rounded-xl transition-all duration-150 flex flex-col items-center justify-center gap-1 ${slotColors.hover ? slotColors.hover : 'bg-indigo-900/0'} opacity-0 hover:opacity-100 z-10 ${isDragging ? 'pointer-events-none' : ''}`}>
-                                          <button draggable={false}
-                                            onClick={(e) => { e.stopPropagation(); triggerEntregar(id, dataList); }}
-                                            className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500 hover:bg-emerald-400 text-white rounded-md font-black text-[9px] uppercase shadow w-[88%] justify-center"
-                                          ><Check size={9} /> Entregar</button>
-                                          <button draggable={false}
-                                            onClick={(e) => { e.stopPropagation(); handleDesasignar(dataList[0]?.OrdenRetiro, id); }}
-                                            className="flex items-center gap-1 px-2 py-0.5 bg-rose-500 hover:bg-rose-400 text-white rounded-md font-black text-[9px] uppercase shadow w-[88%] justify-center"
-                                          ><XCircle size={9} /> Retornar</button>
-                                        </div>
+                                        {/* X button to return/unassign — visible on hover */}
+                                        <button draggable={false}
+                                          onClick={(e) => { e.stopPropagation(); handleDesasignar(dataList[0]?.OrdenRetiro, id); }}
+                                          className={`absolute top-0 right-0 w-6 h-6 flex items-center justify-center text-zinc-100 hover:scale-125 z-30 opacity-0 group-hover:opacity-100 transition-all ${isDragging ? 'pointer-events-none' : ''}`}
+                                        ><X size={14} strokeWidth={2.5} /></button>
+
 
                                         <div className="flex flex-col items-center justify-center gap-0 w-full overflow-hidden px-1 select-none pointer-events-none flex-1">
                                           {dataList.slice(0, 2).map((data, idx) => {
@@ -1716,7 +1766,7 @@ const WebRetirosPage = () => {
                                         <div className="w-1 h-1 rounded-full bg-slate-200" />
                                       </>
                                     )}
-                                  </div>
+                                  </motion.div>
                                 );
                               })}
                             </div>
