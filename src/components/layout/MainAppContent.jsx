@@ -129,6 +129,7 @@ const lucideIconMapRaw = {
     'admin db': Database,
     'depurar clientes': UserX,
     'sysadmin': Terminal,
+    'consola': Terminal,
     // Atención al Cliente sub-items
     'ingreso materiales': PackagePlus,
     'reposiciones': RefreshCw,
@@ -436,7 +437,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/caja/pagos" element={<CargaPagosView />} />
                                 <Route path="/caja/pagos-online" element={<VerificarPagosOnlineView />} />
                                 <Route path="/caja/cuadre" element={<CuadreDiarioView />} />
-                                <Route path="/sysadmin" element={<SysAdminPage />} />
+                                <Route path="/admin/consola" element={<SysAdminPage />} />
                                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
                             </Routes>
                         </Suspense>
@@ -512,7 +513,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/logistica/orden-integral') return <IntegralOrderView />;
     if (menuItem.Ruta === '/caja/verificar-pagos') return <VerificarPagosOnlineView />;
     if (menuItem.Ruta === '/admin/excepciones-deuda') return <ExcepcionesDeudaView />;
-    if (menuItem.Ruta === '/sysadmin') return <SysAdminPage />;
+    if (menuItem.Ruta === '/admin/consola') return <SysAdminPage />;
 
     // NEW: Historial de Lotes
     if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;
