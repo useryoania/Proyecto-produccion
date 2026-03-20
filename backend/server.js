@@ -44,11 +44,9 @@ app.use(limiter);
 app.use(cors());
 app.use(express.json({ limit: '200mb' }));
 
-// 🔍 DEBUG: LOG REQUESTS (Silenced to reduce noise)
-app.use((req, res, next) => {
-    // logger.info(`📡 INCOMING: ${req.method} ${req.url}`);
-    next();
-});
+// 🔍 REQUEST LOGGER: Loguea cada HTTP request
+const requestLogger = require('./middleware/requestLogger');
+app.use(requestLogger);
 
 // --- STATIC FILES ---
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -98,6 +96,10 @@ app.use('/api/apilugaresRetiro', require('./routes/getwayLugaresRetiro'));
 app.use('/api/apiordenes', require('./routes/getwayOrdenes'));
 app.use('/api/apiordenesRetiro', require('./routes/getwayOrdenesRetiro'));
 app.use('/api/apipagos', require('./routes/getwayPagos'));
+app.use('/api/sysadmin', require('./routes/sysadminRoutes'));
+
+// Frontend error reporting (no auth, #14)
+app.post('/api/client-error', require('./controllers/sysadminController').reportClientError);
 
 // HEALTH CHECK (lightweight, no auth)
 app.get('/api/health', async (req, res) => {
@@ -165,15 +167,16 @@ const io = new Server(server, {
 app.set('socketio', io);
 
 io.on('connection', (socket) => {
-    // Log nivel silly para no saturar, pero útil para debug inicial
-    // logger.info('🔌 Socket Connect:', socket.id); 
+    const clientCount = io.engine?.clientsCount || 0;
+    logger.info(`[SOCKET] CONNECT ${socket.id} — ${clientCount} clients`);
 
     socket.on('error', (err) => {
-        logger.error("❌ Socket Error:", err);
+        logger.error("[SOCKET] ERROR:", err);
     });
 
     socket.on('disconnect', (reason) => {
-        // logger.info('❌ Socket Disconnect:', socket.id, reason);
+        const remaining = io.engine?.clientsCount || 0;
+        logger.info(`[SOCKET] DISCONNECT ${socket.id} (${reason}) — ${remaining} clients`);
     });
 });
 

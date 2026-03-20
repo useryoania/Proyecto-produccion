@@ -4,9 +4,10 @@ import api, { SOCKET_URL } from '../../services/apiClient';
 import { io } from 'socket.io-client';
 import {
     DollarSign, CreditCard, Search, X, CheckCircle, AlertTriangle,
-    RefreshCw, Loader2, User, Phone, Package, FileText, Filter, ShieldCheck
+    RefreshCw, Loader2, User, Phone, Package, FileText, Filter, ShieldCheck, PackageCheck
 } from 'lucide-react';
 import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
+import Swal from 'sweetalert2';
 
 export const CargaGestionPagosView = () => {
     const { user } = useAuth();
@@ -247,21 +248,21 @@ export const CargaGestionPagosView = () => {
                 orderNumbers: ordersToPay,
                 comprobanteUrl: filenameDest
             });
-            alert("Pago guardado exitosamente.");
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Pago guardado exitosamente.', showConfirmButton: false, timer: 3000 });
             setMonto(''); setFormaPago(''); setFileComprobante(null); setSelectedRetiro(null);
             const fileInput = document.getElementById('file-upload');
             if (fileInput) fileInput.value = '';
             fetchData();
         } catch (err) {
             console.error(err);
-            alert("Error al procesar el pago.");
+            Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: 'Error al procesar el pago.', showConfirmButton: false, timer: 3000 });
         }
     };
 
     // ─── AUTORIZAR SIN PAGO (Estado 9) ───────────────────
     const handleAutorizarSinPago = async () => {
-        if (!selectedRetiro) return alert('Seleccione una orden para autorizar.');
-        if (!observacionAutorizo.trim()) return alert('Debe ingresar una observación para autorizar sin pago.');
+        if (!selectedRetiro) return Swal.fire({ toast: true, position: 'top', icon: 'warning', title: 'Seleccione una orden para autorizar.', showConfirmButton: false, timer: 3000 });
+        if (!observacionAutorizo.trim()) return Swal.fire({ toast: true, position: 'top', icon: 'warning', title: 'Debe ingresar una observación para autorizar sin pago.', showConfirmButton: false, timer: 3000 });
 
         setAutorizando(true);
         try {
@@ -269,13 +270,19 @@ export const CargaGestionPagosView = () => {
                 ordenRetiro: selectedRetiro.ordenDeRetiro,
                 nota: observacionAutorizo.trim()
             });
-            alert(`✅ Orden ${selectedRetiro.ordenDeRetiro} autorizada para entrega sin pago.`);
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success',
+                title: `Orden ${selectedRetiro.ordenDeRetiro} Autorizada.`,
+                showConfirmButton: false, timer: 3000,
+                showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
+                hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
+            });
+            setModalAutorizar(false);
             setSelectedRetiro(null);
             setMonto('');
             setObservacionAutorizo('');
             fetchOrders();
         } catch (err) {
-            alert('Error: ' + (err.response?.data?.error || err.message));
+            Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: 'Error: ' + (err.response?.data?.error || err.message), showConfirmButton: false, timer: 4000 });
         } finally {
             setAutorizando(false);
         }
@@ -570,18 +577,27 @@ export const CargaGestionPagosView = () => {
                         ) : (
                             filteredRetiros.map((retiro) => {
                                 const isSelected = selectedRetiro?.ordenDeRetiro === retiro.ordenDeRetiro;
+                                const allPaid = getOrdenes(retiro).length > 0 && getOrdenes(retiro).every(o => o.orderIdMetodoPago !== null || o.orderPago !== null);
+                                const isAutorizado = retiro.estadoNumerico === 9 || (retiro.estado || '').toLowerCase() === 'autorizado';
+                                const isEntregado = retiro.estadoNumerico === 6 || (retiro.estado || '').toLowerCase() === 'entregado';
                                 return (
                                     <button
                                         key={retiro.ordenDeRetiro}
                                         onClick={() => handleSelectRetiro(retiro)}
                                         title={retiro.CliNombre || retiro.CliCodigoCliente || ''}
-                                        className={`px-4 py-2.5 rounded-lg border font-black text-sm transition-all whitespace-nowrap
+                                        className={`px-4 py-2.5 rounded-lg border font-black text-sm transition-all whitespace-nowrap flex items-center justify-around
                                             ${isSelected
-                                                ? 'bg-brand-cyan border-brand-cyan text-white shadow-[0_2px_8px_rgba(0,0,0,0.2)]'
-                                                : 'bg-white border-slate-200 text-slate-700 hover:border-brand-cyan hover:text-brand-cyan'
+                                                ? 'bg-custom-cyan border-custom-cyan text-white shadow-[0_2px_8px_rgba(0,0,0,0.2)]'
+                                                : allPaid
+                                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:border-emerald-400'
+                                                    : isAutorizado
+                                                        ? 'bg-amber-50 border-amber-300 text-amber-700 hover:border-amber-400'
+                                                        : 'bg-rose-50 border-rose-300 text-rose-700 hover:border-rose-400'
                                             }`}
                                     >
                                         {retiro.ordenDeRetiro}
+                                        {isEntregado && <PackageCheck size={24} className="text-brand-dark" />}
+                                        {isAutorizado && !isEntregado && <ShieldCheck size={24} className="text-brand-dark" />}
                                     </button>
                                 );
                             })

@@ -406,12 +406,13 @@ const EntregaPedidosView = () => {
 
         if (sinPagoSinAutorizar.length > 0) {
             // No se puede entregar — debe pasar por Caja (pagar o autorizar)
-            toast.error(
-                `${sinPagoSinAutorizar.length > 1
-                    ? `${sinPagoSinAutorizar.length} órdenes no están pagas ni autorizadas`
-                    : `"${sinPagoSinAutorizar[0]}" no está paga ni autorizada`}. Debe pasar por Caja.`,
-                { duration: 5000 }
-            );
+            Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: sinPagoSinAutorizar.length > 1
+                ? `${sinPagoSinAutorizar.length} órdenes no están pagas ni autorizadas. Debe pasar por Caja.`
+                : `"${sinPagoSinAutorizar[0]}" no está paga ni autorizada. Debe pasar por Caja.`,
+                showConfirmButton: false, timer: 4000,
+                showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
+                hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
+            });
             return;
         }
 
@@ -424,7 +425,12 @@ const EntregaPedidosView = () => {
         try {
             const payload = { ordenesParaEntregar: ordenes, password, observacion };
             const response = await api.post('/apiordenesRetiro/despachos/entregar-autorizado', payload);
-            toast.success(response.data.message || 'Órdenes entregadas correctamente.');
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success',
+                title: response.data.message || 'Órdenes entregadas correctamente.',
+                showConfirmButton: false, timer: 3000,
+                showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
+                hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
+            });
             loadDespachos();
         } catch (error) {
             const errorMsg = error.response?.data?.error || 'Error al procesar la entrega.';
@@ -439,7 +445,10 @@ const EntregaPedidosView = () => {
         const noPaga     = enc.pagorealizado === 0;
         const autorizada = enc.OReEstadoActual === 9 || enc.estado === 9;
         if (noPaga && !autorizada) {
-            toast.error(`"${ordenCodigo}" no está paga ni autorizada. Debe pasar por Caja.`, { duration: 5000 });
+            Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: `"${ordenCodigo}" no está paga ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
+                showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
+                hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
+            });
             return;
         }
         ejecutarEntrega([ordenCodigo], null, null);
@@ -760,11 +769,11 @@ const EntregaPedidosView = () => {
                                         body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:#f5f5f5;}
                                         .label{width:10cm;height:15cm;background:#fff;border:2px solid #222;display:flex;flex-direction:column;page-break-after:always;overflow:hidden;}
                                         .label:last-child{page-break-after:avoid;}
-                                        .header-bar{background:#1a1a1a;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}
-                                        .logo{font-size:16px;font-weight:900;letter-spacing:3px;text-transform:uppercase;}
-                                        .orden-code{font-size:16px;font-weight:900;font-family:'Courier New',monospace;letter-spacing:1px;background:rgba(255,255,255,0.15);padding:3px 10px;border-radius:4px;}
+                                        .header-bar{background:#fff;color:#111;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #222;}
+                                        .logo{font-size:16px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:#111;}
+                                        .orden-code{font-size:16px;font-weight:900;font-family:'Courier New',monospace;letter-spacing:1px;color:#111;padding:3px 10px;}
                                         .dest-section{flex:1;padding:16px 20px 10px;display:flex;flex-direction:column;}
-                                        .badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#fff;background:#1a1a1a;padding:3px 10px;border-radius:3px;margin-bottom:10px;width:fit-content;}
+                                        .badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#111;background:#fff;padding:3px 10px;border:1.5px solid #222;border-radius:3px;margin-bottom:10px;width:fit-content;}
                                         .dest-nombre{font-size:24px;font-weight:900;text-transform:uppercase;line-height:1.15;margin-bottom:10px;color:#111;border-bottom:2px solid #eee;padding-bottom:8px;}
                                         .dest-row{font-size:14px;font-weight:600;color:#333;margin-bottom:4px;line-height:1.4;}
                                         .dest-row .icon{display:inline-block;width:18px;font-size:13px;color:#888;}
@@ -773,7 +782,7 @@ const EntregaPedidosView = () => {
                                         .divider-line{flex:1;border-top:2px dashed #aaa;}
                                         .scissors{font-size:16px;color:#aaa;}
                                         .rem-section{padding:10px 20px 14px;background:#fafafa;border-top:1px solid #eee;}
-                                        .rem-badge{background:#666;margin-bottom:6px;}
+                                        .rem-badge{color:#111;background:#fff;border:1.5px solid #666;margin-bottom:6px;}
                                         .rem-nombre{font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#333;margin-bottom:2px;}
                                         .rem-row{font-size:11px;font-weight:600;color:#666;line-height:1.5;}
                                         @media print{body{background:#fff;}.label{border:none;}}
@@ -816,9 +825,10 @@ const EntregaPedidosView = () => {
                                     <th className="p-4 w-10 text-center">
                                         <input
                                             type="checkbox"
-                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                                             checked={selectedEncomiendas.size === encomiendas.length && encomiendas.length > 0}
                                             onChange={toggleAllEncomiendas}
+                                            disabled={!lugaresRetiro.some(lr => String(lr.LReIdLugarRetiro) === filtroLugar && /encomienda|agencia/i.test(lr.LReNombreLugar))}
                                         />
                                     </th>
                                     <th className="p-4">Orden Retiro</th>
@@ -935,7 +945,7 @@ const EntregaPedidosView = () => {
                                                                     </div>`;
                                                                 })();
                                                                 const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Etiqueta</title>
-                                                                <style>@page{size:10cm 15cm;margin:0;}*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Segoe UI',Arial,sans-serif;background:#f5f5f5;}.label{width:10cm;height:15cm;background:#fff;border:2px solid #222;display:flex;flex-direction:column;overflow:hidden;}.header-bar{background:#1a1a1a;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}.logo{font-size:16px;font-weight:900;letter-spacing:3px;text-transform:uppercase;}.orden-code{font-size:16px;font-weight:900;font-family:'Courier New',monospace;}.dest-section{flex:1;padding:16px 20px 10px;display:flex;flex-direction:column;}.badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#fff;background:#1a1a1a;padding:3px 10px;border-radius:3px;margin-bottom:10px;width:fit-content;}.dest-nombre{font-size:22px;font-weight:900;text-transform:uppercase;line-height:1.15;margin-bottom:10px;color:#111;border-bottom:2px solid #eee;padding-bottom:8px;}.dest-row{font-size:13px;font-weight:600;color:#333;margin-bottom:4px;}.dest-row .icon{display:inline-block;width:18px;color:#888;}.agencia-pill{margin-top:10px;font-size:14px;font-weight:800;color:#1a1a1a;background:#f0f0f0;border:1.5px solid #ccc;padding:6px 14px;border-radius:6px;display:inline-block;}.divider-area{display:flex;align-items:center;padding:0 16px;gap:8px;}.divider-line{flex:1;border-top:2px dashed #aaa;}.scissors{font-size:16px;color:#aaa;}.rem-section{padding:10px 20px 14px;background:#fafafa;border-top:1px solid #eee;}.rem-badge{background:#666;margin-bottom:6px;}.rem-nombre{font-size:14px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#333;margin-bottom:2px;}.rem-row{font-size:11px;font-weight:600;color:#666;line-height:1.5;}@media print{body{background:#fff;}}</style></head><body>${labelsHtml}</body></html>`;
+                                                                <style>@page{size:10cm 15cm;margin:0;}*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Segoe UI',Arial,sans-serif;background:#f5f5f5;}.label{width:10cm;height:15cm;background:#fff;border:2px solid #222;display:flex;flex-direction:column;overflow:hidden;}.header-bar{background:#fff;color:#111;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #222;}.logo{font-size:16px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:#111;}.orden-code{font-size:16px;font-weight:900;font-family:'Courier New',monospace;color:#111;}.dest-section{flex:1;padding:16px 20px 10px;display:flex;flex-direction:column;}.badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#111;background:#fff;border:1.5px solid #222;padding:3px 10px;border-radius:3px;margin-bottom:10px;width:fit-content;}.dest-nombre{font-size:22px;font-weight:900;text-transform:uppercase;line-height:1.15;margin-bottom:10px;color:#111;border-bottom:2px solid #eee;padding-bottom:8px;}.dest-row{font-size:13px;font-weight:600;color:#333;margin-bottom:4px;}.dest-row .icon{display:inline-block;width:18px;color:#888;}.agencia-pill{margin-top:10px;font-size:14px;font-weight:800;color:#1a1a1a;background:#f0f0f0;border:1.5px solid #ccc;padding:6px 14px;border-radius:6px;display:inline-block;}.divider-area{display:flex;align-items:center;padding:0 16px;gap:8px;}.divider-line{flex:1;border-top:2px dashed #aaa;}.scissors{font-size:16px;color:#aaa;}.rem-section{padding:10px 20px 14px;background:#fafafa;border-top:1px solid #eee;}.rem-badge{color:#111;background:#fff;border:1.5px solid #666;margin-bottom:6px;}.rem-nombre{font-size:14px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#333;margin-bottom:2px;}.rem-row{font-size:11px;font-weight:600;color:#666;line-height:1.5;}@media print{body{background:#fff;}}</style></head><body>${labelsHtml}</body></html>`;
                                                                 const win = window.open('', '_blank', 'width=420,height=620');
                                                                 if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => win.print(), 400); }
                                                             }}

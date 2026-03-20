@@ -572,7 +572,7 @@ export const PickupView = () => {
 
                                             {/* Dept/Loc pickers for default address */}
                                             {isDefaultAddress && (
-                                                <div className="grid grid-cols-2 gap-3 mt-2 ml-9">
+                                                <div className="grid grid-cols-2 gap-3 mt-2">
                                                     <CustomSelect
                                                         value={defaultDepto}
                                                         onChange={(val) => {
@@ -744,7 +744,7 @@ export const PickupView = () => {
                             sessionStorage.removeItem('pickup_code');
                         }}
                         isLoading={loading}
-                        disabled={loading || !selectedFormaEnvio || needsAddress}
+                        disabled={loading || !selectedFormaEnvio || needsAddress || isEncomienda}
                         variant="secondary"
                         icon={PackageCheck}
                         className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
