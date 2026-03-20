@@ -45,6 +45,7 @@ const DuplicateClientsPage = lazy(() => import('../pages/admin/DuplicateClientsP
 const OrderSearchPage = lazy(() => import('../logistics/OrderSearchPage'));
 const EntregaPedidosView = lazy(() => import('../pages/customer-service/EntregaPedidosView'));
 const DepositoDashboard = lazy(() => import('../logistics/DepositoDashboard'));
+const SysAdminPage = lazy(() => import('../pages/admin/SysAdminPage'));
 
 // ============================================
 // 1. LUCIDE ICON MAP (override FA icons)
@@ -127,6 +128,7 @@ const lucideIconMapRaw = {
     'configuracion': Settings,
     'admin db': Database,
     'depurar clientes': UserX,
+    'sysadmin': Terminal,
     // Atención al Cliente sub-items
     'ingreso materiales': PackagePlus,
     'reposiciones': RefreshCw,
@@ -434,6 +436,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/caja/pagos" element={<CargaPagosView />} />
                                 <Route path="/caja/pagos-online" element={<VerificarPagosOnlineView />} />
                                 <Route path="/caja/cuadre" element={<CuadreDiarioView />} />
+                                <Route path="/sysadmin" element={<SysAdminPage />} />
                                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
                             </Routes>
                         </Suspense>
@@ -509,6 +512,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/logistica/orden-integral') return <IntegralOrderView />;
     if (menuItem.Ruta === '/caja/verificar-pagos') return <VerificarPagosOnlineView />;
     if (menuItem.Ruta === '/admin/excepciones-deuda') return <ExcepcionesDeudaView />;
+    if (menuItem.Ruta === '/sysadmin') return <SysAdminPage />;
 
     // NEW: Historial de Lotes
     if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;

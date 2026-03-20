@@ -1,6 +1,8 @@
 const { sql, getPool } = require('../config/db');
 const jwt = require('jsonwebtoken');
 const logger = require('../utils/logger');
+const { audit } = require('../utils/auditLogger');
+const { trackLogin } = require('../utils/sessionTracker');
 const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-macrosoft-production';
 
 // =====================================================================
@@ -30,6 +32,10 @@ exports.login = async (req, res) => {
                 // Por seguridad, si existe el usuario interno, asumimos que es ese
                 return res.status(401).json({ success: false, message: 'Credenciales inválidas.' });
             }
+
+            // Audit & session tracking
+            audit('LOGIN', { user: user.Username, userId: user.UserID, ip: req.ip, type: 'INTERNAL', result: 'OK' });
+            trackLogin(user.UserID, user.Username, req.ip, 'INTERNAL', true);
 
             // Log successful login
             try {
@@ -163,10 +169,15 @@ exports.login = async (req, res) => {
         // -----------------------------------------------------------------
         // 3. NO ENCONTRADO EN NINGUNO
         // -----------------------------------------------------------------
+        // No match
+        audit('LOGIN', { user: username, ip: req.ip, type: 'UNKNOWN', result: 'FAIL' });
+        trackLogin(null, username, req.ip, 'UNKNOWN', false, 'Usuario no encontrado');
         res.status(401).json({ success: false, message: 'Credenciales inválidas o usuario inexistente.' });
 
     } catch (err) {
         logger.error('[LOGIN ERROR] SQL Error:', err);
+        audit('LOGIN', { user: username, ip: req.ip, result: 'ERROR', error: err.message });
+        trackLogin(null, username, req.ip, 'ERROR', false, err.message);
         res.status(500).send({ message: err.message });
     }
 };

@@ -8,6 +8,7 @@ import { BrowserRouter } from 'react-router-dom';      // 👈 Importamos el enr
 
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from './queryClient';
+import './utils/errorReporter'; // Global frontend error reporter → /api/client-error
 
 // FORCE REFRESH TIMESTAMP
 console.log(`🚀 APP VERSION REFRESH: ${new Date().toLocaleString()}`);
