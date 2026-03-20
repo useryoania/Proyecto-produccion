@@ -138,9 +138,12 @@ async function procesarUnaOrdenWsp(io, r, pool, throttle) {
     }
 
     const params = [
-        codigoOrden,                  // {{1}} Orden
-        r.OrdNombreTrabajo || '-',    // {{2}} Trabajo
-        r.Producto || '-',            // {{3}} Producto
+        formatDateUY(new Date()),                                               // {{1}} Fecha del mensaje
+        codigoOrden,                                                           // {{2}} Orden
+        r.OrdNombreTrabajo || '-',                                             // {{3}} Trabajo
+        r.Producto || '-',                                                     // {{4}} Producto
+        formatNumberUY(r.Cantidad ?? 0, 2),                                    // {{5}} Cantidad
+        `${r.MonSimbolo || '$'} ${formatNumberUY(r.CostoFinal ?? 0, 2)}`,     // {{6}} Total
     ];
 
 
@@ -169,13 +172,24 @@ async function procesarAvisosBatch(io) {
     const pool = await getPool();
     const query = `
   ;WITH CotiDia AS ( SELECT TOP (1) CotFecha, CotDolar FROM Cotizaciones WITH (NOLOCK) ORDER BY CotFecha DESC )
-  SELECT Ord.OrdIdOrden, Cli.TelefonoTrabajo, Ord.OrdCodigoOrden, Ord.OrdNombreTrabajo, LTRIM(RTRIM(Pro.Descripcion)) AS Producto, CAST(Ord.OrdCantidad AS decimal(18,2)) AS Cantidad, Mon.MonIdMoneda, Mon.MonSimbolo, CAST(Ord.OrdCostoFinal AS decimal(18,2)) AS CostoFinal, ISNULL(Cd.CotDolar, NULL) AS CotDolarDia
+  SELECT
+    Ord.OrdIdOrden,
+    Cli.TelefonoTrabajo,
+    Ord.OrdCodigoOrden,
+    Ord.OrdNombreTrabajo,
+    LTRIM(RTRIM(Pro.Descripcion))              AS Producto,
+    CAST(Ord.OrdCantidad   AS decimal(18,2))   AS Cantidad,
+    CAST(Ord.OrdCostoFinal AS decimal(18,2))   AS CostoFinal,
+    Mon.MonIdMoneda,
+    Mon.MonSimbolo,
+    ISNULL(Cd.CotDolar, NULL)                  AS CotDolarDia
   FROM OrdenesDeposito Ord WITH (NOLOCK)
   JOIN Clientes Cli WITH (NOLOCK) ON Cli.CliIdCliente = Ord.CliIdCliente
   JOIN Articulos Pro WITH (NOLOCK) ON Pro.ProIdProducto = Ord.ProIdProducto
   JOIN Monedas Mon WITH (NOLOCK) ON Mon.MonIdMoneda = Ord.MonIdMoneda
   LEFT JOIN CotiDia Cd ON 1 = 1
-  WHERE (Ord.OrdEstadoActual IN (@Estado, 6) AND ISNULL(Ord.OrdAvisoWsp, 0) = 0 AND Cli.TelefonoTrabajo IS NOT NULL) OR Ord.OrdEstadoActual = 12;
+  WHERE (Ord.OrdEstadoActual IN (@Estado, 6) AND ISNULL(Ord.OrdAvisoWsp, 0) = 0 AND Cli.TelefonoTrabajo IS NOT NULL)
+     OR Ord.OrdEstadoActual = 12;
   `;
     const result = await pool.request().input("Estado", sql.Int, ESTADO_POR_AVISAR).query(query);
     const rows = result.recordset || [];
