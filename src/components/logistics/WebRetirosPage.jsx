@@ -677,11 +677,6 @@ const WebRetirosPage = () => {
 
   // 3. Acciones del Operario
   const handleSelectRetiro = (o) => {
-    // RT- retiros: ir directo al modal de entrega, sin pasar por OrderDetail
-    if ((o.ordenDeRetiro || '').startsWith('RT-')) {
-      triggerEntregar('FUERA DE ESTANTE', o);
-      return;
-    }
     setSelectedRetiro(o);
     setScannedBultos({});
     setUbicationMode(false);
@@ -1022,14 +1017,12 @@ const WebRetirosPage = () => {
 
     return (
       <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
-        <div className="bg-white rounded-3xl shadow-2xl p-8 w-full max-w-4xl animate-in fade-in zoom-in-95 duration-200">
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <span className="text-[10px] font-bold text-blue-500 tracking-wider uppercase">Detalle Envio Web</span>
-              <h2 className="text-3xl font-black text-slate-800 mt-0.5">
-                {selectedRetiro.pagoHandy ? selectedRetiro.ordenDeRetiro.replace('R-', 'PW-') : selectedRetiro.ordenDeRetiro}
-              </h2>
-              <p className="text-slate-400 font-medium uppercase text-sm mt-0.5">{selectedRetiro.idcliente}</p>
+        <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-2xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-4 text-sm">
+              <span className="font-black text-slate-800">Orden de Retiro: <span className="text-blue-600">{selectedRetiro.pagoHandy ? selectedRetiro.ordenDeRetiro.replace('R-', 'PW-') : selectedRetiro.ordenDeRetiro}</span></span>
+              <span className="text-slate-300">|</span>
+              <span className="font-bold text-slate-500">ID Cliente: <span className="text-slate-700">{selectedRetiro.idcliente}</span></span>
             </div>
             <button onClick={() => setSelectedRetiro(null)} className="p-2 bg-slate-100 rounded-xl text-slate-400 hover:bg-slate-200 hover:text-slate-600 transition-colors">
               <XCircle size={20} />
@@ -1051,7 +1044,20 @@ const WebRetirosPage = () => {
             <button type="submit" className="absolute inset-y-1.5 right-1.5 px-4 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-blue-700">OK</button>
           </form>
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 mb-6">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Checklist de Bultos</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Checklist de Bultos</p>
+              <button type="button" onClick={() => {
+                const orders = selectedRetiro.orders || [];
+                const allDone = orders.every(o => scannedBultos[o.orderNumber]);
+                const next = {};
+                orders.forEach(o => { next[o.orderNumber] = !allDone; });
+                setScannedBultos(next);
+              }} className="cursor-pointer" title={selectedRetiro.orders?.every(o => scannedBultos[o.orderNumber]) ? 'Desmarcar todos' : 'Marcar todos'}>
+                {selectedRetiro.orders?.every(o => scannedBultos[o.orderNumber])
+                  ? <CheckCircle className="text-green-500" size={24} />
+                  : <div className="w-6 h-6 rounded-full border-2 border-slate-300" />}
+              </button>
+            </div>
             <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
               {selectedRetiro.orders?.map(o => (
                 <div key={o.orderNumber} onClick={() => toggle(o.orderNumber)}
@@ -1071,12 +1077,28 @@ const WebRetirosPage = () => {
               ))}
             </div>
           </div>
-          <div className="flex gap-4">
-            <button onClick={() => setSelectedRetiro(null)} className="flex-[0.8] py-3 px-4 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors">Cancelar</button>
+          <div className="flex gap-3 justify-center">
+            <button onClick={() => setSelectedRetiro(null)} className="flex-1 py-3 px-4 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors">Cancelar</button>
             <button
               disabled={!allChecked}
-              onClick={() => setUbicationMode(true)}
-              className="flex-[2] py-3 bg-blue-600 text-white rounded-xl font-bold text-lg shadow-md shadow-blue-200 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              onClick={() => {
+                // Auto-find first empty slot
+                for (const est of estantesConfigArr) {
+                  for (let s = 1; s <= est.secciones; s++) {
+                    for (let p = 1; p <= est.posiciones; p++) {
+                      const id = `${est.id}-${s}-${p}`;
+                      if (!ocupacionEstantes[id] || ocupacionEstantes[id].length === 0) {
+                        handleAsignarUbicacion(est.id, s, p);
+                        return;
+                      }
+                    }
+                  }
+                }
+                // No empty slot found — fallback to manual
+                Swal.fire({ toast: true, position: 'top', icon: 'warning', title: 'No hay casilleros vacíos. Seleccioná uno manualmente.', showConfirmButton: false, timer: 3000 });
+                setUbicationMode(true);
+              }}
+              className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-md shadow-blue-200 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               Asignar a Estante
             </button>
