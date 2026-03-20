@@ -277,7 +277,7 @@ const SysAdminPage = () => {
         { id: 'sessions', label: 'Sesiones', icon: Users },
         { id: 'sql', label: 'SQL', icon: Database },
         { id: 'tables', label: 'Tablas', icon: Table2 },
-        { id: 'services', label: 'Servicios', icon: Globe },
+
         { id: 'metrics', label: 'Métricas', icon: BarChart3 },
         { id: 'errors', label: 'Errores', icon: Bug },
         { id: 'audit', label: 'Auditoría', icon: ClipboardList },
@@ -574,39 +574,7 @@ const SysAdminPage = () => {
                 </div>
             )}
 
-            {/* ═══ SERVICES ═══ */}
-            {tab === 'services' && (
-                <div className="flex flex-col gap-4">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-xs font-black text-zinc-400 uppercase tracking-wider flex items-center gap-2"><Globe size={14} /> Servicios Externos</h3>
-                        <button onClick={fetchServices} disabled={servicesLoading}
-                            className="flex items-center gap-2 px-3 py-2 bg-zinc-200 hover:bg-zinc-300 rounded-xl text-xs font-bold text-zinc-600">
-                            {servicesLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Probar
-                        </button>
-                    </div>
-                    {services.length === 0 ? (
-                        <p className="text-sm text-zinc-400 italic">Hacé clic en "Probar" para testear los servicios externos.</p>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {services.map((s, i) => (
-                                <div key={i} className={`bg-white rounded-xl border p-4 flex items-center gap-4 ${s.status === 'OK' ? 'border-emerald-200' : 'border-red-200'}`}>
-                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${s.status === 'OK' ? 'bg-emerald-100' : 'bg-red-100'}`}>
-                                        {s.status === 'OK' ? <CheckCircle size={20} className="text-emerald-500" /> : <XCircle size={20} className="text-red-500" />}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-bold text-zinc-800">{s.name}</p>
-                                        <p className="text-[10px] text-zinc-400 truncate">{s.url}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className={`text-sm font-bold ${s.status === 'OK' ? 'text-emerald-500' : 'text-red-500'}`}>{s.status}</p>
-                                        <p className="text-[10px] text-zinc-400">{s.ms}ms</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-            )}
+
 
             {/* ═══ TABLES ═══ */}
             {tab === 'tables' && (
