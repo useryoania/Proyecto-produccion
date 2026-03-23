@@ -59,6 +59,9 @@ router.get('/totem-verify', webOrdersController.totemVerify);
 // POST /api/web-orders/totem-create-pickup (Crear retiro desde tótem, SIN AUTH)
 router.post('/totem-create-pickup', webOrdersController.totemCreatePickup);
 
+// POST /api/web-orders/totem-announce (Anunciarse con orden de retiro, SIN AUTH)
+router.post('/totem-announce', webOrdersController.totemAnnounce);
+
 // POST /api/web-orders/handy-refund (Solicitar Devolución a Handy)
 router.post('/handy-refund', verifyToken, webOrdersController.createHandyRefund);
 
