@@ -79,7 +79,7 @@ const ResetPasswordScreen = ({ token, onSuccess }) => {
                                     onChange={(e) => setNewPass(e.target.value)}
                                     autoFocus
                                 />
-                                <button type="button" className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-cyan hover:text-custom-cyan cursor-pointer"
+                                <button type="button" aria-label="Mostrar u ocultar contraseña" className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-cyan hover:text-custom-cyan cursor-pointer"
                                     onClick={() => setShowPass(!showPass)}>
                                     {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
                                 </button>
@@ -293,6 +293,7 @@ const LoginPage = () => {
                                 <button
                                     type="button"
                                     className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-magenta hover:text-custom-magenta cursor-pointer"
+                                    aria-label="Mostrar u ocultar contraseña"
                                     onClick={() => setShowPassword(!showPassword)}
                                 >
                                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}

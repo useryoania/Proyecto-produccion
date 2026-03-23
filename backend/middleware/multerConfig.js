@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 
 // Ruta de la carpeta donde se guardarán los archivos
-const uploadFolder = path.join(__dirname, '../comprobantesPagos');
+const uploadFolder = process.env.COMPROBANTES_PAGOS_PATH || path.join(__dirname, '../comprobantesPagos');
 
 // Verificar y crear la carpeta si no existe
 if (!fs.existsSync(uploadFolder)) {

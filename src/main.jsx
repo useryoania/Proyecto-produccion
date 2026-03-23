@@ -13,6 +13,15 @@ import './utils/errorReporter'; // Global frontend error reporter → /api/clien
 // FORCE REFRESH TIMESTAMP
 console.log(`🚀 APP VERSION REFRESH: ${new Date().toLocaleString()}`);
 
+// Register Service Worker for PWA
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(err => {
+      console.warn('[SW] Registration failed:', err);
+    });
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>

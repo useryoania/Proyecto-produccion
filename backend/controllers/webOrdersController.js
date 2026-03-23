@@ -2038,17 +2038,19 @@ exports.handyWebhook = async (req, res) => {
                             .input('Usr', sql.Int, usuarioId)
                             .query(`INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@RID, @Estado, GETDATE(), @Usr)`);
 
-                        // 4. UPDATE Ordenes + Historico
-                        if (payloadPago.orderNumbers && payloadPago.orderNumbers.length > 0) {
-                            const safeIds = payloadPago.orderNumbers.filter(n => Number.isInteger(n) && n > 0);
-                            if (safeIds.length > 0) {
-                                await pool.request()
-                                    .input('PagoId', sql.Int, pagoId)
-                                    .query(`UPDATE OrdenesDeposito SET PagIdPago = @PagoId, OrdEstadoActual = 7, OrdFechaEstadoActual = GETDATE() WHERE OrdIdOrden IN (${safeIds.join(',')})`);
+                        // 4. UPDATE Ordenes + Historico (buscar hijas del retiro)
+                        const hijasResult = await pool.request()
+                            .input('RID2', sql.Int, ordenRetiroId)
+                            .query('SELECT OrdIdOrden FROM OrdenesDeposito WHERE OReIdOrdenRetiro = @RID2');
+                        const hijasIds = hijasResult.recordset.map(r => r.OrdIdOrden).filter(id => id > 0);
 
-                                const histValues = safeIds.map(id => `(${id}, 7, GETDATE(), ${usuarioId})`).join(', ');
-                                await pool.request().query(`INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES ${histValues}`);
-                            }
+                        if (hijasIds.length > 0) {
+                            await pool.request()
+                                .input('PagoId', sql.Int, pagoId)
+                                .query(`UPDATE OrdenesDeposito SET PagIdPago = @PagoId, OrdEstadoActual = 7, OrdFechaEstadoActual = GETDATE() WHERE OrdIdOrden IN (${hijasIds.join(',')})`);
+
+                            const histValues = hijasIds.map(id => `(${id}, 7, GETDATE(), ${usuarioId})`).join(', ');
+                            await pool.request().query(`INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES ${histValues}`);
                         }
 
                         logger.info(`[HANDY WEBHOOK] ✅ Pago registrado en DB: PagoId=${pagoId}, OrdenRetiro=${ordenRetiroId}`);

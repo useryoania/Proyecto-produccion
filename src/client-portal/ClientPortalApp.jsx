@@ -15,6 +15,7 @@ import { PickupView } from './modulos/PickupView';
 import { UnpaidPickupsView } from './modulos/UnpaidPickupsView';
 import { HistorialView } from './modulos/HistorialView';
 import { ClubView } from './modulos/ClubView';
+import { PricesView } from './modulos/PricesView';
 import PaymentResult from '../components/pages/PaymentResult';
 
 export const ClientPortalApp = () => {
@@ -98,6 +99,14 @@ export const ClientPortalApp = () => {
                     <Route path="/payment-status" element={
                         <ProtectedRoute>
                             <PaymentResult />
+                        </ProtectedRoute>
+                    } />
+
+                    <Route path="/precios" element={
+                        <ProtectedRoute>
+                            <MainLayout>
+                                <PricesView />
+                            </MainLayout>
                         </ProtectedRoute>
                     } />
 

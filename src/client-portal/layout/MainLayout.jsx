@@ -19,6 +19,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { SERVICES_LIST } from '../constants/services';
 import { Logo } from '../../components/Logo';
+import { usePushNotifications } from '../hooks/usePushNotifications';
+import { PushNotificationBanner } from '../components/PushNotificationBanner';
 
 const BASE_URL = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') : '';
 
@@ -36,6 +38,9 @@ export const MainLayout = ({ children }) => {
     const [visibleConfig, setVisibleConfig] = useState(null);
     const [webContent, setWebContent] = useState({ sidebar: [], popup: [] });
     const [showPopup, setShowPopup] = useState(false);
+
+    // Push notifications (pre-permission banner)
+    const { showBanner, acceptPush, dismissPush } = usePushNotifications();
 
     useEffect(() => {
         const fetchConfig = async () => {
@@ -345,6 +350,9 @@ export const MainLayout = ({ children }) => {
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* Push Notification Banner */}
+            <PushNotificationBanner show={showBanner} onAccept={acceptPush} onDismiss={dismissPush} />
         </div>
     );
 };

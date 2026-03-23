@@ -675,6 +675,21 @@ const WebRetirosPage = () => {
     fetchAllData();
   }, [fetchAllData]);
 
+  // ─── SOCKET: actualizar en tiempo real ───
+  useEffect(() => {
+    let socket;
+    const initSocket = async () => {
+      const { io } = await import('socket.io-client');
+      const { SOCKET_URL } = await import('../../services/apiClient');
+      socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
+      socket.on("connect", () => console.log("WebRetiros conectado a Sockets:", socket.id));
+      socket.on("retiros:update", () => { fetchAllData(false); });
+      socket.on("actualizado", () => { fetchAllData(false); });
+    };
+    initSocket();
+    return () => { if (socket) socket.disconnect(); };
+  }, [fetchAllData]);
+
   // 3. Acciones del Operario
   const handleSelectRetiro = (o) => {
     setSelectedRetiro(o);

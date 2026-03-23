@@ -91,7 +91,7 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
 
             logger.info(`   🎯[FileProcessing] Archivos a procesar realmente: ${processedFiles.length}`);
 
-            const rootDir = 'C:\\ORDENES';
+            const rootDir = process.env.ORDENES_PATH || path.join(__dirname, '..', 'ordenes');
 
             for (const file of processedFiles) {
                 try {
