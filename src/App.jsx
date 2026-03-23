@@ -10,6 +10,7 @@ import MainAppContent from './components/layout/MainAppContent'; // ESTE ES EL I
 import PaymentResult from './components/pages/PaymentResult';
 import { TotemApp } from './client-portal/modulos/totem/TotemApp';
 import PrintStationPage from './components/logistics/PrintStationPage';
+import EncomiendaPrintStation from './components/logistics/EncomiendaPrintStation';
 import { menuService } from './services/api';
 
 function App() {
@@ -74,6 +75,7 @@ function App() {
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="/totem/*" element={<TotemApp />} />
         <Route path="/print-station" element={<PrintStationPage />} />
+        <Route path="/encomienda-station" element={<EncomiendaPrintStation />} />
         <Route path="*" element={<MainAppContent menuItems={menuItems} />} />
       </Routes>
     </main>

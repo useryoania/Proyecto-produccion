@@ -151,7 +151,9 @@ app.use('/api/chat', require('./routes/chatRoutes'));
 // checkout routes deshabilitado por ahora
 
 // --- CRON: Sincronización de lista de precios desde Google Sheets ---
-require('./cron/priceListSync');
+if (process.env.NODE_ENV !== 'test') {
+    require('./cron/priceListSync');
+}
 
 // --- API: Lista de precios pública ---
 app.get('/api/precios-publicos', async (req, res) => {
@@ -269,40 +271,38 @@ process.on('uncaughtException', (err) => {
 
 
 // --- INICIO DEL SERVIDOR Y SCHEDULER ---
-server.listen(PORT, async () => {
-    logger.info(`🚀 Servidor backend + Socket.io corriendo en puerto ${PORT}`);
+if (process.env.NODE_ENV !== 'test') {
+    server.listen(PORT, async () => {
+        logger.info(`🚀 Servidor backend + Socket.io corriendo en puerto ${PORT}`);
 
-    // Iniciamos la sincronización automática después de que el servidor suba
-    try {
-        // startAutoSync(io).catch(err => logger.error("❌ Scheduler Start Error:", err));
-        // logger.info(`⏱️ Sistema de sincronización automática activado.`);
-        logger.info(`ℹ️ [Sync] Sincronización con ERP desactivada (Pedidos vía WEB activos).`);
-
-        // ACTIVAR CRON PLANILLAS
         try {
-            require('./cron/planillaSync');
-            logger.info("⏱️ [CRON] Sincronización de Planillas ACTIVADA");
-        } catch (e) {
-            logger.error("❌ [CRON] Error cargando PlanillaSync:", e.message);
-        }
+            logger.info(`ℹ️ [Sync] Sincronización con ERP desactivada (Pedidos vía WEB activos).`);
 
-        // ACTIVAR CRON WSP AVISOS
-        try {
-            const { startWspJob } = require('./jobs/wspAvisos.job');
-            startWspJob(io);
-        } catch (e) {
-            logger.error("❌ [CRON] Error cargando WspAvisos:", e.message);
-        }
+            try {
+                require('./cron/planillaSync');
+                logger.info("⏱️ [CRON] Sincronización de Planillas ACTIVADA");
+            } catch (e) {
+                logger.error("❌ [CRON] Error cargando PlanillaSync:", e.message);
+            }
 
-        // ACTIVAR CRON COTIZACIÓN BCU (USD/UYU automático)
-        try {
-            const { startCotizacionJob } = require('./jobs/cotizacionBCU.job');
-            startCotizacionJob();
-        } catch (e) {
-            logger.error("❌ [CRON] Error cargando CotizacionBCU:", e.message);
-        }
+            try {
+                const { startWspJob } = require('./jobs/wspAvisos.job');
+                startWspJob(io);
+            } catch (e) {
+                logger.error("❌ [CRON] Error cargando WspAvisos:", e.message);
+            }
 
-    } catch (error) {
-        logger.error("❌ Error al iniciar el Scheduler:", error.message);
-    }
-});
+            try {
+                const { startCotizacionJob } = require('./jobs/cotizacionBCU.job');
+                startCotizacionJob();
+            } catch (e) {
+                logger.error("❌ [CRON] Error cargando CotizacionBCU:", e.message);
+            }
+
+        } catch (error) {
+            logger.error("❌ Error al iniciar el Scheduler:", error.message);
+        }
+    });
+}
+
+module.exports = { app, server };

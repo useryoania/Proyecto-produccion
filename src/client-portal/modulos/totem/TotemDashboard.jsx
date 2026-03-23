@@ -9,81 +9,39 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 const BASE_PREFIXES = ['SB', 'DF', 'UVDF', 'ECOUV', 'TWC', 'EMB', 'TP', 'IMD', 'PRO', 'VEN'];
 
-// Print ticket (same format as WebRetirosPage)
-const printTotemTicket = ({ ordenRetiro, client, orders, totalCost }) => {
-    const now = new Date().toLocaleString('es-UY', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', hour12: false
-    });
-    const ordersRows = orders.map((o, i) => `<tr><td>${i + 1}</td><td><strong>${o.id}</strong></td><td style="text-align:right;">${o.amount ? `$ ${o.amount.toFixed(2)}` : '-'}</td></tr>`).join('');
+// Print ticket (80mm thermal - same technique as PrintStationPage)
+const printTotemTicket = ({ ordenRetiro, client, orders }) => {
+    const fecha = new Date().toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+    const ordenesHTML = orders.map(o =>
+        `<tr><td style="padding:2px 0;font-size:11px">${o.id || '-'}</td></tr>`
+    ).join('');
     const ticketBody = `
-  <div class="header">
-    <div class="empresa">USER</div>
-    <div class="modulo">Logística — Comprobante de Retiro</div>
-    <div class="doc-tipo">Retiro Tótem · Local: Retiro Web</div>
-  </div>
-  <div class="codigo-principal">${ordenRetiro}</div>
-  <div style="text-align:center; margin-bottom:8px;">
-    <span class="estado-badge">PENDIENTE DE PAGO</span>
-  </div>
-  <table class="info-table">
-    <tr><td>Cliente</td><td><strong>${client.company || client.name}</strong> <span style="color:#888;font-size:9px;">(${client.idCliente})</span></td></tr>
-    ${totalCost ? `<tr><td>Monto</td><td>$ ${Number(totalCost).toFixed(2)}</td></tr>` : ''}
-    <tr><td>Local Retiro</td><td>Retiro Web</td></tr>
-    <tr><td>Fecha Alta</td><td>${now}</td></tr>
-  </table>
-  <div class="sep"></div>
-  <div style="font-size:11px;color:#000;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:800;">Órdenes incluidas (${orders.length})</div>
-  <table class="orders-table">
-    <thead><tr><th>#</th><th>Código de Orden</th><th style="text-align:right;">Importe</th></tr></thead>
-    <tbody>${ordersRows}</tbody>
-  </table>
-  <div class="sep"></div>
-  <table style="width:100%;font-size:9px;color:#666;"><tr><td>Impreso:</td><td style="text-align:right;">${now}</td></tr></table>
-  <div style="text-align:center; margin:8px 0 14px;">
-    <img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(ordenRetiro)}&color=000000&bgcolor=ffffff&margin=2" alt="QR" style="width:90px;height:90px;border:1px solid #eee;" />
-    <div style="font-size:9px;color:#999;margin-top:2px;letter-spacing:1px;">${ordenRetiro}</div>
-  </div>
-  <div class="firma-row">
-    <div class="firma-box">Firma y Aclaración Cliente</div>
-    <div class="firma-box">Firma Responsable Logística</div>
-  </div>
-  <div class="footer">USER — Documento interno. Conserve este comprobante.</div>`;
-
-    const styles = `
-    @page { size: A5; margin: 12mm 10mm; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 13px; color: #111; background: #fff; }
-    .header { text-align: center; border-bottom: 2px solid #222; padding-bottom: 8px; margin-bottom: 12px; }
-    .header .empresa { font-size: 20px; font-weight: 900; letter-spacing: 2px; text-transform: uppercase; }
-    .header .modulo { font-size: 12px; color: #555; margin-top: 2px; }
-    .header .doc-tipo { font-size: 11px; color: #888; margin-top: 1px; font-style: italic; }
-    .codigo-principal { text-align: center; font-size: 26px; font-weight: 900; letter-spacing: 2px; margin: 10px 0 8px; padding: 6px 0; border-top: 1px dashed #ccc; border-bottom: 1px dashed #ccc; }
-    .estado-badge { display: inline-block; padding: 3px 10px; border: 2px solid #dc2626; color: #dc2626; font-weight: 900; font-size: 11px; border-radius: 4px; text-transform: uppercase; letter-spacing: 1px; }
-    .info-table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-    .info-table td { padding: 5px 2px; border-bottom: 1px solid #eee; vertical-align: top; }
-    .info-table td:first-child { color: #000; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; width: 32%; white-space: nowrap; }
-    .info-table td:last-child { font-weight: 700; text-align: right; font-size: 13px; }
-    .orders-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
-    .orders-table thead tr { background: #f3f4f6; }
-    .orders-table th { padding: 6px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #444; border-bottom: 1px solid #ddd; }
-    .orders-table td { padding: 6px; border-bottom: 1px solid #eee; font-weight: 600; }
-    .sep { border-top: 1px dashed #bbb; margin: 10px 0; }
-    .firma-row { display: flex; justify-content: space-between; margin-top: 60px; }
-    .firma-box { width: 44%; border-top: 1px solid #333; padding-top: 4px; text-align: center; font-size: 11px; color: #555; }
-    .footer { margin-top: 14px; font-size: 11px; text-align: center; color: #aaa; border-top: 1px solid #eee; padding-top: 6px; }
-    .page-break { page-break-before: always; }`;
+    <div class="center header">USER</div>
+    <div class="center" style="font-size:11px;margin-bottom:4px;font-weight:bold;">COMPROBANTE DE RETIRO</div>
+    <div class="line"></div>
+    <div class="center retiro-id">${ordenRetiro || 'N/A'}</div>
+    <div class="line"></div>
+    <table>
+        <tr><td>Cliente:</td><td>${client?.company || client?.name || '-'}</td></tr>
+        <tr><td>Fecha:</td><td>${fecha}</td></tr>
+    </table>
+    <div class="line"></div>
+    <div style="margin:3px 0;font-size:13px;">ÓRDENES:</div>
+    <table>${ordenesHTML || '<tr><td style="font-size:12px;">Sin detalle</td></tr>'}</table>
+    <div class="line"></div>`;
 
     const html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8">
-  <title>Comprobante Retiro ${ordenRetiro}</title>
-  <style>${styles}</style>
-</head>
-<body>
-  ${ticketBody}
-  <div class="page-break"></div>
+<html><head><style>
+    @page { margin: 0; size: 80mm auto; }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-weight: bold; }
+    body { font-family: 'Courier New', monospace; width: 80mm; padding: 4mm; font-size: 14px; font-weight: bold; }
+    .center { text-align: center; }
+    .line { border-top: 2px dashed #000; margin: 6px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    td { vertical-align: top; font-weight: bold; padding: 2px 0; }
+    .header { font-size: 18px; font-weight: 900; letter-spacing: 2px; }
+    .retiro-id { font-size: 22px; font-weight: 900; margin: 6px 0; }
+</style></head><body>
   ${ticketBody}
 </body>
 </html>`;
@@ -235,8 +193,7 @@ export const TotemDashboard = ({ onLogout }) => {
                 printTotemTicket({
                     ordenRetiro: data.ordIdGenerada || data.ordenRetiro || 'R-' + Date.now(),
                     client,
-                    orders: selectedOrdObjects,
-                    totalCost
+                    orders: selectedOrdObjects
                 });
                 setSuccess(true);
                 setSelectedOrders([]);

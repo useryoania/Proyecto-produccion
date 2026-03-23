@@ -1,38 +1,37 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Printer, Wifi, WifiOff, Volume2, VolumeX, Bell, RotateCcw, Package, AlertTriangle, XCircle } from 'lucide-react';
+import { Printer, Wifi, WifiOff, Volume2, VolumeX, Bell, RotateCcw, Package, AlertTriangle, XCircle, Tag } from 'lucide-react';
 import { socket } from '../../services/socketService';
 import api from '../../services/api';
 import { Logo } from '../Logo';
 
-const PrintStationPage = () => {
+const EncomiendaPrintStation = () => {
     const [connected, setConnected] = useState(socket.connected);
     const [logs, setLogs] = useState(() => {
-        try { const s = localStorage.getItem('ps_logs'); return s ? JSON.parse(s) : []; } catch { return []; }
+        try { const s = localStorage.getItem('eps_logs'); return s ? JSON.parse(s) : []; } catch { return []; }
     });
     const [printCount, setPrintCount] = useState(() => {
-        try { return parseInt(localStorage.getItem('ps_printCount')) || 0; } catch { return 0; }
+        try { return parseInt(localStorage.getItem('eps_printCount')) || 0; } catch { return 0; }
     });
     const [soundEnabled, setSoundEnabled] = useState(() => {
-        try { const s = localStorage.getItem('ps_soundEnabled'); return s !== null ? s === 'true' : true; } catch { return true; }
+        try { const s = localStorage.getItem('eps_soundEnabled'); return s !== null ? s === 'true' : true; } catch { return true; }
     });
     const [copies, setCopies] = useState(() => {
-        try { return parseInt(localStorage.getItem('ps_copies')) || 1; } catch { return 1; }
+        try { return parseInt(localStorage.getItem('eps_copies')) || 1; } catch { return 1; }
     });
     const iframeRef = useRef(null);
     const audioRef = useRef(null);
     const printedIdsRef = useRef(() => {
-        try { const s = localStorage.getItem('ps_printedIds'); return s ? new Set(JSON.parse(s)) : new Set(); } catch { return new Set(); }
+        try { const s = localStorage.getItem('eps_printedIds'); return s ? new Set(JSON.parse(s)) : new Set(); } catch { return new Set(); }
     });
-    // Lazy-init the Set (ref initializer returns a function, evaluate it once)
     if (typeof printedIdsRef.current === 'function') printedIdsRef.current = printedIdsRef.current();
 
-    // Persist state to localStorage
-    useEffect(() => { try { localStorage.setItem('ps_logs', JSON.stringify(logs)); } catch {} }, [logs]);
-    useEffect(() => { try { localStorage.setItem('ps_printCount', String(printCount)); } catch {} }, [printCount]);
-    useEffect(() => { try { localStorage.setItem('ps_soundEnabled', String(soundEnabled)); } catch {} }, [soundEnabled]);
-    useEffect(() => { try { localStorage.setItem('ps_copies', String(copies)); } catch {} }, [copies]);
+    // Persist state
+    useEffect(() => { try { localStorage.setItem('eps_logs', JSON.stringify(logs)); } catch {} }, [logs]);
+    useEffect(() => { try { localStorage.setItem('eps_printCount', String(printCount)); } catch {} }, [printCount]);
+    useEffect(() => { try { localStorage.setItem('eps_soundEnabled', String(soundEnabled)); } catch {} }, [soundEnabled]);
+    useEffect(() => { try { localStorage.setItem('eps_copies', String(copies)); } catch {} }, [copies]);
 
-    // Sonido de notificación
+    // Sound
     useEffect(() => {
         audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1pq6y0r6KYj5+xtbisl4eEkKW0u7OljYWMnK+4t6yYjI2ZqrW1rZqOjpersbOsnpOPlqexsa6glo+VpbCxr6KYkZWjr7GvoZiSlKOusa+impOUoq+xr6KZk5Sjr7CvopmTlKOvsK+imZOUo6+wr6KZk5Sjr7CvopmTlKOvsK+hmJKToa6vr6GYkpOhr6+voZiSk6GvAA==');
     }, []);
@@ -42,99 +41,82 @@ const PrintStationPage = () => {
         setLogs(prev => [{ time, message, type, retiro, icon }, ...prev].slice(0, 50));
     }, []);
 
-    // Socket.io connection status
+    // Socket connection
     useEffect(() => {
         const onConnect = () => { setConnected(true); addLog('Conectado al servidor', 'success'); };
         const onDisconnect = () => { setConnected(false); addLog('Desconectado del servidor', 'error'); };
-
         socket.on('connect', onConnect);
         socket.on('disconnect', onDisconnect);
-
-        if (socket.connected) addLog('ESPERANDO RETIROS...', 'success');
-
-        return () => {
-            socket.off('connect', onConnect);
-            socket.off('disconnect', onDisconnect);
-        };
+        if (socket.connected) addLog('ESPERANDO ENCOMIENDAS...', 'success');
+        return () => { socket.off('connect', onConnect); socket.off('disconnect', onDisconnect); };
     }, [addLog]);
 
-    // Generar HTML del ticket térmico (2 copias en una sola impresión)
-    const generateTicketHTML = useCallback((retiro) => {
-        const fecha = new Date().toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
-        const ordenes = retiro.orders || [];
-        const ordenesHTML = ordenes.map(o =>
-            `<tr><td style="padding:2px 0;font-size:11px">${o.orderNumber || o.id || '-'}</td><td style="padding:2px 0;font-size:11px;text-align:right">${o.orderCosto || ''}</td></tr>`
-        ).join('');
-        const simbolo = ordenes.length > 0 ? (ordenes[0].simbolo || '$') : '$';
+    // Generate 10x15cm shipping label HTML (from EntregaPedidosView)
+    const generateLabelHTML = useCallback((enc) => {
+        const nombre = enc.CliNombre || enc.CliCodigoCliente || '-';
+        const telefono = enc.CliTelefono ? enc.CliTelefono.trim() : '';
+        const depto = enc.departamentoEnvio || '';
+        const localidad = enc.localidadEnvio || '';
+        const ubicacion = [depto, localidad].filter(Boolean).join(' — ');
+        const direccion = enc.direccionEnvio || '';
+        const agencia = enc.agenciaNombre || '';
+        const ordenRetiro = enc.ordenDeRetiro || '';
 
-        // Bloque de una copia del ticket
-        const copiaHTML = `
-    <div class="center header">USER</div>
-    <div class="center" style="font-size:11px;margin-bottom:4px;font-weight:bold;">COMPROBANTE DE RETIRO</div>
-    <div class="line"></div>
-    <div class="center retiro-id">${retiro.ordenDeRetiro || 'N/A'}</div>
-    <div class="line"></div>
-    <table>
-        <tr><td>Cliente:</td><td>${retiro.CliNombre || retiro.CliCodigoCliente || '-'}</td></tr>
-        <tr><td>Envío:</td><td>${retiro.lugarRetiro || '-'}</td></tr>
-        <tr><td>Fecha:</td><td>${fecha}</td></tr>
-    </table>
-    <div class="line"></div>
-    <div style="margin:3px 0;font-size:13px;">ÓRDENES:</div>
-    <table>${ordenesHTML || '<tr><td style="font-size:12px;">Sin detalle</td></tr>'}</table>
-    <div class="line"></div>
-    <table>
-        <tr><td style="font-size:16px;">TOTAL:</td><td style="font-size:16px;text-align:right;">${simbolo} ${retiro.totalCost || '0.00'}</td></tr>
-    </table>
-    <div class="line"></div>`;
+        const labelBody = `<div class="label">
+            <div class="header-bar">
+                <span class="logo">USER</span>
+                <span class="orden-code">${ordenRetiro}</span>
+            </div>
+            <div class="dest-section">
+                <div class="badge">DESTINATARIO</div>
+                <div class="dest-nombre">${nombre}</div>
+                ${telefono ? `<div class="dest-row"><span class="icon">&#9742;</span> ${telefono}</div>` : ''}
+                ${ubicacion ? `<div class="dest-row"><span class="icon">&#9872;</span> ${ubicacion}</div>` : ''}
+                ${direccion ? `<div class="dest-row"><span class="icon">&#9962;</span> ${direccion}</div>` : ''}
+                ${agencia ? `<div class="agencia-pill">&#9654; ${agencia}</div>` : ''}
+            </div>
+            <div class="divider-area">
+                <div class="divider-line"></div>
+                <div class="scissors">&#9986;</div>
+                <div class="divider-line"></div>
+            </div>
+            <div class="rem-section">
+                <div class="badge rem-badge">REMITENTE</div>
+                <div class="rem-nombre">USER</div>
+                <div class="rem-row">Arenal Grande 2667</div>
+                <div class="rem-row">Montevideo, Uruguay</div>
+                <div class="rem-row">&#9742; 092284262</div>
+            </div>
+        </div>`;
 
-        return `<!DOCTYPE html>
-<html><head><style>
-    @page { margin: 0; size: 80mm auto; }
-    * { margin: 0; padding: 0; box-sizing: border-box; font-weight: bold; }
-    body { font-family: 'Courier New', monospace; width: 80mm; padding: 4mm; font-size: 14px; font-weight: bold; }
-    .center { text-align: center; }
-    .line { border-top: 2px dashed #000; margin: 6px 0; }
-    table { width: 100%; border-collapse: collapse; }
-    td { vertical-align: top; font-weight: bold; padding: 2px 0; }
-    .header { font-size: 18px; font-weight: 900; letter-spacing: 2px; }
-    .retiro-id { font-size: 22px; font-weight: 900; margin: 6px 0; }
-    .divider { border-top: 3px dashed #000; margin: 0; }
-    .check-row { display: flex; justify-content: space-around; align-items: center; font-size: 13px; font-weight: 900; }
-    .check-item { display: flex; align-items: center; gap: 6px; }
-    .checkbox { display: inline-block; width: 20px; height: 20px; border: 2px solid #000; }
-</style></head><body>
-
-    <!-- COPIA 1 -->
-    ${copiaHTML}
-
-    <!-- SEPARADOR -->
-    <div style="height:20mm"><span style="font-size:1px;color:#000">.</span></div>
-    <div class="divider"></div>
-    <div style="height:20mm"><span style="font-size:1px;color:#000">.</span></div>
-
-    <!-- COPIA 2 -->
-    ${copiaHTML}
-
-    <!-- PIE CON CHECKBOXES -->
-    <div style="height:6mm"><span style="font-size:1px;color:#000">.</span></div>
-    <div style="text-align:center;font-size:14px;font-weight:900;">Retiro</div>
-    <div style="height:3mm"><span style="font-size:1px;color:#000">.</span></div>
-    <div class="check-row">
-        <span class="check-item">Cliente <span class="checkbox"></span></span>
-        <span class="check-item">Otro <span class="checkbox"></span></span>
-    </div>
-    <div style="height:16mm"><span style="font-size:1px;color:#000">.</span></div>
-    <div style="text-align:center;font-size:13px;font-weight:900;">Firma _________________________</div>
-    <div style="height:8mm"><span style="font-size:1px;color:#000">.</span></div>
-
-</body></html>`;
+        return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Etiqueta ${ordenRetiro}</title>
+        <style>
+            @page{size:10cm 15cm;margin:0;}*{margin:0;padding:0;box-sizing:border-box;}
+            body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:#fff;}
+            .label{width:10cm;height:15cm;background:#fff;border:2px solid #222;display:flex;flex-direction:column;overflow:hidden;}
+            .header-bar{background:#fff;color:#111;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #222;}
+            .logo{font-size:16px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:#111;}
+            .orden-code{font-size:16px;font-weight:900;font-family:'Courier New',monospace;letter-spacing:1px;color:#111;padding:3px 10px;}
+            .dest-section{flex:1;padding:16px 20px 10px;display:flex;flex-direction:column;}
+            .badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#111;background:#fff;padding:3px 10px;border:1.5px solid #222;border-radius:3px;margin-bottom:10px;width:fit-content;}
+            .dest-nombre{font-size:24px;font-weight:900;text-transform:uppercase;line-height:1.15;margin-bottom:10px;color:#111;border-bottom:2px solid #eee;padding-bottom:8px;}
+            .dest-row{font-size:14px;font-weight:600;color:#333;margin-bottom:4px;line-height:1.4;}
+            .dest-row .icon{display:inline-block;width:18px;font-size:13px;color:#888;}
+            .agencia-pill{margin-top:10px;font-size:15px;font-weight:800;color:#1a1a1a;background:#f0f0f0;border:1.5px solid #ccc;padding:6px 14px;border-radius:6px;display:inline-block;}
+            .divider-area{display:flex;align-items:center;padding:0 16px;gap:8px;}
+            .divider-line{flex:1;border-top:2px dashed #aaa;}
+            .scissors{font-size:16px;color:#aaa;}
+            .rem-section{padding:10px 20px 14px;background:#fafafa;border-top:1px solid #eee;}
+            .rem-badge{color:#111;background:#fff;border:1.5px solid #666;margin-bottom:6px;}
+            .rem-nombre{font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#333;margin-bottom:2px;}
+            .rem-row{font-size:11px;font-weight:600;color:#666;line-height:1.5;}
+        </style></head><body>${labelBody}</body></html>`;
     }, []);
 
-    // Imprimir ticket
-    const printTicket = useCallback((retiro) => {
+    // Print label
+    const printLabel = useCallback((retiro) => {
         if (!iframeRef.current) return;
-        const html = generateTicketHTML(retiro);
+        const html = generateLabelHTML(retiro);
 
         const printOnce = (copyNum) => {
             return new Promise((resolve) => {
@@ -143,7 +125,6 @@ const PrintStationPage = () => {
                 doc.open();
                 doc.write(html);
                 doc.close();
-                // Esperar a que renderice
                 setTimeout(() => {
                     try {
                         iframe.contentWindow.print();
@@ -156,70 +137,70 @@ const PrintStationPage = () => {
             });
         };
 
-        // Imprimir copias secuencialmente
         (async () => {
             for (let i = 1; i <= copies; i++) {
                 await printOnce(i);
-                if (i < copies) await new Promise(r => setTimeout(r, 1000)); // delay entre copias
+                if (i < copies) await new Promise(r => setTimeout(r, 1000));
             }
             setPrintCount(prev => prev + 1);
         })();
-    }, [copies, generateTicketHTML, addLog]);
-    // Escuchar eventos de nuevo retiro (con deduplicación)
+    }, [copies, generateLabelHTML, addLog]);
+
+    // Listen for new retiros (filter encomiendas only)
     useEffect(() => {
         const handleRetiroUpdate = async (data) => {
             if (data?.type !== 'nuevo_retiro') return;
 
-            addLog('Nuevo retiro detectado — cargando datos...', 'info', null, 'package');
+            addLog('Nuevo retiro detectado — verificando si es encomienda...', 'info', null, 'package');
 
             if (soundEnabled && audioRef.current) {
-                audioRef.current.play().catch(() => { });
+                audioRef.current.play().catch(() => {});
             }
 
             try {
                 const res = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4');
                 const retiros = res.data;
                 if (retiros && retiros.length > 0) {
-                    // Sort newest first, filter only retiros created in the last 3 minutes and not yet printed
                     const ahora = Date.now();
                     const sorted = retiros.sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta));
+
+                    // Filter: only encomiendas not yet printed (printedIds prevents duplicates)
                     const nuevos = sorted.filter(r => {
                         if (printedIdsRef.current.has(r.ordenDeRetiro)) return false;
-                        const edad = ahora - new Date(r.fechaAlta).getTime();
-                        return edad < 3 * 60 * 1000; // Solo últimos 3 minutos
+                        const lugar = (r.lugarRetiro || '').toLowerCase();
+                        return lugar.includes('encomienda');
                     });
 
                     if (nuevos.length === 0) {
-                        addLog('Todos los retiros recientes ya fueron impresos — omitidos', 'info', null, 'package');
+                        addLog('No hay encomiendas nuevas para imprimir', 'info', null, 'package');
                         return;
                     }
 
                     for (const retiro of nuevos) {
                         const retiroId = retiro.ordenDeRetiro;
                         printedIdsRef.current.add(retiroId);
-                        addLog(`Imprimiendo retiro ${retiroId} (${copies} copias)...`, 'info', retiro, 'printer');
-                        printTicket(retiro);
-                        // Small delay between prints to avoid overlapping
+                        addLog(`Imprimiendo etiqueta ${retiroId} → ${retiro.CliNombre || 'N/A'} (${copies} copias)`, 'info', retiro, 'printer');
+                        printLabel(retiro);
                         if (nuevos.length > 1) await new Promise(r => setTimeout(r, 1500));
                     }
 
-                    // Mantener solo los últimos 200 IDs para no crecer indefinidamente
+                    // Keep only last 200 IDs
                     if (printedIdsRef.current.size > 200) {
                         const arr = [...printedIdsRef.current];
                         printedIdsRef.current = new Set(arr.slice(arr.length - 200));
                     }
-                    try { localStorage.setItem('ps_printedIds', JSON.stringify([...printedIdsRef.current])); } catch {}
+                    try { localStorage.setItem('eps_printedIds', JSON.stringify([...printedIdsRef.current])); } catch {}
                 } else {
-                    addLog('No se encontraron retiros recientes para imprimir', 'error', null, 'warning');
+                    addLog('No se encontraron retiros recientes', 'error', null, 'warning');
                 }
             } catch (err) {
-                addLog(`Error al obtener retiro: ${err.message}`, 'error', null, 'error');
+                addLog(`Error al obtener retiros: ${err.message}`, 'error', null, 'error');
             }
         };
 
         socket.on('retiros:update', handleRetiroUpdate);
         return () => socket.off('retiros:update', handleRetiroUpdate);
-    }, [soundEnabled, copies, printTicket, addLog]);
+    }, [soundEnabled, copies, printLabel, addLog]);
 
     return (
         <div style={{
@@ -232,7 +213,6 @@ const PrintStationPage = () => {
             flexDirection: 'column',
             gap: '20px'
         }}>
-
             {/* Header */}
             <div style={{
                 display: 'flex',
@@ -244,18 +224,17 @@ const PrintStationPage = () => {
                 border: '1px solid #222'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <Printer size={28} color="#ffd700" />
+                    <Tag size={28} color="#ffd700" />
                     <div>
-                        <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#fff', margin: 0, textTransform: 'uppercase', letterSpacing: '2px' }}>Print Station — Retiros</h1>
-                        <p style={{ fontSize: '12px', color: '#888', margin: 0, textTransform: 'uppercase', letterSpacing: '1px' }}>Impresión automática de tickets de retiro</p>
+                        <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#fff', margin: 0, textTransform: 'uppercase', letterSpacing: '2px' }}>Print Station — Encomiendas</h1>
+                        <p style={{ fontSize: '12px', color: '#888', margin: 0, textTransform: 'uppercase', letterSpacing: '1px' }}>Impresión automática de etiquetas de envío</p>
                     </div>
                 </div>
 
-                {/* Logo centrado */}
                 <Logo className="h-16 text-white" style={{ marginBottom: '-12px', marginTop: '4px' }} />
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    {/* Copias */}
+                    {/* Copies */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ fontSize: '12px', color: '#888', textTransform: 'uppercase' }}>Copias:</span>
                         <select
@@ -276,9 +255,10 @@ const PrintStationPage = () => {
                         </select>
                     </div>
 
-                    {/* Sonido toggle */}
+                    {/* Sound */}
                     <button
                         onClick={() => setSoundEnabled(prev => !prev)}
+                        aria-label="Activar o desactivar sonido"
                         style={{
                             background: 'none',
                             border: '1px solid #333',
@@ -296,7 +276,7 @@ const PrintStationPage = () => {
                         {soundEnabled ? 'ON' : 'OFF'}
                     </button>
 
-                    {/* Estado conexión */}
+                    {/* Connection status */}
                     <div style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -318,7 +298,7 @@ const PrintStationPage = () => {
             <div style={{ display: 'flex', gap: '16px' }}>
                 <div style={{ flex: 1, padding: '10px 16px', background: '#141414', borderRadius: '16px', border: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                     <div style={{ fontSize: '24px', fontWeight: 800, color: '#00d4ff' }}>{printCount}</div>
-                    <div style={{ fontSize: '11px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>Tickets impresos</div>
+                    <div style={{ fontSize: '11px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>Etiquetas impresas</div>
                 </div>
                 <div style={{ flex: 1, padding: '10px 16px', background: '#141414', borderRadius: '16px', border: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                     <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: connected ? '#00d464' : '#ff3c3c', animation: connected ? 'pulse 2s ease-in-out infinite' : 'none', flexShrink: 0 }}></div>
@@ -329,7 +309,7 @@ const PrintStationPage = () => {
                 </div>
                 <div style={{ flex: 1, padding: '10px 16px', background: '#141414', borderRadius: '16px', border: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                     <div style={{ fontSize: '24px', fontWeight: 800, color: '#ffd700' }}>{copies}</div>
-                    <div style={{ fontSize: '11px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>{copies > 1 ? 'Copias' : 'Copia'} por ticket</div>
+                    <div style={{ fontSize: '11px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>{copies > 1 ? 'Copias' : 'Copia'} por etiqueta</div>
                 </div>
             </div>
 
@@ -358,7 +338,7 @@ const PrintStationPage = () => {
                 }}>
                     {logs.length === 0 ? (
                         <div style={{ color: '#555', fontSize: '13px', padding: '20px', textAlign: 'center' }}>
-                            Sin actividad. Los eventos aparecerán aquí cuando lleguen retiros nuevos.
+                            Sin actividad. Las etiquetas se imprimirán automáticamente cuando lleguen encomiendas.
                         </div>
                     ) : logs.map((log, i) => (
                         <div key={i} style={{
@@ -382,7 +362,7 @@ const PrintStationPage = () => {
                             }}>{log.message}</span>
                             {log.retiro && (
                                 <button
-                                    onClick={() => { addLog(`Reimprimiendo ${log.retiro.ordenDeRetiro}...`, 'info', log.retiro, 'printer'); printTicket(log.retiro); }}
+                                    onClick={() => { addLog(`Reimprimiendo ${log.retiro.ordenDeRetiro}...`, 'info', log.retiro, 'printer'); printLabel(log.retiro); }}
                                     style={{
                                         background: 'rgba(255,215,0,0.1)',
                                         border: '1px solid rgba(255,215,0,0.3)',
@@ -405,14 +385,14 @@ const PrintStationPage = () => {
                 </div>
             </div>
 
-            {/* Iframe oculto para impresión */}
+            {/* Hidden print iframe */}
             <iframe
                 ref={iframeRef}
                 style={{ display: 'none' }}
-                title="print-frame"
+                title="encomienda-print-frame"
             />
         </div>
     );
 };
 
-export default PrintStationPage;
+export default EncomiendaPrintStation;
