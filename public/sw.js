@@ -1,5 +1,5 @@
 // Service Worker — PWA + Web Push Notifications
-const CACHE_NAME = 'user-pwa-v1';
+const CACHE_NAME = 'user-pwa-v2';
 const OFFLINE_URL = '/offline.html';
 
 // Assets to pre-cache on install

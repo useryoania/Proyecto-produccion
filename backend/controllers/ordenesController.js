@@ -493,6 +493,46 @@ VALUES(@orderId, @estadoId, @fecha, @usuario);
     const io = req.app.get('socketio');
     if (io) io.emit('actualizado', { type: 'actualizacion' });
 
+    // --- PUSH NOTIFICATION WEB INTEGRATION (BULK) ---
+    try {
+        const pushService = require('../services/pushNotificationService');
+        const estadoStr = String(nuevoEstado).trim().toLowerCase();
+        let pushMsg = null;
+
+        if (estadoStr.includes('finalizado') || estadoStr.includes('pronto') || estadoStr.includes('terminado') || estadoStr === '4' || estadoStr === '7') {
+            pushMsg = { title: '¡Tu pedido está listo!', body: `El pedido {code} está pronto. Ya podés crear una orden de retiro.`, url: '/portal/pickup' };
+        } else if (estadoStr.includes('en camino') || estadoStr === '8') {
+            pushMsg = { title: 'Pedido en camino', body: `Tu pedido {code} fue despachado y está en camino.`, url: '/portal/pickup' };
+        } else if (estadoStr.includes('cancelado') || estadoStr === '10') {
+            pushMsg = { title: 'Pedido cancelado', body: `Tu pedido {code} fue cancelado.`, url: '/portal/pickup' };
+        }
+
+        if (pushMsg) {
+            const pool2 = await getPool();
+            const orderIdsList = orderIds.map(id => `'${id}'`).join(',');
+            const resPush = await pool2.request().query(`
+                SELECT c.CodCliente, o.OrdCodigoOrden AS CodigoOrden
+                FROM OrdenesDeposito o 
+                INNER JOIN Clientes c ON o.CliIdCliente = c.CliIdCliente
+                WHERE o.OrdIdOrden IN (${orderIdsList})
+            `);
+            
+            for (const row of resPush.recordset) {
+                if (row.CodCliente) {
+                    const code = row.CodigoOrden || '';
+                    const finalTitle = pushMsg.title.replace(/\{code\}/g, code);
+                    const finalBody = pushMsg.body.replace(/\{code\}/g, code);
+                    pushService.sendToClient(row.CodCliente, { 
+                        title: finalTitle, body: finalBody, url: pushMsg.url 
+                    }).catch(e => logger.error('[WebPush] Error envío push:', e.message));
+                }
+            }
+        }
+    } catch (pushErr) {
+        logger.error('[WebPush] Hubo un error procesando notificaciones masivas:', pushErr.message);
+    }
+    // ------------------------------------------
+
     res.status(200).json({ message: 'Órdenes actualizadas al nuevo estado' });
   } catch (err) {
     logger.error('Error al actualizar el estado de las órdenes:', err);

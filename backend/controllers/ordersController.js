@@ -711,16 +711,16 @@ exports.updateStatus = async (req, res) => {
             res.json({ success: true });
 
             // Push notification — solo estados relevantes para el cliente
-            const statusLower = status.toLowerCase();
+            const statusStr = String(status).trim().toLowerCase();
             let pushMsg = null;
-            if (statusLower.includes('finalizado') || statusLower.includes('pronto')) {
+            if (statusStr.includes('finalizado') || statusStr.includes('pronto') || statusStr.includes('terminado') || statusStr === '4' || statusStr === '7') {
                 pushMsg = { title: '¡Tu pedido está listo!', body: `El pedido {code} está pronto. Ya podés crear una orden de retiro.`, url: '/portal/pickup' };
-            } else if (statusLower.includes('despachado')) {
-                pushMsg = { title: 'Pedido despachado', body: `Tu pedido {code} fue despachado y está en camino.`, url: '/portal/pickup' };
-            } else if (statusLower.includes('cancelado')) {
+            } else if (statusStr.includes('en camino') || statusStr === '8') {
+                pushMsg = { title: 'Pedido en camino', body: `Tu pedido {code} fue despachado y está en camino.`, url: '/portal/pickup' };
+            } else if (statusStr.includes('cancelado') || statusStr === '10') {
                 pushMsg = { title: 'Pedido cancelado', body: `Tu pedido {code} fue cancelado.`, url: '/portal/pickup' };
             }
-            if (pushMsg) pushService.sendToOrderClient(id, pushMsg).catch(() => {});
+            if (pushMsg) pushService.sendToOrderClient(id, pushMsg).catch(err => logger.error('[WebPush Trigger] Error:', err.message));
 
         } catch (inner) {
             await transaction.rollback();
@@ -1409,7 +1409,7 @@ exports.cancelOrder = async (req, res) => {
                 title: 'Pedido cancelado',
                 body: `Tu pedido #${orderId} fue cancelado.`,
                 url: '/portal/pickup'
-            }).catch(() => {});
+            }).catch(err => logger.error('[WebPush Trigger] Error:', err.message));
 
         } catch (inner) {
             await transaction.rollback();

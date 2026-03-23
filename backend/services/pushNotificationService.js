@@ -77,12 +77,14 @@ async function sendToClient(clientId, { title, body, icon, url }) {
         .input('ClienteWebID', sql.Int, clientId)
         .query(`SELECT Endpoint, KeysP256dh, KeysAuth FROM PushSubscriptions WHERE ClienteWebID = @ClienteWebID`);
 
+    logger.info(`[WebPush Debug] Buscando suscripciones para ClienteWebID=${clientId}... Encontrados: ${result.recordset.length}`);
+
     if (result.recordset.length === 0) return;
 
     const payload = JSON.stringify({
         title: title || 'Notificación',
         body: body || '',
-        icon: icon || '/assets/images/favicon.svg',
+        icon: icon || '/assets/images/pwa.png',
         url: url || '/portal/pickup',
     });
 
@@ -94,6 +96,7 @@ async function sendToClient(clientId, { title, body, icon, url }) {
 
         try {
             await webpush.sendNotification(pushSubscription, payload);
+            logger.info(`[WebPush Debug] Notificación enviada con éxito a Endpoint: ${sub.Endpoint.substring(0, 30)}...`);
         } catch (err) {
             if (err.statusCode === 410 || err.statusCode === 404) {
                 // Suscripción expirada, eliminar
@@ -121,12 +124,18 @@ async function sendToOrderClient(orderId, { title, body, icon, url }) {
             .query(`
                 SELECT c.CodCliente, o.CodigoOrden
                 FROM Ordenes o
-                INNER JOIN Clientes c ON c.Nombre = o.Cliente
+                INNER JOIN Clientes c ON 
+                    (COL_LENGTH('Ordenes', 'CliIdCliente') IS NOT NULL AND o.CliIdCliente = c.CliIdCliente) OR 
+                    (o.Cliente = c.Nombre) OR 
+                    (LTRIM(RTRIM(o.Cliente)) = LTRIM(RTRIM(c.Nombre)))
                 WHERE o.OrdenID = @OID
             `);
 
         const row = result.recordset[0];
-        if (!row?.CodCliente) return;
+        if (!row?.CodCliente) {
+            logger.warn(`[WebPush] No se encontró cliente asociado a la Orden ${orderId}. Verificá espacios en el nombre o CliIdCliente.`);
+            return;
+        }
 
         const code = row.CodigoOrden || `#${orderId}`;
         const finalTitle = (title || '').replace(/\{code\}/g, code);
