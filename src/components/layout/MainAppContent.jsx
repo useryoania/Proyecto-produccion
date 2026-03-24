@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
-import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck } from 'lucide-react';
-import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar } from 'lucide-react';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from './Navbar';
@@ -46,6 +46,10 @@ const OrderSearchPage = lazy(() => import('../logistics/OrderSearchPage'));
 const EntregaPedidosView = lazy(() => import('../pages/customer-service/EntregaPedidosView'));
 const DepositoDashboard = lazy(() => import('../logistics/DepositoDashboard'));
 const SysAdminPage = lazy(() => import('../pages/admin/SysAdminPage'));
+const ContabilidadCuentasView    = lazy(() => import('../pages/ContabilidadCuentasView'));
+const ContabilidadAntiguedadView  = lazy(() => import('../pages/ContabilidadAntiguedadView'));
+const ContabilidadColaEstadosView = lazy(() => import('../pages/ContabilidadColaEstadosView'));
+// RecursosView eliminado — planes integrados en ContabilidadCuentasView
 
 // ============================================
 // 1. LUCIDE ICON MAP (override FA icons)
@@ -139,6 +143,12 @@ const lucideIconMapRaw = {
     'perfiles de precios': Layers,
     'catálogo por cliente': BookOpen,
     'catalogo por cliente': BookOpen,
+    // Contabilidad
+    'contabilidad cuentas': CreditCard,
+    'cuentas clientes':     CreditCard,
+    'antigüedad de deuda':  Calendar,
+    'antiguedad de deuda':  Calendar,
+    'cola estados cuenta':  BookOpen,
     // Administración sub-items
     'caja': Banknote,
     'pagos': CreditCard,
@@ -438,6 +448,11 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/caja/pagos-online" element={<VerificarPagosOnlineView />} />
                                 <Route path="/caja/cuadre" element={<CuadreDiarioView />} />
                                 <Route path="/admin/consola" element={<SysAdminPage />} />
+                                <Route path="/contabilidad/cuentas"      element={<ContabilidadCuentasView />} />
+                                <Route path="/contabilidad/antiguedad"    element={<ContabilidadAntiguedadView />} />
+                                <Route path="/contabilidad/cola-estados"  element={<ContabilidadColaEstadosView />} />
+                                <Route path="/contabilidad/recursos"      element={<Navigate to="/contabilidad/cuentas" replace />} />
+
                                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
                             </Routes>
                         </Suspense>
@@ -514,6 +529,10 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/caja/verificar-pagos') return <VerificarPagosOnlineView />;
     if (menuItem.Ruta === '/admin/excepciones-deuda') return <ExcepcionesDeudaView />;
     if (menuItem.Ruta === '/admin/consola') return <SysAdminPage />;
+    if (menuItem.Ruta === '/contabilidad/cuentas')       return <ContabilidadCuentasView />;
+    if (menuItem.Ruta === '/contabilidad/antiguedad')     return <ContabilidadAntiguedadView />;
+    if (menuItem.Ruta === '/contabilidad/cola-estados')   return <ContabilidadColaEstadosView />;
+    if (menuItem.Ruta === '/contabilidad/recursos')       return <ContabilidadCuentasView />;
 
     // NEW: Historial de Lotes
     if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;
