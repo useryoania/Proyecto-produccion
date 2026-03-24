@@ -20,7 +20,7 @@ export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: 
     return (
         <div
             className={`relative group transition-all duration-300 border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer
-                ${selectedFile ? 'border-green-400 bg-green-50/50' : (isOver ? 'border-blue-400 bg-blue-50' : 'border-zinc-300 bg-white hover:border-zinc-400 hover:bg-zinc-50')}`}
+                ${selectedFile ? 'border-emerald-500/50 bg-emerald-500/10' : (isOver ? 'border-cyan-400 bg-cyan-400/10' : 'border-zinc-600 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/60')}`}
             onDragOver={(e) => { e.preventDefault(); setIsOver(true); }}
             onDragLeave={() => setIsOver(false)}
             onDrop={handleDrop}
@@ -42,22 +42,22 @@ export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: 
 
             {selectedFile ? (
                 <div className="flex flex-col items-center text-center animate-in fade-in zoom-in duration-300">
-                    <CheckCircle size={28} className="text-green-500 mb-2" />
-                    <span className="text-[10px] font-bold text-green-700 truncate max-w-[150px]">
+                    <CheckCircle size={28} className="text-emerald-400 mb-2" />
+                    <span className="text-[10px] font-bold text-emerald-300 truncate max-w-[150px]">
                         {multiple ? 'Archivos listos' : selectedFile.name}
                     </span>
-                    <p className="text-[10px] text-green-600 uppercase tracking-tighter">
+                    <p className="text-[10px] text-emerald-400/70 uppercase tracking-tighter">
                         {multiple ? '+ Agregar más' : 'Listo para Drive'}
                     </p>
                 </div>
             ) : (
                 <>
-                    <div className={`p-2 rounded-full ${isOver ? 'bg-blue-100' : 'bg-zinc-100 group-hover:bg-zinc-200'} transition-colors`}>
-                        <Icon size={24} className={isOver ? 'text-blue-500' : 'text-zinc-500'} />
+                    <div className={`p-2 rounded-full ${isOver ? 'bg-cyan-400/20' : 'bg-zinc-700 group-hover:bg-zinc-600'} transition-colors`}>
+                        <Icon size={24} className={isOver ? 'text-cyan-400' : 'text-zinc-400'} />
                     </div>
                     <div className="text-center">
-                        <span className="text-[10px] font-bold text-zinc-600 block uppercase tracking-tight">{label}</span>
-                        <p className="text-[9px] text-zinc-400">Arrastra o haz click</p>
+                        <span className="text-[10px] font-bold text-zinc-400 block uppercase tracking-tight">{label}</span>
+                        <p className="text-[9px] text-zinc-500">Arrastra o haz click</p>
                     </div>
                 </>
             )}

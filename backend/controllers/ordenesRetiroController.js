@@ -98,7 +98,8 @@ const getOrdenesRetiroQueryBase = `
     r.DepartamentoEnvio,
     r.LocalidadEnvio,
     ag.Nombre AS AgenciaNombre,
-    r.AgenciaOtra
+    r.AgenciaOtra,
+    r.ReceptorNombre
   FROM OrdenesRetiro r WITH(NOLOCK)
   LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
   LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
@@ -141,6 +142,7 @@ const processRetirosRows = (rows) => {
         departamentoEnvio: row.DepartamentoEnvio || null,
         localidadEnvio: row.LocalidadEnvio || null,
         agenciaNombre: row.AgenciaNombre || row.AgenciaOtra || null,
+        receptorNombre: row.ReceptorNombre || null,
         orders: []
       };
     }
@@ -168,6 +170,7 @@ const getOrdenesRetiroPorEstados = async (req, res) => {
   const estados = req.query.estados.split(',');
   const soloPageas = req.query.pagas === 'true';
   const soloNoPageas = req.query.no_pagas === 'true';
+  const fechaFiltro = req.query.date || null; // formato YYYY-MM-DD
 
   try {
     const pool = await getPool();
@@ -180,11 +183,18 @@ const getOrdenesRetiroPorEstados = async (req, res) => {
     if (soloPageas) pagoFiltro = 'AND r.PagIdPago IS NOT NULL';
     if (soloNoPageas) pagoFiltro = 'AND r.PagIdPago IS NULL';
 
+    let dateFiltro = '';
+    if (fechaFiltro) {
+      request.input('FechaFiltro', sql.Date, fechaFiltro);
+      dateFiltro = 'AND CAST(r.OReFechaEstadoActual AS DATE) = @FechaFiltro';
+    }
+
     const query = `
       ${getOrdenesRetiroQueryBase}
       WHERE r.OReEstadoActual IN (${inClause})
       AND (CAST(DATEADD(d,-7,GETDATE()) AS DATE) <= CAST(r.OReFechaAlta AS DATE) OR r.OReEstadoActual NOT IN (5,6))
       ${pagoFiltro}
+      ${dateFiltro}
     `;
 
     const result = await request.query(query);

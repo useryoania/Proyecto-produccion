@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import {
     Save, UploadCloud, Plus, Trash2, ArrowLeft,
     AlertTriangle, Check, Scissors, Zap, Download,
-    ImageIcon, User, FileCode, CheckCircle
+    ImageIcon, User, FileCode, CheckCircle, ClipboardList, Layers
 } from 'lucide-react';
 
 // Custom Hooks
@@ -33,25 +33,20 @@ import EcouvTerminacionesUI from './EcouvTerminacionesUI';
 
 const ServiceAccordion = ({ title, isActive, onToggle, children, icon: Icon, main = false }) => {
     return (
-        <div className={`rounded-3xl border-2 transition-all duration-300 overflow-hidden ${isActive ? 'border-zinc-900 bg-white shadow-lg' : 'border-zinc-200 bg-zinc-50'}`}>
+        <div className={`rounded-3xl border transition-all duration-300 overflow-hidden ${isActive ? 'border-zinc-700 bg-custom-dark shadow-xl shadow-black/20' : 'border-zinc-700/50 bg-custom-dark/60'}`}>
             <div
-                className={`p-6 flex items-center justify-between cursor-pointer ${isActive ? 'bg-zinc-900 text-white' : 'hover:bg-zinc-100'}`}
+                className={`p-6 flex items-center justify-between cursor-pointer transition-colors ${isActive ? 'bg-custom-dark text-zinc-100' : 'hover:bg-custom-dark text-zinc-400'}`}
                 onClick={onToggle}
             >
                 <div className="flex items-center gap-4">
-                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${isActive ? 'border-white bg-white text-black' : 'border-zinc-300'}`}>
-                        {isActive && <Check size={14} strokeWidth={4} />}
-                    </div>
-                    <div className="flex items-center gap-3">
-                        {Icon && <Icon size={20} className={isActive ? 'text-amber-400' : 'text-zinc-400'} />}
-                        <span className="font-bold uppercase tracking-wide text-sm">{title}</span>
-                    </div>
+                    {Icon && <Icon size={20} className="text-brand-gold" />}
+                    <span className="font-bold uppercase tracking-wide text-sm">{title}</span>
                 </div>
-                {main && <span className="text-[10px] bg-amber-500 text-black px-2 py-0.5 rounded font-black">PRINCIPAL</span>}
+                {main && <span className="text-[10px] bg-cyan-400 text-zinc-900 px-2.5 py-1 rounded-full font-black tracking-wider">PRINCIPAL</span>}
             </div>
 
             {isActive && (
-                <div className="p-6 border-t border-zinc-100 animate-in slide-in-from-top-4">
+                <div className="p-6 border-t border-zinc-700/50 animate-in slide-in-from-top-4">
                     {children}
                 </div>
             )}
@@ -798,10 +793,10 @@ const OrderForm = ({ serviceId: propServiceId }) => {
             )}
 
             <div className="flex items-center gap-4 mb-6">
-                <CustomButton variant="ghost" onClick={() => navigate('/portal')} icon={ArrowLeft}>Volver</CustomButton>
+                <CustomButton variant="ghost" onClick={() => navigate('/portal')} icon={ArrowLeft} className="text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800">Volver</CustomButton>
                 <div>
-                    <h2 className="text-2xl font-bold text-neutral-800 flex items-center gap-2">Nuevo Pedido: <span className="text-black">{serviceInfo?.label}</span></h2>
-                    <p className="text-sm text-neutral-500">{serviceInfo?.desc}</p>
+                    <h2 className="text-2xl font-bold text-zinc-100 flex items-center gap-2">Nuevo Pedido: <span className="text-cyan-400">{serviceInfo?.label}</span></h2>
+                    <p className="text-sm text-zinc-500">{serviceInfo?.desc}</p>
                 </div>
             </div>
 
@@ -815,22 +810,28 @@ const OrderForm = ({ serviceId: propServiceId }) => {
             <form onSubmit={handleSubmit} className="space-y-6">
 
                 {/* 1. Datos Generales (Resumed) */}
-                <GlassCard title="1. Datos Generales del Pedido">
+                <GlassCard title="Datos Generales del Pedido" icon={ClipboardList}>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="md:col-span-2">
                             <FormInput label="Nombre del Proyecto / Trabajo *" placeholder="Ej: Camisetas Verano 2024" value={jobName} onChange={(e) => actions.setJobName(e.target.value)} required />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-neutral-700 mb-2">Prioridad *</label>
-                            <div className="flex bg-neutral-100 p-1 rounded-lg gap-1">
-                                {(prioritiesList || []).map(p => (
+                            <label className="block text-sm font-medium text-zinc-400 mb-2">Prioridad *</label>
+                            <div className="flex bg-brand-dark p-1 rounded-lg gap-1 border border-zinc-700">
+                                {(prioritiesList || []).map(p => {
+                                    const isUrgent = p.Nombre.toLowerCase() === 'urgente';
+                                    const isSelected = urgency === p.Nombre;
+                                    const selectedClass = isUrgent
+                                        ? 'shadow-sm bg-custom-magenta/20 text-custom-magenta border border-custom-magenta/30'
+                                        : 'shadow-sm bg-cyan-400/20 text-cyan-300 border border-cyan-500/30';
+                                    return (
                                     <button key={p.Nombre} type="button" onClick={() => actions.setUrgency(p.Nombre)}
-                                        className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all ${urgency === p.Nombre ? 'shadow-sm bg-white' : 'hover:bg-zinc-200'} `}
-                                        style={urgency === p.Nombre && p.Color !== '#ffffff' ? { backgroundColor: '#FEF3C7', color: '#D97706' } : {}}
+                                        className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all ${isSelected ? selectedClass : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'} `}
                                     >
                                         {p.Nombre}
                                     </button>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -839,24 +840,24 @@ const OrderForm = ({ serviceId: propServiceId }) => {
 
                 {/* 2. Servicios - Stack */}
                 <div className="space-y-4">
-                    <h3 className="text-lg font-black text-zinc-900 px-2 uppercase tracking-tight">Servicios y Procesos</h3>
+                    <h3 className="text-lg font-black text-zinc-200 px-2 uppercase tracking-tight">Servicios y Procesos</h3>
 
                     {/* Main Service Block */}
                     <ServiceAccordion
                         title={`Producción Principal: ${serviceInfo?.label || 'Servicio'}`}
                         isActive={true} // Always active
                         onToggle={() => { }} // No toggle for main
-                        icon={FileCode}
+                        icon={Layers}
                         main={true}
                     >
                         <div className="space-y-8">
                             {/* Material Selectors for Main Service */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-zinc-50 rounded-2xl border border-zinc-100">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-custom-dark rounded-2xl border border-zinc-700/50">
                                 {/* Variant Selector - Hidden for Bordado as it has its own UI */}
                                 {config.variantMode === 'select' && serviceId !== 'bordado' && serviceId !== 'EMB' && (
                                     <div>
-                                        <label className="block text-xs font-bold uppercase text-zinc-500 mb-2">Variante / Sub-Categoría *</label>
-                                        <select className="w-full p-3 border border-zinc-200 rounded-xl bg-white" value={serviceSubType} onChange={(e) => actions.handleSubTypeChange(e.target.value)}>
+                                        <label className="block text-xs font-bold uppercase text-zinc-400 mb-2">Variante / Sub-Categoría *</label>
+                                        <select className="w-full p-3 border border-zinc-600 rounded-xl bg-brand-dark text-zinc-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 outline-none transition-all" value={serviceSubType} onChange={(e) => actions.handleSubTypeChange(e.target.value)}>
                                             <option value="" disabled>Seleccionar...</option>
                                             {(uniqueVariants.length > 0 ? uniqueVariants : (serviceInfo?.subtypes || [])).map(t => <option key={t} value={t}>{t}</option>)}
                                         </select>
@@ -866,8 +867,8 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                 {/* Global Material Selector - Hidden for Bordado */}
                                 {config.materialMode === 'single' && serviceId !== 'bordado' && serviceId !== 'EMB' && (
                                     <div>
-                                        <label className="block text-xs font-bold uppercase text-zinc-500 mb-2">{serviceInfo?.config?.materialLabel || 'Material / Soporte'} *</label>
-                                        <select className="w-full p-3 border border-zinc-200 rounded-xl bg-white" value={globalMaterial} onChange={(e) => actions.setGlobalMaterial(e.target.value)}>
+                                        <label className="block text-xs font-bold uppercase text-zinc-400 mb-2">{serviceInfo?.config?.materialLabel || 'Material / Soporte'} *</label>
+                                        <select className="w-full p-3 border border-zinc-600 rounded-xl bg-brand-dark text-zinc-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 outline-none transition-all" value={globalMaterial} onChange={(e) => actions.setGlobalMaterial(e.target.value)}>
                                             <option value="" disabled>Seleccionar Material...</option>
                                             {(dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || [])).map(m => {
                                                 const val = m.Material || m.Descripcion || m;
@@ -949,10 +950,10 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                     </div>
                                     <div className="space-y-4">
                                         {items.map((item, index) => (
-                                            <div key={item.id} className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
-                                                <div className="flex justify-between items-center mb-4 pb-2 border-b border-zinc-50">
-                                                    <span className="text-[10px] font-black bg-zinc-100 text-zinc-600 py-1 px-3 rounded-full">ARCHIVO {index + 1}</span>
-                                                    <button type="button" onClick={() => actions.removeItem(item.id)}><Trash2 size={16} className="text-zinc-300 hover:text-red-500 transition-colors" /></button>
+                                            <div key={item.id} className="bg-brand-dark p-4 rounded-2xl border border-zinc-700/50 shadow-sm">
+                                                <div className="flex justify-between items-center mb-4 pb-2 border-b border-zinc-700/30">
+                                                    <span className="text-[10px] font-black bg-cyan-400/10 text-cyan-400 py-1 px-3 rounded-full border border-cyan-500/20">ARCHIVO {index + 1}</span>
+                                                    <button type="button" onClick={() => actions.removeItem(item.id)}><Trash2 size={16} className="text-zinc-500 hover:text-red-400 transition-colors" /></button>
                                                 </div>
                                                 {/* File Uploads for Item */}
                                                 {/* Item Material Override (moved up) */}
@@ -969,7 +970,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                                                     <div className={isBlackoutSelected ? "md:col-span-4" : "md:col-span-6"}>
                                                         <FileUploadZone id={item.id} label={isBlackoutSelected ? "Frente" : (config.productionFileLabel || "Archivo")} selectedFile={item.file} onFileSelected={(f) => handleFileUpload(item.id, 'file', f)} />
-                                                        {item.file && <div className="mt-2 text-[10px] font-bold text-zinc-600 bg-zinc-50 p-1 px-2 rounded w-fit flex gap-1"><FileCode size={12} /> {item.file.name}</div>}
+                                                        {item.file && <div className="mt-2 text-[10px] font-bold text-zinc-400 bg-zinc-900/60 p-1 px-2 rounded border border-zinc-700/50 w-fit flex gap-1"><FileCode size={12} className="text-cyan-400/60" /> {item.file.name}</div>}
 
                                                         {isDirectaTwinface && (
                                                             <div className="mt-2 flex items-center gap-2">
@@ -1037,7 +1038,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                                 document.getElementById('add-item-file-input').click();
                                             }}
                                             disabled={items.length >= 15}
-                                            className={`w-full py-3 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 transition-all ${items.length >= 15 ? 'border-zinc-200 text-zinc-300 cursor-not-allowed' : 'border-zinc-300 text-zinc-500 hover:border-black hover:text-black hover:bg-zinc-50'}`}
+                                            className={`w-full py-3 rounded-xl border-2 border-dashed flex items-center justify-center gap-2 transition-all ${items.length >= 15 ? 'border-zinc-700 text-zinc-600 cursor-not-allowed' : 'border-zinc-600 text-zinc-400 bg-brand-dark hover:border-cyan-500 hover:text-cyan-400 hover:bg-cyan-400/5'}`}
                                         >
                                             {items.length >= 15 ? (
                                                 <span className="text-xs font-bold uppercase">Límite de 15 archivos alcanzado</span>
@@ -1211,19 +1212,19 @@ const OrderForm = ({ serviceId: propServiceId }) => {
 
                 {/* Observaciones Finales */}
                 <div className="mt-8">
-                    <label className="block text-lg font-black text-zinc-900 mb-4 px-2">OBSERVACIONES GENERALES</label>
-                    <textarea rows="3" className="w-full p-4 border-2 border-zinc-200 rounded-2xl text-sm focus:border-black focus:ring-0 transition-all resize-none" placeholder="Detalles importantes, instrucciones de entrega o notas adicionales..." value={generalNote} onChange={(e) => actions.setGeneralNote(e.target.value)} />
+                    <label className="block text-lg font-black text-zinc-200 mb-4 px-2">OBSERVACIONES GENERALES</label>
+                    <textarea rows="3" className="w-full p-4 border border-zinc-700 rounded-2xl text-sm bg-custom-dark text-zinc-200 placeholder-zinc-500 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 outline-none transition-all resize-none" placeholder="Detalles importantes, instrucciones de entrega o notas adicionales..." value={generalNote} onChange={(e) => actions.setGeneralNote(e.target.value)} />
                 </div>
 
                 {/* Footer */}
                 <div className="mt-8">
-                    <div className="bg-zinc-900 text-white p-8 rounded-3xl shadow-2xl flex flex-col md:flex-row items-center justify-between gap-8">
+                    <div className="bg-custom-dark text-white p-8 rounded-3xl shadow-2xl shadow-black/30 flex flex-col md:flex-row items-center justify-between gap-8 border border-zinc-700/50">
                         <div className="flex gap-10">
-                            <div><p className="text-[11px] uppercase font-bold text-zinc-500">Servicio</p><p className="text-xl font-bold">{serviceInfo?.label}</p></div>
-                            <div><p className="text-[11px] uppercase font-bold text-zinc-500">Prioridad</p><p className="text-xl font-bold text-amber-500">{urgency}</p></div>
-                            <div><p className="text-[11px] uppercase font-bold text-zinc-500">Items (Total)</p><p className="text-2xl font-black">{items.length}</p></div>
+                            <div><p className="text-[11px] uppercase font-bold text-zinc-500">Servicio</p><p className="text-xl font-bold text-zinc-100">{serviceInfo?.label}</p></div>
+                            <div><p className="text-[11px] uppercase font-bold text-zinc-500">Prioridad</p><p className={`text-xl font-bold ${urgency?.toLowerCase() === 'urgente' ? 'text-custom-magenta' : 'text-cyan-400'}`}>{urgency}</p></div>
+                            <div><p className="text-[11px] uppercase font-bold text-zinc-500">Items (Total)</p><p className="text-2xl font-black text-zinc-100">{items.length}</p></div>
                         </div>
-                        <CustomButton type="submit" variant="primary" className="w-full md:w-auto px-14 py-5 bg-white text-black hover:bg-zinc-200 font-bold text-lg" isLoading={loading} icon={Save}>Confirmar Pedido</CustomButton>
+                        <CustomButton type="submit" variant="primary" className="w-full md:w-auto px-14 py-5 !bg-cyan-400 !text-zinc-900 hover:!bg-cyan-300 font-black text-lg rounded-2xl shadow-lg shadow-cyan-500/20" isLoading={loading} icon={Save}>Confirmar Pedido</CustomButton>
                     </div>
                 </div>
 

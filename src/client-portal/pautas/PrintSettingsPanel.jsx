@@ -146,22 +146,22 @@ export const PrintSettingsPanel = ({
     };
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-zinc-100 overflow-hidden">
+        <div className="bg-custom-dark rounded-xl shadow-sm border border-zinc-700/50 overflow-hidden">
             {!hideHeader && (
-                <div className="bg-zinc-50 px-4 py-3 border-b border-zinc-100 flex items-center gap-2">
-                    <AlertCircle size={14} className="text-zinc-400" />
+                <div className="bg-custom-dark px-4 py-3 border-b border-zinc-700/50 flex items-center gap-2">
+                    <AlertCircle size={14} className="text-cyan-400/60" />
                     <h4 className="text-xs font-black text-zinc-400 uppercase tracking-widest">Configuración de Impresión</h4>
-                    <div className="h-px bg-zinc-200 flex-1"></div>
+                    <div className="h-px bg-zinc-700 flex-1"></div>
                 </div>
             )}
 
             {/* Selector de Modo */}
             {!disableScaling && (
-                <div className="flex bg-zinc-100 p-1 rounded-xl gap-1">
+                <div className="flex bg-zinc-900/60 p-1 rounded-xl gap-1 border border-zinc-700/30">
                     <button
                         type="button"
                         onClick={() => handleInputChange('mode', 'normal')}
-                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${mode === 'normal' ? 'bg-white shadow-sm ring-1 ring-zinc-200 text-indigo-600' : 'text-zinc-500 hover:bg-zinc-200'}`}
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${mode === 'normal' ? 'bg-cyan-400/15 text-cyan-300 border border-cyan-500/30' : 'text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300'}`}
                     >
                         <ImageIcon size={16} />
                         Normal
@@ -169,7 +169,7 @@ export const PrintSettingsPanel = ({
                     <button
                         type="button"
                         onClick={() => handleInputChange('mode', 'scale')}
-                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${mode === 'scale' ? 'bg-white shadow-sm ring-1 ring-zinc-200 text-indigo-600' : 'text-zinc-500 hover:bg-zinc-200'}`}
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${mode === 'scale' ? 'bg-cyan-400/15 text-cyan-300 border border-cyan-500/30' : 'text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300'}`}
                     >
                         <Maximize size={16} />
                         A Escala
@@ -177,7 +177,7 @@ export const PrintSettingsPanel = ({
                     <button
                         type="button"
                         onClick={() => handleInputChange('mode', 'raport')}
-                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${mode === 'raport' ? 'bg-white shadow-sm ring-1 ring-zinc-200 text-indigo-600' : 'text-zinc-500 hover:bg-zinc-200'}`}
+                        className={`flex-1 py-2 px-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${mode === 'raport' ? 'bg-cyan-400/15 text-cyan-300 border border-cyan-500/30' : 'text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300'}`}
                     >
                         <Repeat size={16} />
                         Raport
@@ -186,29 +186,29 @@ export const PrintSettingsPanel = ({
             )}
 
             {/* Panel de Configuración según Modo */}
-            <div className="bg-white border boundary-zinc-200 rounded-xl p-4 shadow-sm relative overflow-hidden">
+            <div className="bg-zinc-800/40 rounded-xl p-4 relative overflow-hidden">
 
                 {/* MODO NORMAL: Incluye Copias */}
                 {mode === 'normal' && (
-                    <div className="text-sm text-zinc-500 flex flex-col items-center text-center py-2 space-y-4">
+                    <div className="text-sm text-zinc-400 flex flex-col items-center text-center py-2 space-y-4">
                         <div className="w-full flex flex-col items-center">
-                            <label className="block text-xs font-black text-zinc-500 mb-1 uppercase tracking-wider">Copias Impresas</label>
+                            <label className="block text-xs font-black text-zinc-400 mb-1 uppercase tracking-wider">Copias Impresas</label>
                             <input
                                 type="number"
                                 min="1"
                                 value={copies}
                                 onFocus={(e) => e.target.select()}
                                 onChange={(e) => onCopiesChange && onCopiesChange(parseInt(e.target.value) || 1)}
-                                className="w-24 text-center p-2 border border-zinc-300 rounded-lg text-lg font-bold text-zinc-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                className="w-24 text-center p-2 border border-zinc-600 rounded-lg text-lg font-bold text-zinc-100 bg-zinc-800 focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 outline-none"
                             />
                         </div>
 
-                        <div className="w-full h-px bg-zinc-100 my-2"></div>
+                        <div className="w-full h-px bg-zinc-700/50 my-2"></div>
 
                         <div className="flex flex-col items-center cursor-help group">
-                            <p className="font-medium text-zinc-800">Impresión Estándar (1:1)</p>
-                            <p className="text-xs mt-1">Se imprimirá tal cual el archivo.</p>
-                            <div className="mt-2 font-mono bg-zinc-50 px-3 py-1.5 rounded text-[10px] border border-zinc-200 group-hover:bg-indigo-50 group-hover:border-indigo-100 transition-colors">
+                            <p className="font-medium text-zinc-300">Impresión Estándar (1:1)</p>
+                            <p className="text-xs mt-1 text-zinc-500">Se imprimirá tal cual el archivo.</p>
+                            <div className="mt-2 font-mono bg-brand-dark px-3 py-1.5 rounded text-[10px] border border-zinc-700 text-zinc-400 group-hover:bg-cyan-400/10 group-hover:border-cyan-500/30 group-hover:text-cyan-300 transition-colors">
                                 Dim: {originalWidthM.toFixed(2)}m x {originalHeightM.toFixed(2)}m
                             </div>
                         </div>
@@ -221,24 +221,24 @@ export const PrintSettingsPanel = ({
                         <div className="flex gap-4 items-start">
                             <div className="flex-1 space-y-3">
                                 {/* Copies Input for Scale Mode */}
-                                <div className="bg-zinc-50 p-2 rounded-lg border border-zinc-100 flex items-center justify-between">
-                                    <label className="text-xs font-black text-zinc-500 uppercase tracking-wider">Copias:</label>
+                                <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-700/50 flex items-center justify-between">
+                                    <label className="text-xs font-black text-zinc-400 uppercase tracking-wider">Copias:</label>
                                     <input
                                         type="number"
                                         min="1"
                                         value={copies}
                                         onFocus={(e) => e.target.select()}
                                         onChange={(e) => onCopiesChange && onCopiesChange(parseInt(e.target.value) || 1)}
-                                        className="w-16 text-center p-1 border border-zinc-300 rounded font-bold text-zinc-800 focus:ring-2 focus:ring-indigo-500 outline-none h-8"
+                                        className="w-16 text-center p-1 border border-zinc-600 rounded font-bold text-zinc-100 bg-zinc-800 focus:ring-2 focus:ring-cyan-500/30 outline-none h-8"
                                     />
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold text-zinc-500 mb-1 uppercase">Escala del Diseño</label>
+                                    <label className="block text-xs font-bold text-zinc-400 mb-1 uppercase">Escala del Diseño</label>
                                     <select
                                         value={selectedScale}
                                         onChange={(e) => handleInputChange('scale', e.target.value)}
-                                        className="w-full p-2 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                                        className="w-full p-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-200 focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 outline-none font-mono"
                                     >
                                         <option value="">Seleccionar Escala...</option>
                                         {SCALE_TABLE.map(s => (
@@ -250,21 +250,21 @@ export const PrintSettingsPanel = ({
                                 </div>
                                 {/* Reduced Final Width Display instead of Input */}
                                 {selectedScale && (
-                                    <div className="text-[10px] text-zinc-500 bg-zinc-50 p-2 rounded border border-zinc-100">
-                                        Ancho Final: <strong>{(originalWidthM * (SCALE_TABLE.find(s => s.scale == parseInt(selectedScale))?.factor || 100) / 100).toFixed(2)}m</strong>
+                                    <div className="text-[10px] text-zinc-400 bg-zinc-900/60 p-2 rounded border border-zinc-700/50">
+                                        Ancho Final: <strong className="text-cyan-300">{(originalWidthM * (SCALE_TABLE.find(s => s.scale == parseInt(selectedScale))?.factor || 100) / 100).toFixed(2)}m</strong>
                                     </div>
                                 )}
                             </div>
 
                             {/* Info Visual Escala */}
-                            <div className="w-1/3 bg-indigo-50 rounded-lg p-3 hidden md:block border border-indigo-100">
-                                <div className="flex justify-center mb-2 text-indigo-400">
+                            <div className="w-1/3 bg-cyan-400/10 rounded-lg p-3 hidden md:block border border-cyan-500/20">
+                                <div className="flex justify-center mb-2 text-cyan-400">
                                     <Maximize size={24} />
                                 </div>
-                                <p className="text-[10px] text-indigo-800 leading-tight text-center font-bold">
+                                <p className="text-[10px] text-cyan-300 leading-tight text-center font-bold">
                                     A Escala
                                 </p>
-                                <p className="text-[9px] text-indigo-600/80 text-center mt-1 leading-tight">
+                                <p className="text-[9px] text-cyan-400/60 text-center mt-1 leading-tight">
                                     Diseña en pequeño, nosotros lo ampliamos automáticamente.
                                 </p>
                             </div>
@@ -278,48 +278,48 @@ export const PrintSettingsPanel = ({
                         <div className="flex gap-4 items-start">
                             <div className="flex-1 grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-xs font-bold text-zinc-500 mb-1 uppercase">Ancho Total (m)</label>
+                                    <label className="block text-xs font-bold text-zinc-400 mb-1 uppercase">Ancho Total (m)</label>
                                     <input
                                         type="number"
                                         step="0.01"
-                                        className="w-full p-2 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        className="w-full p-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-200 focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 outline-none"
                                         value={raportWidth}
                                         onChange={(e) => handleInputChange('raportWidth', e.target.value)}
                                         placeholder={`Máx: ${materialMaxWidthM}`}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-zinc-500 mb-1 uppercase">Largo Total (m)</label>
+                                    <label className="block text-xs font-bold text-zinc-400 mb-1 uppercase">Largo Total (m)</label>
                                     <input
                                         type="number"
                                         step="0.01"
-                                        className="w-full p-2 border border-zinc-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        className="w-full p-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-200 focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 outline-none"
                                         value={raportHeight}
                                         onChange={(e) => handleInputChange('raportHeight', e.target.value)}
                                         placeholder="Ej: 5.00"
                                     />
                                 </div>
-                                <div className="col-span-2 text-xs text-zinc-500 bg-zinc-50 p-2 rounded border border-zinc-200/50">
+                                <div className="col-span-2 text-xs text-zinc-500 bg-zinc-900/60 p-2 rounded border border-zinc-700/50">
                                     {(raportWidth && raportHeight && originalWidthM > 0) ? (
-                                        <p className="text-indigo-600 font-bold text-center">
+                                        <p className="text-cyan-300 font-bold text-center">
                                             <i className="fa-solid fa-calculator mr-1"></i>
                                             Repeticiones: {(parseFloat(raportWidth) / originalWidthM).toFixed(1)} Horiz. x {(parseFloat(raportHeight) / originalHeightM).toFixed(1)} Vert.
                                         </p>
                                     ) : (
-                                        <p className="text-center italic">Define área para ver repeticiones</p>
+                                        <p className="text-center italic text-zinc-500">Define área para ver repeticiones</p>
                                     )}
                                 </div>
                             </div>
 
                             {/* Info Visual Raport */}
-                            <div className="w-1/3 bg-purple-50 rounded-lg p-3 hidden md:block border border-purple-100">
+                            <div className="w-1/3 bg-purple-500/10 rounded-lg p-3 hidden md:block border border-purple-500/20">
                                 <div className="flex justify-center mb-2 text-purple-400">
                                     <Repeat size={24} />
                                 </div>
-                                <p className="text-[10px] text-purple-800 leading-tight text-center font-bold">
+                                <p className="text-[10px] text-purple-300 leading-tight text-center font-bold">
                                     Raport Infinito
                                 </p>
-                                <p className="text-[9px] text-purple-600/80 text-center mt-1 leading-tight">
+                                <p className="text-[9px] text-purple-400/60 text-center mt-1 leading-tight">
                                     Tu patrón se repetirá en mosaico hasta llenar el área.
                                 </p>
                             </div>
@@ -330,17 +330,17 @@ export const PrintSettingsPanel = ({
 
             {/* Mensaje de Error / Info Global */}
             {values.error && (
-                <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg text-xs font-bold animate-pulse">
+                <div className="flex items-center gap-2 text-red-400 bg-red-500/10 p-3 rounded-lg text-xs font-bold animate-pulse border border-red-500/20">
                     <AlertCircle size={16} />
                     {values.error}
                 </div>
             )}
             {values.isValid && values.observation && (
-                <div className="flex items-start gap-2 text-emerald-700 bg-emerald-50 p-3 rounded-lg text-xs font-medium border border-emerald-100">
+                <div className="flex items-start gap-2 text-emerald-300 bg-emerald-500/10 p-3 rounded-lg text-xs font-medium border border-emerald-500/20">
                     <div className="mt-0.5"><i className="fa-solid fa-check-circle"></i></div>
                     <div>
-                        <span className="font-bold block text-emerald-800 mb-0.5">Configuración Válida</span>
-                        {values.observation}
+                        <span className="font-bold block text-emerald-300 mb-0.5">Configuración Válida</span>
+                        <span className="text-zinc-400">{values.observation}</span>
                     </div>
                 </div>
             )}

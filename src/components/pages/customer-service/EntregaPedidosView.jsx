@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import api from '../../../services/api';
 import { socket } from '../../../services/socketService';
-import { Package, Truck, Search, QrCode, FileText, CheckCircle, RefreshCcw, DollarSign, ChevronDown, ChevronRight, Printer, ClipboardList, Tag } from 'lucide-react';
+import { Package, Truck, Search, QrCode, FileText, CheckCircle, RefreshCcw, DollarSign, ChevronDown, ChevronRight, Printer, ClipboardList, Tag, History, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import AlertaAutorizacionModal from '../../modals/AlertaAutorizacionModal';
@@ -91,6 +91,49 @@ const printTicketEncomienda = (enc) => {
     if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => win.print(), 600); }
 };
 
+// ─── LABEL: Shared label HTML generator ───
+const generateLabelBody = (enc) => {
+    const nombre = enc.receptorNombre || enc.CliNombre || enc.CliCodigoCliente || '-';
+    const telefono = enc.CliTelefono ? enc.CliTelefono.trim() : '';
+    const depto = enc.departamentoEnvio || '';
+    const localidad = enc.localidadEnvio || '';
+    const direccion = enc.direccionEnvio || '';
+    const agencia = enc.agenciaNombre || '';
+    const ordenRetiro = enc.ordenDeRetiro || '';
+
+    return `<div class="label">
+        <div class="header-bar"><span class="logo">USER</span><span class="orden-code">${ordenRetiro}</span></div>
+        <div class="dest-section">
+            <div class="badge-center"><span class="badge">DESTINATARIO</span></div>
+            <div class="dest-nombre">${nombre}</div>
+            ${telefono ? `<div class="dest-row">&#9742; ${telefono}</div>` : ''}
+            <div class="section-sep"></div>
+            ${depto ? `<div class="dest-depto">${depto}</div>` : ''}
+            ${localidad ? `<div class="dest-localidad">${localidad}</div>` : ''}
+            ${direccion ? `<div class="dest-dir">${direccion}</div>` : ''}
+            <div class="section-sep"></div>
+            ${agencia ? `<div class="agencia-pill">AGENCIA &#8226; ${agencia}</div>` : ''}
+        </div>
+        <div class="divider-area"><div class="divider-line"></div></div>
+        <div class="rem-section">
+            <div class="badge-center"><span class="badge rem-badge">REMITENTE</span></div>
+            <div class="rem-nombre">USER</div>
+            <div class="rem-dir">Arenal Grande 2667</div>
+            <div class="rem-city">Montevideo, Uruguay</div>
+            <div class="rem-tel">&#9742; 092284262</div>
+        </div>
+    </div>`;
+};
+
+const LABEL_CSS = `@page{size:10cm 15cm;margin:0;}*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:#f5f5f5;}.label{width:10cm;height:15cm;background:#fff;border:2px solid #222;display:flex;flex-direction:column;page-break-after:always;overflow:hidden;}.label:last-child{page-break-after:avoid;}.header-bar{background:#fff;color:#111;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #222;}.logo{font-size:20px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:#111;}.orden-code{font-size:20px;font-weight:900;font-family:'Courier New',monospace;letter-spacing:1px;color:#111;}.dest-section{flex:1;padding:0 20px;display:flex;flex-direction:column;justify-content:center;align-items:center;}.badge-center{text-align:center;margin-bottom:6px;}.badge{display:inline-block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#111;background:#fff;padding:4px 14px;border:1.5px solid #222;border-radius:3px;}.dest-nombre{font-size:30px;font-weight:700;text-transform:uppercase;line-height:1.15;margin-bottom:8px;color:#111;text-align:center;width:100%;}.dest-depto{font-size:30px;font-weight:700;color:#111;margin-bottom:4px;line-height:1.2;text-align:center;text-transform:uppercase;width:100%;}.dest-localidad{font-size:24px;font-weight:600;color:#333;margin-bottom:4px;line-height:1.2;text-align:center;text-transform:uppercase;width:100%;}.dest-dir{font-size:20px;font-weight:600;color:#222;margin-bottom:4px;line-height:1.2;text-align:center;text-transform:uppercase;width:100%;}.dest-row{font-size:20px;font-weight:600;color:#333;margin-bottom:4px;line-height:1.2;text-align:center;text-transform:uppercase;width:100%;}.section-sep{width:100%;border-top:3px dashed #333;margin:6px 0;}.agencia-pill{margin:4px 0;font-size:20px;font-weight:800;color:#1a1a1a;background:#f0f0f0;border:1.5px solid #ccc;padding:5px 14px;border-radius:6px;text-align:center;text-transform:uppercase;}.divider-area{display:flex;align-items:center;padding:2px 16px;}.divider-line{flex:1;border-top:3px dashed #333;}.rem-section{padding:8px 20px 10px;background:#fafafa;border-top:1px solid #eee;text-align:center;text-transform:uppercase;}.rem-badge{color:#111;background:#fff;border:1.5px solid #666;}.rem-nombre{font-size:18px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#333;margin-bottom:2px;}.rem-dir{font-size:18px;font-weight:700;color:#444;line-height:1.4;}.rem-city{font-size:15px;font-weight:600;color:#666;line-height:1.4;}.rem-tel{font-size:20px;font-weight:800;color:#333;line-height:1.4;margin-top:2px;}@media print{body{background:#fff;}.label{border:none;}}`;
+
+const printLabels = (encomiendas) => {
+    const labelsHtml = (Array.isArray(encomiendas) ? encomiendas : [encomiendas]).map(generateLabelBody).join('');
+    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Etiquetas</title><style>${LABEL_CSS}</style></head><body>${labelsHtml}</body></html>`;
+    const win = window.open('', '_blank', 'width=420,height=620');
+    if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => win.print(), 400); }
+};
+
 const EntregaPedidosView = () => {
     const { user } = useAuth();
     const [activeTab, setActiveTab] = useState('encomiendas'); // Arrancamos en encomiendas por pedido del user 
@@ -114,6 +157,12 @@ const EntregaPedidosView = () => {
     const [showAlertaAuth, setShowAlertaAuth] = useState(false);
     const [pendingDelivery, setPendingDelivery] = useState(null);
     const [filtroLogistica, setFiltroLogistica] = useState(''); // buscador inline en tab Logística
+
+    // --- HISTORIAL DEL DÍA ---
+    const [historialHoy, setHistorialHoy] = useState([]);
+    const [showHistorial, setShowHistorial] = useState(false);
+    const [loadingHistorial, setLoadingHistorial] = useState(false);
+    const [selectedHistorial, setSelectedHistorial] = useState(new Set());
 
     // Modal: Generar Retiro desde Órdenes sin Retiro
     const [retiroModal, setRetiroModal] = useState(null); // { ordenes: [] } | null
@@ -176,8 +225,24 @@ const EntregaPedidosView = () => {
             loadDespachos();
         } else if (activeTab === 'mostrador') {
             loadTodasSinRetiro(filtroLugarMostrador);
+        } else if (activeTab === 'historial') {
+            loadHistorialHoy();
         }
     }, [activeTab]); // Solo recarga al cambiar de tab
+
+    // Cargar historial de encomiendas entregadas hoy
+    const loadHistorialHoy = async () => {
+        setLoadingHistorial(true);
+        try {
+            const hoy = new Date().toISOString().split('T')[0];
+            const res = await api.get(`/apiordenesRetiro/estados?estados=5&date=${hoy}`);
+            setHistorialHoy(res.data || []);
+        } catch (err) {
+            console.error('[Historial] Error:', err);
+        } finally {
+            setLoadingHistorial(false);
+        }
+    };
 
     // Cargar lista completa de órdenes sin retiro (con filtro opcional por lugar)
     const loadTodasSinRetiro = async (lugar = filtroLugarMostrador) => {
@@ -665,6 +730,12 @@ const EntregaPedidosView = () => {
                 >
                     <Truck size={18} /> Mostrador & Facturación Remota
                 </button>
+                <button
+                    onClick={() => setActiveTab('historial')}
+                    className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 flex items-center gap-2 ${activeTab === 'historial' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <History size={18} /> Historial del día
+                </button>
             </div>
 
             {/* TAB: ENCOMIENDAS (DESPACHOS) */}
@@ -727,68 +798,7 @@ const EntregaPedidosView = () => {
                                 onClick={() => {
                                     const sel = encomiendas.filter(e => selectedEncomiendas.has(e.ordenDeRetiro));
                                     if (sel.length === 0) return toast.warning('Seleccioná al menos una orden.');
-                                    const labelsHtml = sel.map(enc => {
-                                        const nombre = enc.CliNombre || enc.CliCodigoCliente || '-';
-                                        const telefono = enc.CliTelefono ? enc.CliTelefono.trim() : '';
-                                        const depto = enc.departamentoEnvio || '';
-                                        const localidad = enc.localidadEnvio || '';
-                                        const ubicacion = [depto, localidad].filter(Boolean).join(' — ');
-                                        const direccion = enc.direccionEnvio || '';
-                                        const agencia = enc.agenciaNombre || '';
-                                        const ordenRetiro = enc.ordenDeRetiro || '';
-                                        return `<div class="label">
-                                            <div class="header-bar">
-                                                <span class="logo">USER</span>
-                                                <span class="orden-code">${ordenRetiro}</span>
-                                            </div>
-                                            <div class="dest-section">
-                                                <div class="badge">DESTINATARIO</div>
-                                                <div class="dest-nombre">${nombre}</div>
-                                                ${telefono ? `<div class="dest-row"><span class="icon">&#9742;</span> ${telefono}</div>` : ''}
-                                                ${ubicacion ? `<div class="dest-row"><span class="icon">&#9872;</span> ${ubicacion}</div>` : ''}
-                                                ${direccion ? `<div class="dest-row"><span class="icon">&#9962;</span> ${direccion}</div>` : ''}
-                                                ${agencia ? `<div class="agencia-pill">&#9654; ${agencia}</div>` : ''}
-                                            </div>
-                                            <div class="divider-area">
-                                                <div class="divider-line"></div>
-                                                <div class="scissors">&#9986;</div>
-                                                <div class="divider-line"></div>
-                                            </div>
-                                            <div class="rem-section">
-                                                <div class="badge rem-badge">REMITENTE</div>
-                                                <div class="rem-nombre">USER</div>
-                                                <div class="rem-row">Arenal Grande 2667</div>
-                                                <div class="rem-row">Montevideo, Uruguay</div>
-                                                <div class="rem-row">&#9742; 092284262</div>
-                                            </div>
-                                        </div>`;
-                                    }).join('');
-                                    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Etiquetas</title>
-                                    <style>
-                                        @page{size:10cm 15cm;margin:0;}*{margin:0;padding:0;box-sizing:border-box;}
-                                        body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:#f5f5f5;}
-                                        .label{width:10cm;height:15cm;background:#fff;border:2px solid #222;display:flex;flex-direction:column;page-break-after:always;overflow:hidden;}
-                                        .label:last-child{page-break-after:avoid;}
-                                        .header-bar{background:#fff;color:#111;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #222;}
-                                        .logo{font-size:16px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:#111;}
-                                        .orden-code{font-size:16px;font-weight:900;font-family:'Courier New',monospace;letter-spacing:1px;color:#111;padding:3px 10px;}
-                                        .dest-section{flex:1;padding:16px 20px 10px;display:flex;flex-direction:column;}
-                                        .badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#111;background:#fff;padding:3px 10px;border:1.5px solid #222;border-radius:3px;margin-bottom:10px;width:fit-content;}
-                                        .dest-nombre{font-size:24px;font-weight:900;text-transform:uppercase;line-height:1.15;margin-bottom:10px;color:#111;border-bottom:2px solid #eee;padding-bottom:8px;}
-                                        .dest-row{font-size:14px;font-weight:600;color:#333;margin-bottom:4px;line-height:1.4;}
-                                        .dest-row .icon{display:inline-block;width:18px;font-size:13px;color:#888;}
-                                        .agencia-pill{margin-top:10px;font-size:15px;font-weight:800;color:#1a1a1a;background:#f0f0f0;border:1.5px solid #ccc;padding:6px 14px;border-radius:6px;display:inline-block;}
-                                        .divider-area{display:flex;align-items:center;padding:0 16px;gap:8px;}
-                                        .divider-line{flex:1;border-top:2px dashed #aaa;}
-                                        .scissors{font-size:16px;color:#aaa;}
-                                        .rem-section{padding:10px 20px 14px;background:#fafafa;border-top:1px solid #eee;}
-                                        .rem-badge{color:#111;background:#fff;border:1.5px solid #666;margin-bottom:6px;}
-                                        .rem-nombre{font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#333;margin-bottom:2px;}
-                                        .rem-row{font-size:11px;font-weight:600;color:#666;line-height:1.5;}
-                                        @media print{body{background:#fff;}.label{border:none;}}
-                                    </style></head><body>${labelsHtml}</body></html>`;
-                                    const win = window.open('', '_blank', 'width=420,height=620');
-                                    if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => win.print(), 400); }
+                                    printLabels(sel);
                                 }}
                                 disabled={selectedEncomiendas.size === 0}
                                 className="bg-emerald-50 hover:bg-emerald-100 disabled:opacity-40 text-emerald-700 font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-2 border border-emerald-200"
@@ -916,39 +926,7 @@ const EntregaPedidosView = () => {
                                                     <div className="flex items-center gap-1.5 justify-center">
                                                         <button
                                                             title="Imprimir etiqueta"
-                                                            onClick={() => {
-                                                                const labelsHtml = (() => {
-                                                                    const nombre = enc.CliNombre || enc.CliCodigoCliente || '-';
-                                                                    const telefono = enc.CliTelefono ? enc.CliTelefono.trim() : '';
-                                                                    const depto = enc.departamentoEnvio || '';
-                                                                    const localidad = enc.localidadEnvio || '';
-                                                                    const ubicacion = [depto, localidad].filter(Boolean).join(' — ');
-                                                                    const direccion = enc.direccionEnvio || '';
-                                                                    const agencia = enc.agenciaNombre || '';
-                                                                    return `<div class="label">
-                                                                        <div class="header-bar"><span class="logo">USER</span><span class="orden-code">${enc.ordenDeRetiro}</span></div>
-                                                                        <div class="dest-section">
-                                                                            <div class="badge">DESTINATARIO</div>
-                                                                            <div class="dest-nombre">${nombre}</div>
-                                                                            ${telefono ? `<div class="dest-row"><span class="icon">&#9742;</span> ${telefono}</div>` : ''}
-                                                                            ${ubicacion ? `<div class="dest-row"><span class="icon">&#9872;</span> ${ubicacion}</div>` : ''}
-                                                                            ${direccion ? `<div class="dest-row"><span class="icon">&#9962;</span> ${direccion}</div>` : ''}
-                                                                            ${agencia ? `<div class="agencia-pill">&#9654; ${agencia}</div>` : ''}
-                                                                        </div>
-                                                                        <div class="divider-area"><div class="divider-line"></div><div class="scissors">&#9986;</div><div class="divider-line"></div></div>
-                                                                        <div class="rem-section">
-                                                                            <div class="badge rem-badge">REMITENTE</div>
-                                                                            <div class="rem-nombre">USER</div>
-                                                                            <div class="rem-row">Arenal Grande 2667</div>
-                                                                            <div class="rem-row">Montevideo, Uruguay</div>
-                                                                        </div>
-                                                                    </div>`;
-                                                                })();
-                                                                const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Etiqueta</title>
-                                                                <style>@page{size:10cm 15cm;margin:0;}*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'Segoe UI',Arial,sans-serif;background:#f5f5f5;}.label{width:10cm;height:15cm;background:#fff;border:2px solid #222;display:flex;flex-direction:column;overflow:hidden;}.header-bar{background:#fff;color:#111;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #222;}.logo{font-size:16px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:#111;}.orden-code{font-size:16px;font-weight:900;font-family:'Courier New',monospace;color:#111;}.dest-section{flex:1;padding:16px 20px 10px;display:flex;flex-direction:column;}.badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#111;background:#fff;border:1.5px solid #222;padding:3px 10px;border-radius:3px;margin-bottom:10px;width:fit-content;}.dest-nombre{font-size:22px;font-weight:900;text-transform:uppercase;line-height:1.15;margin-bottom:10px;color:#111;border-bottom:2px solid #eee;padding-bottom:8px;}.dest-row{font-size:13px;font-weight:600;color:#333;margin-bottom:4px;}.dest-row .icon{display:inline-block;width:18px;color:#888;}.agencia-pill{margin-top:10px;font-size:14px;font-weight:800;color:#1a1a1a;background:#f0f0f0;border:1.5px solid #ccc;padding:6px 14px;border-radius:6px;display:inline-block;}.divider-area{display:flex;align-items:center;padding:0 16px;gap:8px;}.divider-line{flex:1;border-top:2px dashed #aaa;}.scissors{font-size:16px;color:#aaa;}.rem-section{padding:10px 20px 14px;background:#fafafa;border-top:1px solid #eee;}.rem-badge{color:#111;background:#fff;border:1.5px solid #666;margin-bottom:6px;}.rem-nombre{font-size:14px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#333;margin-bottom:2px;}.rem-row{font-size:11px;font-weight:600;color:#666;line-height:1.5;}@media print{body{background:#fff;}}</style></head><body>${labelsHtml}</body></html>`;
-                                                                const win = window.open('', '_blank', 'width=420,height=620');
-                                                                if (win) { win.document.write(html); win.document.close(); win.focus(); setTimeout(() => win.print(), 400); }
-                                                            }}
+                                                            onClick={() => printLabels(enc)}
                                                             className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg transition-colors"
                                                         >
                                                             <Tag size={14} />
@@ -1008,6 +986,139 @@ const EntregaPedidosView = () => {
                                 {loading && encomiendas.length === 0 && (
                                     <tr>
                                         <td colSpan="6" className="p-10 text-center text-blue-600">
+                                            <RefreshCcw className="animate-spin mx-auto mb-3 text-blue-500" size={30} />
+                                            <p className="font-bold">Cargando...</p>
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB: HISTORIAL DEL DÍA */}
+            {activeTab === 'historial' && (
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+                        <div>
+                            <h2 className="text-xl font-black text-slate-800">Encomiendas entregadas hoy</h2>
+                            <p className="text-sm text-slate-500 font-medium mt-1">Seleccioná las que necesités reimprimir</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={loadHistorialHoy}
+                                disabled={loadingHistorial}
+                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                title="Recargar"
+                            >
+                                <RefreshCcw size={18} className={loadingHistorial ? 'animate-spin' : ''} />
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const sel = historialHoy.filter(e => selectedHistorial.has(e.ordenDeRetiro));
+                                    if (sel.length === 0) return toast.warning('Seleccioná al menos una encomienda.');
+                                    printLabels(sel);
+                                }}
+                                disabled={selectedHistorial.size === 0}
+                                className="bg-emerald-50 hover:bg-emerald-100 disabled:opacity-40 text-emerald-700 font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-2 border border-emerald-200"
+                            >
+                                <Tag size={16} /> Reimprimir etiquetas ({selectedHistorial.size})
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                        <table className="w-full text-left border-collapse text-sm">
+                            <thead>
+                                <tr className="bg-slate-100 text-slate-600 uppercase tracking-wider text-[11px] font-black border-b border-slate-200">
+                                    <th className="p-4 w-10 text-center">
+                                        <input
+                                            type="checkbox"
+                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            checked={selectedHistorial.size === historialHoy.length && historialHoy.length > 0}
+                                            onChange={() => {
+                                                if (selectedHistorial.size === historialHoy.length) setSelectedHistorial(new Set());
+                                                else setSelectedHistorial(new Set(historialHoy.map(e => e.ordenDeRetiro)));
+                                            }}
+                                        />
+                                    </th>
+                                    <th className="p-4">Retiro</th>
+                                    <th className="p-4">Cliente</th>
+                                    <th className="p-4">Receptor</th>
+                                    <th className="p-4">Destino</th>
+                                    <th className="p-4">Agencia</th>
+                                    <th className="p-4 text-center">Pago</th>
+                                    <th className="p-4 text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {historialHoy.map(enc => (
+                                    <tr key={enc.ordenDeRetiro} className={`border-b border-slate-100 hover:bg-slate-50/80 transition-colors ${selectedHistorial.has(enc.ordenDeRetiro) ? 'bg-blue-50/50' : ''}`}>
+                                        <td className="p-4 text-center">
+                                            <input
+                                                type="checkbox"
+                                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                checked={selectedHistorial.has(enc.ordenDeRetiro)}
+                                                onChange={() => {
+                                                    const s = new Set(selectedHistorial);
+                                                    s.has(enc.ordenDeRetiro) ? s.delete(enc.ordenDeRetiro) : s.add(enc.ordenDeRetiro);
+                                                    setSelectedHistorial(s);
+                                                }}
+                                            />
+                                        </td>
+                                        <td className="p-4 font-black text-slate-800">{enc.ordenDeRetiro}</td>
+                                        <td className="p-4">
+                                            <span className="font-bold text-slate-700">{enc.CliNombre || enc.CliCodigoCliente || '-'}</span>
+                                            <span className={`ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500`}>{enc.TClDescripcion}</span>
+                                        </td>
+                                        <td className="p-4">
+                                            <span className="font-bold text-blue-700">{enc.receptorNombre || '\u2014'}</span>
+                                        </td>
+                                        <td className="p-4 text-slate-500 font-medium text-xs">
+                                            {[enc.localidadEnvio, enc.departamentoEnvio].filter(Boolean).join(' \u2022 ') || '\u2014'}
+                                        </td>
+                                        <td className="p-4 font-bold text-slate-600 text-xs">{enc.agenciaNombre || '\u2014'}</td>
+                                        <td className="p-4 text-center">
+                                            {enc.pagorealizado === 1
+                                                ? <span className="text-green-700 font-black bg-green-100 px-3 py-1 rounded-md text-xs">PAGADO</span>
+                                                : <span className="text-red-600 font-black bg-red-100 px-3 py-1 rounded-md text-xs">PENDIENTE</span>
+                                            }
+                                        </td>
+                                        <td className="p-4 text-center">
+                                            <div className="flex items-center gap-1.5 justify-center">
+                                                <button
+                                                    title="Reimprimir etiqueta"
+                                                    onClick={() => printLabels(enc)}
+                                                    className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg transition-colors"
+                                                >
+                                                    <Tag size={14} />
+                                                </button>
+                                                <button
+                                                    title="Reimprimir ticket"
+                                                    onClick={() => printTicketEncomienda(enc)}
+                                                    className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg transition-colors"
+                                                >
+                                                    <Printer size={14} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+
+                                {!loadingHistorial && historialHoy.length === 0 && (
+                                    <tr>
+                                        <td colSpan="8" className="p-10 text-center text-slate-500">
+                                            <Package size={40} className="mx-auto mb-3 text-slate-300" />
+                                            <p className="font-bold text-lg">Sin entregas hoy</p>
+                                            <p className="text-sm font-medium">Las encomiendas entregadas aparecer\u00e1n aqu\u00ed.</p>
+                                        </td>
+                                    </tr>
+                                )}
+
+                                {loadingHistorial && (
+                                    <tr>
+                                        <td colSpan="8" className="p-10 text-center text-blue-600">
                                             <RefreshCcw className="animate-spin mx-auto mb-3 text-blue-500" size={30} />
                                             <p className="font-bold">Cargando...</p>
                                         </td>

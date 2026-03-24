@@ -46,6 +46,8 @@ export const PickupView = () => {
     const [defaultDepto, setDefaultDepto] = useState('');
     const [defaultLocalidad, setDefaultLocalidad] = useState('');
     const [selectedDireccion, setSelectedDireccion] = useState('');
+    const [receiverFirstName, setReceiverFirstName] = useState('');
+    const [receiverLastName, setReceiverLastName] = useState('');
     const [showAddAddress, setShowAddAddress] = useState(false);
     const [newAlias, setNewAlias] = useState('');
     const [newDireccion, setNewDireccion] = useState('');
@@ -223,7 +225,8 @@ export const PickupView = () => {
                 departamento: esEncomienda ? depto : null,
                 localidad: esEncomienda ? loc : null,
                 agenciaId: esEncomienda ? (selectedAgencia === -1 ? null : selectedAgencia) : null,
-                customAgencia: esEncomienda && selectedAgencia === -1 ? customAgencia : null
+                customAgencia: esEncomienda && selectedAgencia === -1 ? customAgencia : null,
+                receptorNombre: esEncomienda ? `${receiverFirstName.trim()} ${receiverLastName.trim()}` : null
             };
 
             const res = await apiClient.post('/web-orders/pickup-orders/create', payload);
@@ -385,6 +388,7 @@ export const PickupView = () => {
     const selectedSavedDir = shippingData?.direccionesGuardadas?.find(d => d.Direccion === selectedDireccion);
     const needsDeptLoc = isEncomienda && isDefaultAddress && (!defaultDepto || !defaultLocalidad);
     const needsAddress = isEncomienda && (!selectedDireccion?.trim() || needsDeptLoc);
+    const needsReceiverName = isEncomienda && (!receiverFirstName.trim() || !receiverLastName.trim());
 
     const handleAddAddress = async () => {
         if (!newDireccion.trim()) return;
@@ -523,6 +527,26 @@ export const PickupView = () => {
                         {/* Si es encomienda: agencia + dirección */}
                         {isEncomienda && (
                             <div ref={encomiendaRef} className="space-y-4 pt-2">
+                                {/* Quien recibe */}
+                                <div>
+                                    <label className="block text-sm font-bold text-zinc-500 mb-2 uppercase">¿Quién va a recibir? *</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input
+                                            type="text"
+                                            value={receiverFirstName}
+                                            onChange={(e) => setReceiverFirstName(e.target.value)}
+                                            placeholder="Nombre"
+                                            className="w-full bg-brand-dark border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan outline-none transition-all"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={receiverLastName}
+                                            onChange={(e) => setReceiverLastName(e.target.value)}
+                                            placeholder="Apellido"
+                                            className="w-full bg-brand-dark border border-zinc-700 rounded-xl px-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan outline-none transition-all"
+                                        />
+                                    </div>
+                                </div>
                                 {/* Agencia */}
                                 <div>
                                     <label className="block text-sm font-bold text-zinc-500 mb-2 uppercase">Agencia</label>
@@ -744,7 +768,7 @@ export const PickupView = () => {
                             sessionStorage.removeItem('pickup_code');
                         }}
                         isLoading={loading}
-                        disabled={loading || !selectedFormaEnvio || needsAddress || (isEncomienda && user?.tipoClienteId !== 2)}
+                        disabled={loading || !selectedFormaEnvio || needsAddress || needsReceiverName || (isEncomienda && user?.tipoClienteId !== 2)}
                         variant="secondary"
                         icon={PackageCheck}
                         className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
@@ -762,7 +786,7 @@ export const PickupView = () => {
                                 await handleProceed(code);
                             }}
                             isLoading={loading}
-                            disabled={loading || !selectedFormaEnvio || needsAddress}
+                            disabled={loading || !selectedFormaEnvio || needsAddress || needsReceiverName}
                             variant="primary"
                             icon={CreditCard}
                             className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
