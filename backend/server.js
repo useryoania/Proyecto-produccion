@@ -81,6 +81,7 @@ app.use('/api/web-auth', webAuthRoutes); // RUTAS AUTH CLIENTE WEB
 app.use('/api/web-orders', webOrdersRoutes); // RUTAS PEDIDOS CLIENTE WEB (DTF, Etc)
 app.use('/api/web-retiros', webRetirosRoutes);
 app.use('/api/web-content', require('./routes/webContentRoutes')); // RUTAS CONTENIDO WEB (Sidebar/Popup)
+app.use('/api/push', require('./routes/pushRoutes'));              // PUSH NOTIFICATIONS
 app.use('/api/nomenclators', nomenclatorsRoutes);
 app.use('/api/routes-config', require('./routes/routesConfigRoutes'));
 app.use('/api/delivery-times', require('./routes/deliveryTimesRoutes'));
@@ -154,6 +155,39 @@ try {
 app.use('/api/chat', require('./routes/chatRoutes'));
 // checkout routes deshabilitado por ahora
 
+// --- CRON: Sincronización de lista de precios desde Google Sheets ---
+if (process.env.NODE_ENV !== 'test') {
+    require('./cron/priceListSync');
+}
+
+// --- API: Lista de precios pública ---
+app.get('/api/precios-publicos', async (req, res) => {
+    try {
+        const { getPool } = require('./config/db');
+        const pool = await getPool();
+        const result = await pool.request().query(`
+            SELECT Familia, Producto, Descripcion, Moneda, Precio 
+            FROM PreciosListaPublica 
+            WHERE Activo = 1 
+            ORDER BY Familia, Producto
+        `);
+        res.json(result.recordset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- API: Sync manual de precios (admin) ---
+app.post('/api/admin/sync-precios', async (req, res) => {
+    try {
+        const { syncPriceList } = require('./cron/priceListSync');
+        const result = await syncPriceList();
+        res.json({ success: true, ...result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 const http = require('http');
 const { Server } = require('socket.io');
 
@@ -172,16 +206,8 @@ const io = new Server(server, {
 app.set('socketio', io);
 
 io.on('connection', (socket) => {
-    const clientCount = io.engine?.clientsCount || 0;
-    logger.info(`[SOCKET] CONNECT ${socket.id} — ${clientCount} clients`);
-
     socket.on('error', (err) => {
         logger.error("[SOCKET] ERROR:", err);
-    });
-
-    socket.on('disconnect', (reason) => {
-        const remaining = io.engine?.clientsCount || 0;
-        logger.info(`[SOCKET] DISCONNECT ${socket.id} (${reason}) — ${remaining} clients`);
     });
 });
 
@@ -250,56 +276,55 @@ process.on('uncaughtException', (err) => {
 
 
 // --- INICIO DEL SERVIDOR Y SCHEDULER ---
-server.listen(PORT, async () => {
-    logger.info(`🚀 Servidor backend + Socket.io corriendo en puerto ${PORT}`);
+if (process.env.NODE_ENV !== 'test') {
+    server.listen(PORT, async () => {
+        logger.info(`🚀 Servidor backend + Socket.io corriendo en puerto ${PORT}`);
 
-    // Iniciamos la sincronización automática después de que el servidor suba
-    try {
-        // startAutoSync(io).catch(err => logger.error("❌ Scheduler Start Error:", err));
-        // logger.info(`⏱️ Sistema de sincronización automática activado.`);
-        logger.info(`ℹ️ [Sync] Sincronización con ERP desactivada (Pedidos vía WEB activos).`);
-
-        // ACTIVAR CRON PLANILLAS
         try {
-            require('./cron/planillaSync');
-            logger.info("⏱️ [CRON] Sincronización de Planillas ACTIVADA");
-        } catch (e) {
-            logger.error("❌ [CRON] Error cargando PlanillaSync:", e.message);
-        }
+            logger.info(`ℹ️ [Sync] Sincronización con ERP desactivada (Pedidos vía WEB activos).`);
 
-        // ACTIVAR CRON WSP AVISOS
-        try {
-            const { startWspJob } = require('./jobs/wspAvisos.job');
-            startWspJob(io);
-        } catch (e) {
-            logger.error("❌ [CRON] Error cargando WspAvisos:", e.message);
-        }
+            try {
+                require('./cron/planillaSync');
+                logger.info("⏱️ [CRON] Sincronización de Planillas ACTIVADA");
+            } catch (e) {
+                logger.error("❌ [CRON] Error cargando PlanillaSync:", e.message);
+            }
 
-        // ACTIVAR CRON COTIZACIÓN BCU (USD/UYU automático)
-        try {
-            const { startCotizacionJob } = require('./jobs/cotizacionBCU.job');
-            startCotizacionJob();
-        } catch (e) {
-            logger.error("❌ [CRON] Error cargando CotizacionBCU:", e.message);
-        }
+            try {
+                const { startWspJob } = require('./jobs/wspAvisos.job');
+                startWspJob(io);
+            } catch (e) {
+                logger.error("❌ [CRON] Error cargando WspAvisos:", e.message);
+            }
 
-        // ACTIVAR CRON ESTADOS DE CUENTA (Módulo Contabilidad)
-        try {
-            const { startEstadosCuentaJob } = require('./jobs/estadosCuenta.job');
-            startEstadosCuentaJob();
-        } catch (e) {
-            logger.error('❌ [CRON] Error cargando EstadosCuenta:', e.message);
-        }
+               // ACTIVAR CRON ESTADOS DE CUENTA (Módulo Contabilidad)
+            try {
+                const { startEstadosCuentaJob } = require('./jobs/estadosCuenta.job');
+                startEstadosCuentaJob();
+            } catch (e) {
+                logger.error('❌ [CRON] Error cargando EstadosCuenta:', e.message);
+            }
 
-        // ACTIVAR CRON CICLOS DE CRÉDITO (Cierre automático de ciclos semanales)
-        try {
-            const { iniciarCronCiclos } = require('./jobs/ciclosCredito.job');
-            iniciarCronCiclos();
-        } catch (e) {
-            logger.error('❌ [CRON] Error cargando CiclosCredito:', e.message);
-        }
+            // ACTIVAR CRON CICLOS DE CRÉDITO (Cierre automático de ciclos semanales)
+            try {
+                const { iniciarCronCiclos } = require('./jobs/ciclosCredito.job');
+                iniciarCronCiclos();
+            } catch (e) {
+                logger.error('❌ [CRON] Error cargando CiclosCredito:', e.message);
+            }
 
-    } catch (error) {
-        logger.error("❌ Error al iniciar el Scheduler:", error.message);
-    }
-});
+            // ACTIVAR CRON COTIZACIÓN BCU
+            try {
+                const { startCotizacionJob } = require('./jobs/cotizacionBCU.job');
+                startCotizacionJob();
+            } catch (e) {
+                logger.error("❌ [CRON] Error cargando CotizacionBCU:", e.message);
+            }
+
+        } catch (error) {
+            logger.error("❌ Error al iniciar el Scheduler:", error.message);
+        }
+    });
+}
+
+module.exports = { app, server };

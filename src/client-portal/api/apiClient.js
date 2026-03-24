@@ -67,10 +67,11 @@ export const apiClient = {
         return handleResponse(response);
     },
 
-    delete: async (endpoint) => {
+    delete: async (endpoint, body) => {
         const requestOptions = {
             method: 'DELETE',
             headers: getHeaders(),
+            ...(body ? { body: JSON.stringify(body) } : {})
         };
         const response = await fetch(`${API_BASE_URL}${endpoint}`, requestOptions);
         return handleResponse(response);

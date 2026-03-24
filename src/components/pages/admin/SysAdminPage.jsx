@@ -303,18 +303,7 @@ const SysAdminPage = () => {
                         <p className="text-xs text-zinc-400 uppercase tracking-wider">Panel de administración del sistema</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={runBackup} disabled={backupRunning}
-                        className="flex items-center gap-1.5 px-3 py-2 disabled:opacity-50 text-white rounded-xl text-[11px] font-bold transition-all hover:brightness-110"
-                        style={{ backgroundColor: '#00B4D8' }}>
-                        {backupRunning ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Backup
-                    </button>
-                    <button onClick={handleRestart}
-                        className="flex items-center gap-1.5 px-3 py-2 text-white rounded-xl text-[11px] font-bold transition-all hover:brightness-110"
-                        style={{ backgroundColor: '#BD0C7E' }}>
-                        <Power size={13} /> Reiniciar
-                    </button>
-                </div>
+                <div className="flex-1" />
                 <div className="flex items-center gap-1.5 flex-wrap">
                     {tabs.map(t => (
                         <button key={t.id} onClick={() => setTab(t.id)}
@@ -326,6 +315,19 @@ const SysAdminPage = () => {
                             <t.icon size={13} /> {t.label}
                         </button>
                     ))}
+                </div>
+                <div className="w-px h-8 bg-zinc-300" />
+                <div className="flex items-center gap-2">
+                    <button onClick={runBackup} disabled={backupRunning}
+                        className="p-2 disabled:opacity-50 transition-all hover:bg-zinc-100 rounded-xl"
+                        title="Backup">
+                        {backupRunning ? <Loader2 size={24} className="animate-spin" style={{ color: '#00B4D8' }} /> : <Save size={24} style={{ color: '#00B4D8' }} />}
+                    </button>
+                    <button onClick={handleRestart}
+                        className="p-2 transition-all hover:bg-zinc-100 rounded-xl"
+                        title="Reiniciar">
+                        <Power size={24} style={{ color: '#BD0C7E' }} />
+                    </button>
                 </div>
             </div>
 

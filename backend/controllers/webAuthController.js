@@ -2,7 +2,8 @@ const { sql, getPool } = require('../config/db');
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('../middleware/asyncHandler');
 const logger = require('../utils/logger');
-const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-macrosoft-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is not defined in environment variables');
 
 // ===================================
 // AUTHENTICATION LOGIC (UNIFIED IN Clientes TABLE)
@@ -248,6 +249,7 @@ exports.me = asyncHandler(async (req, res) => {
                 localidadId: u.LocalidadID,
                 agenciaId: u.AgenciaID,
                 formaEnvioId: u.FormaEnvioID,
+                tipoClienteId: u.TClIdTipoCliente || null,
                 vendedorNombre: u.VendedorNombre || null,
                 role: 'WEB_CLIENT',
                 codCliente: u.CodCliente,

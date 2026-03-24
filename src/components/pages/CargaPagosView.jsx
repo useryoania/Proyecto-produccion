@@ -7,7 +7,17 @@ import {
     RefreshCw, Loader2, User, Phone, Package, FileText, Filter, ShieldCheck, PackageCheck
 } from 'lucide-react';
 import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
+import { toast } from 'sonner';
 import Swal from 'sweetalert2';
+
+const Toast = Swal.mixin({
+    toast: true,
+    position: 'top-end',
+    showConfirmButton: false,
+    timer: 3000,
+    showClass: { popup: '' },
+    hideClass: { popup: '' }
+});
 
 export const CargaGestionPagosView = () => {
     const { user } = useAuth();
@@ -36,13 +46,19 @@ export const CargaGestionPagosView = () => {
     const [searchInput, setSearchInput] = useState('');
 
     // Filtros
-    const [filtroTipoCliente, setFiltroTipoCliente] = useState('todos');
+    const [filtroTipoCliente, setFiltroTipoCliente] = useState('1');
     const [incluirSemanales, setIncluirSemanales] = useState(false);
     const [autorizando, setAutorizando] = useState(false);
     const [observacionAutorizo, setObservacionAutorizo] = useState('');
     const [modalAutorizar, setModalAutorizar] = useState(false);
 
     const [socketInstance, setSocketInstance] = useState(null);
+
+    // Refs to avoid stale closures in socket handlers
+    const filtroTipoClienteRef = React.useRef(filtroTipoCliente);
+    const incluirSemanalesRef = React.useRef(incluirSemanales);
+    React.useEffect(() => { filtroTipoClienteRef.current = filtroTipoCliente; }, [filtroTipoCliente]);
+    React.useEffect(() => { incluirSemanalesRef.current = incluirSemanales; }, [incluirSemanales]);
 
     // ─── SOCKET ───────────────────────────────────────────
     useEffect(() => {
@@ -63,8 +79,10 @@ export const CargaGestionPagosView = () => {
         try {
             let url = '/apiordenesRetiro/caja';
             const params = new URLSearchParams();
-            if (filtroTipoCliente && filtroTipoCliente !== 'todos') params.append('tipoCliente', filtroTipoCliente);
-            if (incluirSemanales) params.append('incluirSemanales', 'true');
+            const tipo = filtroTipoClienteRef.current;
+            const semanales = incluirSemanalesRef.current;
+            if (tipo && tipo !== 'todos') params.append('tipoCliente', tipo);
+            if (semanales) params.append('incluirSemanales', 'true');
             if (params.toString()) url += '?' + params.toString();
 
             const resRetiros = await api.get(url);
@@ -222,7 +240,7 @@ export const CargaGestionPagosView = () => {
     // ─── PAGO ─────────────────────────────────────────────
     const handleRealizarPago = async () => {
         if (!selectedRetiro) return alert("Seleccione una orden para pagar.");
-        if (!formaPago) return alert("Seleccione un método de pago.");
+        if (!formaPago) return toast.warning('Seleccione un método de pago.');
         const importe = parseFloat(monto);
         if (isNaN(importe) || importe <= 0) return alert("El importe debe ser mayor que cero.");
 
@@ -248,21 +266,21 @@ export const CargaGestionPagosView = () => {
                 orderNumbers: ordersToPay,
                 comprobanteUrl: filenameDest
             });
-            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Pago guardado exitosamente.', showConfirmButton: false, timer: 3000 });
+            Toast.fire({ icon: 'success', title: 'Pago guardado exitosamente.' });
             setMonto(''); setFormaPago(''); setFileComprobante(null); setSelectedRetiro(null);
             const fileInput = document.getElementById('file-upload');
             if (fileInput) fileInput.value = '';
             fetchData();
         } catch (err) {
             console.error(err);
-            Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: 'Error al procesar el pago.', showConfirmButton: false, timer: 3000 });
+            Toast.fire({ icon: 'error', title: 'Error al procesar el pago.' });
         }
     };
 
     // ─── AUTORIZAR SIN PAGO (Estado 9) ───────────────────
     const handleAutorizarSinPago = async () => {
-        if (!selectedRetiro) return Swal.fire({ toast: true, position: 'top', icon: 'warning', title: 'Seleccione una orden para autorizar.', showConfirmButton: false, timer: 3000 });
-        if (!observacionAutorizo.trim()) return Swal.fire({ toast: true, position: 'top', icon: 'warning', title: 'Debe ingresar una observación para autorizar sin pago.', showConfirmButton: false, timer: 3000 });
+        if (!selectedRetiro) return Toast.fire({ icon: 'warning', title: 'Seleccione una orden para autorizar.' });
+        if (!observacionAutorizo.trim()) return Toast.fire({ icon: 'warning', title: 'Debe ingresar una observación para autorizar sin pago.' });
 
         setAutorizando(true);
         try {
@@ -270,19 +288,14 @@ export const CargaGestionPagosView = () => {
                 ordenRetiro: selectedRetiro.ordenDeRetiro,
                 nota: observacionAutorizo.trim()
             });
-            Swal.fire({ toast: true, position: 'top-end', icon: 'success',
-                title: `Orden ${selectedRetiro.ordenDeRetiro} Autorizada.`,
-                showConfirmButton: false, timer: 3000,
-                showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
-                hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
-            });
+            Toast.fire({ icon: 'success', title: `Orden ${selectedRetiro.ordenDeRetiro} Autorizada.` });
             setModalAutorizar(false);
             setSelectedRetiro(null);
             setMonto('');
             setObservacionAutorizo('');
             fetchOrders();
         } catch (err) {
-            Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: 'Error: ' + (err.response?.data?.error || err.message), showConfirmButton: false, timer: 4000 });
+            Toast.fire({ icon: 'error', title: 'Error: ' + (err.response?.data?.error || err.message), timer: 4000 });
         } finally {
             setAutorizando(false);
         }
@@ -571,7 +584,7 @@ export const CargaGestionPagosView = () => {
                     </div>
 
                     {/* Lista de retiros — chips compactos */}
-                    <div className="grid grid-cols-3 gap-1 overflow-y-auto max-h-[60vh] pr-1">
+                    <div className="grid grid-cols-3 gap-2 overflow-y-auto max-h-[60vh] p-1">
                         {filteredRetiros.length === 0 ? (
                             <p className="text-sm text-slate-400 text-center w-full py-8">No hay órdenes pendientes de pago.</p>
                         ) : (
@@ -587,12 +600,12 @@ export const CargaGestionPagosView = () => {
                                         title={retiro.CliNombre || retiro.CliCodigoCliente || ''}
                                         className={`px-4 py-2.5 rounded-lg border font-black text-sm transition-all whitespace-nowrap flex items-center justify-around
                                             ${isSelected
-                                                ? 'bg-custom-cyan border-custom-cyan text-white shadow-[0_2px_8px_rgba(0,0,0,0.2)]'
+                                                ? 'bg-custom-cyan border-brand-cyan text-white shadow-sm'
                                                 : allPaid
-                                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:border-emerald-400'
+                                                    ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:border-emerald-400 hover:scale-[1.03]'
                                                     : isAutorizado
-                                                        ? 'bg-amber-50 border-amber-300 text-amber-700 hover:border-amber-400'
-                                                        : 'bg-rose-50 border-rose-300 text-rose-700 hover:border-rose-400'
+                                                        ? 'bg-amber-50 border-amber-300 text-amber-700 hover:border-amber-400 hover:scale-[1.03]'
+                                                        : 'bg-rose-50 border-rose-300 text-rose-700 hover:border-rose-400 hover:scale-[1.03]'
                                             }`}
                                     >
                                         {retiro.ordenDeRetiro}
@@ -624,12 +637,12 @@ export const CargaGestionPagosView = () => {
                         <>
                             {/* Header del retiro — sin total duplicado */}
                             <div className="flex items-center gap-3 mb-4">
-                                <h2 className="text-3xl font-black text-blue-600">{selectedRetiro.ordenDeRetiro}</h2>
+                                <h2 className="text-3xl font-black text-brand-cyan">{selectedRetiro.ordenDeRetiro}</h2>
                                 <span className="text-sm text-slate-400 font-medium mt-1">{selectedRetiro.lugarRetiro} • {selectedRetiro.estado}</span>
                             </div>
 
                             {/* Datos del cliente */}
-                            <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-4 grid grid-cols-2 gap-3">
                                 <div className="flex items-center gap-2">
                                     <User size={14} className="text-slate-400" />
                                     <div>
@@ -638,17 +651,17 @@ export const CargaGestionPagosView = () => {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <FileText size={14} className="text-slate-400" />
-                                    <div>
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase">ID</p>
-                                        <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliCodigoCliente || '—'}</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2">
                                     <Phone size={14} className="text-slate-400" />
                                     <div>
                                         <p className="text-[10px] font-bold text-slate-400 uppercase">Teléfono</p>
                                         <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliTelefono || '—'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <FileText size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">ID</p>
+                                        <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliCodigoCliente || '—'}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -680,7 +693,7 @@ export const CargaGestionPagosView = () => {
                                             <div
                                                 key={i}
                                                 className={`px-3 py-2 rounded-xl border-2 flex items-center justify-between gap-2 transition-all
-                                                ${isPaid ? 'border-emerald-200 bg-emerald-50/50' : 'border-slate-200 bg-white'}`}
+                                                ${isPaid ? 'border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/60' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
                                             >
                                                 {/* Icono + nombre + estado de pago inline */}
                                                 <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -719,9 +732,9 @@ export const CargaGestionPagosView = () => {
                                 <div className="mt-3 pt-3 border-t border-slate-200">
                                     <button
                                         onClick={() => { setObservacionAutorizo(''); setModalAutorizar(true); }}
-                                        className="w-full bg-amber-500 hover:bg-amber-600 text-white text-xs font-black py-2.5 rounded-xl transition-all flex items-center justify-center gap-2"
+                                        className="w-full bg-amber-500 hover:bg-amber-600 text-white text-sm font-black py-2.5 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.97] flex items-center justify-center gap-2 uppercase tracking-wider"
                                     >
-                                        <ShieldCheck size={14} /> Autorizar sin pago
+                                        <ShieldCheck size={16} /> Autorizar entrega sin pago
                                     </button>
                                 </div>
                             )}

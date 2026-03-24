@@ -744,7 +744,7 @@ export const PickupView = () => {
                             sessionStorage.removeItem('pickup_code');
                         }}
                         isLoading={loading}
-                        disabled={loading || !selectedFormaEnvio || needsAddress || isEncomienda}
+                        disabled={loading || !selectedFormaEnvio || needsAddress || (isEncomienda && user?.tipoClienteId !== 2)}
                         variant="secondary"
                         icon={PackageCheck}
                         className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"

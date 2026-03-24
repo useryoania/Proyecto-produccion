@@ -2,7 +2,8 @@ const jwt = require('jsonwebtoken');
 const logger = require('../utils/logger');
 
 // Clave secreta para firmar el token (Idealmente en .env, fallback seguro para dev)
-const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-macrosoft-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is not defined in environment variables');
 
 // =====================================================================
 // MIDDLEWARE: VERIFICAR TOKEN

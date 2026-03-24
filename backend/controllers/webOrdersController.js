@@ -1655,6 +1655,105 @@ exports.totemCreatePickup = async (req, res) => {
     }
 };
 
+// ===================================
+// TOTEM: ANUNCIARSE CON ORDEN DE RETIRO (SIN AUTH)
+// ===================================
+exports.totemAnnounce = async (req, res) => {
+    const { ordenRetiroNum } = req.body;
+
+    if (!ordenRetiroNum) {
+        return res.status(400).json({ success: false, message: 'Ingrese el número de orden de retiro.' });
+    }
+
+    try {
+        const pool = await getPool();
+        // Limpiar: aceptar "RT-123", "RW-123", "123", etc.
+        const numericId = parseInt(String(ordenRetiroNum).replace(/^[A-Za-z\-]+/, '').trim(), 10);
+
+        if (isNaN(numericId)) {
+            return res.json({ success: false, message: 'Número de retiro inválido.' });
+        }
+
+        // Buscar la orden de retiro y el cliente
+        const result = await pool.request()
+            .input('retiroId', sql.Int, numericId)
+            .query(`
+                SELECT TOP 1
+                    r.OReIdOrdenRetiro,
+                    r.OReEstadoActual,
+                    eor.EORNombreEstado AS EstadoNombre,
+                    c.Nombre AS ClienteNombre,
+                    c.NombreFantasia,
+                    c.IDCliente,
+                    c.TelefonoTrabajo
+                FROM OrdenesRetiro r WITH(NOLOCK)
+                LEFT JOIN EstadosOrdenesRetiro eor WITH(NOLOCK) ON eor.EORIdEstadoOrden = r.OReEstadoActual
+                LEFT JOIN RelOrdenesRetiroOrdenes rel WITH(NOLOCK) ON rel.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+                LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OrdIdOrden = rel.OrdIdOrden
+                LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+                WHERE r.OReIdOrdenRetiro = @retiroId
+            `);
+
+        if (!result.recordset.length) {
+            return res.json({ success: false, message: 'Orden de retiro no encontrada.' });
+        }
+
+        const row = result.recordset[0];
+        const clientName = row.NombreFantasia || row.ClienteNombre || 'Cliente';
+
+        // Si la orden está asignada a un estante, sacarla para que aparezca en la columna de empaque
+        const shelfCheck = await pool.request()
+            .input('numId', sql.Int, numericId)
+            .query(`
+                SELECT TOP 1 OrdenRetiro, EstanteID, Seccion, Posicion
+                FROM OcupacionEstantes WITH(NOLOCK)
+                WHERE OrdenRetiro LIKE '%' + CAST(@numId AS VARCHAR)
+            `);
+
+        let removedFromShelf = false;
+        if (shelfCheck.recordset.length > 0) {
+            const shelfRow = shelfCheck.recordset[0];
+            // Eliminar de OcupacionEstantes
+            await pool.request()
+                .input('ord', sql.VarChar(50), shelfRow.OrdenRetiro)
+                .query('DELETE FROM OcupacionEstantes WHERE OrdenRetiro = @ord');
+            removedFromShelf = true;
+            logger.info(`[TOTEM] 📦 Orden ${shelfRow.OrdenRetiro} removida del estante ${shelfRow.EstanteID}-${shelfRow.Seccion}-${shelfRow.Posicion} por anuncio`);
+        }
+
+        // Emitir socket para notificar al panel de administración
+        const io = req.app.get('socketio');
+        if (io) {
+            io.emit('totem:cliente-anunciado', {
+                ordenRetiro: numericId,
+                cliente: clientName,
+                idCliente: row.IDCliente,
+                telefono: row.TelefonoTrabajo,
+                estado: row.EstadoNombre,
+                removedFromShelf,
+                timestamp: new Date().toISOString()
+            });
+            // Forzar refresco del panel de retiros para que la orden aparezca en las columnas
+            if (removedFromShelf) {
+                io.emit('retiros:update', { type: 'totem_anuncio', ordenRetiro: numericId });
+            }
+        }
+
+        logger.info(`[TOTEM] 📢 Cliente anunciado: ${clientName} (Retiro #${numericId})`);
+
+        res.json({
+            success: true,
+            client: clientName,
+            ordenRetiro: numericId,
+            estado: row.EstadoNombre
+        });
+
+    } catch (error) {
+        logger.error("Error totem announce:", error);
+        res.status(500).json({ success: false, message: "Error al anunciarse." });
+    }
+};
+
 // --- API HELPERS ---
 const parseAmount = (amt) => {
     if (typeof amt === 'number') return amt;
@@ -2038,17 +2137,19 @@ exports.handyWebhook = async (req, res) => {
                             .input('Usr', sql.Int, usuarioId)
                             .query(`INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@RID, @Estado, GETDATE(), @Usr)`);
 
-                        // 4. UPDATE Ordenes + Historico
-                        if (payloadPago.orderNumbers && payloadPago.orderNumbers.length > 0) {
-                            const safeIds = payloadPago.orderNumbers.filter(n => Number.isInteger(n) && n > 0);
-                            if (safeIds.length > 0) {
-                                await pool.request()
-                                    .input('PagoId', sql.Int, pagoId)
-                                    .query(`UPDATE OrdenesDeposito SET PagIdPago = @PagoId, OrdEstadoActual = 7, OrdFechaEstadoActual = GETDATE() WHERE OrdIdOrden IN (${safeIds.join(',')})`);
+                        // 4. UPDATE Ordenes + Historico (buscar hijas del retiro)
+                        const hijasResult = await pool.request()
+                            .input('RID2', sql.Int, ordenRetiroId)
+                            .query('SELECT OrdIdOrden FROM OrdenesDeposito WHERE OReIdOrdenRetiro = @RID2');
+                        const hijasIds = hijasResult.recordset.map(r => r.OrdIdOrden).filter(id => id > 0);
 
-                                const histValues = safeIds.map(id => `(${id}, 7, GETDATE(), ${usuarioId})`).join(', ');
-                                await pool.request().query(`INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES ${histValues}`);
-                            }
+                        if (hijasIds.length > 0) {
+                            await pool.request()
+                                .input('PagoId', sql.Int, pagoId)
+                                .query(`UPDATE OrdenesDeposito SET PagIdPago = @PagoId, OrdEstadoActual = 7, OrdFechaEstadoActual = GETDATE() WHERE OrdIdOrden IN (${hijasIds.join(',')})`);
+
+                            const histValues = hijasIds.map(id => `(${id}, 7, GETDATE(), ${usuarioId})`).join(', ');
+                            await pool.request().query(`INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES ${histValues}`);
                         }
 
                         logger.info(`[HANDY WEBHOOK] ✅ Pago registrado en DB: PagoId=${pagoId}, OrdenRetiro=${ordenRetiroId}`);

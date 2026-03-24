@@ -3,7 +3,8 @@ const jwt = require('jsonwebtoken');
 const logger = require('../utils/logger');
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-macrosoft-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is not defined in environment variables');
 const BASE_URL = process.env.BASE_URL || 'https://localhost:5173';
 
 const FROM_EMAIL = 'User <notificaciones@user.com.uy>';

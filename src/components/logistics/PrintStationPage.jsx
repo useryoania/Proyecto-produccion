@@ -76,7 +76,7 @@ const PrintStationPage = () => {
     <div class="line"></div>
     <table>
         <tr><td>Cliente:</td><td>${retiro.CliNombre || retiro.CliCodigoCliente || '-'}</td></tr>
-        <tr><td>Lugar:</td><td>${retiro.lugarRetiro || '-'}</td></tr>
+        <tr><td>Envío:</td><td>${retiro.lugarRetiro || '-'}</td></tr>
         <tr><td>Fecha:</td><td>${fecha}</td></tr>
     </table>
     <div class="line"></div>
@@ -246,8 +246,8 @@ const PrintStationPage = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <Printer size={28} color="#ffd700" />
                     <div>
-                        <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#fff', margin: 0, textTransform: 'uppercase', letterSpacing: '2px' }}>Print Station</h1>
-                        <p style={{ fontSize: '12px', color: '#888', margin: 0, textTransform: 'uppercase', letterSpacing: '1px' }}>Impresión automática de retiros</p>
+                        <h1 style={{ fontSize: '20px', fontWeight: 800, color: '#fff', margin: 0, textTransform: 'uppercase', letterSpacing: '2px' }}>Print Station — Retiros</h1>
+                        <p style={{ fontSize: '12px', color: '#888', margin: 0, textTransform: 'uppercase', letterSpacing: '1px' }}>Impresión automática de tickets de retiro</p>
                     </div>
                 </div>
 
@@ -329,7 +329,7 @@ const PrintStationPage = () => {
                 </div>
                 <div style={{ flex: 1, padding: '10px 16px', background: '#141414', borderRadius: '16px', border: '1px solid #222', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
                     <div style={{ fontSize: '24px', fontWeight: 800, color: '#ffd700' }}>{copies}</div>
-                    <div style={{ fontSize: '11px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>Copias por ticket</div>
+                    <div style={{ fontSize: '11px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px' }}>{copies > 1 ? 'Copias' : 'Copia'} por ticket</div>
                 </div>
             </div>
 

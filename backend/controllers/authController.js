@@ -3,7 +3,8 @@ const jwt = require('jsonwebtoken');
 const logger = require('../utils/logger');
 const { audit } = require('../utils/auditLogger');
 const { trackLogin } = require('../utils/sessionTracker');
-const JWT_SECRET = process.env.JWT_SECRET || 'secret-key-macrosoft-production';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) throw new Error('JWT_SECRET is not defined in environment variables');
 
 // =====================================================================
 // 1. LOGIN

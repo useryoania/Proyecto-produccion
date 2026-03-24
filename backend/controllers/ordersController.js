@@ -1,5 +1,6 @@
 const { getPool, sql } = require('../config/db');
 const logger = require('../utils/logger');
+const pushService = require('../services/pushNotificationService');
 
 // HELPER: Recalcular Magnitud de la Orden (Suma de piezas de Archivos + Servicios)
 // Se usa en add, update, delete y cancel para mantener la coherencia.
@@ -709,6 +710,18 @@ exports.updateStatus = async (req, res) => {
 
             res.json({ success: true });
 
+            // Push notification — solo estados relevantes para el cliente
+            const statusStr = String(status).trim().toLowerCase();
+            let pushMsg = null;
+            if (statusStr.includes('finalizado') || statusStr.includes('pronto') || statusStr.includes('terminado') || statusStr === '4' || statusStr === '7') {
+                pushMsg = { title: '¡Tu pedido está listo!', body: `El pedido {code} está pronto. Ya podés crear una orden de retiro.`, url: '/portal/pickup' };
+            } else if (statusStr.includes('en camino') || statusStr === '8') {
+                pushMsg = { title: 'Pedido en camino', body: `Tu pedido {code} fue despachado y está en camino.`, url: '/portal/pickup' };
+            } else if (statusStr.includes('cancelado') || statusStr === '10') {
+                pushMsg = { title: 'Pedido cancelado', body: `Tu pedido {code} fue cancelado.`, url: '/portal/pickup' };
+            }
+            if (pushMsg) pushService.sendToOrderClient(id, pushMsg).catch(err => logger.error('[WebPush Trigger] Error:', err.message));
+
         } catch (inner) {
             await transaction.rollback();
             throw inner;
@@ -1390,6 +1403,13 @@ exports.cancelOrder = async (req, res) => {
             } catch (sockErr) { logger.error("Socket error:", sockErr); }
 
             res.json({ success: true, message: 'Orden cancelada correctamente.' });
+
+            // Push notification
+            pushService.sendToOrderClient(orderId, {
+                title: 'Pedido cancelado',
+                body: `Tu pedido #${orderId} fue cancelado.`,
+                url: '/portal/pickup'
+            }).catch(err => logger.error('[WebPush Trigger] Error:', err.message));
 
         } catch (inner) {
             await transaction.rollback();

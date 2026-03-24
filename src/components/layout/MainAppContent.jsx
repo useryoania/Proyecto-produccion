@@ -64,6 +64,8 @@ const lucideIconMapRaw = {
     'sys admin': Terminal,
     'gestión clientes': CircleUserRound,
     'gestion clientes': CircleUserRound,
+    'gestión de clientes': CircleUserRound,
+    'gestion de clientes': CircleUserRound,
     'gestión productos': Tags,
     'gestion productos': Tags,
     'gestión de productos': Tags,
@@ -123,6 +125,9 @@ const lucideIconMapRaw = {
     'control transporte': Bus,
     // Sys Admin sub-items
     'gestion menu': Menu,
+    'gestión menu': Menu,
+    'gestión del menú': Menu,
+    'gestion del menu': Menu,
     'usuarios': Users,
     'gestión de roles': Shield,
     'gestion de roles': Shield,
@@ -346,7 +351,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                     className: 'shadow-xl rounded-xl',
                     classNames: {
                         toast: 'group toast group-[.toaster]:bg-white group-[.toaster]:text-slate-800 group-[.toaster]:border-slate-200 group-[.toaster]:shadow-xl group-[.toaster]:rounded-xl',
-                        title: 'text-slate-800 font-semibold text-sm',
+                        title: 'text-slate-800 font-semibold text-lg',
                         description: 'text-slate-500 text-xs font-medium',
                         error: '!bg-red-50 !border-red-500 !text-red-500',
                         success: '!bg-emerald-50 !border-emerald-500 !text-emerald-500',

@@ -166,7 +166,7 @@ exports.processBatch = async (req, res) => {
 // --- 5. PROCESAMIENTO POR ÓRDENES (DESCARGAR EN ESTRUCTURA DE CARPETAS - OPTIMIZADO) ---
 exports.processOrdersBatch = async (req, res) => {
     const { orderIds } = req.body;
-    const baseDir = 'C:\\ORDENES';
+    const baseDir = process.env.ORDENES_PATH || path.join(__dirname, '..', 'ordenes');
     const results = [];
 
     if (!orderIds || orderIds.length === 0) return res.status(400).json({ error: "No orders provided" });

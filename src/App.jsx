@@ -10,6 +10,7 @@ import MainAppContent from './components/layout/MainAppContent'; // ESTE ES EL I
 import PaymentResult from './components/pages/PaymentResult';
 import { TotemApp } from './client-portal/modulos/totem/TotemApp';
 import PrintStationPage from './components/logistics/PrintStationPage';
+import EncomiendaPrintStation from './components/logistics/EncomiendaPrintStation';
 import { menuService } from './services/api';
 
 function App() {
@@ -39,15 +40,17 @@ function App() {
 
   if (!user) {
     return (
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/portal/*" element={<ClientPortalApp />} />
-        <Route path="/payment-status" element={<PaymentResult />} />
-        <Route path="/totem/*" element={<TotemApp />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
+      <main>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/portal/*" element={<ClientPortalApp />} />
+          <Route path="/payment-status" element={<PaymentResult />} />
+          <Route path="/totem/*" element={<TotemApp />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </main>
     );
   }
   // CHECK USER TYPE FOR ROUTING
@@ -55,23 +58,27 @@ function App() {
 
   if (isClient) {
     return (
-      <Routes>
-        <Route path="/portal/*" element={<ClientPortalApp />} />
-        <Route path="/payment-status" element={<PaymentResult />} />
-        <Route path="/totem/*" element={<TotemApp />} />
-        {/* Redirect any other route to portal */}
-        <Route path="*" element={<Navigate to="/portal/pickup" replace />} />
-      </Routes>
+      <main>
+        <Routes>
+          <Route path="/portal/*" element={<ClientPortalApp />} />
+          <Route path="/payment-status" element={<PaymentResult />} />
+          <Route path="/totem/*" element={<TotemApp />} />
+          <Route path="*" element={<Navigate to="/portal/pickup" replace />} />
+        </Routes>
+      </main>
     );
   }
   // ADMIN / INTERNAL ROUTING
   return (
-    <Routes>
-      <Route path="/login" element={<Navigate to="/" replace />} />
-      <Route path="/totem/*" element={<TotemApp />} />
-      <Route path="/print-station" element={<PrintStationPage />} />
-      <Route path="*" element={<MainAppContent menuItems={menuItems} />} />
-    </Routes>
+    <main>
+      <Routes>
+        <Route path="/login" element={<Navigate to="/" replace />} />
+        <Route path="/totem/*" element={<TotemApp />} />
+        <Route path="/print-station" element={<PrintStationPage />} />
+        <Route path="/encomienda-station" element={<EncomiendaPrintStation />} />
+        <Route path="*" element={<MainAppContent menuItems={menuItems} />} />
+      </Routes>
+    </main>
   );
 }
 // 🚀 ESTA LÍNEA ES LA QUE TE FALTA Y CAUSA EL ERROR

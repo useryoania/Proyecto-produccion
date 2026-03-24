@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Swal from 'sweetalert2';
 import {
   Package, Search, Check, AlertCircle, ArrowLeft, CheckCircle,
-  Truck, Loader2, LayoutGrid, MapPin, Clock, Printer, Tag,
-  XCircle, MoveHorizontal, X
+  Loader2, LayoutGrid, MapPin, Clock, Printer, Tag,
+  XCircle, MoveHorizontal, X, BellRing, PackageCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/api'; // Axios instance base
@@ -530,6 +530,7 @@ const WebRetirosPage = () => {
   const [deliveryScannedBultos, setDeliveryScannedBultos] = React.useState({});
   const [deliveryBarcodeInput, setDeliveryBarcodeInput] = React.useState('');
   const [deliverySelectedOrders, setDeliverySelectedOrders] = React.useState({});
+  const [announcedOrders, setAnnouncedOrders] = React.useState(new Set()); // Órdenes anunciadas desde el tótem
 
   // Cerrar modales con ESC
   useEffect(() => {
@@ -673,6 +674,50 @@ const WebRetirosPage = () => {
 
   useEffect(() => {
     fetchAllData();
+  }, [fetchAllData]);
+
+  // ─── SOCKET: actualizar en tiempo real ───
+  useEffect(() => {
+    let socket;
+    const initSocket = async () => {
+      const { io } = await import('socket.io-client');
+      const { SOCKET_URL } = await import('../../services/apiClient');
+      socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
+      socket.on("connect", () => console.log("WebRetiros conectado a Sockets:", socket.id));
+      socket.on("retiros:update", () => { fetchAllData(false); });
+      socket.on("actualizado", () => { fetchAllData(false); });
+      socket.on("totem:cliente-anunciado", (data) => {
+        console.log('[WebRetiros] 📢 Cliente anunciado desde tótem:', data);
+        // Buscar todas las variantes posibles del ID del retiro (RT-123, RW-123, RL-123)
+        const numId = data.ordenRetiro;
+        setAnnouncedOrders(prev => {
+          const next = new Set(prev);
+          next.add(numId);
+          return next;
+        });
+        // Notificación visual al operario
+        Swal.fire({
+          toast: true,
+          position: 'top-start',
+          icon: 'info',
+          title: `📢 ${data.cliente} se anunció con Retiro #${numId}`,
+          showConfirmButton: false,
+          timer: 8000,
+          background: '#fdf2f8',
+          color: '#831843',
+        });
+        // Auto-limpiar después de 30 minutos
+        setTimeout(() => {
+          setAnnouncedOrders(prev => {
+            const next = new Set(prev);
+            next.delete(numId);
+            return next;
+          });
+        }, 1800000);
+      });
+    };
+    initSocket();
+    return () => { if (socket) socket.disconnect(); };
   }, [fetchAllData]);
 
   // 3. Acciones del Operario
@@ -1273,7 +1318,7 @@ const WebRetirosPage = () => {
           {/* Tabs a la derecha */}
           <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
             <button onClick={() => setView('empaque')} className={`px-4 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all ${view === 'empaque' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>
-              <Truck size={14} /> Empaque
+              <Package size={14} /> Empaque
             </button>
             <button onClick={() => setView('entrega')} className={`px-4 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all ${view === 'entrega' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>
               <MapPin size={14} /> Entregas
@@ -1284,11 +1329,12 @@ const WebRetirosPage = () => {
         {/* Fila 2: Filtros de tipo y lugar — solo en empaque sin selección */}
         {view === 'empaque' && !selectedRetiro && (() => {
         const PRIORITY_META_F = [
+            { key: 'ANUNCIADA',   label: 'Anunciadas', dot: 'bg-pink-500',    active: 'bg-pink-500'    },
             { key: 'PAGADO',      label: 'Pagados',    dot: 'bg-emerald-500', active: 'bg-emerald-500' },
-            { key: 'ROLLO',       label: 'Rollo',      dot: 'bg-amber-500',   active: 'bg-amber-500'   },
-            { key: 'SEMANAL',     label: 'Semanales',  dot: 'bg-indigo-500',  active: 'bg-indigo-500'  },
             { key: 'AUTORIZADO',  label: 'Autorizados',dot: 'bg-orange-500',  active: 'bg-orange-500'  },
             { key: 'PENDIENTE',   label: 'Pendientes', dot: 'bg-rose-500',    active: 'bg-rose-500'    },
+            { key: 'SEMANAL',     label: 'Semanales',  dot: 'bg-indigo-500',  active: 'bg-indigo-500'  },
+            { key: 'ROLLO',       label: 'Rollo',      dot: 'bg-amber-500',   active: 'bg-amber-500'   },
           ];
           const uniqueLugares = Array.from(
             new Set([...apiOrders, ...otrosRetiros].map(o => o.lugarRetiro).filter(Boolean))
@@ -1310,18 +1356,20 @@ const WebRetirosPage = () => {
                   {m.label}
                 </button>
               ))}
-              {uniqueLugares.length > 0 && (
+              {uniqueLugares.filter(l => l !== 'Desconocido').length > 0 && (
                 <>
                   <div className="w-px h-4 bg-slate-200 mx-1" />
-                  <button
-                    onClick={() => setFiltroLugarRetiro('ALL')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wide border transition-all ${filtroLugarRetiro === 'ALL' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-                  >Todos los locales</button>
-                  {uniqueLugares.map((lugar, i) => (
+                  {uniqueLugares.filter(l => l !== 'Desconocido')
+                    .sort((a, b) => {
+                      if (a.toLowerCase().includes('retiro')) return -1;
+                      if (b.toLowerCase().includes('retiro')) return 1;
+                      return a.localeCompare(b);
+                    })
+                    .map((lugar, i) => (
                     <button key={i}
-                      onClick={() => setFiltroLugarRetiro(lugar)}
+                      onClick={() => setFiltroLugarRetiro(filtroLugarRetiro === lugar ? 'ALL' : lugar)}
                       className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wide border transition-all ${filtroLugarRetiro === lugar ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-                    >{lugar}</button>
+                    >{lugar.replace(/\s*\(.*\)\s*$/, '')}</button>
                   ))}
                 </>
               )}
@@ -1344,15 +1392,19 @@ const WebRetirosPage = () => {
             <div className="animate-in fade-in duration-300">
               {/* ─── LISTA UNIFICADA DE RETIROS ─── */}
               {(() => {
-                const PRIORITY_META = [
-                  { label: 'Pagados',          color: 'text-emerald-600', dot: 'bg-emerald-500', badge: 'bg-emerald-50 border-emerald-200 text-emerald-700' },
-                  { label: 'Rollo por Adelantado', color: 'text-amber-600', dot: 'bg-amber-500', badge: 'bg-amber-50 border-amber-200 text-amber-700' },
-                  { label: 'Semanales',        color: 'text-indigo-600', dot: 'bg-indigo-500', badge: 'bg-indigo-50 border-indigo-200 text-indigo-700' },
-                  { label: 'Autorizados',      color: 'text-orange-600', dot: 'bg-orange-500', badge: 'bg-orange-50 border-orange-200 text-orange-700' },
-                  { label: 'Pendientes de Pago', color: 'text-rose-600', dot: 'bg-rose-500', badge: 'bg-rose-50 border-rose-200 text-rose-700' },
-                ];
+                const PRIORITY_META = {
+                  '-1': { label: 'Anunciadas',    color: 'text-pink-600', dot: 'bg-pink-500', badge: 'bg-pink-50 border-pink-200 text-pink-700', icon: BellRing },
+                  '0': { label: 'Pagados',          color: 'text-emerald-600', dot: 'bg-emerald-500', badge: 'bg-emerald-50 border-emerald-200 text-emerald-700' },
+                  '1': { label: 'Rollo por Adelantado', color: 'text-amber-600', dot: 'bg-amber-500', badge: 'bg-amber-50 border-amber-200 text-amber-700' },
+                  '2': { label: 'Semanales',        color: 'text-indigo-600', dot: 'bg-indigo-500', badge: 'bg-indigo-50 border-indigo-200 text-indigo-700' },
+                  '3': { label: 'Autorizados',      color: 'text-orange-600', dot: 'bg-orange-500', badge: 'bg-orange-50 border-orange-200 text-orange-700' },
+                  '4': { label: 'Pendientes de Pago', color: 'text-rose-600', dot: 'bg-rose-500', badge: 'bg-rose-50 border-rose-200 text-rose-700' },
+                };
 
                 const getPriority = (item) => {
+                  // Anunciadas desde el tótem = prioridad máxima (-1)
+                  const itemNum = (item.ordenDeRetiro || '').match(/(\d+)$/);
+                  if (itemNum && announcedOrders.has(parseInt(itemNum[1], 10))) return -1;
                   if (item.pagorealizado === 1 || item.pagorealizado === true) return 0;
                   const desc = (item.TClDescripcion || '').toLowerCase();
                   if (desc.includes('rollo')) return 1;
@@ -1364,7 +1416,8 @@ const WebRetirosPage = () => {
 
                 const getTipoKey = (item) => {
                   const p = getPriority(item);
-                  return ['PAGADO', 'ROLLO', 'SEMANAL', 'AUTORIZADO', 'PENDIENTE'][p];
+                  const map = { '-1': 'ANUNCIADA', '0': 'PAGADO', '1': 'ROLLO', '2': 'SEMANAL', '3': 'AUTORIZADO', '4': 'PENDIENTE' };
+                  return map[String(p)] || 'PENDIENTE';
                 };
 
                 // 1. Normalizar fuentes
@@ -1509,54 +1562,66 @@ const WebRetirosPage = () => {
                   const diffMin = item.fechaAlta ? Math.floor((Date.now() - new Date(item.fechaAlta).getTime()) / 60000) : 0;
                   const timeColor = diffMin > 480 ? 'text-rose-600 font-black' : 'text-slate-700 font-bold';
 
+                  const itemNum = (item.ordenDeRetiro || '').match(/(\d+)$/);
+                  const isAnnounced = itemNum ? announcedOrders.has(parseInt(itemNum[1], 10)) : false;
+
                   return (
                     <button key={item._key} onClick={handleClickCard}
-                      className="group relative bg-white rounded-2xl border border-slate-200 p-4 text-left hover:border-blue-300 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 flex flex-col gap-2 overflow-hidden w-full"
+                      className="group relative bg-white rounded-2xl border border-slate-200 p-3 pt-4 text-left hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 flex flex-col gap-1 overflow-hidden w-full min-h-[100px] uppercase"
                     >
-                      <div className={`absolute top-0 left-0 right-0 h-1 ${meta.dot} rounded-t-2xl`} />
-                      <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
-                        <div role="button" tabIndex={0}
-                          onClick={(e) => { e.stopPropagation(); printRetiroLabel(item); }}
-                          title="Imprimir etiqueta"
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-custom-dark hover:text-emerald-500 hover:bg-emerald-50 transition-colors cursor-pointer"
-                        ><Tag size={16} /></div>
-                        <div role="button" tabIndex={0}
-                          onClick={(e) => { e.stopPropagation(); printRetiroTicket(item); }}
-                          title="Imprimir hoja de despacho"
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-custom-dark hover:text-blue-500 hover:bg-blue-50 transition-colors cursor-pointer"
-                        ><Printer size={16} /></div>
-                        {/^RT-/i.test(item.ordenDeRetiro) && (
+                      {/* Barra de color superior */}
+                      <div className={`absolute top-0 left-0 right-0 h-2 ${isAnnounced ? 'bg-pink-500' : meta.dot} rounded-t-2xl`} />
+
+                      {/* Fila 1: Código | Botones */}
+                      <div className="flex items-center gap-2 w-full">
+                        <div className="font-black text-slate-800 text-sm tracking-tight leading-tight shrink-0">{item.displayLabel}</div>
+                        <div className="flex-1" />
+                        <div className="flex items-center gap-1 shrink-0">
                           <div role="button" tabIndex={0}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              triggerEntregar('FUERA DE ESTANTE', [{
-                                OrdenRetiro: item.ordenDeRetiro,
-                                ordenDeRetiro: item.ordenDeRetiro,
-                                orders: item.orders || [],
-                                pagorealizado: item.pagorealizado,
-                                Pagado: item.pagorealizado === 1,
-                                TClDescripcion: item.TClDescripcion || '',
-                              }]);
-                            }}
-                            title="Entregar esta orden RT"
-                            className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer shadow-sm"
-                          ><Truck size={14} /></div>
-                        )}
-                      </div>
-                      <div className="font-black text-slate-800 text-sm tracking-tight leading-tight mt-1">{item.displayLabel}</div>
-                      {item.CliNombre && <div className="text-[11px] font-semibold text-slate-600 truncate">{item.CliNombre}</div>}
-                      <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase">{item.idcliente}</span>
-                        {item.TClDescripcion && <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500 font-bold">{item.TClDescripcion}</span>}
-                      </div>
-                      {item.lugarRetiro && item.lugarRetiro !== 'Desconocido' && (
-                        <div className="text-[10px] font-bold text-blue-500 truncate">
-                          {item.agenciaNombre ? item.lugarRetiro.replace(/\s*\(.*\)\s*$/g, '') + ` (${item.agenciaNombre})` : item.lugarRetiro}
+                            onClick={(e) => { e.stopPropagation(); printRetiroLabel(item); }}
+                            title="Imprimir etiqueta"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-custom-dark hover:text-emerald-500 hover:bg-emerald-50 transition-colors cursor-pointer"
+                          ><Tag size={18} /></div>
+                          <div role="button" tabIndex={0}
+                            onClick={(e) => { e.stopPropagation(); printRetiroTicket(item); }}
+                            title="Imprimir hoja de despacho"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-custom-dark hover:text-blue-500 hover:bg-blue-50 transition-colors cursor-pointer"
+                          ><Printer size={18} /></div>
+                          {(/^RT-/i.test(item.ordenDeRetiro) || isAnnounced) && (
+                            <div role="button" tabIndex={0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerEntregar('FUERA DE ESTANTE', [{
+                                  OrdenRetiro: item.ordenDeRetiro,
+                                  ordenDeRetiro: item.ordenDeRetiro,
+                                  orders: item.orders || [],
+                                  pagorealizado: item.pagorealizado,
+                                  Pagado: item.pagorealizado === 1,
+                                  TClDescripcion: item.TClDescripcion || '',
+                                }]);
+                              }}
+                              title="Entregar ahora"
+                              className="w-8 h-8 rounded-lg flex items-center justify-center text-custom-dark hover:text-violet-500 hover:bg-violet-50 transition-colors cursor-pointer"
+                            ><PackageCheck size={18} /></div>
+                          )}
                         </div>
-                      )}
-                      <div className="flex items-center justify-between mt-auto">
-                        {elapsed && <span className={`flex items-center gap-0.5 text-xs ${timeColor}`}><Clock size={10} /> {elapsed}</span>}
-                        {orderCount > 0 && <span className="flex items-center gap-0.5 text-[10px] font-bold text-slate-400 ml-auto"><Package size={9} /> {orderCount}</span>}
+                      </div>
+
+                      {/* Fila 2: idcliente + tipo */}
+                      <div className="flex items-center gap-1.5 w-full min-w-0">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase truncate">{item.idcliente}</span>
+                        {item.TClDescripcion && <span className="text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500 font-bold shrink-0">{item.TClDescripcion}</span>}
+                      </div>
+
+                      {/* Fila 3: lugar retiro | bultos | tiempo */}
+                      <div className="flex items-center justify-between w-full">
+                        {item.lugarRetiro && item.lugarRetiro !== 'Desconocido' ? (
+                          <div className="text-[10px] font-bold text-blue-500 truncate min-w-0">
+                            {item.agenciaNombre ? item.lugarRetiro.replace(/\s*\(.*\)\s*$/g, '') + ` (${item.agenciaNombre})` : item.lugarRetiro}
+                          </div>
+                        ) : <div />}
+                        {orderCount > 0 && <span className="flex items-center gap-0.5 text-[10px] font-bold text-slate-400 shrink-0"><Package size={9} /> {orderCount}</span>}
+                        {elapsed && <span className={`flex items-center gap-0.5 text-xs shrink-0 ${timeColor}`}><Clock size={10} /> {elapsed}</span>}
                       </div>
                     </button>
                   );
@@ -1565,9 +1630,17 @@ const WebRetirosPage = () => {
                 return (
                   <div className="grid grid-cols-3 gap-5">
                     {activeCols.map(col => {
-                      const colItems = all.filter(item => getPrefix(item) === col.prefix);
-                      const colGroups = [0, 1, 2, 3, 4]
-                        .map(p => ({ priority: p, meta: PRIORITY_META[p], items: colItems.filter(i => getPriority(i) === p) }))
+                      const colItems = all.filter(item => {
+                        const prefix = getPrefix(item);
+                        const itemNum = (item.ordenDeRetiro || '').match(/(\d+)$/);
+                        const isAnn = itemNum ? announcedOrders.has(parseInt(itemNum[1], 10)) : false;
+                        // Anunciados van SIEMPRE a RT, sin importar su prefijo real
+                        if (col.prefix === 'RT') return prefix === 'RT' || isAnn;
+                        // En las demás columnas, excluir los anunciados (ya están en RT)
+                        return prefix === col.prefix && !isAnn;
+                      });
+                      const colGroups = [-1, 0, 1, 2, 3, 4]
+                        .map(p => ({ priority: p, meta: PRIORITY_META[String(p)], items: colItems.filter(i => getPriority(i) === p) }))
                         .filter(g => g.items.length > 0);
                       const isEmpty = colItems.length === 0;
                       return (
@@ -1586,9 +1659,9 @@ const WebRetirosPage = () => {
                             ) : (
                               colGroups.map(({ priority, meta, items }) => (
                                 <div key={priority}>
-                                  {colGroups.length > 1 && (
+                                  {(
                                     <div className="flex items-center gap-1.5 mb-2">
-                                      <div className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+                                      {meta.icon ? <meta.icon size={12} className={meta.color} /> : <div className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />}
                                       <span className={`text-[9px] font-black uppercase tracking-widest ${meta.color}`}>{meta.label}</span>
                                     </div>
                                   )}
@@ -1719,6 +1792,12 @@ const WebRetirosPage = () => {
                                 };
                                 const slotColors = getSlotColors();
 
+                                // Detectar si alguna orden en este casillero fue anunciada desde el tótem
+                                const isSlotAnnounced = isOccupied && dataList.some(d => {
+                                  const m = (d.OrdenRetiro || '').match(/(\d+)$/);
+                                  return m ? announcedOrders.has(parseInt(m[1], 10)) : false;
+                                });
+
                                 return (
                                   <motion.div
                                     id={`box-${id}`}
@@ -1745,6 +1824,7 @@ const WebRetirosPage = () => {
                                         ${isMatched ? 'ring-4 ring-green-400 scale-[1.02]' : ''}
                                         ${dragOverSlot === id && !isOccupied ? 'border-blue-400 bg-blue-50 scale-105' : ''}
                                         ${dragOverSlot === id && isOccupied ? 'ring-2 ring-blue-400' : ''}
+                                        ${isSlotAnnounced ? 'ring-4 ring-pink-400 animate-pulse shadow-lg shadow-pink-200' : ''}
                                       `}
                                       onDoubleClick={() => { if (isOccupied) directEntregar(id, dataList); }}
                                   >
@@ -1755,6 +1835,12 @@ const WebRetirosPage = () => {
                                         {dataList.length > 1 && (
                                           <div className="absolute top-0.5 right-1 bg-rose-500 text-white text-[7px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center z-20 pointer-events-none">
                                             {dataList.length}
+                                          </div>
+                                        )}
+
+                                        {isSlotAnnounced && (
+                                          <div className="absolute -top-1 -left-1 bg-pink-500 text-white text-[8px] font-black w-5 h-5 rounded-full flex items-center justify-center z-30 pointer-events-none shadow-md">
+                                            <BellRing size={10} />
                                           </div>
                                         )}
 
