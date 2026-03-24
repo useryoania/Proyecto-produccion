@@ -11,14 +11,14 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const BASE_PREFIXES = ['SB', 'DF', 'UVDF', 'ECOUV', 'TWC', 'EMB', 'TP', 'IMD', 'PRO', 'VEN'];
 
 // Print ticket (80mm thermal - same technique as PrintStationPage)
-const printTotemTicket = ({ ordenRetiro, client, orders }) => {
+const printTotemTicket = ({ ordenRetiro, client, orders, title = 'COMPROBANTE DE RETIRO' }) => {
     const fecha = new Date().toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
     const ordenesHTML = orders.map(o =>
         `<tr><td style="padding:2px 0;font-size:11px">${o.id || '-'}</td></tr>`
     ).join('');
     const ticketBody = `
     <div class="center header">USER</div>
-    <div class="center" style="font-size:11px;margin-bottom:4px;font-weight:bold;">COMPROBANTE DE RETIRO</div>
+    <div class="center" style="font-size:11px;margin-bottom:4px;font-weight:bold;">${title}</div>
     <div class="line"></div>
     <div class="center retiro-id">${ordenRetiro || 'N/A'}</div>
     <div class="line"></div>
@@ -27,9 +27,10 @@ const printTotemTicket = ({ ordenRetiro, client, orders }) => {
         <tr><td>Fecha:</td><td>${fecha}</td></tr>
     </table>
     <div class="line"></div>
+    ${orders.length > 0 ? `
     <div style="margin:3px 0;font-size:13px;">ÓRDENES:</div>
-    <table>${ordenesHTML || '<tr><td style="font-size:12px;">Sin detalle</td></tr>'}</table>
-    <div class="line"></div>`;
+    <table>${ordenesHTML}</table>
+    <div class="line"></div>` : ''}`;
 
     const html = `<!DOCTYPE html>
 <html><head><style>
@@ -241,6 +242,13 @@ export const TotemDashboard = ({ onLogout }) => {
             const data = await res.json();
             if (data.success) {
                 setAnnounceSuccess({ client: data.client, ordenRetiro: data.ordenRetiro });
+                // Print announce ticket
+                printTotemTicket({
+                    ordenRetiro: `R-${data.ordenRetiro}`,
+                    client: { name: data.client },
+                    orders: [],
+                    title: 'ANUNCIO DE RETIRO'
+                });
                 setTimeout(() => { setAnnounceSuccess(null); setAnnounceMode(false); setAnnounceNumber(''); onLogout(); }, 8000);
             } else {
                 Toast.fire({ icon: 'error', title: data.message || 'Retiro no encontrado' });

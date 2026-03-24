@@ -713,8 +713,8 @@ exports.updateStatus = async (req, res) => {
             // Push notification — solo estados relevantes para el cliente
             const statusStr = String(status).trim().toLowerCase();
             let pushMsg = null;
-            if (statusStr.includes('finalizado') || statusStr.includes('pronto') || statusStr.includes('terminado') || statusStr === '4' || statusStr === '7') {
-                pushMsg = { title: '¡Tu pedido está listo!', body: `El pedido {code} está pronto. Ya podés crear una orden de retiro.`, url: '/portal/pickup' };
+            if (statusStr.includes('ingresado') || statusStr === '1') {
+                pushMsg = { title: '¡Tu pedido está listo!', body: `Tu pedido {code} está listo para ser retirado.`, url: '/portal/pickup' };
             } else if (statusStr.includes('en camino') || statusStr === '8') {
                 pushMsg = { title: 'Pedido en camino', body: `Tu pedido {code} fue despachado y está en camino.`, url: '/portal/pickup' };
             } else if (statusStr.includes('cancelado') || statusStr === '10') {
