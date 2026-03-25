@@ -24,9 +24,9 @@ export const PricesView = () => {
         return prices.filter(p => {
             const matchFamily = selectedFamily === 'Todas' || p.Familia === selectedFamily;
             const matchSearch = !search ||
-                p.Producto?.toLowerCase().includes(search.toLowerCase()) ||
-                p.Descripcion?.toLowerCase().includes(search.toLowerCase()) ||
-                p.Familia?.toLowerCase().includes(search.toLowerCase());
+                (p.Producto || '').toLowerCase().includes(search.toLowerCase()) ||
+                (p.Descripcion || '').toLowerCase().includes(search.toLowerCase()) ||
+                (p.Familia || '').toLowerCase().includes(search.toLowerCase());
             return matchFamily && matchSearch;
         });
     }, [prices, selectedFamily, search]);
@@ -125,7 +125,7 @@ export const PricesView = () => {
                                         </div>
                                         <div className="text-right shrink-0">
                                             <p className="text-lg font-bold text-brand-gold">
-                                                {item.Moneda?.toUpperCase().includes('DOLAR') || item.Moneda?.toUpperCase().includes('USD') ? 'US$' : '$'}
+                                                {(item.Moneda || '').toUpperCase().includes('DOLAR') || (item.Moneda || '').toUpperCase().includes('USD') ? 'US$' : '$'}
                                                 {item.Precio?.toLocaleString('es-UY', { minimumFractionDigits: 2 })}
                                             </p>
                                             <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{item.Moneda}</p>
