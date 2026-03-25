@@ -382,6 +382,24 @@ const createOrden = async (req, res) => {
     const io = req.app.get('socketio');
     if (io) io.emit('actualizado', { type: 'actualizacion' });
 
+    // Push notification al cliente: pedido listo para retirar
+    try {
+      const pushService = require('../services/pushNotificationService');
+      const pushClientRes = await pool.request()
+        .input('CliId', sql.Int, reqClientId)
+        .query('SELECT CodCliente FROM Clientes WHERE CliIdCliente = @CliId');
+      const codCliente = pushClientRes.recordset[0]?.CodCliente;
+      if (codCliente) {
+        pushService.sendToClient(codCliente, {
+          title: '¡Tu pedido está listo!',
+          body: `Tu pedido ${CodigoOrden} está listo para ser retirado.`,
+          url: '/portal/pickup'
+        }).catch(e => logger.error('[WebPush] Error push ingreso:', e.message));
+      }
+    } catch (pushErr) {
+      logger.error('[WebPush] Error en push de ingreso:', pushErr.message);
+    }
+
     res.status(201).json({ message: 'Orden creada correctamente', idOrden: newOrderId });
 
     // ── HOOKS CONTABILIDAD ────────────────────────────────────────────────────
@@ -527,8 +545,8 @@ VALUES(@orderId, @estadoId, @fecha, @usuario);
         const estadoStr = String(nuevoEstado).trim().toLowerCase();
         let pushMsg = null;
 
-        if (estadoStr.includes('finalizado') || estadoStr.includes('pronto') || estadoStr.includes('terminado') || estadoStr === '4' || estadoStr === '7') {
-            pushMsg = { title: '¡Tu pedido está listo!', body: `El pedido {code} está pronto. Ya podés crear una orden de retiro.`, url: '/portal/pickup' };
+        if (estadoStr.includes('ingresado') || estadoStr === '1') {
+            pushMsg = { title: '¡Tu pedido está listo!', body: `Tu pedido {code} está listo para ser retirado.`, url: '/portal/pickup' };
         } else if (estadoStr.includes('en camino') || estadoStr === '8') {
             pushMsg = { title: 'Pedido en camino', body: `Tu pedido {code} fue despachado y está en camino.`, url: '/portal/pickup' };
         } else if (estadoStr.includes('cancelado') || estadoStr === '10') {

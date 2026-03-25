@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Printer, Wifi, WifiOff, Volume2, VolumeX, Bell, RotateCcw, Package, AlertTriangle, XCircle, Tag } from 'lucide-react';
+import { Printer, Wifi, WifiOff, Volume2, VolumeX, Bell, RotateCcw, Package, AlertTriangle, XCircle, Tag, History, ChevronUp, ChevronDown, RefreshCcw, CheckSquare } from 'lucide-react';
 import { socket } from '../../services/socketService';
 import api from '../../services/api';
 import { Logo } from '../Logo';
@@ -24,6 +24,12 @@ const EncomiendaPrintStation = () => {
         try { const s = localStorage.getItem('eps_printedIds'); return s ? new Set(JSON.parse(s)) : new Set(); } catch { return new Set(); }
     });
     if (typeof printedIdsRef.current === 'function') printedIdsRef.current = printedIdsRef.current();
+
+    // Historial state
+    const [historialHoy, setHistorialHoy] = useState([]);
+    const [loadingHistorial, setLoadingHistorial] = useState(false);
+    const [showHistorial, setShowHistorial] = useState(false);
+    const [selectedHistorial, setSelectedHistorial] = useState(new Set());
 
     // Persist state
     useEffect(() => { try { localStorage.setItem('eps_logs', JSON.stringify(logs)); } catch {} }, [logs]);
@@ -51,13 +57,12 @@ const EncomiendaPrintStation = () => {
         return () => { socket.off('connect', onConnect); socket.off('disconnect', onDisconnect); };
     }, [addLog]);
 
-    // Generate 10x15cm shipping label HTML (from EntregaPedidosView)
+    // Generate 10x15cm shipping label HTML (updated format)
     const generateLabelHTML = useCallback((enc) => {
-        const nombre = enc.CliNombre || enc.CliCodigoCliente || '-';
+        const nombre = enc.receptorNombre || enc.CliNombre || enc.CliCodigoCliente || '-';
         const telefono = enc.CliTelefono ? enc.CliTelefono.trim() : '';
         const depto = enc.departamentoEnvio || '';
         const localidad = enc.localidadEnvio || '';
-        const ubicacion = [depto, localidad].filter(Boolean).join(' — ');
         const direccion = enc.direccionEnvio || '';
         const agencia = enc.agenciaNombre || '';
         const ordenRetiro = enc.ordenDeRetiro || '';
@@ -68,24 +73,25 @@ const EncomiendaPrintStation = () => {
                 <span class="orden-code">${ordenRetiro}</span>
             </div>
             <div class="dest-section">
-                <div class="badge">DESTINATARIO</div>
+                <div class="badge-center"><span class="badge">DESTINATARIO</span></div>
                 <div class="dest-nombre">${nombre}</div>
-                ${telefono ? `<div class="dest-row"><span class="icon">&#9742;</span> ${telefono}</div>` : ''}
-                ${ubicacion ? `<div class="dest-row"><span class="icon">&#9872;</span> ${ubicacion}</div>` : ''}
-                ${direccion ? `<div class="dest-row"><span class="icon">&#9962;</span> ${direccion}</div>` : ''}
-                ${agencia ? `<div class="agencia-pill">&#9654; ${agencia}</div>` : ''}
+                ${telefono ? `<div class="dest-row">&#9742; ${telefono}</div>` : ''}
+                <div class="section-sep"></div>
+                ${depto ? `<div class="dest-depto">${depto}</div>` : ''}
+                ${localidad ? `<div class="dest-localidad">${localidad}</div>` : ''}
+                ${direccion ? `<div class="dest-dir">${direccion}</div>` : ''}
+                <div class="section-sep"></div>
+                ${agencia ? `<div class="agencia-pill">AGENCIA &#8226; ${agencia}</div>` : ''}
             </div>
             <div class="divider-area">
                 <div class="divider-line"></div>
-                <div class="scissors">&#9986;</div>
-                <div class="divider-line"></div>
             </div>
             <div class="rem-section">
-                <div class="badge rem-badge">REMITENTE</div>
+                <div class="badge-center"><span class="badge rem-badge">REMITENTE</span></div>
                 <div class="rem-nombre">USER</div>
-                <div class="rem-row">Arenal Grande 2667</div>
-                <div class="rem-row">Montevideo, Uruguay</div>
-                <div class="rem-row">&#9742; 092284262</div>
+                <div class="rem-dir">Arenal Grande 2667</div>
+                <div class="rem-city">Montevideo, Uruguay</div>
+                <div class="rem-tel">&#9742; 092284262</div>
             </div>
         </div>`;
 
@@ -94,22 +100,28 @@ const EncomiendaPrintStation = () => {
             @page{size:10cm 15cm;margin:0;}*{margin:0;padding:0;box-sizing:border-box;}
             body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:#fff;}
             .label{width:10cm;height:15cm;background:#fff;border:2px solid #222;display:flex;flex-direction:column;overflow:hidden;}
-            .header-bar{background:#fff;color:#111;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #222;}
-            .logo{font-size:16px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:#111;}
-            .orden-code{font-size:16px;font-weight:900;font-family:'Courier New',monospace;letter-spacing:1px;color:#111;padding:3px 10px;}
-            .dest-section{flex:1;padding:16px 20px 10px;display:flex;flex-direction:column;}
-            .badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#111;background:#fff;padding:3px 10px;border:1.5px solid #222;border-radius:3px;margin-bottom:10px;width:fit-content;}
-            .dest-nombre{font-size:24px;font-weight:900;text-transform:uppercase;line-height:1.15;margin-bottom:10px;color:#111;border-bottom:2px solid #eee;padding-bottom:8px;}
-            .dest-row{font-size:14px;font-weight:600;color:#333;margin-bottom:4px;line-height:1.4;}
-            .dest-row .icon{display:inline-block;width:18px;font-size:13px;color:#888;}
-            .agencia-pill{margin-top:10px;font-size:15px;font-weight:800;color:#1a1a1a;background:#f0f0f0;border:1.5px solid #ccc;padding:6px 14px;border-radius:6px;display:inline-block;}
-            .divider-area{display:flex;align-items:center;padding:0 16px;gap:8px;}
-            .divider-line{flex:1;border-top:2px dashed #aaa;}
+            .header-bar{background:#fff;color:#111;padding:8px 16px;display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #222;}
+            .logo{font-size:20px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:#111;}
+            .orden-code{font-size:20px;font-weight:900;font-family:'Courier New',monospace;letter-spacing:1px;color:#111;}
+            .dest-section{flex:1;padding:0 20px;display:flex;flex-direction:column;justify-content:center;align-items:center;}
+            .badge-center{text-align:center;margin-bottom:6px;}
+            .badge{display:inline-block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:#111;background:#fff;padding:4px 14px;border:1.5px solid #222;border-radius:3px;}
+            .dest-nombre{font-size:30px;font-weight:700;text-transform:uppercase;line-height:1.15;margin-bottom:8px;color:#111;text-align:center;width:100%;}
+            .dest-depto{font-size:30px;font-weight:700;color:#111;margin-bottom:4px;line-height:1.2;text-align:center;text-transform:uppercase;width:100%;}
+            .dest-localidad{font-size:24px;font-weight:600;color:#333;margin-bottom:4px;line-height:1.2;text-align:center;text-transform:uppercase;width:100%;}
+            .dest-dir{font-size:20px;font-weight:600;color:#222;margin-bottom:4px;line-height:1.2;text-align:center;text-transform:uppercase;width:100%;}
+            .section-sep{width:100%;border-top:3px dashed #333;margin:6px 0;}
+            .dest-row{font-size:20px;font-weight:600;color:#333;margin-bottom:4px;line-height:1.2;text-align:center;text-transform:uppercase;width:100%;}
+            .agencia-pill{margin:4px 0;font-size:20px;font-weight:800;color:#1a1a1a;background:#f0f0f0;border:1.5px solid #ccc;padding:5px 14px;border-radius:6px;text-align:center;text-transform:uppercase;}
+            .divider-area{display:flex;align-items:center;padding:2px 16px;}
+            .divider-line{flex:1;border-top:3px dashed #333;}
             .scissors{font-size:16px;color:#aaa;}
-            .rem-section{padding:10px 20px 14px;background:#fafafa;border-top:1px solid #eee;}
-            .rem-badge{color:#111;background:#fff;border:1.5px solid #666;margin-bottom:6px;}
-            .rem-nombre{font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#333;margin-bottom:2px;}
-            .rem-row{font-size:11px;font-weight:600;color:#666;line-height:1.5;}
+            .rem-section{padding:8px 20px 10px;background:#fafafa;border-top:1px solid #eee;text-align:center;text-transform:uppercase;}
+            .rem-badge{color:#111;background:#fff;border:1.5px solid #666;}
+            .rem-nombre{font-size:18px;font-weight:900;text-transform:uppercase;letter-spacing:2px;color:#333;margin-bottom:2px;}
+            .rem-dir{font-size:18px;font-weight:700;color:#444;line-height:1.4;}
+            .rem-city{font-size:15px;font-weight:600;color:#666;line-height:1.4;}
+            .rem-tel{font-size:20px;font-weight:800;color:#333;line-height:1.4;margin-top:2px;}
         </style></head><body>${labelBody}</body></html>`;
     }, []);
 
@@ -151,17 +163,10 @@ const EncomiendaPrintStation = () => {
         const handleRetiroUpdate = async (data) => {
             if (data?.type !== 'nuevo_retiro') return;
 
-            addLog('Nuevo retiro detectado — verificando si es encomienda...', 'info', null, 'package');
-
-            if (soundEnabled && audioRef.current) {
-                audioRef.current.play().catch(() => {});
-            }
-
             try {
                 const res = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4');
                 const retiros = res.data;
                 if (retiros && retiros.length > 0) {
-                    const ahora = Date.now();
                     const sorted = retiros.sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta));
 
                     // Filter: only encomiendas not yet printed (printedIds prevents duplicates)
@@ -172,14 +177,19 @@ const EncomiendaPrintStation = () => {
                     });
 
                     if (nuevos.length === 0) {
-                        addLog('No hay encomiendas nuevas para imprimir', 'info', null, 'package');
                         return;
+                    }
+
+                    // Only log and play sound when we actually have encomiendas
+                    addLog(`Nueva encomienda detectada (${nuevos.length})`, 'info', null, 'package');
+                    if (soundEnabled && audioRef.current) {
+                        audioRef.current.play().catch(() => {});
                     }
 
                     for (const retiro of nuevos) {
                         const retiroId = retiro.ordenDeRetiro;
                         printedIdsRef.current.add(retiroId);
-                        addLog(`Imprimiendo etiqueta ${retiroId} → ${retiro.CliNombre || 'N/A'} (${copies} copias)`, 'info', retiro, 'printer');
+                        addLog(`Imprimiendo etiqueta ${retiroId} → ${retiro.receptorNombre || retiro.CliNombre || 'N/A'} (${copies} copias)`, 'info', retiro, 'printer');
                         printLabel(retiro);
                         if (nuevos.length > 1) await new Promise(r => setTimeout(r, 1500));
                     }
@@ -391,6 +401,142 @@ const EncomiendaPrintStation = () => {
                 style={{ display: 'none' }}
                 title="encomienda-print-frame"
             />
+
+            {/* ── HISTORIAL DEL DÍA ── */}
+            <div style={{
+                padding: '16px 20px',
+                background: '#141414',
+                borderRadius: '16px',
+                border: '1px solid #222',
+                overflow: 'hidden'
+            }}>
+                <button
+                    onClick={() => {
+                        setShowHistorial(!showHistorial);
+                        if (!showHistorial && historialHoy.length === 0) {
+                            setLoadingHistorial(true);
+                            const hoy = new Date().toISOString().split('T')[0];
+                            api.get(`/apiordenesRetiro/estados?estados=5&date=${hoy}`)
+                                .then(res => setHistorialHoy(res.data || []))
+                                .catch(err => addLog(`Error historial: ${err.message}`, 'error'))
+                                .finally(() => setLoadingHistorial(false));
+                        }
+                    }}
+                    style={{
+                        background: 'none', border: 'none', cursor: 'pointer', color: '#e0e0e0',
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', padding: 0
+                    }}
+                >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <History size={18} color="#ffd700" />
+                        <span style={{ fontSize: '13px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>Historial del día</span>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#888', background: '#1a1a1a', padding: '2px 8px', borderRadius: '10px' }}>{historialHoy.length}</span>
+                    </div>
+                    {showHistorial ? <ChevronUp size={16} color="#888" /> : <ChevronDown size={16} color="#888" />}
+                </button>
+
+                {showHistorial && (
+                    <div style={{ marginTop: '12px', borderTop: '1px solid #222', paddingTop: '12px' }}>
+                        {/* Bulk reprint bar */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                            <button
+                                onClick={() => {
+                                    if (selectedHistorial.size === historialHoy.length) setSelectedHistorial(new Set());
+                                    else setSelectedHistorial(new Set(historialHoy.map(e => e.ordenDeRetiro)));
+                                }}
+                                style={{
+                                    background: 'none', border: '1px solid #333', borderRadius: '6px',
+                                    padding: '4px 10px', cursor: 'pointer', color: '#aaa', fontSize: '11px',
+                                    display: 'flex', alignItems: 'center', gap: '6px'
+                                }}
+                            >
+                                <CheckSquare size={13} /> {selectedHistorial.size === historialHoy.length ? 'Deseleccionar' : 'Seleccionar'} todo
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const sel = historialHoy.filter(e => selectedHistorial.has(e.ordenDeRetiro));
+                                    if (sel.length === 0) return;
+                                    addLog(`Reimprimiendo ${sel.length} etiquetas...`, 'info', null, 'printer');
+                                    (async () => {
+                                        for (const enc of sel) {
+                                            printLabel(enc);
+                                            if (sel.length > 1) await new Promise(r => setTimeout(r, 1500));
+                                        }
+                                    })();
+                                }}
+                                disabled={selectedHistorial.size === 0}
+                                style={{
+                                    background: selectedHistorial.size > 0 ? 'rgba(255,215,0,0.15)' : 'transparent',
+                                    border: `1px solid ${selectedHistorial.size > 0 ? 'rgba(255,215,0,0.4)' : '#333'}`,
+                                    borderRadius: '8px', padding: '5px 14px', cursor: selectedHistorial.size > 0 ? 'pointer' : 'not-allowed',
+                                    color: selectedHistorial.size > 0 ? '#ffd700' : '#555', fontSize: '12px', fontWeight: 700,
+                                    display: 'flex', alignItems: 'center', gap: '6px'
+                                }}
+                            >
+                                <Tag size={14} /> Reimprimir ({selectedHistorial.size})
+                            </button>
+                        </div>
+
+                        {loadingHistorial ? (
+                            <div style={{ padding: '20px', textAlign: 'center', color: '#555' }}>
+                                <RefreshCcw size={20} style={{ animation: 'spin 1s linear infinite' }} />
+                                <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
+                            </div>
+                        ) : historialHoy.length === 0 ? (
+                            <div style={{ padding: '20px', textAlign: 'center', color: '#555', fontSize: '13px' }}>
+                                Sin entregas hoy
+                            </div>
+                        ) : (
+                            <div style={{ maxHeight: '300px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                                {historialHoy.map(enc => {
+                                    const isSelected = selectedHistorial.has(enc.ordenDeRetiro);
+                                    return (
+                                        <div
+                                            key={enc.ordenDeRetiro}
+                                            onClick={() => {
+                                                const s = new Set(selectedHistorial);
+                                                s.has(enc.ordenDeRetiro) ? s.delete(enc.ordenDeRetiro) : s.add(enc.ordenDeRetiro);
+                                                setSelectedHistorial(s);
+                                            }}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: '12px',
+                                                padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
+                                                background: isSelected ? 'rgba(255,215,0,0.08)' : 'transparent',
+                                                border: `1px solid ${isSelected ? 'rgba(255,215,0,0.2)' : 'transparent'}`,
+                                                transition: 'all 0.15s'
+                                            }}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                readOnly
+                                                style={{ accentColor: '#ffd700', width: '16px', height: '16px', cursor: 'pointer' }}
+                                            />
+                                            <span style={{ fontSize: '13px', fontWeight: 800, color: '#fff', width: '90px', flexShrink: 0 }}>{enc.ordenDeRetiro}</span>
+                                            <span style={{ fontSize: '12px', fontWeight: 600, color: '#00d4ff', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {enc.receptorNombre || enc.CliNombre || '-'}
+                                            </span>
+                                            <span style={{ fontSize: '11px', color: '#666', flexShrink: 0 }}>
+                                                {enc.agenciaNombre || enc.lugarRetiro || ''}
+                                            </span>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); addLog(`Reimprimiendo ${enc.ordenDeRetiro}...`, 'info', enc, 'printer'); printLabel(enc); }}
+                                                style={{
+                                                    background: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.3)',
+                                                    borderRadius: '6px', padding: '3px 8px', cursor: 'pointer',
+                                                    color: '#ffd700', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', flexShrink: 0
+                                                }}
+                                            >
+                                                <RotateCcw size={12} />
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

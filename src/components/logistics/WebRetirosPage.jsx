@@ -698,7 +698,7 @@ const WebRetirosPage = () => {
         // Notificación visual al operario
         Swal.fire({
           toast: true,
-          position: 'top-start',
+          position: 'top-end',
           icon: 'info',
           title: `📢 ${data.cliente} se anunció con Retiro #${numId}`,
           showConfirmButton: false,
