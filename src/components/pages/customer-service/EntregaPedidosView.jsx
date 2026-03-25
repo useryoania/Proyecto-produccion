@@ -641,14 +641,33 @@ const EntregaPedidosView = () => {
     };
 
     const abrirModalPago = (ordenes, retiroId, clienteInfo) => {
-        // Calcular total en UYU por defecto (igual que Caja)
-        const total = ordenes.reduce((a, o) => {
-            const val = parseFloat(o.costo || o.OrdCostoFinal || 0);
-            const esUSD = (o.simbolo || '').toUpperCase().includes('USD');
-            return a + (esUSD && cotizacion ? val * cotizacion : val);
-        }, 0);
+        // Detectar si todas las órdenes están en la misma moneda
+        const esUSD = (o) => {
+            const sim = (o.simbolo || o.MonSimbolo || '').toUpperCase();
+            return sim.includes('US') || o.monedaId === 2 || o.MonIdMoneda === 2;
+        };
+        const todasUSD = ordenes.every(o => esUSD(o));
+        const todasUYU = ordenes.every(o => !esUSD(o));
+
+        let monedaInicial, total;
+        if (todasUSD) {
+            // Todas en USD → mostrar en USD directamente
+            monedaInicial = 'USD';
+            total = ordenes.reduce((a, o) => a + parseFloat(o.costo || o.OrdCostoFinal || 0), 0);
+        } else if (todasUYU) {
+            // Todas en UYU → mostrar en UYU directamente
+            monedaInicial = 'UYU';
+            total = ordenes.reduce((a, o) => a + parseFloat(o.costo || o.OrdCostoFinal || 0), 0);
+        } else {
+            // Mixto → convertir todo a UYU
+            monedaInicial = 'UYU';
+            total = ordenes.reduce((a, o) => {
+                const val = parseFloat(o.costo || o.OrdCostoFinal || 0);
+                return a + (esUSD(o) && cotizacion ? val * cotizacion : val);
+            }, 0);
+        }
         setFormaPago('');
-        setMonedaPago('UYU');
+        setMonedaPago(monedaInicial);
         setMontoPago(total.toFixed(2));
         setFileComprobante(null);
         setPagoModal({ ordenes, retiroId, clienteInfo });
