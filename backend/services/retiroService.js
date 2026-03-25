@@ -18,9 +18,7 @@ function resolverEstadoPorTipoCliente(tipoCliente) {
 /**
  * verificarRecursoCliente
  * Chequea si el cliente tiene un plan de recursos activo para el producto dado.
- * Funciona para CUALQUIER tipo de cliente (no solo tipo 2 o 3).
- *
- * @returns {Promise<{tieneRecurso, planId, saldoDisponible, motivo}>}
+ * Devuelve: tieneRecurso, planId, saldoDisponible, nombreArticulo, unidad, motivo.
  */
 async function verificarRecursoCliente(transaction, { CliIdCliente, ProIdProducto }) {
     if (!CliIdCliente || !ProIdProducto) {
@@ -33,15 +31,20 @@ async function verificarRecursoCliente(transaction, { CliIdCliente, ProIdProduct
             .input('ProIdProducto', sql.Int, ProIdProducto)
             .query(`
                 SELECT TOP 1
-                    PlaIdPlan,
-                    PlaCantidadTotal - PlaCantidadUsada AS SaldoDisponible
-                FROM dbo.PlanesMetros WITH(NOLOCK)
-                WHERE CliIdCliente  = @CliIdCliente
-                  AND ProIdProducto = @ProIdProducto
-                  AND PlaActivo     = 1
-                  AND (PlaFechaVencimiento IS NULL
-                    OR PlaFechaVencimiento >= CAST(GETDATE() AS DATE))
-                ORDER BY PlaFechaAlta DESC
+                    p.PlaIdPlan,
+                    p.PlaCantidadTotal,
+                    p.PlaCantidadTotal - p.PlaCantidadUsada AS SaldoDisponible,
+                    ISNULL(a.Nombre, ISNULL(cu.NombreArticulo, 'Material')) AS NombreArticulo,
+                    ISNULL(cu.UniSimbolo, ISNULL(cu.UnidadLabel, 'mts')) AS Unidad
+                FROM dbo.PlanesMetros p WITH(NOLOCK)
+                JOIN dbo.CuentasCliente cu WITH(NOLOCK) ON cu.CueIdCuenta = p.CueIdCuenta
+                LEFT JOIN dbo.Articulos a  WITH(NOLOCK) ON a.IDArticulo  = @ProIdProducto
+                WHERE p.CliIdCliente  = @CliIdCliente
+                  AND p.ProIdProducto = @ProIdProducto
+                  AND p.PlaActivo     = 1
+                  AND (p.PlaFechaVencimiento IS NULL
+                    OR p.PlaFechaVencimiento >= CAST(GETDATE() AS DATE))
+                ORDER BY p.PlaFechaAlta DESC
             `);
 
         if (!planRes.recordset.length) {
@@ -50,10 +53,13 @@ async function verificarRecursoCliente(transaction, { CliIdCliente, ProIdProduct
 
         const plan = planRes.recordset[0];
         return {
-            tieneRecurso:    true,
-            planId:          plan.PlaIdPlan,
-            saldoDisponible: Number(plan.SaldoDisponible),
-            motivo:          `plan_${plan.PlaIdPlan}`,
+            tieneRecurso:     true,
+            planId:           plan.PlaIdPlan,
+            saldoDisponible:  Number(plan.SaldoDisponible),
+            totalPlan:        Number(plan.PlaCantidadTotal),
+            nombreArticulo:   plan.NombreArticulo,
+            unidad:           plan.Unidad,
+            motivo:           `plan_${plan.PlaIdPlan}`,
         };
     } catch (err) {
         logger.warn(`[RECURSO] Error verificando plan CliId=${CliIdCliente}: ${err.message}. Sin recurso.`);
@@ -64,15 +70,21 @@ async function verificarRecursoCliente(transaction, { CliIdCliente, ProIdProduct
 /**
  * verificarCicloSemanal
  * Solo para clientes tipo 2 (Semanal): verifica ciclo de crédito abierto.
+ * Devuelve { activo: bool, saldo: number, simbolo: string }.
  */
 async function verificarCicloSemanal(transaction, CliIdCliente) {
     try {
         const cicloRes = await transaction.request()
             .input('CliIdCliente', sql.Int, CliIdCliente)
             .query(`
-                SELECT TOP 1 cc.CicIdCiclo, cc.CicFechaCierre
+                SELECT TOP 1
+                    cc.CicIdCiclo,
+                    cc.CicFechaCierre,
+                    cu.CueSaldoActual,
+                    ISNULL(mo.MonSimbolo, '$U') AS MonSimbolo
                 FROM   dbo.CiclosCredito  cc WITH(NOLOCK)
                 JOIN   dbo.CuentasCliente cu WITH(NOLOCK) ON cu.CueIdCuenta = cc.CueIdCuenta
+                LEFT JOIN dbo.Monedas     mo WITH(NOLOCK) ON mo.MonIdMoneda = cu.MonIdMoneda
                 WHERE  cu.CliIdCliente = @CliIdCliente
                   AND  cc.CicEstado    = 'ABIERTO'
                   AND  cc.CicFechaCierre >= CAST(GETDATE() AS DATE)
@@ -80,12 +92,40 @@ async function verificarCicloSemanal(transaction, CliIdCliente) {
 
         if (!cicloRes.recordset.length) {
             logger.warn(`[RECURSO] Semanal CliId=${CliIdCliente} → sin ciclo activo.`);
-            return false;
+            return { activo: false, saldo: 0, simbolo: '$U' };
         }
-        return true;
+        const row = cicloRes.recordset[0];
+        return { activo: true, fechaCierre: row.CicFechaCierre, saldo: Number(row.CueSaldoActual ?? 0), simbolo: row.MonSimbolo };
     } catch (err) {
         logger.warn(`[RECURSO] Error verificando ciclo CliId=${CliIdCliente}: ${err.message}.`);
-        return false;
+        return { activo: false, saldo: 0, simbolo: '$U' };
+    }
+}
+
+/**
+ * verificarSaldoMonetario
+ * Verifica si el cliente tiene saldo positivo en alguna cuenta monetaria.
+ */
+async function verificarSaldoMonetario(transaction, CliIdCliente) {
+    try {
+        const res = await transaction.request()
+            .input('CliIdCliente', sql.Int, CliIdCliente)
+            .query(`
+                SELECT TOP 1
+                    cu.CueSaldoActual,
+                    ISNULL(mo.MonSimbolo, '$U') AS MonSimbolo
+                FROM dbo.CuentasCliente cu WITH(NOLOCK)
+                LEFT JOIN dbo.Monedas mo WITH(NOLOCK) ON mo.MonIdMoneda = cu.MonIdMoneda
+                WHERE cu.CliIdCliente = @CliIdCliente
+                  AND cu.CueSaldoActual > 0
+                ORDER BY cu.CueSaldoActual DESC
+            `);
+        if (!res.recordset.length) return { tieneSaldo: false, saldo: 0, simbolo: '$U' };
+        const row = res.recordset[0];
+        return { tieneSaldo: true, saldo: Number(row.CueSaldoActual), simbolo: row.MonSimbolo };
+    } catch (err) {
+        logger.warn(`[SALDO] Error verificando saldo CliId=${CliIdCliente}: ${err.message}.`);
+        return { tieneSaldo: false, saldo: 0, simbolo: '$U' };
     }
 }
 
@@ -141,16 +181,22 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
     const CliIdCliente    = tipoRes.recordset[0]?.CliIdCliente     || null;
     const finalCodCliente = codCliente || tipoRes.recordset[0]?.CodCliente || null;
 
-    // Datos de CADA orden: producto, cantidad y si ya tiene pago
+    // Datos de CADA orden: producto, cantidad, nombre del material y si ya tiene pago
     const ordParamsClause = ordIds.map((_, i) => `@ord${i}`).join(',');
     const ordDataReq = transaction.request();
     ordIds.forEach((id, i) => ordDataReq.input(`ord${i}`, sql.Int, id));
     const ordDataRes = await ordDataReq.query(`
-        SELECT OrdIdOrden, ProIdProducto, OrdCantidad, PagIdPago
-        FROM   dbo.OrdenesDeposito WITH(NOLOCK)
-        WHERE  OrdIdOrden IN (${ordParamsClause})
+        SELECT
+            od.OrdIdOrden,
+            od.ProIdProducto,
+            od.OrdCantidad,
+            od.PagIdPago,
+            ISNULL(a.Descripcion, ISNULL(od.OrdNombreTrabajo, 'Material')) AS NombreProducto
+        FROM   dbo.OrdenesDeposito od WITH(NOLOCK)
+        LEFT JOIN dbo.Articulos    a  WITH(NOLOCK) ON a.ProIdProducto = od.ProIdProducto
+        WHERE  od.OrdIdOrden IN (${ordParamsClause})
     `);
-    const ordenesData  = ordDataRes.recordset;
+    const ordenesData     = ordDataRes.recordset;
     const pagoExistenteId = ordenesData.find(o => o.PagIdPago)?.PagIdPago || null;
 
     // ── ESTADO DEL RETIRO: evaluar CADA orden individualmente ───────────────────
@@ -163,40 +209,67 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
     //  Aquí solo se VERIFICA el estado de autorización.
 
     let estadoOrdenRetiro;
+    const coberturaOrdenes = {};  // { [OrdIdOrden]: '...' }  para descripción final
 
     if (pagoExistenteId) {
         estadoOrdenRetiro = 3; // Al menos una orden ya tiene pago registrado
 
     } else {
-        // Verificar ciclo semanal del cliente (aplica a todas las órdenes si tipo 2)
-        let tieneCicloSemanal = false;
+        // Verificar ciclo semanal del cliente (solo tipo 2)
+        let cicloInfo = { activo: false, saldo: 0, simbolo: '$U' };
         if (tipoCliente === 2) {
-            tieneCicloSemanal = await verificarCicloSemanal(transaction, CliIdCliente);
+            cicloInfo = await verificarCicloSemanal(transaction, CliIdCliente);
+        }
+
+        // Verificar saldo monetario (para tipo 3 adelantado o cualquier cliente con crédito)
+        let saldoInfo = { tieneSaldo: false, saldo: 0, simbolo: '$U' };
+        if (tipoCliente === 3 || (!cicloInfo.activo && CliIdCliente)) {
+            saldoInfo = await verificarSaldoMonetario(transaction, CliIdCliente);
         }
 
         // Evaluar cada orden individualmente
         let todasCubiertas = true;
 
         for (const orden of ordenesData) {
-            const { ProIdProducto } = orden;
+            const { OrdIdOrden, ProIdProducto, OrdCantidad, NombreProducto } = orden;
+            const mat = NombreProducto || 'Material';  // material de esta orden
 
             // ¿Cubierta por plan de recursos?
             if (ProIdProducto) {
                 const recurso = await verificarRecursoCliente(transaction, { CliIdCliente, ProIdProducto });
                 if (recurso.tieneRecurso) {
-                    logger.info(`[RETIRO] Orden ${orden.OrdIdOrden} cubierta por plan #${recurso.planId}`);
-                    continue; // esta orden OK
+                    const cant     = parseFloat(OrdCantidad || 0).toFixed(2);
+                    const restante = (recurso.saldoDisponible - parseFloat(OrdCantidad || 0)).toFixed(2);
+                    // La nota incluye el material de la orden y los datos del plan
+                    const nota = `Plan #${recurso.planId} — ${mat} | Consume: ${cant} ${recurso.unidad} | Quedan: ${restante} ${recurso.unidad}`;
+                    coberturaOrdenes[OrdIdOrden] = nota;
+                    logger.info(`[RETIRO] Orden ${OrdIdOrden} cubierta por plan #${recurso.planId} (restante: ${restante} ${recurso.unidad})`);
+                    continue;
                 }
             }
 
             // ¿Cubierta por ciclo semanal?
-            if (tieneCicloSemanal) {
-                logger.info(`[RETIRO] Orden ${orden.OrdIdOrden} cubierta por ciclo semanal`);
-                continue; // esta orden OK
+            if (cicloInfo.activo) {
+                // Mostramos el material de la orden y el tipo de cobertura (no el saldo negativo)
+                const hasta = cicloInfo.fechaCierre
+                    ? new Date(cicloInfo.fechaCierre).toLocaleDateString('es-UY')
+                    : '';
+                const nota = `Ciclo semanal — ${mat}${hasta ? ` | Vigente hasta ${hasta}` : ''}`;
+                coberturaOrdenes[OrdIdOrden] = nota;
+                logger.info(`[RETIRO] Orden ${OrdIdOrden} cubierta por ciclo semanal`);
+                continue;
+            }
+
+            // ¿Cubierta por saldo monetario positivo?
+            if (saldoInfo.tieneSaldo) {
+                const nota = `Saldo disponible — ${mat} | ${saldoInfo.simbolo} ${saldoInfo.saldo.toFixed(2)} a favor`;
+                coberturaOrdenes[OrdIdOrden] = nota;
+                logger.info(`[RETIRO] Orden ${OrdIdOrden} cubierta por saldo ${saldoInfo.simbolo} ${saldoInfo.saldo}`);
+                continue;
             }
 
             // Ninguna cobertura → necesita pago en caja
-            logger.info(`[RETIRO] Orden ${orden.OrdIdOrden} sin cobertura → requiere pago`);
+            logger.info(`[RETIRO] Orden ${OrdIdOrden} sin cobertura → requiere pago`);
             todasCubiertas = false;
             break;
         }
@@ -261,25 +334,45 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
             `);
     }
 
-    // 5. UPDATE OrdenesDeposito (estado=4, asignar lugar y retiroId)
+    // 5. UPDATE OrdenesDeposito (estado=4, asignar lugar, retiroId y nota de cobertura)
     //    + INSERT HistoricoEstadosOrdenes
     for (const ordId of ordIds) {
-        await transaction.request()
+        const notaCobertura = coberturaOrdenes?.[ordId] || null;
+        const req = transaction.request()
             .input('OrdId', sql.Int, ordId)
             .input('Lugar', sql.Int, lugarRetiro)
             .input('RetiroId', sql.Int, OReIdOrdenRetiro)
-            .input('Usr', sql.Int, usuarioAlta)
-            .query(`
+            .input('Usr', sql.Int, usuarioAlta);
+
+        if (notaCobertura) {
+            // OVERWRITE OrdNombreTrabajo con la nota limpia de cobertura
+            // (no se concatena al contenido previo para evitar confusiones de lectura)
+            req.input('Nota', sql.NVarChar(500), notaCobertura);
+            await req.query(`
                 UPDATE OrdenesDeposito SET 
-                    LReIdLugarRetiro = @Lugar, 
-                    OReIdOrdenRetiro = @RetiroId,
-                    OrdEstadoActual = 4, 
+                    LReIdLugarRetiro     = @Lugar, 
+                    OReIdOrdenRetiro     = @RetiroId,
+                    OrdEstadoActual      = 4, 
+                    OrdFechaEstadoActual = GETDATE(),
+                    OrdNombreTrabajo     = @Nota
+                WHERE OrdIdOrden = @OrdId;
+
+                INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+                VALUES (@OrdId, 4, GETDATE(), @Usr);
+            `);
+        } else {
+            await req.query(`
+                UPDATE OrdenesDeposito SET 
+                    LReIdLugarRetiro     = @Lugar, 
+                    OReIdOrdenRetiro     = @RetiroId,
+                    OrdEstadoActual      = 4, 
                     OrdFechaEstadoActual = GETDATE()
                 WHERE OrdIdOrden = @OrdId;
 
                 INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
                 VALUES (@OrdId, 4, GETDATE(), @Usr);
             `);
+        }
     }
 
     return OReIdOrdenRetiro;

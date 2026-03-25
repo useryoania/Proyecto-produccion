@@ -257,7 +257,7 @@ async function crearDeudaDocumento(params) {
  *   @param {number} UsuarioAlta
  */
 async function hookOrdenCreada(params) {
-  const { OrdIdOrden, CliIdCliente, Importe, MonIdMoneda, CodigoOrden, UsuarioAlta, ProIdProducto } = params;
+  const { OrdIdOrden, CliIdCliente, Importe, MonIdMoneda, CodigoOrden, NombreTrabajo, UsuarioAlta, ProIdProducto } = params;
 
   try {
     // ── Si el cliente tiene plan de recursos para este artículo → no cobrar en dinero
@@ -295,7 +295,8 @@ async function hookOrdenCreada(params) {
     const { SaldoResultante } = await registrarMovimiento({
       CueIdCuenta,
       MovTipo:      'ORDEN',
-      MovConcepto:  `Orden ingresada: ${CodigoOrden}`,
+      MovConcepto:  `Orden ${CodigoOrden}${NombreTrabajo ? ' — ' + NombreTrabajo : ''}`,
+      MovObservaciones: NombreTrabajo || null,
       MovImporte:   -Math.abs(Importe),
       MovUsuarioAlta: UsuarioAlta,
       OrdIdOrden,
@@ -314,6 +315,50 @@ async function hookOrdenCreada(params) {
     logger.info(`[CONTABILIDAD] Orden ${CodigoOrden} registrada. Saldo cliente ${CliIdCliente}: ${SaldoResultante}`);
   } catch (err) {
     logger.warn(`[CONTABILIDAD] hookOrdenCreada falló (no afecta la orden): ${err.message}`);
+  }
+}
+
+/**
+ * hookReposicion
+ * Llamar cuando la orden es una REPOSICIÓN (CodigoOrden empieza con 'R').
+ * NO afecta el saldo ni descuenta recursos.
+ * Solo deja trazabilidad en MovimientosCuenta con importe = 0
+ * para que quede en el historial del cliente.
+ *
+ * @param {object} params
+ *   @param {number} OrdIdOrden
+ *   @param {number} CliIdCliente
+ *   @param {number} MonIdMoneda   1=UYU, 2=USD
+ *   @param {string} CodigoOrden
+ *   @param {number} UsuarioAlta
+ */
+async function hookReposicion(params) {
+  const { OrdIdOrden, CliIdCliente, MonIdMoneda, CodigoOrden, NombreTrabajo, UsuarioAlta } = params;
+
+  try {
+    const CueTipo = MonIdMoneda === 2 ? 'DINERO_USD' : 'DINERO_UYU';
+
+    // Obtener o crear la cuenta del cliente (sin modificar saldo)
+    const CueIdCuenta = await obtenerOCrearCuenta(CliIdCliente, CueTipo, {
+      MonIdMoneda,
+      UsuarioAlta,
+    });
+
+    // Registrar movimiento con importe 0 — solo para el historial
+    await registrarMovimiento({
+      CueIdCuenta,
+      MovTipo:        'REPOSICION',
+      MovConcepto:    `Reposición ${CodigoOrden}${NombreTrabajo ? ' — ' + NombreTrabajo : ''}`,
+      MovObservaciones: NombreTrabajo ? `Reposición sin cargo — ${NombreTrabajo}` : 'Orden de reposición',
+      MovImporte:     0,
+      MovUsuarioAlta: UsuarioAlta,
+      OrdIdOrden,
+
+    });
+
+    logger.info(`[CONTABILIDAD] Reposición registrada en historial: ${CodigoOrden} (CliId=${CliIdCliente}, importe=$0)`);
+  } catch (err) {
+    logger.warn(`[CONTABILIDAD] hookReposicion falló (no afecta la orden): ${err.message}`);
   }
 }
 
@@ -945,6 +990,60 @@ async function cerrarCiclosVencidos() {
   return { procesados, errores };
 }
 
+
+// ============================================================
+// SECCIÓN X: HOOK — RETIRO AUTORIZADO SIN PAGO (FIADO)
+// ============================================================
+
+async function hookRetiroSinPago({ OReIdOrdenRetiro, CliIdCliente, OrdIds = [], Monto = 0, UsuarioAlta = 1, Observacion = '' }) {
+  try {
+    const pool = await getPool();
+
+    const cueRes = await pool.request()
+      .input('CliIdCliente', sql.Int, CliIdCliente)
+      .query(`
+        SELECT TOP 1 CueIdCuenta
+        FROM   dbo.CuentasCliente
+        WHERE  CliIdCliente = @CliIdCliente
+          AND  CueTipo IN ('DINERO_UYU', 'DINERO_USD')
+          AND  CueActiva = 1
+        ORDER BY CASE CueTipo WHEN 'DINERO_UYU' THEN 1 ELSE 2 END
+      `);
+
+    if (cueRes.recordset.length > 0) {
+      const { CueIdCuenta } = cueRes.recordset[0];
+      await registrarMovimiento({
+        CueIdCuenta,
+        MovTipo:          'FIADO',
+        MovConcepto:      `Retiro R-${OReIdOrdenRetiro} entregado sin cobro`,
+        MovImporte:       0,
+        MovUsuarioAlta:   UsuarioAlta,
+        OReIdOrdenRetiro: OReIdOrdenRetiro,
+        MovObservaciones: `Monto: ${Number(Monto).toFixed(2)}${Observacion ? ' | ' + Observacion : ''}`,
+      });
+    } else {
+      logger.warn(`[FIADO] Sin cuenta DINERO para CliId=${CliIdCliente}`);
+    }
+
+    if (OrdIds.length > 0) {
+      const placeholders = OrdIds.map((_, i) => `@ord${i}`).join(',');
+      const req2 = pool.request();
+      OrdIds.forEach((id, i) => req2.input(`ord${i}`, sql.Int, id));
+      const updated = await req2.query(`
+        UPDATE dbo.DeudaDocumento
+        SET    DDeEstado = 'EN_GESTION'
+        WHERE  OrdIdOrden IN (${placeholders})
+          AND  DDeEstado = 'PENDIENTE'
+      `);
+      logger.info(`[FIADO] R-${OReIdOrdenRetiro}: ${updated.rowsAffected[0]} deuda(s) -> EN_GESTION`);
+    }
+
+    logger.info(`[FIADO] OK: R-${OReIdOrdenRetiro}, Cli=${CliIdCliente}, Monto=${Monto}`);
+  } catch (err) {
+    logger.warn('[FIADO] hookRetiroSinPago fallo (no afecta la entrega):', err.message);
+  }
+}
+
 // ============================================================
 // EXPORTS
 // ============================================================
@@ -973,8 +1072,10 @@ module.exports = {
 
   // Hooks — llamar post-commit desde otros controladores
   hookOrdenCreada,
+  hookReposicion,
   hookPagoRegistrado,
   hookEntregaMetros,
+  hookRetiroSinPago,
 
   // Consultas
   getSaldoCliente,

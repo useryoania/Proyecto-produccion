@@ -30,6 +30,13 @@ const fmtNum   = (n) => new Intl.NumberFormat('es-UY', { minimumFractionDigits: 
 const fmtFecha = (f) => f ? new Date(f).toLocaleDateString('es-UY') : '—';
 const diasRestantes = (fc) => fc ? Math.ceil((new Date(fc) - new Date()) / 86400000) : null;
 
+// Extrae solo el código de orden de conceptos tipo "Entrega 0.93 uds orden XDF-76630 (Plan 1)"
+const extraerOrden = (concepto) => {
+  if (!concepto) return '';
+  const m = concepto.match(/orden\s+([\w-]+)/i);
+  return m ? m[1] : concepto;
+};
+
 // ── Badge ─────────────────────────────────────────────────────────────────────
 const Badge = ({ children, color = 'slate' }) => {
   const c = {
@@ -373,7 +380,7 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
 };
 
 // ── Panel movimientos ─────────────────────────────────────────────────────────
-const MovimientosPanel = ({ CueIdCuenta, onClose }) => {
+const MovimientosPanel = ({ CueIdCuenta, simbolo = '$U', onClose }) => {
   const [movs, setMovs]       = useState([]);
   const [loading, setLoading] = useState(false);
   const [desde, setDesde]     = useState('');
@@ -426,14 +433,15 @@ const MovimientosPanel = ({ CueIdCuenta, onClose }) => {
                 <tr key={m.MovIdMovimiento} className="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
                   <td className="px-4 py-2 text-slate-400 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
                   <td className="px-4 py-2"><span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{m.MovTipo}</span></td>
-                  <td className="px-4 py-2 text-slate-600 max-w-[200px] truncate">{m.MovConcepto}</td>
+                  <td className="px-4 py-2 text-slate-600 max-w-xs" title={m.MovConcepto}><span className="block truncate text-xs font-medium">{m.MovConcepto || '—'}</span></td>
                   <td className={`px-4 py-2 text-right font-semibold ${esCredito(m.MovTipo) ? 'text-green-600' : 'text-red-600'}`}>
                     <span className="flex items-center justify-end gap-0.5">
                       {esCredito(m.MovTipo) ? <ArrowUpCircle size={10} /> : <ArrowDownCircle size={10} />}
+                      <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>
                       {fmtNum(Math.abs(Number(m.MovImporte)))}
                     </span>
                   </td>
-                  <td className="px-4 py-2 text-right text-slate-700 font-medium">{fmtNum(Number(m.MovSaldoPosterior))}</td>
+                  <td className="px-4 py-2 text-right text-slate-700 font-medium"><span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(Number(m.MovSaldoPosterior))}</td>
                 </tr>
               ))}
               {movs.length === 0 && <tr><td colSpan={5} className="text-center py-6 text-slate-400">Sin movimientos</td></tr>}
@@ -620,18 +628,20 @@ const CiclosPanel = ({ cuenta, CliIdCliente, onClose, onCicloChanged }) => {
 
 // ── Panel planes de recursos (Metros / KG) ─────────────────────────────
 const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
-  const [planes, setPlanes]     = useState([]);
-  const [loading, setLoading]   = useState(false);
-  const [working, setWorking]   = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [monedas,  setMonedas]  = useState([]);
-  const [metodos,  setMetodos]  = useState([]);
+  const [planes, setPlanes]       = useState([]);
+  const [loading, setLoading]     = useState(false);
+  const [working, setWorking]     = useState(false);
+  const [showForm, setShowForm]   = useState(false);
+  const [monedas, setMonedas]     = useState([]);
+  const [metodos, setMetodos]     = useState([]);
+  const [movsAbiertos, setMovsAbiertos] = useState({});
+  const [movsPlan, setMovsPlan]   = useState({});  // { [planId]: [] }
+  const [loadMovs, setLoadMovs]   = useState({});
 
-  const formVacio = { PlaCantidadTotal: '', PlaImportePagado: '', MonedaPagoId: '', MetodoPagoId: '', PlaFechaVencimiento: '', PlaDescripcion: '' };
-  const [form, setForm] = useState(formVacio);
+  const formVacio = { PlaCantidadTotal: '', PlaImportePagado: '', MonedaPagoId: '', MetodoPagoId: '', PlaFechaVencimiento: '', PlaDescripcion: '', DocTipo: 'FACTURA' };
+  const [form, setForm]           = useState(formVacio);
   const [formRecarga, setFormRecarga] = useState({});
 
-  // Unidad de la cuenta — fija, no editable
   const unidadLabel = cuenta.UnidadLabel || cuenta.CueTipo || '';
   const uniSimbolo  = cuenta.UniSimbolo  || unidadLabel;
 
@@ -639,12 +649,16 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
     setLoading(true);
     try {
       const data = await fetchAPI(`/api/contabilidad/planes/${CliIdCliente}`);
-      setPlanes(data.data || []);
+      // ── FIX: filtrar solo los planes de ESTA cuenta ──
+      const todos = data.data || [];
+      const deCuenta = todos.filter(p =>
+        !p.CueIdCuenta || String(p.CueIdCuenta) === String(cuenta.CueIdCuenta)
+      );
+      setPlanes(deCuenta);
     } catch (e) { toast.error(e.message); }
     finally { setLoading(false); }
-  }, [CliIdCliente]);
+  }, [CliIdCliente, cuenta.CueIdCuenta]);
 
-  // Cargar catálogos al abrir el panel
   useEffect(() => { cargar(); }, [cargar]);
   useEffect(() => {
     fetchAPI('/api/contabilidad/monedas').then(d => {
@@ -658,6 +672,32 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
       if (list.length > 0) setForm(f => ({ ...f, MetodoPagoId: String(list[0].MetodoPagoId) }));
     }).catch(() => {});
   }, []);
+
+  // ── Toggle movimientos de un plan ──────────────────────────────────────
+  const toggleMovs = async (plan) => {
+    const id = plan.PlaIdPlan;
+    if (movsAbiertos[id]) {
+      setMovsAbiertos(p => ({ ...p, [id]: false }));
+      return;
+    }
+    setMovsAbiertos(p => ({ ...p, [id]: true }));
+    if (movsPlan[id]) return;  // ya cargados
+
+    setLoadMovs(p => ({ ...p, [id]: true }));
+    try {
+      const data = await fetchAPI(`/api/contabilidad/cuentas/${cuenta.CueIdCuenta}/movimientos?top=200`);
+      const todos = data.data || [];
+      // Filtrar los que pertenecen a este plan por el texto del concepto
+      const delPlan = todos.filter(m =>
+        m.MovConcepto?.includes(`(Plan ${id})`) ||
+        m.MovConcepto?.includes(`Plan #${id}`) ||
+        m.MovConcepto?.includes(`plan ${id}`) ||
+        m.MovConcepto?.toLowerCase().includes(`plan${id}`)
+      );
+      setMovsPlan(p => ({ ...p, [id]: delPlan }));
+    } catch (e) { toast.error(e.message); }
+    finally { setLoadMovs(p => ({ ...p, [id]: false })); }
+  };
 
   const crearPlan = async (e) => {
     e.preventDefault();
@@ -675,6 +715,7 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
           MetodoPagoId:        form.MetodoPagoId  || null,
           PlaFechaVencimiento: form.PlaFechaVencimiento || null,
           PlaDescripcion:      form.PlaDescripcion || null,
+          DocTipo:             form.DocTipo || 'FACTURA',
         }),
       });
       toast.success(res.message);
@@ -696,6 +737,7 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
       });
       toast.success(res.message);
       setFormRecarga(prev => ({ ...prev, [planId]: undefined }));
+      setMovsPlan(p => ({ ...p, [planId]: undefined }));  // limpiar caché de movs
       await cargar(); onChanged?.();
     } catch (e) { toast.error(e.message); }
     finally { setWorking(false); }
@@ -734,8 +776,6 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
       {showForm && (
         <form onSubmit={crearPlan} className="px-4 py-3 bg-violet-50 border-b border-violet-200 space-y-3">
           <p className="text-xs font-semibold text-violet-800">Nuevo plan de recursos</p>
-
-          {/* Fila 1: Cantidad + Unidad (fija) */}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-[10px] text-slate-500 uppercase">Cantidad</label>
@@ -750,8 +790,6 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
               </div>
             </div>
           </div>
-
-          {/* Fila 2: Importe + Moneda + Forma de pago */}
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="text-[10px] text-slate-500 uppercase">Importe pagado</label>
@@ -776,8 +814,6 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
               </select>
             </div>
           </div>
-
-          {/* Fila 3: Vencimiento + Descripción */}
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-[10px] text-slate-500 uppercase">Vencimiento (opcional)</label>
@@ -790,6 +826,37 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
                 placeholder="Ej: Rollo Nov-2026"
                 className="w-full mt-0.5 px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none" />
             </div>
+          </div>
+
+          {/* Tipo de documento contable */}
+          <div>
+            <label className="text-[10px] text-slate-500 uppercase">Tipo de documento</label>
+            <div className="flex gap-2 mt-1">
+              {[
+                { val: 'FACTURA', label: '🧾 Factura',  desc: 'Obliga al cliente a pagar (contado o crédito)' },
+                { val: 'RECIBO',  label: '✅ Recibo',   desc: 'El cliente ya pagó — solo se emite constancia' },
+                { val: 'TICKET',  label: '📋 Ticket',   desc: 'Comprobante interno sin obligación formal' },
+              ].map(opt => (
+                <button
+                  key={opt.val}
+                  type="button"
+                  title={opt.desc}
+                  onClick={() => setForm(f => ({ ...f, DocTipo: opt.val }))}
+                  className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
+                    form.DocTipo === opt.val
+                      ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
+                      : 'bg-white text-slate-600 border-slate-200 hover:border-violet-400 hover:text-violet-600'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-1">
+              {form.DocTipo === 'FACTURA' && '🧾 Se genera una factura. Si no hay pago inmediato, queda como deuda pendiente.'}
+              {form.DocTipo === 'RECIBO'  && '✅ El cliente ya abonó. Se registra el cobro y se emite recibo sin deuda.'}
+              {form.DocTipo === 'TICKET'  && '📋 Solo queda constancia interna. No genera obligación contable.'}
+            </p>
           </div>
 
           <div className="flex gap-2 justify-end">
@@ -810,6 +877,10 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
             const agotado = pct >= 100;
             const alerta  = pct >= 80 && !agotado;
             const rec     = formRecarga[p.PlaIdPlan];
+            const movsDelPlan = movsPlan[p.PlaIdPlan] || [];
+            const movsOpen    = movsAbiertos[p.PlaIdPlan];
+            const movsLoading = loadMovs[p.PlaIdPlan];
+            const totalPlan   = Number(p.PlaCantidadTotal);
 
             return (
               <div key={p.PlaIdPlan} className="px-4 py-3">
@@ -844,36 +915,89 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
                 </div>
 
                 {/* Acciones */}
-                {p.PlaActivo && (
-                  <div className="mt-2 flex gap-2 flex-wrap">
-                    {/* Recarga quick */}
-                    {rec ? (
-                      <div className="flex gap-1 flex-1">
-                        <input type="number" min="0.01" step="0.01" placeholder={`Cantidad (${p.PlaUnidad})`}
-                          value={rec.cantidad || ''} onChange={e => setFormRecarga(prev => ({ ...prev, [p.PlaIdPlan]: { ...prev[p.PlaIdPlan], cantidad: e.target.value } }))}
-                          className="flex-1 px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none" />
-                        <input type="number" min="0" step="0.01" placeholder={`$ (opcional)`}
-                          value={rec.importe || ''} onChange={e => setFormRecarga(prev => ({ ...prev, [p.PlaIdPlan]: { ...prev[p.PlaIdPlan], importe: e.target.value } }))}
-                          className="w-24 px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none" />
-                        <button onClick={() => recargar(p.PlaIdPlan)} disabled={working}
-                          className="px-2 py-1 bg-violet-600 text-white text-xs rounded hover:bg-violet-700 disabled:opacity-50">
-                          <CheckCircle2 size={11} />
+                <div className="mt-2 flex gap-2 flex-wrap">
+                  {/* Ver movimientos toggle */}
+                  <button onClick={() => toggleMovs(p)}
+                    className={`flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors
+                      ${movsOpen ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
+                    <BarChart3 size={10} /> {movsOpen ? 'Ocultar' : 'Ver entregas'}
+                  </button>
+
+                  {p.PlaActivo && (
+                    <>
+                      {rec ? (
+                        <div className="flex gap-1 flex-1">
+                          <input type="number" min="0.01" step="0.01" placeholder={`Cantidad (${p.PlaUnidad})`}
+                            value={rec.cantidad || ''} onChange={e => setFormRecarga(prev => ({ ...prev, [p.PlaIdPlan]: { ...prev[p.PlaIdPlan], cantidad: e.target.value } }))}
+                            className="flex-1 px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none" />
+                          <input type="number" min="0" step="0.01" placeholder="$ (opcional)"
+                            value={rec.importe || ''} onChange={e => setFormRecarga(prev => ({ ...prev, [p.PlaIdPlan]: { ...prev[p.PlaIdPlan], importe: e.target.value } }))}
+                            className="w-24 px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none" />
+                          <button onClick={() => recargar(p.PlaIdPlan)} disabled={working}
+                            className="px-2 py-1 bg-violet-600 text-white text-xs rounded hover:bg-violet-700 disabled:opacity-50">
+                            <CheckCircle2 size={11} />
+                          </button>
+                          <button onClick={() => setFormRecarga(prev => ({ ...prev, [p.PlaIdPlan]: undefined }))}
+                            className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded hover:bg-slate-200">
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => setFormRecarga(prev => ({ ...prev, [p.PlaIdPlan]: {} }))}
+                          className="flex items-center gap-1 text-xs px-2 py-1 bg-violet-50 text-violet-700 border border-violet-200 rounded hover:bg-violet-100">
+                          <RotateCcw size={10} /> Recargar
                         </button>
-                        <button onClick={() => setFormRecarga(prev => ({ ...prev, [p.PlaIdPlan]: undefined }))}
-                          className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded hover:bg-slate-200">
-                          <X size={11} />
-                        </button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setFormRecarga(prev => ({ ...prev, [p.PlaIdPlan]: {} }))}
-                        className="flex items-center gap-1 text-xs px-2 py-1 bg-violet-50 text-violet-700 border border-violet-200 rounded hover:bg-violet-100">
-                        <RotateCcw size={10} /> Recargar
+                      )}
+                      <button onClick={() => desactivar(p.PlaIdPlan)} disabled={working}
+                        className="flex items-center gap-1 text-xs px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded hover:bg-red-100 ml-auto">
+                        <X size={10} /> Cerrar plan
                       </button>
+                    </>
+                  )}
+                </div>
+
+                {/* ── Movimientos del plan (expandibles) ───────────────── */}
+                {movsOpen && (
+                  <div className="mt-3 rounded-lg border border-slate-200 overflow-hidden">
+                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-slate-600">Entregas del Plan #{p.PlaIdPlan}</span>
+                      <span className="text-[10px] text-slate-400">{movsDelPlan.length} movimientos</span>
+                    </div>
+                    {movsLoading ? (
+                      <div className="flex justify-center py-4">
+                        <div className="animate-spin h-4 w-4 border-2 border-violet-400 border-t-transparent rounded-full" />
+                      </div>
+                    ) : movsDelPlan.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-4">Sin entregas registradas en este plan</p>
+                    ) : (
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-[10px] text-slate-400 uppercase">
+                            <th className="px-3 py-1.5 text-left">Fecha</th>
+                            <th className="px-3 py-1.5 text-left">Orden</th>
+                            <th className="px-3 py-1.5 text-right">Consumo</th>
+                            <th className="px-3 py-1.5 text-right">Quedan</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {[...movsDelPlan].reverse().reduce((acc, m) => {
+                            const acum = Math.abs(Number(m.MovSaldoPosterior));
+                            const quedan = totalPlan - acum;
+                            acc.push({ ...m, _quedan: quedan });
+                            return acc;
+                          }, []).reverse().map(m => (
+                            <tr key={m.MovIdMovimiento} className="hover:bg-slate-50">
+                              <td className="px-3 py-2 text-slate-400">{fmtFecha(m.MovFecha)}</td>
+                              <td className="px-3 py-2 max-w-xs" title={m.MovConcepto}><span className="block truncate text-xs text-slate-700">{m.MovConcepto || '—'}</span></td>
+                              <td className="px-3 py-2 text-right text-slate-700">{fmtNum(Math.abs(Number(m.MovImporte)))} {p.PlaUnidad}</td>
+                              <td className={`px-3 py-2 text-right font-bold ${m._quedan < totalPlan * 0.1 ? 'text-amber-600' : 'text-violet-700'}`}>
+                                {fmtNum(m._quedan)} {p.PlaUnidad}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     )}
-                    <button onClick={() => desactivar(p.PlaIdPlan)} disabled={working}
-                      className="flex items-center gap-1 text-xs px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded hover:bg-red-100 ml-auto">
-                      <X size={10} /> Cerrar plan
-                    </button>
                   </div>
                 )}
               </div>
@@ -884,6 +1008,320 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
           )}
         </div>
       )}
+    </div>
+  );
+};
+
+// ── Modal Estado de Cuenta — diseño limpio por secciones ──────────────────────
+const esCreditoTipo = (t) => ['PAGO','ANTICIPO','NOTA_CREDITO','AJUSTE_POS','DEVOLUCION','SALDO_INICIAL'].includes(t);
+
+const ETIQUETA_TIPO = {
+  ORDEN:        'Orden',
+  ENTREGA:      'Entrega',
+  PAGO:         'Pago',
+  ANTICIPO:     'Anticipo',
+  NOTA_CREDITO: 'Nota cred.',
+  AJUSTE_POS:   'Ajuste +',
+  AJUSTE_NEG:   'Ajuste -',
+  REPOSICION:   'Reposición',
+};
+
+const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
+  const [secciones, setSecciones] = useState({});  // { CueIdCuenta: { movs, loading } }
+  const [planes, setPlanes]       = useState([]);
+  const [expandidos, setExpandidos] = useState({});
+  const [desde, setDesde] = useState('');
+  const [hasta, setHasta] = useState('');
+  const [cargando, setCargando]   = useState(false);
+
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    try {
+      const p = new URLSearchParams({ top: 300 });
+      if (desde) p.append('desde', desde);
+      if (hasta) p.append('hasta', hasta);
+
+      // Movimientos + planes en paralelo
+      const [planesRes, ...movsRes] = await Promise.all([
+        fetchAPI(`/api/contabilidad/planes/${cliente.CliIdCliente}`).catch(() => ({ data: [] })),
+        ...cuentas.map(c =>
+          fetchAPI(`/api/contabilidad/cuentas/${c.CueIdCuenta}/movimientos?${p}`)
+            .then(d => ({ cue: c, movs: d.data || [] }))
+            .catch(() => ({ cue: c, movs: [] }))
+        ),
+      ]);
+
+      setPlanes(planesRes.data || []);
+
+      const nuevas = {};
+      movsRes.forEach(({ cue, movs }) => { nuevas[cue.CueIdCuenta] = { cue, movs }; });
+      setSecciones(nuevas);
+
+      // Expandir todas por defecto
+      const exp = {};
+      cuentas.forEach(c => { exp[c.CueIdCuenta] = true; });
+      setExpandidos(exp);
+    } catch (e) { toast.error(e.message); }
+    finally { setCargando(false); }
+  }, [cliente.CliIdCliente, cuentas, desde, hasta]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const toggle = (id) => setExpandidos(p => ({ ...p, [id]: !p[id] }));
+
+  const TIPOS_MONETARIOS = ['DINERO_USD','DINERO_UYU'];
+  const cuentasMonetarias = cuentas.filter(c => TIPOS_MONETARIOS.includes(c.CueTipo?.toUpperCase()));
+  const cuentasRecursos   = cuentas.filter(c => !TIPOS_MONETARIOS.includes(c.CueTipo?.toUpperCase()));
+
+  // Para cada cuenta de recursos, arma tabla de movimientos con saldo restante calculado desde el plan
+  const planDeCuenta = (c) => planes.find(p =>
+    p.PlaActivo && String(p.CueIdCuenta || '') === String(c.CueIdCuenta)
+  ) || planes.find(p => String(p.CueIdCuenta || '') === String(c.CueIdCuenta));
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-6 pb-4 px-4"
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col border border-slate-200"
+        style={{ maxHeight: '92vh' }}>
+
+        {/* ── Header ──────────────────────────────────────────────────────── */}
+        <div className="px-6 py-4 bg-white rounded-t-2xl border-b border-slate-200 shrink-0">
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Estado de cuenta</p>
+              <h2 className="text-xl font-black text-slate-800 mt-0.5">{cliente.Nombre}</h2>
+              {cliente.NombreFantasia && <p className="text-xs text-slate-400">{cliente.NombreFantasia}</p>}
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400"><X size={16} /></button>
+          </div>
+          <div className="flex gap-2 mt-3 items-center">
+            <input type="date" value={desde} onChange={e => setDesde(e.target.value)}
+              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400/30" />
+            <span className="text-slate-300 text-sm">→</span>
+            <input type="date" value={hasta} onChange={e => setHasta(e.target.value)}
+              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400/30" />
+            <button onClick={cargar}
+              className="flex items-center gap-1 text-xs px-3 py-1.5 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-700">
+              <RefreshCw size={11} className={cargando ? 'animate-spin' : ''} /> Filtrar
+            </button>
+          </div>
+        </div>
+
+        {/* ── Cuerpo ──────────────────────────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+          {cargando ? (
+            <div className="flex justify-center py-16">
+              <div className="animate-spin h-7 w-7 border-2 border-slate-400 border-t-transparent rounded-full" />
+            </div>
+          ) : (
+            <>
+              {/* ── Cuentas monetarias ─────────────────────────────────── */}
+              {cuentasMonetarias.map(c => {
+                const sec  = secciones[c.CueIdCuenta];
+                const movs = sec?.movs || [];
+                const abierto = expandidos[c.CueIdCuenta];
+                const saldo   = Number(c.CueSaldoActual ?? 0);
+
+                return (
+                  <div key={c.CueIdCuenta} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    {/* Cabecera de sección */}
+                    <button onClick={() => toggle(c.CueIdCuenta)}
+                      className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                          <DollarSign size={15} className="text-slate-500" />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-bold text-slate-800">{c.UnidadLabel || c.CueTipo}</p>
+                          <p className="text-[11px] text-slate-400">{movs.length} movimientos · {c.CondicionPago || 'Contado'}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <p className="text-[10px] text-slate-400 uppercase">Saldo actual</p>
+                          <p className={`text-base font-black ${saldo < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {c.MonSimbolo} {fmtNum(saldo)}
+                          </p>
+                        </div>
+                        <div className={`w-5 h-5 rounded flex items-center justify-center text-slate-400 transition-transform ${abierto ? 'rotate-180' : ''}`}>
+                          ▾
+                        </div>
+                      </div>
+                    </button>
+
+                    {abierto && (
+                      <div className="border-t border-slate-100">
+                        {movs.length === 0 ? (
+                          <p className="text-xs text-slate-400 text-center py-5">Sin movimientos en el período</p>
+                        ) : (
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-slate-50 text-slate-400 uppercase tracking-wide text-[10px]">
+                                <th className="px-5 py-2 text-left font-semibold">Fecha</th>
+                                <th className="px-4 py-2 text-left font-semibold">Tipo</th>
+                                <th className="px-4 py-2 text-left font-semibold">Concepto</th>
+                                <th className="px-4 py-2 text-right font-semibold">Importe</th>
+                                <th className="px-4 py-2 text-right font-semibold">Saldo</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {movs.map(m => {
+                                const cred = esCreditoTipo(m.MovTipo);
+                                return (
+                                  <tr key={m.MovIdMovimiento} className="hover:bg-slate-50 transition-colors">
+                                    <td className="px-5 py-2.5 text-slate-400 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
+                                    <td className="px-4 py-2.5">
+                                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                                        {ETIQUETA_TIPO[m.MovTipo] || m.MovTipo}
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2.5 text-slate-600 max-w-[200px] truncate" title={m.MovConcepto}>
+                                      {m.MovConcepto}
+                                    </td>
+                                    <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${cred ? 'text-emerald-600' : 'text-red-500'}`}>
+                                      {cred ? '+' : '-'}{fmtNum(Math.abs(Number(m.MovImporte)))} {c.MonSimbolo}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right text-slate-700 font-medium whitespace-nowrap">
+                                      {fmtNum(Number(m.MovSaldoPosterior))} {c.MonSimbolo}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* ── Cuentas de recursos (una sección por plan) ─────────── */}
+              {cuentasRecursos.map(c => {
+                const sec     = secciones[c.CueIdCuenta];
+                const movs    = sec?.movs || [];
+                const abierto = expandidos[c.CueIdCuenta];
+                const plan    = planDeCuenta(c);
+                const saldoCuenta = Math.abs(Number(c.CueSaldoActual ?? 0)); // consumido acumulado
+                const totalPlan   = plan ? Number(plan.PlaCantidadTotal) : null;
+                const restante    = totalPlan !== null ? totalPlan - saldoCuenta : null;
+                const pct         = totalPlan ? Math.min(100, (saldoCuenta / totalPlan) * 100) : 0;
+                const uni         = c.UniSimbolo || c.UnidadLabel || '';
+
+                return (
+                  <div key={c.CueIdCuenta} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    {/* Cabecera */}
+                    <button onClick={() => toggle(c.CueIdCuenta)}
+                      className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center">
+                          <Layers size={15} className="text-violet-600" />
+                        </div>
+                        <div className="text-left">
+                          <p className="text-sm font-bold text-slate-800">{c.UnidadLabel || c.CueTipo}</p>
+                          {c.NombreArticulo && <p className="text-[11px] text-slate-400">{c.NombreArticulo}</p>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        {restante !== null ? (
+                          <div className="text-right">
+                            <p className="text-[10px] text-slate-400 uppercase">Restante del plan</p>
+                            <p className={`text-base font-black ${restante < totalPlan * 0.1 ? 'text-amber-600' : 'text-violet-700'}`}>
+                              {fmtNum(restante)} {uni}
+                            </p>
+                            <div className="w-32 h-1.5 bg-slate-100 rounded-full mt-1 ml-auto">
+                              <div className="h-1.5 bg-violet-500 rounded-full transition-all"
+                                style={{ width: `${pct}%` }} />
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{fmtNum(saldoCuenta)} / {fmtNum(totalPlan)} {uni} usados</p>
+                          </div>
+                        ) : (
+                          <div className="text-right">
+                            <p className="text-[10px] text-slate-400 uppercase">Consumido</p>
+                            <p className="text-base font-black text-slate-700">{fmtNum(saldoCuenta)} {uni}</p>
+                          </div>
+                        )}
+                        <div className={`w-5 h-5 rounded flex items-center justify-center text-slate-400 transition-transform ${abierto ? 'rotate-180' : ''}`}>
+                          ▾
+                        </div>
+                      </div>
+                    </button>
+
+                    {abierto && (
+                      <div className="border-t border-slate-100">
+                        {movs.length === 0 ? (
+                          <p className="text-xs text-slate-400 text-center py-5">Sin movimientos en el período</p>
+                        ) : (
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-slate-50 text-slate-400 uppercase tracking-wide text-[10px]">
+                                <th className="px-5 py-2 text-left font-semibold">Fecha</th>
+                                <th className="px-4 py-2 text-left font-semibold">Tipo</th>
+                                <th className="px-4 py-2 text-left font-semibold">Concepto</th>
+                                <th className="px-4 py-2 text-right font-semibold">Consumo</th>
+                                <th className="px-4 py-2 text-right font-semibold">Acum. usado</th>
+                                {totalPlan && <th className="px-4 py-2 text-right font-semibold">Quedan</th>}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-50">
+                              {/* Mostrar en orden cronológico para calcular acumulado */}
+                              {[...movs].reverse().reduce((acc, m) => {
+                                const consumo = Math.abs(Number(m.MovImporte));
+                                const acumUsado = Math.abs(Number(m.MovSaldoPosterior));
+                                const quedan = totalPlan !== null ? totalPlan - acumUsado : null;
+                                acc.push({ ...m, _consumo: consumo, _acum: acumUsado, _quedan: quedan });
+                                return acc;
+                              }, []).reverse().map(m => (
+                                <tr key={m.MovIdMovimiento} className="hover:bg-slate-50 transition-colors">
+                                  <td className="px-5 py-2.5 text-slate-400 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
+                                  <td className="px-4 py-2.5">
+                                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">
+                                      {ETIQUETA_TIPO[m.MovTipo] || m.MovTipo}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-slate-600 max-w-[180px] truncate" title={m.MovConcepto}>
+                                    {m.MovConcepto}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right font-semibold text-slate-700 whitespace-nowrap">
+                                    {fmtNum(m._consumo)} {uni}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right text-slate-500 whitespace-nowrap">
+                                    {fmtNum(m._acum)} {uni}
+                                  </td>
+                                  {totalPlan && (
+                                    <td className={`px-4 py-2.5 text-right font-bold whitespace-nowrap ${m._quedan < totalPlan * 0.1 ? 'text-amber-600' : 'text-violet-700'}`}>
+                                      {fmtNum(m._quedan)} {uni}
+                                    </td>
+                                  )}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {Object.keys(secciones).length === 0 && !cargando && (
+                <div className="text-center py-16 text-slate-400">
+                  <BarChart3 size={32} className="mx-auto mb-3 opacity-20" />
+                  <p className="text-sm">Sin movimientos registrados</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ── Footer ──────────────────────────────────────────────────────── */}
+        <div className="px-6 py-2.5 border-t border-slate-200 bg-white rounded-b-2xl shrink-0
+          flex items-center justify-between text-[11px] text-slate-400">
+          <span>{cuentas.length} cuenta{cuentas.length !== 1 ? 's' : ''} · {planes.length} plan{planes.length !== 1 ? 'es' : ''}</span>
+          <span>Más reciente primero</span>
+        </div>
+      </div>
     </div>
   );
 };
@@ -997,6 +1435,7 @@ export default function ContabilidadCuentasView() {
   const [loadingCuentas, setLoadingCuentas]   = useState(false);
   const [paneles, setPaneles]                 = useState({});
   const [modalPago, setModalPago]             = useState(null);
+  const [modalEstado, setModalEstado]         = useState(false);
 
   const cargarClientesActivos = useCallback(async (q = '') => {
     setLoadingLista(true);
@@ -1042,12 +1481,21 @@ export default function ContabilidadCuentasView() {
 
   return (
     <>
-      {/* Modal */}
+      {/* Modal pago */}
       {modalPago && (
         <ModalPago
           cuenta={modalPago}
           onClose={() => setModalPago(null)}
           onSuccess={recargarCuentas}
+        />
+      )}
+
+      {/* Modal estado de cuenta */}
+      {modalEstado && clienteSel && (
+        <ModalEstadoCuenta
+          cliente={clienteSel}
+          cuentas={cuentas}
+          onClose={() => setModalEstado(false)}
         />
       )}
 
@@ -1138,6 +1586,12 @@ export default function ContabilidadCuentasView() {
                       <p className="text-[10px] text-slate-400 uppercase tracking-wide">Vencidos</p>
                       <p className={`text-base font-black ${docsVencidos > 0 ? 'text-red-600' : 'text-slate-400'}`}>{docsVencidos}</p>
                     </div>
+                    <button
+                      onClick={() => setModalEstado(true)}
+                      disabled={cuentas.length === 0}
+                      className="flex items-center gap-1.5 text-xs px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-40">
+                      <FileText size={13} /> Estado de Cuenta
+                    </button>
                     <button onClick={recargarCuentas} disabled={loadingCuentas}
                       className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400">
                       <RefreshCw size={15} className={loadingCuentas ? 'animate-spin' : ''} />
@@ -1165,7 +1619,7 @@ export default function ContabilidadCuentasView() {
                       onRegistrarPago={setModalPago}
                     />
                     {paneles[cuenta.CueIdCuenta] === 'mov' && (
-                      <MovimientosPanel CueIdCuenta={cuenta.CueIdCuenta} onClose={() => togglePanel(cuenta.CueIdCuenta, 'mov')} />
+                      <MovimientosPanel CueIdCuenta={cuenta.CueIdCuenta} simbolo={cuenta.MonSimbolo || '$U'} onClose={() => togglePanel(cuenta.CueIdCuenta, 'mov')} />
                     )}
                     {paneles[cuenta.CueIdCuenta] === 'deuda' && (
                       <DeudasPanel CueIdCuenta={cuenta.CueIdCuenta} simbolo={cuenta.MonSimbolo} onClose={() => togglePanel(cuenta.CueIdCuenta, 'deuda')} />

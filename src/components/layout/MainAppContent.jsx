@@ -49,6 +49,7 @@ const SysAdminPage = lazy(() => import('../pages/admin/SysAdminPage'));
 const ContabilidadCuentasView    = lazy(() => import('../pages/ContabilidadCuentasView'));
 const ContabilidadAntiguedadView  = lazy(() => import('../pages/ContabilidadAntiguedadView'));
 const ContabilidadColaEstadosView = lazy(() => import('../pages/ContabilidadColaEstadosView'));
+const TiposMovimientoAdmin        = lazy(() => import('../pages/TiposMovimientoAdmin'));
 // RecursosView eliminado — planes integrados en ContabilidadCuentasView
 
 // ============================================
@@ -453,10 +454,11 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/caja/pagos-online" element={<VerificarPagosOnlineView />} />
                                 <Route path="/caja/cuadre" element={<CuadreDiarioView />} />
                                 <Route path="/admin/consola" element={<SysAdminPage />} />
-                                <Route path="/contabilidad/cuentas"      element={<ContabilidadCuentasView />} />
-                                <Route path="/contabilidad/antiguedad"    element={<ContabilidadAntiguedadView />} />
-                                <Route path="/contabilidad/cola-estados"  element={<ContabilidadColaEstadosView />} />
-                                <Route path="/contabilidad/recursos"      element={<Navigate to="/contabilidad/cuentas" replace />} />
+                                <Route path="/contabilidad/cuentas"           element={<ContabilidadCuentasView />} />
+                                <Route path="/contabilidad/antiguedad"         element={<ContabilidadAntiguedadView />} />
+                                <Route path="/contabilidad/cola-estados"       element={<ContabilidadColaEstadosView />} />
+                                <Route path="/contabilidad/tipos-movimiento"   element={<TiposMovimientoAdmin />} />
+                                <Route path="/contabilidad/recursos"           element={<Navigate to="/contabilidad/cuentas" replace />} />
 
                                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
                             </Routes>
@@ -534,10 +536,11 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/caja/verificar-pagos') return <VerificarPagosOnlineView />;
     if (menuItem.Ruta === '/admin/excepciones-deuda') return <ExcepcionesDeudaView />;
     if (menuItem.Ruta === '/admin/consola') return <SysAdminPage />;
-    if (menuItem.Ruta === '/contabilidad/cuentas')       return <ContabilidadCuentasView />;
-    if (menuItem.Ruta === '/contabilidad/antiguedad')     return <ContabilidadAntiguedadView />;
-    if (menuItem.Ruta === '/contabilidad/cola-estados')   return <ContabilidadColaEstadosView />;
-    if (menuItem.Ruta === '/contabilidad/recursos')       return <ContabilidadCuentasView />;
+    if (menuItem.Ruta === '/contabilidad/cuentas')              return <ContabilidadCuentasView />;
+    if (menuItem.Ruta === '/contabilidad/antiguedad')            return <ContabilidadAntiguedadView />;
+    if (menuItem.Ruta === '/contabilidad/cola-estados')          return <ContabilidadColaEstadosView />;
+    if (menuItem.Ruta === '/contabilidad/tipos-movimiento')      return <TiposMovimientoAdmin />;
+    if (menuItem.Ruta === '/contabilidad/recursos')              return <ContabilidadCuentasView />;
 
     // NEW: Historial de Lotes
     if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;

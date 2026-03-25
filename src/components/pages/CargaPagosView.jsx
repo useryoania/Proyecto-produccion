@@ -692,14 +692,16 @@ export const CargaGestionPagosView = () => {
                                         return (
                                             <div
                                                 key={i}
-                                                className={`px-3 py-2 rounded-xl border-2 flex items-center justify-between gap-2 transition-all
-                                                ${isPaid ? 'border-emerald-200 bg-emerald-50/50 hover:bg-emerald-100/60' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+                                                className={`px-3 py-2 rounded-xl border-2 flex flex-col gap-1 transition-all
+                                                ${isPaid ? 'border-emerald-200 bg-emerald-50/50' : po.orderCobertura ? 'border-violet-200 bg-violet-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
                                             >
-                                                {/* Icono + nombre + estado de pago inline */}
-                                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                {/* Fila principal: icono + nombre + cant + badge */}
+                                                <div className="flex items-center gap-2">
                                                     {isPaid
                                                         ? <CheckCircle size={15} className="text-emerald-500 shrink-0" />
-                                                        : <AlertTriangle size={15} className="text-amber-500 shrink-0" />}
+                                                        : po.orderCobertura
+                                                            ? <ShieldCheck size={15} className="text-violet-500 shrink-0" />
+                                                            : <AlertTriangle size={15} className="text-amber-500 shrink-0" />}
                                                     <span className="font-bold text-sm text-slate-800 truncate">
                                                         {po.orderNumber || `Item ${i + 1}`}
                                                     </span>
@@ -708,17 +710,28 @@ export const CargaGestionPagosView = () => {
                                                             Cant: <strong className="text-slate-600">{po.orderCantidad % 1 === 0 ? po.orderCantidad : po.orderCantidad.toFixed(2)}</strong>
                                                         </span>
                                                     )}
+                                                    <span className={`ml-auto text-[10px] font-black px-2 py-0.5 rounded-full shrink-0
+                                                        ${isPaid ? 'bg-emerald-100 text-emerald-700' : po.orderCobertura ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700'}`}>
+                                                        {isPaid ? '✓ Pagada' : po.orderCobertura ? '⚡ Cubierta' : '✗ Sin pago'}
+                                                    </span>
+                                                    {/* Monto */}
+                                                    <div className="text-right shrink-0 ml-2">
+                                                        <p className="font-black text-sm text-slate-800">{curSym} {rawValor.toFixed(2)}</p>
+                                                        {valorConvertidoDest && <p className="text-xs text-slate-400">{valorConvertidoDest}</p>}
+                                                    </div>
                                                 </div>
-                                                {/* Badge pago inline */}
-                                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full shrink-0
-                                                    ${isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                                                    {isPaid ? '✓ Pagada' : '✗ Sin pago'}
-                                                </span>
-                                                {/* Monto */}
-                                                <div className="text-right shrink-0">
-                                                    <p className="font-black text-sm text-slate-800">{curSym} {rawValor.toFixed(2)}</p>
-                                                    {valorConvertidoDest && <p className="text-xs text-slate-400">{valorConvertidoDest}</p>}
-                                                </div>
+                                                {/* Nombre del trabajo */}
+                                                {po.orderNombreTrabajo && (
+                                                    <p className="text-[10px] text-slate-500 pl-5 leading-tight italic truncate">
+                                                        {po.orderNombreTrabajo}
+                                                    </p>
+                                                )}
+                                                {/* Nota de cobertura (Plan / Ciclo / Saldo) */}
+                                                {po.orderCobertura && !isPaid && (
+                                                    <p className="text-[10px] text-violet-600 font-semibold pl-5 leading-tight">
+                                                        {po.orderCobertura}
+                                                    </p>
+                                                )}
                                             </div>
                                         );
                                     })
