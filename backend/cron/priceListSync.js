@@ -50,10 +50,17 @@ async function ensureTable(pool) {
                 Descripcion NVARCHAR(500),
                 Moneda NVARCHAR(50),
                 Precio DECIMAL(18,2),
+                ProIdProducto INT NULL,
                 Activo BIT DEFAULT 1,
                 UltimaSync DATETIME DEFAULT GETDATE()
             );
             CREATE INDEX IX_PLP_Familia ON PreciosListaPublica(Familia);
+        END
+
+        -- Asegurar que la columna exista si la tabla ya fue creada antes
+        IF COL_LENGTH('PreciosListaPublica', 'ProIdProducto') IS NULL
+        BEGIN
+            ALTER TABLE PreciosListaPublica ADD ProIdProducto INT NULL;
         END
     `);
 }
@@ -79,7 +86,7 @@ async function syncPriceList() {
 
         const res = await sheets.spreadsheets.values.get({
             spreadsheetId: PRICE_SPREADSHEET_ID,
-            range: `'${PRICE_SHEET_NAME}'!A:E`,
+            range: `'${PRICE_SHEET_NAME}'!A:F`,
         });
 
         const rows = res.data.values || [];
@@ -107,28 +114,38 @@ async function syncPriceList() {
             const moneda = (row[3] || '').trim().toUpperCase();
             const precioStr = (row[4] || '0').replace(/[^0-9.,\-]/g, '').replace(',', '.');
             const precio = parseFloat(precioStr) || 0;
+            const proIdRaw = (row[5] || '').trim();
+            const proIdProducto = proIdRaw ? parseInt(proIdRaw, 10) : null;
 
             if (!producto) continue;
 
             // MERGE: buscar por Familia + Producto + Moneda
-            const result = await pool.request()
+            const req = pool.request()
                 .input('Familia', sql.NVarChar(100), familia)
                 .input('Producto', sql.NVarChar(255), producto)
                 .input('Descripcion', sql.NVarChar(500), descripcion)
                 .input('Moneda', sql.NVarChar(50), moneda || 'N/A')
-                .input('Precio', sql.Decimal(18, 2), precio)
-                .query(`
+                .input('Precio', sql.Decimal(18, 2), precio);
+
+            // ProIdProducto puede ser null si el producto no tiene artículo asociado
+            if (proIdProducto != null && !isNaN(proIdProducto)) {
+                req.input('ProIdProducto', sql.Int, proIdProducto);
+            } else {
+                req.input('ProIdProducto', sql.Int, null);
+            }
+
+            const result = await req.query(`
                     IF EXISTS (SELECT 1 FROM PreciosListaPublica WHERE Familia = @Familia AND Producto = @Producto AND Moneda = @Moneda)
                     BEGIN
                         UPDATE PreciosListaPublica 
-                        SET Descripcion = @Descripcion, Precio = @Precio, Activo = 1, UltimaSync = GETDATE()
+                        SET Descripcion = @Descripcion, Precio = @Precio, ProIdProducto = @ProIdProducto, Activo = 1, UltimaSync = GETDATE()
                         WHERE Familia = @Familia AND Producto = @Producto AND Moneda = @Moneda;
                         SELECT 'UPDATED' AS action;
                     END
                     ELSE
                     BEGIN
-                        INSERT INTO PreciosListaPublica (Familia, Producto, Descripcion, Moneda, Precio, Activo, UltimaSync)
-                        VALUES (@Familia, @Producto, @Descripcion, @Moneda, @Precio, 1, GETDATE());
+                        INSERT INTO PreciosListaPublica (Familia, Producto, Descripcion, Moneda, Precio, ProIdProducto, Activo, UltimaSync)
+                        VALUES (@Familia, @Producto, @Descripcion, @Moneda, @Precio, @ProIdProducto, 1, GETDATE());
                         SELECT 'INSERTED' AS action;
                     END
                 `);

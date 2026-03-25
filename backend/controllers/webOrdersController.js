@@ -32,6 +32,36 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
 
         let y = 780;
 
+        // Helper: buscar imagen en múltiples rutas posibles
+        const findImage = (filename) => {
+            const paths = [
+                path.join(__dirname, '..', '..', 'public', 'assets', 'images', filename),
+                path.join(__dirname, '..', '..', 'src', 'assets', 'images', filename),
+                path.join(process.cwd(), 'public', 'assets', 'images', filename),
+                path.join(process.cwd(), 'src', 'assets', 'images', filename),
+            ];
+            return paths.find(p => fs.existsSync(p)) || null;
+        };
+
+        // Logo (arriba a la izquierda)
+        try {
+            const logoPath = findImage('logo.png');
+            if (logoPath) {
+                const logoBytes = fs.readFileSync(logoPath);
+                const logoImage = await doc.embedPng(logoBytes);
+                const logoHeight = 40;
+                const logoWidth = logoHeight * (logoImage.width / logoImage.height);
+                page.drawImage(logoImage, {
+                    x: 50,
+                    y: y - 12,
+                    width: logoWidth,
+                    height: logoHeight,
+                });
+            }
+        } catch (logoErr) {
+            logger.warn('[HANDY RECEIPT] No se pudo agregar logo:', logoErr.message);
+        }
+
         // Título
         drawCentered('COMPROBANTE DE PAGO', y, 18, fontBold);
         y -= 30;
@@ -50,7 +80,7 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
 
         // Código de retiro y cliente: siempre con prefijo PW-
         const rawId = String(ordenRetiro || '').replace(/^R-/i, '').replace(/^PW-/i, '').replace(/^RW-/i, '');
-        const retiroCode = rawId ? `PW-${rawId}` : '-';
+        const retiroCode = rawId ? `RW-${rawId}` : '-';
         drawLeft('CÓDIGO DE RETIRO', 50, y, 9, fontBold);
         y -= 16;
         drawLeft(retiroCode, 50, y, 14, fontBold);
@@ -98,8 +128,8 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
         // Sello PAGADO (a la izquierda del total)
         let stampDrawn = false;
         try {
-            const stampPath = path.join(__dirname, '..', '..', 'public', 'assets', 'images', 'pagado-stamp.png');
-            if (fs.existsSync(stampPath)) {
+            const stampPath = findImage('pagado-stamp.png');
+            if (stampPath) {
                 const stampBytes = fs.readFileSync(stampPath);
                 const stampImage = await doc.embedPng(stampBytes);
                 const stampWidth = 120;
@@ -112,6 +142,8 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
                     opacity: 0.7
                 });
                 stampDrawn = true;
+            } else {
+                logger.warn('[HANDY RECEIPT] No se encontró pagado-stamp.png en ninguna ruta conocida.');
             }
         } catch (stampErr) {
             logger.warn('[HANDY RECEIPT] No se pudo agregar sello PAGADO:', stampErr.message);
@@ -128,7 +160,7 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
         const dir = path.join(baseDir, 'handy');
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-        const fileName = `comprobante-${retiroCode}.pdf`;
+        const fileName = `Comprobante-${retiroCode}.pdf`;
         const filePath = path.join(dir, fileName);
         const pdfBytes = await doc.save();
         fs.writeFileSync(filePath, pdfBytes);
