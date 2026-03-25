@@ -9,8 +9,19 @@ import ReceptionView from './ReceptionView';
 import StockView from './StockView';
 import LostView from './LostView';
 import DepositoDashboard from './DepositoDashboard';
-// Dynamic Import for DepositStockPage to optimize chunk loading
-const DepositStockPage = React.lazy(() => import('./DepositStockPage'));
+// Dynamic Import with auto-reload on stale chunks
+const DepositStockPage = React.lazy(() =>
+    import('./DepositStockPage').catch((err) => {
+        const key = 'chunk_reload_' + window.location.pathname;
+        if (!sessionStorage.getItem(key)) {
+            sessionStorage.setItem(key, '1');
+            window.location.reload();
+            return new Promise(() => {});
+        }
+        sessionStorage.removeItem(key);
+        throw err;
+    })
+);
 
 const LogisticsDashboard = () => {
     const { user } = useAuth();

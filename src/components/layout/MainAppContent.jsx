@@ -4,48 +4,64 @@ import { Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from './Navbar';
-const MachineDetailView = lazy(() => import('../pages/MachineDetailView'));
+
+// ── Auto-reload en caso de chunks desactualizados (cache stale post-deploy) ──
+const lazyWithRetry = (importFn) => lazy(() =>
+    importFn().catch((err) => {
+        const key = 'chunk_reload_' + window.location.pathname;
+        if (!sessionStorage.getItem(key)) {
+            sessionStorage.setItem(key, '1');
+            console.warn('[LazyRetry] Chunk load failed, reloading page...', err);
+            window.location.reload();
+            return new Promise(() => {}); // never resolves — page is reloading
+        }
+        sessionStorage.removeItem(key);
+        throw err; // already retried once, let it fail normally
+    })
+);
+
+const MachineDetailView = lazyWithRetry(() => import('../pages/MachineDetailView'));
 import Dashboard from '../pages/Dashboard';
 import AreaView from '../production/areas/AreaView';
-const ConfigPage = lazy(() => import('../pages/ConfigPage'));
-const LogisticsDashboard = lazy(() => import('../logistics/LogisticsDashboard'));
-const OrdersQueryView = lazy(() => import('../pages/OrdersQueryView'));
-const RollHistory = lazy(() => import('../pages/RollHistory'));
-const MenuAdmin = lazy(() => import('../pages/MenuAdmin'));
-const RolesPage = lazy(() => import('../pages/RolesPage'));
-const UsersPage = lazy(() => import('../pages/UsersPage'));
-const AuditPage = lazy(() => import('../pages/AuditPage'));
-const InventoryPage = lazy(() => import('../pages/InventoryPage'));
-const InsumosCatalogPage = lazy(() => import('../pages/InsumosCatalogPage'));
-const StockRequestsPage = lazy(() => import('../pages/StockRequestsPage'));
-const ReceptionPage = lazy(() => import('../pages/customer-service/ReceptionPage'));
-const LogisticsPage = lazy(() => import('../pages/customer-service/LogisticsPage'));
-const ActiveStockPage = lazy(() => import('../pages/customer-service/ActiveStockPage'));
-const TransportControlPage = lazy(() => import('../pages/TransportControlPage'));
-const EcoUvFinishing = lazy(() => import('../pages/EcoUvFinishing'));
-const WebRetirosPage = lazy(() => import('../logistics/WebRetirosPage'));
-const ClientsIntegration = lazy(() => import('../pages/ClientsIntegration'));
+const ConfigPage = lazyWithRetry(() => import('../pages/ConfigPage'));
+const LogisticsDashboard = lazyWithRetry(() => import('../logistics/LogisticsDashboard'));
+const OrdersQueryView = lazyWithRetry(() => import('../pages/OrdersQueryView'));
+const RollHistory = lazyWithRetry(() => import('../pages/RollHistory'));
+const MenuAdmin = lazyWithRetry(() => import('../pages/MenuAdmin'));
+const RolesPage = lazyWithRetry(() => import('../pages/RolesPage'));
+const UsersPage = lazyWithRetry(() => import('../pages/UsersPage'));
+const AuditPage = lazyWithRetry(() => import('../pages/AuditPage'));
+const InventoryPage = lazyWithRetry(() => import('../pages/InventoryPage'));
+const InsumosCatalogPage = lazyWithRetry(() => import('../pages/InsumosCatalogPage'));
+const StockRequestsPage = lazyWithRetry(() => import('../pages/StockRequestsPage'));
+const ReceptionPage = lazyWithRetry(() => import('../pages/customer-service/ReceptionPage'));
+const LogisticsPage = lazyWithRetry(() => import('../pages/customer-service/LogisticsPage'));
+const ActiveStockPage = lazyWithRetry(() => import('../pages/customer-service/ActiveStockPage'));
+const TransportControlPage = lazyWithRetry(() => import('../pages/TransportControlPage'));
+const EcoUvFinishing = lazyWithRetry(() => import('../pages/EcoUvFinishing'));
+const WebRetirosPage = lazyWithRetry(() => import('../logistics/WebRetirosPage'));
+const ClientsIntegration = lazyWithRetry(() => import('../pages/ClientsIntegration'));
 import ChatWidget from '../common/ChatWidget';
-const ProductsIntegration = lazy(() => import('../pages/ProductsIntegration'));
-const SpecialPrices = lazy(() => import('../pages/SpecialPrices'));
-const BasePrices = lazy(() => import('../pages/BasePrices'));
-const PriceProfiles = lazy(() => import('../pages/PriceProfiles'));
-const LabelGenerationPage = lazy(() => import('../pages/LabelGenerationPage'));
-const DepositStockPage = lazy(() => import('../logistics/DepositStockPage'));
-const CustomerReplacementPage = lazy(() => import('../pages/customer-service/CustomerReplacementPage'));
-const CustomerPriceCatalogPage = lazy(() => import('../pages/CustomerPriceCatalogPage'));
-const IntegralOrderView = lazy(() => import('../pages/IntegralOrderView'));
-const CargaPagosView = lazy(() => import('../pages/CargaPagosView'));
-const VerificarPagosOnlineView = lazy(() => import('../pages/VerificarPagosOnlineView'));
-const ExcepcionesDeudaView = lazy(() => import('../pages/ExcepcionesDeudaView'));
-const CargaDepositoPage = lazy(() => import('../logistics/CargaDepositoPage'));
-const VerificarCodigoPage = lazy(() => import('../logistics/VerificarCodigoPage'));
-const CuadreDiarioView = lazy(() => import('../pages/CuadreDiarioView'));
-const DuplicateClientsPage = lazy(() => import('../pages/admin/DuplicateClientsPage'));
-const OrderSearchPage = lazy(() => import('../logistics/OrderSearchPage'));
-const EntregaPedidosView = lazy(() => import('../pages/customer-service/EntregaPedidosView'));
-const DepositoDashboard = lazy(() => import('../logistics/DepositoDashboard'));
-const SysAdminPage = lazy(() => import('../pages/admin/SysAdminPage'));
+const ProductsIntegration = lazyWithRetry(() => import('../pages/ProductsIntegration'));
+const SpecialPrices = lazyWithRetry(() => import('../pages/SpecialPrices'));
+const BasePrices = lazyWithRetry(() => import('../pages/BasePrices'));
+const PriceProfiles = lazyWithRetry(() => import('../pages/PriceProfiles'));
+const LabelGenerationPage = lazyWithRetry(() => import('../pages/LabelGenerationPage'));
+const DepositStockPage = lazyWithRetry(() => import('../logistics/DepositStockPage'));
+const CustomerReplacementPage = lazyWithRetry(() => import('../pages/customer-service/CustomerReplacementPage'));
+const CustomerPriceCatalogPage = lazyWithRetry(() => import('../pages/CustomerPriceCatalogPage'));
+const IntegralOrderView = lazyWithRetry(() => import('../pages/IntegralOrderView'));
+const CargaPagosView = lazyWithRetry(() => import('../pages/CargaPagosView'));
+const VerificarPagosOnlineView = lazyWithRetry(() => import('../pages/VerificarPagosOnlineView'));
+const ExcepcionesDeudaView = lazyWithRetry(() => import('../pages/ExcepcionesDeudaView'));
+const CargaDepositoPage = lazyWithRetry(() => import('../logistics/CargaDepositoPage'));
+const VerificarCodigoPage = lazyWithRetry(() => import('../logistics/VerificarCodigoPage'));
+const CuadreDiarioView = lazyWithRetry(() => import('../pages/CuadreDiarioView'));
+const DuplicateClientsPage = lazyWithRetry(() => import('../pages/admin/DuplicateClientsPage'));
+const OrderSearchPage = lazyWithRetry(() => import('../logistics/OrderSearchPage'));
+const EntregaPedidosView = lazyWithRetry(() => import('../pages/customer-service/EntregaPedidosView'));
+const DepositoDashboard = lazyWithRetry(() => import('../logistics/DepositoDashboard'));
+const SysAdminPage = lazyWithRetry(() => import('../pages/admin/SysAdminPage'));
 
 // ============================================
 // 1. LUCIDE ICON MAP (override FA icons)
