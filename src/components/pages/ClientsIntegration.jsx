@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import './ClientsIntegration.css';
 import { toast } from 'sonner';
+import Swal from 'sweetalert2';
 import api from '../../services/apiClient';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -26,69 +27,6 @@ function Avatar({ name, size = 34 }) {
     );
 }
 
-// ─── Modal ABM ────────────────────────────────────────────────────────────────
-function ClientModal({ client, catalogs, onClose, onSaved, onDeleted }) {
-    const isNew = !client?.CodCliente;
-    const [form, setForm] = useState({});
-    const [saving, setSaving] = useState(false);
-    const [deleting, setDeleting] = useState(false);
-
-    useEffect(() => {
-        setForm(client ? { ...client } : { Nombre:'', NombreFantasia:'', IDCliente:'', CioRuc:'', TelefonoTrabajo:'', Email:'', DireccionTrabajo:'', TClIdTipoCliente:'', VendedorID:'', DepartamentoID:'', LocalidadID:'', AgenciaID:'', FormaEnvioID:'', ESTADO:'ACTIVO', WebActive:true });
-    }, [client]);
-
-    const set = f => e => setForm(p => ({...p, [f]: e.target.type==='checkbox' ? e.target.checked : e.target.value}));
-    const locs = useMemo(() => form.DepartamentoID ? (catalogs.localidades||[]).filter(l=>String(l.DepartamentoID)===String(form.DepartamentoID)) : (catalogs.localidades||[]), [form.DepartamentoID, catalogs.localidades]);
-
-    const handleSave = async () => {
-        if (!form.Nombre?.trim()) return toast.error('El nombre es obligatorio');
-        setSaving(true);
-        try {
-            if (isNew) {
-                // Al crear: envía TODOS los campos del formulario al backend
-                const r = await api.post('/clients', {
-                    nombre:         form.Nombre,
-                    nombreFantasia: form.NombreFantasia,
-                    telefono:       form.TelefonoTrabajo,
-                    email:          form.Email,
-                    direccion:      form.DireccionTrabajo,
-                    ruc:            form.CioRuc,
-                    idCliente:      form.IDCliente,
-                    idReact:        form.IDReact,
-                    codReferencia:  form.CodReferencia,
-                    tipoCliente:    form.TClIdTipoCliente,
-                    vendedorId:     form.VendedorID,
-                    estado:         form.ESTADO || 'ACTIVO',
-                    departamentoId: form.DepartamentoID,
-                    localidadId:    form.LocalidadID,
-                    agenciaId:      form.AgenciaID,
-                    formaEnvioId:   form.FormaEnvioID,
-                    webActive:      form.WebActive ? 1 : 0,
-                });
-                onSaved(r.data);
-            } else {
-                const r = await api.put(`/clients/${client.CodCliente}`, form);
-                onSaved(r.data || { ...client, ...form });
-            }
-            toast.success(isNew ? 'Cliente creado ✓' : 'Cliente actualizado ✓');
-            onClose();
-        } catch(e) { toast.error(e.response?.data?.error || 'Error guardando'); }
-        finally { setSaving(false); }
-    };
-
-    const handleDelete = async () => {
-        if (!window.confirm(`¿Eliminar "${client.Nombre}"? Esta acción no se puede deshacer.`)) return;
-        setDeleting(true);
-        try {
-            await api.delete(`/clients/${client.CodCliente}`);
-            toast.success('Cliente eliminado');
-            onDeleted(client.CodCliente);
-            onClose();
-        } catch(e) { toast.error(e.response?.data?.error || 'No se pudo eliminar'); }
-        finally { setDeleting(false); }
-    };
-
-
 // ─── Helpers de campo reutilizables (FUERA del modal para evitar remounts) ────
 // IMPORTANTE: si se definen dentro del componente, React los trata como nuevos
 // tipos en cada render y desmonta/remonta el input → pérdida de foco al tipear.
@@ -112,8 +50,198 @@ function ModalSelect({ label, field, options=[], idKey='ID', nameKey='Nombre', c
     );
 }
 
+// ─── Modal ABM ────────────────────────────────────────────────────────────────
+function ClientModal({ client, catalogs, onClose, onSaved, onDeleted }) {
+    const isNew = !client?.CodCliente;
+    const [form, setForm] = useState({});
+    const [saving, setSaving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+
+    // Helper: buscar IDs de defaults en catálogos
+    const getDefaults = useCallback(() => {
+        const dacId = (catalogs.agencias||[]).find(a => a.Nombre?.toUpperCase().includes('DAC'))?.ID || '';
+        const mvdDep = (catalogs.departamentos||[]).find(d => d.Nombre?.toUpperCase().includes('MONTEVIDEO'));
+        const mvdDepId = mvdDep?.ID || '';
+        const mvdLocId = mvdDepId ? ((catalogs.localidades||[]).find(l => String(l.DepartamentoID) === String(mvdDepId) && l.Nombre?.toUpperCase().includes('MONTEVIDEO'))?.ID || '') : '';
+        const comunId = (catalogs.tiposClientes||[]).find(t => t.Nombre?.toUpperCase().includes('COMUN') || t.Nombre?.toUpperCase().includes('COMÚN'))?.ID || '';
+        return { dacId, mvdDepId, mvdLocId, comunId };
+    }, [catalogs]);
+
+    useEffect(() => {
+        if (client) {
+            const { dacId, mvdDepId, mvdLocId, comunId } = getDefaults();
+            // Trim todos los strings (las columnas CHAR de SQL Server agregan espacios)
+            const trimmed = {};
+            for (const [k, v] of Object.entries(client)) {
+                trimmed[k] = typeof v === 'string' ? v.trim() : v;
+            }
+            // Defaults para campos vacíos (solo al editar existentes)
+            if (!trimmed.AgenciaID) trimmed.AgenciaID = dacId;
+            if (!trimmed.ESTADO) trimmed.ESTADO = 'ACTIVO';
+            if (!trimmed.DepartamentoID) trimmed.DepartamentoID = mvdDepId;
+            if (!trimmed.LocalidadID) trimmed.LocalidadID = mvdLocId;
+            if (!trimmed.TClIdTipoCliente) trimmed.TClIdTipoCliente = comunId;
+            setForm(trimmed);
+        } else {
+            // Nuevo cliente: solo tipo y estado con default, el resto vacío
+            const { comunId } = getDefaults();
+            setForm({ Nombre:'', NombreFantasia:'', IDCliente:'', CioRuc:'', TelefonoTrabajo:'', Email:'', DireccionTrabajo:'', TClIdTipoCliente:comunId, VendedorID:'', DepartamentoID:'', LocalidadID:'', AgenciaID:'', FormaEnvioID:'', ESTADO:'ACTIVO', WebActive:true });
+        }
+    }, [client, getDefaults]);
+
+    const set = f => e => setForm(p => ({...p, [f]: e.target.type==='checkbox' ? e.target.checked : e.target.value}));
+    const locs = useMemo(() => form.DepartamentoID ? (catalogs.localidades||[]).filter(l=>String(l.DepartamentoID)===String(form.DepartamentoID)) : (catalogs.localidades||[]), [form.DepartamentoID, catalogs.localidades]);
+
+    // Auto-seleccionar localidad si el departamento tiene solo una (solo al editar)
+    useEffect(() => {
+        if (isNew) return;
+        if (locs.length === 1) {
+            setForm(p => ({ ...p, LocalidadID: locs[0].ID }));
+        }
+    }, [locs, isNew]);
+
+    // Auto-seleccionar forma de envío según departamento (solo al editar, si no tiene una)
+    useEffect(() => {
+        if (isNew || !form.DepartamentoID || form.FormaEnvioID) return;
+        const dep = (catalogs.departamentos||[]).find(d => String(d.ID) === String(form.DepartamentoID));
+        const esMontevideo = dep?.Nombre?.toUpperCase().includes('MONTEVIDEO');
+        const formas = catalogs.formasEnvio || [];
+        const targetForma = esMontevideo
+            ? formas.find(f => f.Nombre?.toUpperCase().includes('RETIRO'))
+            : formas.find(f => f.Nombre?.toUpperCase().includes('ENCOMIENDA'));
+        if (targetForma) {
+            setForm(p => ({ ...p, FormaEnvioID: targetForma.ID }));
+        }
+    }, [form.DepartamentoID, form.FormaEnvioID, catalogs.departamentos, catalogs.formasEnvio, isNew]);
+
+    // Auto-asignar vendedor por zona del departamento (solo al editar, si no tiene uno)
+    useEffect(() => {
+        if (isNew || !form.DepartamentoID || form.VendedorID) return;
+        api.get(`/nomenclators/vendedores-by-department/${form.DepartamentoID}`)
+            .then(r => {
+                const vendedores = r.data?.data || [];
+                if (vendedores.length > 0) {
+                    const random = vendedores[Math.floor(Math.random() * vendedores.length)];
+                    setForm(p => p.VendedorID ? p : { ...p, VendedorID: random.Cedula });
+                }
+            })
+            .catch(() => {});
+    }, [form.DepartamentoID, form.VendedorID, isNew]);
+
+    // Trim helper: limpia espacios de todos los campos string del form
+    const trimForm = (f) => {
+        const trimmed = {};
+        for (const [k, v] of Object.entries(f)) {
+            trimmed[k] = typeof v === 'string' ? v.trim() : v;
+        }
+        return trimmed;
+    };
+
+    // Aplicar defaults a campos vacíos antes de guardar (para nuevos clientes)
+    const applyDefaults = async (cleanForm) => {
+        const { dacId, mvdDepId, mvdLocId, comunId } = getDefaults();
+        if (!cleanForm.ESTADO) cleanForm.ESTADO = 'ACTIVO';
+        if (!cleanForm.AgenciaID) cleanForm.AgenciaID = dacId;
+        if (!cleanForm.TClIdTipoCliente) cleanForm.TClIdTipoCliente = comunId;
+        if (!cleanForm.DepartamentoID) cleanForm.DepartamentoID = mvdDepId;
+        if (!cleanForm.LocalidadID) {
+            if (cleanForm.DepartamentoID) {
+                const deptLocs = (catalogs.localidades||[]).filter(l => String(l.DepartamentoID) === String(cleanForm.DepartamentoID));
+                cleanForm.LocalidadID = deptLocs.length === 1 ? deptLocs[0].ID : mvdLocId;
+            } else {
+                cleanForm.LocalidadID = mvdLocId;
+            }
+        }
+        if (!cleanForm.FormaEnvioID) {
+            const dep = (catalogs.departamentos||[]).find(d => String(d.ID) === String(cleanForm.DepartamentoID));
+            const esMvd = dep?.Nombre?.toUpperCase().includes('MONTEVIDEO');
+            const formas = catalogs.formasEnvio || [];
+            const target = esMvd
+                ? formas.find(f => f.Nombre?.toUpperCase().includes('RETIRO'))
+                : formas.find(f => f.Nombre?.toUpperCase().includes('ENCOMIENDA'));
+            if (target) cleanForm.FormaEnvioID = target.ID;
+        }
+        if (!cleanForm.VendedorID && cleanForm.DepartamentoID) {
+            try {
+                const r = await api.get(`/nomenclators/vendedores-by-department/${cleanForm.DepartamentoID}`);
+                const vendedores = r.data?.data || [];
+                if (vendedores.length > 0) {
+                    cleanForm.VendedorID = vendedores[Math.floor(Math.random() * vendedores.length)].Cedula;
+                }
+            } catch {}
+        }
+        return cleanForm;
+    };
+
+    const handleSave = async () => {
+        if (!form.Nombre?.trim()) return toast.error('El nombre es obligatorio');
+        setSaving(true);
+        let cleanForm = trimForm(form);
+        try {
+            // Si es nuevo, aplicar defaults a campos vacíos antes de guardar
+            if (isNew) cleanForm = await applyDefaults(cleanForm);
+
+            if (isNew) {
+                const r = await api.post('/clients', {
+                    nombre:         cleanForm.Nombre,
+                    nombreFantasia: cleanForm.NombreFantasia,
+                    telefono:       cleanForm.TelefonoTrabajo,
+                    email:          cleanForm.Email,
+                    direccion:      cleanForm.DireccionTrabajo,
+                    ruc:            cleanForm.CioRuc,
+                    idCliente:      cleanForm.IDCliente,
+                    idReact:        cleanForm.IDReact,
+                    codReferencia:  cleanForm.CodReferencia,
+                    tipoCliente:    cleanForm.TClIdTipoCliente,
+                    vendedorId:     cleanForm.VendedorID,
+                    estado:         cleanForm.ESTADO || 'ACTIVO',
+                    departamentoId: cleanForm.DepartamentoID,
+                    localidadId:    cleanForm.LocalidadID,
+                    agenciaId:      cleanForm.AgenciaID,
+                    formaEnvioId:   cleanForm.FormaEnvioID,
+                    webActive:      cleanForm.WebActive ? 1 : 0,
+                });
+                // POST devuelve el cliente completo con OUTPUT INSERTED.*
+                onSaved(r.data);
+            } else {
+                await api.put(`/clients/${client.CodCliente}`, cleanForm);
+                // PUT solo devuelve { success: true }, así que usamos los datos locales
+                onSaved({ ...client, ...cleanForm });
+            }
+            toast.success(isNew ? 'Cliente creado ✓' : 'Cliente actualizado ✓');
+            onClose();
+        } catch(e) { toast.error(e.response?.data?.error || 'Error guardando'); }
+        finally { setSaving(false); }
+    };
+
+    const handleDelete = async () => {
+        const { value } = await Swal.fire({
+            title: '¿Eliminar cliente?',
+            html: `<p style="margin-bottom:8px">Estás por eliminar <b>"${client.Nombre}"</b>.</p><p style="font-size:13px;color:#888">Esta acción no se puede deshacer. Escribí <b>eliminar</b> para confirmar.</p>`,
+            input: 'text',
+            inputPlaceholder: 'Escribí "eliminar"',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Eliminar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#dc2626',
+            inputValidator: (val) => {
+                if (val?.trim().toLowerCase() !== 'eliminar') return 'Debés escribir "eliminar" para confirmar';
+            }
+        });
+        if (!value) return;
+        setDeleting(true);
+        try {
+            await api.delete(`/clients/${client.CodCliente}`);
+            toast.success('Cliente eliminado');
+            onDeleted(client.CodCliente);
+            onClose();
+        } catch(e) { toast.error(e.response?.data?.error || 'No se pudo eliminar'); }
+        finally { setDeleting(false); }
+    };
+
     return (
-        <div className="ci-overlay" onClick={onClose}>
+        <div className="ci-overlay">
             <div className="ci-modal" onClick={e=>e.stopPropagation()}>
                 <div className="ci-modal-header">
                     <div>
@@ -143,6 +271,15 @@ function ModalSelect({ label, field, options=[], idKey='ID', nameKey='Nombre', c
                         </div>
                     </div>
                     <div>
+                        <div className="ci-modal-section-title">Ubicación y Envío</div>
+                        <div className="ci-field-grid">
+                            <ModalSelect label="Departamento" field="DepartamentoID" options={catalogs.departamentos||[]} form={form} onChange={set}/>
+                            <ModalSelect label="Localidad" field="LocalidadID" options={locs} form={form} onChange={set}/>
+                            <ModalSelect label="Agencia Envío" field="AgenciaID" options={catalogs.agencias||[]} form={form} onChange={set}/>
+                            <ModalSelect label="Forma de Envío" field="FormaEnvioID" options={catalogs.formasEnvio||[]} form={form} onChange={set}/>
+                        </div>
+                    </div>
+                    <div>
                         <div className="ci-modal-section-title">Clasificación</div>
                         <div className="ci-field-grid">
                             <ModalSelect label="Tipo de Cliente" field="TClIdTipoCliente" options={catalogs.tiposClientes||[]} form={form} onChange={set}/>
@@ -160,15 +297,6 @@ function ModalSelect({ label, field, options=[], idKey='ID', nameKey='Nombre', c
                                 <input type="checkbox" id="wa-chk" checked={!!form.WebActive} onChange={set('WebActive')} style={{width:16,height:16,accentColor:'#4f46e5'}}/>
                                 <label htmlFor="wa-chk" style={{textTransform:'none',fontSize:13,fontWeight:600,color:'#374151',marginBottom:0}}>Web Activo</label>
                             </div>
-                        </div>
-                    </div>
-                    <div>
-                        <div className="ci-modal-section-title">Ubicación y Envío</div>
-                        <div className="ci-field-grid">
-                            <ModalSelect label="Departamento" field="DepartamentoID" options={catalogs.departamentos||[]} form={form} onChange={set}/>
-                            <ModalSelect label="Localidad" field="LocalidadID" options={locs} form={form} onChange={set}/>
-                            <ModalSelect label="Agencia Envío" field="AgenciaID" options={catalogs.agencias||[]} form={form} onChange={set}/>
-                            <ModalSelect label="Forma de Envío" field="FormaEnvioID" options={catalogs.formasEnvio||[]} form={form} onChange={set}/>
                         </div>
                     </div>
                 </div>
