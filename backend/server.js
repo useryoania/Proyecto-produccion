@@ -91,6 +91,11 @@ app.use('/api/reception', require('./routes/receptionRoutes'));
 app.use('/api/inventory', require('./routes/inventoryRoutes'));
 app.use('/api/configuraciones', require('./routes/configuracionesRoutes'));
 
+try {
+    app.use('/api/contabilidad', require('./routes/contabilidadRoutes'));
+    logger.info('✅ [MÓDULO] Contabilidad de Clientes activado en /api/contabilidad');
+} catch (e) { logger.error('❌ Error loading contabilidad routes:', e.message); }
+
 // --- RUTAS INTEGRADAS DEL SISTEMA REACT ---
 app.use('/api/apicotizaciones', require('./routes/getwayCotizaciones'));
 app.use('/api/apilugaresRetiro', require('./routes/getwayLugaresRetiro'));
@@ -292,6 +297,23 @@ if (process.env.NODE_ENV !== 'test') {
                 logger.error("❌ [CRON] Error cargando WspAvisos:", e.message);
             }
 
+               // ACTIVAR CRON ESTADOS DE CUENTA (Módulo Contabilidad)
+            try {
+                const { startEstadosCuentaJob } = require('./jobs/estadosCuenta.job');
+                startEstadosCuentaJob();
+            } catch (e) {
+                logger.error('❌ [CRON] Error cargando EstadosCuenta:', e.message);
+            }
+
+            // ACTIVAR CRON CICLOS DE CRÉDITO (Cierre automático de ciclos semanales)
+            try {
+                const { iniciarCronCiclos } = require('./jobs/ciclosCredito.job');
+                iniciarCronCiclos();
+            } catch (e) {
+                logger.error('❌ [CRON] Error cargando CiclosCredito:', e.message);
+            }
+
+            // ACTIVAR CRON COTIZACIÓN BCU
             try {
                 const { startCotizacionJob } = require('./jobs/cotizacionBCU.job');
                 startCotizacionJob();

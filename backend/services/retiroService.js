@@ -3,17 +3,90 @@
  * Centraliza la lógica compartida entre ordenesRetiroController (local)
  * y webOrdersController (web), eliminando duplicación de código.
  */
-const { sql } = require('../config/db');
+const { sql, getPool } = require('../config/db');
 const logger = require('../utils/logger');
 
 /**
- * Determina el estado inicial del retiro según el tipo de cliente.
- * TClIdTipoCliente: 1=Comun, 2=Semanal, 3=Rollo por adelantado, 4=Deudor
- * Semanal y Rollo no pagan al retirar → estado 4 (Abonado de antemano)
- * Comun y Deudor pagan al retirar → estado 1 (Ingresado)
+ * resolverEstadoPorTipoCliente
+ * SOLO como fallback cuando no hay datos de contabilidad disponibles.
+ * La lógica real usa verificarRecursoCliente() para cada retiro.
  */
 function resolverEstadoPorTipoCliente(tipoCliente) {
     return (tipoCliente === 2 || tipoCliente === 3) ? 4 : 1;
+}
+
+/**
+ * verificarRecursoCliente
+ * Chequea si el cliente tiene un plan de recursos activo para el producto dado.
+ * Funciona para CUALQUIER tipo de cliente (no solo tipo 2 o 3).
+ *
+ * @returns {Promise<{tieneRecurso, planId, saldoDisponible, motivo}>}
+ */
+async function verificarRecursoCliente(transaction, { CliIdCliente, ProIdProducto }) {
+    if (!CliIdCliente || !ProIdProducto) {
+        return { tieneRecurso: false, motivo: 'sin_datos' };
+    }
+
+    try {
+        const planRes = await transaction.request()
+            .input('CliIdCliente',  sql.Int, CliIdCliente)
+            .input('ProIdProducto', sql.Int, ProIdProducto)
+            .query(`
+                SELECT TOP 1
+                    PlaIdPlan,
+                    PlaCantidadTotal - PlaCantidadUsada AS SaldoDisponible
+                FROM dbo.PlanesMetros WITH(NOLOCK)
+                WHERE CliIdCliente  = @CliIdCliente
+                  AND ProIdProducto = @ProIdProducto
+                  AND PlaActivo     = 1
+                  AND (PlaFechaVencimiento IS NULL
+                    OR PlaFechaVencimiento >= CAST(GETDATE() AS DATE))
+                ORDER BY PlaFechaAlta DESC
+            `);
+
+        if (!planRes.recordset.length) {
+            return { tieneRecurso: false, motivo: 'sin_plan' };
+        }
+
+        const plan = planRes.recordset[0];
+        return {
+            tieneRecurso:    true,
+            planId:          plan.PlaIdPlan,
+            saldoDisponible: Number(plan.SaldoDisponible),
+            motivo:          `plan_${plan.PlaIdPlan}`,
+        };
+    } catch (err) {
+        logger.warn(`[RECURSO] Error verificando plan CliId=${CliIdCliente}: ${err.message}. Sin recurso.`);
+        return { tieneRecurso: false, motivo: 'error_verificacion' };
+    }
+}
+
+/**
+ * verificarCicloSemanal
+ * Solo para clientes tipo 2 (Semanal): verifica ciclo de crédito abierto.
+ */
+async function verificarCicloSemanal(transaction, CliIdCliente) {
+    try {
+        const cicloRes = await transaction.request()
+            .input('CliIdCliente', sql.Int, CliIdCliente)
+            .query(`
+                SELECT TOP 1 cc.CicIdCiclo, cc.CicFechaCierre
+                FROM   dbo.CiclosCredito  cc WITH(NOLOCK)
+                JOIN   dbo.CuentasCliente cu WITH(NOLOCK) ON cu.CueIdCuenta = cc.CueIdCuenta
+                WHERE  cu.CliIdCliente = @CliIdCliente
+                  AND  cc.CicEstado    = 'ABIERTO'
+                  AND  cc.CicFechaCierre >= CAST(GETDATE() AS DATE)
+            `);
+
+        if (!cicloRes.recordset.length) {
+            logger.warn(`[RECURSO] Semanal CliId=${CliIdCliente} → sin ciclo activo.`);
+            return false;
+        }
+        return true;
+    } catch (err) {
+        logger.warn(`[RECURSO] Error verificando ciclo CliId=${CliIdCliente}: ${err.message}.`);
+        return false;
+    }
 }
 
 /**
@@ -55,41 +128,80 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
     }
     ordIds = ordIdsLibres;
 
-    // Determinar estado del retiro y CodCliente según tipo de cliente (lógica centralizada)
+    // Datos del cliente (iguales para todas las órdenes del retiro)
     const tipoRes = await transaction.request()
         .input('OrdId', sql.Int, ordIds[0])
         .query(`
-            SELECT c.TClIdTipoCliente, c.CodCliente 
+        SELECT c.TClIdTipoCliente, c.CodCliente, o.CliIdCliente
             FROM OrdenesDeposito o WITH(NOLOCK)
             JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
             WHERE o.OrdIdOrden = @OrdId
         `);
-    const tipoCliente = tipoRes.recordset[0]?.TClIdTipoCliente || 1;
-    // Si no se pasó codCliente, resolverlo desde la orden
+    const tipoCliente     = tipoRes.recordset[0]?.TClIdTipoCliente || 1;
+    const CliIdCliente    = tipoRes.recordset[0]?.CliIdCliente     || null;
     const finalCodCliente = codCliente || tipoRes.recordset[0]?.CodCliente || null;
 
-    // Verificar si las órdenes hijas ya tienen pago registrado
-    // Si sí → el retiro debe nacer en estado 3 (Abonado) con ese PagIdPago
-    const ordIdsInClause = ordIds.map((_, i) => `@chk${i}`).join(',');
-    const pagoChkReq = transaction.request();
-    ordIds.forEach((id, i) => pagoChkReq.input(`chk${i}`, sql.Int, id));
-    const pagoChkRes = await pagoChkReq.query(`
-        SELECT TOP 1 PagIdPago FROM OrdenesDeposito WITH(NOLOCK)
-        WHERE OrdIdOrden IN (${ordIdsInClause}) AND PagIdPago IS NOT NULL
+    // Datos de CADA orden: producto, cantidad y si ya tiene pago
+    const ordParamsClause = ordIds.map((_, i) => `@ord${i}`).join(',');
+    const ordDataReq = transaction.request();
+    ordIds.forEach((id, i) => ordDataReq.input(`ord${i}`, sql.Int, id));
+    const ordDataRes = await ordDataReq.query(`
+        SELECT OrdIdOrden, ProIdProducto, OrdCantidad, PagIdPago
+        FROM   dbo.OrdenesDeposito WITH(NOLOCK)
+        WHERE  OrdIdOrden IN (${ordParamsClause})
     `);
-    const pagoExistenteId = pagoChkRes.recordset[0]?.PagIdPago || null;
+    const ordenesData  = ordDataRes.recordset;
+    const pagoExistenteId = ordenesData.find(o => o.PagIdPago)?.PagIdPago || null;
 
-    // Estado del retiro:
-    //  - Semanal/Rollo (tipo 2/3) → 4 (Abonado de antemano)
-    //  - Ya pagado (pagoExistenteId) → 3 (Abonado)
-    //  - Común/Deudor sin pago    → 1 (Ingresado)
+    // ── ESTADO DEL RETIRO: evaluar CADA orden individualmente ───────────────────
+    //
+    //  Regla: el retiro es autorizado (estado 4) SOLO si TODAS las órdenes
+    //  están cubiertas (por plan de recursos o por ciclo semanal).
+    //  Si CUALQUIERA necesita pago en caja → todo el retiro queda en estado 1.
+    //
+    //  Los metros ya fueron descontados al INGRESO (hookEntregaMetros).
+    //  Aquí solo se VERIFICA el estado de autorización.
+
     let estadoOrdenRetiro;
-    if (tipoCliente === 2 || tipoCliente === 3) {
-        estadoOrdenRetiro = 4; // Abonado de antemano
-    } else if (pagoExistenteId) {
-        estadoOrdenRetiro = 3; // Abonado (ya tiene pago registrado)
+
+    if (pagoExistenteId) {
+        estadoOrdenRetiro = 3; // Al menos una orden ya tiene pago registrado
+
     } else {
-        estadoOrdenRetiro = 1; // Ingresado (aún no pagó)
+        // Verificar ciclo semanal del cliente (aplica a todas las órdenes si tipo 2)
+        let tieneCicloSemanal = false;
+        if (tipoCliente === 2) {
+            tieneCicloSemanal = await verificarCicloSemanal(transaction, CliIdCliente);
+        }
+
+        // Evaluar cada orden individualmente
+        let todasCubiertas = true;
+
+        for (const orden of ordenesData) {
+            const { ProIdProducto } = orden;
+
+            // ¿Cubierta por plan de recursos?
+            if (ProIdProducto) {
+                const recurso = await verificarRecursoCliente(transaction, { CliIdCliente, ProIdProducto });
+                if (recurso.tieneRecurso) {
+                    logger.info(`[RETIRO] Orden ${orden.OrdIdOrden} cubierta por plan #${recurso.planId}`);
+                    continue; // esta orden OK
+                }
+            }
+
+            // ¿Cubierta por ciclo semanal?
+            if (tieneCicloSemanal) {
+                logger.info(`[RETIRO] Orden ${orden.OrdIdOrden} cubierta por ciclo semanal`);
+                continue; // esta orden OK
+            }
+
+            // Ninguna cobertura → necesita pago en caja
+            logger.info(`[RETIRO] Orden ${orden.OrdIdOrden} sin cobertura → requiere pago`);
+            todasCubiertas = false;
+            break;
+        }
+
+        estadoOrdenRetiro = todasCubiertas ? 4 : 1;
     }
 
     // 1. Generar ID para OrdenesRetiro con UPDLOCK (previene race condition)
@@ -201,6 +313,51 @@ async function marcarEntregado(transactionOrReq, OReIdOrdenRetiro, fecha, usuari
             UPDATE OrdenesRetiro SET OReEstadoActual = 5, ORePasarPorCaja = 0, OReFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
             INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@ID, 5, @Fec, @Usr);
         `);
+
+    // ── Descuento de recursos (Planes de Metros) ─────────────────────────────
+    // Por cada orden del retiro, si el cliente tiene cuenta METROS/KG,
+    // descontamos la cantidad de su plan activo.
+    try {
+        const svc = require('./contabilidadService');
+        const pool = await (require('../config/db')).getPool();
+
+        // Obtener órdenes con su cliente, artículo y cantidad
+        const ordenesRes = await pool.request()
+            .input('OReId', sql.Int, OReIdOrdenRetiro)
+            .query(`
+                SELECT
+                    od.OrdIdOrden,
+                    od.OrdCantidad,
+                    od.OrdCodigo,
+                    o.CodCliente,
+                    cl.CliIdCliente,
+                    art.IDArticulo AS ProIdProducto
+                FROM dbo.OrdenesDeposito od WITH(NOLOCK)
+                JOIN dbo.Ordenes         o   WITH(NOLOCK) ON o.OrdenID     = od.OrdIdOrdenExterna
+                JOIN dbo.Clientes        cl  WITH(NOLOCK) ON cl.CodCliente = o.CodCliente
+                LEFT JOIN dbo.Articulos  art WITH(NOLOCK) ON art.IDArticulo = od.OrdIdArticulo
+                WHERE od.OReIdOrdenRetiro = @OReId
+                  AND od.OrdEstadoActual  = 9
+            `);
+
+        for (const ord of ordenesRes.recordset) {
+            if (!ord.CliIdCliente || !ord.ProIdProducto) continue;
+            try {
+                await svc.hookEntregaMetros({
+                    CliIdCliente:  ord.CliIdCliente,
+                    ProIdProducto: ord.ProIdProducto,
+                    Cantidad:      Number(ord.OrdCantidad) || 1,
+                    OrdIdOrden:    ord.OrdIdOrden,
+                    UsuarioAlta:   usuarioId,
+                });
+            } catch (hookErr) {
+                // No bloquear la entrega si el hook falla — solo loguear
+                logger.warn(`[hookEntregaMetros] CliId=${ord.CliIdCliente} OrdId=${ord.OrdIdOrden}: ${hookErr.message}`);
+            }
+        }
+    } catch (err) {
+        logger.warn(`[marcarEntregado] Error en descuento de metros: ${err.message}`);
+    }
 }
 
 /**

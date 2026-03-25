@@ -1,5 +1,6 @@
-const { getPool, sql } = require('../config/db');
-const logger = require('../utils/logger');
+const { getPool, sql }       = require('../config/db');
+const logger                  = require('../utils/logger');
+const contabilidadService     = require('../services/contabilidadService');
 
 // Controlador para obtener las órdenes
 const getOrdenesByFilter = async (req, res) => {
@@ -400,6 +401,33 @@ const createOrden = async (req, res) => {
     }
 
     res.status(201).json({ message: 'Orden creada correctamente', idOrden: newOrderId });
+
+    // ── HOOKS CONTABILIDAD ────────────────────────────────────────────────────
+    // Ambos se disparan al ingreso de la orden al depósito.
+    // Fire-and-forget: la respuesta ya fue enviada. Si fallan, solo se loguea.
+
+    // 1. Débito en cuenta de dinero (se saltea si el cliente tiene plan de recursos)
+    contabilidadService.hookOrdenCreada({
+      OrdIdOrden:   newOrderId,
+      CliIdCliente: reqClientId,
+      Importe:      costoFinalDecimal,
+      MonIdMoneda:  monIdMoneda,
+      CodigoOrden,
+      UsuarioAlta,
+      ProIdProducto: productoMapeado.ProIdProducto,
+    });
+
+    // 2. Descuento del plan de metros/kg (solo actúa si el cliente
+    //    tiene una cuenta METROS/KG activa para este artículo)
+    contabilidadService.hookEntregaMetros({
+      OrdIdOrden:   newOrderId,
+      CliIdCliente: reqClientId,
+      ProIdProducto: productoMapeado.ProIdProducto,
+      Cantidad:     cantidadDecimal,
+      CodigoOrden,
+      UsuarioAlta,
+    });
+    // ─────────────────────────────────────────────────────────────────────────
 
   } catch (err) {
     logger.error('Error al crear la orden:', err);

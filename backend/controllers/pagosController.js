@@ -1,5 +1,6 @@
-const { getPool, sql } = require('../config/db');
-const logger = require('../utils/logger');
+const { getPool, sql }   = require('../config/db');
+const logger              = require('../utils/logger');
+const contabilidadService = require('../services/contabilidadService');
 
 // Controlador para obtener métodos de pago
 const obtenerMetodosPago = async (req, res) => {
@@ -167,6 +168,33 @@ const realizarPago = async (req, res) => {
     }
 
     res.status(200).json({ message: 'Pago registrado correctamente', pagoId });
+
+    // ── HOOK CONTABILIDAD ─────────────────────────────────────────────────────
+    // Obtener CliIdCliente de la primera orden del lote (todas son del mismo cliente)
+    if (orderNumbers && orderNumbers.length > 0) {
+      (async () => {
+        try {
+          const hookPool = await getPool();
+          const cliRes = await hookPool.request()
+            .input('OrdIdOrden', sql.Int, parseInt(orderNumbers[0]))
+            .query('SELECT CliIdCliente, MonIdMoneda FROM OrdenesDeposito WITH(NOLOCK) WHERE OrdIdOrden = @OrdIdOrden');
+
+          if (cliRes.recordset.length > 0) {
+            const { CliIdCliente, MonIdMoneda } = cliRes.recordset[0];
+            await contabilidadService.hookPagoRegistrado({
+              PagIdPago:   pagoId,
+              CliIdCliente,
+              MontoPago:   monto,
+              MonIdMoneda: MonIdMoneda ?? monedaId,
+              UsuarioAlta: usuarioId,
+            });
+          }
+        } catch (hookErr) {
+          logger.warn('[CONTABILIDAD] hookPagoRegistrado falló (no afecta el pago):', hookErr.message);
+        }
+      })();
+    }
+    // ─────────────────────────────────────────────────────────────────────────
   } catch (error) {
     if (transaction) {
       try { await transaction.rollback(); } catch (e) { }
