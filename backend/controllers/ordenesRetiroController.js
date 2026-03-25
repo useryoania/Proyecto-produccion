@@ -99,7 +99,8 @@ const getOrdenesRetiroQueryBase = `
     r.LocalidadEnvio,
     ag.Nombre AS AgenciaNombre,
     r.AgenciaOtra,
-    r.ReceptorNombre
+    r.ReceptorNombre,
+    r.LReIdLugarRetiro
   FROM OrdenesRetiro r WITH(NOLOCK)
   LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
   LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
@@ -143,6 +144,7 @@ const processRetirosRows = (rows) => {
         localidadEnvio: row.LocalidadEnvio || null,
         agenciaNombre: row.AgenciaNombre || row.AgenciaOtra || null,
         receptorNombre: row.ReceptorNombre || null,
+        formaEnvioId: row.LReIdLugarRetiro || null,
         orders: []
       };
     }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import TransportView from '../../logistics/TransportView';
 import { useAuth } from '../../../context/AuthContext';
-import api from '../../../services/api';
+import api, { logisticsService } from '../../../services/api';
 import { socket } from '../../../services/socketService';
 import { Package, Truck, Search, QrCode, FileText, CheckCircle, RefreshCcw, DollarSign, ChevronDown, ChevronRight, Printer, ClipboardList, Tag, History, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
@@ -149,7 +150,7 @@ const EntregaPedidosView = () => {
 
     // --- TAB: ENCOMIENDAS (DESPACHOS) ---
     const [lugaresRetiro, setLugaresRetiro] = useState([]);
-    const [filtroLugar, setFiltroLugar] = useState(''); // '' = Todas
+    const [filtroLugar, setFiltroLugar] = useState('2'); // Por defecto '2' (Encomiendas)
     const [filtroPagoEncomiendas, setFiltroPagoEncomiendas] = useState('todas'); // todas, pagas, nopagas
 
     const [encomiendas, setEncomiendas] = useState([]);
@@ -163,6 +164,8 @@ const EntregaPedidosView = () => {
     const [showHistorial, setShowHistorial] = useState(false);
     const [loadingHistorial, setLoadingHistorial] = useState(false);
     const [selectedHistorial, setSelectedHistorial] = useState(new Set());
+    const [filtroFechaHistorial, setFiltroFechaHistorial] = useState(new Date().toISOString().split('T')[0]);
+    const [filtroLugarHistorial, setFiltroLugarHistorial] = useState('2'); // Por defecto '2' (Encomiendas)
 
     // Modal: Generar Retiro desde Órdenes sin Retiro
     const [retiroModal, setRetiroModal] = useState(null); // { ordenes: [] } | null
@@ -228,15 +231,21 @@ const EntregaPedidosView = () => {
         } else if (activeTab === 'historial') {
             loadHistorialHoy();
         }
-    }, [activeTab]); // Solo recarga al cambiar de tab
+    }, [activeTab, filtroFechaHistorial, filtroLugarHistorial]); // Solo recarga al cambiar de tab o filtros
 
-    // Cargar historial de encomiendas entregadas hoy
+    // Cargar historial de encomiendas entregadas
     const loadHistorialHoy = async () => {
         setLoadingHistorial(true);
         try {
-            const hoy = new Date().toISOString().split('T')[0];
-            const res = await api.get(`/apiordenesRetiro/estados?estados=5&date=${hoy}`);
-            setHistorialHoy(res.data || []);
+            // Fetch all states: Generado(1), Armando(2), Preparado(3), Autorizado(4), Entregado(5), Cancelado(6), Abonado(8), Pronto(9), Despachado/En Viaje(10)
+            const res = await api.get(`/apiordenesRetiro/estados?estados=1,2,3,4,5,6,8,9,10&date=${filtroFechaHistorial}`);
+            
+            let filtrados = res.data || [];
+            if (filtroLugarHistorial && filtroLugarHistorial !== 'todas') {
+                filtrados = filtrados.filter(enc => String(enc.formaEnvioId) === String(filtroLugarHistorial));
+            }
+            
+            setHistorialHoy(filtrados);
         } catch (err) {
             console.error('[Historial] Error:', err);
         } finally {
@@ -282,12 +291,13 @@ const EntregaPedidosView = () => {
 
             let url;
             if (!lugar || lugar === 'todas') {
-                url = `/apiordenesRetiro/estados?estados=1,2,3,4,7,8,9${pagas ? '&pagas=true' : ''}${nopagas ? '&no_pagas=true' : ''}`;
+                url = `/apiordenesRetiro/estados?estados=1,2,3,4,8,9${pagas ? '&pagas=true' : ''}${nopagas ? '&no_pagas=true' : ''}`;
             } else {
                 url = `/apiordenesRetiro/lugar/${lugar}?pagas=${pagas}&no_pagas=${nopagas}`;
             }
             const response = await api.get(url);
-            setEncomiendas(response.data);
+            
+            setEncomiendas(response.data || []);
             setSelectedEncomiendas(new Set());
         } catch (error) {
             console.error("Error cargando despachos:", error);
@@ -329,7 +339,48 @@ const EntregaPedidosView = () => {
         }
     };
 
-    const printResumenSeleccionados = () => {
+    const generarRemitoLogistico = async () => {
+        const sel = encomiendas.filter(e => selectedEncomiendas.has(e.ordenDeRetiro));
+        if (sel.length === 0) return toast.warning('Seleccioná al menos una orden para remito.');
+        
+        try {
+            setLoading(true);
+            const userLocalStorage = JSON.parse(localStorage.getItem('user')) || { username: 'Sistema', id: 1 };
+            
+            const newBultos = sel.map(enc => ({
+                ordenId: parseInt(enc.ordenDeRetiro.split('-').pop(), 10),
+                descripcion: `Encomienda: ${enc.CliNombre || enc.CliCodigoCliente || enc.ordenDeRetiro}`,
+                tipo: 'ENCOMIENDA'
+            }));
+
+            const payload = {
+                codigoRemito: 'AUTO',
+                areaOrigen: 'LOGISTICA_ENCOMIENDAS',
+                areaDestino: 'AGENCIAS_EXTERNAS',
+                usuarioId: userLocalStorage.id || userLocalStorage.IdUsuario || 1,
+                transportista: userLocalStorage.username || 'Operador',
+                bultosIds: [],
+                newBultos: newBultos,
+                observations: 'Despacho de encomiendas agrupado'
+            };
+
+            const res = await logisticsService.createDispatch(payload);
+            toast.success(`Remito ${res.dispatchCode} generado con éxito`);
+            
+            // Opcional: imprimir resumen luego
+            printResumenSeleccionados(res.dispatchCode);
+            
+            setSelectedEncomiendas(new Set());
+            loadDespachos(filtroLugar, filtroPagoEncomiendas);
+        } catch (error) {
+            console.error("Error generando remito:", error);
+            toast.error("Error al generar remito: " + (error.response?.data?.error || error.message));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const printResumenSeleccionados = (remitoCode = null) => {
         const sel = encomiendas.filter(e => selectedEncomiendas.has(e.ordenDeRetiro));
         if (sel.length === 0) return toast.warning('Seleccioná al menos una orden.');
         const fecha = new Date().toLocaleString('es-UY', { timeZone: 'America/Montevideo' });
@@ -433,9 +484,16 @@ const EntregaPedidosView = () => {
             @media print{body{padding:14px 16px;} button{display:none!important;}}
         </style></head><body>
         <div style="border-bottom:3px solid #0070bc;padding-bottom:14px;margin-bottom:22px;display:flex;justify-content:space-between;align-items:flex-end;">
-            <div>
-                <div style="font-size:24px;font-weight:900;color:#0070bc;letter-spacing:1px;">USER</div>
-                <div style="font-size:15px;font-weight:700;color:#475569;">Logística &mdash; Hoja de Despacho</div>
+            <div style="display:flex;align-items:center;gap:20px;">
+                <div>
+                    <div style="font-size:24px;font-weight:900;color:#0070bc;letter-spacing:1px;">USER</div>
+                    <div style="font-size:15px;font-weight:700;color:#475569;">Logística &mdash; Hoja de Despacho</div>
+                </div>
+                ${remitoCode ? 
+                `<div style="text-align:center;border-left:2px solid #e2e8f0;padding-left:20px;margin-left:5px;">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(remitoCode)}" style="width:60px;height:60px;mix-blend-mode:multiply;" />
+                    <div style="font-size:11px;font-weight:900;color:#1e293b;margin-top:2px;">${remitoCode}</div>
+                </div>` : ''}
             </div>
             <div style="text-align:right;">
                 <div style="font-size:12px;color:#94a3b8;">${fecha}</div>
@@ -755,6 +813,13 @@ const EntregaPedidosView = () => {
                 >
                     <History size={18} /> Historial del día
                 </button>
+                <div className="w-px bg-slate-300 mx-2"></div>
+                <button
+                    onClick={() => setActiveTab('transport')}
+                    className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 flex items-center gap-2 ${activeTab === 'transport' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    <Truck size={18} /> En Viaje
+                </button>
             </div>
 
             {/* TAB: ENCOMIENDAS (DESPACHOS) */}
@@ -805,6 +870,14 @@ const EntregaPedidosView = () => {
 
                             <div className="flex-1"></div>
 
+                            <button
+                                onClick={generarRemitoLogistico}
+                                disabled={selectedEncomiendas.size === 0 || loading}
+                                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-2 shadow-sm"
+                                title="Generar Remito Logístico"
+                            >
+                                <Package size={16} /> Generar Remito ({selectedEncomiendas.size})
+                            </button>
                             <button
                                 onClick={printResumenSeleccionados}
                                 disabled={selectedEncomiendas.size === 0}
@@ -1021,10 +1094,27 @@ const EntregaPedidosView = () => {
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                     <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
                         <div>
-                            <h2 className="text-xl font-black text-slate-800">Encomiendas entregadas hoy</h2>
-                            <p className="text-sm text-slate-500 font-medium mt-1">Seleccioná las que necesités reimprimir</p>
+                            <h2 className="text-xl font-black text-slate-800">Historial de fecha</h2>
+                            <p className="text-sm text-slate-500 font-medium mt-1">Órdenes con movimientos en el día. Filtralas acá:</p>
                         </div>
                         <div className="flex items-center gap-3">
+                            <select
+                                value={filtroLugarHistorial}
+                                onChange={e => setFiltroLugarHistorial(e.target.value)}
+                                className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none cursor-pointer"
+                            >
+                                <option value="todas">— Seleccionar (Todas) —</option>
+                                {lugaresRetiro.map(lr => (
+                                    <option key={lr.LReIdLugarRetiro} value={lr.LReIdLugarRetiro}>{lr.LReNombreLugar}</option>
+                                ))}
+                            </select>
+                            
+                            <input
+                                type="date"
+                                value={filtroFechaHistorial}
+                                onChange={e => setFiltroFechaHistorial(e.target.value)}
+                                className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                            />
                             <button
                                 onClick={loadHistorialHoy}
                                 disabled={loadingHistorial}
@@ -1884,6 +1974,13 @@ const EntregaPedidosView = () => {
                     </div>
                 )
             }
+
+            {/* TAB TRANSPORT (EN VIAJE) */}
+            {activeTab === 'transport' && (
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col flex-1 overflow-hidden min-h-[600px] mt-4">
+                    <TransportView areaFilter="TODOS" mode="transport" originArea="LOGISTICA_ENCOMIENDAS" />
+                </div>
+            )}
         </div>
     );
 };

@@ -20,7 +20,7 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
     const { data: outgoingRemitos, isLoading: loadingHistory, refetch: refetchHistory } = useQuery({
         queryKey: ['remitos', 'outgoing', currentArea],
         queryFn: () => logisticsService.getOutgoingRemitos(currentArea),
-        enabled: !!currentArea && currentArea !== 'TODOS'
+        enabled: !!currentArea
     });
 
     // --- CREATION STATE ---
@@ -282,7 +282,15 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
         };
 
         return (
-            <div className="flex flex-col h-full bg-slate-100 overflow-auto print:bg-white">
+            <div className="flex flex-col w-full max-w-3xl bg-slate-100 print:bg-white h-auto rounded-xl overflow-hidden shadow-sm">
+                <style>{`
+                    @media print {
+                        body * { visibility: hidden; }
+                        #print-detail, #print-detail * { visibility: visible; }
+                        #print-detail { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; }
+                    }
+                `}</style>
+
                 <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center print:hidden">
                     <div>
                         <h2 className="font-bold text-slate-800 flex items-center gap-2">
@@ -293,8 +301,8 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
                     <button onClick={handlePrint} className="px-6 py-2 bg-slate-800 text-white rounded-lg font-bold"><i className="fa-solid fa-print mr-2"></i> Imprimir</button>
                 </div>
 
-                <div className="p-8 flex flex-col items-center print:p-0">
-                    <div className="w-full max-w-2xl bg-white p-8 rounded-xl border-dashed border-2 border-slate-300 print:border-4 print:border-black print:w-full print:shadow-none shadow-sm">
+                <div id="print-detail" className="p-8 flex flex-col items-center print:p-0">
+                    <div className="w-full bg-white p-8 rounded-xl border-dashed border-2 border-slate-300 print:border-none print:shadow-none shadow-sm pb-10">
                         <div className="text-center mb-6 border-b-2 border-black pb-4">
                             <h1 className="text-4xl font-black uppercase tracking-tight">Remito</h1>
                             <div className="flex justify-between mt-4 font-bold text-sm">
@@ -307,14 +315,38 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
                         </div>
                         <div className="text-center font-mono text-2xl font-black mb-6">{res.dispatchCode}</div>
 
-                        <div className="text-center text-xs text-slate-500 mb-6">Emisión: {res.date}</div>
+                        <div className="text-center text-xs text-slate-500 mb-6 font-bold">FECHA EMISIÓN: {res.date}</div>
 
                         {/* Item List */}
-                        <div className="text-center border-t-2 border-slate-200 pt-6 mt-4">
+                        <div className="text-center border-t-2 border-slate-200 pt-6 mt-4 mb-8">
                             <h3 className="text-xs font-bold uppercase mb-2 text-slate-400">Cantidad Total</h3>
-                            <div className="text-6xl font-black text-slate-900">{historyDetail.items?.length || 0}</div>
+                            <div className="text-5xl font-black text-slate-900">{historyDetail.items?.length || 0}</div>
                             <div className="text-sm font-bold uppercase text-slate-500 mt-1">Bultos</div>
                         </div>
+
+                        {historyDetail.items && historyDetail.items.length > 0 && (
+                            <div className="w-full text-left mt-6">
+                                <h4 className="text-xs font-bold uppercase text-slate-500 mb-2 border-b-2 border-black pb-1">Detalle de Bultos</h4>
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr className="border-b border-slate-200 text-slate-400">
+                                            <th className="py-2 text-left">Código Bulto</th>
+                                            <th className="py-2 text-left">Nro. Orden</th>
+                                            <th className="py-2 text-left">Cliente</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {historyDetail.items.map((item, idx) => (
+                                            <tr key={idx} className="font-bold text-slate-700">
+                                                <td className="py-1.5 font-mono text-[11px]">{item.displayCode || '-'}</td>
+                                                <td className="py-1.5">{item.orderCode || '-'}</td>
+                                                <td className="py-1.5 uppercase truncate max-w-[150px]">{item.clientName || 'S/D'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

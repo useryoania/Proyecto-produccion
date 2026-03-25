@@ -25,6 +25,13 @@ const logisticsService = {
         return response.data;
     },
 
+    confirmDeliveryWithProof: async (code, fileFormData) => {
+        const response = await api.post(`/logistics/remitos/${encodeURIComponent(code)}/confirm-delivery`, fileFormData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return response.data;
+    },
+
     getRemitoByCode: async (code) => {
         const response = await api.get(`/logistics/remitos/${encodeURIComponent(code)}`);
         return response.data;

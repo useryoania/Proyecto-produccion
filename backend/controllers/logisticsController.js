@@ -294,7 +294,7 @@ exports.createRemito = async (req, res) => {
 
                     const rNew = await new sql.Request(transaction)
                         .input('Cod', sql.VarChar, autoLabel)
-                        .input('Tip', sql.VarChar, 'PROD_TERMINADO')
+                        .input('Tip', sql.VarChar, nb.tipo || 'PROD_TERMINADO')
                         .input('OID', sql.Int, nb.ordenId)
                         .input('Desc', sql.NVarChar, nb.descripcion || 'Generado autom. en Despacho')
                         .input('Ubi', sql.NVarChar, areaOrigen || 'PRODUCCION')
@@ -392,7 +392,7 @@ exports.createRemito = async (req, res) => {
                     .query(`
                         UPDATE Logistica_Bultos 
                         SET Estado = 'EN_TRANSITO', UbicacionActual = 'TRANSITO' 
-                        OUTPUT INSERTED.CodigoEtiqueta, INSERTED.Estado
+                        OUTPUT INSERTED.CodigoEtiqueta, INSERTED.Estado, INSERTED.Tipocontenido, INSERTED.OrdenID
                         WHERE BultoID = @BID
                     `);
 
@@ -408,6 +408,17 @@ exports.createRemito = async (req, res) => {
                         estNew: 'EN_TRANSITO',
                         esRecep: false
                     });
+                    
+                    // IF it's an encomienda, mark the Order as Dispatched (State 10) to block it from being selected again
+                    if (row.Tipocontenido === 'ENCOMIENDA' && row.OrdenID) {
+                        await new sql.Request(transaction)
+                            .input('OID', sql.Int, row.OrdenID)
+                            .query(`
+                                UPDATE OrdenesRetiro 
+                                SET OReEstadoActual = 10, OReFechaEstadoActual = GETDATE() 
+                                WHERE OReIdOrdenRetiro = @OID
+                            `);
+                    }
                 }
             }
 
@@ -454,7 +465,7 @@ exports.getRemitoByCode = async (req, res) => {
         // Items + Bulto Info + Orden Info
         const items = await pool.request().input('EID', sql.Int, envio.EnvioID)
             .query(`
-                SELECT i.*, b.CodigoEtiqueta, b.Descripcion, b.OrdenID, o.Cliente, o.DescripcionTrabajo
+                SELECT i.*, b.Estado as BultoEstado, b.CodigoEtiqueta, b.Descripcion, b.OrdenID, b.ComprobantePath, o.Cliente, o.DescripcionTrabajo
                 FROM Logistica_EnvioItems i
                 INNER JOIN Logistica_Bultos b ON i.BultoID = b.BultoID
                 LEFT JOIN Ordenes o ON b.OrdenID = o.OrdenID
@@ -470,18 +481,26 @@ exports.getRemitoByCode = async (req, res) => {
 exports.getIncomingRemitos = async (req, res) => {
     const { areaId } = req.query;
     if (!areaId) return res.json([]);
+    const isTodos = areaId === 'TODOS';
 
     try {
         const pool = await getPool();
-        const r = await pool.request().input('A', sql.VarChar, areaId)
-            .query(`
-                SELECT e.*, 
-                       (SELECT COUNT(*) FROM Logistica_EnvioItems WHERE EnvioID = e.EnvioID) as TotalItems
-                FROM Logistica_Envios e
-                WHERE e.AreaDestinoID = @A
-                AND e.Estado IN ('ESPERANDO_RETIRO', 'EN_TRANSITO', 'DESPACHADO')
-                ORDER BY e.FechaSalida DESC
-            `);
+        const q = isTodos ? `
+            SELECT e.*, 
+                   (SELECT COUNT(*) FROM Logistica_EnvioItems WHERE EnvioID = e.EnvioID) as TotalItems
+            FROM Logistica_Envios e
+            WHERE e.Estado IN ('ESPERANDO_RETIRO', 'EN_TRANSITO', 'DESPACHADO')
+            ORDER BY e.FechaSalida DESC
+        ` : `
+            SELECT e.*, 
+                   (SELECT COUNT(*) FROM Logistica_EnvioItems WHERE EnvioID = e.EnvioID) as TotalItems
+            FROM Logistica_Envios e
+            WHERE e.AreaDestinoID = @A
+            AND e.Estado IN ('ESPERANDO_RETIRO', 'EN_TRANSITO', 'DESPACHADO')
+            ORDER BY e.FechaSalida DESC
+        `;
+        
+        const r = await pool.request().input('A', sql.VarChar, areaId).query(q);
         res.json(r.recordset);
     } catch (err) {
         logger.error("Error getIncomingRemitos:", err);
@@ -492,17 +511,24 @@ exports.getIncomingRemitos = async (req, res) => {
 exports.getOutgoingRemitos = async (req, res) => {
     const { areaId } = req.query;
     if (!areaId) return res.json([]);
+    const isTodos = areaId === 'TODOS';
 
     try {
         const pool = await getPool();
-        const r = await pool.request().input('A', sql.VarChar, areaId)
-            .query(`
-                SELECT e.*, 
-                       (SELECT COUNT(*) FROM Logistica_EnvioItems WHERE EnvioID = e.EnvioID) as TotalItems
-                FROM Logistica_Envios e
-                WHERE e.AreaOrigenID = @A
-                ORDER BY e.FechaSalida DESC
-            `);
+        const q = isTodos ? `
+            SELECT e.*, 
+                   (SELECT COUNT(*) FROM Logistica_EnvioItems WHERE EnvioID = e.EnvioID) as TotalItems
+            FROM Logistica_Envios e
+            ORDER BY e.FechaSalida DESC
+        ` : `
+            SELECT e.*, 
+                   (SELECT COUNT(*) FROM Logistica_EnvioItems WHERE EnvioID = e.EnvioID) as TotalItems
+            FROM Logistica_Envios e
+            WHERE e.AreaOrigenID = @A
+            ORDER BY e.FechaSalida DESC
+        `;
+        
+        const r = await pool.request().input('A', sql.VarChar, areaId).query(q);
         res.json(r.recordset);
     } catch (err) {
         logger.error("Error getOutgoingRemitos:", err);
@@ -1102,6 +1128,105 @@ exports.confirmTransport = async (req, res) => {
 
     } catch (err) {
         logger.error("Error confirmTransport:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.confirmRemitoDelivery = async (req, res) => {
+    try {
+        const { code } = req.params;
+        const file = req.file;
+        let { bultosIds } = req.body;
+        
+        if (!bultosIds) {
+            return res.status(400).json({ error: 'Debe especificar los bultos a los que aplica este comprobante' });
+        }
+
+        // Parse bultosIds from FormData text
+        let idsArray = [];
+        try {
+            idsArray = typeof bultosIds === 'string' ? JSON.parse(bultosIds) : bultosIds;
+        } catch (e) {
+            return res.status(400).json({ error: 'Formato inválido de bultosIds' });
+        }
+
+        if (idsArray.length === 0) {
+            return res.status(400).json({ error: 'No se seleccionaron bultos' });
+        }
+
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+        
+        try {
+            // Ensure column exists in BULTOS instead of Envios (Safe to fail if already exists)
+            try {
+                await new sql.Request(transaction).query("ALTER TABLE Logistica_Bultos ADD ComprobantePath NVARCHAR(MAX) NULL");
+            } catch (e) { /* Ignore */ }
+
+            const comprobanteUrl = file ? `/comprobantesPagos/${file.filename}` : null;
+            const idsList = idsArray.join(',');
+
+            // 1. Update Bultos inside this Envio
+            await new sql.Request(transaction)
+                .input('Path', sql.NVarChar, comprobanteUrl)
+                .query(`
+                    UPDATE Logistica_Bultos
+                    SET Estado = 'ENTREGADO', UbicacionActual = 'CLIENTE_FINAL', 
+                    ComprobantePath = ISNULL(@Path, ComprobantePath)
+                    WHERE BultoID IN (${idsList})
+                `);
+                
+            // 1.5 Update items in the Envio
+            await new sql.Request(transaction)
+                .input('Code', sql.VarChar, code)
+                .query(`
+                    UPDATE Logistica_EnvioItems
+                    SET EstadoRecepcion = 'ENTREGADO'
+                    WHERE BultoID IN (${idsList}) AND EnvioID = (SELECT EnvioID FROM Logistica_Envios WHERE CodigoRemito = @Code)
+                `);
+
+            // 2. Update OrdenesRetiro to Mark as Entregado (state 5) if they were encomiendas
+            await new sql.Request(transaction).query(`
+                UPDATE OrdenesRetiro
+                SET OReEstadoActual = 5, OReFechaEstadoActual = GETDATE()
+                WHERE OReIdOrdenRetiro IN (
+                    SELECT b.OrdenID FROM Logistica_Bultos b
+                    WHERE b.BultoID IN (${idsList}) AND b.Tipocontenido = 'ENCOMIENDA' AND b.OrdenID IS NOT NULL
+                );
+
+                UPDATE OrdenesDeposito
+                SET OrdEstadoActual = 9, OrdFechaEstadoActual = GETDATE()
+                WHERE OReIdOrdenRetiro IN (
+                    SELECT b.OrdenID FROM Logistica_Bultos b
+                    WHERE b.BultoID IN (${idsList}) AND b.Tipocontenido = 'ENCOMIENDA' AND b.OrdenID IS NOT NULL
+                );
+            `);
+
+            // 3. Check if ALL items in this Envio are delivered to mark the Envio itself as Delivered
+            const remainingReq = await new sql.Request(transaction)
+                .input('Code', sql.VarChar, code)
+                .query(`
+                    SELECT COUNT(*) as Pendientes 
+                    FROM Logistica_EnvioItems i
+                    JOIN Logistica_Envios e ON e.EnvioID = i.EnvioID
+                    WHERE e.CodigoRemito = @Code AND i.EstadoRecepcion != 'ENTREGADO'
+                `);
+            
+            if (remainingReq.recordset[0].Pendientes === 0) {
+                await new sql.Request(transaction)
+                    .input('Code', sql.VarChar, code)
+                    .query("UPDATE Logistica_Envios SET Estado = 'ENTREGADO' WHERE CodigoRemito = @Code");
+            }
+
+            await transaction.commit();
+            res.json({ success: true, message: 'Comprobante subido y bultos cerrados exitosamente' });
+        } catch (innerErr) {
+            await transaction.rollback();
+            throw innerErr;
+        }
+    } catch (err) {
+        logger.error("Error confirmRemitoDelivery:", err);
         res.status(500).json({ error: err.message });
     }
 };

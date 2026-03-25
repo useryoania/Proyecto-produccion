@@ -22,12 +22,86 @@ router.get('/localities/:id', async (req, res) => {
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Get Localities (All - para el abm)
+router.get('/localities', async (req, res) => {
+    try {
+        const pool = await getPool();
+        const r = await pool.request().query("SELECT l.ID, l.Nombre, l.DepartamentoID, d.Nombre as DepartamentoNombre FROM Localidades l JOIN Departamentos d ON l.DepartamentoID = d.ID ORDER BY d.Nombre, l.Nombre");
+        res.json({ success: true, data: r.recordset });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/localities', async (req, res) => {
+    try {
+        const pool = await getPool();
+        const r = await pool.request()
+            .input('Nombre', sql.NVarChar, req.body.nombre)
+            .input('DepId', sql.Int, req.body.departamentoId)
+            .query("INSERT INTO Localidades (Nombre, DepartamentoID) VALUES (@Nombre, @DepId); SELECT SCOPE_IDENTITY() AS ID");
+        res.json({ success: true, id: r.recordset[0].ID });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.put('/localities/:id', async (req, res) => {
+    try {
+        const pool = await getPool();
+        await pool.request()
+            .input('Id', sql.Int, req.params.id)
+            .input('Nombre', sql.NVarChar, req.body.nombre)
+            .input('DepId', sql.Int, req.body.departamentoId)
+            .query("UPDATE Localidades SET Nombre = @Nombre, DepartamentoID = @DepId WHERE ID = @Id");
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/localities/:id', async (req, res) => {
+    try {
+        const pool = await getPool();
+        await pool.request()
+            .input('Id', sql.Int, req.params.id)
+            .query("DELETE FROM Localidades WHERE ID = @Id");
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Get Agencies
 router.get('/agencies', async (req, res) => {
     try {
         const pool = await getPool();
         const r = await pool.request().query("SELECT * FROM Agencias ORDER BY Nombre");
         res.json({ success: true, data: r.recordset });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ABM Agencias
+router.post('/agencies', async (req, res) => {
+    try {
+        const pool = await getPool();
+        const r = await pool.request()
+            .input('Nombre', sql.NVarChar, req.body.nombre)
+            .query("INSERT INTO Agencias (Nombre) VALUES (@Nombre); SELECT SCOPE_IDENTITY() AS ID");
+        res.json({ success: true, id: r.recordset[0].ID });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.put('/agencies/:id', async (req, res) => {
+    try {
+        const pool = await getPool();
+        await pool.request()
+            .input('Id', sql.Int, req.params.id)
+            .input('Nombre', sql.NVarChar, req.body.nombre)
+            .query("UPDATE Agencias SET Nombre = @Nombre WHERE ID = @Id");
+        res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/agencies/:id', async (req, res) => {
+    try {
+        const pool = await getPool();
+        await pool.request()
+            .input('Id', sql.Int, req.params.id)
+            .query("DELETE FROM Agencias WHERE ID = @Id");
+        res.json({ success: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

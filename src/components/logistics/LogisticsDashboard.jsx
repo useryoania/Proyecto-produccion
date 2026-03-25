@@ -28,7 +28,7 @@ const LogisticsDashboard = () => {
     const isAdmin = user?.rol?.toLowerCase() === 'admin';
     const isDeposito = user?.areaKey?.trim().toUpperCase() === 'DEPOSITO';
     const hasFullAccess = isAdmin || isDeposito;
-    const [activeTab, setActiveTab] = useState('dashboard');
+    const [activeTab, setActiveTab] = useState('dispatch');
 
     // Global Area Filter
     const [globalArea, setGlobalArea] = useState('TODOS');
@@ -92,8 +92,8 @@ const LogisticsDashboard = () => {
     }, [user]);
 
     const renderContent = () => {
-        // Pass the area filter to all views
-        const commonProps = { areaFilter: globalArea === 'TODOS' ? null : globalArea };
+        // Pass the explicit area filter to all views
+        const commonProps = { areaFilter: globalArea };
 
         switch (activeTab) {
             case 'dashboard':
