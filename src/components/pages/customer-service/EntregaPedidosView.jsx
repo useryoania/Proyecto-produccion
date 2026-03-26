@@ -239,12 +239,12 @@ const EntregaPedidosView = () => {
         try {
             // Fetch all states: Generado(1), Armando(2), Preparado(3), Autorizado(4), Entregado(5), Cancelado(6), Abonado(8), Pronto(9), Despachado/En Viaje(10)
             const res = await api.get(`/apiordenesRetiro/estados?estados=1,2,3,4,5,6,8,9,10&date=${filtroFechaHistorial}`);
-            
+
             let filtrados = res.data || [];
             if (filtroLugarHistorial && filtroLugarHistorial !== 'todas') {
                 filtrados = filtrados.filter(enc => String(enc.formaEnvioId) === String(filtroLugarHistorial));
             }
-            
+
             setHistorialHoy(filtrados);
         } catch (err) {
             console.error('[Historial] Error:', err);
@@ -296,7 +296,7 @@ const EntregaPedidosView = () => {
                 url = `/apiordenesRetiro/lugar/${lugar}?pagas=${pagas}&no_pagas=${nopagas}`;
             }
             const response = await api.get(url);
-            
+
             setEncomiendas(response.data || []);
             setSelectedEncomiendas(new Set());
         } catch (error) {
@@ -342,11 +342,11 @@ const EntregaPedidosView = () => {
     const generarRemitoLogistico = async () => {
         const sel = encomiendas.filter(e => selectedEncomiendas.has(e.ordenDeRetiro));
         if (sel.length === 0) return toast.warning('Seleccioná al menos una orden para remito.');
-        
+
         try {
             setLoading(true);
             const userLocalStorage = JSON.parse(localStorage.getItem('user')) || { username: 'Sistema', id: 1 };
-            
+
             const newBultos = sel.map(enc => ({
                 ordenId: parseInt(enc.ordenDeRetiro.split('-').pop(), 10),
                 descripcion: `Encomienda: ${enc.CliNombre || enc.CliCodigoCliente || enc.ordenDeRetiro}`,
@@ -366,10 +366,10 @@ const EntregaPedidosView = () => {
 
             const res = await logisticsService.createDispatch(payload);
             toast.success(`Remito ${res.dispatchCode} generado con éxito`);
-            
+
             // Opcional: imprimir resumen luego
             printResumenSeleccionados(res.dispatchCode);
-            
+
             setSelectedEncomiendas(new Set());
             loadDespachos(filtroLugar, filtroPagoEncomiendas);
         } catch (error) {
@@ -489,7 +489,7 @@ const EntregaPedidosView = () => {
                     <div style="font-size:24px;font-weight:900;color:#0070bc;letter-spacing:1px;">USER</div>
                     <div style="font-size:15px;font-weight:700;color:#475569;">Logística &mdash; Hoja de Despacho</div>
                 </div>
-                ${remitoCode ? 
+                ${remitoCode ?
                 `<div style="text-align:center;border-left:2px solid #e2e8f0;padding-left:20px;margin-left:5px;">
                     <img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(remitoCode)}" style="width:60px;height:60px;mix-blend-mode:multiply;" />
                     <div style="font-size:11px;font-weight:900;color:#1e293b;margin-top:2px;">${remitoCode}</div>
@@ -522,16 +522,17 @@ const EntregaPedidosView = () => {
         const sinPagoSinAutorizar = Array.from(selectedEncomiendas).filter(ordenCodigo => {
             const orden = encomiendas.find(e => e.ordenDeRetiro === ordenCodigo);
             if (!orden) return false;
-            const noPaga      = orden.pagorealizado === 0;
-            const autorizada  = orden.OReEstadoActual === 9 || orden.estado === 9;
+            const noPaga = orden.pagorealizado === 0;
+            const autorizada = orden.OReEstadoActual === 9 || orden.estado === 9;
             return noPaga && !autorizada;
         });
 
         if (sinPagoSinAutorizar.length > 0) {
             // No se puede entregar — debe pasar por Caja (pagar o autorizar)
-            Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: sinPagoSinAutorizar.length > 1
-                ? `${sinPagoSinAutorizar.length} órdenes no están pagas ni autorizadas. Debe pasar por Caja.`
-                : `"${sinPagoSinAutorizar[0]}" no está paga ni autorizada. Debe pasar por Caja.`,
+            Swal.fire({
+                toast: true, position: 'top-end', icon: 'warning', title: sinPagoSinAutorizar.length > 1
+                    ? `${sinPagoSinAutorizar.length} órdenes no están pagas ni autorizadas. Debe pasar por Caja.`
+                    : `"${sinPagoSinAutorizar[0]}" no está paga ni autorizada. Debe pasar por Caja.`,
                 showConfirmButton: false, timer: 4000,
                 showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
                 hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
@@ -548,7 +549,8 @@ const EntregaPedidosView = () => {
         try {
             const payload = { ordenesParaEntregar: ordenes, password, observacion };
             const response = await api.post('/apiordenesRetiro/despachos/entregar-autorizado', payload);
-            Swal.fire({ toast: true, position: 'top-end', icon: 'success',
+            Swal.fire({
+                toast: true, position: 'top-end', icon: 'success',
                 title: response.data.message || 'Órdenes entregadas correctamente.',
                 showConfirmButton: false, timer: 3000,
                 showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
@@ -565,10 +567,11 @@ const EntregaPedidosView = () => {
 
     // Entregar una sola orden (desde el botón por renglón) con la misma lógica de bloqueo
     const ejecutarEntregarUna = (ordenCodigo, enc) => {
-        const noPaga     = enc.pagorealizado === 0;
+        const noPaga = enc.pagorealizado === 0;
         const autorizada = enc.OReEstadoActual === 9 || enc.estado === 9;
         if (noPaga && !autorizada) {
-            Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: `"${ordenCodigo}" no está paga ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
+            Swal.fire({
+                toast: true, position: 'top-end', icon: 'warning', title: `"${ordenCodigo}" no está paga ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
                 showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
                 hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
             });
@@ -1008,9 +1011,9 @@ const EntregaPedidosView = () => {
                                                     {enc.pagorealizado === 1 ?
                                                         <span className="text-green-700 font-black bg-green-100 px-3 py-1 rounded-md text-xs tracking-wider shadow-sm border border-green-200">PAGADO</span>
                                                         : (enc.OReEstadoActual === 9) ?
-                                                        <span className="text-amber-700 font-black bg-amber-100 px-3 py-1 rounded-md text-xs tracking-wider shadow-sm border border-amber-300">AUTORIZADO</span>
-                                                        :
-                                                        <span className="text-red-600 font-black bg-red-100 px-3 py-1 rounded-md text-xs tracking-wider shadow-sm border border-red-200">PENDIENTE</span>
+                                                            <span className="text-amber-700 font-black bg-amber-100 px-3 py-1 rounded-md text-xs tracking-wider shadow-sm border border-amber-300">AUTORIZADO</span>
+                                                            :
+                                                            <span className="text-red-600 font-black bg-red-100 px-3 py-1 rounded-md text-xs tracking-wider shadow-sm border border-red-200">PENDIENTE</span>
                                                     }
                                                 </td>
                                                 {/* Acciones por fila */}
@@ -1108,7 +1111,7 @@ const EntregaPedidosView = () => {
                                     <option key={lr.LReIdLugarRetiro} value={lr.LReIdLugarRetiro}>{lr.LReNombreLugar}</option>
                                 ))}
                             </select>
-                            
+
                             <input
                                 type="date"
                                 value={filtroFechaHistorial}

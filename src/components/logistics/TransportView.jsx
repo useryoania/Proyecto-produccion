@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { logisticsService } from '../../services/api';
+import api, { logisticsService } from '../../services/api';
 import { toast } from 'sonner';
 
 const TransportView = () => {
@@ -35,7 +35,7 @@ const TransportView = () => {
         try {
             const details = await logisticsService.getRemitoByCode(transport.CodigoRemito);
             setModalData({ transport, items: details.items });
-            
+
             const initialMap = {};
             details.items.forEach(i => {
                 if (i.BultoEstado !== 'ENTREGADO') {
@@ -91,63 +91,149 @@ const TransportView = () => {
 
     const handlePrint = async (transport) => {
         try {
-            // Fetch full details
-            const details = await logisticsService.getRemitoByCode(transport.CodigoRemito);
+            // Unconditionally fetch full data for Hoja de Despacho format
+            const resApi = await api.get('/apiordenesRetiro/remito/' + transport.CodigoRemito);
+            const sel = resApi.data;
+            
+            if (!sel || sel.length === 0) {
+                return toast.warning('No se encontraron órdenes en este remito para imprimir.');
+            }
+            
+            const remitoCode = transport.CodigoRemito;
+            const fecha = new Date().toLocaleString('es-UY', { timeZone: 'America/Montevideo' });
+            // Agrupar por agencia (agenciaNombre o 'Sin Agencia / Retiro Local')
+            const grupos = {};
+            sel.forEach(enc => {
+                const agKey = enc.agenciaNombre || enc.lugarRetiro || 'Sin Agencia / Retiro Local';
+                if (!grupos[agKey]) grupos[agKey] = [];
+                grupos[agKey].push(enc);
+            });
 
-            // Construct HTML
-            const html = `
-                <html>
-                <head>
-                    <title>Remito ${details.CodigoRemito}</title>
-                    <style>
-                        body { font-family: sans-serif; padding: 20px; }
-                        h1 { border-bottom: 2px solid #000; padding-bottom: 10px; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                        th { background-color: #f2f2f2; }
-                        .footer { margin-top: 40px; font-weight: bold; }
-                    </style>
-                </head>
-                <body>
-                    <h1>REMITO DE SALIDA</h1>
-                    <p><strong>Código:</strong> ${details.CodigoRemito}</p>
-                    <p><strong>Fecha Salida:</strong> ${new Date(details.FechaSalida || details.FechaCreacion).toLocaleString()}</p>
-                    <p><strong>Origen:</strong> ${details.AreaOrigenID}</p>
-                    <p><strong>Destino:</strong> ${details.AreaDestinoID}</p>
-                    <p><strong>Transportista:</strong> ${transport.Observaciones}</p>
-                    
-                    <h3>Detalle de Bultos</h3>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Código Bulto</th>
-                                <th>Descripción</th>
-                                <th>Orden</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${details.items.map(i => `
-                                <tr>
-                                    <td>${i.CodigoEtiqueta}</td>
-                                    <td>${i.Descripcion || ''}</td>
-                                    <td>${i.OrdenID || ''}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                    
-                    <div class="footer">
-                        <p>Firma Transportista: _______________________</p>
-                        <p>Aclaración: _____________________________</p>
+            const renderFila = (enc) => {
+                const ordenesList = (enc.orders || []).map((o, i) =>
+                    `<tr>
+                        <td style="padding:5px 8px;font-size:12px;">${i + 1}</td>
+                        <td style="padding:5px 8px;font-size:12px;font-weight:700;">${o.orderNumber || '-'}</td>
+                        <td style="padding:5px 8px;font-size:12px;color:#475569;">${o.orderEstado || '-'}</td>
+                        <td style="padding:5px 8px;font-size:12px;text-align:right;font-weight:700;color:#0070bc;">${o.orderCosto || '-'}</td>
+                    </tr>`).join('');
+                const ordTable = enc.orders?.length > 0
+                    ? `<table style="width:100%;border-collapse:collapse;margin-top:6px;">
+                        <thead><tr style="background:#f8fafc;">
+                            <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">#</th>
+                            <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">Cód. Orden</th>
+                            <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">Estado</th>
+                            <th style="padding:5px 8px;font-size:11px;text-align:right;color:#64748b;border-bottom:1px solid #e2e8f0;">Importe</th>
+                        </tr></thead><tbody>${ordenesList}</tbody>
+                    </table>`
+                    : '<span style="font-size:12px;color:#aaa;">Sin órdenes registradas</span>';
+
+                return `<tr style="border-bottom:1px solid #e2e8f0;vertical-align:top;">
+                    <td style="padding:10px 8px;font-size:13px;font-weight:900;color:#1e293b;white-space:nowrap;">${enc.ordenDeRetiro}</td>
+                    <td style="padding:10px 8px;">
+                        <div style="font-size:13px;font-weight:700;">${enc.CliNombre || '-'}</div>
+                        <div style="font-size:11px;color:#64748b;">${enc.CliCodigoCliente || ''} &bull; ${enc.TClDescripcion || ''}</div>
+                        ${enc.CliTelefono ? `<div style="font-size:11px;color:#64748b;">&#128222; ${enc.CliTelefono}</div>` : ''}
+                    </td>
+                    <td style="padding:10px 8px;">
+                        ${enc.departamentoEnvio ? `<div style="font-size:12px;"><strong>Dpto:</strong> ${enc.departamentoEnvio}</div>` : ''}
+                        ${enc.localidadEnvio ? `<div style="font-size:12px;"><strong>Localidad:</strong> ${enc.localidadEnvio}</div>` : ''}
+                        ${enc.direccionEnvio ? `<div style="font-size:12px;"><strong>Dir:</strong> ${enc.direccionEnvio}</div>` : ''}
+                        ${(!enc.departamentoEnvio && !enc.localidadEnvio && !enc.direccionEnvio) ? `<span style="color:#aaa;font-size:11px;">—</span>` : ''}
+                    </td>
+                    <td style="padding:10px 8px;">${ordTable}</td>
+                    <td style="padding:10px 8px;text-align:center;">
+                        <span style="display:inline-block;padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;
+                            border:1.5px solid ${enc.pagorealizado === 1 ? '#16a34a' : '#dc2626'};
+                            color:${enc.pagorealizado === 1 ? '#16a34a' : '#dc2626'};">
+                            ${enc.pagorealizado === 1 ? 'PAGADO' : 'PENDIENTE'}
+                        </span>
+                    </td>
+                </tr>`;
+            };
+
+            const seccionesHtml = Object.entries(grupos).map(([agencia, ordenes]) => `
+                <div style="margin-bottom:24px;page-break-inside:avoid;">
+                    <div style="background:#0070bc;color:#fff;padding:8px 14px;border-radius:6px 6px 0 0;font-size:13px;font-weight:900;letter-spacing:.5px;">
+                        &#128666; ${agencia} &nbsp;<span style="font-size:11px;font-weight:400;opacity:.85;">(${ordenes.length} retiro${ordenes.length > 1 ? 's' : ''})</span>
                     </div>
-                    <script>window.print();</script>
-                </body>
-                </html>
-             `;
+                    <table style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;border-top:none;">
+                        <thead><tr style="background:#f1f5f9;">
+                            <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Retiro</th>
+                            <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Cliente</th>
+                            <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Destino</th>
+                            <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Órdenes</th>
+                            <th style="padding:7px 8px;font-size:11px;text-align:center;color:#334155;border-bottom:2px solid #e2e8f0;">Pago</th>
+                        </tr></thead>
+                        <tbody>${ordenes.map(renderFila).join('')}</tbody>
+                    </table>
+                </div>`).join('');
 
-            const win = window.open('', '_blank');
-            win.document.write(html);
-            win.document.close();
+            const firmasHtml = `
+                <div style="margin-top:40px;page-break-inside:avoid;">
+                    <div style="display:flex;justify-content:space-around;gap:24px;">
+                        <div style="flex:1;text-align:center;">
+                            <div style="border-top:1.5px solid #334155;padding-top:8px;margin-top:50px;">
+                                <div style="font-size:13px;font-weight:700;">Firma Entrega</div>
+                                <div style="font-size:11px;color:#64748b;margin-top:2px;">Responsable despacho</div>
+                            </div>
+                        </div>
+                        <div style="flex:1;text-align:center;">
+                            <div style="border-top:1.5px solid #334155;padding-top:8px;margin-top:50px;">
+                                <div style="font-size:13px;font-weight:700;">Firma Recibe</div>
+                                <div style="font-size:11px;color:#64748b;margin-top:2px;">Transportista / Agencia</div>
+                            </div>
+                        </div>
+                        <div style="flex:1;text-align:center;">
+                            <div style="border-top:1.5px solid #334155;padding-top:8px;margin-top:50px;">
+                                <div style="font-size:13px;font-weight:700;">Confirma Comprobante</div>
+                                <div style="font-size:11px;color:#64748b;margin-top:2px;">Aclaración y sello</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+
+            const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+            <title>Reporte Despacho &mdash; USER</title>
+            <style>
+                *{box-sizing:border-box;margin:0;padding:0;}
+                body{font-family:'Segoe UI',Calibri,sans-serif;padding:28px 32px;color:#1e293b;font-size:13px;}
+                @media print{body{padding:14px 16px;} button{display:none!important;}}
+            </style></head><body>
+            <div style="border-bottom:3px solid #0070bc;padding-bottom:14px;margin-bottom:22px;display:flex;justify-content:space-between;align-items:flex-end;">
+                <div style="display:flex;align-items:center;gap:20px;">
+                    <div>
+                        <div style="font-size:24px;font-weight:900;color:#0070bc;letter-spacing:1px;">USER</div>
+                        <div style="font-size:15px;font-weight:700;color:#475569;">Logística &mdash; Hoja de Despacho</div>
+                    </div>
+                    ${remitoCode ?
+                    `<div style="text-align:center;border-left:2px solid #e2e8f0;padding-left:20px;margin-left:5px;">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(remitoCode)}" style="width:60px;height:60px;mix-blend-mode:multiply;" />
+                        <div style="font-size:11px;font-weight:900;color:#1e293b;margin-top:2px;">${remitoCode}</div>
+                    </div>` : ''}
+                </div>
+                <div style="text-align:right;">
+                    <div style="font-size:12px;color:#94a3b8;">${fecha}</div>
+                    <div style="font-size:12px;color:#94a3b8;"><strong style="color:#1e293b;">${sel.length}</strong> retiros &bull; <strong style="color:#1e293b;">${Object.keys(grupos).length}</strong> agencia(s)</div>
+                </div>
+            </div>
+            ${seccionesHtml}
+            ${firmasHtml}
+            <div style="margin-top:24px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center;">
+                USER &mdash; Sistema de Gestión Logística &mdash; Documento interno
+            </div>
+            <div style="text-align:center;margin-top:16px;">
+                <button onclick="window.print()" style="background:#0070bc;color:#fff;border:none;padding:9px 30px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">&#128438; Imprimir Reporte</button>
+            </div>
+            </body></html>`;
+            
+            const win = window.open('', '_blank', 'width=1050,height=950');
+            if (win) { 
+                win.document.write(html); 
+                win.document.close(); 
+                win.focus(); 
+                setTimeout(() => win.print(), 700); 
+            }
 
         } catch (err) {
             console.error(err);
@@ -282,11 +368,11 @@ const TransportView = () => {
                                 <i className="fa-solid fa-xmark text-lg"></i>
                             </button>
                         </div>
-                        
+
                         <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
                             {/* COL ARCHIVOS */}
                             <div className="w-full md:w-1/3 bg-slate-50 p-5 border-r border-slate-200 overflow-y-auto">
-                                
+
                                 {/* HISTORIAL DE ARCHIVOS YA SUBIDOS */}
                                 {(() => {
                                     const prevPaths = Array.from(new Set(modalData.items.filter(i => i.ComprobantePath).map(i => i.ComprobantePath)));
@@ -316,7 +402,7 @@ const TransportView = () => {
 
                                 <div className="flex justify-between items-center mb-4 pt-2 border-t border-slate-200">
                                     <h4 className="font-bold text-slate-700">Comprobantes Nuevos</h4>
-                                    <button 
+                                    <button
                                         onClick={() => setModalFiles([...modalFiles, { id: Date.now(), file: null }])}
                                         className="text-[11px] bg-indigo-100 text-indigo-700 px-2 py-1 rounded font-bold hover:bg-indigo-200"
                                     >
@@ -327,7 +413,7 @@ const TransportView = () => {
                                     {modalFiles.map((mf, index) => (
                                         <div key={mf.id} className="bg-white p-3 rounded-lg border shadow-sm relative">
                                             {modalFiles.length > 1 && (
-                                                <button 
+                                                <button
                                                     onClick={() => {
                                                         const newFiles = modalFiles.filter(f => f.id !== mf.id);
                                                         setModalFiles(newFiles);
@@ -343,8 +429,8 @@ const TransportView = () => {
                                                 </button>
                                             )}
                                             <label className="text-xs font-bold text-indigo-600 mb-1 block">Archivo {index + 1}</label>
-                                            <input 
-                                                type="file" 
+                                            <input
+                                                type="file"
                                                 accept="image/*,application/pdf"
                                                 onChange={e => {
                                                     const newArr = [...modalFiles];
@@ -361,16 +447,16 @@ const TransportView = () => {
                                     )}
                                 </div>
                             </div>
-                            
+
                             {/* COL BULTOS */}
                             <div className="w-full md:w-2/3 p-5 overflow-y-auto">
                                 <h4 className="font-bold text-slate-700 mb-2">2. Bultos de esta tanda</h4>
                                 <p className="text-xs text-slate-500 mb-4">Marcá los entregados y asigales a qué archivo de la izquierda corresponden.</p>
-                                
+
                                 <div className="space-y-2">
                                     {modalData.items.map(item => {
                                         const isDelivered = item.BultoEstado === 'ENTREGADO';
-                                        
+
                                         if (isDelivered) {
                                             const fname = item.ComprobantePath ? item.ComprobantePath.split('/').pop() : 'Sin archivo';
                                             return (
@@ -388,11 +474,11 @@ const TransportView = () => {
                                         }
 
                                         const map = bultoMappings[item.BultoID] || { checked: false, fileId: 'none' };
-                                        
+
                                         return (
                                             <div key={item.BultoID} className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-lg border transition-all ${map.checked ? 'border-emerald-300 bg-emerald-50/30 shadow-sm' : 'bg-white hover:border-slate-300'}`}>
-                                                <label className="flex items-center gap-3 cursor-pointer flex-1 cursor-pointer">
-                                                    <input 
+                                                <label className="flex items-center gap-3 cursor-pointer flex-1">
+                                                    <input
                                                         type="checkbox"
                                                         checked={map.checked}
                                                         onChange={(e) => {
@@ -413,10 +499,10 @@ const TransportView = () => {
                                                         <p className="text-xs text-slate-500">{item.Descripcion || 'Sin desc'}</p>
                                                     </div>
                                                 </label>
-                                                
+
                                                 {/* SELECTOR DE ARCHIVO */}
                                                 <div className="mt-3 sm:mt-0 w-full sm:w-48 ml-8 sm:ml-0">
-                                                    <select 
+                                                    <select
                                                         disabled={!map.checked}
                                                         value={map.fileId}
                                                         onChange={(e) => {
@@ -445,8 +531,8 @@ const TransportView = () => {
                             <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-lg font-bold text-slate-600 hover:bg-slate-200 text-sm">
                                 Cancelar
                             </button>
-                            <button 
-                                onClick={handleConfirmDelivery} 
+                            <button
+                                onClick={handleConfirmDelivery}
                                 disabled={Object.values(bultoMappings).filter(m => m.checked).length === 0 || loading}
                                 className="px-6 py-2 rounded-lg font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 text-sm"
                             >

@@ -29,7 +29,7 @@ exports.verifyToken = (req, res, next) => {
             req.user = decoded;
 
             const { iat, exp, ...userData } = decoded;
-            const newToken = jwt.sign(userData, JWT_SECRET, { expiresIn: '24h' });
+            const newToken = jwt.sign(userData, JWT_SECRET, { expiresIn: '30d' });
             res.setHeader('x-renewed-token', newToken)
             /* 
                decoded espera tener:

@@ -427,7 +427,7 @@ const getOrdenesRetiroPorLugar = async (req, res) => {
     let query = `
       ${getOrdenesRetiroQueryBase}
       WHERE r.LReIdLugarRetiro = @LugarId
-      AND r.OReEstadoActual NOT IN (5, 6)
+      AND r.OReEstadoActual NOT IN (5, 6, 10)
     `;
 
     // FIX: filtro no_pagas usa NOT EXISTS para evitar falsos positivos con LEFT JOIN
@@ -606,7 +606,7 @@ const buscarParaMostrador = async (req, res) => {
     `;
 
     let retiroRows = [];
-    let sinRetiro  = [];
+    let sinRetiro = [];
 
     if (esRetiro) {
       // ── Búsqueda por código de retiro (R-XXXX / RT-XXXX / etc.) ─────────────
@@ -796,8 +796,27 @@ const getClienteEnvioDatos = async (req, res) => {
 };
 
 
+const getOrdenesRetiroPorRemito = async (req, res) => {
+  const { remitoCode } = req.params;
+  try {
+    const pool = await getPool();
+    const query = `
+      ${getOrdenesRetiroQueryBase}
+      INNER JOIN Logistica_Bultos b WITH(NOLOCK) ON b.OrdenID = r.OReIdOrdenRetiro AND b.Tipocontenido = 'ENCOMIENDA'
+      INNER JOIN Logistica_EnvioItems ei WITH(NOLOCK) ON ei.BultoID = b.BultoID
+      INNER JOIN Logistica_Envios e WITH(NOLOCK) ON e.EnvioID = ei.EnvioID
+      WHERE e.CodigoRemito = @RemitoCode
+    `;
+    const result = await pool.request().input('RemitoCode', sql.VarChar, remitoCode).query(query);
+    res.json(processRetirosRows(result.recordset));
+  } catch (err) {
+    logger.error('Error al obtener retiros por remito:', err);
+    res.status(500).json({ error: 'Error' });
+  }
+};
+
 module.exports = {
   createOrdenRetiro, getOrdenesRetiroPorEstados, actualizarOrdenRetiroEstado, marcarOrdenRetiroPronto,
   marcarOrdenRetiroEntregado, ordenesRetiroCaja, getOrdenesRetiroPasarPorCaja, ordenesRetiroMarcarPasarPorCaja, getOrdenesRetiroPorFecha,
-  getOrdenesRetiroPorLugar, marcarDespachoEntregadoAutorizado, buscarParaMostrador, getClienteEnvioDatos, getTodasSinRetiro, backfillLugarRetiro
+  getOrdenesRetiroPorLugar, marcarDespachoEntregadoAutorizado, buscarParaMostrador, getClienteEnvioDatos, getTodasSinRetiro, backfillLugarRetiro, getOrdenesRetiroPorRemito
 };

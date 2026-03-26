@@ -59,7 +59,7 @@ exports.login = async (req, res) => {
                     userType: 'INTERNAL' // Flag para distinguir
                 },
                 JWT_SECRET,
-                { expiresIn: '24h' }
+                { expiresIn: '30d' }
             );
 
             return res.json({
@@ -324,7 +324,7 @@ exports.register = async (req, res) => {
                 idRol: 2
             },
             JWT_SECRET,
-            { expiresIn: '24h' }
+            { expiresIn: '30d' }
         );
 
         res.json({

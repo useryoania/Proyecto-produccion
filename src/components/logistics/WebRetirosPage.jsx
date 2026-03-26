@@ -531,6 +531,22 @@ const WebRetirosPage = () => {
   const [deliveryBarcodeInput, setDeliveryBarcodeInput] = React.useState('');
   const [deliverySelectedOrders, setDeliverySelectedOrders] = React.useState({});
   const [announcedOrders, setAnnouncedOrders] = React.useState(new Set()); // Órdenes anunciadas desde el tótem
+  const [duplicateDeliveryWarn, setDuplicateDeliveryWarn] = React.useState(null);
+  const deliveryInputRef = React.useRef(null);
+
+  // Scanner redirect for ConfirmDelivery
+  useEffect(() => {
+    if (!confirmDelivery) return;
+    const handleScannerFocus = (e) => {
+      const active = document.activeElement;
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        deliveryInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleScannerFocus);
+    return () => window.removeEventListener('keydown', handleScannerFocus);
+  }, [confirmDelivery]);
 
   // Cerrar modales con ESC
   useEffect(() => {
@@ -916,7 +932,8 @@ const WebRetirosPage = () => {
       const isPagado = retiroFull?.pagorealizado === 1 || item.Pagado;
       const isAutorizado = retiroFull?.estadoNumerico === 9 || (retiroFull?.estado || '').toLowerCase() === 'autorizado' || item.estadoNumerico === 9;
       if (!isPagado && !isAutorizado) {
-        Swal.fire({ toast: true, position: 'top-end', icon: 'warning', title: `${ordenStr} no está pagada ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
+        Swal.fire({
+          toast: true, position: 'top-end', icon: 'warning', title: `${ordenStr} no está pagada ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
           showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' }, hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
         });
         return;
@@ -938,7 +955,8 @@ const WebRetirosPage = () => {
 
     try {
       await api.post('/web-retiros/estantes/liberar-multiple', { ubicacionId, ordenesParaEntregar });
-      Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Entregado correctamente.', showConfirmButton: false, timer: 2500,
+      Swal.fire({
+        toast: true, position: 'top-end', icon: 'success', title: 'Entregado correctamente.', showConfirmButton: false, timer: 2500,
         showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' }, hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
       });
     } catch (err) {
@@ -1043,19 +1061,42 @@ const WebRetirosPage = () => {
   const OrderDetail = () => {
     const [barcodeInput, setBarcodeInput] = useState('');
     const inputRef = React.useRef(null);
+    const [duplicateWarn, setDuplicateWarn] = useState(null);
+
+    useEffect(() => {
+      const handleGlobalKeyDown = (e) => {
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+        if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+          inputRef.current?.focus();
+        }
+      };
+      window.addEventListener('keydown', handleGlobalKeyDown);
+      return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+    }, []);
 
     const toggle = (id) => setScannedBultos(prev => ({ ...prev, [id]: !prev[id] }));
     const allChecked = selectedRetiro.orders?.every(o => scannedBultos[o.orderNumber]);
 
     const handleScanSubmit = (e) => {
       e.preventDefault();
-      const code = barcodeInput.trim().toUpperCase();
-      if (!code) return;
+      const rawCode = barcodeInput.trim().toUpperCase();
+      if (!rawCode) return;
+      const code = rawCode.replace(/^([A-Z]+)(\d+)$/, '$1-$2');
 
-      // Find if code exists in order
-      const found = selectedRetiro.orders?.find(o => o.orderNumber.toUpperCase() === code);
+      // Find matches (exact or numeric suffix if unique)
+      const possibleMatches = selectedRetiro.orders?.filter(o => {
+        const oNum = o.orderNumber.toUpperCase();
+        return oNum === code || (code.match(/^\d+$/) && oNum.endsWith(`-${code}`));
+      }) || [];
+      const found = possibleMatches.length === 1 ? possibleMatches[0] : null;
       if (found) {
-        setScannedBultos(prev => ({ ...prev, [found.orderNumber]: true }));
+        if (scannedBultos[found.orderNumber]) {
+          setDuplicateWarn(found.orderNumber);
+          setTimeout(() => setDuplicateWarn(null), 200);
+        } else {
+          setScannedBultos(prev => ({ ...prev, [found.orderNumber]: true }));
+        }
       }
       setBarcodeInput('');
     };
@@ -1081,44 +1122,57 @@ const WebRetirosPage = () => {
               ref={inputRef}
               type="text"
               value={barcodeInput}
-              onChange={(e) => setBarcodeInput(e.target.value)}
-              className="block w-full pl-12 pr-16 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white text-base font-bold transition-all text-slate-700"
+              onChange={(e) => {
+                const val = e.target.value;
+                setBarcodeInput(val);
+                const rawCode = val.trim().toUpperCase();
+                const code = rawCode.replace(/^([A-Z]+)(\d+)$/, '$1-$2');
+                if (code && selectedRetiro?.orders) {
+                  const possibleMatches = selectedRetiro.orders.filter(o => {
+                    const oNum = o.orderNumber.toUpperCase();
+                    return oNum === code || (code.match(/^\d+$/) && oNum.endsWith(`-${code}`));
+                  });
+                  const found = possibleMatches.length === 1 ? possibleMatches[0] : null;
+
+                  if (found) {
+                    if (scannedBultos[found.orderNumber]) {
+                      setDuplicateWarn(found.orderNumber);
+                      setTimeout(() => setDuplicateWarn(null), 200);
+                    } else {
+                      setScannedBultos(prev => ({ ...prev, [found.orderNumber]: true }));
+                    }
+                    setTimeout(() => setBarcodeInput(''), 0);
+                  }
+                }
+              }}
+              className="block w-full pl-12 pr-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white text-base font-bold transition-all text-slate-700"
               placeholder="Escanee el bulto aquí..."
               autoFocus
             />
-            <button type="submit" className="absolute inset-y-1.5 right-1.5 px-4 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-blue-700">OK</button>
           </form>
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 mb-6">
             <div className="flex items-center justify-between mb-3">
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Checklist de Bultos</p>
-              <button type="button" onClick={() => {
-                const orders = selectedRetiro.orders || [];
-                const allDone = orders.every(o => scannedBultos[o.orderNumber]);
-                const next = {};
-                orders.forEach(o => { next[o.orderNumber] = !allDone; });
-                setScannedBultos(next);
-              }} className="cursor-pointer" title={selectedRetiro.orders?.every(o => scannedBultos[o.orderNumber]) ? 'Desmarcar todos' : 'Marcar todos'}>
-                {selectedRetiro.orders?.every(o => scannedBultos[o.orderNumber])
-                  ? <CheckCircle className="text-green-500" size={24} />
-                  : <div className="w-6 h-6 rounded-full border-2 border-slate-300" />}
-              </button>
             </div>
-            <div className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto">
+            <div className="grid grid-cols-3 gap-3 p-1 max-h-64 overflow-y-auto">
               {selectedRetiro.orders?.map(o => (
-                <div key={o.orderNumber} onClick={() => toggle(o.orderNumber)}
-                  className={`flex items-center gap-2 p-3 rounded-xl border-2 cursor-pointer transition-all ${
-                    scannedBultos[o.orderNumber] ? 'bg-green-50 border-green-500 shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300'
-                  }`}>
-                  <div className={`p-2 rounded-lg shrink-0 ${scannedBultos[o.orderNumber] ? 'bg-green-500 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                <motion.div key={o.orderNumber}
+                  animate={duplicateWarn === o.orderNumber ? { rotate: [0, -3, 3, -3, 3, 0] } : { rotate: 0 }}
+                  transition={{ duration: 0.2 }}
+                  onClick={() => {
+                    if (scannedBultos[o.orderNumber]) {
+                      setScannedBultos(prev => ({ ...prev, [o.orderNumber]: false }));
+                    }
+                  }}
+                  className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-colors ${scannedBultos[o.orderNumber] ? 'bg-green-100 border-green-500 shadow-sm cursor-pointer hover:opacity-80' : 'bg-white border-slate-200'
+                    }`}>
+                  <div className={`p-2 shrink-0 ${scannedBultos[o.orderNumber] ? 'text-green-700' : 'text-slate-400'}`}>
                     <Package size={16} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-black text-slate-800 truncate">{o.orderNumber}</div>
                   </div>
-                  {scannedBultos[o.orderNumber]
-                    ? <CheckCircle className="text-green-500 shrink-0" size={18} />
-                    : <div className="w-4 h-4 rounded-full border-2 border-slate-300 shrink-0" />}
-                </div>
+                </motion.div>
               ))}
             </div>
           </div>
@@ -1155,86 +1209,86 @@ const WebRetirosPage = () => {
 
   const UbicationGrid = () => (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4 py-8" onClick={() => setUbicationMode(false)}>
-    <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h2 className="text-2xl font-black text-slate-800">Mapa del Depósito</h2>
-          <p className="text-slate-500 font-medium text-sm mt-1">Haga click en un casillero vacío para ubicar la orden <strong className="text-blue-600">{selectedRetiro.pagoHandy ? selectedRetiro.ordenDeRetiro.replace('R-', 'PW-') : selectedRetiro.ordenDeRetiro}</strong></p>
-        </div>
-        <button onClick={() => setUbicationMode(false)} className="px-6 py-2.5 bg-white border border-slate-200 rounded-lg font-bold text-slate-500 shadow-sm hover:bg-slate-50 text-sm">Atrás</button>
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-4">
-        {estantesConfigArr.map(est => (
-          <div key={est.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-white font-black text-base">{est.id}</div>
-              <span className="text-sm font-bold text-slate-700">Estante {est.id}</span>
-            </div>
-
-            <div className="space-y-1.5">
-              {[...Array(est.secciones)].map((_, s) => (
-                <div key={s} className="flex gap-1.5 items-center">
-                  <div className="w-8 bg-slate-50 rounded-md flex flex-col items-center justify-center border border-slate-200 py-1 shrink-0">
-                    <span className="text-[8px] font-bold text-slate-400 uppercase">S</span>
-                    <span className="text-xs font-black text-slate-700">{s + 1}</span>
-                  </div>
-                  <div className="grid grid-cols-5 flex-1 gap-1">
-                    {[...Array(est.posiciones)].map((_, p) => {
-                      const id = `${est.id}-${s + 1}-${p + 1}`;
-                      const dataList = ocupacionEstantes[id] || [];
-                      const isOccupied = dataList.length > 0;
-
-                      let puedeGuardarAca = true;
-                      if (isOccupied && selectedRetiro) {
-                        const clienteExistente = String(dataList[0].CodigoCliente || '').trim().toLowerCase();
-                        const clienteNuevo = String(selectedRetiro.idcliente || '').trim().toLowerCase();
-                        if (clienteExistente !== clienteNuevo && clienteExistente !== 'ecommerce') {
-                          puedeGuardarAca = false;
-                        }
-                      }
-
-                      return (
-                        <button
-                          key={p}
-                          title={isOccupied ? (dataList[0]?.OrdenRetiro || id) : id}
-                          onClick={() => {
-                            if (!puedeGuardarAca) {
-                              setError('No puedes guardar órdenes de diferentes clientes en el mismo casillero.');
-                              return;
-                            }
-                            handleAsignarUbicacion(est.id, s + 1, p + 1);
-                          }}
-                          className={`relative h-10 rounded-lg border-2 transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${isOccupied
-                            ? puedeGuardarAca
-                              ? 'bg-indigo-600 border-indigo-700 hover:bg-indigo-500'
-                              : 'bg-rose-950 border-rose-800 opacity-60 cursor-not-allowed'
-                            : 'bg-white border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50'
-                            }`}
-                        >
-                          {isOccupied ? (
-                            <span className="text-[8px] font-black text-white leading-tight px-0.5 truncate w-full text-center">
-                              {dataList[0]?.OrdenRetiro?.split('-')[1] || '?'}
-                            </span>
-                          ) : (
-                            <span className="text-[8px] text-slate-300">{p + 1}</span>
-                          )}
-                          {dataList.length > 1 && (
-                            <div className="absolute top-0 right-0 bg-rose-500 text-white text-[7px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
-                              {dataList.length}
-                            </div>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
+      <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h2 className="text-2xl font-black text-slate-800">Mapa del Depósito</h2>
+            <p className="text-slate-500 font-medium text-sm mt-1">Haga click en un casillero vacío para ubicar la orden <strong className="text-blue-600">{selectedRetiro.pagoHandy ? selectedRetiro.ordenDeRetiro.replace('R-', 'PW-') : selectedRetiro.ordenDeRetiro}</strong></p>
           </div>
-        ))}
+          <button onClick={() => setUbicationMode(false)} className="px-6 py-2.5 bg-white border border-slate-200 rounded-lg font-bold text-slate-500 shadow-sm hover:bg-slate-50 text-sm">Atrás</button>
+        </div>
+
+        <div className="grid lg:grid-cols-3 gap-4">
+          {estantesConfigArr.map(est => (
+            <div key={est.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-white font-black text-base">{est.id}</div>
+                <span className="text-sm font-bold text-slate-700">Estante {est.id}</span>
+              </div>
+
+              <div className="space-y-1.5">
+                {[...Array(est.secciones)].map((_, s) => (
+                  <div key={s} className="flex gap-1.5 items-center">
+                    <div className="w-8 bg-slate-50 rounded-md flex flex-col items-center justify-center border border-slate-200 py-1 shrink-0">
+                      <span className="text-[8px] font-bold text-slate-400 uppercase">S</span>
+                      <span className="text-xs font-black text-slate-700">{s + 1}</span>
+                    </div>
+                    <div className="grid grid-cols-5 flex-1 gap-1">
+                      {[...Array(est.posiciones)].map((_, p) => {
+                        const id = `${est.id}-${s + 1}-${p + 1}`;
+                        const dataList = ocupacionEstantes[id] || [];
+                        const isOccupied = dataList.length > 0;
+
+                        let puedeGuardarAca = true;
+                        if (isOccupied && selectedRetiro) {
+                          const clienteExistente = String(dataList[0].CodigoCliente || '').trim().toLowerCase();
+                          const clienteNuevo = String(selectedRetiro.idcliente || '').trim().toLowerCase();
+                          if (clienteExistente !== clienteNuevo && clienteExistente !== 'ecommerce') {
+                            puedeGuardarAca = false;
+                          }
+                        }
+
+                        return (
+                          <button
+                            key={p}
+                            title={isOccupied ? (dataList[0]?.OrdenRetiro || id) : id}
+                            onClick={() => {
+                              if (!puedeGuardarAca) {
+                                setError('No puedes guardar órdenes de diferentes clientes en el mismo casillero.');
+                                return;
+                              }
+                              handleAsignarUbicacion(est.id, s + 1, p + 1);
+                            }}
+                            className={`relative h-10 rounded-lg border-2 transition-all flex flex-col items-center justify-center cursor-pointer overflow-hidden ${isOccupied
+                              ? puedeGuardarAca
+                                ? 'bg-indigo-600 border-indigo-700 hover:bg-indigo-500'
+                                : 'bg-rose-950 border-rose-800 opacity-60 cursor-not-allowed'
+                              : 'bg-white border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50'
+                              }`}
+                          >
+                            {isOccupied ? (
+                              <span className="text-[8px] font-black text-white leading-tight px-0.5 truncate w-full text-center">
+                                {dataList[0]?.OrdenRetiro?.split('-')[1] || '?'}
+                              </span>
+                            ) : (
+                              <span className="text-[8px] text-slate-300">{p + 1}</span>
+                            )}
+                            {dataList.length > 1 && (
+                              <div className="absolute top-0 right-0 bg-rose-500 text-white text-[7px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                                {dataList.length}
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
     </div>
   );
 
@@ -1328,13 +1382,13 @@ const WebRetirosPage = () => {
 
         {/* Fila 2: Filtros de tipo y lugar — solo en empaque sin selección */}
         {view === 'empaque' && !selectedRetiro && (() => {
-        const PRIORITY_META_F = [
-            { key: 'ANUNCIADA',   label: 'Anunciadas', dot: 'bg-pink-500',    active: 'bg-pink-500'    },
-            { key: 'PAGADO',      label: 'Pagados',    dot: 'bg-emerald-500', active: 'bg-emerald-500' },
-            { key: 'AUTORIZADO',  label: 'Autorizados',dot: 'bg-orange-500',  active: 'bg-orange-500'  },
-            { key: 'PENDIENTE',   label: 'Pendientes', dot: 'bg-rose-500',    active: 'bg-rose-500'    },
-            { key: 'SEMANAL',     label: 'Semanales',  dot: 'bg-indigo-500',  active: 'bg-indigo-500'  },
-            { key: 'ROLLO',       label: 'Rollo',      dot: 'bg-amber-500',   active: 'bg-amber-500'   },
+          const PRIORITY_META_F = [
+            { key: 'ANUNCIADA', label: 'Anunciadas', dot: 'bg-pink-500', active: 'bg-pink-500' },
+            { key: 'PAGADO', label: 'Pagados', dot: 'bg-emerald-500', active: 'bg-emerald-500' },
+            { key: 'AUTORIZADO', label: 'Autorizados', dot: 'bg-orange-500', active: 'bg-orange-500' },
+            { key: 'PENDIENTE', label: 'Pendientes', dot: 'bg-rose-500', active: 'bg-rose-500' },
+            { key: 'SEMANAL', label: 'Semanales', dot: 'bg-indigo-500', active: 'bg-indigo-500' },
+            { key: 'ROLLO', label: 'Rollo', dot: 'bg-amber-500', active: 'bg-amber-500' },
           ];
           const uniqueLugares = Array.from(
             new Set([...apiOrders, ...otrosRetiros].map(o => o.lugarRetiro).filter(Boolean))
@@ -1348,9 +1402,8 @@ const WebRetirosPage = () => {
               {PRIORITY_META_F.map(m => (
                 <button key={m.key}
                   onClick={() => setFiltroTipo(m.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wide border transition-all ${
-                    filtroTipo === m.key ? `${m.active} text-white border-transparent` : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                  }`}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wide border transition-all ${filtroTipo === m.key ? `${m.active} text-white border-transparent` : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                    }`}
                 >
                   <div className={`w-1.5 h-1.5 rounded-full ${filtroTipo === m.key ? 'bg-white' : m.dot}`} />
                   {m.label}
@@ -1366,11 +1419,11 @@ const WebRetirosPage = () => {
                       return a.localeCompare(b);
                     })
                     .map((lugar, i) => (
-                    <button key={i}
-                      onClick={() => setFiltroLugarRetiro(filtroLugarRetiro === lugar ? 'ALL' : lugar)}
-                      className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wide border transition-all ${filtroLugarRetiro === lugar ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-                    >{lugar.replace(/\s*\(.*\)\s*$/, '')}</button>
-                  ))}
+                      <button key={i}
+                        onClick={() => setFiltroLugarRetiro(filtroLugarRetiro === lugar ? 'ALL' : lugar)}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wide border transition-all ${filtroLugarRetiro === lugar ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                      >{lugar.replace(/\s*\(.*\)\s*$/, '')}</button>
+                    ))}
                 </>
               )}
             </div>
@@ -1393,11 +1446,11 @@ const WebRetirosPage = () => {
               {/* ─── LISTA UNIFICADA DE RETIROS ─── */}
               {(() => {
                 const PRIORITY_META = {
-                  '-1': { label: 'Anunciadas',    color: 'text-pink-600', dot: 'bg-pink-500', badge: 'bg-pink-50 border-pink-200 text-pink-700', icon: BellRing },
-                  '0': { label: 'Pagados',          color: 'text-emerald-600', dot: 'bg-emerald-500', badge: 'bg-emerald-50 border-emerald-200 text-emerald-700' },
+                  '-1': { label: 'Anunciadas', color: 'text-pink-600', dot: 'bg-pink-500', badge: 'bg-pink-50 border-pink-200 text-pink-700', icon: BellRing },
+                  '0': { label: 'Pagados', color: 'text-emerald-600', dot: 'bg-emerald-500', badge: 'bg-emerald-50 border-emerald-200 text-emerald-700' },
                   '1': { label: 'Rollo por Adelantado', color: 'text-amber-600', dot: 'bg-amber-500', badge: 'bg-amber-50 border-amber-200 text-amber-700' },
-                  '2': { label: 'Semanales',        color: 'text-indigo-600', dot: 'bg-indigo-500', badge: 'bg-indigo-50 border-indigo-200 text-indigo-700' },
-                  '3': { label: 'Autorizados',      color: 'text-orange-600', dot: 'bg-orange-500', badge: 'bg-orange-50 border-orange-200 text-orange-700' },
+                  '2': { label: 'Semanales', color: 'text-indigo-600', dot: 'bg-indigo-500', badge: 'bg-indigo-50 border-indigo-200 text-indigo-700' },
+                  '3': { label: 'Autorizados', color: 'text-orange-600', dot: 'bg-orange-500', badge: 'bg-orange-50 border-orange-200 text-orange-700' },
                   '4': { label: 'Pendientes de Pago', color: 'text-rose-600', dot: 'bg-rose-500', badge: 'bg-rose-50 border-rose-200 text-rose-700' },
                 };
 
@@ -1519,9 +1572,9 @@ const WebRetirosPage = () => {
 
                 // 3. Columnas por tipo: RT / RW / RL
                 const TYPE_COLS = [
-                  { prefix: 'RT', color: 'text-teal-700',   dot: 'bg-teal-500',   badge: 'bg-teal-50 border-teal-200 text-teal-700' },
+                  { prefix: 'RT', color: 'text-teal-700', dot: 'bg-teal-500', badge: 'bg-teal-50 border-teal-200 text-teal-700' },
                   { prefix: 'RW', color: 'text-violet-700', dot: 'bg-violet-500', badge: 'bg-violet-50 border-violet-200 text-violet-700' },
-                  { prefix: 'RL', color: 'text-amber-700',  dot: 'bg-amber-500',  badge: 'bg-amber-50 border-amber-200 text-amber-700' },
+                  { prefix: 'RL', color: 'text-amber-700', dot: 'bg-amber-500', badge: 'bg-amber-50 border-amber-200 text-amber-700' },
                 ];
 
                 const getPrefix = (item) => {
@@ -1679,10 +1732,10 @@ const WebRetirosPage = () => {
                 );
               })()}
             </div>
-          {/* OrderDetail / UbicationGrid as overlay modals */}
-          {selectedRetiro && (
-            ubicationMode ? <UbicationGrid /> : <OrderDetail />
-          )}
+            {/* OrderDetail / UbicationGrid as overlay modals */}
+            {selectedRetiro && (
+              ubicationMode ? <UbicationGrid /> : <OrderDetail />
+            )}
           </>
         ) : (
           /* VISTA MOSTRADOR - MATRIZ DE ESTANTERÍA */
@@ -1781,14 +1834,14 @@ const WebRetirosPage = () => {
                                 const getSlotColors = () => {
                                   if (!isOccupied) return { bg: '', border: '' };
                                   if (isMatched) return { bg: 'bg-green-600', border: 'border-green-500', subText: 'text-green-100', hover: 'bg-green-900/85' };
-                                  const pagado    = retiroInfo?.pagorealizado === 1 || retiroInfo?.pagorealizado === true || firstData?.Pagado === true;
+                                  const pagado = retiroInfo?.pagorealizado === 1 || retiroInfo?.pagorealizado === true || firstData?.Pagado === true;
                                   const autorizado = retiroInfo?.estadoNumerico === 9 || retiroInfo?.OReEstadoActual === 9 || firstData?.Autorizado === true;
-                                  const desc      = (retiroInfo?.TClDescripcion || firstData?.TClDescripcion || '').toLowerCase();
-                                  if (pagado || desc.includes('rollo'))         return { bg: 'bg-emerald-600', border: 'border-emerald-700', subText: 'text-emerald-200', hover: 'bg-emerald-900/85' };
-                                  if (autorizado)                               return { bg: 'bg-amber-500',   border: 'border-amber-600',   subText: 'text-amber-100',   hover: 'bg-amber-900/85' };
-                                  if (desc.includes('semanal'))                 return { bg: 'bg-indigo-600',  border: 'border-indigo-700',  subText: 'text-indigo-200',  hover: 'bg-indigo-900/85' };
+                                  const desc = (retiroInfo?.TClDescripcion || firstData?.TClDescripcion || '').toLowerCase();
+                                  if (pagado || desc.includes('rollo')) return { bg: 'bg-emerald-600', border: 'border-emerald-700', subText: 'text-emerald-200', hover: 'bg-emerald-900/85' };
+                                  if (autorizado) return { bg: 'bg-amber-500', border: 'border-amber-600', subText: 'text-amber-100', hover: 'bg-amber-900/85' };
+                                  if (desc.includes('semanal')) return { bg: 'bg-indigo-600', border: 'border-indigo-700', subText: 'text-indigo-200', hover: 'bg-indigo-900/85' };
                                   // Pendiente de pago → rojo
-                                  return                                               { bg: 'bg-rose-600',    border: 'border-rose-700',    subText: 'text-rose-200',    hover: 'bg-rose-900/85' };
+                                  return { bg: 'bg-rose-600', border: 'border-rose-700', subText: 'text-rose-200', hover: 'bg-rose-900/85' };
                                 };
                                 const slotColors = getSlotColors();
 
@@ -1818,15 +1871,15 @@ const WebRetirosPage = () => {
                                     onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDrop(id); setDragOverSlot(null); }}
                                     className={`h-14 rounded-xl border-2 transition-colors flex flex-col items-center justify-center gap-0.5 relative group overflow-hidden cursor-pointer
                                         ${isOccupied
-                                          ? `${slotColors.bg} ${slotColors.border} shadow-sm`
-                                          : 'bg-white border-dashed border-slate-200'}
+                                        ? `${slotColors.bg} ${slotColors.border} shadow-sm`
+                                        : 'bg-white border-dashed border-slate-200'}
                                         ${isMismatched ? 'opacity-20 grayscale' : ''}
                                         ${isMatched ? 'ring-4 ring-green-400 scale-[1.02]' : ''}
                                         ${dragOverSlot === id && !isOccupied ? 'border-blue-400 bg-blue-50 scale-105' : ''}
                                         ${dragOverSlot === id && isOccupied ? 'ring-2 ring-blue-400' : ''}
                                         ${isSlotAnnounced ? 'ring-4 ring-pink-400 animate-pulse shadow-lg shadow-pink-200' : ''}
                                       `}
-                                      onDoubleClick={() => { if (isOccupied) directEntregar(id, dataList); }}
+                                    onDoubleClick={() => { if (isOccupied) directEntregar(id, dataList); }}
                                   >
                                     {isOccupied ? (
                                       <>
@@ -1901,55 +1954,55 @@ const WebRetirosPage = () => {
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                     <AnimatePresence>
-                    {otrosRetiros
-                      .filter(o => {
-                        if (!searchTerm) return true;
-                        const t = searchTerm.toLowerCase();
-                        return (o.ordenDeRetiro || '').toLowerCase().includes(t) || (o.CliCodigoCliente || '').toLowerCase().includes(t);
-                      })
-                      .sort((a, b) => {
-                        const pri = x => (x.pagorealizado === 1 || x.pagorealizado === true) ? 0
-                          : (x.TClDescripcion || '').toLowerCase().includes('rollo') ? 1
-                            : (x.TClDescripcion || '').toLowerCase().includes('semanal') ? 2 : 3;
-                        if (pri(a) !== pri(b)) return pri(a) - pri(b);
-                        return new Date(a.fechaAlta || 0) - new Date(b.fechaAlta || 0);
-                      })
-                      .map((o) => {
-                        const pagado = o.pagorealizado === 1 || o.pagorealizado === true;
-                        const desc = (o.TClDescripcion || '').toLowerCase();
-                        const dotColor = pagado ? 'bg-emerald-500' : desc.includes('rollo') ? 'bg-amber-500' : desc.includes('semanal') ? 'bg-indigo-500' : 'bg-rose-500';
-                        const diffMin = o.fechaAlta ? Math.floor((Date.now() - new Date(o.fechaAlta).getTime()) / 60000) : 0;
-                        const d = Math.floor(diffMin / 1440), h = Math.floor((diffMin % 1440) / 60), m = diffMin % 60;
-                        const timeStr = d > 0 ? `${d}d` : h > 0 ? `${h}h ${m}m` : `${m}m`;
-                        return (
-                          <motion.div
-                            key={o.ordenDeRetiro}
-                            layout
-                            initial={{ opacity: 0, scale: 0.9 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.85, y: 10 }}
-                            transition={{ duration: 0.25 }}
-                            className="relative bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-2 overflow-hidden"
-                          >
-                            <div className={`absolute top-0 left-0 right-0 h-1 ${dotColor} rounded-t-2xl`} />
-                            <div className="font-black text-slate-800 text-sm tracking-tight mt-1">{o.ordenDeRetiro}</div>
-                            <div className="text-[10px] font-bold text-slate-400 uppercase truncate">{o.CliCodigoCliente || o.CliNombre}</div>
-                            <div className={`text-xs font-black ${pagado ? 'text-emerald-600' : 'text-rose-500'}`}>
-                              {pagado ? 'Pagado ✓' : 'Pend. Pago'}
-                            </div>
-                            <div className="flex items-center justify-between mt-auto">
-                              <span className="flex items-center gap-0.5 text-[10px] font-bold text-slate-700"><Clock size={9} /> {timeStr}</span>
-                              <span className="flex items-center gap-0.5 text-[10px] font-bold text-slate-400"><Package size={9} /> {(o.orders || []).length}</span>
-                            </div>
-                            <button
-                              onClick={() => triggerEntregar('FUERA DE ESTANTE', o)}
-                              className="mt-1 w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black rounded-xl transition-colors"
+                      {otrosRetiros
+                        .filter(o => {
+                          if (!searchTerm) return true;
+                          const t = searchTerm.toLowerCase();
+                          return (o.ordenDeRetiro || '').toLowerCase().includes(t) || (o.CliCodigoCliente || '').toLowerCase().includes(t);
+                        })
+                        .sort((a, b) => {
+                          const pri = x => (x.pagorealizado === 1 || x.pagorealizado === true) ? 0
+                            : (x.TClDescripcion || '').toLowerCase().includes('rollo') ? 1
+                              : (x.TClDescripcion || '').toLowerCase().includes('semanal') ? 2 : 3;
+                          if (pri(a) !== pri(b)) return pri(a) - pri(b);
+                          return new Date(a.fechaAlta || 0) - new Date(b.fechaAlta || 0);
+                        })
+                        .map((o) => {
+                          const pagado = o.pagorealizado === 1 || o.pagorealizado === true;
+                          const desc = (o.TClDescripcion || '').toLowerCase();
+                          const dotColor = pagado ? 'bg-emerald-500' : desc.includes('rollo') ? 'bg-amber-500' : desc.includes('semanal') ? 'bg-indigo-500' : 'bg-rose-500';
+                          const diffMin = o.fechaAlta ? Math.floor((Date.now() - new Date(o.fechaAlta).getTime()) / 60000) : 0;
+                          const d = Math.floor(diffMin / 1440), h = Math.floor((diffMin % 1440) / 60), m = diffMin % 60;
+                          const timeStr = d > 0 ? `${d}d` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+                          return (
+                            <motion.div
+                              key={o.ordenDeRetiro}
+                              layout
+                              initial={{ opacity: 0, scale: 0.9 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.85, y: 10 }}
+                              transition={{ duration: 0.25 }}
+                              className="relative bg-white rounded-2xl border border-slate-200 p-4 flex flex-col gap-2 overflow-hidden"
                             >
-                              Entregar
-                            </button>
-                          </motion.div>
-                        );
-                      })}
+                              <div className={`absolute top-0 left-0 right-0 h-1 ${dotColor} rounded-t-2xl`} />
+                              <div className="font-black text-slate-800 text-sm tracking-tight mt-1">{o.ordenDeRetiro}</div>
+                              <div className="text-[10px] font-bold text-slate-400 uppercase truncate">{o.CliCodigoCliente || o.CliNombre}</div>
+                              <div className={`text-xs font-black ${pagado ? 'text-emerald-600' : 'text-rose-500'}`}>
+                                {pagado ? 'Pagado ✓' : 'Pend. Pago'}
+                              </div>
+                              <div className="flex items-center justify-between mt-auto">
+                                <span className="flex items-center gap-0.5 text-[10px] font-bold text-slate-700"><Clock size={9} /> {timeStr}</span>
+                                <span className="flex items-center gap-0.5 text-[10px] font-bold text-slate-400"><Package size={9} /> {(o.orders || []).length}</span>
+                              </div>
+                              <button
+                                onClick={() => triggerEntregar('FUERA DE ESTANTE', o)}
+                                className="mt-1 w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black rounded-xl transition-colors"
+                              >
+                                Entregar
+                              </button>
+                            </motion.div>
+                          );
+                        })}
                     </AnimatePresence>
                   </div>
                 </div>
@@ -2001,8 +2054,9 @@ const WebRetirosPage = () => {
 
               <form onSubmit={(e) => {
                 e.preventDefault();
-                const code = deliveryBarcodeInput.trim().toUpperCase();
-                if (!code) return;
+                const rawCode = deliveryBarcodeInput.trim().toUpperCase();
+                if (!rawCode) return;
+                const code = rawCode.replace(/^([A-Z]+)(\d+)$/, '$1-$2');
                 try {
                   let bultosFlat = [];
                   confirmDelivery.dataList.forEach(obj => {
@@ -2012,7 +2066,13 @@ const WebRetirosPage = () => {
                     else if (obj.orders) { bultosFlat.push(...obj.orders); }
                   });
 
-                  const found = bultosFlat.find((o) => (o.orderNumber && o.orderNumber.toUpperCase() === code) || (o.id && o.id.toString().toUpperCase() === code));
+                  const possibleMatches = bultosFlat.filter(o => {
+                    const oNum = (o.orderNumber || '').toUpperCase();
+                    const oId = (o.id || '').toString().toUpperCase();
+                    return oNum === code || oId === code || (code.match(/^\d+$/) && oNum.endsWith(`-${code}`));
+                  });
+                  const found = possibleMatches.length === 1 ? possibleMatches[0] : null;
+
                   if (found) {
                     setDeliveryScannedBultos(prev => ({ ...prev, [found.orderNumber || found.id]: true }));
                   }
@@ -2025,17 +2085,43 @@ const WebRetirosPage = () => {
                 <input
                   type="text"
                   value={deliveryBarcodeInput}
-                  onChange={(e) => setDeliveryBarcodeInput(e.target.value)}
-                  className="block w-full pl-12 pr-16 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white font-medium transition-all text-slate-700"
-                  placeholder="Escanee el bulto aquí (opcional manual)..."
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setDeliveryBarcodeInput(val);
+                    const rawCode = val.trim().toUpperCase();
+                    const code = rawCode.replace(/^([A-Z]+)(\d+)$/, '$1-$2');
+                    if (code && confirmDelivery?.dataList) {
+                      try {
+                        let bultosFlat = [];
+                        confirmDelivery.dataList.forEach(obj => {
+                          const ordStr = obj.OrdenRetiro || obj.ordenDeRetiro;
+                          if (!deliverySelectedOrders[ordStr]) return;
+                          if (obj.BultosJSON) { bultosFlat.push(...JSON.parse(obj.BultosJSON)); }
+                          else if (obj.orders) { bultosFlat.push(...obj.orders); }
+                        });
+                        const possibleMatches = bultosFlat.filter(o => {
+                          const oNum = (o.orderNumber || '').toUpperCase();
+                          const oId = (o.id || '').toString().toUpperCase();
+                          return oNum === code || oId === code || (code.match(/^\d+$/) && oNum.endsWith(`-${code}`));
+                        });
+                        const found = possibleMatches.length === 1 ? possibleMatches[0] : null;
+
+                        if (found) {
+                          setDeliveryScannedBultos(prev => ({ ...prev, [found.orderNumber || found.id]: true }));
+                          setTimeout(() => setDeliveryBarcodeInput(''), 0);
+                        }
+                      } catch (err) {}
+                    }
+                  }}
+                  className="block w-full pl-12 pr-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white font-medium transition-all text-slate-700"
+                  placeholder="Escanee el bulto aquí (opción automatch)..."
                   autoFocus
                 />
-                <button type="submit" className="absolute inset-y-1.5 right-1.5 px-4 bg-blue-600 text-white rounded-lg text-sm font-bold shadow-sm hover:bg-blue-700">OK</button>
               </form>
 
               <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 mb-6 max-h-48 overflow-y-auto">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Checklist Bultos a Entregar</p>
-                <ul className="space-y-2">
+                <ul className="space-y-3 p-1">
                   {(() => {
                     try {
                       let bultosFlat = [];
@@ -2051,18 +2137,23 @@ const WebRetirosPage = () => {
                         const identifier = b.orderNumber || b.id || `Desconocido_${i}`;
                         const isScanned = !!deliveryScannedBultos[identifier];
                         return (
-                          <li
+                          <motion.li
                             key={i}
-                            onClick={() => setDeliveryScannedBultos(prev => ({ ...prev, [identifier]: !isScanned }))}
-                            className={`flex items-center gap-3 text-sm font-bold cursor-pointer transition-all p-3 rounded-xl border-2 shadow-sm ${isScanned ? 'bg-green-50/80 border-green-400 text-green-800' : 'bg-white border-slate-200 text-slate-700'}`}
+                            animate={duplicateDeliveryWarn === identifier ? { rotate: [0, -3, 3, -3, 3, 0] } : { rotate: 0 }}
+                            transition={{ duration: 0.2 }}
+                            onClick={() => {
+                              if (isScanned) {
+                                setDeliveryScannedBultos(prev => ({ ...prev, [identifier]: false }));
+                              }
+                            }}
+                            className={`flex items-center gap-3 text-sm font-bold transition-colors p-3 rounded-xl border-2 shadow-sm ${isScanned ? 'bg-green-100 border-green-400 text-green-800 cursor-pointer hover:opacity-80' : 'bg-white border-slate-200 text-slate-700'}`}
                           >
-                            <div className={`p-1.5 rounded-md ${isScanned ? 'bg-green-500/10' : 'bg-slate-100'}`}>
-                              <Package size={16} className={isScanned ? 'text-green-600' : 'text-blue-500'} />
+                            <div className="p-1.5">
+                              <Package size={16} className={isScanned ? 'text-green-700' : 'text-blue-500'} />
                             </div>
-                            {identifier}
+                            <span className="flex-1 min-w-0 truncate">{identifier}</span>
                             <span className="text-[11px] font-normal opacity-60 ml-auto mr-2 truncate max-w-[120px]">{b.ordNombreTrabajo || ''}</span>
-                            {isScanned ? <CheckCircle className="text-green-500" size={20} /> : <div className="w-5 h-5 rounded-full border-2 border-slate-300" />}
-                          </li>
+                          </motion.li>
                         );
                       });
                     } catch (e) {

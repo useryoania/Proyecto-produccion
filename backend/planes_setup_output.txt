@@ -1,2 +1,0 @@
-Sqlcmd: Error: Microsoft ODBC Driver 17 for SQL Server : Login failed for user 'DESKTOP-U3PGI0H\Usuario'..
-Sqlcmd: Error: Microsoft ODBC Driver 17 for SQL Server : Cannot open database "produccion" requested by the login. The login failed..
