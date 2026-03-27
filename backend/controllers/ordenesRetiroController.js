@@ -194,7 +194,7 @@ const getOrdenesRetiroPorEstados = async (req, res) => {
     const query = `
       ${getOrdenesRetiroQueryBase}
       WHERE r.OReEstadoActual IN (${inClause})
-      AND (CAST(DATEADD(d,-7,GETDATE()) AS DATE) <= CAST(r.OReFechaAlta AS DATE) OR r.OReEstadoActual NOT IN (5,6))
+      AND (CAST(DATEADD(d,-3,GETDATE()) AS DATE) <= CAST(r.OReFechaAlta AS DATE) OR r.OReEstadoActual NOT IN (5,6,8))
       ${pagoFiltro}
       ${dateFiltro}
     `;

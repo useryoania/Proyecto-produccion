@@ -522,6 +522,8 @@ const EntregaPedidosView = () => {
         const sinPagoSinAutorizar = Array.from(selectedEncomiendas).filter(ordenCodigo => {
             const orden = encomiendas.find(e => e.ordenDeRetiro === ordenCodigo);
             if (!orden) return false;
+            const esSemanal = orden.TClIdTipoCliente === 2;
+            if (esSemanal) return false; // Semanal: entrega siempre sin importar pago/autorización
             const noPaga = orden.pagorealizado === 0;
             const autorizada = orden.OReEstadoActual === 9 || orden.estado === 9;
             return noPaga && !autorizada;
@@ -567,15 +569,18 @@ const EntregaPedidosView = () => {
 
     // Entregar una sola orden (desde el botón por renglón) con la misma lógica de bloqueo
     const ejecutarEntregarUna = (ordenCodigo, enc) => {
-        const noPaga = enc.pagorealizado === 0;
-        const autorizada = enc.OReEstadoActual === 9 || enc.estado === 9;
-        if (noPaga && !autorizada) {
-            Swal.fire({
-                toast: true, position: 'top-end', icon: 'warning', title: `"${ordenCodigo}" no está paga ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
-                showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
-                hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
-            });
-            return;
+        const esSemanal = enc.TClIdTipoCliente === 2;
+        if (!esSemanal) {
+            const noPaga = enc.pagorealizado === 0;
+            const autorizada = enc.OReEstadoActual === 9 || enc.estado === 9;
+            if (noPaga && !autorizada) {
+                Swal.fire({
+                    toast: true, position: 'top-end', icon: 'warning', title: `"${ordenCodigo}" no está paga ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
+                    showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
+                    hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
+                });
+                return;
+            }
         }
         ejecutarEntrega([ordenCodigo], null, null);
     };

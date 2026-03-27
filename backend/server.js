@@ -3,6 +3,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 const logger = require('./utils/logger');
 const express = require('express');
 logger.info('--- SERVER RESTARTED V32 (NAMING: ARCHIVO X DE Y) AT ' + new Date().toISOString() + ' ---');
+const SERVER_START_TIME = Date.now(); // Timestamp único de este arranque — usado para forzar reload en clientes
 const cors = require('cors');
 
 logger.info("---------------------------------------------------------");
@@ -206,6 +207,10 @@ const io = new Server(server, {
 app.set('socketio', io);
 
 io.on('connection', (socket) => {
+    // Informar a cada cliente qué timestamp tiene este arranque del servidor.
+    // Si el cliente ya conocía otro timestamp → detecta restart y hace hard-reload.
+    socket.emit('server:started', { startTime: SERVER_START_TIME });
+
     socket.on('error', (err) => {
         logger.error("[SOCKET] ERROR:", err);
     });

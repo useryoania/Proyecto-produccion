@@ -140,7 +140,7 @@ exports.getAllLocalRetiros = async (req, res) => {
             LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
             LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
             -- Excluir retiros entregados o cancelados
-            WHERE r.OReEstadoActual NOT IN (5, 6)
+            WHERE r.OReEstadoActual NOT IN (5, 6, 8)
             -- Excluir retiros que ya estan asignados a un estante fisico
             AND NOT EXISTS (
                 SELECT 1 FROM OcupacionEstantes oe WITH(NOLOCK)
@@ -155,6 +155,7 @@ exports.getAllLocalRetiros = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
 
 /**
  * Traer lista de retiros de un cliente específico que estén pendientes de pago (Estado 1)
@@ -356,6 +357,7 @@ exports.obtenerMapaEstantes = async (req, res) => {
             LEFT JOIN OrdenesRetiro orr 
                 ON o.OrdenRetiro = COALESCE(orr.FormaRetiro, 'R') + '-' + CAST(orr.OReIdOrdenRetiro AS VARCHAR)
             WHERE c.Activo = 1
+              AND (orr.OReEstadoActual IS NULL OR orr.OReEstadoActual NOT IN (5, 6))
             ORDER BY c.EstanteID, c.Seccion, c.Posicion
         `);
         res.json(result.recordset);

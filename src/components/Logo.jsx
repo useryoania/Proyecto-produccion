@@ -13,7 +13,7 @@ import React from 'react';
 export const Logo = ({ className = '', ...props }) => (
     <svg
         xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 101.36 50.64"
+        viewBox="0 -6.05 101.36 50.64"
         className={className}
         {...props}
     >
@@ -25,10 +25,13 @@ export const Logo = ({ className = '', ...props }) => (
             <path fill="currentColor" d="M101.36,2.43l-6.05,6.14c-.44-.44-.87-.78-1.29-1.01-.41-.23-.94-.35-1.6-.35-.75,0-1.47.27-2.17.82-.7.55-1.05,1.48-1.05,2.8v15.69h-8V.29h7.81v2.14c.67-.67,1.54-1.24,2.63-1.71C92.74.24,93.93,0,95.21,0s2.43.18,3.38.55c.95.36,1.87.99,2.76,1.88" />
 
             {/* CMY bars — colores fijos */}
-            <path fill="#00adee" d="M23.76,38.53H2.51c-1.39,0-2.51-1.12-2.51-2.51v-.48c0-1.39,1.12-2.51,2.51-2.51h21.25v5.51Z" />
+            {/* Cyan y Negro: subidos 0.5u para compensar percepción visual del redondeo */}
+            <g transform="translate(0,-0.5)">
+              <path fill="#00adee"      d="M2.73,33.02 H23.76 V38.53 H2.73 A2.73,2.73,0,0,1,0,35.80 V35.75 A2.73,2.73,0,0,1,2.73,33.02 Z" />
+              <path fill="currentColor" d="M79.51,33.02 H98.63 A2.73,2.73,0,0,1,101.36,35.75 V35.80 A2.73,2.73,0,0,1,98.63,38.53 H79.51 Z" />
+            </g>
             <rect fill="#eb008b" x="27.37" y="33.02" width="21.95" height="5.51" />
             <rect fill="#ffef20" x="52.94" y="33.02" width="21.95" height="5.51" />
-            <path fill="currentColor" d="M98.85,38.53h-20.34v-5.51h20.34c1.39,0,2.51,1.12,2.51,2.51v.48c0,1.39-1.12,2.51-2.51,2.51" />
         </g>
     </svg>
 );

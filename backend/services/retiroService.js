@@ -312,6 +312,13 @@ async function marcarEntregado(transactionOrReq, OReIdOrdenRetiro, fecha, usuari
 
             UPDATE OrdenesRetiro SET OReEstadoActual = 5, ORePasarPorCaja = 0, OReFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
             INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@ID, 5, @Fec, @Usr);
+
+            -- Liberar estante automáticamente al entregar
+            DELETE FROM OcupacionEstantes
+            WHERE OrdenRetiro = COALESCE(
+                (SELECT FormaRetiro FROM OrdenesRetiro WITH(NOLOCK) WHERE OReIdOrdenRetiro = @ID),
+                'R'
+            ) + '-' + CAST(@ID AS VARCHAR);
         `);
 
     // ── Descuento de recursos (Planes de Metros) ─────────────────────────────

@@ -3,7 +3,7 @@ import Swal from 'sweetalert2';
 import {
   Package, Search, Check, AlertCircle, ArrowLeft, CheckCircle,
   Loader2, LayoutGrid, MapPin, Clock, Printer, Tag,
-  XCircle, MoveHorizontal, X, BellRing, PackageCheck
+  XCircle, MoveHorizontal, X, BellRing, PackageCheck, Lock, Unlock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/api'; // Axios instance base
@@ -523,6 +523,7 @@ const WebRetirosPage = () => {
   const [dragItem, setDragItem] = useState(null);
   const [filtroTipo, setFiltroTipo] = React.useState('ALL'); // Nuevo filtro unificado
   const [filtroLugarRetiro, setFiltroLugarRetiro] = React.useState('ALL');
+  const [expandedCol, setExpandedCol] = React.useState(null); // null = both, 'RT' | 'RWRL' = solo esa
   const [confirmDelivery, setConfirmDelivery] = React.useState(null);
   // excepcionDelivery removido — reemplazado por estado 9
   const [adminPassword, setAdminPassword] = React.useState('');
@@ -532,7 +533,12 @@ const WebRetirosPage = () => {
   const [deliverySelectedOrders, setDeliverySelectedOrders] = React.useState({});
   const [announcedOrders, setAnnouncedOrders] = React.useState(new Set()); // Órdenes anunciadas desde el tótem
   const [duplicateDeliveryWarn, setDuplicateDeliveryWarn] = React.useState(null);
+  const [pendingUpdate, setPendingUpdate] = React.useState(null); // { count, apiOrders } — nuevas órdenes sin aplicar
+  const [layoutLocked, setLayoutLocked] = React.useState(false); // lock de layout de columnas
+  const [lockedWeights, setLockedWeights] = React.useState(null); // pesos congelados
   const deliveryInputRef = React.useRef(null);
+  const knownApiOrdersRef = React.useRef(new Set()); // Ref para delta detection sin closure stale
+  const lastComputedWeightsRef = React.useRef({}); // Ref para capturar pesos al hacer lock
 
   // Scanner redirect for ConfirmDelivery
   useEffect(() => {
@@ -692,6 +698,41 @@ const WebRetirosPage = () => {
     fetchAllData();
   }, [fetchAllData]);
 
+  // Sync ref de órdenes conocidas para delta detection
+  useEffect(() => {
+    knownApiOrdersRef.current = new Set(apiOrders.map(o => o.ordenDeRetiro));
+  }, [apiOrders]);
+
+  // Fetch silencioso: compara con ref, muestra badge si hay nuevas
+  const fetchPendingUpdate = useCallback(async () => {
+    try {
+      const { data } = await api.get('/web-retiros/locales');
+      const newOrders = (data || [])
+        .filter(r => r.Estado === 1 || r.Estado === 3)
+        .map(r => ({
+          ordenDeRetiro: r.OrdIdRetiro,
+          idcliente: r.NombreCliente || r.CodCliente || 'Ecommerce',
+          monto: r.Monto || 0,
+          moneda: r.Moneda || 'UYU',
+          pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
+          pagoHandy: !!r.ReferenciaPago,
+          lugarRetiro: r.LugarRetiro || null,
+          agenciaNombre: r.AgenciaNombre || null,
+          direccionEnvio: r.DireccionEnvio || null,
+          departamentoEnvio: r.DepartamentoEnvio || null,
+          localidadEnvio: r.LocalidadEnvio || null,
+          orders: r.BultosJSON ? JSON.parse(r.BultosJSON)
+            : (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(c => ({ orderNumber: c.trim(), orderId: c.trim() })) : []),
+        }));
+      const newCount = newOrders.filter(o => !knownApiOrdersRef.current.has(o.ordenDeRetiro)).length;
+      if (newCount > 0) {
+        setPendingUpdate(prev => ({ count: (prev?.count || 0) + newCount, apiOrders: newOrders }));
+      } else {
+        setApiOrders(newOrders);
+      }
+    } catch (e) { console.warn('[fetchPendingUpdate]', e); }
+  }, []);
+
   // ─── SOCKET: actualizar en tiempo real ───
   useEffect(() => {
     let socket;
@@ -700,8 +741,8 @@ const WebRetirosPage = () => {
       const { SOCKET_URL } = await import('../../services/apiClient');
       socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
       socket.on("connect", () => console.log("WebRetiros conectado a Sockets:", socket.id));
-      socket.on("retiros:update", () => { fetchAllData(false); });
-      socket.on("actualizado", () => { fetchAllData(false); });
+      socket.on("retiros:update", () => { fetchPendingUpdate(); });
+      socket.on("actualizado", () => { fetchPendingUpdate(); });
       socket.on("totem:cliente-anunciado", (data) => {
         console.log('[WebRetiros] 📢 Cliente anunciado desde tótem:', data);
         // Buscar todas las variantes posibles del ID del retiro (RT-123, RW-123, RL-123)
@@ -734,7 +775,7 @@ const WebRetirosPage = () => {
     };
     initSocket();
     return () => { if (socket) socket.disconnect(); };
-  }, [fetchAllData]);
+  }, [fetchAllData, fetchPendingUpdate]);
 
   // 3. Acciones del Operario
   const handleSelectRetiro = (o) => {
@@ -837,10 +878,16 @@ const WebRetirosPage = () => {
       };
     });
 
-    // Verificar autorización: pagada o estado 9 (Autorizado)
+    // Verificar autorización: pagada o estado 9 (Autorizado) — tipo 2 siempre pasa
     for (const item of listEnriquecida) {
       const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
       const retiroFull = freshRetiros.find(o => o.ordenDeRetiro === ordenStr) || apiOrders.find(o => o.ordenDeRetiro === ordenStr) || otrosRetiros.find(o => o.ordenDeRetiro === ordenStr);
+
+      // Si no se encuentra en la lista (ej. estado 5 ghost), permitir entrega
+      if (!retiroFull) continue;
+
+      const esSemanal = retiroFull.TClIdTipoCliente === 2;
+      if (esSemanal) continue; // Tipo 2: siempre se entrega sin pasar por caja
 
       const isPagado = retiroFull?.pagorealizado === 1 || item.Pagado;
       const estadoStr = (typeof retiroFull?.estado === 'string' ? retiroFull.estado : '').toLowerCase();
@@ -925,10 +972,17 @@ const WebRetirosPage = () => {
       freshRetiros = Array.isArray(data) ? data : [];
     } catch (e) { console.warn('No se pudo verificar estado actual de retiros:', e); }
 
-    // Verificar pago/autorización
+    // Verificar pago/autorización — tipo 2 siempre pasa
     for (const item of list) {
       const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
       const retiroFull = freshRetiros.find(o => o.ordenDeRetiro === ordenStr) || apiOrders.find(o => o.ordenDeRetiro === ordenStr);
+
+      // Si no se encuentra (ej. estado 5 ghost), permitir entrega
+      if (!retiroFull) continue;
+
+      const esSemanal = retiroFull.TClIdTipoCliente === 2;
+      if (esSemanal) continue; // Tipo 2: siempre se entrega
+
       const isPagado = retiroFull?.pagorealizado === 1 || item.Pagado;
       const isAutorizado = retiroFull?.estadoNumerico === 9 || (retiroFull?.estado || '').toLowerCase() === 'autorizado' || item.estadoNumerico === 9;
       if (!isPagado && !isAutorizado) {
@@ -1064,6 +1118,11 @@ const WebRetirosPage = () => {
     const [duplicateWarn, setDuplicateWarn] = useState(null);
 
     useEffect(() => {
+      // Focus input once on mount
+      inputRef.current?.focus();
+    }, []);
+
+    useEffect(() => {
       const handleGlobalKeyDown = (e) => {
         const active = document.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
@@ -1147,7 +1206,8 @@ const WebRetirosPage = () => {
               }}
               className="block w-full pl-12 pr-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white text-base font-bold transition-all text-slate-700"
               placeholder="Escanee el bulto aquí..."
-              autoFocus
+              autoComplete="off"
+              spellCheck={false}
             />
           </form>
           <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 mb-6">
@@ -1157,21 +1217,19 @@ const WebRetirosPage = () => {
             <div className="grid grid-cols-3 gap-3 p-1 max-h-64 overflow-y-auto">
               {selectedRetiro.orders?.map(o => (
                 <motion.div key={o.orderNumber}
-                  animate={duplicateWarn === o.orderNumber ? { rotate: [0, -3, 3, -3, 3, 0] } : { rotate: 0 }}
-                  transition={{ duration: 0.2 }}
+                  animate={duplicateWarn === o.orderNumber ? { rotate: [0, -3, 3, -3, 3, 0] } : {}}
+                  transition={duplicateWarn === o.orderNumber ? { duration: 0.2 } : { duration: 0 }}
                   onClick={() => {
                     if (scannedBultos[o.orderNumber]) {
                       setScannedBultos(prev => ({ ...prev, [o.orderNumber]: false }));
                     }
                   }}
-                  className={`flex items-center gap-2 p-3 rounded-xl border-2 transition-colors ${scannedBultos[o.orderNumber] ? 'bg-green-100 border-green-500 shadow-sm cursor-pointer hover:opacity-80' : 'bg-white border-slate-200'
+                  className={`flex flex-row items-center justify-center gap-2 p-3 rounded-xl border-2 transition-colors ${scannedBultos[o.orderNumber] ? 'bg-green-100 border-green-500 shadow-sm cursor-pointer hover:opacity-80' : 'bg-white border-slate-200'
                     }`}>
-                  <div className={`p-2 shrink-0 ${scannedBultos[o.orderNumber] ? 'text-green-700' : 'text-slate-400'}`}>
-                    <Package size={16} />
+                  <div className={`shrink-0 ${scannedBultos[o.orderNumber] ? 'text-green-700' : 'text-slate-400'}`}>
+                    {scannedBultos[o.orderNumber] ? <PackageCheck size={24} /> : <Package size={24} />}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-black text-slate-800 truncate">{o.orderNumber}</div>
-                  </div>
+                  <div className="text-base font-black text-slate-800 truncate">{o.orderNumber}</div>
                 </motion.div>
               ))}
             </div>
@@ -1366,6 +1424,40 @@ const WebRetirosPage = () => {
             </div>
           )}
 
+          {/* Badge de nuevas órdenes */}
+          {pendingUpdate && pendingUpdate.count > 0 && (
+            <button
+              onClick={() => { setApiOrders(pendingUpdate.apiOrders); setPendingUpdate(null); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-lg transition-colors shrink-0 animate-pulse"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-white" />
+              +{pendingUpdate.count} nueva{pendingUpdate.count !== 1 ? 's' : ''}
+            </button>
+          )}
+
+          {/* Lock de layout */}
+          {view === 'empaque' && !selectedRetiro && (
+            <button
+              onClick={() => {
+                if (layoutLocked) {
+                  setLayoutLocked(false);
+                  setLockedWeights(null);
+                } else {
+                  setLockedWeights({ ...lastComputedWeightsRef.current });
+                  setLayoutLocked(true);
+                }
+              }}
+              title={layoutLocked ? 'Desbloquear layout' : 'Bloquear layout'}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-colors shrink-0 ${
+                layoutLocked
+                  ? 'bg-amber-50 border-amber-300 text-amber-600 hover:bg-amber-100'
+                  : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'
+              }`}
+            >
+              {layoutLocked ? <Lock size={13} /> : <Unlock size={13} />}
+            </button>
+          )}
+
           {/* Spacer */}
           <div className="flex-1" />
 
@@ -1380,55 +1472,7 @@ const WebRetirosPage = () => {
           </div>
         </div>
 
-        {/* Fila 2: Filtros de tipo y lugar — solo en empaque sin selección */}
-        {view === 'empaque' && !selectedRetiro && (() => {
-          const PRIORITY_META_F = [
-            { key: 'ANUNCIADA', label: 'Anunciadas', dot: 'bg-pink-500', active: 'bg-pink-500' },
-            { key: 'PAGADO', label: 'Pagados', dot: 'bg-emerald-500', active: 'bg-emerald-500' },
-            { key: 'AUTORIZADO', label: 'Autorizados', dot: 'bg-orange-500', active: 'bg-orange-500' },
-            { key: 'PENDIENTE', label: 'Pendientes', dot: 'bg-rose-500', active: 'bg-rose-500' },
-            { key: 'SEMANAL', label: 'Semanales', dot: 'bg-indigo-500', active: 'bg-indigo-500' },
-            { key: 'ROLLO', label: 'Rollo', dot: 'bg-amber-500', active: 'bg-amber-500' },
-          ];
-          const uniqueLugares = Array.from(
-            new Set([...apiOrders, ...otrosRetiros].map(o => o.lugarRetiro).filter(Boolean))
-          ).sort();
-          return (
-            <div className="px-4 pb-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
-              <button
-                onClick={() => setFiltroTipo('ALL')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wide border transition-all ${filtroTipo === 'ALL' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-              >Todos</button>
-              {PRIORITY_META_F.map(m => (
-                <button key={m.key}
-                  onClick={() => setFiltroTipo(m.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wide border transition-all ${filtroTipo === m.key ? `${m.active} text-white border-transparent` : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                    }`}
-                >
-                  <div className={`w-1.5 h-1.5 rounded-full ${filtroTipo === m.key ? 'bg-white' : m.dot}`} />
-                  {m.label}
-                </button>
-              ))}
-              {uniqueLugares.filter(l => l !== 'Desconocido').length > 0 && (
-                <>
-                  <div className="w-px h-4 bg-slate-200 mx-1" />
-                  {uniqueLugares.filter(l => l !== 'Desconocido')
-                    .sort((a, b) => {
-                      if (a.toLowerCase().includes('retiro')) return -1;
-                      if (b.toLowerCase().includes('retiro')) return 1;
-                      return a.localeCompare(b);
-                    })
-                    .map((lugar, i) => (
-                      <button key={i}
-                        onClick={() => setFiltroLugarRetiro(filtroLugarRetiro === lugar ? 'ALL' : lugar)}
-                        className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wide border transition-all ${filtroLugarRetiro === lugar ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
-                      >{lugar.replace(/\s*\(.*\)\s*$/, '')}</button>
-                    ))}
-                </>
-              )}
-            </div>
-          );
-        })()}
+
       </div>
 
       {loading && !selectedRetiro && apiOrders.length === 0 && (
@@ -1530,8 +1574,16 @@ const WebRetirosPage = () => {
                   }
                 }
                 const all = deduped.filter(item => {
-                  // Filtro tipo
-                  if (filtroTipo !== 'ALL' && getTipoKey(item) !== filtroTipo) return false;
+                  // Filtro por prefijo (RT / RW / RL)
+                  if (filtroTipo !== 'ALL') {
+                    const m = (item.ordenDeRetiro || '').match(/^([A-Z]+)/i);
+                    const prefix = m ? m[1].toUpperCase() : 'OTRO';
+                    if (filtroTipo === 'RWRL') {
+                      if (prefix !== 'RW' && prefix !== 'RL') return false;
+                    } else {
+                      if (prefix !== filtroTipo) return false;
+                    }
+                  }
                   // Filtro lugar
                   if (filtroLugarRetiro !== 'ALL' && item.lugarRetiro !== filtroLugarRetiro) return false;
                   // Búsqueda por retiro, cliente o número de orden de depósito
@@ -1572,14 +1624,14 @@ const WebRetirosPage = () => {
 
                 // 3. Columnas por tipo: RT / RW / RL
                 const TYPE_COLS = [
-                  { prefix: 'RT', color: 'text-teal-700', dot: 'bg-teal-500', badge: 'bg-teal-50 border-teal-200 text-teal-700' },
-                  { prefix: 'RW', color: 'text-violet-700', dot: 'bg-violet-500', badge: 'bg-violet-50 border-violet-200 text-violet-700' },
-                  { prefix: 'RL', color: 'text-amber-700', dot: 'bg-amber-500', badge: 'bg-amber-50 border-amber-200 text-amber-700' },
+                  { prefix: 'RT',   label: 'RT',   color: 'text-custom-cyan', dot: 'bg-custom-cyan', badge: 'bg-custom-cyan/10 border-custom-cyan/30 text-custom-cyan' },
+                  { prefix: 'RWRL', label: 'RW/L', color: 'text-custom-cyan', dot: 'bg-custom-cyan', badge: 'bg-custom-cyan/10 border-custom-cyan/30 text-custom-cyan' },
                 ];
 
                 const getPrefix = (item) => {
                   const m = (item.ordenDeRetiro || '').match(/^([A-Z]+)/i);
-                  return m ? m[1].toUpperCase() : 'OTRO';
+                  const raw = m ? m[1].toUpperCase() : 'OTRO';
+                  return (raw === 'RW' || raw === 'RL') ? 'RWRL' : raw;
                 };
 
                 // Siempre mostrar las 3 columnas aunque estén vacías
@@ -1613,17 +1665,22 @@ const WebRetirosPage = () => {
                   const elapsed = timeAgo(item.fechaAlta);
                   const orderCount = (item.orders || []).length;
                   const diffMin = item.fechaAlta ? Math.floor((Date.now() - new Date(item.fechaAlta).getTime()) / 60000) : 0;
-                  const timeColor = diffMin > 480 ? 'text-rose-600 font-black' : 'text-slate-700 font-bold';
+                  const isOld = diffMin > 60;
+                  const timeColor = diffMin > 480 ? 'text-rose-600 font-black' : diffMin > 60 ? 'text-orange-500 font-bold' : 'text-slate-700 font-bold';
 
                   const itemNum = (item.ordenDeRetiro || '').match(/(\d+)$/);
                   const isAnnounced = itemNum ? announcedOrders.has(parseInt(itemNum[1], 10)) : false;
 
                   return (
                     <button key={item._key} onClick={handleClickCard}
-                      className="group relative bg-white rounded-2xl border border-slate-200 p-3 pt-4 text-left hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 flex flex-col gap-1 overflow-hidden w-full min-h-[100px] uppercase"
+                      className={`group relative bg-white rounded-2xl border p-3 text-left hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 flex flex-col gap-1 overflow-hidden w-full min-h-[100px] uppercase ${isOld ? 'border-rose-400 shadow-sm shadow-rose-100' : 'border-slate-200'}`}
                     >
-                      {/* Barra de color superior */}
-                      <div className={`absolute top-0 left-0 right-0 h-2 ${isAnnounced ? 'bg-pink-500' : meta.dot} rounded-t-2xl`} />
+                      {isOld && (
+                        <span className="absolute top-2 right-2 flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500" />
+                        </span>
+                      )}
 
                       {/* Fila 1: Código | Botones */}
                       <div className="flex items-center gap-2 w-full">
@@ -1680,56 +1737,76 @@ const WebRetirosPage = () => {
                   );
                 };
 
-                return (
-                  <div className="grid grid-cols-3 gap-5">
-                    {activeCols.map(col => {
-                      const colItems = all.filter(item => {
-                        const prefix = getPrefix(item);
-                        const itemNum = (item.ordenDeRetiro || '').match(/(\d+)$/);
-                        const isAnn = itemNum ? announcedOrders.has(parseInt(itemNum[1], 10)) : false;
-                        // Anunciados van SIEMPRE a RT, sin importar su prefijo real
-                        if (col.prefix === 'RT') return prefix === 'RT' || isAnn;
-                        // En las demás columnas, excluir los anunciados (ya están en RT)
-                        return prefix === col.prefix && !isAnn;
-                      });
-                      const colGroups = [-1, 0, 1, 2, 3, 4]
-                        .map(p => ({ priority: p, meta: PRIORITY_META[String(p)], items: colItems.filter(i => getPriority(i) === p) }))
-                        .filter(g => g.items.length > 0);
-                      const isEmpty = colItems.length === 0;
-                      return (
-                        <div key={col.prefix} className="flex flex-col gap-3 min-w-0">
-                          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${col.badge} sticky top-0 z-10`}>
-                            <div className={`w-2 h-2 rounded-full ${isEmpty ? 'bg-slate-300' : col.dot}`} />
-                            <span className={`text-xs font-black uppercase tracking-widest ${isEmpty ? 'text-slate-400' : col.color}`}>{col.prefix}</span>
-                            <span className={`ml-auto text-[10px] font-black px-2 py-0.5 rounded-full text-white ${isEmpty ? 'bg-slate-300' : col.dot}`}>{colItems.length}</span>
-                          </div>
-                          <div className="flex flex-col gap-4">
-                            {isEmpty ? (
-                              <div className="flex flex-col items-center justify-center py-10 gap-2 text-slate-300">
-                                <Package size={32} strokeWidth={1.5} />
-                                <span className="text-[11px] font-bold uppercase tracking-widest">Sin órdenes</span>
+                return (() => {
+                  const getWeight = (count) => count === 0 ? 0 : count === 1 ? 1 : 3;
+                  const colData = activeCols.map(col => {
+                    const colItems = all.filter(item => {
+                      const prefix = getPrefix(item);
+                      const itemNum = (item.ordenDeRetiro || '').match(/(\d+)$/);
+                      const isAnn = itemNum ? announcedOrders.has(parseInt(itemNum[1], 10)) : false;
+                      if (col.prefix === 'RT') return prefix === 'RT' || isAnn;
+                      return prefix === col.prefix && !isAnn;
+                    });
+                    const colGroups = [-1, 0, 1, 2, 3, 4]
+                      .map(p => ({ priority: p, meta: PRIORITY_META[String(p)], items: colItems.filter(i => getPriority(i) === p) }))
+                      .filter(g => g.items.length > 0);
+                    return { col, colItems, colGroups, weight: getWeight(colItems.length) };
+                  });
+                  const totalWeight = colData.reduce((s, d) => s + d.weight, 0);
+                  // Guardar pesos para captura al hacer lock
+                  lastComputedWeightsRef.current = Object.fromEntries(colData.map(d => [d.col.prefix, d.weight]));
+
+                  return (
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                      {colData.map(({ col, colItems, colGroups, weight }) => {
+                        const effectiveWeight = layoutLocked && lockedWeights ? (lockedWeights[col.prefix] ?? weight) : weight;
+                        const isPill = effectiveWeight === 0;
+                        const effectiveTotal = layoutLocked && lockedWeights
+                          ? Object.values(lockedWeights).reduce((s, w) => s + w, 0)
+                          : totalWeight;
+                        const myPercent = effectiveTotal === 0 ? 1 : effectiveWeight / effectiveTotal;
+                        const gridColsClass = myPercent > 0.6 ? 'grid-cols-3' : myPercent > 0.35 ? 'grid-cols-2' : 'grid-cols-1';
+
+                        return (
+                          <div
+                            key={col.prefix}
+                            style={{
+                              ...(isPill ? { flex: '0 0 auto' } : { flex: `${effectiveWeight} ${effectiveWeight} 0%` }),
+                              display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden',
+                              gap: isPill ? 0 : 12,
+                              transition: 'flex 0.35s ease',
+                            }}
+                          >
+                            {isPill ? (
+                              <div
+                                className="flex flex-row items-center justify-center gap-2 px-3 py-2 rounded-xl border bg-slate-100 border-slate-200 select-none"
+                                style={{ userSelect: 'none', whiteSpace: 'nowrap' }}
+                              >
+                                <span className="text-xs font-black uppercase tracking-wide text-slate-400">{col.label || col.prefix}</span>
                               </div>
                             ) : (
-                              colGroups.map(({ priority, meta, items }) => (
-                                <div key={priority}>
-                                  {(
-                                    <div className="flex items-center gap-1.5 mb-2">
-                                      {meta.icon ? <meta.icon size={12} className={meta.color} /> : <div className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />}
-                                      <span className={`text-[9px] font-black uppercase tracking-widest ${meta.color}`}>{meta.label}</span>
-                                    </div>
-                                  )}
-                                  <div className="flex flex-col gap-2">
-                                    {items.map(item => renderCard(item, meta))}
-                                  </div>
+                              <>
+                                <div
+                                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${col.badge} sticky top-0 z-10 select-none`}
+                                  style={{ userSelect: 'none' }}
+                                >
+                                  <div className={`w-2 h-2 rounded-full ${col.dot}`} />
+                                  <span className={`text-xs font-black uppercase tracking-widest ${col.color}`}>{col.label || col.prefix}</span>
+                                  <span className={`ml-auto text-xs font-black leading-none ${col.color}`}>{colItems.length}</span>
                                 </div>
-                              ))
+                                <div className={`grid gap-3 ${gridColsClass}`}>
+                                  {colGroups.map(({ priority, meta, items }) =>
+                                    items.map(item => renderCard(item, meta))
+                                  )}
+                                </div>
+                              </>
                             )}
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
+                        );
+                      })}
+                    </div>
+                  );
+                })();
               })()}
             </div>
             {/* OrderDetail / UbicationGrid as overlay modals */}
@@ -2115,7 +2192,9 @@ const WebRetirosPage = () => {
                   }}
                   className="block w-full pl-12 pr-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white font-medium transition-all text-slate-700"
                   placeholder="Escanee el bulto aquí (opción automatch)..."
-                  autoFocus
+                  ref={deliveryInputRef}
+                  autoComplete="off"
+                  spellCheck={false}
                 />
               </form>
 

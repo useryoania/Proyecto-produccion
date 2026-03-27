@@ -254,7 +254,7 @@ function ClientModal({ client, catalogs, onClose, onSaved, onDeleted }) {
                     <div>
                         <div className="ci-modal-section-title">Identificación</div>
                         <div className="ci-field-grid">
-                            <ModalField label="Nombre / Razón Social *" field="Nombre" cls="full" form={form} onChange={set}/>
+                            <ModalField label="Nombre y Apellido *" field="Nombre" cls="full" form={form} onChange={set}/>
                             <ModalField label="Nombre Fantasía" field="NombreFantasia" form={form} onChange={set}/>
                             <ModalField label="ID Cliente" field="IDCliente" form={form} onChange={set}/>
                             <ModalField label="RUC / C.I." field="CioRuc" form={form} onChange={set}/>
