@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import { Logo } from '../Logo';
 import Footer from '../Footer';
 import { useViewport } from '../../hooks/useViewport';
@@ -46,8 +47,36 @@ const SERVICES = [
 
 const NAV_LINKS = ['Servicios', 'Quienes Somos'];
 
+function NavBtn({ onClick, children }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: 'relative', padding: '8px 4px',
+        border: 'none', background: 'transparent', color: '#fff',
+        fontSize: 13, fontWeight: 700, letterSpacing: '0.08em',
+        textTransform: 'uppercase', cursor: 'pointer',
+        transition: 'color 0.2s',
+      }}
+    >
+      {children}
+      <span style={{
+        position: 'absolute', bottom: 0, left: 0,
+        height: '4px', borderRadius: '2px',
+        background: 'linear-gradient(to right, #00AEEF 0% 20%, transparent 20% 27%, #EC008C 27% 47%, transparent 47% 53%, #FFF200 53% 73%, transparent 73% 80%, #fff 80% 100%)',
+        width: hovered ? '100%' : '0%',
+        transition: 'width 0.3s ease',
+      }} />
+    </button>
+  );
+}
+
 export default function LandingPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { isMobile, isTablet } = useViewport();
   const [scrolled, setScrolled] = useState(false);
   const [heroLoaded, setHeroLoaded] = useState(false);
@@ -58,6 +87,30 @@ export default function LandingPage() {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Detectar tipo de sesión — misma lógica que App.jsx
+  const isClient = user?.userType === 'CLIENT' || user?.role === 'WEB_CLIENT';
+  let sessionType = null;
+  if (user && isClient) sessionType = 'client';
+  else if (user && !isClient) sessionType = 'production';
+  else {
+    // Fallback: cliente logueado solo por portal (sin user en AuthContext principal)
+    try {
+      const authToken = localStorage.getItem('auth_token');
+      const sessionStr = localStorage.getItem('user_session');
+      if (authToken && sessionStr) {
+        const payload = JSON.parse(atob(authToken.split('.')[1]));
+        if (payload.exp * 1000 > Date.now()) sessionType = 'client';
+      }
+    } catch {}
+  }
+
+  const sessionLabel = sessionType === 'production' ? 'Producción' : sessionType === 'client' ? 'Mi Portal' : 'Ingresar';
+  const handleSessionBtn = () => {
+    if (sessionType === 'production') navigate('/retiros');
+    else if (sessionType === 'client') navigate('/portal');
+    else navigate('/login');
+  };
 
   // El index.css global tiene body { overflow: hidden } para el app interno.
   // Acá lo habilitamos solo mientras el landing está montado.
@@ -88,7 +141,7 @@ export default function LandingPage() {
         borderBottom: scrolled ? '1px solid rgba(255,255,255,0.07)' : 'none',
         transition: 'all 0.3s ease',
       }}>
-        <div onClick={() => navigate('/')} style={{ cursor: 'pointer', lineHeight: 0 }}>
+        <div onClick={() => navigate('/')} style={{ cursor: 'pointer', lineHeight: 0, position: 'relative', top: '15px' }}>
           <Logo style={{ height: isMobile ? 48 : 64, color: 'white', display: 'block' }} />
         </div>
 
@@ -96,32 +149,10 @@ export default function LandingPage() {
         {!isMobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 40 }}>
             {NAV_LINKS.map(link => (
-              <a key={link} href="#" style={{
-                color: 'rgba(255,255,255,0.75)', textDecoration: 'none',
-                fontSize: 13, fontWeight: 600, letterSpacing: '0.08em',
-                textTransform: 'uppercase', transition: 'color 0.2s',
-              }}
-                onMouseEnter={e => e.target.style.color = '#fff'}
-                onMouseLeave={e => e.target.style.color = 'rgba(255,255,255,0.75)'}
-              >{link}</a>
+              <NavBtn key={link}>{link}</NavBtn>
             ))}
-            <button onClick={() => navigate('/login')} style={{
-              padding: '8px 22px', border: '1.5px solid rgba(255,255,255,0.5)',
-              borderRadius: 999, background: 'transparent', color: '#fff',
-              fontSize: 13, fontWeight: 700, letterSpacing: '0.08em',
-              textTransform: 'uppercase', cursor: 'pointer', transition: 'all 0.2s',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = '#0d0d0d'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#fff'; }}
-            >Ingresar</button>
-            <button style={{
-              padding: '8px 22px', border: 'none', borderRadius: 999,
-              background: '#f4f4f5', color: '#111', fontSize: 13, fontWeight: 700,
-              letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#e4e4e7'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = '#f4f4f5'; }}
-            >Contacto</button>
+            <NavBtn onClick={handleSessionBtn}>{sessionLabel}</NavBtn>
+            <NavBtn>Contacto</NavBtn>
           </div>
         )}
 
@@ -170,11 +201,11 @@ export default function LandingPage() {
               }}>{link}</a>
             ))}
             <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-              <button onClick={() => navigate('/login')} style={{
-                flex: 1, padding: '12px', border: '1.5px solid rgba(255,255,255,0.4)',
-                borderRadius: 999, background: 'transparent', color: '#fff',
+              <button onClick={handleSessionBtn} style={{
+                flex: 1, padding: '12px', border: 'none',
+                borderRadius: 999, background: sessionType ? 'rgba(255,255,255,0.08)' : 'transparent', color: '#fff',
                 fontSize: 14, fontWeight: 700, cursor: 'pointer',
-              }}>Ingresar</button>
+              }}>{sessionLabel}</button>
               <button style={{
                 flex: 1, padding: '12px', border: 'none', borderRadius: 999,
                 background: '#f4f4f5', color: '#111', fontSize: 14, fontWeight: 700, cursor: 'pointer',
@@ -265,7 +296,7 @@ export default function LandingPage() {
             <button style={{
               padding: '14px 28px',
               background: 'transparent',
-              border: '1.5px solid rgba(255,255,255,0.35)',
+              border: 'none',
               borderRadius: 999,
               color: '#fff',
               fontSize: 13,

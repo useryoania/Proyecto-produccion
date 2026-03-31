@@ -757,26 +757,29 @@ export const PickupView = () => {
                 )}
 
                 {/* Botones finales */}
-                <div className="flex justify-between items-stretch gap-3">
-                    <CustomButton
-                        onClick={async () => {
-                            const code = await handleCreatePickup();
-                            if (!code) return;
-                            setConfirmedWithoutPayment(true);
-                            setStep('success');
-                            sessionStorage.removeItem('pickup_selected');
-                            sessionStorage.removeItem('pickup_code');
-                        }}
-                        isLoading={loading}
-                        disabled={loading || !selectedFormaEnvio || needsAddress || needsReceiverName || (isEncomienda && user?.tipoClienteId !== 2)}
-                        variant="secondary"
-                        icon={PackageCheck}
-                        className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
-                        whileHover={{ scale: 1 }}
-                        whileTap={{ scale: 1 }}
-                    >
-                        Pagar después
-                    </CustomButton>
+                <div className={`flex ${user?.tipoClienteId === 1 ? 'justify-end' : 'justify-between'} items-stretch gap-3`}>
+                    {/* "Pagar después" — solo para cuentas corrientes (tipo 2 y 3) */}
+                    {(user?.tipoClienteId === 2 || user?.tipoClienteId === 3) && (
+                        <CustomButton
+                            onClick={async () => {
+                                const code = await handleCreatePickup();
+                                if (!code) return;
+                                setConfirmedWithoutPayment(true);
+                                setStep('success');
+                                sessionStorage.removeItem('pickup_selected');
+                                sessionStorage.removeItem('pickup_code');
+                            }}
+                            isLoading={loading}
+                            disabled={loading || !selectedFormaEnvio || needsAddress || needsReceiverName || (isEncomienda && user?.tipoClienteId !== 2)}
+                            variant="secondary"
+                            icon={PackageCheck}
+                            className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
+                            whileHover={{ scale: 1 }}
+                            whileTap={{ scale: 1 }}
+                        >
+                            Pagar después
+                        </CustomButton>
+                    )}
 
                     {totalAmount > 0 && (
                         <CustomButton
@@ -789,7 +792,7 @@ export const PickupView = () => {
                             disabled={loading || !selectedFormaEnvio || needsAddress || needsReceiverName}
                             variant="primary"
                             icon={CreditCard}
-                            className="w-1/2 md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
+                            className={`${user?.tipoClienteId === 1 ? 'w-full' : 'w-1/2'} md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5`}
                             whileHover={{ scale: 1 }}
                             whileTap={{ scale: 1 }}
                         >

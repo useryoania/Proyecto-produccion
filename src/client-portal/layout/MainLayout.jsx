@@ -108,7 +108,7 @@ export const MainLayout = ({ children }) => {
             <aside className="hidden md:flex flex-col w-72 bg-custom-dark text-zinc-100 shadow-2xl z-20 m-4 rounded-2xl border border-brand-dark backdrop-blur-xl">
                 <div className="p-4 border-b border-brand-dark leading-none overflow-hidden">
                     <div className="flex items-center">
-                        <Logo className="h-12 w-auto text-white shrink-0 mt-3" />
+                        <Link to="/"><Logo className="h-12 w-auto text-white shrink-0" /></Link>
                         <div className="w-px h-14 bg-zinc-700 mx-4 shrink-0"></div>
                         <h1 className="text-lg font-bold tracking-tight text-zinc-100 flex-1 text-center">AUTOGESTIÓN</h1>
                     </div>
@@ -199,6 +199,28 @@ export const MainLayout = ({ children }) => {
                     </div> */}
                 </nav>
 
+                <style>{`
+                    @keyframes dotPulse {
+                        0%, 100% { transform: scale(1); opacity: 0.75; }
+                        50% { transform: scale(1.25); opacity: 1; }
+                    }
+                `}</style>
+                <div className="flex justify-evenly pt-3 pb-6">
+                    {[
+                        { color: '#00AEEF', glow: '0 0 12px 4px rgba(0,174,239,0.7)', delay: '0s' },
+                        { color: '#EC008C', glow: '0 0 12px 4px rgba(236,0,140,0.7)', delay: '0.4s' },
+                        { color: '#FFF200', glow: '0 0 12px 4px rgba(255,242,0,0.7)', delay: '0.8s' },
+                        { color: '#ffffff', glow: '0 0 12px 4px rgba(255,255,255,0.6)', delay: '1.2s' },
+                    ].map(({ color, glow, delay }) => (
+                        <div key={color} style={{
+                            width: 25, height: 25, borderRadius: '50%',
+                            background: color, flexShrink: 0, boxShadow: glow,
+                            animation: 'dotPulse 2s ease-in-out infinite',
+                            animationDelay: delay,
+                        }} />
+                    ))}
+                </div>
+
                 <div className="p-4 border-t border-brand-dark bg-custom-dark rounded-b-2xl">
                     <div className="flex items-center gap-3 mb-4 px-2">
                         <div className="w-10 h-10 rounded-full bg-brand-dark flex items-center justify-center font-bold text-zinc-300 border border-zinc-300">
@@ -221,7 +243,7 @@ export const MainLayout = ({ children }) => {
             {/* Mobile Header */}
             <div className="md:hidden fixed top-0 w-full bg-custom-dark backdrop-blur-md text-zinc-100 z-30 px-4 py-3 flex justify-between items-center shadow-lg border-b border-brand-dark">
                 <div className="flex items-center gap-3">
-                    <Logo className="h-8 w-auto text-white mt-2" />
+                    <Link to="/"><Logo className="h-8 w-auto text-white mt-2" /></Link>
                     <div className="w-px h-8 bg-zinc-700"></div>
                     <span className="font-bold text-zinc-100">AUTOGESTIÓN</span>
                 </div>

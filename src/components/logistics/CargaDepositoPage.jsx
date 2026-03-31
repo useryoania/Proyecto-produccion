@@ -319,7 +319,7 @@ const CargaDepositoPage = () => {
     };
 
     const processCodes = async () => {
-        const toProcess = codes.filter(c => c.value.trim() !== '' && c.status !== 'success' && c.status !== 'info' && c.status !== 'error' && c.status !== 'wsp_error' && c.status !== 'validating');
+        const toProcess = codes.filter(c => c.value.trim() !== '' && c.status !== 'success' && c.status !== 'info' && c.status !== 'error' && c.status !== 'wsp_error' && c.status !== 'wsp_waiting' && c.status !== 'validating');
 
         if (toProcess.length === 0) return;
 

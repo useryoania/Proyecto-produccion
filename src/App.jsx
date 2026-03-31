@@ -43,7 +43,7 @@ function App() {
     return (
       <main>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -62,6 +62,7 @@ function App() {
     return (
       <main>
         <Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/portal/*" element={<ClientPortalApp />} />
           <Route path="/payment-status" element={<PaymentResult />} />
           <Route path="/totem/*" element={<TotemApp />} />

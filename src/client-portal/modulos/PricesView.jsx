@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { apiClient } from '../api/apiClient';
-import { Search, DollarSign, Filter, Loader2, Tag, Package } from 'lucide-react';
+import { Search, DollarSign, Filter, Loader2, ChevronDown, ChevronRight, Tag } from 'lucide-react';
 
 export const PricesView = () => {
     const [prices, setPrices] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [selectedFamily, setSelectedFamily] = useState('Todas');
+    const [collapsed, setCollapsed] = useState({});
 
     useEffect(() => {
         apiClient.get('/precios-publicos')
@@ -41,10 +42,21 @@ export const PricesView = () => {
         return map;
     }, [filtered]);
 
+    const toggleFamily = (family) => {
+        setCollapsed(prev => ({ ...prev, [family]: !prev[family] }));
+    };
+
+    const formatPrice = (item) => {
+        const isDolar = (item.Moneda || '').toUpperCase().includes('DOLAR') || (item.Moneda || '').toUpperCase().includes('USD');
+        const symbol = isDolar ? 'US$' : '$';
+        const amount = item.Precio?.toLocaleString('es-UY', { minimumFractionDigits: 2 }) ?? '-';
+        return { symbol, amount };
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
-                <Loader2 className="animate-spin text-blue-500" size={40} />
+                <Loader2 className="animate-spin text-custom-cyan" size={36} />
             </div>
         );
     }
@@ -91,51 +103,76 @@ export const PricesView = () => {
                 {filtered.length} producto{filtered.length !== 1 ? 's' : ''} encontrado{filtered.length !== 1 ? 's' : ''}
             </p>
 
-            {/* Price Cards by Family */}
+            {/* Liste agrupada */}
             {Object.keys(grouped).length === 0 ? (
-                <div className="text-center py-16 text-zinc-400">
-                    <Package size={48} className="mx-auto mb-3 opacity-40" />
-                    <p className="text-lg font-medium">No se encontraron productos</p>
-                    <p className="text-sm">Probá con otro término de búsqueda</p>
+                <div className="text-center py-16 text-zinc-500">
+                    <p className="text-sm font-medium">No se encontraron productos</p>
+                    <p className="text-xs mt-1">Probá con otro término de búsqueda</p>
                 </div>
             ) : (
-                Object.entries(grouped).map(([family, items]) => (
-                    <div key={family} className="space-y-3">
-                        <div className="flex items-center gap-2 text-zinc-700">
-                            <Tag size={16} className="text-blue-500" />
-                            <h2 className="font-bold text-lg uppercase">{family}</h2>
-                            <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full">{items.length}</span>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {items.map((item, idx) => (
-                                <div
-                                    key={idx}
-                                    className="bg-brand-dark rounded-xl border border-zinc-700 p-4 hover:border-brand-cyan hover:shadow-[0_0_15px_-3px_rgba(0,174,239,0.25)] transition-all duration-300 group cursor-default opacity-0 animate-fade-in"
-                                    style={{ animationDelay: `${idx * 50}ms` }}
+                <div className="space-y-2">
+                    {Object.entries(grouped).map(([family, items]) => {
+                        const isCollapsed = collapsed[family];
+                        return (
+                            <div key={family} className="overflow-hidden rounded-xl border border-zinc-800 bg-brand-dark">
+                                {/* Family header — clickeable */}
+                                <button
+                                    onClick={() => toggleFamily(family)}
+                                    className="w-full flex items-center justify-between px-4 py-3 bg-custom-dark hover:bg-zinc-800/50 transition-colors group"
                                 >
-                                    <div className="flex justify-between items-start gap-3">
-                                        <div className="flex-1 min-w-0">
-                                            <h3 className="font-semibold text-zinc-100 text-sm truncate group-hover:text-brand-cyan transition-colors uppercase">
-                                                {item.Producto}
-                                            </h3>
-                                            {item.Descripcion && (
-                                                <p className="text-xs text-zinc-400 mt-1 line-clamp-2 uppercase">{item.Descripcion}</p>
-                                            )}
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                            <p className="text-lg font-bold text-brand-gold">
-                                                {(item.Moneda || '').toUpperCase().includes('DOLAR') || (item.Moneda || '').toUpperCase().includes('USD') ? 'US$' : '$'}
-                                                {item.Precio?.toLocaleString('es-UY', { minimumFractionDigits: 2 })}
-                                            </p>
-                                            <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{item.Moneda}</p>
-                                        </div>
+                                    <div className="flex items-center gap-2">
+                                        <Tag size={14} className="text-custom-cyan shrink-0" />
+                                        <span className="font-bold text-xs uppercase tracking-wider text-zinc-200 group-hover:text-custom-cyan transition-colors">
+                                            {family}
+                                        </span>
+                                        <span className="text-[10px] text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full">
+                                            {items.length}
+                                        </span>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                ))
+                                    {isCollapsed
+                                        ? <ChevronRight size={16} className="text-zinc-500" />
+                                        : <ChevronDown size={16} className="text-zinc-500" />
+                                    }
+                                </button>
+
+                                {/* Rows */}
+                                {!isCollapsed && (
+                                    <div>
+                                        {/* Table header */}
+                                        <div className="grid grid-cols-[1fr_auto] md:grid-cols-[1fr_2fr_auto] px-4 py-2 border-t border-zinc-800 border-b border-b-zinc-800">
+                                            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Producto</span>
+                                            <span className="hidden md:block text-[10px] font-bold uppercase tracking-widest text-zinc-500">Descripción</span>
+                                            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 text-right">Precio</span>
+                                        </div>
+
+                                        {items.map((item, idx) => {
+                                            const { symbol, amount } = formatPrice(item);
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    className={`grid grid-cols-[1fr_auto] md:grid-cols-[1fr_2fr_auto] items-center px-4 py-3 gap-3 border-b border-zinc-800/60 last:border-b-0 hover:bg-zinc-800/20 transition-colors`}
+                                                >
+                                                    <p className="text-sm font-semibold text-zinc-100 uppercase truncate">
+                                                        {item.Producto}
+                                                    </p>
+                                                    <p className="hidden md:block text-xs text-zinc-400 truncate uppercase">
+                                                        {item.Descripcion || '—'}
+                                                    </p>
+                                                    <div className="text-right shrink-0">
+                                                        <p className="text-sm font-bold text-brand-gold whitespace-nowrap">
+                                                            <span className="text-xs text-zinc-400 mr-0.5">{symbol}</span>
+                                                            {amount}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
             )}
         </div>
     );

@@ -2,6 +2,7 @@ const { sql, getPool } = require('../config/db');
 const jwt = require('jsonwebtoken');
 const asyncHandler = require('../middleware/asyncHandler');
 const logger = require('../utils/logger');
+const googleSheets = require('../services/googleSheetsService');
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET is not defined in environment variables');
 
@@ -179,7 +180,7 @@ exports.register = asyncHandler(async (req, res) => {
     const idQuery = await pool.request().query("SELECT ISNULL(MAX(CodCliente), 0) + 1 as NextID FROM Clientes");
     let codClienteInterno = idQuery.recordset[0].NextID;
 
-    await pool.request()
+    const insertRes = await pool.request()
         .input('CC', sql.Int, codClienteInterno)
         .input('IDC', sql.NVarChar(50), idcliente)
         .input('Nom', sql.NVarChar(200), company || name || 'Nuevo Cliente')
@@ -200,12 +201,19 @@ exports.register = asyncHandler(async (req, res) => {
                 WebPasswordHash, WebActive, WebResetPassword,
                 DepartamentoID, LocalidadID, AgenciaID, FormaEnvioID, VendedorID, FechaRegistro
             )
+            OUTPUT INSERTED.CliIdCliente
             VALUES (
                 @CC, @IDC, @Nom, @Fant, @Email, @Tel, @Dir, @Ruc, 
                 @Pass, 0, 0,
                 @DepID, @LocID, @AgeID, @FenvID, @VenID, GETDATE()
             )
         `);
+
+    const cliIdClienteGenerado = insertRes.recordset[0].CliIdCliente;
+
+    await pool.request()
+        .input('CID', sql.Int, cliIdClienteGenerado)
+        .query('UPDATE Clientes SET IDReact = @CID WHERE CliIdCliente = @CID');
 
     const emailService = require('../services/emailService');
     if (email) {
@@ -217,6 +225,18 @@ exports.register = asyncHandler(async (req, res) => {
         pendingApproval: true,
         message: 'Registro exitoso. Revisá tu correo electrónico para activar tu cuenta.'
     });
+
+    // Fire-and-forget: sincronizar con Google Sheets
+    googleSheets.insertarClienteEnGoogle({
+        idCliente: idcliente,
+        nombre:    company || name || '',
+        telefono:  phone   || '',
+        email:     email   || '',
+        empresa:   company || '',
+        doc:       ruc     || '',
+        direccion: address || '',
+        idReact:   String(cliIdClienteGenerado),
+    }).catch(e => logger.warn('[GoogleSheets] insertarCliente falló:', e.message));
 });
 
 exports.me = asyncHandler(async (req, res) => {
@@ -344,6 +364,17 @@ exports.updateProfile = asyncHandler(async (req, res) => {
                 codCliente: u.CodCliente
             }
         });
+
+        // Fire-and-forget: sincronizar con Google Sheets
+        if (u.IDReact) {
+            googleSheets.actualizarClienteEnGoogle(u.IDReact, {
+                nombre:    name    || '',
+                telefono:  phone   || '',
+                empresa:   company || '',
+                direccion: address || '',
+                doc:       ruc     || '',
+            }).catch(e => logger.warn('[GoogleSheets] actualizarCliente falló:', e.message));
+        }
     } else {
         res.status(404).json({ error: "Cliente no encontrado" });
     }

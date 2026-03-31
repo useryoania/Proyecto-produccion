@@ -533,7 +533,6 @@ const WebRetirosPage = () => {
   const [deliverySelectedOrders, setDeliverySelectedOrders] = React.useState({});
   const [announcedOrders, setAnnouncedOrders] = React.useState(new Set()); // Órdenes anunciadas desde el tótem
   const [duplicateDeliveryWarn, setDuplicateDeliveryWarn] = React.useState(null);
-  const [pendingUpdate, setPendingUpdate] = React.useState(null); // { count, apiOrders } — nuevas órdenes sin aplicar
   const [layoutLocked, setLayoutLocked] = React.useState(false); // lock de layout de columnas
   const [lockedWeights, setLockedWeights] = React.useState(null); // pesos congelados
   const deliveryInputRef = React.useRef(null);
@@ -703,7 +702,7 @@ const WebRetirosPage = () => {
     knownApiOrdersRef.current = new Set(apiOrders.map(o => o.ordenDeRetiro));
   }, [apiOrders]);
 
-  // Fetch silencioso: compara con ref, muestra badge si hay nuevas
+  // Fetch silencioso: aplica directamente sin badge
   const fetchPendingUpdate = useCallback(async () => {
     try {
       const { data } = await api.get('/web-retiros/locales');
@@ -724,12 +723,7 @@ const WebRetirosPage = () => {
           orders: r.BultosJSON ? JSON.parse(r.BultosJSON)
             : (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(c => ({ orderNumber: c.trim(), orderId: c.trim() })) : []),
         }));
-      const newCount = newOrders.filter(o => !knownApiOrdersRef.current.has(o.ordenDeRetiro)).length;
-      if (newCount > 0) {
-        setPendingUpdate(prev => ({ count: (prev?.count || 0) + newCount, apiOrders: newOrders }));
-      } else {
-        setApiOrders(newOrders);
-      }
+      setApiOrders(newOrders);
     } catch (e) { console.warn('[fetchPendingUpdate]', e); }
   }, []);
 
@@ -1405,10 +1399,10 @@ const WebRetirosPage = () => {
       {/* Navbar compacto: logo + buscador a la izquierda, tabs a la derecha */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 mb-4 overflow-hidden">
         <div className="flex items-center gap-3 px-4 py-3">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-sm shrink-0">
-            <LayoutGrid size={16} />
+          <div className="shrink-0 text-brand-cyan">
+            <LayoutGrid size={18} />
           </div>
-          <span className="text-sm font-black text-slate-800 tracking-tight shrink-0">Logística eCommerce</span>
+          <span className="text-sm font-black text-slate-800 tracking-tight shrink-0 uppercase">Logística</span>
 
           {/* Buscador compacto — solo en empaque sin orden seleccionada */}
           {view === 'empaque' && !selectedRetiro && (
@@ -1424,16 +1418,7 @@ const WebRetirosPage = () => {
             </div>
           )}
 
-          {/* Badge de nuevas órdenes */}
-          {pendingUpdate && pendingUpdate.count > 0 && (
-            <button
-              onClick={() => { setApiOrders(pendingUpdate.apiOrders); setPendingUpdate(null); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-lg transition-colors shrink-0 animate-pulse"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-white" />
-              +{pendingUpdate.count} nueva{pendingUpdate.count !== 1 ? 's' : ''}
-            </button>
-          )}
+
 
           {/* Lock de layout */}
           {view === 'empaque' && !selectedRetiro && (
@@ -1461,15 +1446,16 @@ const WebRetirosPage = () => {
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Tabs a la derecha */}
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
-            <button onClick={() => setView('empaque')} className={`px-4 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all ${view === 'empaque' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>
-              <Package size={14} /> Empaque
-            </button>
-            <button onClick={() => setView('entrega')} className={`px-4 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all ${view === 'entrega' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:bg-slate-200'}`}>
-              <MapPin size={14} /> Entregas
-            </button>
-          </div>
+          {/* Toggle de vista: un solo botón que lleva a la otra */}
+          <button
+            onClick={() => setView(view === 'empaque' ? 'entrega' : 'empaque')}
+            className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors shrink-0 uppercase"
+          >
+            {view === 'empaque'
+              ? <><MapPin size={16} className="text-brand-cyan" /> Ir a Entregas</>
+              : <><Package size={16} className="text-brand-cyan" /> Ir a Empaque</>
+            }
+          </button>
         </div>
 
 
@@ -1726,7 +1712,7 @@ const WebRetirosPage = () => {
                       {/* Fila 3: lugar retiro | bultos | tiempo */}
                       <div className="flex items-center justify-between w-full">
                         {item.lugarRetiro && item.lugarRetiro !== 'Desconocido' ? (
-                          <div className="text-[10px] font-bold text-blue-500 truncate min-w-0">
+                          <div className="text-[10px] font-bold text-brand-cyan truncate min-w-0">
                             {item.agenciaNombre ? item.lugarRetiro.replace(/\s*\(.*\)\s*$/g, '') + ` (${item.agenciaNombre})` : item.lugarRetiro}
                           </div>
                         ) : <div />}
