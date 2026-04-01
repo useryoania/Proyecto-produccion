@@ -205,7 +205,7 @@ export const MainLayout = ({ children }) => {
                         50% { transform: scale(1.25); opacity: 1; }
                     }
                 `}</style>
-                <div className="flex justify-evenly pt-3 pb-6">
+                <div className="flex justify-evenly items-center w-full pt-3 pb-6">
                     {[
                         { color: '#00AEEF', glow: '0 0 12px 4px rgba(0,174,239,0.7)', delay: '0s' },
                         { color: '#EC008C', glow: '0 0 12px 4px rgba(236,0,140,0.7)', delay: '0.4s' },

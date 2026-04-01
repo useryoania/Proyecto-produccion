@@ -44,76 +44,93 @@ export function AuthProvider({ children }) {
     const login = async (username, password) => {
         console.log("🚀 [LoginStep 1] Intentando login para:", username);
         try {
-            const response = await fetch(`${API_URL}/auth/login`, {
+            // --- 1. Intentar login de usuario INTERNO ---
+            const internalRes = await fetch(`${API_URL}/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
             });
+            const internalData = await internalRes.json();
+            console.log("📥 [LoginStep 2a] Respuesta interno:", internalData);
 
-            const data = await response.json();
-            console.log("📥 [LoginStep 2] Respuesta del servidor:", data);
-
-            if (response.ok && data.user) {
-                // FALLBACK: Check if token is directly in data or inside user object
-                const receivedToken = data.token || data.user.token;
-                console.log("🔑 [LoginStep 2.5] Token recibido:", receivedToken ? "SÍ (Length: " + receivedToken.length + ")" : "NO (undefined)");
-
+            if (internalRes.ok && internalData.user) {
+                // Usuario interno encontrado
+                const receivedToken = internalData.token || internalData.user.token;
                 const userData = {
-                    id: data.user.userId || data.user.IdUsuario || data.user.id, // Support both formats
-                    nombre: data.user.Nombre || data.user.username || data.user.Usuario || data.user.name,
-                    rol: data.user.role || data.user.IdRol, // Support both formats
-                    idRol: data.user.idRol || data.user.IdRol, // Explicitly store IdRol
-                    usuario: data.user.username || data.user.Usuario || data.user.email,
-                    token: receivedToken, // Store the found token
-                    areaKey: (data.user.area || data.user.AreaUsuario || data.user.AreaKey || '').trim(),
-                    userType: data.userType, // INTERNAL or CLIENT
-                    redirectUrl: data.redirectUrl, // Where to go
-                    requireReset: data.user.requireReset || false // Force password change
+                    id: internalData.user.userId || internalData.user.IdUsuario || internalData.user.id,
+                    nombre: internalData.user.Nombre || internalData.user.username || internalData.user.Usuario || internalData.user.name,
+                    rol: internalData.user.role || internalData.user.IdRol,
+                    idRol: internalData.user.idRol || internalData.user.IdRol,
+                    usuario: internalData.user.username || internalData.user.Usuario || internalData.user.email,
+                    token: receivedToken,
+                    areaKey: (internalData.user.area || internalData.user.AreaUsuario || internalData.user.AreaKey || '').trim(),
+                    userType: internalData.userType,
+                    redirectUrl: internalData.redirectUrl,
+                    requireReset: internalData.user.requireReset || false
+                };
+                if (userData.idRol === 1 || userData.rol === 1) userData.rol = 'ADMIN';
+                localStorage.setItem('user', JSON.stringify(userData));
+                if (receivedToken) {
+                    localStorage.setItem('auth_token', receivedToken);
+                    localStorage.setItem('user_session', JSON.stringify(internalData.user));
+                }
+                setUser(userData);
+                return userData;
+            }
+
+            // --- 2. Intentar login de CLIENTE WEB ---
+            console.log("📥 [LoginStep 2b] No es interno, probando cliente web...");
+            const clientRes = await fetch(`${API_URL}/web-auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ identifier: username, password })
+            });
+            const clientData = await clientRes.json();
+            console.log("📥 [LoginStep 2c] Respuesta cliente web:", clientData);
+
+            if (clientRes.ok && clientData.user) {
+                const receivedToken = clientData.token;
+                const userData = {
+                    id: clientData.user.id || clientData.user.codCliente,
+                    nombre: clientData.user.name,
+                    rol: clientData.user.role || 'WEB_CLIENT',
+                    idRol: null,
+                    usuario: clientData.user.email,
+                    token: receivedToken,
+                    areaKey: '',
+                    userType: 'CLIENT',
+                    redirectUrl: '/portal/pickup',
+                    requireReset: clientData.user.requireReset || false,
+                    codCliente: clientData.user.codCliente,
+                    role: 'WEB_CLIENT',
                 };
 
-                // Normalize Role for Frontend Checks
-                if (userData.idRol === 1 || userData.rol === 1) {
-                    userData.rol = 'ADMIN';
-                }
-
-                // Log what we mapped to debug
-                console.log("📍 [Auth] Mapped User Data:", userData);
-                console.log("💾 [LoginStep 3] Guardando en LocalStorage:", userData);
-
-                // If client needs to reset password, only store token (for API call)
-                // but DON'T store user/session (prevents back-button session restore)
                 if (userData.requireReset) {
-                    if (receivedToken) {
-                        localStorage.setItem('auth_token', receivedToken);
-                    }
+                    if (receivedToken) localStorage.setItem('auth_token', receivedToken);
                     return userData;
                 }
 
-                // MAIN STORAGE (Shared)
                 localStorage.setItem('user', JSON.stringify(userData));
-
-                // ALSO STORE TOKEN IN 'auth_token' FOR CLIENT PORTAL COMPATIBILITY
                 if (receivedToken) {
                     localStorage.setItem('auth_token', receivedToken);
-                    localStorage.setItem('user_session', JSON.stringify(data.user));
-                } else {
-                    console.error("No token to write to auth_token!");
+                    localStorage.setItem('user_session', JSON.stringify(clientData.user));
                 }
-
                 setUser(userData);
-
                 return userData;
-            } else {
-                // Mostrar el mensaje exacto del servidor (ej: "pendiente de aprobación")
-                const errorMsg = data.message || 'Credenciales inválidas';
-                console.warn(`⚠️ [Login] Server response (${response.status}):`, errorMsg);
-                throw new Error(errorMsg);
             }
+
+            // --- 3. Ambos fallaron: mostrar el error más relevante ---
+            // Priorizar mensaje del endpoint web si el usuario intentó con formato de IDCliente
+            const errorMsg = clientData.message || internalData.message || 'Credenciales inválidas';
+            console.warn(`⚠️ [Login] Ambos endpoints fallaron. Último error: ${errorMsg}`);
+            throw new Error(errorMsg);
+
         } catch (error) {
             console.error("🔥 [LoginError]:", error);
             throw error;
         }
     };
+
 
     const googleLogin = async (credential) => {
         try {

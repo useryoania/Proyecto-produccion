@@ -92,6 +92,8 @@ export const ProfileEdit = () => {
                 phone: form.telefono,
                 address: form.direccion,
                 ruc: form.rut,
+                localidad: locName,
+                agencia: ageName,
                 departamentoId: form.departamentoId ? parseInt(form.departamentoId) : null,
                 localidadId: form.localidadId ? parseInt(form.localidadId) : null,
                 agenciaId: form.agenciaId ? parseInt(form.agenciaId) : null,

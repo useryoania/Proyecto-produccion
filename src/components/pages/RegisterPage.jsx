@@ -63,7 +63,7 @@ const RegisterPage = () => {
     }, [form.departamentoId]);
 
     const set = (key) => (e) => {
-        const val = e.target.value;
+        const val = key === 'idCliente' ? e.target.value.replace(/\s/g, '') : e.target.value;
         setForm(f => {
             const next = { ...f, [key]: val };
             if (key === 'departamentoId') {
@@ -90,6 +90,10 @@ const RegisterPage = () => {
         }
 
         switch (key) {
+            case 'idCliente':
+                if (v && /\s/.test(v))
+                    return 'No puede contener espacios';
+                break;
             case 'email':
                 if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))
                     return 'Email inválido';
@@ -147,14 +151,14 @@ const RegisterPage = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     idcliente: form.idCliente,
-                    name: form.nombre,
+                    name: `${form.nombre} ${form.apellido}`.trim(),
                     email: form.email,
                     password: form.password,
                     company: form.razonSocial,
                     phone: form.telefono,
                     address: form.direccion,
                     ruc: form.rut,
-                    fantasyName: `${form.nombre} ${form.apellido}`,
+                    fantasyName: form.razonSocial.trim() || form.idCliente,
                     departamentoId: form.departamentoId ? parseInt(form.departamentoId) : null,
                     localidadId: form.localidadId ? parseInt(form.localidadId) : null,
                     agenciaId: form.agenciaId ? parseInt(form.agenciaId) : null,

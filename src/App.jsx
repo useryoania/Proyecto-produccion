@@ -5,6 +5,7 @@ import { useAuth } from './context/AuthContext';
 import LoginPage from './components/pages/LoginPage';
 import RegisterPage from './components/pages/RegisterPage';
 import ForgotPasswordPage from './components/pages/ForgotPasswordPage';
+import ResetPasswordPage from './components/pages/ResetPasswordPage';
 import LandingPage from './components/pages/LandingPage';
 import { ClientPortalApp } from './client-portal/ClientPortalApp';
 import MainAppContent from './components/layout/MainAppContent'; // ESTE ES EL IMPORT
@@ -47,6 +48,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/portal/*" element={<ClientPortalApp />} />
           <Route path="/payment-status" element={<PaymentResult />} />
           <Route path="/totem/*" element={<TotemApp />} />

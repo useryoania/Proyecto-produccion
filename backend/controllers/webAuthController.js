@@ -7,22 +7,19 @@ const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET is not defined in environment variables');
 
 // ===================================
-// AUTHENTICATION LOGIC (UNIFIED IN Clientes TABLE)
+// LOGIN
 // ===================================
 exports.login = asyncHandler(async (req, res) => {
-    // identifier es el IDCliente (Varchar)
     const { identifier, password } = req.body;
 
-    // Check if identifier is provided
     if (!identifier) {
         return res.status(400).json({ success: false, message: 'ID Cliente requerido' });
     }
 
-    logger.info(`🔐 [LOGIN ATTEMPT] Identifier: '${identifier}' (Pattern: '${identifier.trim()}')`);
+    logger.info(`🔐 [LOGIN ATTEMPT] Identifier: '${identifier}'`);
 
     const pool = await getPool();
 
-    // Busqueda estricta por IDCliente (Varchar) con tolerancia a espacios
     const result = await pool.request()
         .input('Val', sql.NVarChar, identifier.trim())
         .query(`
@@ -34,7 +31,6 @@ exports.login = asyncHandler(async (req, res) => {
     logger.info(`🔐 [LOGIN RESULT] Matches found: ${result.recordset.length}`);
 
     if (result.recordset.length === 0) {
-        logger.warn(`❌ Login Failed: User not found for '${identifier}'`);
         return res.status(401).json({ success: false, message: 'Usuario incorrecto: No se encontró el cliente.' });
     }
 
@@ -43,8 +39,6 @@ exports.login = asyncHandler(async (req, res) => {
     let isValid = false;
     let isFirstTime = false;
 
-    // Lógica de Contraseña
-    // Si no tiene hash (NULL o vacio), es primera vez -> Auto Set
     if (!client.WebPasswordHash || client.WebPasswordHash === '') {
         if (password && password.length > 0) {
             isFirstTime = true;
@@ -52,8 +46,7 @@ exports.login = asyncHandler(async (req, res) => {
         } else {
             return res.status(401).json({ success: false, message: 'Debe ingresar una contraseña.' });
         }
-    }
-    else if (client.WebPasswordHash === password) {
+    } else if (client.WebPasswordHash === password) {
         isValid = true;
     }
 
@@ -61,19 +54,15 @@ exports.login = asyncHandler(async (req, res) => {
         return res.status(401).json({ success: false, message: 'Contraseña incorrecta.' });
     }
 
-    // Verificar si el cliente está activo (después de validar contraseña)
     if (!client.WebActive) {
         return res.status(403).json({ success: false, message: 'Tu cuenta está pendiente de aprobación. Contactá al administrador.' });
     }
 
-    // Si es la primera vez, guardamos la contraseña
     if (isFirstTime) {
         await pool.request()
             .input('ID', sql.Int, client.CodCliente)
             .input('Pass', sql.NVarChar, password)
             .query("UPDATE Clientes SET WebPasswordHash = @Pass, WebResetPassword = 0 WHERE CodCliente = @ID");
-
-        // Actualizamos en memoria
         client.WebResetPassword = false;
     }
 
@@ -109,8 +98,10 @@ exports.login = asyncHandler(async (req, res) => {
     });
 });
 
+// ===================================
+// REGISTER
+// ===================================
 exports.register = asyncHandler(async (req, res) => {
-    // Registro usando IDCliente (alfanumérico) como identificador principal
     const {
         idcliente,
         name, email, password, company, phone,
@@ -125,11 +116,23 @@ exports.register = asyncHandler(async (req, res) => {
 
     const pool = await getPool();
 
+    // --- Fetch department name (always, independent of vendedor path) ---
+    let deptoNombre = '';
+    if (departamentoId) {
+        try {
+            const deptoResult = await pool.request()
+                .input('DepID', sql.Int, departamentoId)
+                .query("SELECT Nombre FROM dbo.Departamentos WHERE ID = @DepID");
+            deptoNombre = deptoResult.recordset[0]?.Nombre || '';
+        } catch (err) {
+            logger.warn('⚠️ Error fetching department name:', err.message);
+        }
+    }
+
     // --- Vendedor assignment: manual selection takes priority, otherwise auto-assign ---
     let vendedorId = manualVendedorId || null;
     if (!vendedorId && departamentoId) {
         try {
-            // 1. Get the zone for the selected department
             const zonaResult = await pool.request()
                 .input('DepID', sql.Int, departamentoId)
                 .query("SELECT Zona FROM dbo.Departamentos WHERE ID = @DepID");
@@ -137,7 +140,6 @@ exports.register = asyncHandler(async (req, res) => {
             const zona = zonaResult.recordset[0]?.Zona;
 
             if (zona) {
-                // 2. Find the vendedor in that zone with the fewest assigned clients (round-robin)
                 const vendedorResult = await pool.request()
                     .input('Zona', sql.NVarChar, zona)
                     .query(`
@@ -153,7 +155,6 @@ exports.register = asyncHandler(async (req, res) => {
             }
         } catch (err) {
             logger.warn('⚠️ Error auto-assigning vendedor:', err.message);
-            // Non-blocking: registration continues without vendedor
         }
     }
 
@@ -176,7 +177,8 @@ exports.register = asyncHandler(async (req, res) => {
             return res.status(409).json({ success: false, message: 'Este correo electrónico ya está registrado.' });
         }
     }
-    // Crear cliente nuevo (ya validamos que IDCliente y Email no existen)
+
+    // 3. Crear cliente nuevo
     const idQuery = await pool.request().query("SELECT ISNULL(MAX(CodCliente), 0) + 1 as NextID FROM Clientes");
     let codClienteInterno = idQuery.recordset[0].NextID;
 
@@ -229,16 +231,22 @@ exports.register = asyncHandler(async (req, res) => {
     // Fire-and-forget: sincronizar con Google Sheets
     googleSheets.insertarClienteEnGoogle({
         idCliente: idcliente,
-        nombre:    company || name || '',
-        telefono:  phone   || '',
-        email:     email   || '',
-        empresa:   company || '',
-        doc:       ruc     || '',
+        nombre: name || '',
+        telefono: phone || '',
+        email: email || '',
+        empresa: company || '',
+        doc: ruc || '',
         direccion: address || '',
-        idReact:   String(cliIdClienteGenerado),
+        depto: deptoNombre || '',
+        localidad: localidad || '',
+        tipoRetiro: formaEnvioId === 1 || formaEnvioId === '1' ? 'Retiro en el local' : 'Encomienda: ' + agencia,
+        idReact: String(cliIdClienteGenerado),
     }).catch(e => logger.warn('[GoogleSheets] insertarCliente falló:', e.message));
 });
 
+// ===================================
+// ME (GET CURRENT USER)
+// ===================================
 exports.me = asyncHandler(async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "No autorizado" });
 
@@ -285,8 +293,7 @@ exports.me = asyncHandler(async (req, res) => {
 // UPDATE PASSWORD (FORCE RESET)
 // ===================================
 exports.updatePassword = asyncHandler(async (req, res) => {
-    // User must be authenticated (even with the temp/reset token)
-    const userId = req.user.codCliente; // Using CodCliente as ID
+    const userId = req.user.codCliente;
     const { newPassword } = req.body;
 
     if (!newPassword || newPassword.length < 4) {
@@ -338,7 +345,6 @@ exports.updateProfile = asyncHandler(async (req, res) => {
             WHERE CodCliente = @ID
         `);
 
-    // Return updated user data
     const r = await pool.request()
         .input('ID2', sql.Int, userId)
         .query("SELECT * FROM Clientes WHERE CodCliente = @ID2");
@@ -365,19 +371,112 @@ exports.updateProfile = asyncHandler(async (req, res) => {
             }
         });
 
-        // Fire-and-forget: sincronizar con Google Sheets
         if (u.IDReact) {
+            // Fetch department name for Sheets sync
+            let deptoNombreUpdate = '';
+            if (u.DepartamentoID) {
+                try {
+                    const deptoRes = await pool.request()
+                        .input('DepID', sql.Int, u.DepartamentoID)
+                        .query("SELECT Nombre FROM dbo.Departamentos WHERE ID = @DepID");
+                    deptoNombreUpdate = deptoRes.recordset[0]?.Nombre || '';
+                } catch (_) {}
+            }
+
             googleSheets.actualizarClienteEnGoogle(u.IDReact, {
-                nombre:    name    || '',
-                telefono:  phone   || '',
-                empresa:   company || '',
+                nombre: name || '',
+                telefono: phone || '',
+                empresa: company || '',
                 direccion: address || '',
-                doc:       ruc     || '',
+                doc: ruc || '',
+                depto: deptoNombreUpdate,
+                localidad: localidad || '',
+                tipoRetiro: u.FormaEnvioID === 1 ? 'Retiro en el local' : `Encomienda: ${agencia || ''}`,
             }).catch(e => logger.warn('[GoogleSheets] actualizarCliente falló:', e.message));
         }
     } else {
         res.status(404).json({ error: "Cliente no encontrado" });
     }
+});
+
+// ===================================
+// FORGOT PASSWORD (send reset link)
+// ===================================
+exports.forgotPassword = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+
+    logger.info(`🔑 [FORGOT-PASSWORD] Solicitud recibida para email: '${email}'`);
+
+    if (!email || !email.trim()) {
+        return res.status(400).json({ success: false, message: 'El email es requerido.' });
+    }
+
+    const pool = await getPool();
+    const result = await pool.request()
+        .input('Email', sql.NVarChar, email.trim().toLowerCase())
+        .query(`
+            SELECT CodCliente, Nombre, Email
+            FROM Clientes
+            WHERE LOWER(LTRIM(RTRIM(Email))) = @Email
+              AND WebActive = 1
+        `);
+
+    logger.info(`🔑 [FORGOT-PASSWORD] Clientes encontrados con ese email: ${result.recordset.length}`);
+
+    if (result.recordset.length === 0) {
+        logger.warn(`🔑 [FORGOT-PASSWORD] Email '${email}' no encontrado o cuenta inactiva. No se envía correo.`);
+        return res.json({ success: true });
+    }
+
+    const client = result.recordset[0];
+    logger.info(`🔑 [FORGOT-PASSWORD] Enviando link de reset a CodCliente=${client.CodCliente} (${client.Email})`);
+
+    const resetToken = jwt.sign(
+        { codCliente: client.CodCliente, purpose: 'password-reset' },
+        JWT_SECRET,
+        { expiresIn: '15m' }
+    );
+
+    const emailService = require('../services/emailService');
+    emailService.sendPasswordResetLinkMail(client.Email, client.Nombre, resetToken)
+        .then(ok => logger.info(`🔑 [FORGOT-PASSWORD] sendMail resultado: ${ok}`))
+        .catch(err => logger.error(`🔑 [FORGOT-PASSWORD] sendMail excepción: ${err.message}`));
+
+    return res.json({ success: true });
+});
+
+// ===================================
+// RESET PASSWORD (consume reset token)
+// ===================================
+exports.resetPassword = asyncHandler(async (req, res) => {
+    const { token, newPassword } = req.body;
+
+    if (!token) {
+        return res.status(400).json({ success: false, expired: true, message: 'Token requerido.' });
+    }
+    if (!newPassword || newPassword.length < 4) {
+        return res.status(400).json({ success: false, message: 'La contraseña debe tener al menos 4 caracteres.' });
+    }
+
+    let decoded;
+    try {
+        decoded = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+        const expired = err.name === 'TokenExpiredError';
+        return res.status(400).json({ success: false, expired, message: expired ? 'El enlace expiró.' : 'Token inválido.' });
+    }
+
+    if (decoded.purpose !== 'password-reset') {
+        return res.status(400).json({ success: false, message: 'Token inválido.' });
+    }
+
+    const pool = await getPool();
+    await pool.request()
+        .input('ID', sql.Int, decoded.codCliente)
+        .input('Pass', sql.NVarChar, newPassword)
+        .query("UPDATE Clientes SET WebPasswordHash = @Pass, WebResetPassword = 0 WHERE CodCliente = @ID");
+
+    return res.json({ success: true, message: 'Contraseña actualizada correctamente.' });
 });
 
 // ===================================
@@ -394,7 +493,6 @@ exports.activate = asyncHandler(async (req, res) => {
         const decoded = jwt.verify(token, JWT_SECRET);
         const pool = await getPool();
 
-        // Verificar que el cliente existe
         const result = await pool.request()
             .input('ID', sql.Int, decoded.codCliente)
             .query('SELECT CodCliente, WebActive, Nombre FROM Clientes WHERE CodCliente = @ID');
@@ -409,7 +507,6 @@ exports.activate = asyncHandler(async (req, res) => {
             return res.send(activationPage('Tu cuenta ya estaba activada. Podés iniciar sesión.', true));
         }
 
-        // Activar la cuenta
         await pool.request()
             .input('ID', sql.Int, decoded.codCliente)
             .query('UPDATE Clientes SET WebActive = 1 WHERE CodCliente = @ID');

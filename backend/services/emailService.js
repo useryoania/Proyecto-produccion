@@ -18,10 +18,10 @@ exports.sendMail = async (to, subject, html) => {
             html
         });
         if (error) {
-            logger.error('[Email] Error:', error);
+            logger.error(`[Email] ❌ RESEND ERROR enviando a ${to}: ${JSON.stringify(error)}`);
             return false;
         }
-        logger.info(`[Email] Enviado a ${to}: ${subject}`);
+        logger.info(`[Email] ✅ Enviado a ${to}: ${subject}`);
         return true;
 
     } catch (err) {
@@ -56,7 +56,7 @@ exports.sendRegistrationMail = async (to, clientName, codCliente) => {
         <p style="color:#aaa;font-size:11px;text-align:center;margin-top:16px;">User - Sistema de Producción</p>
     </div>
     `;
-    return this.sendMail(to, "Activá tu cuenta", html);
+    return exports.sendMail(to, "Activá tu cuenta", html);
 };
 
 exports.sendOrderConfirmation = async (to, clientName, orderNumber, orderDetails) => {
@@ -67,9 +67,10 @@ exports.sendOrderConfirmation = async (to, clientName, orderNumber, orderDetails
     <hr>
     <p style="color: #888; font-size: 12px;">User - Sistema de Producción</p>
     </div>`;
-    return this.sendMail(to, `Pedido #${orderNumber} confirmado`, html);
+    return exports.sendMail(to, `Pedido #${orderNumber} confirmado`, html);
 };
 
+// Legacy: code-based reset (kept for compatibility, unused)
 exports.sendPasswordResetMail = async (to, resetCode) => {
     const html = `
     <div style="font-family:Arial, sans-serif; max-width:600px; margin: 0 auto; padding: 20px;">
@@ -84,5 +85,39 @@ exports.sendPasswordResetMail = async (to, resetCode) => {
     <p style="color: #888; font-size: 12px;">User - Sistema de Producción</p>
     </div>
     `;
-    return this.sendMail(to, "Código de recuperación de contraseña", html);
+    return exports.sendMail(to, "Código de recuperación de contraseña", html);
+};
+
+// New: link-based reset (used by forgotPassword endpoint)
+exports.sendPasswordResetLinkMail = async (to, clientName, resetToken) => {
+    const resetUrl = `${BASE_URL}/reset-password?token=${resetToken}`;
+
+    const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;background:#ffffff;">
+        <div style="text-align:center;padding:20px 0;border-bottom:2px solid #f0f0f0;">
+            <h1 style="color:#0f172a;margin:0;font-size:24px;">User</h1>
+        </div>
+        <div style="padding:30px 0;">
+            <h2 style="color:#1a1a1a;margin-bottom:8px;">Recuperar contraseña</h2>
+            <p style="color:#555;font-size:15px;line-height:1.6;">
+                Hola ${clientName}, recibimos una solicitud para restablecer la contraseña de tu cuenta.
+                Hacé clic en el botón de abajo para elegir una nueva contraseña:
+            </p>
+            <div style="text-align:center;margin:30px 0;">
+                <a href="${resetUrl}" style="display:inline-block;padding:14px 40px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;font-size:16px;">
+                    Restablecer contraseña
+                </a>
+            </div>
+            <p style="color:#888;font-size:13px;">Si no podés hacer clic en el botón, copiá y pegá este enlace en tu navegador:</p>
+            <p style="color:#888;font-size:12px;word-break:break-all;">${resetUrl}</p>
+            <p style="color:#888;font-size:13px;margin-top:20px;">
+                Este enlace expira en <strong>15 minutos</strong>.<br>
+                Si no solicitaste restablecer tu contraseña, podés ignorar este mensaje.
+            </p>
+        </div>
+        <hr style="border:none;border-top:1px solid #eee;">
+        <p style="color:#aaa;font-size:11px;text-align:center;margin-top:16px;">User - Sistema de Producción</p>
+    </div>
+    `;
+    return exports.sendMail(to, "Restablecer tu contraseña", html);
 };
