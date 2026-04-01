@@ -1995,6 +1995,82 @@ exports.generatePickupReceipt = async (req, res) => {
     }
 };
 
+
+// --- INIT HANDY PAYMENT (nuevo flujo: retiro se crea solo si el pago es exitoso) ---
+exports.initHandyPayment = async (req, res) => {
+    try {
+        const {
+            orders,          // [{ OrdIdOrden, orderNumber, desc, amount, currency }]
+            totalAmount,
+            activeCurrency,
+            lugarRetiro,
+            direccion,
+            departamento,
+            localidad,
+            agenciaId,
+            customAgencia,
+            receptorNombre
+        } = req.body;
+
+        if (!orders || orders.length === 0) {
+            return res.status(400).json({ error: 'No hay órdenes para pagar.' });
+        }
+
+        const currencyCode = activeCurrency === 'USD' ? 840 : 858;
+
+        // Productos para Handy
+        const products = orders.map(o => {
+            const amt = Number(Number(o.amount || 0).toFixed(2));
+            return {
+                Name: (o.desc || o.orderNumber || 'Pedido').substring(0, 50),
+                Quantity: 1,
+                Amount: amt,
+                TaxedAmount: Number((amt / 1.22).toFixed(2))
+            };
+        });
+
+        const { createPaymentLink } = require('../services/handyService');
+        const result = await createPaymentLink({
+            products,
+            totalAmount,
+            currencyCode,
+            commerceName: 'USER',
+            ordersData: {
+                type: 'pickup-deferred',       // marca el nuevo flujo
+                orders: orders.map(o => ({
+                    id: o.orderNumber,
+                    desc: o.desc || o.orderNumber || 'Pedido',
+                    amount: o.amount,
+                    rawId: o.OrdIdOrden        // necesario para crear el retiro
+                })),
+                ordIds: orders.map(o => o.OrdIdOrden).filter(Boolean),
+                totalCost: totalAmount,
+                lugarRetiro: lugarRetiro || 1,
+                direccion: direccion || null,
+                departamento: departamento || null,
+                localidad: localidad || null,
+                agenciaId: agenciaId || null,
+                customAgencia: customAgencia || null,
+                receptorNombre: receptorNombre || null,
+                moneda: activeCurrency === 'USD' ? 'USD' : 'UYU'
+            },
+            codCliente: req.user?.codCliente || 0,
+            logPrefix: '[HANDY INIT]'
+        });
+
+        if (!result.success) {
+            return res.status(500).json({ error: result.error });
+        }
+
+        res.json({ success: true, url: result.url, transactionId: result.transactionId });
+
+    } catch (error) {
+        const logger = require('../utils/logger');
+        logger.error('[HANDY INIT] Error:', error.message);
+        res.status(500).json({ error: 'Error al iniciar el pago.' });
+    }
+};
+
 // --- HANDY PAYMENT ---
 exports.createHandyPaymentLink = async (req, res) => {
     try {
@@ -2135,6 +2211,59 @@ exports.handyWebhook = async (req, res) => {
 
                     logger.info('[HANDY WEBHOOK] Registrando pago directamente en DB...', JSON.stringify(payloadPago));
 
+                    // NUEVO FLUJO: crear el retiro ahora si aún no existía
+                    if (storedData.type === 'pickup-deferred' && !storedOrdenRetiro && storedData.ordIds?.length > 0) {
+                        try {
+                            logger.info('[HANDY WEBHOOK] Creando retiro diferido...');
+                            const { crearRetiro } = require('../services/retiroService');
+                            const retiroTransaction = new sql.Transaction(pool);
+                            await retiroTransaction.begin();
+                            const OReIdOrdenRetiro = await crearRetiro(retiroTransaction, {
+                                ordIds:        storedData.ordIds,
+                                totalCost:     storedData.totalCost || tx.TotalAmount,
+                                lugarRetiro:   storedData.lugarRetiro || 1,
+                                usuarioAlta:   70,
+                                formaRetiro:   'RW',
+                                codCliente:    tx.CodCliente || null,
+                                moneda:        storedData.moneda || 'UYU',
+                                direccion:     storedData.direccion || null,
+                                departamento:  storedData.departamento || null,
+                                localidad:     storedData.localidad || null,
+                                agenciaId:     storedData.agenciaId || null
+                            });
+                            await retiroTransaction.commit();
+
+                            const codigoRetiro = `RW-${OReIdOrdenRetiro}`;
+                            logger.info(`[HANDY WEBHOOK] ✅ Retiro diferido creado: ${codigoRetiro}`);
+
+                            // Guardar customAgencia si aplica
+                            if (storedData.customAgencia) {
+                                await pool.request()
+                                    .input('OReId', sql.Int, OReIdOrdenRetiro)
+                                    .input('AgenciaOtra', sql.NVarChar(200), storedData.customAgencia)
+                                    .query('UPDATE OrdenesRetiro SET AgenciaOtra = @AgenciaOtra WHERE OReIdOrdenRetiro = @OReId');
+                            }
+                            if (storedData.receptorNombre) {
+                                await pool.request()
+                                    .input('OReId', sql.Int, OReIdOrdenRetiro)
+                                    .input('Receptor', sql.NVarChar(200), storedData.receptorNombre)
+                                    .query('UPDATE OrdenesRetiro SET ReceptorNombre = @Receptor WHERE OReIdOrdenRetiro = @OReId');
+                            }
+
+                            // Guardar código en HandyTransactions para que el polling lo encuentre
+                            await pool.request()
+                                .input('txId3', sql.VarChar(100), transactionId)
+                                .input('orCode', sql.VarChar(50), codigoRetiro)
+                                .query('UPDATE HandyTransactions SET OrdenRetiroCreada = @orCode WHERE TransactionId = @txId3');
+
+                            // Usar el nuevo retiro en el resto del flujo de pago
+                            payloadPago.ordenRetiro = codigoRetiro;
+                            orderNumbers = [OReIdOrdenRetiro];
+                        } catch (retiroErr) {
+                            logger.error('[HANDY WEBHOOK] Error creando retiro diferido:', retiroErr.message);
+                        }
+                    }
+
                     // --- MIGRACIÓN: Escribir directamente en DB en vez de llamar a API React ---
                     const ordenRetiroId = parseInt(String(payloadPago.ordenRetiro).replace(/^[A-Za-z]+-0*/, ''), 10);
                     if (!isNaN(ordenRetiroId)) {
@@ -2233,7 +2362,7 @@ exports.getPaymentStatus = async (req, res) => {
         const pool = await getPool();
         const result = await pool.request()
             .input('txId', sql.VarChar(100), transactionId)
-            .query('SELECT TransactionId, TotalAmount, Currency, OrdersJson, Status, IssuerName, CreatedAt, PaidAt FROM HandyTransactions WHERE TransactionId = @txId');
+            .query('SELECT TransactionId, TotalAmount, Currency, OrdersJson, Status, IssuerName, CreatedAt, PaidAt, OrdenRetiroCreada FROM HandyTransactions WHERE TransactionId = @txId');
 
         if (result.recordset.length === 0) {
             return res.status(404).json({ error: 'Transacción no encontrada' });
@@ -2249,7 +2378,7 @@ exports.getPaymentStatus = async (req, res) => {
             totalAmount: tx.TotalAmount,
             currency: tx.Currency === 840 ? 'USD' : 'UYU',
             currencySymbol: tx.Currency === 840 ? 'US$' : '$',
-            ordenRetiro: storedData.ordenRetiro || null,
+            ordenRetiro: tx.OrdenRetiroCreada || storedData.ordenRetiro || null,
             orders: orders.map(o => ({
                 id: o.id,
                 desc: o.desc,

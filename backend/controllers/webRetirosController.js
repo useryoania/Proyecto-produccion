@@ -134,7 +134,19 @@ exports.getAllLocalRetiros = async (req, res) => {
                     FROM RelOrdenesRetiroOrdenes rel WITH(NOLOCK)
                     JOIN OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = rel.OrdIdOrden
                     WHERE rel.OReIdOrdenRetiro = r.OReIdOrdenRetiro
-                ) AS OrdenesCodigos
+                ) AS OrdenesCodigos,
+                (
+                    SELECT 
+                        od.OrdCodigoOrden AS orderNumber,
+                        od.OrdCodigoOrden AS orderId,
+                        od.OrdCostoFinal AS costoFinal,
+                        m.MonSimbolo AS simbolo
+                    FROM RelOrdenesRetiroOrdenes rel2 WITH(NOLOCK)
+                    JOIN OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = rel2.OrdIdOrden
+                    LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = od.MonIdMoneda
+                    WHERE rel2.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+                    FOR JSON PATH
+                ) AS BultosJSON
             FROM OrdenesRetiro r WITH(NOLOCK)
             LEFT JOIN Clientes c WITH(NOLOCK) ON c.CodCliente = r.CodCliente
             LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
@@ -340,7 +352,19 @@ exports.obtenerMapaEstantes = async (req, res) => {
                 o.OrdenRetiro,
                 o.CodigoCliente,
                 cli.Nombre as ClientName,
-                o.BultosJSON,
+                COALESCE((
+                    SELECT 
+                        od.OrdCodigoOrden AS orderNumber,
+                        od.OrdCodigoOrden AS orderId,
+                        od.OrdCostoFinal AS costoFinal,
+                        m.MonSimbolo AS simbolo,
+                        od.OrdCostoFinal as amount,
+                        m.MonSimbolo as currency
+                    FROM OrdenesDeposito od WITH(NOLOCK)
+                    LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = od.MonIdMoneda
+                    WHERE od.OReIdOrdenRetiro = orr.OReIdOrdenRetiro
+                    FOR JSON PATH
+                ), o.BultosJSON) AS BultosJSON,
                 o.Pagado,
                 CASE WHEN orr.ReferenciaPagoOnline IS NOT NULL AND orr.ReferenciaPagoOnline <> '' THEN 1 ELSE 0 END AS PagoHandy,
                 o.FechaUbicacion,

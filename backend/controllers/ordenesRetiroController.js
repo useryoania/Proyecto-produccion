@@ -124,7 +124,7 @@ const processRetirosRows = (rows) => {
       map[row.OReIdOrdenRetiro] = {
         ordenDeRetiro: `${row.FormaRetiro || 'R'}-${row.OReIdOrdenRetiro}`,
         totalCost: parseFloat(row.OReCostoTotalOrden).toFixed(2),
-        lugarRetiro: row.lugarRetiro || 'Desconocido',
+        lugarRetiro: row.lugarRetiro || 'Retiro en el Local',
         fechaAlta: row.OReFechaAlta,
         usuarioAlta: row.OReUsuarioAlta,
         estado: row.estado || 'Desconocido',
@@ -154,7 +154,7 @@ const processRetirosRows = (rows) => {
         orderNumber: row.orderNumber,
         orderId: row.orderId,
         orderEstado: row.orderEstadoNombre || row.orderEstado,
-        orderCosto: row.orderMonedaSimbolo ? `${row.orderMonedaId === 2 ? 'US$' : '$'} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
+        orderCosto: row.costoFinal != null ? `${row.orderMonedaId === 2 ? 'US$' : '$'} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
         orderCantidad: row.orderCantidad != null ? parseFloat(row.orderCantidad) : null,
         simbolo: row.orderMonedaId === 2 ? 'US$' : '$',
         monedaId: row.orderMonedaId || 1,

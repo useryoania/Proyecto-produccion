@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { jsPDF } from 'jspdf';
+import logoSrc from '../../assets/images/logo.png';
+import pagadoStampSrc from '../../assets/images/pagado-stamp.png';
 import { useSearchParams } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import Lottie from 'lottie-react';
@@ -57,6 +60,12 @@ export const PickupView = () => {
     const addAddressRef = useRef(null);
     const encomiendaRef = useRef(null);
     const creatingRef = useRef(false);
+
+    // Estados del nuevo flujo Handy (polling post-pago)
+    const [pollingTxId, setPollingTxId] = useState(null);
+    const [paymentStatus, setPaymentStatus] = useState(null);
+    const [paymentData, setPaymentData] = useState(null);
+    const pollingRef = useRef(null);
 
     useEffect(() => {
         if (step !== 'selection') return;
@@ -250,58 +259,180 @@ export const PickupView = () => {
         }
     };
 
-    const handleProceed = async (codeOverride) => {
-        const retiroCode = codeOverride || pickupCode;
-        if (!retiroCode) {
-            Swal.fire({ icon: 'warning', title: 'Sin retiro', text: 'No hay retiro creado.', background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
-            return;
+    // Detectar ?txId al volver de Handy
+    useEffect(() => {
+        const txId = searchParams.get('txId');
+        if (txId) {
+            setPollingTxId(txId);
+            setPaymentStatus('Creado');
+            sessionStorage.removeItem('pickup_selected');
+            sessionStorage.removeItem('pickup_code');
+            setSelectedOrders([]);
+            setPickupCode(null);
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Polling del estado del pago
+    useEffect(() => {
+        if (!pollingTxId) return;
+        const poll = async () => {
+            try {
+                const API_URL = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+                const token = localStorage.getItem('auth_token');
+                const res = await fetch(`${API_URL}/web-orders/payment-status/${pollingTxId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    setPaymentStatus(data.status);
+                    if (data.status === 'Pagado' || data.status === 'Fallido') {
+                        setPaymentData(data);
+                        clearInterval(pollingRef.current);
+                    }
+                }
+            } catch (e) { /* silencioso */ }
+        };
+        poll();
+        pollingRef.current = setInterval(poll, 4000);
+        return () => clearInterval(pollingRef.current);
+    }, [pollingTxId]);
+
+    // NUEVO FLUJO: genera link Handy sin crear retiro, redirige en la misma pestana
+    const handleInitPayment = async () => {
         setLoading(true);
         try {
+            const formaEnvioId = selectedFormaEnvio || shippingData?.defaultFormaEnvioID || 5;
+            const esEncomienda = shippingData?.formasEnvio?.find(f => f.ID === formaEnvioId)?.Nombre?.toLowerCase().includes('encomienda');
+            let dir = selectedDireccion || '';
+            let depto = '';
+            let loc = '';
+            const savedDir = shippingData?.direccionesGuardadas?.find(d => d.Direccion === selectedDireccion);
+            if (savedDir) { depto = savedDir.Ciudad || ''; loc = savedDir.Localidad || ''; }
+            else if (dir === shippingData?.defaultDireccion) { depto = defaultDepto || ''; loc = defaultLocalidad || ''; }
             const ordersPayload = selectedOrders.map(selId => {
                 const order = readyOrders.find(o => o.id === selId);
                 if (!order) return null;
-                return {
-                    id: order.id,
-                    rawId: order.rawId,
-                    orderNumber: order.id.replace('#', ''),
-                    desc: order.desc,
-                    amount: order.amount,
-                };
+                return { OrdIdOrden: order.rawId, orderNumber: order.id.replace('#', ''), desc: order.desc, amount: order.amount, currency: order.currency };
             }).filter(Boolean);
-
             const payload = {
-                ordenRetiro: retiroCode,
-                totalAmount: totalAmount,
+                orders: ordersPayload,
+                totalAmount: Number((totalAmount || 0).toFixed(2)),
                 activeCurrency: activeCurrency,
-                bultosJSON: JSON.stringify(ordersPayload)
+                lugarRetiro: esEncomienda ? 2 : 1,
+                direccion: esEncomienda ? dir : null,
+                departamento: esEncomienda ? depto : null,
+                localidad: esEncomienda ? loc : null,
+                agenciaId: esEncomienda ? (selectedAgencia === -1 ? null : selectedAgencia) : null,
+                customAgencia: esEncomienda && selectedAgencia === -1 ? customAgencia : null,
+                receptorNombre: esEncomienda ? (receiverFirstName.trim() + ' ' + receiverLastName.trim()) : null
             };
-
-            const res = await apiClient.post('/web-retiros/payment', payload);
-
+            const res = await apiClient.post('/web-orders/pickup-orders/init-payment', payload);
             if (res.success && res.url) {
-                // Limpiar estado antes de redirigir para que el back-button no muestre datos viejos
                 sessionStorage.removeItem('pickup_selected');
                 sessionStorage.removeItem('pickup_code');
-                setSelectedOrders([]);
-                setPickupCode(null);
-                window.open(res.url, '_blank');
-                window.location.href = `/portal/payment-status?txId=${res.transactionId}`;
+                window.location.href = res.url;
             } else {
                 Swal.fire({ icon: 'error', title: 'Error de pago', text: 'No se pudo generar el link de pago' + (res.error ? ': ' + res.error : ''), background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
             }
         } catch (err) {
-            console.error("Error al ir a pagar:", err);
-            Swal.fire({ icon: 'error', title: 'Error', text: 'Ocurrió un error al contactar la pasarela de pagos.', background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
-        } finally {
-            setLoading(false);
-        }
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Ocurrio un error al contactar la pasarela de pagos.', background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
+        } finally { setLoading(false); }
     };
 
-    const handlePayment = (e) => {
-        e.preventDefault();
-        handleCreatePickup();
+    const generateReceipt = async (data) => {
+        const doc = new jsPDF();
+        const pageW = doc.internal.pageSize.getWidth();
+        const toBase64 = (src) => new Promise((resolve) => {
+            const img = new Image(); img.crossOrigin = 'anonymous';
+            img.onload = () => { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); resolve({ dataUrl: c.toDataURL('image/png'), width: img.naturalWidth, height: img.naturalHeight }); };
+            img.onerror = () => resolve(null); img.src = src;
+        });
+        try { const ld = await toBase64(logoSrc); if (ld) { const r = ld.width/ld.height; const h=12; doc.addImage(ld.dataUrl,'PNG',20,14,h*r,h); } } catch(e) {}
+        let stampDataUrl = null, stampRatio = 1;
+        if (data.status === 'Pagado') { try { const sd = await toBase64(pagadoStampSrc); if(sd){ stampDataUrl=sd.dataUrl; stampRatio=sd.width/sd.height; } } catch(e){} }
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(140);
+        doc.text(data.transactionId || '', pageW-20, 25, { align:'right' });
+        doc.setDrawColor(200); doc.line(20,32,pageW-20,32);
+        let y=40;
+        doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(25,24,27);
+        doc.text('COMPROBANTE DE PAGO',20,y);
+        const dt = data.paidAt ? new Date(data.paidAt).toLocaleDateString('es-UY',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}) : '';
+        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(120);
+        doc.text(dt, pageW-20, y, {align:'right'}); y+=20;
+        const retiroCode = data.ordenRetiro ? String(data.ordenRetiro) : '-';
+        const clientCode = String(user?.codCliente || '-');
+        const cw=pageW-40; const hw=(cw-6)/2;
+        const drawCard=(x,w,label,val)=>{ doc.setFillColor(25,24,27); doc.roundedRect(x,y,w,7,2,2,'F'); doc.rect(x,y+5,w,2,'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(255,255,255); doc.text(label,x+w/2,y+5,{align:'center'}); doc.setFillColor(255,255,255); doc.setDrawColor(200); doc.rect(x,y+7,w,11,'FD'); doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(25,24,27); doc.text(val,x+w/2,y+14.5,{align:'center'}); };
+        drawCard(20,hw,'CODIGO DE RETIRO',retiroCode); drawCard(20+hw+6,hw,'CODIGO DE CLIENTE',clientCode); y+=28;
+        doc.setFont('helvetica','normal'); doc.setTextColor(120); doc.setFontSize(10);
+        doc.text('MEDIO DE PAGO',20,y); doc.setFont('helvetica','bold'); doc.setTextColor(40);
+        doc.text(String(data.paymentMethod||'-').toUpperCase(),pageW-20,y,{align:'right'}); y+=12;
+        if(data.orders?.length>0){ const rh=8; doc.setFillColor(25,24,27); doc.rect(20,y,pageW-40,rh,'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(255,255,255); doc.text('PEDIDO',24,y+5.5); doc.text('IMPORTE',pageW-24,y+5.5,{align:'right'}); y+=rh; data.orders.forEach((o,i)=>{ i%2===0?doc.setFillColor(244,244,245):doc.setFillColor(212,212,216); doc.rect(20,y,pageW-40,rh,'F'); doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(40); doc.text(String(o.id||o.desc),24,y+5.5); doc.setFont('helvetica','bold'); doc.text(String(data.currencySymbol)+' '+Number(o.amount||0).toFixed(2),pageW-24,y+5.5,{align:'right'}); y+=rh; }); y+=6; }
+        doc.setDrawColor(200); doc.line(20,y,pageW-20,y); y+=10;
+        doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(25,24,27);
+        const totalStr = String(data.currencySymbol)+' '+Number(data.totalAmount).toFixed(2);
+        doc.text('TOTAL: ',pageW-20-doc.getTextWidth(totalStr),y,{align:'right'}); doc.setTextColor(5,150,105); doc.text(totalStr,pageW-20,y,{align:'right'});
+        if(stampDataUrl){ const sw=35,sh=sw/stampRatio; doc.saveGraphicsState(); doc.setGState(new doc.GState({opacity:0.5})); doc.addImage(stampDataUrl,'PNG',pageW/3-sw/2,y-sh/2+2,sw,sh); doc.restoreGraphicsState(); }
+        doc.setFontSize(8); doc.setTextColor(160); doc.text('ESTE COMPROBANTE FUE GENERADO AUTOMATICAMENTE.',pageW/2,280,{align:'center'});
+        doc.save('comprobante-'+retiroCode+'.pdf');
     };
+
+    // Pantalla: polling / resultado del pago Handy
+    if (pollingTxId) {
+        if (paymentStatus === 'Pagado' && paymentData) {
+            return (
+                <div className="animate-fade-in flex flex-col min-h-[80vh]">
+                    <div className="flex items-center gap-3 mb-6">
+                        <CheckCircle size={48} strokeWidth={1} className="text-green-400" />
+                        <div>
+                            <h2 className="text-lg font-bold text-zinc-300 uppercase">Pago <span className="text-custom-cyan">Confirmado</span></h2>
+                            <p className="text-zinc-500 uppercase text-xs">Tu retiro fue creado y el pago fue procesado.</p>
+                        </div>
+                    </div>
+                    <div className="flex-1 flex flex-col items-center justify-center gap-4">
+                        <div className="max-w-xs w-full rounded-xl bg-brand-dark border border-zinc-700 pt-5 pb-7 px-6 flex flex-col items-center gap-4">
+                            <p className="text-[10px] uppercase text-zinc-500 font-bold tracking-wider">Codigo de retiro</p>
+                            <p className="text-5xl font-mono font-black text-custom-cyan tracking-wider text-center">{paymentData.ordenRetiro || '—'}</p>
+                            {paymentData.ordenRetiro && (
+                                <div className="bg-white rounded-xl p-3">
+                                    <QRCodeSVG value={paymentData.ordenRetiro} size={160} fgColor="#18181b" bgColor="#ffffff" />
+                                </div>
+                            )}
+                            {paymentData.paymentMethod && (
+                                <p className="text-xs text-zinc-500">Pagado con <span className="text-zinc-300 font-bold">{paymentData.paymentMethod}</span></p>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex justify-between items-stretch gap-3 mt-auto">
+                        <CustomButton onClick={() => generateReceipt(paymentData)} variant="secondary" icon={Download} className="w-1/2 md:w-auto !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5" whileHover={{ scale: 1 }} whileTap={{ scale: 1 }}>Comprobante</CustomButton>
+                        <CustomButton onClick={() => { setPollingTxId(null); setPaymentStatus(null); setPaymentData(null); setStep('selection'); }} variant="secondary" icon={ArrowLeft} className="w-1/2 md:w-auto !bg-transparent !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5" whileHover={{ scale: 1 }} whileTap={{ scale: 1 }}>Volver</CustomButton>
+                    </div>
+                </div>
+            );
+        }
+        if (paymentStatus === 'Fallido') {
+            return (
+                <div className="animate-fade-in flex flex-col items-center justify-center min-h-[60vh] gap-6">
+                    <AlertCircle size={64} strokeWidth={1} className="text-brand-magenta" />
+                    <div className="text-center">
+                        <h2 className="text-lg font-bold text-zinc-300 uppercase">Pago <span className="text-brand-magenta">Fallido</span></h2>
+                        <p className="text-zinc-500 text-sm mt-1">No se pudo procesar el pago. Podes intentarlo de nuevo.</p>
+                    </div>
+                    <CustomButton onClick={() => { setPollingTxId(null); setPaymentStatus(null); setPaymentData(null); setStep('confirmation'); }} variant="primary" icon={CreditCard} className="!bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5" whileHover={{ scale: 1 }} whileTap={{ scale: 1 }}>Reintentar</CustomButton>
+                </div>
+            );
+        }
+        return (
+            <div className="flex flex-col justify-center items-center min-h-[70vh] gap-6">
+                <Lottie animationData={loadingAnim} loop style={{ width: 220, height: 220 }} />
+                <div className="text-center -mt-16">
+                    <p className="font-bold uppercase animate-pulse text-zinc-300">Verificando pago...</p>
+                    <p className="text-xs text-zinc-600 mt-1">Por favor espera, esto puede tardar unos segundos.</p>
+                </div>
+            </div>
+        );
+    }
 
     if (step === 'success') {
         return (
@@ -783,11 +914,7 @@ export const PickupView = () => {
 
                     {totalAmount > 0 && (
                         <CustomButton
-                            onClick={async () => {
-                                const code = await handleCreatePickup();
-                                if (!code) return;
-                                await handleProceed(code);
-                            }}
+                            onClick={handleInitPayment}
                             isLoading={loading}
                             disabled={loading || !selectedFormaEnvio || needsAddress || needsReceiverName}
                             variant="primary"

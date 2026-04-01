@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Swal from 'sweetalert2';
+import { printRetiroStation } from './webPrintHelper';
 import {
   Package, Search, Check, AlertCircle, ArrowLeft, CheckCircle,
   Loader2, LayoutGrid, MapPin, Clock, Printer, Tag,
@@ -243,12 +244,20 @@ const printRetiroTicket = (item) => {
     <tbody>
       ${orderObjs.map((o, i) => {
     const cod = o.orderNumber || o.codigoOrden || '-';
-    const costo = o.orderCosto || (o.costoFinal ? o.costoFinal : null);
+    let costo = o.orderCosto || o.costoFinal || o.amount;
+    let finalCosto = '-';
+    if (costo !== undefined && costo !== null && costo !== '' && costo !== '-') {
+        if (typeof costo === 'string' && costo.includes('$')) {
+            finalCosto = costo;
+        } else {
+            finalCosto = `${o.simbolo || o.currency || '$'} ${Number(costo).toFixed(2)}`;
+        }
+    }
     return `
         <tr>
           <td>${i + 1}</td>
           <td><strong>${cod}</strong></td>
-          <td style="text-align:right;">${costo || '-'}</td>
+          <td style="text-align:right; font-weight:700;">${finalCosto}</td>
         </tr>`;
   }).join('')}
       ${orderObjs.length === 0 ? '<tr><td colspan="3" style="text-align:center;color:#aaa;">Sin órdenes registradas</td></tr>' : ''}
@@ -610,10 +619,10 @@ const WebRetirosPage = () => {
       estantesData.forEach(item => {
         if (item.OrdenRetiro) {
           if (!estantesMap[item.UbicacionID]) estantesMap[item.UbicacionID] = [];
-          // Convertir OrdenesCodigos (STRING_AGG: "DF-123,DF-456") en array orders[]
-          const ordersFromDB = item.OrdenesCodigos
-            ? item.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() }))
-            : (item.BultosJSON ? JSON.parse(item.BultosJSON) : []);
+          // Convertir OrdenesCodigos solo como fallback; BultosJSON tiene la data rica (costos, monedas)
+          const ordersFromDB = item.BultosJSON 
+            ? JSON.parse(item.BultosJSON)
+            : (item.OrdenesCodigos ? item.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() })) : []);
           estantesMap[item.UbicacionID].push({ ...item, orders: ordersFromDB });
         }
         if (!configMap[item.EstanteID]) {
@@ -1674,15 +1683,10 @@ const WebRetirosPage = () => {
                         <div className="flex-1" />
                         <div className="flex items-center gap-1 shrink-0">
                           <div role="button" tabIndex={0}
-                            onClick={(e) => { e.stopPropagation(); printRetiroLabel(item); }}
-                            title="Imprimir etiqueta"
-                            className="w-8 h-8 rounded-lg flex items-center justify-center text-custom-dark hover:text-emerald-500 hover:bg-emerald-50 transition-colors cursor-pointer"
-                          ><Tag size={18} /></div>
-                          <div role="button" tabIndex={0}
-                            onClick={(e) => { e.stopPropagation(); printRetiroTicket(item); }}
-                            title="Imprimir hoja de despacho"
-                            className="w-8 h-8 rounded-lg flex items-center justify-center text-custom-dark hover:text-blue-500 hover:bg-blue-50 transition-colors cursor-pointer"
-                          ><Printer size={18} /></div>
+                            onClick={(e) => { e.stopPropagation(); printRetiroStation(item); }}
+                            title="Imprimir Copia/Etiqueta"
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-white bg-blue-600 hover:bg-blue-700 transition-colors cursor-pointer shadow-sm"
+                          ><Printer size={16} /></div>
                           {(/^RT-/i.test(item.ordenDeRetiro) || isAnnounced) && (
                             <div role="button" tabIndex={0}
                               onClick={(e) => {
