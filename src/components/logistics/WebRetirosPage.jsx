@@ -1685,8 +1685,8 @@ const WebRetirosPage = () => {
                           <div role="button" tabIndex={0}
                             onClick={(e) => { e.stopPropagation(); printRetiroStation(item); }}
                             title="Imprimir Copia/Etiqueta"
-                            className="w-8 h-8 rounded-lg flex items-center justify-center text-white bg-blue-600 hover:bg-blue-700 transition-colors cursor-pointer shadow-sm"
-                          ><Printer size={16} /></div>
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-brand-cyan hover:bg-cyan-50 transition-colors cursor-pointer"
+                          ><Printer size={18} /></div>
                           {(/^RT-/i.test(item.ordenDeRetiro) || isAnnounced) && (
                             <div role="button" tabIndex={0}
                               onClick={(e) => {
