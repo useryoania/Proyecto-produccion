@@ -337,7 +337,7 @@ const SysAdminPage = () => {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <Gauge label="RAM" value={parseFloat(status.memory.percentUsed)} icon={HardDrive} color="#00B4D8" />
                         <Gauge label="CPU" value={parseFloat(status.cpu.percentUsed)} icon={Cpu} color="#BD0C7E" />
-                        <Gauge label="Sockets" value={status.sockets} max={50} unit="conn" icon={Wifi} color="#DCB308" />
+                        <Gauge label="Sockets" value={status.sockets} max={100} unit="conn" icon={Wifi} color="#DCB308" />
                         <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800 flex flex-col items-center justify-center gap-2">
                             <Database size={20} className={status.db.ok ? 'text-emerald-400' : 'text-red-400'} />
                             <span className="text-xs font-bold text-zinc-400 uppercase">Base de Datos</span>

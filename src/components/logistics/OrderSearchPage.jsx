@@ -1,8 +1,18 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Search, Loader2, Save, Trash2, Download, Filter, RefreshCcw, CheckSquare, Square, ChevronDown, CheckCircle, Database, X } from 'lucide-react';
 import api from '../../services/api';
-import { toast } from 'sonner';
 import { utils, writeFile } from 'xlsx';
+import Swal from 'sweetalert2';
+
+const Toast = Swal.mixin({
+    toast: true,
+    position: 'bottom-end',
+    showConfirmButton: false,
+    timer: 3500,
+    timerProgressBar: true,
+    background: '#1c1c1e',
+    color: '#f4f4f5',
+});
 
 const OrderSearchPage = () => {
     const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -49,7 +59,7 @@ const OrderSearchPage = () => {
             setEstadosOrden(res.data || []);
         } catch (error) {
             console.error('Error al obtener estados de órdenes:', error);
-            toast.error('Error al cargar la lista de estados');
+            Toast.fire({ icon: 'error', title: 'Error al cargar la lista de estados' });
         }
     };
 
@@ -74,7 +84,7 @@ const OrderSearchPage = () => {
             (currentFilters.estados && currentFilters.estados.length > 0);
 
         if (!hasFilters) {
-            toast.warning('Por favor ingrese al menos un filtro de búsqueda.');
+            Toast.fire({ icon: 'warning', title: 'Por favor ingresá al menos un filtro de búsqueda.' });
             return;
         }
 
@@ -98,16 +108,16 @@ const OrderSearchPage = () => {
             if (Array.isArray(response.data)) {
                 setOrders(response.data);
                 if (response.data.length === 0) {
-                    toast.info('No se encontraron órdenes con esos filtros.');
+                    Toast.fire({ icon: 'info', title: 'No se encontraron órdenes con esos filtros.' });
                 } else {
-                    toast.success(`Se encontraron ${response.data.length} órdenes.`);
+                    Toast.fire({ icon: 'success', title: `Se encontraron ${response.data.length} órdenes.` });
                 }
             } else {
-                toast.error('La respuesta del servidor fue inválida.');
+                Toast.fire({ icon: 'error', title: 'La respuesta del servidor fue inválida.' });
             }
         } catch (error) {
             console.error('Error buscando ordenes:', error);
-            toast.error('Error al realizar la búsqueda.');
+            Toast.fire({ icon: 'error', title: 'Error al realizar la búsqueda.' });
         } finally {
             setLoading(false);
         }
@@ -152,11 +162,11 @@ const OrderSearchPage = () => {
     // ACCIONES EN LOTE
     const handleUpdateEstado = async () => {
         if (selectedOrders.size === 0) {
-            toast.warning('No hay órdenes seleccionadas.');
+            Toast.fire({ icon: 'warning', title: 'No hay órdenes seleccionadas.' });
             return;
         }
         if (!nuevoEstado) {
-            toast.warning('Seleccione el nuevo estado.');
+            Toast.fire({ icon: 'warning', title: 'Seleccioná el nuevo estado.' });
             return;
         }
 
@@ -169,13 +179,13 @@ const OrderSearchPage = () => {
                 orderIds: Array.from(selectedOrders)
             });
 
-            toast.success(`Se actualizaron ${selectedOrders.size} órdenes a ${nuevoEstado}`);
+            Toast.fire({ icon: 'success', title: `Se actualizaron ${selectedOrders.size} órdenes a ${nuevoEstado}` });
             setSelectedOrders(new Set());
             setNuevoEstado('');
             fetchAllOrders(filters); // recargar
         } catch (error) {
             console.error('Error batch update:', error);
-            toast.error('Hubo un problema al actualizar estados');
+            Toast.fire({ icon: 'error', title: 'Hubo un problema al actualizar estados.' });
         } finally {
             setBulkUpdating(false);
         }
@@ -183,7 +193,36 @@ const OrderSearchPage = () => {
 
     const handleDeleteOrders = async () => {
         if (selectedOrders.size === 0) return;
-        if (!window.confirm(`¿Estás seguro de que deseas ELIMINAR ${selectedOrders.size} órdenes seleccionadas?`)) return;
+
+        const { value } = await Swal.fire({
+            title: '¿Eliminar órdenes?',
+            html: `Vas a eliminar <strong>${selectedOrders.size}</strong> orden(es). Esta acción <strong>no se puede deshacer</strong>.<br><br>Escribí <strong>ELIMINAR</strong> para confirmar.`,
+            input: 'text',
+            inputPlaceholder: 'ELIMINAR',
+            inputAttributes: { autocomplete: 'off' },
+            showCancelButton: true,
+            confirmButtonText: 'Confirmar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#e11d48',
+            background: '#1c1c1e',
+            color: '#f4f4f5',
+            didOpen: () => {
+                const confirmBtn = Swal.getConfirmButton();
+                const input = Swal.getInput();
+                confirmBtn.disabled = true;
+                confirmBtn.style.opacity = '0.4';
+                confirmBtn.style.cursor = 'not-allowed';
+                input.addEventListener('input', () => {
+                    const ok = input.value === 'ELIMINAR';
+                    confirmBtn.disabled = !ok;
+                    confirmBtn.style.opacity = ok ? '1' : '0.4';
+                    confirmBtn.style.cursor = ok ? 'pointer' : 'not-allowed';
+                });
+            },
+            preConfirm: (val) => val === 'ELIMINAR',
+        });
+
+        if (!value) return;
 
         try {
             setBulkUpdating(true);
@@ -194,12 +233,12 @@ const OrderSearchPage = () => {
                 data: { orderIds: Array.from(selectedOrders) }
             });
 
-            toast.success(`Órdenes eliminadas correctamente`);
+            Toast.fire({ icon: 'success', title: 'Órdenes eliminadas correctamente.' });
             setSelectedOrders(new Set());
             fetchAllOrders(filters);
         } catch (error) {
             console.error('Error deleting:', error);
-            toast.error('Error al eliminar órdenes');
+            Toast.fire({ icon: 'error', title: 'Error al eliminar órdenes.' });
         } finally {
             setBulkUpdating(false);
         }
@@ -210,7 +249,7 @@ const OrderSearchPage = () => {
 
     const handleDownloadExcel = async () => {
         if (orders.length === 0) {
-            toast.warning('No hay órdenes para exportar.');
+            Toast.fire({ icon: 'warning', title: 'No hay órdenes para exportar.' });
             return;
         }
 
@@ -231,14 +270,14 @@ const OrderSearchPage = () => {
         setReexportConfirm(null);
 
         if (aExportar.length === 0) {
-            toast.info('No hay órdenes pendientes de exportación.');
+            Toast.fire({ icon: 'info', title: 'No hay órdenes pendientes de exportación.' });
             return;
         }
 
         // Detectar las que no tienen ProCodigoOdooProducto (solo aviso, no bloquean)
         const sinCodigo = aExportar.filter(o => !o.ProCodigoOdooProducto || o.ProCodigoOdooProducto.trim() === '');
         if (sinCodigo.length > 0) {
-            toast.warning(`${sinCodigo.length} orden(es) sin Código Odoo: la celda quedará vacía, podés completarla a mano en Excel.`);
+            Toast.fire({ icon: 'warning', title: `${sinCodigo.length} orden(es) sin Código Odoo: la celda quedará vacía.` });
         }
 
         // Helper: trim seguro para strings
@@ -265,12 +304,12 @@ const OrderSearchPage = () => {
             const orderIds = aExportar.map(o => o.IdOrden);
             await api.post('/apiordenes/actualizarExportacion', { orderIds });
 
-            toast.success(`✅ ${aExportar.length} orden(es) exportadas y marcadas correctamente.`);
+            Toast.fire({ icon: 'success', title: `${aExportar.length} orden(es) exportadas y marcadas correctamente.` });
             fetchAllOrders(filters);
 
         } catch (error) {
             console.error('EXCEL ERROR:', error);
-            toast.error('Error al generar Excel o marcar exportación');
+            Toast.fire({ icon: 'error', title: 'Error al generar Excel o marcar exportación.' });
         }
     };
 
@@ -318,6 +357,7 @@ const OrderSearchPage = () => {
                             name="codigoCliente"
                             value={filters.codigoCliente}
                             onChange={handleFilterChange}
+                            onKeyDown={(e) => e.key === 'Enter' && fetchAllOrders()}
                             placeholder="Ej. MACROSOFT"
                             className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 font-medium transition-all"
                         />
@@ -329,6 +369,7 @@ const OrderSearchPage = () => {
                             name="codigoOrden"
                             value={filters.codigoOrden}
                             onChange={handleFilterChange}
+                            onKeyDown={(e) => e.key === 'Enter' && fetchAllOrders()}
                             placeholder="Ej. O-1234..."
                             className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 font-medium transition-all"
                         />
@@ -376,6 +417,7 @@ const OrderSearchPage = () => {
                             name="numeroRetiro"
                             value={filters.numeroRetiro}
                             onChange={handleFilterChange}
+                            onKeyDown={(e) => e.key === 'Enter' && fetchAllOrders()}
                             placeholder="Ej. RL-1234"
                             className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 font-medium transition-all"
                         />

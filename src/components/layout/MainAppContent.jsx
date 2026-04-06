@@ -124,6 +124,8 @@ const lucideIconMapRaw = {
     'ingreso/aviso de ordenes': PackagePlus,
     'ingreso/ aviso de ordenes': PackagePlus,
     'ingreso/ aviso de órdenes': PackagePlus,
+    'ingreso / aviso de ordenes': PackagePlus,
+    'ingreso / aviso de órdenes': PackagePlus,
     'empaquetado de retiros': PackageCheck,
     'gestión de encomiendas': Truck,
     'gestion de encomiendas': Truck,
@@ -131,10 +133,16 @@ const lucideIconMapRaw = {
     'gestion de encomiendas y cadeteria': Truck,
     'gestión de encomiendas y cadetería': Truck,
     'gestion de encomiendas y cadetería': Truck,
+    'encomiendas y cadeteria': Truck,
+    'encomiendas y cadetería': Truck,
     'buscar/actualizar órdenes': FileSearch,
     'buscar/actualizar ordenes': FileSearch,
     'buscar/actualizar ordenes de retiro': FileSearch,
     'buscar/actualizar órdenes de retiro': FileSearch,
+    'buscar / actualizar órdenes': FileSearch,
+    'buscar / actualizar ordenes': FileSearch,
+    'buscar / actualizar ordenes de retiro': FileSearch,
+    'buscar / actualizar órdenes de retiro': FileSearch,
     'inventario': Boxes,
     'control logístico': Waypoints,
     'control logistico': Waypoints,
@@ -179,6 +187,8 @@ const lucideIconMapRaw = {
     'caja': Banknote,
     'pagos': CreditCard,
     'autorizaciones de pagos': ShieldCheck,
+    'pagos online por la web (handy)': CreditCard,
+    'pagos online / web (handy)': CreditCard,
     'cierre diario': CalendarCheck,
 };
 const getLucideIcon = (name) => lucideIconMapRaw[name?.toLowerCase?.()?.trim?.()?.replace(/\s+/g, ' ')];
@@ -295,13 +305,7 @@ const MainAppContent = ({ menuItems = [] }) => {
     const handleSidebarLeave = useCallback(() => setIsCollapsed(true), []);
 
     // Dynamic sidebar width based on which parent is expanded
-    const expandedWidth = useMemo(() => {
-        const openIds = Object.entries(openMenus).filter(([, v]) => v).map(([k]) => Number(k));
-        const openNames = openIds.map(id => menuItems.find(m => m.IdModulo === id)?.Nombre?.toLowerCase() || '');
-        if (openNames.some(n => n.includes('logística wms') || n.includes('logistica wms'))) return 380;
-        if (openNames.some(n => n.includes('administración') || n.includes('administracion'))) return 350;
-        return 300;
-    }, [openMenus, menuItems]);
+    const expandedWidth = 300;
 
     console.log(`[MainAppContent] Render! Path: ${location.pathname}, Key: ${location.key}`);
 

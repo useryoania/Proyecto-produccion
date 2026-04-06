@@ -3,6 +3,8 @@ const jwt = require('jsonwebtoken');
 const asyncHandler = require('../middleware/asyncHandler');
 const logger = require('../utils/logger');
 const googleSheets = require('../services/googleSheetsService');
+const { trackLogin } = require('../utils/sessionTracker');
+const { audit } = require('../utils/auditLogger');
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET is not defined in environment variables');
 
@@ -31,6 +33,8 @@ exports.login = asyncHandler(async (req, res) => {
     logger.info(`🔐 [LOGIN RESULT] Matches found: ${result.recordset.length}`);
 
     if (result.recordset.length === 0) {
+        trackLogin(null, identifier, req.ip, 'WEB_CLIENT', false, 'Usuario no encontrado');
+        audit('LOGIN', { user: identifier, ip: req.ip, type: 'WEB_CLIENT', result: 'FAIL', reason: 'Usuario no encontrado' });
         return res.status(401).json({ success: false, message: 'Usuario incorrecto: No se encontró el cliente.' });
     }
 
@@ -82,6 +86,9 @@ exports.login = asyncHandler(async (req, res) => {
     await pool.request()
         .input('ID', sql.Int, client.CodCliente)
         .query("UPDATE Clientes SET WebLastLogin = GETDATE() WHERE CodCliente = @ID");
+
+    trackLogin(client.CodCliente, client.IDCliente || identifier, req.ip, 'WEB_CLIENT', true);
+    audit('LOGIN', { user: client.IDCliente || identifier, userId: client.CodCliente, ip: req.ip, type: 'WEB_CLIENT', result: 'OK' });
 
     res.json({
         success: true,

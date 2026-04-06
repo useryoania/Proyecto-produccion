@@ -172,7 +172,6 @@ exports.login = async (req, res) => {
         // -----------------------------------------------------------------
         // No match
         audit('LOGIN', { user: username, ip: req.ip, type: 'UNKNOWN', result: 'FAIL' });
-        trackLogin(null, username, req.ip, 'UNKNOWN', false, 'Usuario no encontrado');
         res.status(401).json({ success: false, message: 'Credenciales inválidas o usuario inexistente.' });
 
     } catch (err) {
@@ -187,7 +186,7 @@ exports.login = async (req, res) => {
 // 1b. GOOGLE LOGIN
 // =====================================================================
 exports.googleLogin = async (req, res) => {
-    const { credential } = req.body; // Google ID token from frontend
+    const { credential } = req.body;
 
     if (!credential) {
         return res.status(400).json({ success: false, message: 'Token de Google no proporcionado.' });
@@ -209,7 +208,6 @@ exports.googleLogin = async (req, res) => {
 
         const pool = await getPool();
 
-        // Buscar en Clientes por email
         const clientResult = await pool.request()
             .input('Email', sql.NVarChar, googleEmail)
             .query(`
@@ -221,7 +219,6 @@ exports.googleLogin = async (req, res) => {
         if (clientResult.recordset.length > 0) {
             const cl = clientResult.recordset[0];
 
-            // Verificar si el cliente está activo
             if (!cl.WebActive) {
                 return res.status(403).json({ success: false, message: 'Tu cuenta está pendiente de aprobación. Contactá al administrador.' });
             }
@@ -262,7 +259,6 @@ exports.googleLogin = async (req, res) => {
             });
         }
 
-        // No encontrado
         res.status(401).json({
             success: false,
             message: `No se encontró un cliente registrado con el email ${googleEmail}`
