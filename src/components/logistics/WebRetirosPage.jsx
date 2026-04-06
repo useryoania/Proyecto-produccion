@@ -515,6 +515,18 @@ const printRetiroLabel = (items) => {
 // La configuración visual de los estantes ahora se trae de la BDD dinámicamente.
 
 const WebRetirosPage = () => {
+
+  // ─── HELPER: Calcula el estante destino según los últimos 2 dígitos del retiro ───
+  // 00-24 → A | 25-49 → B | 50-74 → C | 75-99 → D
+  const getEstanteForRetiro = (ordenDeRetiro) => {
+    const match = (ordenDeRetiro || '').match(/(\d+)$/);
+    if (!match) return null;
+    const last2 = parseInt(match[1].slice(-2), 10);
+    if (last2 <= 24) return 'A';
+    if (last2 <= 49) return 'B';
+    if (last2 <= 74) return 'C';
+    return 'D';
+  };
   const [view, setView] = useState('empaque');
   const [apiOrders, setApiOrders] = useState([]);
   const [estantesConfigArr, setEstantesConfigArr] = useState([]); // Array extraido del server
@@ -592,6 +604,7 @@ const WebRetirosPage = () => {
             moneda: r.Moneda || 'UYU',
             pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
             pagoHandy: !!r.ReferenciaPago,
+            TClDescripcion: r.TClDescripcion || '',
             lugarRetiro: r.LugarRetiro || null,
             agenciaNombre: r.AgenciaNombre || null,
             direccionEnvio: r.DireccionEnvio || null,
@@ -617,22 +630,37 @@ const WebRetirosPage = () => {
       const configMap = {};
 
       estantesData.forEach(item => {
+        // Normalizar claves: EstanteID es CHAR en SQL y puede traer espacios trailing ('A         ')
+        const cleanKey = (item.UbicacionID || '').trim();
+        const cleanEstanteId = (item.EstanteID || '').trim();
+
         if (item.OrdenRetiro) {
-          if (!estantesMap[item.UbicacionID]) estantesMap[item.UbicacionID] = [];
+          if (!estantesMap[cleanKey]) estantesMap[cleanKey] = [];
           // Convertir OrdenesCodigos solo como fallback; BultosJSON tiene la data rica (costos, monedas)
           const ordersFromDB = item.BultosJSON 
             ? JSON.parse(item.BultosJSON)
             : (item.OrdenesCodigos ? item.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() })) : []);
-          estantesMap[item.UbicacionID].push({ ...item, orders: ordersFromDB });
+          estantesMap[cleanKey].push({ ...item, EstanteID: cleanEstanteId, orders: ordersFromDB });
         }
-        if (!configMap[item.EstanteID]) {
-          configMap[item.EstanteID] = { id: item.EstanteID, secciones: 0, posiciones: 0 };
+        if (!configMap[cleanEstanteId]) {
+          configMap[cleanEstanteId] = { id: cleanEstanteId, secciones: 0, posiciones: 0 };
         }
-        if (item.Seccion > configMap[item.EstanteID].secciones) configMap[item.EstanteID].secciones = item.Seccion;
-        if (item.Posicion > configMap[item.EstanteID].posiciones) configMap[item.EstanteID].posiciones = item.Posicion;
+        if (item.Seccion > configMap[cleanEstanteId].secciones) configMap[cleanEstanteId].secciones = item.Seccion;
+        if (item.Posicion > configMap[cleanEstanteId].posiciones) configMap[cleanEstanteId].posiciones = item.Posicion;
       });
 
-      setEstantesConfigArr(Object.values(configMap).sort((a, b) => a.id.localeCompare(b.id)));
+      // Garantizar que los 4 estantes siempre aparezcan (aunque D esté vacío)
+      const ESTANTES_DEFAULT = [
+        { id: 'A', secciones: 4, posiciones: 10 },
+        { id: 'B', secciones: 4, posiciones: 10 },
+        { id: 'C', secciones: 4, posiciones: 10 },
+        { id: 'D', secciones: 4, posiciones: 10 },
+      ];
+      const mergedEstantes = ESTANTES_DEFAULT.map(def => {
+        const fromDB = Object.values(configMap).find(c => c.id.trim() === def.id);
+        return fromDB || def;
+      });
+      setEstantesConfigArr(mergedEstantes);
       setOcupacionEstantes(estantesMap);
 
       // 2.5 Traer "Retiros Fuera de Estante":
@@ -681,6 +709,7 @@ const WebRetirosPage = () => {
                 moneda: r.Moneda || 'UYU',
                 pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
                 pagoHandy: !!r.ReferenciaPago,
+                TClDescripcion: r.TClDescripcion || '',
                 lugarRetiro: r.LugarRetiro || null,
                 agenciaNombre: r.AgenciaNombre || null,
                 direccionEnvio: r.DireccionEnvio || null,
@@ -744,7 +773,27 @@ const WebRetirosPage = () => {
       const { SOCKET_URL } = await import('../../services/apiClient');
       socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
       socket.on("connect", () => console.log("WebRetiros conectado a Sockets:", socket.id));
-      socket.on("retiros:update", () => { fetchPendingUpdate(); });
+      socket.on("retiros:update", (data) => {
+        fetchPendingUpdate();
+        // Si se asignó o desasignó un retiro, refrescar también el mapa de estantes
+        if (data?.type === 'asignado_estante' || data?.type === 'desasignado' || data?.type === 'entregado') {
+          api.get('/web-retiros/estantes').then(res => {
+            const estantesData = res.data || [];
+            const estantesMap = {};
+            estantesData.forEach(item => {
+              const cleanKey = (item.UbicacionID || '').trim();
+              if (item.OrdenRetiro) {
+                if (!estantesMap[cleanKey]) estantesMap[cleanKey] = [];
+                const ordersFromDB = item.BultosJSON
+                  ? JSON.parse(item.BultosJSON)
+                  : (item.OrdenesCodigos ? item.OrdenesCodigos.split(',').map(c => ({ orderNumber: c.trim(), orderId: c.trim() })) : []);
+                estantesMap[cleanKey].push({ ...item, EstanteID: (item.EstanteID || '').trim(), orders: ordersFromDB });
+              }
+            });
+            setOcupacionEstantes(estantesMap);
+          }).catch(e => console.warn('[socket] Error refrescando estantes:', e));
+        }
+      });
       socket.on("actualizado", () => { fetchPendingUpdate(); });
       socket.on("totem:cliente-anunciado", (data) => {
         console.log('[WebRetiros] 📢 Cliente anunciado desde tótem:', data);
@@ -815,7 +864,10 @@ const WebRetirosPage = () => {
         [ubicacionId]: [...currentList, {
           OrdenRetiro: retiroParaAsignar.ordenDeRetiro,
           CodigoCliente: retiroParaAsignar.idcliente,
-          ClientName: retiroParaAsignar.clienteNombre || retiroParaAsignar.ClientName || retiroParaAsignar.idcliente
+          ClientName: retiroParaAsignar.clienteNombre || retiroParaAsignar.ClientName || retiroParaAsignar.idcliente,
+          Pagado: retiroParaAsignar.pagorealizado === 1 || retiroParaAsignar.pagorealizado === true,
+          TClDescripcion: retiroParaAsignar.TClDescripcion || '',
+          Autorizado: retiroParaAsignar.estadoNumerico === 9 || retiroParaAsignar.OReEstadoActual === 9
         }]
       };
     });
@@ -845,7 +897,23 @@ const WebRetirosPage = () => {
         scannedValues: scannedArray
       };
 
-      await api.post('/web-retiros/estantes/asignar', payload);
+      const response = await api.post('/web-retiros/estantes/asignar', payload);
+      // Si el backend devuelve el estado real de pago, corregir el slot en el optimismo UI
+      if (response.data?.pagadoReal !== undefined) {
+        setOcupacionEstantes(prev => {
+          const list = prev[ubicacionId] || [];
+          return {
+            ...prev,
+            [ubicacionId]: list.map(item =>
+              item.OrdenRetiro === retiroParaAsignar.ordenDeRetiro
+                ? { ...item, Pagado: response.data.pagadoReal }
+                : item
+            )
+          };
+        });
+      }
+      // Refrescar estantes desde BDD para asegurar estado correcto
+      setTimeout(() => fetchAllData(false), 600);
       // Data se refresca por Socket o en background
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Error al asignar');
@@ -1168,7 +1236,7 @@ const WebRetirosPage = () => {
         <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-2xl animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4 text-sm">
-              <span className="font-black text-slate-800">Orden de Retiro: <span className="text-blue-600">{selectedRetiro.pagoHandy ? selectedRetiro.ordenDeRetiro.replace('R-', 'PW-') : selectedRetiro.ordenDeRetiro}</span></span>
+              <span className="font-black text-slate-800">Orden de Retiro: <span className="text-brand-cyan">{selectedRetiro.pagoHandy ? selectedRetiro.ordenDeRetiro.replace('R-', 'PW-') : selectedRetiro.ordenDeRetiro}</span></span>
               <span className="text-slate-300">|</span>
               <span className="font-bold text-slate-500">ID Cliente: <span className="text-slate-700">{selectedRetiro.idcliente}</span></span>
             </div>
@@ -1178,7 +1246,7 @@ const WebRetirosPage = () => {
           </div>
           <form onSubmit={handleScanSubmit} className="mb-4 relative">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <Search className="h-5 w-5 text-blue-400" />
+              <Search className="h-5 w-5 text-brand-cyan" />
             </div>
             <input
               ref={inputRef}
@@ -1242,23 +1310,43 @@ const WebRetirosPage = () => {
             <button
               disabled={!allChecked}
               onClick={() => {
-                // Auto-find first empty slot
-                for (const est of estantesConfigArr) {
-                  for (let s = 1; s <= est.secciones; s++) {
-                    for (let p = 1; p <= est.posiciones; p++) {
-                      const id = `${est.id}-${s}-${p}`;
+                const targetEstanteId = getEstanteForRetiro(selectedRetiro.ordenDeRetiro);
+                // Si el estante todavía no tiene retiros (ej. D recién creado), usar config por defecto igual a los demás (4x10)
+                const defaultConfig = { id: targetEstanteId, secciones: 4, posiciones: 10 };
+                const estConfig = estantesConfigArr.find(e => e.id.trim() === targetEstanteId) || defaultConfig;
+
+                // Buscar primer casillero vacío en el estante destino
+                const tryAssignIn = (config) => {
+                  if (!config) return false;
+                  for (let s = 1; s <= config.secciones; s++) {
+                    for (let p = 1; p <= config.posiciones; p++) {
+                      const id = `${config.id}-${s}-${p}`;
                       if (!ocupacionEstantes[id] || ocupacionEstantes[id].length === 0) {
-                        handleAsignarUbicacion(est.id, s, p);
-                        return;
+                        handleAsignarUbicacion(config.id, s, p);
+                        return true;
                       }
                     }
                   }
+                  return false;
+                };
+
+                // 1. Intentar en el estante calculado
+                if (tryAssignIn(estConfig)) return;
+
+                // 2. Si está lleno, intentar cualquier otro estante
+                for (const est of estantesConfigArr) {
+                  if (est.id.trim() === targetEstanteId) continue;
+                  if (tryAssignIn(est)) {
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: `Estante ${targetEstanteId} lleno — asignado a ${est.id.trim()}`, showConfirmButton: false, timer: 3000 });
+                    return;
+                  }
                 }
-                // No empty slot found — fallback to manual
+
+                // 3. Todo lleno → modal manual
                 Swal.fire({ toast: true, position: 'top', icon: 'warning', title: 'No hay casilleros vacíos. Seleccioná uno manualmente.', showConfirmButton: false, timer: 3000 });
                 setUbicationMode(true);
               }}
-              className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-md shadow-blue-200 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              className="flex-1 py-3 bg-brand-cyan text-white rounded-xl font-bold shadow-md hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             >
               Asignar a Estante
             </button>
@@ -1283,8 +1371,7 @@ const WebRetirosPage = () => {
           {estantesConfigArr.map(est => (
             <div key={est.id} className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-white font-black text-base">{est.id}</div>
-                <span className="text-sm font-bold text-slate-700">Estante {est.id}</span>
+                <div className="px-3 h-8 bg-brand-cyan rounded-lg flex items-center justify-center text-white font-black text-xs">{getEstanteLabel(est.id)}</div>
               </div>
 
               <div className="space-y-1.5">
@@ -1402,6 +1489,10 @@ const WebRetirosPage = () => {
     return { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-800' };
   };
 
+
+  // Etiqueta descriptiva para cada estante basada en su rango
+  const ESTANTE_LABELS = { A: '00 – 24', B: '25 – 49', C: '50 – 74', D: '75 – 99' };
+  const getEstanteLabel = (id) => ESTANTE_LABELS[id?.trim()] || id;
 
   return (
     <div className="p-6 h-full overflow-y-auto">
@@ -1668,7 +1759,7 @@ const WebRetirosPage = () => {
 
                   return (
                     <button key={item._key} onClick={handleClickCard}
-                      className={`group relative bg-white rounded-2xl border p-3 text-left hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 flex flex-col gap-1 overflow-hidden w-full min-h-[100px] uppercase ${isOld ? 'border-rose-400 shadow-sm shadow-rose-100' : 'border-slate-200'}`}
+                      className={`group relative bg-white rounded-2xl border border-slate-200 p-3 text-left hover:shadow-lg hover:-translate-y-0.5 transition-all duration-150 flex flex-col gap-1 overflow-hidden w-full min-h-[100px] uppercase`}
                     >
                       {isOld && (
                         <span className="absolute top-2 right-2 flex h-2.5 w-2.5">
@@ -1681,7 +1772,7 @@ const WebRetirosPage = () => {
                       <div className="flex items-center gap-2 w-full">
                         <div className="font-black text-slate-800 text-sm tracking-tight leading-tight shrink-0">{item.displayLabel}</div>
                         <div className="flex-1" />
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-1 shrink-0 mr-3">
                           <div role="button" tabIndex={0}
                             onClick={(e) => { e.stopPropagation(); printRetiroStation(item); }}
                             title="Imprimir Copia/Etiqueta"
@@ -1827,13 +1918,13 @@ const WebRetirosPage = () => {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setFilterEstante('ALL')}
-                    className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === 'ALL' ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
+                    className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === 'ALL' ? 'bg-brand-cyan text-white border-brand-cyan shadow-md shadow-cyan-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
                   >
                     Ver Todo
                   </button>
                   <button
                     onClick={() => setFilterEstante('FUERA')}
-                    className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === 'FUERA' ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
+                    className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === 'FUERA' ? 'bg-brand-cyan text-white border-brand-cyan shadow-md shadow-cyan-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
                   >
                     Fuera de Estante
                   </button>
@@ -1841,9 +1932,9 @@ const WebRetirosPage = () => {
                     <button
                       key={est.id}
                       onClick={() => setFilterEstante(est.id)}
-                      className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === est.id ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
+                      className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === est.id ? 'bg-brand-cyan text-white border-brand-cyan shadow-md shadow-cyan-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
                     >
-                      Estante {est.id}
+                      {getEstanteLabel(est.id)}
                     </button>
                   ))}
                 </div>
@@ -1855,151 +1946,130 @@ const WebRetirosPage = () => {
                   {estantesConfigArr.filter(est => filterEstante === 'ALL' || filterEstante === est.id).map(est => (
                     <div key={est.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
                       <div className="flex items-center gap-3 mb-4">
-                        <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center text-white font-black text-base italic shadow-md shadow-blue-200">{est.id}</div>
-                        <span className="text-base font-black text-slate-800 uppercase italic tracking-tighter">Bloque {est.id}</span>
+                        <div className="px-3 h-9 bg-brand-cyan rounded-xl flex items-center justify-center text-white font-black text-xs italic shadow-md">{getEstanteLabel(est.id)}</div>
                       </div>
 
-                      <div className="space-y-1.5">
-                        {[...Array(est.secciones)].map((_, s) => (
-                          <div key={s} className="flex gap-2 items-center">
-                            <div className="w-10 h-10 flex flex-col items-center justify-center bg-slate-50/50 rounded-xl border border-slate-100 shrink-0">
-                              <span className="text-[9px] font-black text-slate-400 uppercase">Sec</span>
-                              <span className="text-sm font-black text-blue-600">{s + 1}</span>
-                            </div>
-                            <div className="grid grid-cols-5 flex-1 gap-3">
-                              {[...Array(est.posiciones)].map((_, p) => {
-                                const id = `${est.id}-${s + 1}-${p + 1}`;
-                                const dataList = ocupacionEstantes[id] || [];
-                                const isOccupied = dataList.length > 0;
-                                const firstData = dataList[0];
+                      <div className="flex flex-wrap gap-3">
+                        <AnimatePresence mode="popLayout">
+                        {Object.entries(ocupacionEstantes)
+                          .filter(([key]) => key.startsWith(`${est.id}-`) || key.startsWith(`${est.id.trim()}-`))
+                          .sort(([aId, aList], [bId, bList]) => {
+                            const numA = parseInt((aList[0]?.OrdenRetiro || '').replace(/\D/g, '') || 0, 10);
+                            const numB = parseInt((bList[0]?.OrdenRetiro || '').replace(/\D/g, '') || 0, 10);
+                            const lastTwoA = numA % 100;
+                            const lastTwoB = numB % 100;
+                            if (lastTwoA !== lastTwoB) return lastTwoA - lastTwoB;
+                            return numA - numB;
+                          })
+                          .map(([id, dataList]) => {
+                            const firstData = dataList[0];
+                            const term = searchTerm.toLowerCase();
+                            const matchesSearch = dataList.some(item => {
+                              if (item.OrdenRetiro && item.OrdenRetiro.toLowerCase().includes(term)) return true;
+                              if (item.CodigoCliente && String(item.CodigoCliente).toLowerCase().includes(term)) return true;
+                              if (item.ClientName && item.ClientName.toLowerCase().includes(term)) return true;
+                              const retiroFull = apiOrders.find(o => o.ordenDeRetiro === item.OrdenRetiro)
+                                || otrosRetiros.find(o => o.ordenDeRetiro === item.OrdenRetiro);
+                              if (retiroFull && Array.isArray(retiroFull.orders)) {
+                                return retiroFull.orders.some(o => o.orderNumber && o.orderNumber.toLowerCase().includes(term));
+                              }
+                              return false;
+                            });
+                            const isMismatched = searchTerm && !matchesSearch;
+                            const isMatched = searchTerm && matchesSearch;
 
-                                const term = searchTerm.toLowerCase();
-                                const matchesSearch = isOccupied && dataList.some(item => {
-                                  if (item.OrdenRetiro && item.OrdenRetiro.toLowerCase().includes(term)) return true;
-                                  if (item.CodigoCliente && String(item.CodigoCliente).toLowerCase().includes(term)) return true;
-                                  if (item.ClientName && item.ClientName.toLowerCase().includes(term)) return true;
-                                  // Buscar por número de orden de depósito cruzando con apiOrders/otrosRetiros
-                                  const retiroFull = apiOrders.find(o => o.ordenDeRetiro === item.OrdenRetiro)
-                                    || otrosRetiros.find(o => o.ordenDeRetiro === item.OrdenRetiro);
-                                  if (retiroFull && Array.isArray(retiroFull.orders)) {
-                                    return retiroFull.orders.some(o =>
-                                      o.orderNumber && o.orderNumber.toLowerCase().includes(term)
+                            const retiroInfo = firstData ? (
+                              apiOrders.find(o => o.ordenDeRetiro === firstData.OrdenRetiro)
+                              || otrosRetiros.find(o => o.ordenDeRetiro === firstData.OrdenRetiro)
+                            ) : null;
+
+                            const getSlotColors = () => {
+                              if (isMatched) return { bg: 'bg-green-600', border: 'border-green-500', subText: 'text-green-100' };
+                              const pagado = retiroInfo?.pagorealizado === 1 || retiroInfo?.pagorealizado === true
+                                || firstData?.Pagado === true || firstData?.Pagado === 1;
+                              const autorizado = retiroInfo?.estadoNumerico === 9 || retiroInfo?.OReEstadoActual === 9 || firstData?.Autorizado === true;
+                              const desc = (retiroInfo?.TClDescripcion || firstData?.TClDescripcion || '').toLowerCase();
+                              if (desc.includes('rollo') || desc.includes('semanal')) return { bg: 'bg-purple-600', border: 'border-purple-700', subText: 'text-purple-100' };
+                              if (pagado) return { bg: 'bg-emerald-600', border: 'border-emerald-700', subText: 'text-emerald-200' };
+                              if (autorizado) return { bg: 'bg-amber-500', border: 'border-amber-600', subText: 'text-amber-100' };
+                              return { bg: 'bg-red-500', border: 'border-red-600', subText: 'text-red-100' };
+                            };
+                            const slotColors = getSlotColors();
+
+                            const isSlotAnnounced = dataList.some(d => {
+                              const m = (d.OrdenRetiro || '').match(/(\d+)$/);
+                              return m ? announcedOrders.has(parseInt(m[1], 10)) : false;
+                            });
+
+                            return (
+                                <motion.div
+                                  layout
+                                  id={`box-${id}`}
+                                  key={`${id}-${dataList.map(d => d.OrdenRetiro).join(',')}`}
+                                  initial={{ opacity: 0, scale: 0.5, filter: 'blur(4px)' }}
+                                  animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                                  exit={{ opacity: 0, scale: 0.5, filter: 'blur(4px)' }}
+                                  whileHover={{ scale: 1.08 }}
+                                  transition={{ duration: 0.25, type: 'spring', bounce: 0.2 }}
+                                draggable
+                                onDragStart={(e) => {
+                                  setIsDragging(true);
+                                  setDragItem({ ...dataList[0], ubicacionId: id });
+                                  e.dataTransfer.effectAllowed = 'move';
+                                }}
+                                onDragEnd={() => { setIsDragging(false); setDragOverSlot(null); }}
+                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverSlot(id); }}
+                                onDragLeave={(e) => { e.preventDefault(); setDragOverSlot(prev => prev === id ? null : prev); }}
+                                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDrop(id); setDragOverSlot(null); }}
+                                className={`h-14 w-32 rounded-xl border-2 transition-colors flex flex-col items-center justify-center gap-0.5 relative group overflow-hidden cursor-pointer
+                                    ${slotColors.bg} ${slotColors.border} shadow-sm
+                                    ${isMismatched ? 'opacity-20 grayscale' : ''}
+                                    ${isMatched ? 'ring-4 ring-green-400 scale-[1.02]' : ''}
+                                    ${dragOverSlot === id ? 'ring-2 ring-blue-400' : ''}
+                                    ${isSlotAnnounced ? 'ring-4 ring-pink-400 animate-pulse shadow-lg shadow-pink-200' : ''}
+                                  `}
+                                onDoubleClick={() => directEntregar(id, dataList)}
+                              >
+                                {dataList.length > 1 && (
+                                  <div className="absolute top-0.5 right-1 bg-rose-500 text-white text-[7px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center z-20 pointer-events-none">
+                                    {dataList.length}
+                                  </div>
+                                )}
+
+                                {isSlotAnnounced && (
+                                  <div className="absolute -top-1 -left-1 bg-pink-500 text-white text-[8px] font-black w-5 h-5 rounded-full flex items-center justify-center z-30 pointer-events-none shadow-md">
+                                    <BellRing size={10} />
+                                  </div>
+                                )}
+
+                                <button draggable={false}
+                                  onClick={(e) => { e.stopPropagation(); handleDesasignar(dataList[0]?.OrdenRetiro, id); }}
+                                  className={`absolute top-0 right-0 w-6 h-6 flex items-center justify-center text-zinc-100 hover:scale-125 z-30 opacity-0 group-hover:opacity-100 transition-all ${isDragging ? 'pointer-events-none' : ''}`}
+                                ><X size={14} strokeWidth={2.5} /></button>
+
+                                <div className="flex flex-col items-center justify-center gap-0 w-full overflow-hidden px-1 select-none pointer-events-none flex-1">
+                                  {dataList.slice(0, 2).map((data, idx) => {
+                                    const subLabel = dataList.length === 1 && Array.isArray(data.orders) && data.orders.length === 1
+                                      ? data.orders[0].orderNumber : null;
+                                    return (
+                                      <React.Fragment key={idx}>
+                                        <span className="text-[11px] font-black text-white truncate leading-tight text-center w-full">
+                                          {data.PagoHandy ? data.OrdenRetiro.replace('R-', 'PW-') : data.OrdenRetiro}
+                                        </span>
+                                        {subLabel && (
+                                          <span className={`text-[11px] font-black truncate leading-tight text-center w-full ${slotColors.subText || 'text-indigo-200'}`}>{subLabel}</span>
+                                        )}
+                                      </React.Fragment>
                                     );
-                                  }
-                                  return false;
-                                });
-                                const isMismatched = searchTerm && isOccupied && !matchesSearch;
-                                const isMatched = searchTerm && isOccupied && matchesSearch;
-
-                                // ─── Color por situación de pago ───────────────────────────────
-                                // Cruza OrdenRetiro con los datos cargados para obtener estado real
-                                const retiroInfo = firstData ? (
-                                  apiOrders.find(o => o.ordenDeRetiro === firstData.OrdenRetiro)
-                                  || otrosRetiros.find(o => o.ordenDeRetiro === firstData.OrdenRetiro)
-                                ) : null;
-
-                                const getSlotColors = () => {
-                                  if (!isOccupied) return { bg: '', border: '' };
-                                  if (isMatched) return { bg: 'bg-green-600', border: 'border-green-500', subText: 'text-green-100', hover: 'bg-green-900/85' };
-                                  const pagado = retiroInfo?.pagorealizado === 1 || retiroInfo?.pagorealizado === true || firstData?.Pagado === true;
-                                  const autorizado = retiroInfo?.estadoNumerico === 9 || retiroInfo?.OReEstadoActual === 9 || firstData?.Autorizado === true;
-                                  const desc = (retiroInfo?.TClDescripcion || firstData?.TClDescripcion || '').toLowerCase();
-                                  if (pagado || desc.includes('rollo')) return { bg: 'bg-emerald-600', border: 'border-emerald-700', subText: 'text-emerald-200', hover: 'bg-emerald-900/85' };
-                                  if (autorizado) return { bg: 'bg-amber-500', border: 'border-amber-600', subText: 'text-amber-100', hover: 'bg-amber-900/85' };
-                                  if (desc.includes('semanal')) return { bg: 'bg-indigo-600', border: 'border-indigo-700', subText: 'text-indigo-200', hover: 'bg-indigo-900/85' };
-                                  // Pendiente de pago → rojo
-                                  return { bg: 'bg-rose-600', border: 'border-rose-700', subText: 'text-rose-200', hover: 'bg-rose-900/85' };
-                                };
-                                const slotColors = getSlotColors();
-
-                                // Detectar si alguna orden en este casillero fue anunciada desde el tótem
-                                const isSlotAnnounced = isOccupied && dataList.some(d => {
-                                  const m = (d.OrdenRetiro || '').match(/(\d+)$/);
-                                  return m ? announcedOrders.has(parseInt(m[1], 10)) : false;
-                                });
-
-                                return (
-                                  <motion.div
-                                    id={`box-${id}`}
-                                    key={`${p}-${dataList.map(d => d.OrdenRetiro).join(',')}`}
-                                    initial={isOccupied ? { opacity: 0, scale: 0.85 } : false}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    whileHover={{ scale: 1.08 }}
-                                    transition={{ duration: 0.2 }}
-                                    draggable={isOccupied}
-                                    onDragStart={isOccupied ? (e) => {
-                                      setIsDragging(true);
-                                      setDragItem({ ...dataList[0], ubicacionId: id });
-                                      e.dataTransfer.effectAllowed = 'move';
-                                    } : undefined}
-                                    onDragEnd={() => { setIsDragging(false); setDragOverSlot(null); }}
-                                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverSlot(id); }}
-                                    onDragLeave={(e) => { e.preventDefault(); setDragOverSlot(prev => prev === id ? null : prev); }}
-                                    onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDrop(id); setDragOverSlot(null); }}
-                                    className={`h-14 rounded-xl border-2 transition-colors flex flex-col items-center justify-center gap-0.5 relative group overflow-hidden cursor-pointer
-                                        ${isOccupied
-                                        ? `${slotColors.bg} ${slotColors.border} shadow-sm`
-                                        : 'bg-white border-dashed border-slate-200'}
-                                        ${isMismatched ? 'opacity-20 grayscale' : ''}
-                                        ${isMatched ? 'ring-4 ring-green-400 scale-[1.02]' : ''}
-                                        ${dragOverSlot === id && !isOccupied ? 'border-blue-400 bg-blue-50 scale-105' : ''}
-                                        ${dragOverSlot === id && isOccupied ? 'ring-2 ring-blue-400' : ''}
-                                        ${isSlotAnnounced ? 'ring-4 ring-pink-400 animate-pulse shadow-lg shadow-pink-200' : ''}
-                                      `}
-                                    onDoubleClick={() => { if (isOccupied) directEntregar(id, dataList); }}
-                                  >
-                                    {isOccupied ? (
-                                      <>
-                                        <span className={`text-[7px] font-bold absolute top-0.5 left-1 select-none pointer-events-none ${isMatched ? 'text-green-100' : (slotColors.subText || 'text-indigo-300')}`}>{id}</span>
-
-                                        {dataList.length > 1 && (
-                                          <div className="absolute top-0.5 right-1 bg-rose-500 text-white text-[7px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center z-20 pointer-events-none">
-                                            {dataList.length}
-                                          </div>
-                                        )}
-
-                                        {isSlotAnnounced && (
-                                          <div className="absolute -top-1 -left-1 bg-pink-500 text-white text-[8px] font-black w-5 h-5 rounded-full flex items-center justify-center z-30 pointer-events-none shadow-md">
-                                            <BellRing size={10} />
-                                          </div>
-                                        )}
-
-                                        {/* X button to return/unassign — visible on hover */}
-                                        <button draggable={false}
-                                          onClick={(e) => { e.stopPropagation(); handleDesasignar(dataList[0]?.OrdenRetiro, id); }}
-                                          className={`absolute top-0 right-0 w-6 h-6 flex items-center justify-center text-zinc-100 hover:scale-125 z-30 opacity-0 group-hover:opacity-100 transition-all ${isDragging ? 'pointer-events-none' : ''}`}
-                                        ><X size={14} strokeWidth={2.5} /></button>
-
-
-                                        <div className="flex flex-col items-center justify-center gap-0 w-full overflow-hidden px-1 select-none pointer-events-none flex-1">
-                                          {dataList.slice(0, 2).map((data, idx) => {
-                                            const subLabel = dataList.length === 1 && Array.isArray(data.orders) && data.orders.length === 1
-                                              ? data.orders[0].orderNumber : null;
-                                            return (
-                                              <React.Fragment key={idx}>
-                                                <span className="text-[11px] font-black text-white truncate leading-tight text-center w-full">
-                                                  {data.PagoHandy ? data.OrdenRetiro.replace('R-', 'PW-') : data.OrdenRetiro}
-                                                </span>
-                                                {subLabel && (
-                                                  <span className={`text-[11px] font-black truncate leading-tight text-center w-full ${slotColors.subText || 'text-indigo-200'}`}>{subLabel}</span>
-                                                )}
-                                              </React.Fragment>
-                                            );
-                                          })}
-                                        </div>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <span className="text-[9px] font-black text-slate-300">P{p + 1}</span>
-                                        <div className="w-1 h-1 rounded-full bg-slate-200" />
-                                      </>
-                                    )}
-                                  </motion.div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
+                                  })}
+                                </div>
+                              </motion.div>
+                            );
+                          })}
+                        </AnimatePresence>
+                        {!Object.keys(ocupacionEstantes).some(k => k.startsWith(`${est.id}-`) || k.startsWith(`${est.id.trim()}-`)) && (
+                          <p className="text-slate-400 text-sm font-medium py-4">Estante vacío</p>
+                        )}
                       </div>
                     </div>
                   ))}

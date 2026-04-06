@@ -129,6 +129,7 @@ exports.getAllLocalRetiros = async (req, res) => {
                 r.DireccionEnvio,
                 r.DepartamentoEnvio,
                 r.LocalidadEnvio,
+                tc.TClDescripcion,
                 (
                     SELECT STRING_AGG(od.OrdCodigoOrden, ',')
                     FROM RelOrdenesRetiroOrdenes rel WITH(NOLOCK)
@@ -149,6 +150,7 @@ exports.getAllLocalRetiros = async (req, res) => {
                 ) AS BultosJSON
             FROM OrdenesRetiro r WITH(NOLOCK)
             LEFT JOIN Clientes c WITH(NOLOCK) ON c.CodCliente = r.CodCliente
+            LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
             LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
             LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
             -- Excluir retiros entregados o cancelados
@@ -347,11 +349,12 @@ exports.obtenerMapaEstantes = async (req, res) => {
                 c.EstanteID, 
                 c.Seccion, 
                 c.Posicion, 
-                c.EstanteID + '-' + CAST(c.Seccion AS VARCHAR) + '-' + CAST(c.Posicion AS VARCHAR) AS UbicacionID,
+                RTRIM(c.EstanteID) + '-' + CAST(c.Seccion AS VARCHAR) + '-' + CAST(c.Posicion AS VARCHAR) AS UbicacionID,
                 c.Activo,
                 o.OrdenRetiro,
                 o.CodigoCliente,
                 cli.Nombre as ClientName,
+                tc.TClDescripcion,
                 COALESCE((
                     SELECT 
                         od.OrdCodigoOrden AS orderNumber,
@@ -377,9 +380,12 @@ exports.obtenerMapaEstantes = async (req, res) => {
             FROM ConfiguracionEstantes c
             LEFT JOIN OcupacionEstantes o 
                 ON c.EstanteID = o.EstanteID AND c.Seccion = o.Seccion AND c.Posicion = o.Posicion
-            LEFT JOIN Clientes cli ON CAST(o.CodigoCliente AS VARCHAR) = CAST(cli.CodCliente AS VARCHAR)
             LEFT JOIN OrdenesRetiro orr 
                 ON o.OrdenRetiro = COALESCE(orr.FormaRetiro, 'R') + '-' + CAST(orr.OReIdOrdenRetiro AS VARCHAR)
+            LEFT JOIN Clientes cli 
+                ON CAST(cli.CodCliente AS VARCHAR) = CAST(orr.CodCliente AS VARCHAR) 
+                OR CAST(cli.CodCliente AS VARCHAR) = CAST(o.CodigoCliente AS VARCHAR)
+            LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = cli.TClIdTipoCliente
             WHERE c.Activo = 1
               AND (orr.OReEstadoActual IS NULL OR orr.OReEstadoActual NOT IN (5, 6))
             ORDER BY c.EstanteID, c.Seccion, c.Posicion
@@ -411,6 +417,20 @@ exports.asignarRetiroAEstante = async (req, res) => {
                 return res.status(400).json({ error: `La orden ${ordenRetiro} ya está asignada a un estante.` });
             }
 
+            // Verificar el estado real de pago en la BDD (más confiable que el campo del frontend)
+            const numMatchPag = ordenRetiro.match(/(\d+)$/);
+            const OReIdPag = numMatchPag ? parseInt(numMatchPag[1], 10) : NaN;
+            let pagadoReal = pagado; // fallback al valor del frontend
+            if (!isNaN(OReIdPag)) {
+                const pagRes = await new sql.Request(transaction)
+                    .input('ID', sql.Int, OReIdPag)
+                    .query(`SELECT TOP 1 PagIdPago, ReferenciaPagoOnline, OReEstadoActual FROM OrdenesRetiro WITH(NOLOCK) WHERE OReIdOrdenRetiro = @ID`);
+                if (pagRes.recordset.length > 0) {
+                    const row = pagRes.recordset[0];
+                    pagadoReal = !!(row.PagIdPago || (row.ReferenciaPagoOnline && row.ReferenciaPagoOnline.trim() !== '') || row.OReEstadoActual === 3 || row.OReEstadoActual === 8);
+                }
+            }
+
             await new sql.Request(transaction)
                 .input('e', sql.Char, estanteId)
                 .input('s', sql.Int, seccion)
@@ -418,13 +438,13 @@ exports.asignarRetiroAEstante = async (req, res) => {
                 .input('o', sql.VarChar, ordenRetiro)
                 .input('c', sql.VarChar, codigoCliente)
                 .input('b', sql.NVarChar, JSON.stringify(bultos))
-                .input('pag', sql.Bit, pagado ? 1 : 0)
+                .input('pag', sql.Bit, pagadoReal ? 1 : 0)
                 .query(`
                     INSERT INTO OcupacionEstantes (EstanteID, Seccion, Posicion, OrdenRetiro, CodigoCliente, BultosJSON, Pagado)
                     VALUES (@e, @s, @p, @o, @c, @b, @pag)
                 `);
 
-            const nuevoEstado = pagado ? 8 : 7;
+            const nuevoEstado = pagadoReal ? 8 : 7;
             const ubicacionString = `${estanteId}-${seccion}-${posicion}`;
 
             // Extraer ID numérico del retiro: soporta R-, RL-, RT-, RW-, etc.
@@ -484,7 +504,7 @@ exports.asignarRetiroAEstante = async (req, res) => {
             const io = req.app.get('socketio');
             if (io) io.emit('retiros:update', { type: 'asignado_estante', ordenRetiro });
 
-            res.json({ success: true, message: 'Ubicación asignada y notificada a central' });
+            res.json({ success: true, message: 'Ubicación asignada y notificada a central', pagadoReal });
 
         } catch (err) {
             await transaction.rollback();
@@ -1321,7 +1341,7 @@ exports.gestionarExcepcion = async (req, res) => {
  */
 exports.seedConfigEstantes = async (req, res) => {
     const {
-        estantes = ['A', 'B', 'C'],
+        estantes = ['A', 'B', 'C', 'D'],
         secciones = 4,
         posiciones = 10
     } = req.body;
