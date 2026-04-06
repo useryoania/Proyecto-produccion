@@ -2250,15 +2250,20 @@ exports.handyWebhook = async (req, res) => {
                                     .query('UPDATE OrdenesRetiro SET ReceptorNombre = @Receptor WHERE OReIdOrdenRetiro = @OReId');
                             }
 
-                            // Guardar código en HandyTransactions para que el polling lo encuentre
-                            await pool.request()
-                                .input('txId3', sql.VarChar(100), transactionId)
-                                .input('orCode', sql.VarChar(50), codigoRetiro)
-                                .query('UPDATE HandyTransactions SET OrdenRetiroCreada = @orCode WHERE TransactionId = @txId3');
-
                             // Usar el nuevo retiro en el resto del flujo de pago
                             payloadPago.ordenRetiro = codigoRetiro;
                             orderNumbers = [OReIdOrdenRetiro];
+
+                            // Guardar código en HandyTransactions dentro del OrdersJson para que el polling lo encuentre
+                            const updatedOrdersJson = JSON.stringify({
+                                ...storedData,
+                                ordenRetiro: codigoRetiro
+                            });
+
+                            await pool.request()
+                                .input('txId3', sql.VarChar(100), transactionId)
+                                .input('jsonStr', sql.NVarChar(sql.MAX), updatedOrdersJson)
+                                .query('UPDATE HandyTransactions SET OrdersJson = @jsonStr WHERE TransactionId = @txId3');
                         } catch (retiroErr) {
                             logger.error('[HANDY WEBHOOK] Error creando retiro diferido:', retiroErr.message);
                         }
@@ -2362,7 +2367,7 @@ exports.getPaymentStatus = async (req, res) => {
         const pool = await getPool();
         const result = await pool.request()
             .input('txId', sql.VarChar(100), transactionId)
-            .query('SELECT TransactionId, TotalAmount, Currency, OrdersJson, Status, IssuerName, CreatedAt, PaidAt, OrdenRetiroCreada FROM HandyTransactions WHERE TransactionId = @txId');
+            .query('SELECT TransactionId, TotalAmount, Currency, OrdersJson, Status, IssuerName, CreatedAt, PaidAt FROM HandyTransactions WHERE TransactionId = @txId');
 
         if (result.recordset.length === 0) {
             return res.status(404).json({ error: 'Transacción no encontrada' });
@@ -2378,7 +2383,7 @@ exports.getPaymentStatus = async (req, res) => {
             totalAmount: tx.TotalAmount,
             currency: tx.Currency === 840 ? 'USD' : 'UYU',
             currencySymbol: tx.Currency === 840 ? 'US$' : '$',
-            ordenRetiro: tx.OrdenRetiroCreada || storedData.ordenRetiro || null,
+            ordenRetiro: storedData.ordenRetiro || null,
             orders: orders.map(o => ({
                 id: o.id,
                 desc: o.desc,

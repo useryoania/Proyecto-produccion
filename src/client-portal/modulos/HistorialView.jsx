@@ -124,12 +124,12 @@ export const HistorialView = () => {
                                     className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-zinc-800/50 transition-colors"
                                 >
                                     <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="w-16 text-base font-black text-custom-cyan uppercase tracking-tight">{retiro.OrdIdRetiro}</span>
-                                            <span className={`px-2 md:px-1.5 py-0.5 text-[10px] md:text-xs font-bold uppercase tracking-wider rounded-full border ${estado.color}`}>
+                                        <div className="flex items-center justify-between mb-2 gap-3">
+                                            <span className="text-base font-black text-custom-cyan uppercase tracking-tight whitespace-nowrap shrink-0">{retiro.OrdIdRetiro}</span>
+                                            <span className={`px-2 md:px-1.5 py-0.5 text-[10px] md:text-xs font-bold uppercase tracking-wider rounded-full border mx-auto text-center ${estado.color}`}>
                                                 {estado.label}
                                             </span>
-                                            <span className="text-xs text-zinc-500">{formatDate(retiro.Fecha)}</span>
+                                            <span className="text-xs text-zinc-500 shrink-0 text-right">{formatDate(retiro.Fecha)}</span>
                                         </div>
                                         <div className="flex items-center justify-between text-xs text-zinc-500">
                                             {retiro.Ordenes?.length > 0 && (

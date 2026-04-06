@@ -31,6 +31,10 @@ export const UnpaidPickupsView = () => {
 
     const handlePay = async (retiro) => {
         setPayingId(retiro.OrdIdRetiro);
+        
+        // Anti-popup blocker: Abrir pestaña en blanco síncronamente en el momento del click
+        const payWindow = window.open('about:blank', '_blank');
+        
         try {
             const payload = {
                 ordenRetiro: retiro.OrdIdRetiro,
@@ -44,14 +48,19 @@ export const UnpaidPickupsView = () => {
             const txId = res?.transactionId || res?.data?.transactionId;
 
             if (url) {
-                window.open(url, '_blank');
+                // Navegar en la pestaña nueva
+                if (payWindow) payWindow.location.href = url;
+                
+                // Navegar la original a la vista de status
                 if (txId) {
                     window.location.href = `/portal/payment-status?txId=${txId}`;
                 }
             } else {
+                if (payWindow) payWindow.close();
                 alert("No se pudo obtener el link de pago.");
             }
         } catch (error) {
+            if (payWindow) payWindow.close();
             console.error("Error generating payment link:", error);
             alert("Error al contactar la pasarela de pagos.");
         } finally {

@@ -52,8 +52,10 @@ async function createPaymentLink({
         },
         Client: {
             CommerceName: commerceName,
-            SiteUrl: `${siteUrl}/portal/pickup?txId=${transactionId}`
+            SiteUrl: `${siteUrl}/portal/payment-status?txId=${transactionId}`
         },
+        PostSuccessUrl: `${siteUrl}/portal/payment-status?txId=${transactionId}`,
+        CancelUrl: `${siteUrl}/portal/payment-status?txId=${transactionId}`,
         CallbackURL: `${siteUrl}/api/web-orders/handy-webhook`,
         ResponseType: "Json"
     };

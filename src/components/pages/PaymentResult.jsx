@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { CircleCheckBig, CircleX, Clock, Clock8, ArrowLeft, RotateCcw, CreditCard, Package, Receipt, Download, Copy, Check } from 'lucide-react';
+import { CircleCheckBig, CircleX, Clock, Clock8, ArrowLeft, RotateCcw, CreditCard, Package, Receipt, Download, Copy, Check, ChevronDown } from 'lucide-react';
 import { Logo } from '../Logo';
 import { useAuth } from '../../client-portal/auth/AuthContext';
 import { jsPDF } from 'jspdf';
@@ -254,6 +254,7 @@ export default function PaymentResult() {
     const [txData, setTxData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [ordersExpanded, setOrdersExpanded] = useState(false);
 
     useEffect(() => {
 
@@ -309,16 +310,13 @@ export default function PaymentResult() {
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent: 'flex-start',
             fontFamily: "'Inter', 'Segoe UI', sans-serif",
-            padding: '20px',
-            gap: '24px',
+            padding: '16px 16px 40px',
+            gap: '16px',
         }}>
-            {/* Logo + Card */}
+            {/* Card Content wrapper (no visible card) */}
             <div className="payment-card" style={{
-                background: '#f4f4f5',
-                borderRadius: '16px',
-                padding: '40px',
                 maxWidth: '520px',
                 width: '100%',
                 position: 'relative',
@@ -336,8 +334,8 @@ export default function PaymentResult() {
                 ) : error && !txData ? (
                     <div style={{ textAlign: 'center' }}>
                         <CircleX size={48} color="#BD0C7E" style={{ marginBottom: 16 }} />
-                        <h2 style={{ color: '#19181B', fontSize: '20px', margin: '0 0 8px' }}>No se encontró la transacción</h2>
-                        <p style={{ color: '#52525b', fontSize: '14px', margin: '0 0 24px' }}>{error}</p>
+                        <h2 style={{ color: '#f4f4f5', fontSize: '20px', margin: '0 0 8px' }}>No se encontró la transacción</h2>
+                        <p style={{ color: '#a1a1aa', fontSize: '14px', margin: '0 0 24px' }}>{error}</p>
                         <button onClick={() => navigate('/portal/pickup')} style={btnDark}>
                             <ArrowLeft size={16} /> Volver al Portal
                         </button>
@@ -345,26 +343,25 @@ export default function PaymentResult() {
                 ) : txData && (
                     <>
                         {/* Status Header */}
-                        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-                            <div style={{
-                                width: '72px', height: '72px', borderRadius: '50%',
-                                background: '#fff', border: '1px solid #e4e4e7',
+                        <div className="payment-header" style={{ textAlign: 'center', marginBottom: '24px' }}>
+                            <div className="payment-card-icon" style={{
+                                background: 'transparent', border: 'none',
                                 display: 'flex', alignItems: 'center',
-                                justifyContent: 'center', margin: '0 auto 20px',
+                                justifyContent: 'center', margin: '0 auto 4px',
                             }}>
-                                <Icon size={36} color={config.color} />
+                                <Icon size={48} color={config.color} />
                             </div>
-                            <h1 style={{ color: '#19181B', fontSize: '18px', fontWeight: 700, margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            <h1 style={{ color: '#f4f4f5', fontSize: '18px', fontWeight: 700, margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                                 {config.title}
                             </h1>
-                            <p style={{ color: '#52525b', fontSize: '12px', margin: '0 0 12px', lineHeight: 1.5, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+                            <p style={{ color: '#a1a1aa', fontSize: '12px', margin: '0 0 16px', lineHeight: 1.5, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
                                 {config.subtitle}
                             </p>
 
                             {/* Status Badge */}
                             <span style={{
                                 display: 'inline-block',
-                                marginTop: '14px',
+                                margin: '0',
                                 padding: '5px 18px',
                                 borderRadius: '20px',
                                 background: config.badgeBg,
@@ -378,91 +375,119 @@ export default function PaymentResult() {
 
                             {/* 3. Timestamp — only on Pagado/Fallido */}
                             {absoluteTime && (
-                                <p style={{ color: '#71717a', fontSize: '12px', marginTop: '8px' }}>
+                                <p style={{ color: '#71717a', fontSize: '12px', margin: '12px 0 0 0' }}>
                                     {absoluteTime}
                                 </p>
                             )}
                         </div>
 
                         {/* Amount Section */}
-                        <div style={{
-                            background: '#fff', borderRadius: '12px',
-                            padding: '20px', marginBottom: '16px',
-                            border: '1px solid #e4e4e7',
+                        <div className="payment-section" style={{
+                            background: '#27272a', borderRadius: '12px',
+                            padding: '16px', marginBottom: '16px',
+                            border: '1px solid #3f3f46',
                         }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <span style={{ color: '#71717a', fontSize: '13px' }}>Total pagado</span>
+                                <span style={{ color: '#a1a1aa', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total pagado</span>
                                 <span style={{ color: config.color, fontSize: '28px', fontWeight: 700 }}>
                                     {txData.currencySymbol} {Number(txData.totalAmount).toFixed(2)}
                                 </span>
                             </div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px' }}>
-                                <span style={{ color: '#71717a', fontSize: '12px' }}>Moneda</span>
-                                <span style={{ color: '#3f3f46', fontSize: '13px' }}>{txData.currency}</span>
-                            </div>
+                            {txData.paymentMethod && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #3f3f46' }}>
+                                    <span style={{ color: '#a1a1aa', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Medio de pago</span>
+                                    <span style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: 500, textTransform: 'uppercase' }}>{txData.paymentMethod}</span>
+                                </div>
+                            )}
                         </div>
 
                         {/* Details Grid */}
-                        <div className="payment-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '16px' }}>
+                        <div className="payment-grid" style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '10px', marginBottom: '16px' }}>
                             {txData.ordenRetiro && (
                                 <CopyableInfoCard icon={<Receipt size={14} />} label="Código de Retiro"
                                     value={txData.status === 'Pagado' ? String(txData.ordenRetiro).replace('R-', 'PW-') : String(txData.ordenRetiro)} />
-                            )}
-                            {txData.paymentMethod && (
-                                <InfoCard icon={<CreditCard size={14} />} label="Medio de pago" value={txData.paymentMethod} />
                             )}
                         </div>
 
                         {/* Orders List */}
                         {txData.orders?.length > 0 && (
-                            <div style={{
-                                background: '#fff', borderRadius: '12px',
-                                padding: '14px', marginBottom: '24px',
-                                border: '1px solid #e4e4e7',
+                            <div className="payment-section" style={{
+                                background: '#27272a', borderRadius: '12px',
+                                padding: '16px', marginBottom: '16px',
+                                border: '1px solid #3f3f46',
                             }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                                    <Package size={14} color="#71717a" />
-                                    <span style={{ color: '#71717a', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                                        Pedidos ({txData.orders.length})
-                                    </span>
-                                </div>
-                                {txData.orders.map((order, i) => (
-                                    <div key={i} style={{
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                        padding: '8px 0', borderTop: i > 0 ? '1px solid #e4e4e7' : 'none'
-                                    }}>
-                                        <span style={{ color: '#19181B', fontSize: '13px' }}>
-                                            {order.id || order.desc}
-                                        </span>
-                                        <span style={{ color: '#52525b', fontSize: '13px', fontFamily: 'monospace' }}>
-                                            {txData.currencySymbol} {Number(order.amount || 0).toFixed(2)}
+                                <div 
+                                    style={{ 
+                                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                                        marginBottom: (ordersExpanded || txData.orders.length <= 1) ? '10px' : '0', 
+                                        cursor: txData.orders.length > 1 ? 'pointer' : 'default',
+                                        transition: 'margin-bottom 0.3s ease-in-out'
+                                    }}
+                                    onClick={() => txData.orders.length > 1 && setOrdersExpanded(!ordersExpanded)}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <Package size={14} color="#a1a1aa" />
+                                        <span style={{ color: '#a1a1aa', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                            Pedidos ({txData.orders.length})
                                         </span>
                                     </div>
-                                ))}
+                                    {txData.orders.length > 1 && (
+                                        <button style={{ background: 'none', border: 'none', padding: 0, color: '#f4f4f5', display: 'flex', cursor: 'pointer' }}>
+                                            <ChevronDown 
+                                                size={18} 
+                                                style={{ 
+                                                    transform: ordersExpanded ? 'rotate(180deg)' : 'rotate(0deg)', 
+                                                    transition: 'transform 0.3s ease-in-out' 
+                                                }} 
+                                            />
+                                        </button>
+                                    )}
+                                </div>
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateRows: (ordersExpanded || txData.orders.length <= 1) ? '1fr' : '0fr',
+                                    transition: 'grid-template-rows 0.3s ease-in-out'
+                                }}>
+                                    <div style={{ overflow: 'hidden' }}>
+                                        {txData.orders.map((order, i) => (
+                                            <div key={i} style={{
+                                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                                padding: '8px 0', borderTop: i > 0 ? '1px solid #3f3f46' : 'none'
+                                            }}>
+                                                <span style={{ color: '#f4f4f5', fontSize: '13px' }}>
+                                                    {order.id || order.desc}
+                                                </span>
+                                                <span style={{ color: '#a1a1aa', fontSize: '13px', fontFamily: 'monospace' }}>
+                                                    {txData.currencySymbol} {Number(order.amount || 0).toFixed(2)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         )}
 
                         {/* Transaction ID */}
                         <div style={{
-                            background: '#fff', borderRadius: '8px', border: '1px solid #e4e4e7',
+                            background: '#27272a', borderRadius: '8px', border: '1px solid #3f3f46',
                             padding: '10px 14px', textAlign: 'center'
                         }}>
-                            <span style={{ color: '#52525b', fontSize: '11px' }}>ID: </span>
-                            <span style={{ color: '#71717a', fontSize: '11px', fontFamily: 'monospace' }}>
+                            <span style={{ color: '#71717a', fontSize: '11px' }}>ID: </span>
+                            <span style={{ color: '#a1a1aa', fontSize: '11px', fontFamily: 'monospace' }}>
                                 {txData.transactionId}
                             </span>
                         </div>
 
                         {/* 4. Separator */}
-                        <div style={{ borderTop: '1px solid #d4d4d8', margin: '24px 0' }} />
+                        <div style={{ borderTop: '1px solid #3f3f46', margin: '24px 0' }} />
 
                         {/* Action Buttons */}
                         <div className="payment-actions" style={{ display: 'flex', gap: '10px' }}>
                             <button
-                                onClick={() => navigate('/portal/pickup')}
+                                onClick={() => navigate('/portal/history')}
                                 style={btnDark}
-                                onMouseOver={e => e.target.style.opacity = '0.85'}
-                                onMouseOut={e => e.target.style.opacity = '1'}
+                                onMouseOver={e => e.currentTarget.style.opacity = '0.85'}
+                                onMouseOut={e => e.currentTarget.style.opacity = '1'}
                             >
                                 <ArrowLeft size={16} />
                                 Volver al Portal
@@ -472,11 +497,19 @@ export default function PaymentResult() {
                                 <button
                                     onClick={() => generateReceipt(txData, user?.codCliente)}
                                     style={btnOutline}
-                                    onMouseOver={e => e.target.style.background = '#f4f4f5'}
-                                    onMouseOut={e => e.target.style.background = 'transparent'}
+                                    onMouseOver={e => {
+                                        e.currentTarget.style.background = '#BD0C7E';
+                                        e.currentTarget.style.color = '#ffffff';
+                                        e.currentTarget.style.borderColor = '#BD0C7E';
+                                    }}
+                                    onMouseOut={e => {
+                                        e.currentTarget.style.background = 'transparent';
+                                        e.currentTarget.style.color = '#e4e4e7';
+                                        e.currentTarget.style.borderColor = '#52525b';
+                                    }}
                                 >
                                     <Download size={16} />
-                                    Comprobante
+                                    Descargar comprobante
                                 </button>
                             )}
 
@@ -484,8 +517,8 @@ export default function PaymentResult() {
                                 <button
                                     onClick={() => navigate('/portal/pickup')}
                                     style={{ ...btnOutline, color: '#BD0C7E', borderColor: '#BD0C7E' }}
-                                    onMouseOver={e => e.target.style.background = 'rgba(189,12,126,0.06)'}
-                                    onMouseOut={e => e.target.style.background = 'transparent'}
+                                    onMouseOver={e => e.currentTarget.style.background = 'rgba(189,12,126,0.06)'}
+                                    onMouseOut={e => e.currentTarget.style.background = 'transparent'}
                                 >
                                     <RotateCcw size={16} />
                                     Reintentar
@@ -499,27 +532,38 @@ export default function PaymentResult() {
             <style>{`
                 @keyframes spin { to { transform: rotate(360deg); } }
 
+                /* Defaults for Desktop overridden inline, but classes used for mobile */
+                
                 @media (max-width: 480px) {
-                    .payment-card {
-                        padding: 20px !important;
-                        border-radius: 12px !important;
+                    .payment-header {
+                        margin-bottom: 16px !important;
+                    }
+                    .payment-card-icon {
+                        margin-bottom: 8px !important;
+                    }
+                    .payment-card-icon svg {
+                        width: 42px !important;
+                        height: 42px !important;
                     }
                     .payment-card h1 {
-                        font-size: 15px !important;
+                        font-size: 16px !important;
+                    }
+                    .payment-section {
+                        padding: 14px !important;
+                        margin-bottom: 12px !important;
                     }
                     .payment-grid {
                         grid-template-columns: 1fr !important;
+                        gap: 8px !important;
+                        margin-bottom: 12px !important;
                     }
                     .payment-actions {
-                        flex-direction: column !important;
+                        flex-direction: column-reverse !important;
+                        gap: 8px !important;
                     }
-                }
-
-                @media (min-width: 481px) and (max-width: 768px) {
-                    .payment-card {
-                        padding: 28px !important;
+                    .payment-actions button {
+                        padding: 12px 16px !important;
                     }
-                }
             `}</style>
         </div>
     );
@@ -529,14 +573,14 @@ export default function PaymentResult() {
 function InfoCard({ icon, label, value }) {
     return (
         <div style={{
-            background: '#fff', borderRadius: '12px', padding: '14px',
-            border: '1px solid #e4e4e7',
+            background: '#27272a', borderRadius: '12px', padding: '16px',
+            border: '1px solid #3f3f46',
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                <span style={{ color: '#71717a' }}>{icon}</span>
-                <span style={{ color: '#71717a', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
+                <span style={{ color: '#a1a1aa' }}>{icon}</span>
+                <span style={{ color: '#a1a1aa', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
             </div>
-            <span style={{ color: '#19181B', fontSize: '14px', fontWeight: 600 }}>{value}</span>
+            <span style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: 600 }}>{value}</span>
         </div>
     );
 }
@@ -550,15 +594,15 @@ function CopyableInfoCard({ icon, label, value }) {
     };
     return (
         <div style={{
-            background: '#fff', borderRadius: '12px', padding: '14px',
-            border: '1px solid #e4e4e7',
+            background: '#27272a', borderRadius: '12px', padding: '16px',
+            border: '1px solid #3f3f46',
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                <span style={{ color: '#71717a' }}>{icon}</span>
-                <span style={{ color: '#71717a', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
+                <span style={{ color: '#a1a1aa' }}>{icon}</span>
+                <span style={{ color: '#a1a1aa', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{label}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ color: '#19181B', fontSize: '14px', fontWeight: 600 }}>{value}</span>
+                <span style={{ color: '#f4f4f5', fontSize: '14px', fontWeight: 600 }}>{value}</span>
                 <button onClick={handleCopy} style={{
                     background: 'none', border: 'none', cursor: 'pointer', padding: '4px',
                     color: copied ? '#10b981' : '#a1a1aa', transition: 'color 0.2s',
@@ -574,8 +618,8 @@ function CopyableInfoCard({ icon, label, value }) {
 const btnDark = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
     flex: 1, padding: '14px 20px',
-    background: '#19181B',
-    color: '#d4d4d8', border: 'none', borderRadius: '12px',
+    background: '#006E97',
+    color: '#ffffff', border: 'none', borderRadius: '12px',
     fontSize: '14px', fontWeight: 600, cursor: 'pointer',
     transition: 'all 0.2s ease'
 };
@@ -584,7 +628,7 @@ const btnOutline = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
     flex: 1, padding: '14px 20px',
     background: 'transparent',
-    color: '#3f3f46', border: '1px solid #a1a1aa', borderRadius: '12px',
+    color: '#e4e4e7', border: '1px solid #52525b', borderRadius: '12px',
     fontSize: '14px', fontWeight: 600, cursor: 'pointer',
     transition: 'all 0.2s ease'
 };

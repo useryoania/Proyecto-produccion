@@ -298,8 +298,11 @@ export const PickupView = () => {
         return () => clearInterval(pollingRef.current);
     }, [pollingTxId]);
 
-    // NUEVO FLUJO: genera link Handy sin crear retiro, redirige en la misma pestana
+    // NUEVO FLUJO: genera link Handy sin crear retiro, pero con anti-popup blocker y redireccion
     const handleInitPayment = async () => {
+        // Anti-popup blocker: Abrir pestaña en blanco síncronamente en el momento del click
+        const payWindow = window.open('about:blank', '_blank');
+        
         setLoading(true);
         try {
             const formaEnvioId = selectedFormaEnvio || shippingData?.defaultFormaEnvioID || 5;
@@ -328,14 +331,21 @@ export const PickupView = () => {
                 receptorNombre: esEncomienda ? (receiverFirstName.trim() + ' ' + receiverLastName.trim()) : null
             };
             const res = await apiClient.post('/web-orders/pickup-orders/init-payment', payload);
+            
             if (res.success && res.url) {
-                sessionStorage.removeItem('pickup_selected');
-                sessionStorage.removeItem('pickup_code');
-                window.location.href = res.url;
+                // Navegar URL popup a Handy
+                if (payWindow) payWindow.location.href = res.url;
+                
+                // Limpiar state y navegar la pestaña origin a status de pago
+                if (res.transactionId) {
+                    window.location.href = `/portal/payment-status?txId=${res.transactionId}`;
+                }
             } else {
+                if (payWindow) payWindow.close();
                 Swal.fire({ icon: 'error', title: 'Error de pago', text: 'No se pudo generar el link de pago' + (res.error ? ': ' + res.error : ''), background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
             }
         } catch (err) {
+            if (payWindow) payWindow.close();
             Swal.fire({ icon: 'error', title: 'Error', text: 'Ocurrio un error al contactar la pasarela de pagos.', background: '#212121', color: '#e4e4e7', confirmButtonColor: '#006E97', customClass: { popup: 'rounded-xl border border-zinc-700' } });
         } finally { setLoading(false); }
     };
