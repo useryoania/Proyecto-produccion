@@ -147,6 +147,9 @@ exports.login = async (req, res) => {
                 .input('ID', sql.Int, client.CodCliente)
                 .query("UPDATE Clientes SET WebLastLogin = GETDATE() WHERE CodCliente = @ID");
 
+            audit('LOGIN', { user: client.IDCliente || username, userId: client.CodCliente, ip: req.ip, type: 'WEB_CLIENT', result: 'OK' });
+            trackLogin(client.CodCliente, client.IDCliente || username, req.ip, 'WEB_CLIENT', true);
+
             return res.json({
                 success: true,
                 userType: 'CLIENT',
@@ -172,6 +175,7 @@ exports.login = async (req, res) => {
         // -----------------------------------------------------------------
         // No match
         audit('LOGIN', { user: username, ip: req.ip, type: 'UNKNOWN', result: 'FAIL' });
+        trackLogin(null, username, req.ip, 'UNKNOWN', false, 'Usuario inexistente');
         res.status(401).json({ success: false, message: 'Credenciales inválidas o usuario inexistente.' });
 
     } catch (err) {

@@ -1208,6 +1208,45 @@ const WebRetirosPage = () => {
     const toggle = (id) => setScannedBultos(prev => ({ ...prev, [id]: !prev[id] }));
     const allChecked = selectedRetiro.orders?.every(o => scannedBultos[o.orderNumber]);
 
+    // Auto-asignar a estante cuando todas las órdenes están verdes
+    useEffect(() => {
+      if (!allChecked || !selectedRetiro.orders?.length) return;
+      const timer = setTimeout(() => {
+        const targetEstanteId = getEstanteForRetiro(selectedRetiro.ordenDeRetiro);
+        const defaultConfig = { id: targetEstanteId, secciones: 4, posiciones: 10 };
+        const estConfig = estantesConfigArr.find(e => e.id.trim() === targetEstanteId) || defaultConfig;
+
+        const tryAssignIn = (config) => {
+          if (!config) return false;
+          for (let s = 1; s <= config.secciones; s++) {
+            for (let p = 1; p <= config.posiciones; p++) {
+              const id = `${config.id}-${s}-${p}`;
+              if (!ocupacionEstantes[id] || ocupacionEstantes[id].length === 0) {
+                handleAsignarUbicacion(config.id, s, p);
+                return true;
+              }
+            }
+          }
+          return false;
+        };
+
+        if (tryAssignIn(estConfig)) return;
+
+        for (const est of estantesConfigArr) {
+          if (est.id.trim() === targetEstanteId) continue;
+          if (tryAssignIn(est)) {
+            Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: `Estante ${targetEstanteId} lleno — asignado a ${est.id.trim()}`, showConfirmButton: false, timer: 3000 });
+            return;
+          }
+        }
+
+        Swal.fire({ toast: true, position: 'top', icon: 'warning', title: 'No hay casilleros vacíos. Seleccioná uno manualmente.', showConfirmButton: false, timer: 3000 });
+        setUbicationMode(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [allChecked]);
+
     const handleScanSubmit = (e) => {
       e.preventDefault();
       const rawCode = barcodeInput.trim().toUpperCase();
@@ -1307,49 +1346,6 @@ const WebRetirosPage = () => {
           </div>
           <div className="flex gap-3 justify-center">
             <button onClick={() => setSelectedRetiro(null)} className="flex-1 py-3 px-4 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors">Cancelar</button>
-            <button
-              disabled={!allChecked}
-              onClick={() => {
-                const targetEstanteId = getEstanteForRetiro(selectedRetiro.ordenDeRetiro);
-                // Si el estante todavía no tiene retiros (ej. D recién creado), usar config por defecto igual a los demás (4x10)
-                const defaultConfig = { id: targetEstanteId, secciones: 4, posiciones: 10 };
-                const estConfig = estantesConfigArr.find(e => e.id.trim() === targetEstanteId) || defaultConfig;
-
-                // Buscar primer casillero vacío en el estante destino
-                const tryAssignIn = (config) => {
-                  if (!config) return false;
-                  for (let s = 1; s <= config.secciones; s++) {
-                    for (let p = 1; p <= config.posiciones; p++) {
-                      const id = `${config.id}-${s}-${p}`;
-                      if (!ocupacionEstantes[id] || ocupacionEstantes[id].length === 0) {
-                        handleAsignarUbicacion(config.id, s, p);
-                        return true;
-                      }
-                    }
-                  }
-                  return false;
-                };
-
-                // 1. Intentar en el estante calculado
-                if (tryAssignIn(estConfig)) return;
-
-                // 2. Si está lleno, intentar cualquier otro estante
-                for (const est of estantesConfigArr) {
-                  if (est.id.trim() === targetEstanteId) continue;
-                  if (tryAssignIn(est)) {
-                    Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: `Estante ${targetEstanteId} lleno — asignado a ${est.id.trim()}`, showConfirmButton: false, timer: 3000 });
-                    return;
-                  }
-                }
-
-                // 3. Todo lleno → modal manual
-                Swal.fire({ toast: true, position: 'top', icon: 'warning', title: 'No hay casilleros vacíos. Seleccioná uno manualmente.', showConfirmButton: false, timer: 3000 });
-                setUbicationMode(true);
-              }}
-              className="flex-1 py-3 bg-brand-cyan text-white rounded-xl font-bold shadow-md hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-            >
-              Asignar a Estante
-            </button>
           </div>
         </div>
       </div>
@@ -1502,10 +1498,12 @@ const WebRetirosPage = () => {
           <div className="shrink-0 text-brand-cyan">
             <LayoutGrid size={18} />
           </div>
-          <span className="text-sm font-black text-slate-800 tracking-tight shrink-0 uppercase">Logística</span>
+          <span className="text-sm font-black text-slate-800 tracking-tight shrink-0 uppercase">
+            {view === 'empaque' ? 'Empaques' : 'Estantes'}
+          </span>
 
-          {/* Buscador compacto — solo en empaque sin orden seleccionada */}
-          {view === 'empaque' && !selectedRetiro && (
+          {/* Buscador compacto — en empaque (sin orden seleccionada) y en estantes */}
+          {((view === 'empaque' && !selectedRetiro) || view === 'entrega') && (
             <div className="relative w-56 shrink-0">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
               <input
@@ -1900,47 +1898,25 @@ const WebRetirosPage = () => {
           <div className="animate-in fade-in duration-300">
             <div className="mt-4">
 
-              {/* FILTROS DE ESTANTES Y BUSCADOR */}
-              <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-8 bg-white p-3 rounded-3xl border border-slate-100 shadow-sm">
-                {/* Buscador Integrado */}
-                <div className="relative w-full md:w-96 flex-shrink-0">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input
-                    type="text"
-                    placeholder="Buscar por orden o cliente..."
-                    className="w-full pl-12 pr-4 py-3 bg-slate-50 rounded-2xl border-none focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium transition-all"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                </div>
-
-                {/* Filtros de Pestañas */}
-                <div className="flex flex-wrap items-center gap-2">
+              {/* FILTROS DE ESTANTES - Oculto por requerimiento
+              <div className="flex flex-wrap items-center gap-2 mb-8 bg-white p-3 rounded-3xl border border-slate-100 shadow-sm">
+                <button
+                  onClick={() => setFilterEstante('ALL')}
+                  className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === 'ALL' ? 'bg-brand-cyan text-white border-brand-cyan shadow-md shadow-cyan-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
+                >
+                  Ver Todo
+                </button>
+                {estantesConfigArr.map(est => (
                   <button
-                    onClick={() => setFilterEstante('ALL')}
-                    className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === 'ALL' ? 'bg-brand-cyan text-white border-brand-cyan shadow-md shadow-cyan-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
+                    key={est.id}
+                    onClick={() => setFilterEstante(est.id)}
+                    className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === est.id ? 'bg-brand-cyan text-white border-brand-cyan shadow-md shadow-cyan-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
                   >
-                    Ver Todo
+                    {getEstanteLabel(est.id)}
                   </button>
-                  {/*
-                  <button
-                    onClick={() => setFilterEstante('FUERA')}
-                    className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === 'FUERA' ? 'bg-brand-cyan text-white border-brand-cyan shadow-md shadow-cyan-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
-                  >
-                    Fuera de Estante
-                  </button>
-                  */}
-                  {estantesConfigArr.map(est => (
-                    <button
-                      key={est.id}
-                      onClick={() => setFilterEstante(est.id)}
-                      className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === est.id ? 'bg-brand-cyan text-white border-brand-cyan shadow-md shadow-cyan-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
-                    >
-                      {getEstanteLabel(est.id)}
-                    </button>
-                  ))}
-                </div>
+                ))}
               </div>
+              */}
 
               {/* MAPA VISUAL DE ESTANTES */}
               {filterEstante !== 'FUERA' && (
@@ -1948,7 +1924,8 @@ const WebRetirosPage = () => {
                   {estantesConfigArr.filter(est => filterEstante === 'ALL' || filterEstante === est.id).map(est => (
                     <div key={est.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
                       <div className="flex items-center gap-3 mb-4">
-                        <div className="px-3 h-9 bg-brand-cyan rounded-xl flex items-center justify-center text-white font-black text-xs italic shadow-md">{getEstanteLabel(est.id)}</div>
+                        <h3 className="text-sm font-black text-brand-cyan tracking-widest uppercase">{getEstanteLabel(est.id)}</h3>
+                        <div className="h-[2px] bg-cyan-50 flex-1 rounded-full"></div>
                       </div>
 
                       <div className="flex flex-wrap gap-3">
@@ -2070,7 +2047,9 @@ const WebRetirosPage = () => {
                           })}
                         </AnimatePresence>
                         {!Object.keys(ocupacionEstantes).some(k => k.startsWith(`${est.id}-`) || k.startsWith(`${est.id.trim()}-`)) && (
-                          <p className="text-slate-400 text-sm font-medium py-4">Estante vacío</p>
+                          <div className="w-full flex items-center justify-center pt-2 pb-6">
+                            <p className="text-slate-400 text-sm font-bold text-center uppercase tracking-wider">Estante vacío</p>
+                          </div>
                         )}
                       </div>
                     </div>

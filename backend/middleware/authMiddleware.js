@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const logger = require('../utils/logger');
 
-// Clave secreta para firmar el token (Idealmente en .env, fallback seguro para dev)
+// Clave secreta para firmar el token
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET) throw new Error('JWT_SECRET is not defined in environment variables');
 
@@ -25,16 +25,22 @@ exports.verifyToken = (req, res, next) => {
             if (err) {
                 return res.status(401).json({ message: 'Token inválido o expirado.' });
             }
+            
             // Guardamos datos decodificados en req.user
             req.user = decoded;
 
             const { iat, exp, ...userData } = decoded;
             const newToken = jwt.sign(userData, JWT_SECRET, { expiresIn: '30d' });
-            res.setHeader('x-renewed-token', newToken)
-            /* 
-               decoded espera tener:
-               { id, username, role, areaKey, ... }
-            */
+            res.setHeader('x-renewed-token', newToken);
+
+            // Actualizar actividad en sessionTracker
+            const { touchSession } = require('../utils/sessionTracker');
+            if (decoded.id) {
+                const sessionUsername = decoded.username || decoded.name || decoded.email || 'Desconocido';
+                const sessionType = decoded.userType || decoded.role || 'UNKNOWN';
+                touchSession(decoded.id, sessionUsername, req.ip, sessionType);
+            }
+
             next();
         });
 
@@ -54,13 +60,6 @@ exports.authorizeAdminOrArea = (req, res, next) => {
     }
 
     const { role } = req.user;
-
-    // Si la ruta tiene un parámetro :area, verificamos coincidencia
-    // Nota: Para getActiveOrdersSummary no hay :area en path, se usa req.user.areaKey directamente en el controller.
-    // Este middleware es más útil si protegemos rutas tipo /orders/:area
-
-    // De momento, simplemente dejamos pasar, ya que el controller hace el filtrado final.
-    // Solo validamos que tenga rol válido.
 
     if (!role) {
         return res.status(403).json({ message: 'Usuario sin rol asignado.' });

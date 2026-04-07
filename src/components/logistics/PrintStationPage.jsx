@@ -32,10 +32,10 @@ const PrintStationPage = () => {
     if (typeof printedIdsRef.current === 'function') printedIdsRef.current = printedIdsRef.current();
 
     // Persist state to localStorage
-    useEffect(() => { try { localStorage.setItem('ps_logs', JSON.stringify(logs)); } catch {} }, [logs]);
-    useEffect(() => { try { localStorage.setItem('ps_printCount', String(printCount)); } catch {} }, [printCount]);
-    useEffect(() => { try { localStorage.setItem('ps_soundEnabled', String(soundEnabled)); } catch {} }, [soundEnabled]);
-    useEffect(() => { try { localStorage.setItem('ps_copies', String(copies)); } catch {} }, [copies]);
+    useEffect(() => { try { localStorage.setItem('ps_logs', JSON.stringify(logs)); } catch { } }, [logs]);
+    useEffect(() => { try { localStorage.setItem('ps_printCount', String(printCount)); } catch { } }, [printCount]);
+    useEffect(() => { try { localStorage.setItem('ps_soundEnabled', String(soundEnabled)); } catch { } }, [soundEnabled]);
+    useEffect(() => { try { localStorage.setItem('ps_copies', String(copies)); } catch { } }, [copies]);
 
     // Cargar historial al montar — filtra por fechaAlta (creación) client-side para que nada desaparezca al cambiar estado
     useEffect(() => {
@@ -43,12 +43,12 @@ const PrintStationPage = () => {
         setLoadingHistorial(true);
         api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5')
             .then(res => {
-                const data = (res.data || []).filter(r =>
-                    r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy
-                );
+                const data = (res.data || [])
+                    .filter(r => r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy)
+                    .sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta));
                 setHistorialHoy(data);
             })
-            .catch(() => {})
+            .catch(() => { })
             .finally(() => setLoadingHistorial(false));
     }, []);
 
@@ -350,15 +350,15 @@ const PrintStationPage = () => {
                         const arr = [...printedIdsRef.current];
                         printedIdsRef.current = new Set(arr.slice(arr.length - 200));
                     }
-                    try { localStorage.setItem('ps_printedIds', JSON.stringify([...printedIdsRef.current])); } catch {}
+                    try { localStorage.setItem('ps_printedIds', JSON.stringify([...printedIdsRef.current])); } catch { }
 
                     // Refrescar historial en tiempo real (filtrando por fechaAlta = hoy)
                     try {
                         const hoy = new Date().toISOString().split('T')[0];
                         const histRes = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5');
-                        const data = (histRes.data || []).filter(r =>
-                            r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy
-                        );
+                        const data = (histRes.data || [])
+                            .filter(r => r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy)
+                            .sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta));
                         setHistorialHoy(data);
                     } catch { /* silencioso */ }
                 } else {
@@ -576,9 +576,9 @@ const PrintStationPage = () => {
                             const hoy = new Date().toISOString().split('T')[0];
                             api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5')
                                 .then(res => {
-                                    const data = (res.data || []).filter(r =>
-                                        r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy
-                                    );
+                                    const data = (res.data || [])
+                                        .filter(r => r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy)
+                                        .sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta));
                                     setHistorialHoy(data);
                                 })
                                 .catch(err => addLog(`Error historial: ${err.message}`, 'error'))

@@ -7,6 +7,7 @@
 const activeSessions = new Map(); // userId -> { username, ip, loginAt, lastActivity, userType }
 const loginHistory = [];          // { timestamp, username, ip, success, userType, reason }
 const MAX_HISTORY = 500;
+const SESSION_EXPIRATION_MS = 14400000; // 4 horas de inactividad máxima
 
 const trackLogin = (userId, username, ip, userType, success, reason) => {
     // Always log to history
@@ -33,9 +34,21 @@ const trackLogin = (userId, username, ip, userType, success, reason) => {
     }
 };
 
-const touchSession = (userId) => {
-    const s = activeSessions.get(userId);
-    if (s) s.lastActivity = new Date().toISOString();
+const touchSession = (userId, username, ip, userType) => {
+    let s = activeSessions.get(userId);
+    if (s) {
+        s.lastActivity = new Date().toISOString();
+        if (ip && s.ip !== ip) s.ip = ip.replace(/^::ffff:/, ''); // update IP si cambió
+    } else if (username) {
+        // Es un usuario con token válido usando el sistema que no estaba en memoria
+        activeSessions.set(userId, {
+            username: username,
+            ip: (ip || '').replace(/^::ffff:/, ''),
+            loginAt: new Date().toISOString(), // momento en que lo detectamos activo
+            lastActivity: new Date().toISOString(),
+            userType: userType || 'UNKNOWN',
+        });
+    }
 };
 
 const removeSession = (userId) => {
@@ -49,5 +62,16 @@ const getActiveSessions = () => {
 const getLoginHistory = (limit = 100) => {
     return loginHistory.slice(0, limit);
 };
+
+// Cleanup routine: remueve las sesiones inactivas cada 15 min
+setInterval(() => {
+    const now = Date.now();
+    for (const [userId, session] of activeSessions.entries()) {
+        const lastAct = new Date(session.lastActivity).getTime();
+        if (now - lastAct > SESSION_EXPIRATION_MS) {
+            activeSessions.delete(userId);
+        }
+    }
+}, 900000); // 15 minutos
 
 module.exports = { trackLogin, touchSession, removeSession, getActiveSessions, getLoginHistory };

@@ -431,19 +431,46 @@ const SysAdminPage = () => {
                         <button onClick={fetchSessions} className="flex items-center gap-2 px-3 py-2 bg-zinc-200 hover:bg-zinc-300 rounded-xl text-xs font-bold text-zinc-600"><RefreshCw size={14} /></button>
                     </div>
                     {sessions.active.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {sessions.active.map((s, i) => (
-                                <div key={i} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center gap-3">
-                                    <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-sm">
-                                        {(s.username || '?')[0].toUpperCase()}
+                        <div className="flex flex-col gap-4">
+                            {sessions.active.some(s => ['INTERNAL', 'ADMIN'].includes(s.userType?.toUpperCase())) && (
+                                <div>
+                                    <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Personal Interno</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {sessions.active.filter(s => ['INTERNAL', 'ADMIN'].includes(s.userType?.toUpperCase())).map((s, i) => (
+                                            <div key={`int-${i}`} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center gap-3">
+                                                <div className="w-9 h-9 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-black text-sm">
+                                                    {(s.username || '?')[0].toUpperCase()}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-sm font-bold text-zinc-800 truncate">{s.username}</p>
+                                                    <p className="text-[10px] text-zinc-400">{s.ip} · {s.userType} · {timeAgo(s.loginAt)}</p>
+                                                </div>
+                                                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                            </div>
+                                        ))}
                                     </div>
-                                    <div className="min-w-0 flex-1">
-                                        <p className="text-sm font-bold text-zinc-800 truncate">{s.username}</p>
-                                        <p className="text-[10px] text-zinc-400">{s.ip} · {s.userType} · {timeAgo(s.loginAt)}</p>
-                                    </div>
-                                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                                 </div>
-                            ))}
+                            )}
+
+                            {sessions.active.some(s => !['INTERNAL', 'ADMIN'].includes(s.userType?.toUpperCase())) && (
+                                <div>
+                                    <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Clientes Web</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                        {sessions.active.filter(s => !['INTERNAL', 'ADMIN'].includes(s.userType?.toUpperCase())).map((s, i) => (
+                                            <div key={`cli-${i}`} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center gap-3">
+                                                <div className="w-9 h-9 rounded-full bg-cyan-100 text-cyan-600 flex items-center justify-center font-black text-sm">
+                                                    {(s.username || '?')[0].toUpperCase()}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-sm font-bold text-zinc-800 truncate">{s.username}</p>
+                                                    <p className="text-[10px] text-zinc-400">{s.ip} · {s.userType} · {timeAgo(s.loginAt)}</p>
+                                                </div>
+                                                <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <p className="text-sm text-zinc-400 italic">No hay sesiones activas registradas</p>
