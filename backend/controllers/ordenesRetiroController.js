@@ -47,7 +47,7 @@ const createOrdenRetiro = async (req, res) => {
     const io = req.app.get('socketio');
     if (io) {
       io.emit('actualizado', { type: 'actualizacion' });
-      io.emit('retiros:update', { type: 'nuevo_retiro' }); // Nuevo retiro creado
+      io.emit('retiros:update', { type: 'nuevo_retiro', ordenId: OReIdOrdenRetiro, formaRetiro: 'RL' }); // Nuevo retiro creado
     }
 
     res.status(201).json({

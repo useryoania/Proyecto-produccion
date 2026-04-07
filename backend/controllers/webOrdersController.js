@@ -1671,7 +1671,7 @@ exports.totemCreatePickup = async (req, res) => {
             const io = req.app.get('socketio');
             if (io) {
                 io.emit('actualizado', { type: 'actualizacion' });
-                io.emit('retiros:update', { type: 'nuevo_retiro' });
+                io.emit('retiros:update', { type: 'nuevo_retiro', ordenId: OReIdOrdenRetiro, formaRetiro: 'RT' });
             }
 
             res.json({ success: true, data: { OReIdOrdenRetiro }, ordIdGenerada: ordIdRetiro });
@@ -1909,7 +1909,7 @@ exports.createPickupOrder = async (req, res) => {
             const io = req.app.get('socketio');
             if (io) {
                 io.emit('actualizado', { type: 'actualizacion' });
-                io.emit('retiros:update', { type: 'nuevo_retiro' });
+                io.emit('retiros:update', { type: 'nuevo_retiro', ordenId: OReIdOrdenRetiro, formaRetiro: 'RW' });
             }
 
             res.json({ success: true, data: { OReIdOrdenRetiro }, ordIdGenerada: ordIdRetiro });
@@ -2253,6 +2253,14 @@ exports.handyWebhook = async (req, res) => {
                             // Usar el nuevo retiro en el resto del flujo de pago
                             payloadPago.ordenRetiro = codigoRetiro;
                             orderNumbers = [OReIdOrdenRetiro];
+
+                            // Notificar a PrintStation para que imprima automáticamente
+                            const ioInst = req.app?.get('socketio');
+                            if (ioInst) {
+                                ioInst.emit('actualizado', { type: 'actualizacion' });
+                                ioInst.emit('retiros:update', { type: 'nuevo_retiro', ordenId: OReIdOrdenRetiro, formaRetiro: 'RW' });
+                                logger.info(`[HANDY WEBHOOK] 📡 Socket emitido para retiro diferido RW-${OReIdOrdenRetiro}`);
+                            }
 
                             // Guardar código en HandyTransactions dentro del OrdersJson para que el polling lo encuentre
                             const updatedOrdersJson = JSON.stringify({

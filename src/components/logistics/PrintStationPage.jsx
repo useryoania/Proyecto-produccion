@@ -37,6 +37,21 @@ const PrintStationPage = () => {
     useEffect(() => { try { localStorage.setItem('ps_soundEnabled', String(soundEnabled)); } catch {} }, [soundEnabled]);
     useEffect(() => { try { localStorage.setItem('ps_copies', String(copies)); } catch {} }, [copies]);
 
+    // Cargar historial al montar — filtra por fechaAlta (creación) client-side para que nada desaparezca al cambiar estado
+    useEffect(() => {
+        const hoy = new Date().toISOString().split('T')[0];
+        setLoadingHistorial(true);
+        api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5')
+            .then(res => {
+                const data = (res.data || []).filter(r =>
+                    r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy
+                );
+                setHistorialHoy(data);
+            })
+            .catch(() => {})
+            .finally(() => setLoadingHistorial(false));
+    }, []);
+
     // Síntesis de voz
     const speak = useCallback((retiro) => {
         if (!soundEnabled) return;
@@ -97,6 +112,14 @@ const PrintStationPage = () => {
                 </tr>`).join('')
             : `<tr><td colspan="2" style="padding:8px;font-size:12px;color:#888;text-align:center;border:none;">Sin detalle de órdenes</td></tr>`;
 
+        const isEncomienda = (retiro.lugarRetiro || '').toLowerCase().includes('encomienda')
+            || retiro.formaEnvioId === 2
+            || retiro.LReIdLugarRetiro === 2;
+
+        // Código estético para el ticket: ENC-número en encomiendas
+        const numPart = (retiro.ordenDeRetiro || '').replace(/^[A-Za-z]+-?/, '');
+        const displayCodigo = isEncomienda ? `ENC-${numPart}` : (retiro.ordenDeRetiro || 'N/A');
+
         const copiaHTML = (label, showFirma = false, encomiendaData = null) => `
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid #000;">
             <div style="display:flex;align-items:flex-end;gap:10px;">
@@ -104,7 +127,7 @@ const PrintStationPage = () => {
                 <div style="font-size:10px;font-weight:600;color:#555;letter-spacing:2px;text-transform:uppercase;">Comprobante de Retiro · ${label}</div>
             </div>
             <div style="text-align:right;">
-                <div style="font-size:28px;font-weight:900;letter-spacing:2px;line-height:1;">${retiro.ordenDeRetiro || 'N/A'}</div>
+                <div style="font-size:28px;font-weight:900;letter-spacing:2px;line-height:1;">${displayCodigo}</div>
                 <div style="font-size:10px;color:#555;margin-top:2px;">${fecha}</div>
             </div>
         </div>
@@ -193,7 +216,6 @@ const PrintStationPage = () => {
         </div>` : ''}
         `;
 
-        const isEncomienda = (retiro.lugarRetiro || '').toLowerCase().includes('encomienda');
         const encomiendaData = isEncomienda ? {
             nombre: retiro.receptorNombre || retiro.CliNombre || retiro.CliCodigoCliente || '-',
             telefono: (retiro.CliTelefono || '').trim(),
@@ -289,14 +311,22 @@ const PrintStationPage = () => {
                 const res = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4');
                 const retiros = res.data;
                 if (retiros && retiros.length > 0) {
-                    // Sort newest first, filter only retiros created in the last 3 minutes and not yet printed
-                    const ahora = Date.now();
                     const sorted = retiros.sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta));
-                    const nuevos = sorted.filter(r => {
-                        if (printedIdsRef.current.has(r.ordenDeRetiro)) return false;
-                        const edad = ahora - new Date(r.fechaAlta).getTime();
-                        return edad < 3 * 60 * 1000; // Solo últimos 3 minutos
-                    });
+
+                    let nuevos;
+                    if (data.ordenId && data.formaRetiro) {
+                        // El backend nos dice exactamente qué retiro imprimir
+                        const targetId = `${data.formaRetiro}-${data.ordenId}`;
+                        const target = sorted.find(r => r.ordenDeRetiro === targetId);
+                        if (target && !printedIdsRef.current.has(targetId)) {
+                            nuevos = [target];
+                        } else {
+                            nuevos = [];
+                        }
+                    } else {
+                        // Fallback: imprimir el más nuevo no registrado
+                        nuevos = sorted.filter(r => !printedIdsRef.current.has(r.ordenDeRetiro));
+                    }
 
                     if (nuevos.length === 0) {
                         addLog('Todos los retiros recientes ya fueron impresos — omitidos', 'info', null, 'package');
@@ -321,6 +351,16 @@ const PrintStationPage = () => {
                         printedIdsRef.current = new Set(arr.slice(arr.length - 200));
                     }
                     try { localStorage.setItem('ps_printedIds', JSON.stringify([...printedIdsRef.current])); } catch {}
+
+                    // Refrescar historial en tiempo real (filtrando por fechaAlta = hoy)
+                    try {
+                        const hoy = new Date().toISOString().split('T')[0];
+                        const histRes = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5');
+                        const data = (histRes.data || []).filter(r =>
+                            r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy
+                        );
+                        setHistorialHoy(data);
+                    } catch { /* silencioso */ }
                 } else {
                     addLog('No se encontraron retiros recientes para imprimir', 'error', null, 'warning');
                 }
@@ -529,12 +569,18 @@ const PrintStationPage = () => {
             }}>
                 <button
                     onClick={() => {
-                        setShowHistorial(!showHistorial);
-                        if (!showHistorial && historialHoy.length === 0) {
+                        const opening = !showHistorial;
+                        setShowHistorial(opening);
+                        if (opening && historialHoy.length === 0) {
                             setLoadingHistorial(true);
                             const hoy = new Date().toISOString().split('T')[0];
-                            api.get(`/apiordenesRetiro/estados?estados=1,2,3,4,5&date=${hoy}`)
-                                .then(res => setHistorialHoy(res.data || []))
+                            api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5')
+                                .then(res => {
+                                    const data = (res.data || []).filter(r =>
+                                        r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy
+                                    );
+                                    setHistorialHoy(data);
+                                })
                                 .catch(err => addLog(`Error historial: ${err.message}`, 'error'))
                                 .finally(() => setLoadingHistorial(false));
                         }

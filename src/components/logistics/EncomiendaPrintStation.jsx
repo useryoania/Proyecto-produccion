@@ -37,6 +37,16 @@ const EncomiendaPrintStation = () => {
     useEffect(() => { try { localStorage.setItem('eps_soundEnabled', String(soundEnabled)); } catch {} }, [soundEnabled]);
     useEffect(() => { try { localStorage.setItem('eps_copies', String(copies)); } catch {} }, [copies]);
 
+    // Cargar historial al montar (para que el contador no muestre 0)
+    useEffect(() => {
+        const hoy = new Date().toISOString().split('T')[0];
+        setLoadingHistorial(true);
+        api.get(`/apiordenesRetiro/estados?estados=5&date=${hoy}`)
+            .then(res => setHistorialHoy(res.data || []))
+            .catch(() => {})
+            .finally(() => setLoadingHistorial(false));
+    }, []);
+
     // Sound
     useEffect(() => {
         audioRef.current = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1pq6y0r6KYj5+xtbisl4eEkKW0u7OljYWMnK+4t6yYjI2ZqrW1rZqOjpersbOsnpOPlqexsa6glo+VpbCxr6KYkZWjr7GvoZiSlKOusa+impOUoq+xr6KZk5Sjr7CvopmTlKOvsK+imZOUo6+wr6KZk5Sjr7CvopmTlKOvsK+hmJKToa6vr6GYkpOhr6+voZiSk6GvAA==');
@@ -173,7 +183,9 @@ const EncomiendaPrintStation = () => {
                     const nuevos = sorted.filter(r => {
                         if (printedIdsRef.current.has(r.ordenDeRetiro)) return false;
                         const lugar = (r.lugarRetiro || '').toLowerCase();
-                        return lugar.includes('encomienda');
+                        const esEncomiendaPorNombre = lugar.includes('encomienda');
+                        const esEncomiendaPorId = r.formaEnvioId === 2 || r.LReIdLugarRetiro === 2;
+                        return esEncomiendaPorNombre || esEncomiendaPorId;
                     });
 
                     if (nuevos.length === 0) {
@@ -200,6 +212,13 @@ const EncomiendaPrintStation = () => {
                         printedIdsRef.current = new Set(arr.slice(arr.length - 200));
                     }
                     try { localStorage.setItem('eps_printedIds', JSON.stringify([...printedIdsRef.current])); } catch {}
+
+                    // Refrescar historial en tiempo real (para que el contador y la lista se actualicen sin expandir)
+                    try {
+                        const hoy = new Date().toISOString().split('T')[0];
+                        const histRes = await api.get(`/apiordenesRetiro/estados?estados=5&date=${hoy}`);
+                        setHistorialHoy(histRes.data || []);
+                    } catch { /* silencioso */ }
                 } else {
                     addLog('No se encontraron retiros recientes', 'error', null, 'warning');
                 }
@@ -412,8 +431,9 @@ const EncomiendaPrintStation = () => {
             }}>
                 <button
                     onClick={() => {
-                        setShowHistorial(!showHistorial);
-                        if (!showHistorial && historialHoy.length === 0) {
+                        const opening = !showHistorial;
+                        setShowHistorial(opening);
+                        if (opening && historialHoy.length === 0) {
                             setLoadingHistorial(true);
                             const hoy = new Date().toISOString().split('T')[0];
                             api.get(`/apiordenesRetiro/estados?estados=5&date=${hoy}`)

@@ -1922,12 +1922,14 @@ const WebRetirosPage = () => {
                   >
                     Ver Todo
                   </button>
+                  {/*
                   <button
                     onClick={() => setFilterEstante('FUERA')}
                     className={`px-6 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all border ${filterEstante === 'FUERA' ? 'bg-brand-cyan text-white border-brand-cyan shadow-md shadow-cyan-200' : 'bg-transparent text-slate-500 border-transparent hover:bg-slate-50'}`}
                   >
                     Fuera de Estante
                   </button>
+                  */}
                   {estantesConfigArr.map(est => (
                     <button
                       key={est.id}
@@ -2077,6 +2079,7 @@ const WebRetirosPage = () => {
               )}
 
               {/* RETIROS FUERA DE ESTANTE */}
+              {/*
               {(filterEstante === 'ALL' || filterEstante === 'FUERA') && otrosRetiros.length > 0 && (
                 <div className={filterEstante === 'ALL' ? 'mt-10 pt-8 border-t-2 border-slate-100' : ''}>
                   <div className="flex items-center gap-3 mb-5">
@@ -2150,6 +2153,7 @@ const WebRetirosPage = () => {
                   <p className="font-semibold">No hay retiros fuera de estante.</p>
                 </div>
               )}
+              */}
 
 
             </div>

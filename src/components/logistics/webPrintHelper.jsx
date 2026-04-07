@@ -22,9 +22,10 @@ export const printRetiroStation = (retiro) => {
             let finalCosto = '-';
             if (costo !== undefined && costo !== null && costo !== '' && costo !== '-') {
                 if (typeof costo === 'string' && costo.includes('$')) {
-                    finalCosto = costo;
+                    finalCosto = costo; // ya tiene símbolo
                 } else {
-                    finalCosto = `${o.simbolo || o.currency || '$'} ${Number(costo).toFixed(2)}`;
+                    const simb = o.simbolo || o.currency || '$';
+                    finalCosto = `${simb} ${Number(costo).toFixed(2)}`;
                 }
             }
             return `
@@ -45,7 +46,14 @@ export const printRetiroStation = (retiro) => {
         }
     }
 
-    const isEncomienda = lugarRetiro.toLowerCase().includes('encomienda');
+    const isEncomienda = lugarRetiro.toLowerCase().includes('encomienda')
+        || retiro.formaEnvioId === 2
+        || retiro.LReIdLugarRetiro === 2;
+    // Código estético: ENC-número para encomiendas
+    const _rawCodigo = retiro.displayLabel || retiro.ordenDeRetiro || 'N/A';
+    const _numPart = _rawCodigo.replace(/^[A-Za-z]+-?/, '');
+    const displayCodigo = isEncomienda ? `ENC-${_numPart}` : _rawCodigo;
+
     const copiaHTML = (label, showFirma = false, encomiendaData = null) => `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid #000;">
         <div style="display:flex;align-items:flex-end;gap:10px;">
@@ -53,7 +61,7 @@ export const printRetiroStation = (retiro) => {
             <div style="font-size:10px;font-weight:600;color:#555;letter-spacing:2px;text-transform:uppercase;">Comprobante de Retiro · ${label}</div>
         </div>
         <div style="text-align:right;">
-            <div style="font-size:28px;font-weight:900;letter-spacing:2px;line-height:1;">${retiro.displayLabel || retiro.ordenDeRetiro || 'N/A'}</div>
+            <div style="font-size:28px;font-weight:900;letter-spacing:2px;line-height:1;">${displayCodigo}</div>
             <div style="font-size:10px;color:#555;margin-top:2px;">${fecha}</div>
         </div>
     </div>
@@ -89,7 +97,7 @@ export const printRetiroStation = (retiro) => {
 
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#e8e8e8;color:#000;border:2px solid #000;margin-bottom:10px;">
         <span style="font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Total</span>
-        <span style="font-size:18px;font-weight:900;">${simbolo} ${retiro.totalCost && retiro.totalCost !== '-' ? retiro.totalCost : '0.00'}</span>
+        <span style="font-size:18px;font-weight:900;">${(() => { const t = retiro.totalCost && retiro.totalCost !== '-' ? String(retiro.totalCost) : '0.00'; return t.includes('$') ? t : `${simbolo} ${t}`; })()}</span>
     </div>
 
     ${showFirma ? `
