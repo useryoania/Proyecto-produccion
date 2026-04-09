@@ -1,4 +1,4 @@
-const { sql } = require('../config/db');
+const { sql, getPool } = require('../config/db');
 
 exports.getClientes = async (req, res) => {
     // Basic API Key validation
@@ -11,7 +11,7 @@ exports.getClientes = async (req, res) => {
     }
 
     try {
-        const pool = await sql.connect();
+        const pool = await getPool();
         const query = `
             SELECT 
                 c.CliIdCliente as id,
@@ -65,7 +65,7 @@ exports.updateVendedor = async (req, res) => {
     }
 
     try {
-        const pool = await sql.connect();
+        const pool = await getPool();
         const result = await pool.request()
             .input('VendedorID', sql.Int, VendedorID)
             .input('CliIdCliente', sql.Int, id)
@@ -96,7 +96,7 @@ exports.getVendedores = async (req, res) => {
     }
 
     try {
-        const pool = await sql.connect();
+        const pool = await getPool();
         const query = `
             SELECT 
                 Cedula as id,

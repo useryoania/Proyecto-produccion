@@ -78,8 +78,8 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
         const fechaStr = paidAt ? new Date(paidAt).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : new Date().toLocaleDateString('es-UY');
         drawRight(fechaStr, width - 50, y, 9, font, rgb(0.47, 0.47, 0.47));
 
-        // Código de retiro y cliente: siempre con prefijo PW-
-        const rawId = String(ordenRetiro || '').replace(/^R-/i, '').replace(/^PW-/i, '').replace(/^RW-/i, '');
+        // Código de retiro y cliente: limpiamos prefijos como R-, RT-, RW-, PW-, etc.
+        const rawId = String(ordenRetiro || '').replace(/^[A-Za-z]+-0*/i, '');
         const retiroCode = rawId ? `RW-${rawId}` : '-';
         drawLeft('CÓDIGO DE RETIRO', 50, y, 9, fontBold);
         y -= 16;
@@ -155,12 +155,13 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
         // Footer
         drawCentered('ESTE COMPROBANTE FUE GENERADO AUTOMATICAMENTE.', 40, 8, font);
 
-        // Guardar en disco (usa COMPROBANTES_PATH del .env o la carpeta local por defecto)
-        const baseDir = process.env.COMPROBANTES_PATH || path.join(__dirname, '..', 'comprobantes');
-        const dir = path.join(baseDir, 'handy');
+        // Guardar en disco (redirigido a comprobantesPagos para unificar localizaciones)
+        const baseDir = process.env.COMPROBANTES_PAGOS_PATH || path.join(__dirname, '..', 'comprobantesPagos');
+        const dir = baseDir; // Sin subcarpeta handy, para que concuerde con el frontend
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-        const fileName = `Comprobante-${retiroCode}.pdf`;
+        const safeCode = (retiroCode && retiroCode !== '-') ? retiroCode : (transactionId || 'suelto-' + Date.now());
+        const fileName = `Comprobante-${safeCode}.pdf`;
         const filePath = path.join(dir, fileName);
         const pdfBytes = await doc.save();
         fs.writeFileSync(filePath, pdfBytes);
@@ -2347,6 +2348,16 @@ exports.handyWebhook = async (req, res) => {
                             paymentMethod: issuerName,
                             paidAt: new Date(),
                             codCliente: tx.CodCliente
+                        }).then(async (filePath) => {
+                            if (filePath) {
+                                // Vincular la ruta en Pagos usando solo el nombre del archivo para que el frontend lo levante
+                                const fileNameToSave = path.basename(filePath);
+                                await pool.request()
+                                    .input('PagoId', sql.Int, pagoId)
+                                    .input('Ruta', sql.VarChar, fileNameToSave)
+                                    .query(`UPDATE Pagos SET PagRutaComprobante = @Ruta WHERE PagIdPago = @PagoId`);
+                                logger.info(`[HANDY WEBHOOK] Comprobante guardado en BD: ${fileNameToSave}`);
+                            }
                         }).catch(e => logger.error('[HANDY WEBHOOK] Error guardando comprobante:', e.message));
                     } else {
                         logger.warn('[HANDY WEBHOOK] No se pudo parsear ordenRetiroId:', payloadPago.ordenRetiro);

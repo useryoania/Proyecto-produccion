@@ -21,7 +21,7 @@ const createOrdenRetiro = async (req, res) => {
       orderReq.input(`code${i}`, sql.VarChar, order.orderNumber);
     });
     const orderIdResults = await orderReq.query(`
-      SELECT OrdIdOrden FROM OrdenesDeposito WITH(NOLOCK) 
+      SELECT OrdIdOrden, MonIdMoneda FROM OrdenesDeposito WITH(NOLOCK) 
       WHERE OrdCodigoOrden IN (${orders.map((_, i) => `@code${i}`).join(',')})
     `);
 
@@ -31,6 +31,12 @@ const createOrdenRetiro = async (req, res) => {
 
     const ordIds = orderIdResults.recordset.map(r => r.OrdIdOrden);
 
+    // Determinar la moneda: si alguna sub-orden está en dólares (2), todo el retiro queda dolarizado ('USD'), si no en pesos ('UYU').
+    let monedaFuerte = 'UYU'; // Default
+    if (orderIdResults.recordset.some(r => parseInt(r.MonIdMoneda, 10) === 2)) {
+      monedaFuerte = 'USD';
+    }
+
     // Crear retiro usando servicio unificado (el service determina el estado por tipo de cliente)
     transaction = await pool.transaction();
     await transaction.begin();
@@ -39,6 +45,7 @@ const createOrdenRetiro = async (req, res) => {
       ordIds, totalCost, lugarRetiro,
       usuarioAlta: UsuarioAlta,
       formaRetiro: 'RL',
+      moneda: monedaFuerte,
       direccion, departamento, localidad, agenciaId
     });
 

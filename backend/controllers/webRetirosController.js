@@ -20,7 +20,7 @@ exports.crearRetiro = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const OReId = parseInt(OrdIdRetiro.replace(/^R-0*/, ''), 10);
+        const OReId = parseInt(String(OrdIdRetiro).replace(/^[A-Za-z]+-0*/, ''), 10);
 
         // Actualizar la orden de retiro existente con datos de pago
         await pool.request()
@@ -60,7 +60,7 @@ exports.reportarPagoRetiro = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const ordenRetiroId = parseInt(ordenRetiro.replace(/^R-0*/, ''), 10);
+        const ordenRetiroId = parseInt(String(ordenRetiro).replace(/^[A-Za-z]+-0*/, ''), 10);
         if (isNaN(ordenRetiroId)) return res.status(400).json({ error: "ordenRetiro inválido" });
 
         logger.info(`[REPORTAR PAGO] Procesando pago directo para ${ordenRetiro} (ID: ${ordenRetiroId})`);
@@ -121,7 +121,7 @@ exports.getAllLocalRetiros = async (req, res) => {
                 r.ReferenciaPagoOnline AS ReferenciaPago,
                 r.OReEstadoActual AS Estado,
                 r.CodCliente,
-                r.OReFechaAlta AS Fecha,
+                r.OReFechaAlta AS fechaAlta,
                 r.FormaRetiro,
                 c.Nombre AS NombreCliente,
                 fe.Nombre AS LugarRetiro,
@@ -321,7 +321,7 @@ exports.createHandyPaymentLinkForRetiro = async (req, res) => {
         // Actualizar la ReferenciaPagoOnline en OrdenesRetiro
         try {
             const pool = await getPool();
-            const OReId = parseInt(String(ordenRetiro).replace(/^R-0*/, ''), 10);
+            const OReId = parseInt(String(ordenRetiro).replace(/^[A-Za-z]+-0*/, ''), 10);
             await pool.request()
                 .input('OReId', sql.Int, OReId)
                 .input('Ref', sql.VarChar(200), result.transactionId)
@@ -743,7 +743,7 @@ exports.marcarRetiroEntregado = async (req, res) => {
             const UsuarioAlta = req.user?.id || 70;
 
             for (const ord of ordenesDeRetiro) {
-                const OReId = parseInt(ord.replace(/^R-0*/, ''), 10);
+                const OReId = parseInt(String(ord).replace(/^[A-Za-z]+-0*/, ''), 10);
                 if (isNaN(OReId)) continue;
                 logger.info(`[ENTREGADO MULTIPLE] ${ord} -> ${OReId}`);
                 await marcarEntregado(transaction, OReId, new Date(fechaEntrega), UsuarioAlta);

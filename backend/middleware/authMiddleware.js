@@ -25,7 +25,7 @@ exports.verifyToken = (req, res, next) => {
             if (err) {
                 return res.status(401).json({ message: 'Token inválido o expirado.' });
             }
-            
+
             // Guardamos datos decodificados en req.user
             req.user = decoded;
 

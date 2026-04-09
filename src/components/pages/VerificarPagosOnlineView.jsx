@@ -370,7 +370,7 @@ const TablaPagosOnline = ({ endpoint, fallidos = false }) => {
                                         {retiro && (
                                             <p className="mb-2">
                                                 <span className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-full text-sm font-bold">
-                                                    Retiro: R-{String(retiro).replace('R-', '')}
+                                                    Retiro: {/^[A-Za-z]/.test(String(retiro)) ? String(retiro) : 'R-' + String(retiro)}
                                                 </span>
                                             </p>
                                         )}
