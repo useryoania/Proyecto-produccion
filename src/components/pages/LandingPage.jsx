@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Logo } from '../Logo';
+import logoWhite from '../../assets/images/logo-white.png';
+import { LoginFormBox } from './LoginPage';
+import LandingNavbar from '../shared/LandingNavbar';
+import { motion, AnimatePresence } from 'framer-motion';
 import Footer from '../Footer';
 import { useViewport } from '../../hooks/useViewport';
 import heroImg from '../../assets/images/hero_printing.png';
@@ -45,35 +49,6 @@ const SERVICES = [
   },
 ];
 
-const NAV_LINKS = ['Servicios', 'Quienes Somos'];
-
-function NavBtn({ onClick, children }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        position: 'relative', padding: '8px 4px',
-        border: 'none', background: 'transparent', color: '#fff',
-        fontSize: 13, fontWeight: 700, letterSpacing: '0.08em',
-        textTransform: 'uppercase', cursor: 'pointer',
-        transition: 'color 0.2s',
-      }}
-    >
-      {children}
-      <span style={{
-        position: 'absolute', bottom: 0, left: 0,
-        height: '4px', borderRadius: '2px',
-        background: 'linear-gradient(to right, #00AEEF 0% 20%, transparent 20% 27%, #EC008C 27% 47%, transparent 47% 53%, #FFF200 53% 73%, transparent 73% 80%, #fff 80% 100%)',
-        width: hovered ? '100%' : '0%',
-        transition: 'width 0.3s ease',
-      }} />
-    </button>
-  );
-}
-
 export default function LandingPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -81,6 +56,8 @@ export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [heroLoaded, setHeroLoaded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sessionDropdown, setSessionDropdown] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -102,14 +79,17 @@ export default function LandingPage() {
         const payload = JSON.parse(atob(authToken.split('.')[1]));
         if (payload.exp * 1000 > Date.now()) sessionType = 'client';
       }
-    } catch {}
+    } catch { }
   }
 
-  const sessionLabel = sessionType === 'production' ? 'Producción' : sessionType === 'client' ? 'Mi Portal' : 'Ingresar';
+  const sessionLabel = sessionType === 'production' ? 'Producción' : sessionType === 'client' ? 'Mi Portal' : 'Iniciar sesión';
   const handleSessionBtn = () => {
     if (sessionType === 'production') navigate('/retiros');
     else if (sessionType === 'client') navigate('/portal');
-    else navigate('/login');
+    else {
+      if (isMobile) navigate('/login');
+      else setShowLoginModal(true);
+    }
   };
 
   // El index.css global tiene body { overflow: hidden } para el app interno.
@@ -131,89 +111,7 @@ export default function LandingPage() {
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" />
 
       {/* ══════════ NAVBAR ══════════ */}
-      <nav style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: isMobile ? '0 20px' : '0 48px',
-        height: '70px',
-        background: (scrolled || menuOpen) ? 'rgba(13,13,13,0.97)' : 'transparent',
-        backdropFilter: (scrolled || menuOpen) ? 'blur(12px)' : 'none',
-        borderBottom: scrolled ? '1px solid rgba(255,255,255,0.07)' : 'none',
-        transition: 'all 0.3s ease',
-      }}>
-        <div onClick={() => navigate('/')} style={{ cursor: 'pointer', lineHeight: 0, position: 'relative', top: '15px' }}>
-          <Logo style={{ height: isMobile ? 48 : 64, color: 'white', display: 'block' }} />
-        </div>
-
-        {/* Desktop nav */}
-        {!isMobile && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 40 }}>
-            {NAV_LINKS.map(link => (
-              <NavBtn key={link}>{link}</NavBtn>
-            ))}
-            <NavBtn onClick={handleSessionBtn}>{sessionLabel}</NavBtn>
-            <NavBtn>Contacto</NavBtn>
-          </div>
-        )}
-
-        {/* Mobile hamburger */}
-        {isMobile && (
-          <button onClick={() => setMenuOpen(o => !o)} style={{
-            background: 'transparent', border: 'none', cursor: 'pointer',
-            padding: 8, display: 'flex', flexDirection: 'column', gap: 5,
-          }}>
-            {[0,1,2].map(i => (
-              <span key={i} style={{
-                display: 'block', width: 24, height: 2, background: '#fff',
-                borderRadius: 2, transition: 'all 0.3s',
-                transform: menuOpen
-                  ? i === 0 ? 'rotate(45deg) translate(5px,5px)'
-                  : i === 2 ? 'rotate(-45deg) translate(5px,-5px)'
-                  : 'scaleX(0)'
-                  : 'none',
-              }} />
-            ))}
-          </button>
-        )}
-      </nav>
-
-      {/* Mobile drawer */}
-      {isMobile && (
-        <div style={{
-          position: 'fixed', top: 70, left: 0, right: 0, zIndex: 99,
-          overflow: 'hidden',
-          maxHeight: menuOpen ? 400 : 0,
-          transition: 'max-height 0.35s cubic-bezier(.4,0,.2,1)',
-        }}>
-          <div style={{
-            background: 'rgba(13,13,13,0.97)', backdropFilter: 'blur(12px)',
-            padding: '24px 24px 32px',
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
-            display: 'flex', flexDirection: 'column', gap: 20,
-            opacity: menuOpen ? 1 : 0,
-            transform: menuOpen ? 'translateY(0)' : 'translateY(-12px)',
-            transition: 'opacity 0.3s ease, transform 0.3s ease',
-          }}>
-            {NAV_LINKS.map(link => (
-              <a key={link} href="#" onClick={() => setMenuOpen(false)} style={{
-                color: '#fff', textDecoration: 'none', fontSize: 18,
-                fontWeight: 700, letterSpacing: '0.04em',
-              }}>{link}</a>
-            ))}
-            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-              <button onClick={handleSessionBtn} style={{
-                flex: 1, padding: '12px', border: 'none',
-                borderRadius: 999, background: sessionType ? 'rgba(255,255,255,0.08)' : 'transparent', color: '#fff',
-                fontSize: 14, fontWeight: 700, cursor: 'pointer',
-              }}>{sessionLabel}</button>
-              <button style={{
-                flex: 1, padding: '12px', border: 'none', borderRadius: 999,
-                background: '#f4f4f5', color: '#111', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-              }}>Contacto</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <LandingNavbar onOpenLoginModal={() => setShowLoginModal(true)} />
 
       {/* ══════════ HERO ══════════ */}
       <section style={{
@@ -313,7 +211,7 @@ export default function LandingPage() {
 
           {/* Scroll indicator dots */}
           <div style={{ display: 'flex', gap: 8, marginTop: 56 }}>
-            {[0,1,2,3,4].map(i => (
+            {[0, 1, 2, 3, 4].map(i => (
               <div key={i} style={{
                 width: i === 0 ? 24 : 8, height: 8,
                 borderRadius: 999,
@@ -339,6 +237,62 @@ export default function LandingPage() {
       </section>
 
       <Footer />
+
+      {/* Login Modal Overlay para Desktop (Framer Motion) */}
+      <AnimatePresence>
+        {showLoginModal && !isMobile && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ fontFamily: "'Inter', sans-serif" }}>
+            {/* Backdrop con Framer Motion puro (sin blur para evitar matar los FPS) */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 bg-[#000000e6]"
+              style={{ willChange: 'opacity' }}
+              onClick={() => setShowLoginModal(false)}
+            />
+
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ 
+                type: "spring", 
+                stiffness: 400, 
+                damping: 30, 
+                mass: 0.8 
+              }}
+              style={{ willChange: 'transform, opacity' }}
+              className="relative w-full max-w-sm rounded-3xl z-10 p-[2px] bg-gradient-to-br from-[#00AEEF] via-[#EC008C] to-[#FFF200] shadow-2xl shadow-black/50"
+            >
+
+              {/* Close button */}
+              <button
+                onClick={() => setShowLoginModal(false)}
+                className="absolute top-4 right-4 z-50 text-zinc-500 hover:text-white transition-colors cursor-pointer bg-transparent border-none p-2"
+                aria-label="Cerrar modal"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+
+              {/* Inyectamos el form puramente dentro de un contenedor oscuro */}
+              <div className="bg-custom-dark rounded-[22px] overflow-hidden">
+                <LoginFormBox
+                  onRequireReset={(result) => {
+                    window.location.href = '/login?reset=true';
+                  }}
+                  onLoginSuccess={(result) => {
+                    setShowLoginModal(false);
+                    if (result.userType === 'CLIENT') navigate('/portal/pickup');
+                    else navigate('/');
+                  }}
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

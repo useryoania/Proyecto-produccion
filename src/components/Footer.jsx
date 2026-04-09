@@ -56,8 +56,17 @@ const sLink = {
 
 export default function Footer() {
   const { isMobile, isTablet } = useViewport();
+  
+  const isAuthPage = typeof window !== 'undefined' && 
+    (window.location.pathname === '/login' || window.location.pathname === '/register');
+
   return (
-    <footer style={{ background: '#111', borderTop: '1px solid rgba(255,255,255,0.07)', fontFamily: "'Inter', sans-serif" }}>
+    <footer style={{ 
+      background: isAuthPage ? 'rgba(17, 17, 17, 0.25)' : '#111', 
+      borderTop: '1px solid rgba(255,255,255,0.07)', 
+      fontFamily: "'Inter', sans-serif",
+      backdropFilter: isAuthPage ? 'blur(8px)' : 'none'
+    }}>
 
       {/* ── MAIN FOOTER ── */}
       <div style={{

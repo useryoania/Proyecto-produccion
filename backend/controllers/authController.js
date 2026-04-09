@@ -265,7 +265,9 @@ exports.googleLogin = async (req, res) => {
 
         res.status(401).json({
             success: false,
-            message: `No se encontró un cliente registrado con el email ${googleEmail}`
+            notFound: true,
+            email: googleEmail,
+            message: `No se encontró un cliente registrado con el email ${googleEmail}. Redirigiendo a registro...`
         });
 
     } catch (err) {

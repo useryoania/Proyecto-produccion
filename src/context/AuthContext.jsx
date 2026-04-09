@@ -165,7 +165,10 @@ export function AuthProvider({ children }) {
                 setUser(userData);
                 return userData;
             } else {
-                throw new Error(data.message || 'No se pudo iniciar sesión con Google');
+                const err = new Error(data.message || 'No se pudo iniciar sesión con Google');
+                err.notFound = data.notFound;
+                err.email = data.email;
+                throw err;
             }
         } catch (error) {
             console.error("🔥 [GoogleLoginError]:", error);

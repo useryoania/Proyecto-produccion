@@ -1,0 +1,17 @@
+const express = require('express');
+const router = express.Router();
+const externalController = require('../controllers/externalController');
+
+// Endpoint para extraer la lista de Vendedores (Trabajadores)
+// GET /api/external/vendedores
+router.get('/vendedores', externalController.getVendedores);
+
+// Endpoint para extraer la lista de clientes desde otro sistema
+// GET /api/external/clientes
+router.get('/clientes', externalController.getClientes);
+
+// Endpoint para actualizar el Vendedor de un cliente
+// PATCH /api/external/clientes/:id/vendedor
+router.patch('/clientes/:id/vendedor', externalController.updateVendedor);
+
+module.exports = router;

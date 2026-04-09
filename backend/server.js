@@ -135,6 +135,7 @@ try {
 
 try {
     app.use('/api/integration-logs', require('./routes/integrationLogsRoutes'));
+    app.use('/api/external', require('./routes/externalRoutes'));
 } catch (e) { logger.error("❌ Error loading log routes:", e); }
 
 try {
@@ -302,7 +303,7 @@ if (process.env.NODE_ENV !== 'test') {
                 logger.error("❌ [CRON] Error cargando WspAvisos:", e.message);
             }
 
-               // ACTIVAR CRON ESTADOS DE CUENTA (Módulo Contabilidad)
+            // ACTIVAR CRON ESTADOS DE CUENTA (Módulo Contabilidad)
             try {
                 const { startEstadosCuentaJob } = require('./jobs/estadosCuenta.job');
                 startEstadosCuentaJob();

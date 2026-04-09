@@ -1,16 +1,16 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '../ui/Button.jsx';
 import { User, Lock, Mail, Eye, EyeOff, UserCheck, ChevronDown, AlertCircle, CheckCircle2 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { API_URL } from '../../services/apiClient';
 import { ClientFormFields, Field, useNomenclators, inputClass, iconClass } from '../shared/ClientFormFields';
-import { Logo } from '../Logo.jsx'
 import ParticlesCanvas from '../ui/ParticlesCanvas';
-
+import LandingNavbar from '../shared/LandingNavbar.jsx';
 const RegisterPage = () => {
+    const location = useLocation();
     const [form, setForm] = useState({
-        idCliente: '', email: '', password: '', confirmPassword: '',
+        idCliente: '', email: location.state?.prefilledEmail || '', password: '', confirmPassword: '',
         nombre: '', apellido: '', telefono: '',
         razonSocial: '', rut: '',
         direccion: '', departamentoId: '', localidadId: '', agenciaId: ''
@@ -79,7 +79,7 @@ const RegisterPage = () => {
 
     const validateField = (key, value) => {
         const v = typeof value === 'string' ? value.trim() : String(value || '');
-        const required = ['idCliente', 'email', 'password', 'confirmPassword', 'nombre', 'apellido', 'telefono', 'direccion', 'departamentoId', 'localidadId'];
+        const required = ['idCliente', 'email', 'password', 'confirmPassword', 'nombre', 'apellido', 'telefono', 'rut', 'direccion', 'departamentoId', 'localidadId'];
 
         if (key === 'agenciaId' && !isMontevideo && !v) {
             return 'Seleccioná una agencia';
@@ -191,238 +191,234 @@ const RegisterPage = () => {
     }, []);
 
     return (
-        <div className="min-h-screen bg-custom-dark relative font-sans py-10 px-4 overflow-hidden">
+        <div className="flex flex-col min-h-screen bg-custom-dark relative overflow-x-hidden font-sans pt-[70px]">
+            {/* <LandingNavbar /> */}
 
-            {/* Particles canvas */}
+            {/* Particles canvas (Reactivado a pedido del usuario) */}
             <ParticlesCanvas />
 
-            {/* Animated border keyframes */}
-            <style>{`
-                @keyframes rotateBorder {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-            `}</style>
-
-            {/* Card wrapper with animated CMY border */}
-            <div className="relative w-full max-w-lg rounded-3xl z-10 mx-auto">
-                {/* Animated gradient border - only on md+ */}
-                <div className="hidden md:block absolute -inset-[2px] rounded-3xl overflow-hidden">
-                    <div
-                        className="absolute inset-[-150%] w-[400%] h-[400%]"
-                        style={{
-                            background: 'conic-gradient(#00AEEF, #EC008C, #FFF200, #FFFFFF, #00AEEF)',
-                            animation: 'rotateBorder 3s linear infinite',
-                        }}
-                    />
-                </div>
-
-                <div className="relative bg-custom-dark pt-4 px-5 pb-10 md:px-8 md:pb-8 rounded-3xl w-full overflow-hidden">
-                    <div className="flex flex-col items-center mb-6 md:mt-4 md:mb-6">
-                        <Logo className="h-32 w-auto text-white" />
-                    </div>
-
-                    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-                        {/* ID de Cliente */}
-                        <Field label="ID de Cliente" icon={User} required error={fieldErrors.idCliente}>
-                            <input type="text" className={`${inputClass} ${fieldErrors.idCliente ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder="Ej: Tu ID" value={form.idCliente} onChange={set('idCliente')} onBlur={handleBlur('idCliente')} />
-                        </Field>
-
-                        {/* Email */}
-                        <Field label="Email" icon={Mail} required error={fieldErrors.email}>
-                            <input type="email" className={`${inputClass} ${fieldErrors.email ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder="tu@email.com" value={form.email} onChange={set('email')} onBlur={handleBlur('email')} />
-                        </Field>
-
-                        {/* Contraseña | Confirmar Contraseña */}
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1">
-                                <label className="text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1">Contraseña <span className="text-custom-magenta">*</span></label>
-                                <div className="relative group">
-                                    <div className={iconClass}><Lock size={18} /></div>
-                                    <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.password ? 'border-custom-magenta focus:ring-custom-magenta focus:border-custom-magenta' : ''}`} placeholder="********" value={form.password} onChange={set('password')} onBlur={handleBlur('password')} />
-                                </div>
-                                {fieldErrors.password && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.password}</p>}
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1">Confirmar <span className="text-custom-magenta">*</span></label>
-                                <div className="relative group">
-                                    <div className={iconClass}><Lock size={18} /></div>
-                                    <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.confirmPassword ? 'border-custom-magenta focus:ring-custom-magenta focus:border-custom-magenta' : ''}`} placeholder="********" value={form.confirmPassword} onChange={set('confirmPassword')} onBlur={handleBlur('confirmPassword')} />
-                                    <button type="button" className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-cyan hover:text-custom-cyan cursor-pointer" onClick={() => setShowPassword(!showPassword)}>
-                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                                    </button>
-                                </div>
-                                {fieldErrors.confirmPassword && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.confirmPassword}</p>}
-                            </div>
+            <div className="flex-1 flex items-center justify-center p-4 min-h-[calc(100vh-70px-100px)] z-10 w-full mb-10">
+                {/* Card wrapper with static CMY border instead of animated gradient to save GPU */}
+                <div className="relative w-full md:max-w-4xl rounded-3xl z-10 mx-auto p-[2px] bg-gradient-to-br from-[#00AEEF] via-[#EC008C] to-[#FFF200]">
+                    {/* Contenedor interior oscuro para simular el borde */}
+                    <div className="relative bg-custom-dark p-6 md:px-8 md:py-8 rounded-[22px] w-full overflow-hidden">
+                        <div className="mb-6 text-center">
+                            <h2 className="text-2xl font-black text-white tracking-tight">Crear cuenta</h2>
+                            <p className="text-sm font-medium text-zinc-400 mt-1">Industrializá tu producción hoy mismo.</p>
                         </div>
 
-                        {/* Shared client fields */}
-                        <ClientFormFields
-                            form={form}
-                            set={set}
-                            fieldErrors={fieldErrors}
-                            handleBlur={handleBlur}
-                            departments={departments}
-                            localities={localities}
-                            agencies={agencies}
-                            isMontevideo={isMontevideo}
-                        />
+                        <form onSubmit={handleSubmit} className="flex flex-col gap-4 md:gap-4">
+                            {/* Se usa el grid directo para que distribuya los campos en zig-zag */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                                
+                                {/* ID de Cliente */}
+                                <Field label="ID de Cliente" icon={User} required error={fieldErrors.idCliente}>
+                                    <input type="text" className={`${inputClass} ${fieldErrors.idCliente ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder="Ej: Tu ID" value={form.idCliente} onChange={set('idCliente')} onBlur={handleBlur('idCliente')} />
+                                </Field>
 
-                        {/* Vendedor checkbox + SweetAlert picker */}
-                        <div className={`bg-brand-dark border border-brand-cyan rounded-2xl p-4 space-y-3 ${!form.departamentoId || !form.localidadId ? 'opacity-50' : ''}`}>
-                            <label className={`flex items-center gap-3 select-none ${!form.departamentoId || !form.localidadId ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
-                                onClick={async () => {
-                                    if (!form.departamentoId || !form.localidadId) return;
-                                    if (!hadVendedor) {
-                                        if (vendedores.length === 0) {
-                                            Swal.fire({ title: 'Sin asesores', text: 'No hay asesores disponibles para este departamento.', icon: 'info', background: '#212121', color: '#f4f4f5' });
-                                            return;
-                                        }
-                                        // Build HTML grid with photos
-                                        const isMobile = window.innerWidth < 768;
-                                        const grid = vendedores.map(v => {
-                                            const imgUrl = `/assets/images/asesores/${v.Cedula}.svg`;
-                                            const firstName = v.Nombre.split(' ')[0];
-                                            if (isMobile) {
-                                                return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 14px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;">
-                                                    <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:72px;height:72px;border-radius:50%;object-fit:cover" /><div style="width:72px;height:72px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:24px">${firstName.charAt(0)}</div>
-                                                    <span style="font-weight:600;color:#f4f4f5;font-size:14px;text-transform:uppercase;letter-spacing:0.05em;text-align:center">${firstName}</span>
-                                                </div>`;
-                                            } else {
-                                                return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px 16px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;flex:1;min-width:140px;max-width:180px;">
-                                                    <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:96px;height:96px;border-radius:50%;object-fit:cover" /><div style="width:96px;height:96px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:30px">${firstName.charAt(0)}</div>
-                                                    <span style="font-weight:600;color:#f4f4f5;font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:0.05em">${firstName}</span>
-                                                </div>`;
-                                            }
-                                        });
-                                        const separator = isMobile ? '<hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);width:60%;margin:0 auto" />' : '';
-                                        const gridHtml = grid.join(separator);
+                                {/* Email */}
+                                <Field label="Email" icon={Mail} required error={fieldErrors.email}>
+                                    <input type="email" className={`${inputClass} ${fieldErrors.email ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder="tu@email.com" value={form.email} onChange={set('email')} onBlur={handleBlur('email')} />
+                                </Field>
 
-                                        const selected = await new Promise((resolve) => {
-                                            Swal.fire({
-                                                title: 'SELECCIONÁ TU ASESOR',
-                                                html: `<div style="display:flex;${isMobile ? 'flex-direction:column;align-items:center;' : 'flex-wrap:wrap;justify-content:center;'}gap:12px;padding:8px">${gridHtml}</div>`,
-                                                showConfirmButton: false,
-                                                showCancelButton: false,
-                                                showCloseButton: isMobile,
-                                                background: '#19181B',
-                                                color: '#f4f4f5',
-                                                width: isMobile ? '100vw' : 'auto',
-                                                padding: isMobile ? '1rem 0' : undefined,
-                                                customClass: { popup: isMobile ? 'swal-mobile-full' : '' },
-                                                didOpen: () => {
-                                                    if (isMobile) {
-                                                        const popup = Swal.getPopup();
-                                                        popup.style.borderRadius = '0';
-                                                        popup.style.margin = '0';
-                                                        popup.style.position = 'fixed';
-                                                        popup.style.top = '0';
-                                                        popup.style.left = '0';
-                                                        popup.style.width = '100vw';
-                                                        popup.style.height = '100vh';
-                                                        popup.style.display = 'flex';
-                                                        popup.style.flexDirection = 'column';
-                                                        const htmlContainer = popup.querySelector('.swal2-html-container');
-                                                        if (htmlContainer) {
-                                                            htmlContainer.style.flex = '1';
-                                                            htmlContainer.style.display = 'flex';
-                                                            htmlContainer.style.alignItems = 'center';
-                                                            htmlContainer.style.justifyContent = 'center';
-                                                        }
-                                                        const closeBtn = popup.querySelector('.swal2-close');
-                                                        if (closeBtn) {
-                                                            closeBtn.style.position = 'absolute';
-                                                            closeBtn.style.top = '10px';
-                                                            closeBtn.style.right = '20px';
-                                                            closeBtn.style.top = 'auto';
-                                                            closeBtn.style.fontSize = '36px';
-                                                            closeBtn.style.color = '#ec008c';
-                                                        }
-                                                        const title = popup.querySelector('.swal2-title');
-                                                        if (title) {
-                                                            title.style.fontSize = '24px';
-                                                        }
-                                                    }
-                                                    const items = Swal.getPopup().querySelectorAll('.swal-asesor');
-                                                    items.forEach(el => {
-                                                        el.addEventListener('mouseenter', () => { el.style.background = '#2a2a2a'; });
-                                                        el.addEventListener('mouseleave', () => { el.style.background = 'transparent'; });
-                                                        el.addEventListener('click', () => {
-                                                            resolve({ id: el.dataset.id, nombre: el.dataset.nombre });
-                                                            Swal.close();
-                                                        });
-                                                    });
-                                                },
-                                            }).then((result) => {
-                                                if (result.dismiss) resolve(null);
-                                            });
-                                        });
-
-                                        if (selected) {
-                                            setHadVendedor(true);
-                                            setSelectedVendedorId(selected.id);
-                                            setSelectedVendedorName(selected.nombre);
-                                        }
-                                    } else {
-                                        setHadVendedor(false);
-                                        setSelectedVendedorId('');
-                                        setSelectedVendedorName('');
-                                    }
-                                }}
-                            >
-                                <div className="flex items-center justify-center text-custom-cyan">
-                                    {hadVendedor ? (
-                                        <CheckCircle2 size={22} />
-                                    ) : (
-                                        <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
-                                    )}
+                                {/* Contraseña | Confirmar Contraseña */}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1">Contraseña <span className="text-custom-magenta">*</span></label>
+                                        <div className="relative group">
+                                            <div className={iconClass}><Lock size={18} /></div>
+                                            <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.password ? 'border-custom-magenta focus:ring-custom-magenta focus:border-custom-magenta' : ''}`} placeholder="********" value={form.password} onChange={set('password')} onBlur={handleBlur('password')} />
+                                        </div>
+                                        {fieldErrors.password && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.password}</p>}
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1">Confirmar <span className="text-custom-magenta">*</span></label>
+                                        <div className="relative group">
+                                            <div className={iconClass}><Lock size={18} /></div>
+                                            <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.confirmPassword ? 'border-custom-magenta focus:ring-custom-magenta focus:border-custom-magenta' : ''}`} placeholder="********" value={form.confirmPassword} onChange={set('confirmPassword')} onBlur={handleBlur('confirmPassword')} />
+                                            <button type="button" className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-cyan hover:text-custom-cyan cursor-pointer" onClick={() => setShowPassword(!showPassword)}>
+                                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                            </button>
+                                        </div>
+                                        {fieldErrors.confirmPassword && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.confirmPassword}</p>}
+                                    </div>
                                 </div>
-                                <span className="text-sm font-semibold text-zinc-300">¿Fuiste atendido por algún asesor?</span>
-                            </label>
 
-                            {hadVendedor && selectedVendedorName && (
-                                <div className="flex items-center gap-3 mt-2 p-3 bg-brand-dark border border-custom-cyan rounded-xl">
-                                    <UserCheck size={18} className="text-custom-cyan" />
-                                    <span className="text-sm font-semibold text-zinc-100">{selectedVendedorName}</span>
-                                    <button type="button" className="ml-auto text-xs text-zinc-500 hover:text-custom-magenta" onClick={() => { setHadVendedor(false); setSelectedVendedorId(''); setSelectedVendedorName(''); }}>✕</button>
+                                {/* Shared client fields caen solos en el flow del Grid */}
+                                <ClientFormFields
+                                    form={form}
+                                    set={set}
+                                    fieldErrors={fieldErrors}
+                                    handleBlur={handleBlur}
+                                    departments={departments}
+                                    localities={localities}
+                                    agencies={agencies}
+                                    isMontevideo={isMontevideo}
+                                />
+                            </div>
+
+                            {/* Vendedor checkbox + SweetAlert picker */}
+                            <div className={`bg-brand-dark border border-brand-cyan rounded-2xl p-4 space-y-3 ${!form.departamentoId || !form.localidadId ? 'opacity-50' : ''}`}>
+                                <label className={`flex items-center gap-3 select-none ${!form.departamentoId || !form.localidadId ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                                    onClick={async () => {
+                                        if (!form.departamentoId || !form.localidadId) return;
+                                        if (!hadVendedor) {
+                                            if (vendedores.length === 0) {
+                                                Swal.fire({ title: 'Sin asesores', text: 'No hay asesores disponibles para este departamento.', icon: 'info', background: '#212121', color: '#f4f4f5' });
+                                                return;
+                                            }
+                                            // Build HTML grid with photos
+                                            const isMobile = window.innerWidth < 768;
+                                            const grid = vendedores.map(v => {
+                                                const imgUrl = `/assets/images/asesores/${v.Cedula}.svg`;
+                                                const firstName = v.Nombre.split(' ')[0];
+                                                if (isMobile) {
+                                                    return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 14px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;">
+                                                        <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:72px;height:72px;border-radius:50%;object-fit:cover" /><div style="width:72px;height:72px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:24px">${firstName.charAt(0)}</div>
+                                                        <span style="font-weight:600;color:#f4f4f5;font-size:14px;text-transform:uppercase;letter-spacing:0.05em;text-align:center">${firstName}</span>
+                                                    </div>`;
+                                                } else {
+                                                    return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px 16px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;flex:1;min-width:140px;max-width:180px;">
+                                                        <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:96px;height:96px;border-radius:50%;object-fit:cover" /><div style="width:96px;height:96px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:30px">${firstName.charAt(0)}</div>
+                                                        <span style="font-weight:600;color:#f4f4f5;font-size:13px;text-align:center;text-transform:uppercase;letter-spacing:0.05em">${firstName}</span>
+                                                    </div>`;
+                                                }
+                                            });
+                                            const separator = isMobile ? '<hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);width:60%;margin:0 auto" />' : '';
+                                            const gridHtml = grid.join(separator);
+
+                                            const selected = await new Promise((resolve) => {
+                                                Swal.fire({
+                                                    title: 'SELECCIONÁ TU ASESOR',
+                                                    html: `<div style="display:flex;${isMobile ? 'flex-direction:column;align-items:center;' : 'flex-wrap:wrap;justify-content:center;'}gap:12px;padding:8px">${gridHtml}</div>`,
+                                                    showConfirmButton: false,
+                                                    showCancelButton: false,
+                                                    showCloseButton: isMobile,
+                                                    background: 'transparent',
+                                                    color: '#f4f4f5',
+                                                    width: isMobile ? '100vw' : 'auto',
+                                                    padding: isMobile ? '1rem 0' : undefined,
+                                                    customClass: { popup: isMobile ? 'swal-mobile-full' : '' },
+                                                    didOpen: () => {
+                                                        const popup = Swal.getPopup();
+                                                        if (isMobile) {
+                                                            popup.style.background = '#19181B';
+                                                            popup.style.borderRadius = '0';
+                                                            popup.style.margin = '0';
+                                                            popup.style.position = 'fixed';
+                                                            popup.style.top = '0';
+                                                            popup.style.left = '0';
+                                                            popup.style.width = '100vw';
+                                                            popup.style.height = '100vh';
+                                                            popup.style.display = 'flex';
+                                                            popup.style.flexDirection = 'column';
+                                                            const htmlContainer = popup.querySelector('.swal2-html-container');
+                                                            if (htmlContainer) {
+                                                                htmlContainer.style.flex = '1';
+                                                                htmlContainer.style.display = 'flex';
+                                                                htmlContainer.style.alignItems = 'center';
+                                                                htmlContainer.style.justifyContent = 'center';
+                                                            }
+                                                            const closeBtn = popup.querySelector('.swal2-close');
+                                                            if (closeBtn) {
+                                                                closeBtn.style.position = 'absolute';
+                                                                closeBtn.style.top = '10px';
+                                                                closeBtn.style.right = '20px';
+                                                                closeBtn.style.top = 'auto';
+                                                                closeBtn.style.fontSize = '36px';
+                                                                closeBtn.style.color = '#ec008c';
+                                                            }
+                                                            const title = popup.querySelector('.swal2-title');
+                                                            if (title) {
+                                                                title.style.fontSize = '24px';
+                                                            }
+                                                        } else {
+                                                            popup.style.background = 'linear-gradient(#19181B, #19181B) padding-box, linear-gradient(to bottom right, #00AEEF, #EC008C, #FFF200) border-box';
+                                                            popup.style.border = '2px solid transparent';
+                                                            popup.style.borderRadius = '24px';
+                                                            popup.style.boxShadow = '0 25px 50px -12px rgba(0, 0, 0, 0.7)';
+                                                        }
+                                                        const items = Swal.getPopup().querySelectorAll('.swal-asesor');
+                                                        items.forEach(el => {
+                                                            el.addEventListener('mouseenter', () => { el.style.background = '#2a2a2a'; });
+                                                            el.addEventListener('mouseleave', () => { el.style.background = 'transparent'; });
+                                                            el.addEventListener('click', () => {
+                                                                resolve({ id: el.dataset.id, nombre: el.dataset.nombre });
+                                                                Swal.close();
+                                                            });
+                                                        });
+                                                    },
+                                                }).then((result) => {
+                                                    if (result.dismiss) resolve(null);
+                                                });
+                                            });
+
+                                            if (selected) {
+                                                setHadVendedor(true);
+                                                setSelectedVendedorId(selected.id);
+                                                setSelectedVendedorName(selected.nombre);
+                                            }
+                                        } else {
+                                            setHadVendedor(false);
+                                            setSelectedVendedorId('');
+                                            setSelectedVendedorName('');
+                                        }
+                                    }}
+                                >
+                                    <div className="flex items-center justify-center text-custom-cyan">
+                                        {hadVendedor ? (
+                                            <CheckCircle2 size={22} />
+                                        ) : (
+                                            <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                        )}
+                                    </div>
+                                    <span className="text-sm font-semibold text-zinc-300">¿Fuiste atendido por algún asesor?</span>
+                                </label>
+
+                                {hadVendedor && selectedVendedorName && (
+                                    <div className="flex items-center gap-3 mt-2 p-3 bg-brand-dark border border-custom-cyan rounded-xl">
+                                        <UserCheck size={18} className="text-custom-cyan" />
+                                        <span className="text-sm font-semibold text-zinc-100">{selectedVendedorName}</span>
+                                        <button type="button" className="ml-auto text-xs text-zinc-500 hover:text-custom-magenta" onClick={() => { setHadVendedor(false); setSelectedVendedorId(''); setSelectedVendedorName(''); }}>✕</button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {error && (
+                                <div className="text-custom-magenta p-3 rounded-xl text-xs font-bold flex items-center gap-2 justify-center animate-pulse">
+                                    <AlertCircle size={14} />
+                                    {error}
                                 </div>
                             )}
-                        </div>
 
-                        {error && (
-                            <div className="text-custom-magenta p-3 rounded-xl text-xs font-bold flex items-center gap-2 justify-center animate-pulse">
-                                <AlertCircle size={14} />
-                                {error}
-                            </div>
-                        )}
+                            {success && (
+                                <div className="bg-green-50 text-green-600 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-green-100">
+                                    <CheckCircle2 size={14} />
+                                    {success}
+                                </div>
+                            )}
 
-                        {success && (
-                            <div className="bg-green-50 text-green-600 p-3 rounded-xl text-xs font-bold flex items-center gap-2 border border-green-100">
-                                <CheckCircle2 size={14} />
-                                {success}
-                            </div>
-                        )}
+                            <Button
+                                type="submit"
+                                className="w-full py-2.5 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
+                                isLoading={isLoading}
+                            >
+                                Crear Cuenta
+                            </Button>
 
-                        <Button
-                            type="submit"
-                            className="w-full py-2.5 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
-                            isLoading={isLoading}
-                        >
-                            Crear Cuenta
-                        </Button>
-
-                        <p className="text-center text-sm text-zinc-500">
-                            ¿Ya tenés cuenta?{' '}
-                            <a href="/login" className="font-bold text-brand-cyan hover:text-custom-cyan transition-colors">
-                                Iniciá sesión
-                            </a>
-                        </p>
-                    </form>
+                            <p className="text-center text-sm text-zinc-500">
+                                ¿Ya tenés cuenta?{' '}
+                                <a href="/login" className="font-bold text-brand-cyan hover:text-custom-cyan transition-colors">
+                                    Iniciá sesión
+                                </a>
+                            </p>
+                        </form>
+                    </div>
                 </div>
             </div>
 
             {/* 4-color bar - mobile only, fixed to bottom of screen */}
-            <div className="fixed bottom-0 left-0 w-screen flex h-4 md:hidden z-50">
+            <div className="fixed bottom-0 left-0 w-screen flex h-2 md:hidden z-50">
                 <div className="flex-1 bg-custom-cyan" />
                 <div className="flex-1 bg-custom-magenta" />
                 <div className="flex-1 bg-custom-yellow" />

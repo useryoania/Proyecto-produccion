@@ -74,7 +74,7 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
         apellido: 'Pérez',
         telefono: '099123456',
         razonSocial: 'Opcional',
-        rut: 'Opcional',
+        rut: 'Sin puntos ni guiones',
         documento: 'Sin puntos ni guiones',
         direccion: 'Calle 1234',
         ...placeholders,
@@ -103,8 +103,8 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
             </Field>
 
             {/* Cédula o RUT */}
-            <Field label="Cédula o RUT" icon={FileText}>
-                <input type="text" className={inputClass} placeholder={ph.rut} value={form.rut} maxLength={12} onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); set('rut')({ target: { value: v } }); }} />
+            <Field label="Cédula o RUT" icon={FileText} required error={fieldErrors.rut}>
+                <input type="text" className={`${inputClass} ${fieldErrors.rut ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder={ph.rut} value={form.rut} maxLength={12} onChange={(e) => { const v = e.target.value.replace(/\D/g, ''); set('rut')({ target: { value: v } }); }} onBlur={blur('rut')} />
             </Field>
 
 
@@ -114,57 +114,94 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
                 <input type="text" className={`${inputClass} ${fieldErrors.direccion ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder={ph.direccion} value={form.direccion} onChange={set('direccion')} onBlur={blur('direccion')} />
             </Field>
 
-            {/* Departamento | Localidad */}
-            <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                    <label className={labelClass}>
-                        Departamento <span className="text-custom-magenta">*</span>
-                    </label>
-                    <CustomSelect
-                        value={form.departamentoId}
-                        onChange={selectSet('departamentoId')}
-                        options={departments.map(d => ({ value: String(d.ID), label: d.Nombre }))}
-                        placeholder="Seleccionar..."
-                        size="small"
-                        direction="up"
-                        className="!border-brand-cyan font-semibold"
-                    />
-                    {fieldErrors.departamentoId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.departamentoId}</p>}
-                </div>
-                <div className="space-y-1">
-                    <label className={labelClass}>
-                        Localidad <span className="text-custom-magenta">*</span>
-                    </label>
-                    <CustomSelect
-                        value={form.localidadId}
-                        onChange={selectSet('localidadId')}
-                        options={localities.map(l => ({ value: String(l.ID), label: l.Nombre }))}
-                        placeholder={form.departamentoId ? 'Seleccionar...' : 'Localidad'}
-                        size="small"
-                        direction="up"
-                        disabled={!form.departamentoId}
-                        className="!border-brand-cyan font-semibold"
-                    />
-                    {fieldErrors.localidadId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.localidadId}</p>}
-                </div>
-            </div>
-
-            {/* Agencia - solo si NO es Montevideo */}
-            {form.departamentoId && !isMontevideo && (
-                <div className="space-y-1">
-                    <label className={labelClass}>
-                        Agencia <span className="text-custom-magenta">*</span>
-                    </label>
-                    <CustomSelect
-                        value={form.agenciaId}
-                        onChange={selectSet('agenciaId')}
-                        options={agencies.map(a => ({ value: String(a.ID), label: a.Nombre }))}
-                        placeholder="Seleccionar agencia..."
-                        direction="up"
-                        className="!border-brand-cyan font-semibold"
-                    />
-                    {fieldErrors.agenciaId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.agenciaId}</p>}
-                </div>
+            {/* Lógica condicional del Layout para Departamento, Localidad y Agencia */}
+            {form.departamentoId && !isMontevideo ? (
+                // Si HAY agencia: Todo a la izquierda (dividido en 2) y Agencia a la derecha
+                <>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                            <label className={labelClass}>
+                                Departamento <span className="text-custom-magenta">*</span>
+                            </label>
+                            <CustomSelect
+                                value={form.departamentoId}
+                                onChange={selectSet('departamentoId')}
+                                options={departments.map(d => ({ value: String(d.ID), label: d.Nombre }))}
+                                placeholder="Seleccionar..."
+                                size="small"
+                                direction="up"
+                                className="!border-brand-cyan font-semibold"
+                            />
+                            {fieldErrors.departamentoId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.departamentoId}</p>}
+                        </div>
+                        <div className="space-y-1">
+                            <label className={labelClass}>
+                                Localidad <span className="text-custom-magenta">*</span>
+                            </label>
+                            <CustomSelect
+                                value={form.localidadId}
+                                onChange={selectSet('localidadId')}
+                                options={localities.map(l => ({ value: String(l.ID), label: l.Nombre }))}
+                                placeholder={form.departamentoId ? 'Seleccionar...' : 'Localidad'}
+                                size="small"
+                                direction="up"
+                                disabled={!form.departamentoId}
+                                className="!border-brand-cyan font-semibold"
+                            />
+                            {fieldErrors.localidadId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.localidadId}</p>}
+                        </div>
+                    </div>
+                    <div className="space-y-1">
+                        <label className={labelClass}>
+                            Agencia <span className="text-custom-magenta">*</span>
+                        </label>
+                        <CustomSelect
+                            value={form.agenciaId}
+                            onChange={selectSet('agenciaId')}
+                            options={agencies.map(a => ({ value: String(a.ID), label: a.Nombre }))}
+                            placeholder="Seleccionar agencia..."
+                            size="small"
+                            direction="up"
+                            className="!border-brand-cyan font-semibold"
+                        />
+                        {fieldErrors.agenciaId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.agenciaId}</p>}
+                    </div>
+                </>
+            ) : (
+                // Si NO hay agencia: Departamento ocupa toda la izq, y Localidad toda la der
+                <>
+                    <div className="space-y-1">
+                        <label className={labelClass}>
+                            Departamento <span className="text-custom-magenta">*</span>
+                        </label>
+                        <CustomSelect
+                            value={form.departamentoId}
+                            onChange={selectSet('departamentoId')}
+                            options={departments.map(d => ({ value: String(d.ID), label: d.Nombre }))}
+                            placeholder="Seleccionar..."
+                            size="small"
+                            direction="up"
+                            className="!border-brand-cyan font-semibold"
+                        />
+                        {fieldErrors.departamentoId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.departamentoId}</p>}
+                    </div>
+                    <div className="space-y-1">
+                        <label className={labelClass}>
+                            Localidad <span className="text-custom-magenta">*</span>
+                        </label>
+                        <CustomSelect
+                            value={form.localidadId}
+                            onChange={selectSet('localidadId')}
+                            options={localities.map(l => ({ value: String(l.ID), label: l.Nombre }))}
+                            placeholder={form.departamentoId ? 'Seleccionar...' : 'Localidad'}
+                            size="small"
+                            direction="up"
+                            disabled={!form.departamentoId}
+                            className="!border-brand-cyan font-semibold"
+                        />
+                        {fieldErrors.localidadId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.localidadId}</p>}
+                    </div>
+                </>
             )}
         </>
     );

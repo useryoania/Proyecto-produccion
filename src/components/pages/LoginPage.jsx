@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { Button } from '../ui/Button.jsx';
 import { User, Lock, Eye, EyeOff, AlertCircle, LogIn, KeyRound } from 'lucide-react';
-import { Logo } from '../Logo.jsx';
+import LandingNavbar from '../shared/LandingNavbar.jsx';
 import { API_URL } from '../../services/apiClient';
 import ParticlesCanvas from '../ui/ParticlesCanvas';
 
@@ -47,6 +47,7 @@ const ResetPasswordScreen = ({ token, onSuccess }) => {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-custom-dark relative overflow-hidden font-sans">
+            {/* <LandingNavbar /> */}
             <ParticlesCanvas />
             <div className="relative w-full max-w-md rounded-3xl z-10">
                 <div className="hidden md:block absolute -inset-[2px] rounded-3xl overflow-hidden">
@@ -127,7 +128,8 @@ const ResetPasswordScreen = ({ token, onSuccess }) => {
     );
 };
 
-const LoginPage = () => {
+// --- LOGIN FORM EXTRACTED PARA REUTILIZAR EN MODAL ---
+export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -137,8 +139,6 @@ const LoginPage = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [googleLoading, setGoogleLoading] = useState(false);
     const googleWrapperRef = useRef(null);
-    const [requireReset, setRequireReset] = useState(false);
-    const [resetToken, setResetToken] = useState(null);
     const googleCallbackRef = useRef(null);
 
     googleCallbackRef.current = async (response) => {
@@ -146,44 +146,101 @@ const LoginPage = () => {
         setGoogleLoading(true);
         try {
             const result = await googleLogin(response.credential);
-            if (result.userType === 'CLIENT') {
-                navigate('/portal/pickup');
+            if (onLoginSuccess) {
+                onLoginSuccess(result);
             } else {
-                navigate('/');
+                if (result.userType === 'CLIENT') {
+                    navigate('/portal/pickup');
+                } else {
+                    navigate('/');
+                }
             }
         } catch (err) {
-            setError(err.message || 'Error al iniciar sesión con Google.');
+            if (err.notFound && err.email) {
+                // Si la cuenta no existe en BD, redirigir directo al formulario registro
+                navigate('/register', { state: { prefilledEmail: err.email } });
+            } else {
+                setError(err.message || 'Error al iniciar sesión con Google.');
+            }
         } finally {
             setGoogleLoading(false);
         }
     };
 
-    useEffect(() => {
-        if (window.__gsiInitialized) return;
-        window.__gsiInitialized = true;
+    const googleRenderedRef = useRef(false);
 
-        const script = document.createElement('script');
-        script.src = 'https://accounts.google.com/gsi/client';
-        script.async = true;
-        script.defer = true;
-        script.onload = () => {
-            if (window.google && googleWrapperRef.current) {
-                window.google.accounts.id.initialize({
-                    client_id: GOOGLE_CLIENT_ID,
-                    callback: (resp) => googleCallbackRef.current?.(resp),
-                });
-                window.google.accounts.id.renderButton(googleWrapperRef.current, {
-                    type: 'standard',
-                    theme: 'filled_black',
-                    size: 'large',
-                    text: 'signin_with',
-                    shape: 'pill',
-                    width: 350,
-                    logo_alignment: 'left',
-                });
+    useEffect(() => {
+        let isMounted = true;
+
+        const renderBtn = () => {
+            if (isMounted && window.google && googleWrapperRef.current && !googleRenderedRef.current) {
+                // Forzar limpieza dura a nivel de DOM antes de que Google toque la caja
+                if (googleWrapperRef.current) {
+                    googleWrapperRef.current.innerHTML = '';
+                }
+                
+                try {
+                    // Inicializamos GSI globalmente para evitar duplicados en el SDK
+                    if (!window.__gsi_initialized) {
+                        window.google.accounts.id.initialize({
+                            client_id: GOOGLE_CLIENT_ID,
+                            callback: (resp) => {
+                                // Llamamos directamente a la función de login del contexto window si es necesario, 
+                                // pero el ref funciona siempre y cuando mantengamos la referencia vigente.
+                                window.__gsi_callback?.(resp);
+                            },
+                        });
+                        window.__gsi_initialized = true;
+                    }
+
+                    // Actualizamos el callback global para que siempre apunte al componente montado actualmente
+                    window.__gsi_callback = (resp) => googleCallbackRef.current?.(resp);
+
+                    // Calculamos el ancho disponible dinámicamente
+                    let btnWidth = 300;
+                    if (window.innerWidth < 380) {
+                        btnWidth = 240;
+                    } else if (window.innerWidth < 440) {
+                        btnWidth = 280;
+                    }
+
+                    window.google.accounts.id.renderButton(googleWrapperRef.current, {
+                        type: 'standard',
+                        theme: 'filled_black',
+                        size: 'large',
+                        text: 'signin_with',
+                        shape: 'pill',
+                        width: btnWidth,
+                        logo_alignment: 'left',
+                    });
+                } catch (e) { }
             }
         };
-        document.body.appendChild(script);
+
+        if (window.google) {
+            renderBtn();
+        } else {
+            const existingScript = document.getElementById('gsi-client-script');
+            if (existingScript) {
+                existingScript.addEventListener('load', renderBtn);
+            } else {
+                const script = document.createElement('script');
+                script.id = 'gsi-client-script';
+                script.src = 'https://accounts.google.com/gsi/client';
+                script.async = true;
+                script.defer = true;
+                script.onload = renderBtn;
+                document.body.appendChild(script);
+            }
+        }
+
+        return () => {
+            isMounted = false;
+            const existingScript = document.getElementById('gsi-client-script');
+            if (existingScript) {
+                existingScript.removeEventListener('load', renderBtn);
+            }
+        };
     }, []);
 
     const handleSubmit = async (e) => {
@@ -198,17 +255,20 @@ const LoginPage = () => {
 
         try {
             const result = await login(username, password);
-            // Check if client needs to reset password
             if (result.userType === 'CLIENT' && result.requireReset) {
-                setResetToken(localStorage.getItem('auth_token'));
-                setRequireReset(true);
-                setIsLoading(false);
-                return;
+                if (onRequireReset) {
+                    onRequireReset(result);
+                    return;
+                }
             }
-            if (result.userType === 'CLIENT') {
-                navigate('/portal/pickup');
+            if (onLoginSuccess) {
+                onLoginSuccess(result);
             } else {
-                navigate('/');
+                if (result.userType === 'CLIENT') {
+                    navigate('/portal/pickup');
+                } else {
+                    navigate('/');
+                }
             }
         } catch (err) {
             setError(err.message || 'Credenciales inválidas. Por favor, intentá de nuevo.');
@@ -217,10 +277,114 @@ const LoginPage = () => {
         }
     };
 
+    return (
+        <div className="relative pt-8 px-6 sm:px-10 md:px-8 pb-10 md:pb-8 w-full">
+            <div className="mb-6 text-center">
+                <h2 className="text-2xl font-black text-white tracking-tight">Bienvenido de vuelta</h2>
+                <p className="text-sm font-medium text-zinc-400 mt-1">Ingresá para acceder a tu producción.</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="flex flex-col gap-5 md:gap-4">
+                <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-100 uppercase tracking-wider ml-1">Usuario</label>
+                    <div className="relative group">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-cyan group-focus-within:text-custom-cyan transition-colors">
+                            <User size={18} />
+                        </div>
+                        <input
+                            type="text"
+                            className="w-full pl-10 pr-4 py-2.5 md:py-2 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan focus:bg-brand-dark transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
+                            placeholder="Usuario o ID de Cliente"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                        />
+                    </div>
+                </div>
+
+                <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-100 uppercase tracking-wider ml-1">Contraseña</label>
+                    <div className="relative group">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-magenta group-focus-within:text-custom-magenta transition-colors">
+                            <Lock size={18} />
+                        </div>
+                        <input
+                            type={showPassword ? "text" : "password"}
+                            className="w-full pl-10 pr-10 py-2.5 md:py-2 bg-brand-dark border border-brand-magenta rounded-xl focus:ring-1 focus:ring-custom-magenta focus:border-custom-magenta focus:bg-brand-dark transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
+                            placeholder="********"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                        />
+                        <button
+                            type="button"
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-magenta hover:text-custom-magenta cursor-pointer"
+                            aria-label="Mostrar u ocultar contraseña"
+                            onClick={() => setShowPassword(!showPassword)}
+                        >
+                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                    </div>
+                </div>
+
+                <div className="flex justify-end">
+                    <a href="/forgot-password" className="text-xs font-semibold text-zinc-500 hover:text-slate-100 transition-colors">
+                        ¿Olvidaste tu contraseña?
+                    </a>
+                </div>
+
+                {error && (
+                    <div className="text-custom-magenta p-3 rounded-xl text-xs font-bold flex items-center gap-2 justify-center animate-pulse">
+                        <AlertCircle size={14} />
+                        {error}
+                    </div>
+                )}
+
+                <Button
+                    type="submit"
+                    className="w-full py-2.5 md:py-2 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2 md:text-sm"
+                    isLoading={isLoading}
+                >
+                    Ingresar al Sistema <LogIn size={18} />
+                </Button>
+
+                <p className="text-center text-sm text-zinc-500">
+                    ¿No tenés cuenta?{' '}
+                    <a href="/register" className="font-bold text-brand-cyan hover:text-custom-cyan transition-colors">
+                        Registrate
+                    </a>
+                </p>
+            </form>
+
+            <div className="flex items-center gap-3 my-6">
+                <div className="flex-1 h-px bg-zinc-100"></div>
+                <span className="text-xs font-bold text-zinc-300 uppercase">o</span>
+                <div className="flex-1 h-px bg-zinc-100"></div>
+            </div>
+
+            {/* Fijamos matemáticamente la caja a 40px (altura exacta del size="large" de GSI) con overflow-hidden para amputar cualquier sombra, rebote, o línea blanca muerta del iframe */}
+            <div className="flex justify-center h-[40px] overflow-hidden w-full" ref={googleWrapperRef}></div>
+        </div>
+    );
+};
+
+const LoginPage = () => {
+    const navigate = useNavigate();
+    const [requireReset, setRequireReset] = useState(false);
+    const [resetToken, setResetToken] = useState(null);
+
+    const handleRequireReset = (result) => {
+        setResetToken(localStorage.getItem('auth_token'));
+        setRequireReset(true);
+    };
+
+    // Override global body overflow:hidden for this page
+    useEffect(() => {
+        document.body.style.overflow = 'auto';
+        return () => { document.body.style.overflow = 'hidden'; };
+    }, []);
+
     // --- FORCED PASSWORD RESET SCREEN ---
     if (requireReset) {
         return <ResetPasswordScreen token={resetToken} onSuccess={() => {
-            // Clear session and redirect to login so user enters with new password
             localStorage.removeItem('user');
             localStorage.removeItem('auth_token');
             localStorage.removeItem('user_session');
@@ -229,121 +393,20 @@ const LoginPage = () => {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-custom-dark relative overflow-hidden font-sans">
-
-            {/* Particles canvas */}
+        <div className="flex flex-col min-h-screen bg-custom-dark relative overflow-x-hidden font-sans pt-[70px]">
+            {/* <LandingNavbar /> */}
             <ParticlesCanvas />
-
-            {/* Animated border keyframes */}
-            <style>{`
-                @keyframes rotateBorder {
-                    0% { transform: rotate(0deg); }
-                    100% { transform: rotate(360deg); }
-                }
-            `}</style>
-
-            {/* Card wrapper with animated CMY border (hidden on mobile) */}
-            <div className="relative w-full max-w-md md:max-w-sm rounded-3xl z-10">
-                {/* Animated gradient border - only on md+ */}
-                <div className="hidden md:block absolute -inset-[2px] rounded-3xl overflow-hidden">
-                    <div
-                        className="absolute inset-[-50%] w-[200%] h-[200%]"
-                        style={{
-                            background: 'conic-gradient(#00AEEF, #EC008C, #FFF200, #FFFFFF, #00AEEF)',
-                            animation: 'rotateBorder 3s linear infinite',
-                        }}
-                    />
-                </div>
-
-                <div className="relative pt-4 px-10 md:px-8 pb-10 md:pb-8 rounded-3xl w-full backdrop-blur-sm overflow-hidden bg-custom-dark">
-                    <div className="flex flex-col items-center mb-8 md:mt-4 md:mb-6">
-                        <Logo className="h-32 w-auto text-white" />
+            
+            <div className="flex-1 flex items-center justify-center p-4 min-h-[calc(100vh-70px-100px)] z-10 w-full">
+                <div className="relative w-full max-w-md md:max-w-sm rounded-3xl p-[2px] bg-gradient-to-br from-[#00AEEF] via-[#EC008C] to-[#FFF200]">
+                    {/* Aqui inyectamos el componente extraido */}
+                    <div className="bg-custom-dark rounded-[22px] overflow-hidden">
+                        <LoginFormBox onRequireReset={handleRequireReset} />
                     </div>
-
-                    <form onSubmit={handleSubmit} className="flex flex-col gap-5 md:gap-4">
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-100 uppercase tracking-wider ml-1">Usuario</label>
-                            <div className="relative group">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-cyan group-focus-within:text-custom-cyan transition-colors">
-                                    <User size={18} />
-                                </div>
-                                <input
-                                    type="text"
-                                    className="w-full pl-10 pr-4 py-2.5 md:py-2 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan focus:bg-brand-dark transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
-                                    placeholder="Usuario o ID de Cliente"
-                                    value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
-                                />
-                            </div>
-                        </div>
-
-                        <div className="space-y-1">
-                            <label className="text-xs font-bold text-slate-100 uppercase tracking-wider ml-1">Contraseña</label>
-                            <div className="relative group">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-magenta group-focus-within:text-custom-magenta transition-colors">
-                                    <Lock size={18} />
-                                </div>
-                                <input
-                                    type={showPassword ? "text" : "password"}
-                                    className="w-full pl-10 pr-10 py-2.5 md:py-2 bg-brand-dark border border-brand-magenta rounded-xl focus:ring-1 focus:ring-custom-magenta focus:border-custom-magenta focus:bg-brand-dark transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
-                                    placeholder="********"
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                />
-                                <button
-                                    type="button"
-                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-magenta hover:text-custom-magenta cursor-pointer"
-                                    aria-label="Mostrar u ocultar contraseña"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                >
-                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="flex justify-end">
-                            <a href="/forgot-password" className="text-xs font-semibold text-zinc-500 hover:text-slate-100 transition-colors">
-                                ¿Olvidaste tu contraseña?
-                            </a>
-                        </div>
-
-                        {error && (
-                            <div className="text-custom-magenta p-3 rounded-xl text-xs font-bold flex items-center gap-2 justify-center animate-pulse">
-                                <AlertCircle size={14} />
-                                {error}
-                            </div>
-                        )}
-
-                        <Button
-                            type="submit"
-                            className="w-full py-2.5 md:py-2 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2 md:text-sm"
-                            isLoading={isLoading}
-                        >
-                            Ingresar al Sistema <LogIn size={18} />
-                        </Button>
-
-                        <p className="text-center text-sm text-zinc-500">
-                            ¿No tenés cuenta?{' '}
-                            <a href="/register" className="font-bold text-brand-cyan hover:text-custom-cyan transition-colors">
-                                Registrate
-                            </a>
-                        </p>
-                    </form>
-
-                    {/* Divider */}
-                    <div className="flex items-center gap-3 my-6">
-                        <div className="flex-1 h-px bg-zinc-100"></div>
-                        <span className="text-xs font-bold text-zinc-300 uppercase">o</span>
-                        <div className="flex-1 h-px bg-zinc-100"></div>
-                    </div>
-
-                    {/* Google Sign-In - official button, dark theme, pill shape */}
-                    <div className="flex justify-center" ref={googleWrapperRef}></div>
-
                 </div>
-
             </div>
-            <div className="absolute bottom-0 left-0 right-0 flex h-4 md:hidden">
+
+            <div className="fixed bottom-0 left-0 right-0 flex h-2 md:hidden z-50">
                 <div className="flex-1 bg-custom-cyan" />
                 <div className="flex-1 bg-custom-magenta" />
                 <div className="flex-1 bg-custom-yellow" />
