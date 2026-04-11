@@ -114,7 +114,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
               <NavBtn onClick={handleSessionBtn}>{sessionLabel}</NavBtn>
             )}
 
-            <NavBtn onClick={() => navigate('/')}>Contacto</NavBtn>
+            <NavBtn onClick={() => navigate('/contacto')}>Contacto</NavBtn>
           </div>
         )}
 
@@ -179,7 +179,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
                   }}
                 >Registrate</button>
               )}
-              <button onClick={() => { setMenuOpen(false); navigate('/'); }} style={{
+              <button onClick={() => { setMenuOpen(false); navigate('/contacto'); }} style={{
                 flex: 1, padding: '12px', border: 'none', borderRadius: 999,
                 background: '#f4f4f5', color: '#111', fontSize: 14, fontWeight: 700, cursor: 'pointer',
               }}>Contacto</button>

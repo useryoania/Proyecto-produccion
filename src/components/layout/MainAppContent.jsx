@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
 import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck } from 'lucide-react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from './Navbar';
@@ -225,9 +226,15 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                         toggleMenu(item.IdModulo);
                         if (!wasOpen) {
                             const firstChild = item.children.find(c => c.Ruta);
-                            if (firstChild) navigate(firstChild.Ruta);
+                            if (firstChild) {
+                                navigate(firstChild.Ruta);
+                                setIsCollapsed(true);
+                            }
                         }
-                    } else if (item.Ruta) navigate(item.Ruta);
+                    } else if (item.Ruta) {
+                        navigate(item.Ruta);
+                        setIsCollapsed(true);
+                    }
                 }}
                 title={isCollapsed ? item.Nombre : ''}
             >
@@ -444,12 +451,21 @@ const MainAppContent = ({ menuItems = [] }) => {
 
                 <main className="flex-1 overflow-hidden relative bg-slate-100 w-full">
                     <div className="absolute inset-0 overflow-y-auto p-6 scroll-smooth">
-                        <Suspense fallback={
-                            <div className="flex items-center justify-center h-full ">
-                                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-                            </div>
-                        }>
-                            <Routes>
+                        <AnimatePresence mode="wait">
+                            <motion.div
+                                key={location.pathname}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.15, ease: "easeOut" }}
+                                className="h-full"
+                            >
+                                <Suspense fallback={
+                                    <div className="flex items-center justify-center h-full ">
+                                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-cyan"></div>
+                                    </div>
+                                }>
+                                    <Routes location={location}>
                                 <Route path="/" element={<Dashboard />} />
                                 <Route path="/consultas/ordenes" element={<OrdersQueryView />} />
                                 <Route path="/consultas/integral" element={<IntegralOrderView />} />
@@ -487,7 +503,9 @@ const MainAppContent = ({ menuItems = [] }) => {
 
                                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
                             </Routes>
-                        </Suspense>
+                                </Suspense>
+                            </motion.div>
+                        </AnimatePresence>
                     </div>
                 </main>
             </div>

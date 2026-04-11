@@ -156,7 +156,7 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
         drawCentered('ESTE COMPROBANTE FUE GENERADO AUTOMATICAMENTE.', 40, 8, font);
 
         // Guardar en disco (redirigido a comprobantesPagos para unificar localizaciones)
-        const baseDir = process.env.COMPROBANTES_PAGOS_PATH || path.join(__dirname, '..', 'comprobantesPagos');
+        const baseDir = process.env.COMPROBANTES_PATH || path.join(__dirname, '..', 'comprobantesPagos');
         const dir = baseDir; // Sin subcarpeta handy, para que concuerde con el frontend
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -2340,7 +2340,7 @@ exports.handyWebhook = async (req, res) => {
                         // Generar comprobante PDF y guardarlo en disco
                         generateHandyReceipt({
                             transactionId,
-                            ordenRetiro: storedOrdenRetiro,
+                            ordenRetiro: payloadPago.ordenRetiro, // código final: ya incluye el RW- del retiro diferido si aplica
                             orders,
                             totalAmount: tx.TotalAmount,
                             currency: tx.Currency,

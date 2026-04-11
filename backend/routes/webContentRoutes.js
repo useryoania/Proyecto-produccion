@@ -7,5 +7,6 @@ router.get('/all', webContentController.getAllContent);
 router.post('/', webContentController.createContent);
 router.put('/:id', webContentController.updateContent);
 router.delete('/:id', webContentController.deleteContent);
+router.post('/contact', webContentController.sendContactForm);
 
 module.exports = router;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Logo } from '../Logo';
@@ -8,7 +8,7 @@ import LandingNavbar from '../shared/LandingNavbar';
 import { motion, AnimatePresence } from 'framer-motion';
 import Footer from '../Footer';
 import { useViewport } from '../../hooks/useViewport';
-import heroImg from '../../assets/images/hero_printing.png';
+import heroVideo from '../../assets/videos/hero.mp4';
 import imgSublimacion from '../../assets/images/service_sublimacion.png';
 import imgDtf from '../../assets/images/service_dtf.png';
 import imgGranFormato from '../../assets/images/service_gran_formato.png';
@@ -53,6 +53,7 @@ export default function LandingPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { isMobile, isTablet } = useViewport();
+  const videoRef = useRef(null);
   const [scrolled, setScrolled] = useState(false);
   const [heroLoaded, setHeroLoaded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -119,13 +120,17 @@ export default function LandingPage() {
         minHeight: '100vh',
         display: 'flex',
         alignItems: 'center',
+        justifyContent: (isMobile || isTablet) ? 'center' : 'flex-start',
+        paddingTop: '70px', /* Compensación para la Navbar */
         overflow: 'hidden',
       }}>
-        {/* Hero background image */}
-        <img
-          src={heroImg}
-          alt=""
-          onLoad={() => setHeroLoaded(true)}
+        <video
+          ref={videoRef}
+          autoPlay
+          loop
+          muted
+          playsInline
+          onCanPlay={() => setHeroLoaded(true)}
           style={{
             position: 'absolute', inset: 0,
             width: '100%', height: '100%',
@@ -134,11 +139,13 @@ export default function LandingPage() {
             opacity: heroLoaded ? 0.55 : 0,
             transition: 'opacity 1s ease',
           }}
-        />
+        >
+          <source src={heroVideo} type="video/mp4" />
+        </video>
         {/* Left gradient overlay */}
         <div style={{
           position: 'absolute', inset: 0,
-          background: 'linear-gradient(90deg, #0d0d0d 35%, rgba(13,13,13,0.7) 60%, transparent 100%)',
+          background: 'linear-gradient(90deg, rgba(13,13,13,0.85) 0%, rgba(13,13,13,0.4) 50%, transparent 90%)',
         }} />
         {/* Bottom gradient */}
         <div style={{
@@ -148,9 +155,17 @@ export default function LandingPage() {
         }} />
 
         {/* Content */}
-        <div style={{ position: 'relative', zIndex: 2, padding: isMobile ? '0 24px' : isTablet ? '0 48px' : '0 80px', maxWidth: isMobile ? '100%' : 680 }}>
+        <div style={{
+          position: 'relative', zIndex: 2,
+          padding: isMobile ? '0 24px' : isTablet ? '0 48px' : '0 80px',
+          maxWidth: isMobile ? '100%' : 680,
+          margin: (isMobile || isTablet) ? '0 auto' : '0',
+          textAlign: (isMobile || isTablet) ? 'center' : 'left',
+          display: 'flex', flexDirection: 'column',
+          alignItems: (isMobile || isTablet) ? 'center' : 'flex-start',
+        }}>
           <h1 style={{
-            fontSize: isMobile ? 'clamp(26px, 7.5vw, 38px)' : 'clamp(42px, 5.5vw, 76px)',
+            fontSize: isMobile ? 'clamp(26px, 7.5vw, 38px)' : 'clamp(32px, 3.8vw, 64px)',
             fontWeight: 900,
             lineHeight: 1.1,
             letterSpacing: '-0.02em',
@@ -160,19 +175,18 @@ export default function LandingPage() {
             Industrializamos<br /><span style={{ whiteSpace: 'nowrap' }}>tu producción</span>
           </h1>
 
-          <p style={{
-            fontSize: isMobile ? 15 : 18,
-            color: 'rgba(255,255,255,0.65)',
-            lineHeight: 1.6,
-            margin: '0 0 32px',
-            maxWidth: isMobile ? '100%' : 480,
-          }}>
-            Ecosistema integral de producción gráfica,{!isMobile && <br />}
-            {' '}textil y publicitaria B2B en Uruguay.
-          </p>
+          <div style={{ margin: '0 0 32px', minHeight: isMobile ? 24 : 28 }}>
+            <VideoTypewriter videoRef={videoRef} isMobile={isMobile} />
+          </div>
 
           {/* CTA buttons */}
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', 
+            gap: 16, 
+            flexDirection: 'column',
+            alignItems: (isMobile || isTablet) ? 'center' : 'flex-start',
+            justifyContent: (isMobile || isTablet) ? 'center' : 'flex-start'
+          }}>
             <button style={{
               padding: '14px 28px',
               background: 'linear-gradient(135deg, #06b6d4, #3b82f6)',
@@ -189,7 +203,8 @@ export default function LandingPage() {
             }}
               onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 40px rgba(6,182,212,0.5)'; }}
               onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 0 30px rgba(6,182,212,0.4)'; }}
-            >Crear nueva orden B2B →</button>
+              onClick={handleSessionBtn}
+            >Hacé tu pedido aquí →</button>
 
             <button style={{
               padding: '14px 28px',
@@ -206,20 +221,11 @@ export default function LandingPage() {
             }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)'; e.currentTarget.style.background = 'transparent'; }}
+              onClick={() => navigate('/contacto')}
             >Solicitar cotización →</button>
           </div>
 
-          {/* Scroll indicator dots */}
-          <div style={{ display: 'flex', gap: 8, marginTop: 56 }}>
-            {[0, 1, 2, 3, 4].map(i => (
-              <div key={i} style={{
-                width: i === 0 ? 24 : 8, height: 8,
-                borderRadius: 999,
-                background: i === 0 ? '#06b6d4' : 'rgba(255,255,255,0.25)',
-                transition: 'all 0.3s',
-              }} />
-            ))}
-          </div>
+
         </div>
       </section>
 
@@ -257,11 +263,11 @@ export default function LandingPage() {
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ 
-                type: "spring", 
-                stiffness: 400, 
-                damping: 30, 
-                mass: 0.8 
+              transition={{
+                type: "spring",
+                stiffness: 400,
+                damping: 30,
+                mass: 0.8
               }}
               style={{ willChange: 'transform, opacity' }}
               className="relative w-full max-w-sm rounded-3xl z-10 p-[2px] bg-gradient-to-br from-[#00AEEF] via-[#EC008C] to-[#FFF200] shadow-2xl shadow-black/50"
@@ -284,7 +290,7 @@ export default function LandingPage() {
                   }}
                   onLoginSuccess={(result) => {
                     setShowLoginModal(false);
-                    if (result.userType === 'CLIENT') navigate('/portal/pickup');
+                    if (result.userType === 'CLIENT') navigate('/portal');
                     else navigate('/');
                   }}
                 />
@@ -387,6 +393,117 @@ function ServiceCard({ title, desc, img, accent, gradFrom, gradTo }) {
           Ver más →
         </div>
       </div>
+    </div>
+  );
+}
+
+const VIDEO_TEXTS = [
+  { time: 0, text: 'ECOSISTEMA INTEGRAL' },
+  { time: 1.567, text: 'IMPRESIÓN' },
+  { time: 3.600, text: 'SUBLIMACIÓN' },
+  { time: 5.566, text: 'CORTE LÁSER' },
+  { time: 7.767, text: 'BORDADO' },
+  { time: 9.933, text: 'ESTAMPADO' },
+  { time: 12.766, text: 'DTF UV' },
+  { time: 14.001, text: 'ECO UV' },
+  { time: 16.200, text: 'DTF TEXTIL' },
+  { time: 19.166, text: 'COSTURA' },
+  { time: 21.967, text: 'TPU' },
+  { time: 24.033, text: 'IMPORTADORES DIRECTOS' },
+  { time: 9999, text: '' }
+];
+
+function VideoTypewriter({ videoRef, isMobile }) {
+  const [displayText, setDisplayText] = useState('');
+  const [cursorVisible, setCursorVisible] = useState(true);
+
+  // Titilado del cursor
+  useEffect(() => {
+    const int = setInterval(() => setCursorVisible(v => !v), 530);
+    return () => clearInterval(int);
+  }, []);
+
+  useEffect(() => {
+    if (!videoRef.current) return;
+    const vid = videoRef.current;
+    let reqId;
+
+    const loop = () => {
+      const ct = vid.currentTime;
+
+      const currentIndex = VIDEO_TEXTS.findIndex((item, i, arr) => {
+        const next = arr[i + 1];
+        return ct >= item.time && (!next || ct < next.time);
+      });
+
+      if (currentIndex !== -1) {
+        const currentItem = VIDEO_TEXTS[currentIndex];
+        const nextItem = VIDEO_TEXTS[currentIndex + 1];
+
+        const targetText = currentItem.text;
+        const timeInState = Math.max(0, ct - currentItem.time);
+
+        const duration = (nextItem && nextItem.time < 999) ? (nextItem.time - currentItem.time) : 3.0;
+        
+        // Fase de escritura: toma el 35% del tiempo total
+        const typePhaseTime = duration * 0.35;
+        const typeSpeed = typePhaseTime / Math.max(targetText.length, 1);
+
+        if (nextItem && nextItem.time < 999) {
+          // Fase de borrado: toma el 25% del tiempo total
+          const erasePhaseTime = duration * 0.25;
+          const eraseSpeed = erasePhaseTime / Math.max(targetText.length, 1);
+          
+          // Debe terminar de borrar exactamente 50ms (0.05s) antes del siguiente
+          const startEraseTime = duration - 0.05 - erasePhaseTime;
+
+          if (timeInState > startEraseTime) {
+            const eraseProgress = timeInState - startEraseTime;
+            const charsLeft = Math.max(0, targetText.length - Math.floor(eraseProgress / eraseSpeed));
+            setDisplayText(targetText.substring(0, charsLeft));
+          } else {
+            const charsTyped = Math.floor(timeInState / typeSpeed);
+            setDisplayText(targetText.substring(0, Math.min(charsTyped, targetText.length)));
+          }
+        } else {
+          const charsTyped = Math.floor(timeInState / typeSpeed);
+          setDisplayText(targetText.substring(0, Math.min(charsTyped, targetText.length)));
+        }
+      }
+
+      reqId = requestAnimationFrame(loop);
+    };
+
+    reqId = requestAnimationFrame(loop);
+    vid.addEventListener('timeupdate', loop);
+    return () => {
+      cancelAnimationFrame(reqId);
+      vid.removeEventListener('timeupdate', loop);
+    };
+  }, [videoRef]);
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'inherit',
+      fontSize: isMobile ? 'clamp(20px, 8vw, 36px)' : 44, 
+      fontWeight: 600,
+      color: '#fff',
+      letterSpacing: '0.04em',
+      whiteSpace: 'nowrap'
+    }}>
+      <span style={{ color: '#00AEEF', fontWeight: 800 }}>{'>'}</span>
+      <span style={{ marginLeft: 8 }}>{displayText}</span>
+      <span style={{
+        opacity: cursorVisible ? 1 : 0,
+        transition: 'opacity 0.1s',
+        marginLeft: 6,
+        width: 5, // Aumentado para compensar el tamaño
+        height: isMobile ? 40 : 48, // Duplicado
+        background: '#00AEEF',
+        display: 'inline-block'
+      }} />
     </div>
   );
 }

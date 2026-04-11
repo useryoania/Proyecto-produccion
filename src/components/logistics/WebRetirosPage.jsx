@@ -651,10 +651,10 @@ const WebRetirosPage = () => {
 
       // Garantizar que los 4 estantes siempre aparezcan (aunque D esté vacío)
       const ESTANTES_DEFAULT = [
-        { id: 'A', secciones: 4, posiciones: 10 },
-        { id: 'B', secciones: 4, posiciones: 10 },
-        { id: 'C', secciones: 4, posiciones: 10 },
-        { id: 'D', secciones: 4, posiciones: 10 },
+        { id: 'A', secciones: 4, posiciones: 20 },
+        { id: 'B', secciones: 4, posiciones: 20 },
+        { id: 'C', secciones: 4, posiciones: 20 },
+        { id: 'D', secciones: 4, posiciones: 20 },
       ];
       const mergedEstantes = ESTANTES_DEFAULT.map(def => {
         const fromDB = Object.values(configMap).find(c => c.id.trim() === def.id);
@@ -672,9 +672,12 @@ const WebRetirosPage = () => {
         // 7 = Empaquetado sin abonar, 8 = Empaquetado y abonado
         const { data: todosData } = await api.get('/apiordenesRetiro/estados?estados=1,3,4,7,8,9');
         // Filter out retiros that are already assigned to a shelf
-        const enEstante = new Set();
+        const enEstanteNums = new Set();
         Object.values(estantesMap).forEach(items => items.forEach(item => {
-          if (item.OrdenRetiro) enEstante.add(item.OrdenRetiro);
+          if (item.OrdenRetiro) {
+            const m = String(item.OrdenRetiro).match(/(\d+)$/);
+            if (m) enEstanteNums.add(parseInt(m[1], 10));
+          }
         }));
         // Filter out retiros already in apiOrders (web/totem) to avoid duplicates
         // apiOrders use format "RT-18", otrosRetiros use "RT-0018" — compare by numeric ID
@@ -683,10 +686,10 @@ const WebRetirosPage = () => {
           return match ? parseInt(match[1], 10) : null;
         }).filter(Boolean));
         const sinEstante = (Array.isArray(todosData) ? todosData : []).filter(o => {
-          if (enEstante.has(o.ordenDeRetiro)) return false;
-          // Extract numeric ID from "RT-0018" format
           const match = (o.ordenDeRetiro || '').match(/(\d+)$/);
           const numId = match ? parseInt(match[1], 10) : null;
+          
+          if (numId && enEstanteNums.has(numId)) return false;
           if (numId && apiOrderIds.has(numId)) return false;
           return true;
         });
@@ -778,9 +781,10 @@ const WebRetirosPage = () => {
       socket.on("connect", () => console.log("WebRetiros conectado a Sockets:", socket.id));
       socket.on("retiros:update", (data) => {
         fetchPendingUpdate();
-        // Si se asignó o desasignó un retiro, refrescar también el mapa de estantes
-        if (data?.type === 'asignado_estante' || data?.type === 'desasignado' || data?.type === 'entregado') {
-          api.get('/web-retiros/estantes').then(res => {
+        // Cualquier evento de retiros recalcula otrosRetiros para evitar estado obsoleto
+        // (ej. cancelaciones que cambian estado 1→5 y deben desaparecer de empaques)
+        if (data?.type === 'asignado_estante' || data?.type === 'desasignado' || data?.type === 'entregado' || data?.type === 'estado' || data?.type === 'pago_web' || !data?.type) {
+          api.get('/web-retiros/estantes').then(async res => {
             const estantesData = res.data || [];
             const estantesMap = {};
             estantesData.forEach(item => {
@@ -794,6 +798,43 @@ const WebRetirosPage = () => {
               }
             });
             setOcupacionEstantes(estantesMap);
+
+            // Recalcular sinEstante con el mismo criterio que fetchAllData:
+            // excluir lo que ya está en estantes Y lo que ya está en apiOrders (web) para evitar duplicados.
+            // Esto garantiza consistencia sin necesitar hard refresh.
+            try {
+              const [todosRes, localesRes] = await Promise.all([
+                api.get('/apiordenesRetiro/estados?estados=1,3,4,7,8,9'),
+                api.get('/web-retiros/locales')
+              ]);
+              const todosData = todosRes.data;
+              const localesData = (localesRes.data || []).filter(r => r.Estado === 1 || r.Estado === 3);
+
+              // IDs numéricos de órdenes ya en estantes
+              const enEstanteNums = new Set();
+              Object.values(estantesMap).forEach(items => items.forEach(item => {
+                if (item.OrdenRetiro) {
+                  const m = String(item.OrdenRetiro).match(/(\d+)$/);
+                  if (m) enEstanteNums.add(parseInt(m[1], 10));
+                }
+              }));
+
+              // IDs numéricos de órdenes web (evitar duplicados con apiOrders)
+              const apiOrderIds = new Set(localesData.map(r => {
+                const match = (r.OrdIdRetiro || '').toString().match(/(\d+)$/);
+                return match ? parseInt(match[1], 10) : null;
+              }).filter(Boolean));
+
+              const sinEstanteActualizado = (Array.isArray(todosData) ? todosData : []).filter(o => {
+                const match = (o.ordenDeRetiro || '').match(/(\d+)$/);
+                const numId = match ? parseInt(match[1], 10) : null;
+                if (numId && enEstanteNums.has(numId)) return false;
+                if (numId && apiOrderIds.has(numId)) return false;
+                return true;
+              });
+              setOtrosRetiros(sinEstanteActualizado);
+            } catch (e) { console.warn('[socket] Error recalculando sinEstante:', e); }
+
           }).catch(e => console.warn('[socket] Error refrescando estantes:', e));
         }
       });
@@ -841,6 +882,26 @@ const WebRetirosPage = () => {
 
   const handleAsignarUbicacion = async (estanteId, sec, pos) => {
     if (!selectedRetiro) return;
+
+    // === VALIDACIÓN DE ESTANTE: el retiro debe ir al estante que corresponde a sus últimos 2 dígitos ===
+    const intendedEstante = getEstanteForRetiro(selectedRetiro.ordenDeRetiro);
+    if (intendedEstante && estanteId.trim() !== intendedEstante) {
+      Swal.fire({
+        iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>`,
+        title: 'Estante incorrecto',
+        html: `La orden <strong style="color: #00AEEF;">${selectedRetiro.ordenDeRetiro}</strong> debe ir al estante <strong style="color: #00AEEF;">${intendedEstante}</strong> (rango ${intendedEstante === 'A' ? '00–24' : intendedEstante === 'B' ? '25–49' : intendedEstante === 'C' ? '50–74' : '75–99'}).<br><br>No se puede asignar al estante <strong>${estanteId}</strong>.`,
+        confirmButtonText: 'Entendido',
+        confirmButtonColor: '#dc2626',
+        background: '#212121',
+        color: '#f8fafc',
+        customClass: { 
+          popup: '!rounded-xl !pb-8 !px-2',
+          icon: '!border-none !mt-2 !-mb-4',
+          title: '!-mt-2'
+        }
+      });
+      return;
+    }
 
     const ubicacionId = `${estanteId}-${sec}-${pos}`;
     const retiroParaAsignar = selectedRetiro; // Capturamos para optimismo
@@ -1096,6 +1157,28 @@ const WebRetirosPage = () => {
   // Quita la orden del estante y la devuelve a la lista de empaque (sin marcar como entregada)
   const handleDesasignar = async (ordenRetiro, ubicacionId) => {
     if (!ordenRetiro || !ubicacionId) return;
+
+    // ⚠️ Confirmación: desasignar devuelve la orden a empaques sin entregarla
+    const { isConfirmed } = await Swal.fire({
+      // icon: 'warning',
+      iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><path d="m7.5 4.27 9 5.15"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/><path d="m17 13 5 5"/><path d="m17 18 5-5"/></svg>`,
+      title: '¿Quitar del estante?',
+      html: `La orden <strong style="color: #00AEEF;">${ordenRetiro}</strong> se quitará del estante<br>y volverá a la sección de empaques.<br><br>Confirmá si querés hacer esto.`,
+      confirmButtonText: 'Sí, quitar del estante',
+      cancelButtonText: 'Cancelar',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#64748b',
+      background: '#212121',
+      color: '#f8fafc',
+      customClass: { 
+        popup: '!rounded-xl !pb-8 !px-2',
+        icon: '!border-none !mt-2 !-mb-4',
+        title: '!-mt-2'
+      },
+    });
+    if (!isConfirmed) return;
+
     // Optimismo UI: liberar visualmente el casillero
     setOcupacionEstantes(prev => {
       const next = { ...prev };
@@ -1216,7 +1299,7 @@ const WebRetirosPage = () => {
       if (!allChecked || !selectedRetiro.orders?.length) return;
       const timer = setTimeout(() => {
         const targetEstanteId = getEstanteForRetiro(selectedRetiro.ordenDeRetiro);
-        const defaultConfig = { id: targetEstanteId, secciones: 4, posiciones: 10 };
+        const defaultConfig = { id: targetEstanteId, secciones: 4, posiciones: 20 };
         const estConfig = estantesConfigArr.find(e => e.id.trim() === targetEstanteId) || defaultConfig;
 
         const tryAssignIn = (config) => {
@@ -1235,16 +1318,22 @@ const WebRetirosPage = () => {
 
         if (tryAssignIn(estConfig)) return;
 
-        for (const est of estantesConfigArr) {
-          if (est.id.trim() === targetEstanteId) continue;
-          if (tryAssignIn(est)) {
-            Swal.fire({ toast: true, position: 'top-end', icon: 'info', title: `Estante ${targetEstanteId} lleno — asignado a ${est.id.trim()}`, showConfirmButton: false, timer: 3000 });
-            return;
+        // Estante correcto lleno — no hacer overflow, solo informar y abortar
+        const rangoLabel = targetEstanteId === 'A' ? '00–24' : targetEstanteId === 'B' ? '25–49' : targetEstanteId === 'C' ? '50–74' : '75–99';
+        Swal.fire({
+          iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>`,
+          title: `Estante ${targetEstanteId} lleno`,
+          html: `No hay casilleros disponibles en el estante <strong style="color: #00AEEF;">${targetEstanteId}</strong> (rango ${rangoLabel}).<br><br>Debés liberar espacio antes de poder asignar esta orden.`,
+          confirmButtonText: 'Entendido',
+          confirmButtonColor: '#dc2626',
+          background: '#212121',
+          color: '#f8fafc',
+          customClass: { 
+            popup: '!rounded-xl !pb-8 !px-2',
+            icon: '!border-none !mt-2 !-mb-4',
+            title: '!-mt-2'
           }
-        }
-
-        Swal.fire({ toast: true, position: 'top', icon: 'warning', title: 'No hay casilleros vacíos. Seleccioná uno manualmente.', showConfirmButton: false, timer: 3000 });
-        setUbicationMode(true);
+        });
       }, 500);
       return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps

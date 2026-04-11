@@ -199,9 +199,9 @@ const RegisterPage = () => {
 
             <div className="flex-1 flex items-center justify-center p-4 min-h-[calc(100vh-70px-100px)] z-10 w-full mb-10">
                 {/* Card wrapper with static CMY border instead of animated gradient to save GPU */}
-                <div className="relative w-full md:max-w-4xl rounded-3xl z-10 mx-auto p-[2px] bg-gradient-to-br from-[#00AEEF] via-[#EC008C] to-[#FFF200]">
+                <div className="relative w-full md:max-w-4xl z-10 mx-auto md:rounded-3xl md:p-[2px] md:bg-gradient-to-br md:from-[#00AEEF] md:via-[#EC008C] md:to-[#FFF200]">
                     {/* Contenedor interior oscuro para simular el borde */}
-                    <div className="relative bg-custom-dark p-6 md:px-8 md:py-8 rounded-[22px] w-full overflow-hidden">
+                    <div className="relative bg-custom-dark p-6 md:px-8 md:py-8 md:rounded-[22px] w-full overflow-hidden">
                         <div className="mb-6 text-center">
                             <h2 className="text-2xl font-black text-white tracking-tight">Crear cuenta</h2>
                             <p className="text-sm font-medium text-zinc-400 mt-1">Industrializá tu producción hoy mismo.</p>

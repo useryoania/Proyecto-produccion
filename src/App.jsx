@@ -1,12 +1,14 @@
 // src/App.jsx
 import { useState, useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from './context/AuthContext';
 import LoginPage from './components/pages/LoginPage';
 import RegisterPage from './components/pages/RegisterPage';
 import ForgotPasswordPage from './components/pages/ForgotPasswordPage';
 import ResetPasswordPage from './components/pages/ResetPasswordPage';
 import LandingPage from './components/pages/LandingPage';
+import ContactPage from './components/pages/ContactPage';
 import { ClientPortalApp } from './client-portal/ClientPortalApp';
 import MainAppContent from './components/layout/MainAppContent'; // ESTE ES EL IMPORT
 import PaymentResult from './components/pages/PaymentResult';
@@ -17,6 +19,7 @@ import { menuService } from './services/api';
 
 function App() {
   const { user, loading: authLoading } = useAuth();
+  const location = useLocation();
   const [menuItems, setMenuItems] = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
@@ -42,19 +45,30 @@ function App() {
 
   if (!user) {
     return (
-      <main>
-        <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="/landing" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/portal/*" element={<ClientPortalApp />} />
-          <Route path="/payment-status" element={<PaymentResult />} />
-          <Route path="/totem/*" element={<TotemApp />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
+      <main className="bg-custom-dark min-h-screen">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={location.pathname}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+          >
+            <Routes location={location}>
+              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route path="/landing" element={<LandingPage />} />
+              <Route path="/contacto" element={<ContactPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/portal/*" element={<ClientPortalApp />} />
+              <Route path="/payment-status" element={<PaymentResult />} />
+              <Route path="/totem/*" element={<TotemApp />} />
+              <Route path="*" element={<Navigate to="/login" replace />} />
+            </Routes>
+          </motion.div>
+        </AnimatePresence>
       </main>
     );
   }
@@ -67,6 +81,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/portal/pickup" replace />} />
           <Route path="/landing" element={<LandingPage />} />
+          <Route path="/contacto" element={<ContactPage />} />
           <Route path="/portal/*" element={<ClientPortalApp />} />
           <Route path="/payment-status" element={<PaymentResult />} />
           <Route path="/totem/*" element={<TotemApp />} />
@@ -83,6 +98,8 @@ function App() {
         <Route path="/totem/*" element={<TotemApp />} />
         <Route path="/print-station" element={<PrintStationPage />} />
         <Route path="/encomienda-station" element={<EncomiendaPrintStation />} />
+        {/* /portal pertenece al portal cliente — si un admin llega aquí, redirigir al dashboard */}
+        <Route path="/portal/*" element={<Navigate to="/" replace />} />
         <Route path="*" element={<MainAppContent menuItems={menuItems} />} />
       </Routes>
     </main>

@@ -1,5 +1,6 @@
 const { getPool, sql } = require('../config/db');
 const logger = require('../utils/logger');
+const emailService = require('../services/emailService');
 
 exports.getActiveContent = async (req, res) => {
     try {
@@ -85,5 +86,36 @@ exports.deleteContent = async (req, res) => {
     } catch (error) {
         logger.error("Error deleting content:", error);
         res.status(500).json({ success: false, error: "Error deleting content." });
+    }
+};
+
+exports.sendContactForm = async (req, res) => {
+    const { name, email, message } = req.body;
+
+    if (!name || !email || !message) {
+        return res.status(400).json({ success: false, error: "Todos los campos son obligatorios." });
+    }
+
+    try {
+        const html = `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;background:#ffffff;">
+            <h2 style="color:#0f172a;">Nuevo mensaje web</h2>
+            <p><strong>Nombre:</strong> ${name}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
+            <p style="white-space:pre-wrap;color:#333;font-size:15px;line-height:1.6;">${message}</p>
+        </div>
+        `;
+        
+        const success = await emailService.sendMail('info@user.uy', `Mensaje Web - ${name}`, html);
+
+        if (success) {
+            res.json({ success: true, message: "Mensaje enviado exitosamente." });
+        } else {
+            res.status(500).json({ success: false, error: "Error enviando el correo." });
+        }
+    } catch (error) {
+        logger.error("Error sending contact email:", error);
+        res.status(500).json({ success: false, error: "Error procesando petición." });
     }
 };

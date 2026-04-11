@@ -228,7 +228,7 @@ export const MainLayout = ({ children }) => {
                         </div>
                         <div className="overflow-hidden">
                             <p className="text-sm font-medium truncate">{user?.name}</p>
-                            <p className="text-xs text-zinc-300 truncate">{user?.email}</p>
+                            <p className="text-xs text-zinc-300 truncate font-mono">{user?.idCliente}</p>
                         </div>
                     </div>
                     <button

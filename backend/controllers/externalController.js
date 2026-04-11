@@ -27,7 +27,8 @@ exports.getClientes = async (req, res) => {
                 c.LocalidadID,
                 c.VendedorID,
                 t.Nombre as VendedorNombre,
-                c.FormaEnvioID
+                c.FormaEnvioID,
+                c.WebLastLogin
             FROM [SecureAppDB].[dbo].[Clientes] c
             LEFT JOIN [SecureAppDB].[dbo].[Trabajadores] t ON CAST(c.VendedorID AS VARCHAR) = CAST(t.Cedula AS VARCHAR)
             WHERE c.CliIdCliente IS NOT NULL

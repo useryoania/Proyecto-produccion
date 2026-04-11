@@ -150,7 +150,7 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
                 onLoginSuccess(result);
             } else {
                 if (result.userType === 'CLIENT') {
-                    navigate('/portal/pickup');
+                    navigate('/portal');
                 } else {
                     navigate('/');
                 }
@@ -265,7 +265,7 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
                 onLoginSuccess(result);
             } else {
                 if (result.userType === 'CLIENT') {
-                    navigate('/portal/pickup');
+                    navigate('/portal');
                 } else {
                     navigate('/');
                 }
@@ -294,7 +294,7 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
                         <input
                             type="text"
                             className="w-full pl-10 pr-4 py-2.5 md:py-2 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan focus:bg-brand-dark transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
-                            placeholder="Usuario o ID de Cliente"
+                            placeholder="ID de Cliente"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
                         />
@@ -398,9 +398,9 @@ const LoginPage = () => {
             <ParticlesCanvas />
             
             <div className="flex-1 flex items-center justify-center p-4 min-h-[calc(100vh-70px-100px)] z-10 w-full">
-                <div className="relative w-full max-w-md md:max-w-sm rounded-3xl p-[2px] bg-gradient-to-br from-[#00AEEF] via-[#EC008C] to-[#FFF200]">
+                <div className="relative w-full max-w-md md:max-w-sm z-10 md:rounded-3xl md:p-[2px] md:bg-gradient-to-br md:from-[#00AEEF] md:via-[#EC008C] md:to-[#FFF200]">
                     {/* Aqui inyectamos el componente extraido */}
-                    <div className="bg-custom-dark rounded-[22px] overflow-hidden">
+                    <div className="bg-custom-dark md:rounded-[22px] overflow-hidden">
                         <LoginFormBox onRequireReset={handleRequireReset} />
                     </div>
                 </div>

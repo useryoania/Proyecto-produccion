@@ -146,7 +146,7 @@ async function runRecovery() {
         let failCount = 0;
         let missingOrphans = 0;
 
-        const baseDir = process.env.COMPROBANTES_PAGOS_PATH || path.join(__dirname, 'comprobantesPagos');
+        const baseDir = process.env.COMPROBANTES_PATH || path.join(__dirname, 'comprobantesPagos');
         if (!fs.existsSync(baseDir)) fs.mkdirSync(baseDir, { recursive: true });
 
         for (const row of txRes.recordset) {
@@ -168,8 +168,12 @@ async function runRecovery() {
 
             if (dbPago.recordset.length > 0) {
                 const currentPath = dbPago.recordset[0].PagRutaComprobante;
-                // Actuar si está vacío o si quedó envenenado con el nombre falso del error anterior
-                if (!currentPath || currentPath.includes('Comprobante--.pdf')) {
+                // Actuar si:
+                // 1. No tiene comprobante asignado
+                // 2. Quedó con el nombre corrupto Comprobante--.pdf
+                // 3. Quedó con el UUID de transacción en vez del código RW- (bug anterior)
+                const hasUuidName = currentPath && /Comprobante-[0-9a-f]{8}-[0-9a-f]{4}-/.test(currentPath);
+                if (!currentPath || currentPath.includes('Comprobante--.pdf') || hasUuidName) {
 
                     const currencyObj = json.moneda || (row.Currency === 840 ? 'USD' : 'UYU');
                     const currencySymbol = currencyObj === 'USD' ? 'U$S' : '$';

@@ -167,6 +167,15 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
     if (pagoExistenteId) {
         estadoOrdenRetiro = 3; // Al menos una orden ya tiene pago registrado
 
+    } else if (tipoCliente === 2 || tipoCliente === 3) {
+        // TODO: DEUDA TÉCNICA — Bypass temporal para clientes tipo 2 (Semanal) y tipo 3.
+        // Cuando PlanesMetros y CiclosCredito estén completamente implementados
+        // (UI de gestión + carga de datos en producción), eliminar este bloque y
+        // dejar que caigan al else de abajo para que pasen por la verificación real
+        // de verificarRecursoCliente() y verificarCicloSemanal().
+        estadoOrdenRetiro = 4;
+        logger.info(`[RETIRO] Cliente tipo ${tipoCliente} → Estado 4 (Abonado de antemano) directo [bypass temporal].`);
+
     } else {
         // Verificar ciclo semanal del cliente (aplica a todas las órdenes si tipo 2)
         let tieneCicloSemanal = false;
