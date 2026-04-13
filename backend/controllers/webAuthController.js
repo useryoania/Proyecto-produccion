@@ -59,7 +59,20 @@ exports.login = asyncHandler(async (req, res) => {
     }
 
     if (!client.WebActive) {
-        return res.status(403).json({ success: false, message: 'Tu cuenta está pendiente de aprobación. Contactá al administrador.' });
+        const email = client.Email || '';
+        let maskedEmail = '';
+        if (email) {
+            const [local, domain] = email.split('@');
+            maskedEmail = local.length <= 2
+                ? email
+                : local[0] + '*'.repeat(local.length - 2) + local[local.length - 1] + '@' + domain;
+        }
+        return res.status(403).json({
+            success: false,
+            accountInactive: true,
+            maskedEmail,
+            message: 'Tu cuenta aún no fue activada.'
+        });
     }
 
     if (isFirstTime) {
@@ -90,6 +103,9 @@ exports.login = asyncHandler(async (req, res) => {
     trackLogin(client.CodCliente, client.IDCliente || identifier, req.ip, 'WEB_CLIENT', true);
     audit('LOGIN', { user: client.IDCliente || identifier, userId: client.CodCliente, ip: req.ip, type: 'WEB_CLIENT', result: 'OK' });
 
+    const mustReset = Boolean(client.WebResetPassword) && client.WebResetPassword.toString() !== '0' && client.WebResetPassword.toString() !== 'false';
+    logger.info(`🔍 DEBUG - DB WebResetPassword = ${client.WebResetPassword} | Type = ${typeof client.WebResetPassword} | IsBuffer = ${Buffer.isBuffer(client.WebResetPassword)} | Evaluated MustReset = ${mustReset}`);
+
     res.json({
         success: true,
         user: {
@@ -99,7 +115,8 @@ exports.login = asyncHandler(async (req, res) => {
             company: client.NombreFantasia,
             role: 'WEB_CLIENT',
             codCliente: client.CodCliente,
-            requireReset: client.WebResetPassword
+            requireReset: mustReset,
+            idCliente: client.IDCliente || identifier
         },
         token
     });
@@ -114,7 +131,7 @@ exports.register = asyncHandler(async (req, res) => {
         name, email, password, company, phone,
         address, ruc, localidad, agencia, fantasyName, documento,
         departamentoId, localidadId, agenciaId, formaEnvioId,
-        manualVendedorId
+        manualVendedorId, newsletter
     } = req.body;
 
     if (!idcliente || !password) {
@@ -204,16 +221,17 @@ exports.register = asyncHandler(async (req, res) => {
         .input('AgeID', sql.Int, agenciaId || null)
         .input('FenvID', sql.Int, formaEnvioId || null)
         .input('VenID', sql.NVarChar(20), vendedorId)
+        .input('Newsletter', sql.Bit, newsletter ? 1 : 0)
         .query(`
             INSERT INTO Clientes (
                 CodCliente, IDCliente, Nombre, NombreFantasia, Email, TelefonoTrabajo, DireccionTrabajo, CioRuc, 
-                WebPasswordHash, WebActive, WebResetPassword,
+                WebPasswordHash, WebActive, WebResetPassword, Newsletter,
                 DepartamentoID, LocalidadID, AgenciaID, FormaEnvioID, VendedorID, FechaRegistro
             )
             OUTPUT INSERTED.CliIdCliente
             VALUES (
                 @CC, @IDC, @Nom, @Fant, @Email, @Tel, @Dir, @Ruc, 
-                @Pass, 0, 0,
+                @Pass, 0, 0, @Newsletter,
                 @DepID, @LocID, @AgeID, @FenvID, @VenID, GETDATE()
             )
         `);
@@ -529,17 +547,214 @@ exports.activate = asyncHandler(async (req, res) => {
 
 // HTML page shown after clicking activation link
 function activationPage(message, success) {
+    const successSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#00AEEF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 12px rgba(0, 174, 239, 0.4)); margin: 0 auto;">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="m9 12 2 2 4-4"/>
+        </svg>
+    `;
+    const errorSvg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#EC008C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 12px rgba(236, 0, 140, 0.4)); margin: 0 auto;">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="m15 9-6 6"/>
+            <path d="m9 9 6 6"/>
+        </svg>
+    `;
+
     return `
     <!DOCTYPE html>
     <html lang="es">
-    <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Activación de Cuenta</title></head>
-    <body style="font-family:Arial,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f5f5f5;">
-        <div style="background:white;padding:40px;border-radius:12px;box-shadow:0 2px 12px rgba(0,0,0,0.1);text-align:center;max-width:400px;">
-            <div style="font-size:48px;margin-bottom:16px;">${success ? '✅' : '❌'}</div>
-            <h2 style="color:${success ? '#1a1a1a' : '#dc2626'};margin-bottom:12px;">${success ? 'Cuenta Activada' : 'Error'}</h2>
-            <p style="color:#666;margin-bottom:24px;">${message}</p>
-            <a href="/login" style="display:inline-block;padding:12px 32px;background:#0f172a;color:white;text-decoration:none;border-radius:8px;font-weight:bold;">Ir al Login</a>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1.0">
+        <title>Activación de Cuenta</title>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
+            body {
+                font-family: 'Inter', sans-serif;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                margin: 0;
+                background-color: #09090b;
+                color: #f4f4f5;
+                padding: 20px;
+                box-sizing: border-box;
+            }
+            .card-wrapper {
+                background: linear-gradient(135deg, #00AEEF, #EC008C, #FFF200);
+                padding: 2px;
+                border-radius: 24px;
+                width: 100%;
+                max-width: 420px;
+                box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7);
+                position: relative;
+                z-index: 10;
+            }
+            .card {
+                background-color: #19181B;
+                padding: 40px;
+                border-radius: 22px;
+                text-align: center;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            .icon {
+                margin-bottom: 20px;
+                display: flex;
+                justify-content: center;
+            }
+            h2 {
+                margin: 0 0 12px 0;
+                font-size: 28px;
+                font-weight: 900;
+                color: #fff;
+                letter-spacing: -0.5px;
+            }
+            p {
+                margin: 0 0 32px 0;
+                color: #a1a1aa;
+                font-size: 15px;
+                line-height: 1.6;
+                font-weight: 600;
+            }
+            a.btn {
+                display: inline-block;
+                padding: 14px 32px;
+                background-color: #00AEEF;
+                color: #111;
+                text-decoration: none;
+                border-radius: 12px;
+                font-weight: 800;
+                font-size: 15px;
+                transition: all 0.2s ease;
+                box-shadow: 0 8px 16px -4px rgba(0, 174, 239, 0.4);
+            }
+            a.btn:hover {
+                background-color: #009ce0;
+                transform: translateY(-2px);
+                box-shadow: 0 12px 20px -4px rgba(0, 174, 239, 0.5);
+                color: #fff;
+            }
+            .particles {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                z-index: 0;
+                pointer-events: none;
+            }
+        </style>
+    </head>
+    <body>
+        <canvas id="particles-canvas" class="particles"></canvas>
+        <div class="card-wrapper">
+            <div class="card">
+                <div class="icon">${success ? successSvg : errorSvg}</div>
+                <h2>${success ? '¡Cuenta Activada!' : 'Ocurrió un error'}</h2>
+                <p>${message}</p>
+                <a href="http://localhost:5173/login" class="btn">Ir al Login</a>
+            </div>
         </div>
+
+        <script>
+            const canvas = document.getElementById('particles-canvas');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                const COLORS = ['#00AEEF', '#EC008C', '#FFF200', '#FFFFFF'];
+                let particles = [];
+                const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
+                resize();
+                window.addEventListener('resize', resize);
+                
+                for (let i = 0; i < 40; i++) {
+                    particles.push({
+                        x: Math.random() * canvas.width,
+                        y: Math.random() * canvas.height,
+                        vx: (Math.random() - 0.5) * 0.4,
+                        vy: (Math.random() - 0.5) * 0.4,
+                        r: Math.random() * 2 + 1,
+                        color: COLORS[Math.floor(Math.random() * COLORS.length)]
+                    });
+                }
+                
+                const draw = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    for (let i = 0; i < particles.length; i++) {
+                        for (let j = i + 1; j < particles.length; j++) {
+                            const dx = particles[i].x - particles[j].x;
+                            const dy = particles[i].y - particles[j].y;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (dist < 120) {
+                                ctx.beginPath();
+                                ctx.strokeStyle = \`rgba(255,255,255,\${0.08 * (1 - dist / 120)})\`;
+                                ctx.lineWidth = 0.5;
+                                ctx.moveTo(particles[i].x, particles[i].y);
+                                ctx.lineTo(particles[j].x, particles[j].y);
+                                ctx.stroke();
+                            }
+                        }
+                    }
+                    
+                    particles.forEach(p => {
+                        p.x += p.vx;
+                        p.y += p.vy;
+                        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+                        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                        ctx.fillStyle = p.color;
+                        ctx.globalAlpha = 0.5;
+                        ctx.fill();
+                        ctx.globalAlpha = 1;
+                    });
+                    
+                    requestAnimationFrame(draw);
+                };
+                draw();
+            }
+        </script>
     </body>
     </html>`;
 }
+
+// ===================================
+// RESEND ACTIVATION EMAIL
+// ===================================
+exports.resendActivation = asyncHandler(async (req, res) => {
+    const { identifier, email } = req.body;
+
+    if (!identifier || !email) {
+        return res.status(400).json({ success: false, message: 'Datos incompletos.' });
+    }
+
+    const pool = await getPool();
+    const result = await pool.request()
+        .input('Val', sql.NVarChar, identifier.trim())
+        .query(`SELECT CodCliente, Nombre, Email, WebActive FROM Clientes WHERE LTRIM(RTRIM(IDCliente)) = @Val`);
+
+    if (result.recordset.length === 0) {
+        // No revelar si el usuario existe o no
+        return res.json({ success: true, message: 'Si el correo es correcto, recibirás el email de activación.' });
+    }
+
+    const client = result.recordset[0];
+
+    if (client.WebActive) {
+        return res.status(400).json({ success: false, message: 'Esta cuenta ya está activa. Podés iniciar sesión.' });
+    }
+
+    const emailMatch = (client.Email || '').trim().toLowerCase() === email.trim().toLowerCase();
+    if (!emailMatch) {
+        return res.status(400).json({ success: false, emailMismatch: true, message: 'El correo ingresado no coincide con el registrado.' });
+    }
+
+    const emailService = require('../services/emailService');
+    await emailService.sendRegistrationMail(client.Email, client.Nombre, client.CodCliente);
+
+    return res.json({ success: true, message: 'Correo de activación reenviado. Revisá tu bandeja de entrada.' });
+});

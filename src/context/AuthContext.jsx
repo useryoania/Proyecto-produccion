@@ -100,7 +100,7 @@ export function AuthProvider({ children }) {
                     areaKey: '',
                     userType: 'CLIENT',
                     redirectUrl: '/portal/pickup',
-                    requireReset: clientData.user.requireReset || false,
+                    requireReset: clientData.user.requireReset === true || clientData.user.requireReset === 1 || clientData.user.requireReset === '1',
                     codCliente: clientData.user.codCliente,
                     role: 'WEB_CLIENT',
                 };
@@ -120,7 +120,13 @@ export function AuthProvider({ children }) {
             }
 
             // --- 3. Ambos fallaron: mostrar el error más relevante ---
-            // Priorizar mensaje del endpoint web si el usuario intentó con formato de IDCliente
+            if (clientData.accountInactive) {
+                const err = new Error(clientData.message || 'Cuenta inactiva');
+                err.accountInactive = true;
+                err.maskedEmail = clientData.maskedEmail || '';
+                err.identifier = username;
+                throw err;
+            }
             const errorMsg = clientData.message || internalData.message || 'Credenciales inválidas';
             console.warn(`⚠️ [Login] Ambos endpoints fallaron. Último error: ${errorMsg}`);
             throw new Error(errorMsg);

@@ -6,12 +6,14 @@ import { CustomButton } from '../pautas/CustomButton';
 import { User, UserPen, Mail, Save } from 'lucide-react';
 import { apiClient } from '../api/apiClient';
 import { ClientFormFields, Field, useNomenclators, inputClass } from '../../components/shared/ClientFormFields';
+import { validateClientDocument } from '../../utils/documentValidation';
 
 export const ProfileEdit = () => {
     const { user, updateProfile } = useAuth();
     const navigate = useNavigate();
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState(null);
+    const [fieldErrors, setFieldErrors] = useState({});
 
     // DB mapping (matches register endpoint):
     //   Clientes.Nombre        = Razón Social (business name)  → user.name
@@ -75,12 +77,36 @@ export const ProfileEdit = () => {
             }
             return next;
         });
+        if (fieldErrors[key]) {
+            setFieldErrors(fe => ({ ...fe, [key]: '' }));
+        }
+    };
+
+    const validateField = (key, value) => {
+        const v = typeof value === 'string' ? value.trim() : String(value || '');
+        if (key === 'rut' && v && !validateClientDocument(v)) {
+            return 'Documento ingresado (CI o RUT) inválido';
+        }
+        return '';
+    };
+
+    const handleBlur = (key) => () => {
+        const err = validateField(key, form[key]);
+        setFieldErrors(fe => ({ ...fe, [key]: err }));
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setSaving(true);
         setMessage(null);
+
+        const err = validateField('rut', form.rut);
+        if (err) {
+            setFieldErrors({ rut: err });
+            setMessage({ type: 'error', text: 'Corregí los errores marcados en el formulario.' });
+            setSaving(false);
+            return;
+        }
 
         const locName = localities.find(l => String(l.ID) === String(form.localidadId))?.Nombre || '';
         const ageName = agencies.find(a => String(a.ID) === String(form.agenciaId))?.Nombre || '';
@@ -135,7 +161,8 @@ export const ProfileEdit = () => {
                     <ClientFormFields
                         form={form}
                         set={set}
-                        fieldErrors={{}}
+                        fieldErrors={fieldErrors}
+                        handleBlur={handleBlur}
                         departments={departments}
                         localities={localities}
                         agencies={agencies}

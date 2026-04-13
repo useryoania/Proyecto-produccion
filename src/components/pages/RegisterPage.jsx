@@ -7,6 +7,8 @@ import { API_URL } from '../../services/apiClient';
 import { ClientFormFields, Field, useNomenclators, inputClass, iconClass } from '../shared/ClientFormFields';
 import ParticlesCanvas from '../ui/ParticlesCanvas';
 import LandingNavbar from '../shared/LandingNavbar.jsx';
+import { validateClientDocument } from '../../utils/documentValidation';
+
 const RegisterPage = () => {
     const location = useLocation();
     const [form, setForm] = useState({
@@ -24,6 +26,7 @@ const RegisterPage = () => {
     const [vendedores, setVendedores] = useState([]);
     const [selectedVendedorId, setSelectedVendedorId] = useState('');
     const [selectedVendedorName, setSelectedVendedorName] = useState('');
+    const [newsletter, setNewsletter] = useState(true);
     const navigate = useNavigate();
 
     // Nomenclator data via shared hook
@@ -110,6 +113,10 @@ const RegisterPage = () => {
                 if (v && !/^[+\d\s()-]{6,20}$/.test(v))
                     return 'Teléfono inválido';
                 break;
+            case 'rut':
+                if (v && !validateClientDocument(v))
+                    return 'Documento ingresado (CI o RUT) inválido';
+                break;
         }
         return '';
     };
@@ -165,15 +172,93 @@ const RegisterPage = () => {
                     localidad: locName,
                     agencia: ageName,
                     formaEnvioId: isMontevideo ? 1 : 2,
-                    manualVendedorId: hadVendedor && selectedVendedorId ? selectedVendedorId : null
+                    manualVendedorId: hadVendedor && selectedVendedorId ? selectedVendedorId : null,
+                    newsletter: newsletter ? 1 : 0
                 })
             });
 
             const data = await response.json();
 
             if (response.ok && data.success) {
-                setSuccess('¡Cuenta creada exitosamente! Redirigiendo al login...');
-                setTimeout(() => navigate('/login'), 2000);
+                setSuccess('¡Registro exitoso!');
+
+                let seconds = 10;
+                const isMobile = window.innerWidth < 768;
+                const swalResult = Swal.fire({
+                    title: '¡Ya casi terminás!',
+                    html: `
+                        <p style="color:#a1a1aa;font-size:14px;margin-bottom:16px;line-height:1.6">
+                            Te enviamos un correo electrónico con un <strong style="color:#f4f4f5">link de activación</strong>.<br/>
+                            Hacé clic en ese link para activar tu cuenta y poder ingresar.
+                        </p>
+                        <p id="swal-countdown" style="color:#71717a;font-size:12px">
+                            Serás redirigido al inicio de sesión en <strong style="color:#00AEEF" id="swal-sec">10</strong> segundos, o podés hacer clic aquí abajo.
+                        </p>
+                    `,
+                    confirmButtonText: 'Ir a iniciar sesión →',
+                    showConfirmButton: true,
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    background: isMobile
+                        ? '#19181B'
+                        : 'linear-gradient(#19181B, #19181B) padding-box, linear-gradient(to bottom right, #00AEEF, #EC008C, #FFF200) border-box',
+                    color: '#f4f4f5',
+                    width: isMobile ? '100vw' : undefined,
+                    padding: isMobile ? '2rem 1.5rem' : undefined,
+                    customClass: { popup: isMobile ? 'swal-mobile-full' : '' },
+                    didOpen: () => {
+                        const popup = Swal.getPopup();
+                        if (isMobile) {
+                            popup.style.background = '#19181B';
+                            popup.style.borderRadius = '0';
+                            popup.style.margin = '0';
+                            popup.style.position = 'fixed';
+                            popup.style.inset = '0';
+                            popup.style.width = '100vw';
+                            popup.style.maxWidth = '100vw';
+                            popup.style.height = '100dvh';
+                            popup.style.display = 'flex';
+                            popup.style.flexDirection = 'column';
+                            popup.style.justifyContent = 'center';
+                        } else {
+                            popup.style.border = '2px solid transparent';
+                            popup.style.borderRadius = '24px';
+                            popup.style.boxShadow = '0 25px 50px -12px rgba(0,0,0,0.7)';
+                        }
+
+                        const title = popup.querySelector('.swal2-title');
+                        if (title) {
+                            title.style.fontSize = isMobile ? '22px' : '20px';
+                            title.style.color = '#f4f4f5';
+                        }
+
+                        const confirmBtn = Swal.getConfirmButton();
+                        if (confirmBtn) {
+                            confirmBtn.style.cssText = `background:transparent;color:#f4f4f5;border:1px solid rgba(0,174,239,0.4);border-radius:12px;padding:12px 24px;font-weight:700;font-size:14px;cursor:pointer;transition:all 0.2s;width:100%;margin-top:8px`;
+                            confirmBtn.onmouseenter = () => { confirmBtn.style.background = 'rgba(0,174,239,0.08)'; confirmBtn.style.borderColor = '#00AEEF'; };
+                            confirmBtn.onmouseleave = () => { confirmBtn.style.background = 'transparent'; confirmBtn.style.borderColor = 'rgba(0,174,239,0.4)'; };
+                        }
+
+                        const interval = setInterval(() => {
+                            seconds--;
+                            const secEl = document.getElementById('swal-sec');
+                            if (secEl) secEl.textContent = seconds;
+                            if (seconds <= 0) {
+                                clearInterval(interval);
+                                Swal.close();
+                                navigate('/login');
+                            }
+                        }, 1000);
+
+                        Swal.getConfirmButton()?.addEventListener('click', () => clearInterval(interval));
+                    }
+                });
+
+                swalResult.then((result) => {
+                    if (result.isConfirmed) {
+                        navigate('/login');
+                    }
+                });
             } else {
                 setError(data.message || data.error || 'Error al registrar la cuenta.');
             }
@@ -191,13 +276,13 @@ const RegisterPage = () => {
     }, []);
 
     return (
-        <div className="flex flex-col min-h-screen bg-custom-dark relative overflow-x-hidden font-sans pt-[70px]">
+        <div className="flex flex-col min-h-screen bg-custom-dark relative overflow-x-hidden font-sans">
             {/* <LandingNavbar /> */}
 
             {/* Particles canvas (Reactivado a pedido del usuario) */}
             <ParticlesCanvas />
 
-            <div className="flex-1 flex items-center justify-center p-4 min-h-[calc(100vh-70px-100px)] z-10 w-full mb-10">
+            <div className="flex-1 flex items-center justify-center p-6 z-10 w-full">
                 {/* Card wrapper with static CMY border instead of animated gradient to save GPU */}
                 <div className="relative w-full md:max-w-4xl z-10 mx-auto md:rounded-3xl md:p-[2px] md:bg-gradient-to-br md:from-[#00AEEF] md:via-[#EC008C] md:to-[#FFF200]">
                     {/* Contenedor interior oscuro para simular el borde */}
@@ -210,7 +295,7 @@ const RegisterPage = () => {
                         <form onSubmit={handleSubmit} className="flex flex-col gap-4 md:gap-4">
                             {/* Se usa el grid directo para que distribuya los campos en zig-zag */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
-                                
+
                                 {/* ID de Cliente */}
                                 <Field label="ID de Cliente" icon={User} required error={fieldErrors.idCliente}>
                                     <input type="text" className={`${inputClass} ${fieldErrors.idCliente ? 'border-custom-magenta focus:ring-brand-magenta focus:border-custom-magenta' : ''}`} placeholder="Ej: Tu ID" value={form.idCliente} onChange={set('idCliente')} onBlur={handleBlur('idCliente')} />
@@ -270,7 +355,7 @@ const RegisterPage = () => {
                                             // Build HTML grid with photos
                                             const isMobile = window.innerWidth < 768;
                                             const grid = vendedores.map(v => {
-                                                const imgUrl = `/assets/images/asesores/${v.Cedula}.svg`;
+                                                const imgUrl = `/assets/images/asesores/${v.Cedula}.jpg`;
                                                 const firstName = v.Nombre.split(' ')[0];
                                                 if (isMobile) {
                                                     return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 14px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;">
@@ -397,6 +482,23 @@ const RegisterPage = () => {
                                     {success}
                                 </div>
                             )}
+
+                            {/* Newsletter checkbox */}
+                            <div className="pl-4">
+                                <label
+                                    className="flex items-center gap-3 cursor-pointer select-none"
+                                    onClick={() => setNewsletter(v => !v)}
+                                >
+                                    <div className="flex items-center justify-center text-custom-cyan">
+                                        {newsletter ? (
+                                            <CheckCircle2 size={22} />
+                                        ) : (
+                                            <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                        )}
+                                    </div>
+                                    <span className="text-sm font-semibold text-zinc-300">Quiero recibir novedades y promociones exclusivas</span>
+                                </label>
+                            </div>
 
                             <Button
                                 type="submit"

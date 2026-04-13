@@ -49,7 +49,7 @@ exports.sendRegistrationMail = async (to, clientName, codCliente) => {
                 </a>
             </div>
             <p style="color:#888;font-size:13px;">Si no podés hacer clic en el botón, copiá y pegá este enlace en tu navegador:</p>
-            <p style="color:#888;font-size:12px;word-break:break-all;">${activationUrl}</p>
+            <p style="font-size:12px;word-break:break-all;"><a href="${activationUrl}" style="color:#0f172a;text-decoration:underline;">${activationUrl}</a></p>
             <p style="color:#888;font-size:13px;margin-top:20px;">Este enlace expira en 7 días.</p>
         </div>
         <hr style="border:none;border-top:1px solid #eee;">
@@ -109,7 +109,7 @@ exports.sendPasswordResetLinkMail = async (to, clientName, resetToken) => {
                 </a>
             </div>
             <p style="color:#888;font-size:13px;">Si no podés hacer clic en el botón, copiá y pegá este enlace en tu navegador:</p>
-            <p style="color:#888;font-size:12px;word-break:break-all;">${resetUrl}</p>
+            <p style="font-size:12px;word-break:break-all;"><a href="${resetUrl}" style="color:#0f172a;text-decoration:underline;">${resetUrl}</a></p>
             <p style="color:#888;font-size:13px;margin-top:20px;">
                 Este enlace expira en <strong>15 minutos</strong>.<br>
                 Si no solicitaste restablecer tu contraseña, podés ignorar este mensaje.

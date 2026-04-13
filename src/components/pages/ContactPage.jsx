@@ -109,30 +109,38 @@ export default function ContactPage() {
                 
 
                 {/* Botón de WhatsApp Centrado */}
-                <div className="flex justify-center w-full max-w-md mx-auto mb-16">
+                <div className="flex justify-center w-full max-w-md md:max-w-sm mx-auto mb-16">
                     {CONTACTS.filter(c => !c.divider).map((c, i) => (
-                        <a
-                            key={i}
-                            href={c.href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="w-full relative group flex items-center justify-between p-4 rounded-[24px] bg-[#111111] border border-[#25d366]/30 hover:border-[#25d366] transition-all duration-300 hover:shadow-[0_0_30px_rgba(37,211,102,0.25)] hover:-translate-y-1 overflow-hidden z-10"
-                        >
-                            {/* Hover background fill effect */}
-                            <div className="absolute inset-0 bg-gradient-to-r from-[#25d366]/0 to-[#25d366]/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
+                        <div key={i} className="relative w-full rounded-3xl z-10 group cursor-pointer">
+                            
+                            {/* Efecto Glow Gradiente (Hover) */}
+                            <div className="absolute -inset-1 bg-gradient-to-br from-[#00AEEF] via-[#EC008C] to-[#FFF200] opacity-30 group-hover:opacity-100 blur-xl transition-opacity duration-500 rounded-3xl -z-10"></div>
+                            
+                            {/* Borde Estructura */}
+                            <div className="relative w-full rounded-3xl p-[2px] bg-gradient-to-br from-[#00AEEF] via-[#EC008C] to-[#FFF200] transition-transform group-hover:-translate-y-1 duration-300">
+                                <a
+                                    href={c.href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-full relative flex items-center justify-between p-4 rounded-[22px] bg-custom-dark transition-all duration-300 overflow-hidden z-10"
+                                >
+                                {/* Hover background fill effect */}
+                                <div className="absolute inset-0 bg-gradient-to-r from-[#25d366]/0 to-[#25d366]/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"></div>
 
-                            <div className="flex items-center gap-4 relative z-10">
-                                <div className="w-12 h-12 rounded-full bg-[#25d366]/10 flex items-center justify-center text-[#25d366] group-hover:bg-[#25d366] group-hover:text-[#111111] transition-all duration-300 group-hover:scale-110 shadow-lg shadow-[#25d366]/5">
-                                    {WaIcon}
+                                <div className="flex items-center gap-4 relative z-10">
+                                    <div className="w-12 h-12 rounded-full bg-[#25d366]/10 flex items-center justify-center text-[#25d366] group-hover:bg-[#25d366] group-hover:text-[#111111] transition-all duration-300 group-hover:scale-110 shadow-lg shadow-[#25d366]/5">
+                                        {WaIcon}
+                                    </div>
+                                    <span className="text-white font-bold text-base tracking-wide group-hover:text-[#25d366] transition-colors">
+                                        {c.label} {c.boldLabel && <strong className="font-black">{c.boldLabel}</strong>}
+                                    </span>
                                 </div>
-                                <span className="text-white font-bold text-base tracking-wide group-hover:text-[#25d366] transition-colors">
-                                    {c.label} {c.boldLabel && <strong className="font-black">{c.boldLabel}</strong>}
+                                <span className="text-[#25d366]/50 group-hover:text-[#25d366] group-hover:translate-x-1 transition-all ml-4 relative z-10 text-xl font-bold">
+                                    →
                                 </span>
-                            </div>
-                            <span className="text-[#25d366]/50 group-hover:text-[#25d366] group-hover:translate-x-1 transition-all ml-4 relative z-10 text-xl font-bold">
-                                →
-                            </span>
-                        </a>
+                            </a>
+                        </div>
+                        </div>
                     ))}
                 </div>
 

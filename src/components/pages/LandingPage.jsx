@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Footer from '../Footer';
 import { useViewport } from '../../hooks/useViewport';
 import heroVideo from '../../assets/videos/hero.mp4';
+import heroMobileVideo from '../../assets/videos/hero_mobile.mp4';
 import imgSublimacion from '../../assets/images/service_sublimacion.png';
 import imgDtf from '../../assets/images/service_dtf.png';
 import imgGranFormato from '../../assets/images/service_gran_formato.png';
@@ -104,6 +105,14 @@ export default function LandingPage() {
     };
   }, []);
 
+  // Recarga el video si cambia el viewport sin recrear el elemento
+  useEffect(() => {
+    if (videoRef.current) {
+        videoRef.current.load();
+        videoRef.current.play().catch(e => console.warn('Autoplay prevented:', e));
+    }
+  }, [isMobile]);
+
   return (
     <div style={{ background: '#0d0d0d', color: '#fff', fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif", minHeight: '100vh' }}>
 
@@ -130,18 +139,17 @@ export default function LandingPage() {
           loop
           muted
           playsInline
+          src={isMobile ? heroMobileVideo : heroVideo}
           onCanPlay={() => setHeroLoaded(true)}
           style={{
             position: 'absolute', inset: 0,
             width: '100%', height: '100%',
             objectFit: 'cover',
-            objectPosition: 'right center',
+            objectPosition: 'center center',
             opacity: heroLoaded ? 0.55 : 0,
             transition: 'opacity 1s ease',
           }}
-        >
-          <source src={heroVideo} type="video/mp4" />
-        </video>
+        />
         {/* Left gradient overlay */}
         <div style={{
           position: 'absolute', inset: 0,
@@ -487,7 +495,7 @@ function VideoTypewriter({ videoRef, isMobile }) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'inherit',
-      fontSize: isMobile ? 'clamp(20px, 8vw, 36px)' : 44, 
+      fontSize: isMobile ? 'clamp(16px, 5.5vw, 24px)' : 44, 
       fontWeight: 600,
       color: '#fff',
       letterSpacing: '0.04em',
@@ -499,8 +507,8 @@ function VideoTypewriter({ videoRef, isMobile }) {
         opacity: cursorVisible ? 1 : 0,
         transition: 'opacity 0.1s',
         marginLeft: 6,
-        width: 5, // Aumentado para compensar el tamaño
-        height: isMobile ? 40 : 48, // Duplicado
+        width: isMobile ? 4 : 5, 
+        height: isMobile ? 28 : 48, 
         background: '#00AEEF',
         display: 'inline-block'
       }} />

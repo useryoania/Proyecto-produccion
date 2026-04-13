@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { apiClient } from '../api/apiClient';
 import {
@@ -33,6 +33,8 @@ const getImageUrl = (url) => {
 export const MainLayout = ({ children }) => {
     const { user, logout } = useAuth();
     const location = useLocation();
+    const navigate = useNavigate();
+    const [checking, setChecking] = useState(true);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isServicesOpen, setIsServicesOpen] = useState(false);
     const [visibleConfig, setVisibleConfig] = useState(null);
@@ -41,6 +43,27 @@ export const MainLayout = ({ children }) => {
 
     // Push notifications (pre-permission banner)
     const { showBanner, acceptPush, dismissPush } = usePushNotifications();
+
+    // Guard: si el token JWT indica requireReset, bloquear acceso al portal
+    useEffect(() => {
+        try {
+            const token = localStorage.getItem('auth_token');
+            if (token) {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                if (payload.requireReset) {
+                    sessionStorage.setItem('reset_token', token);
+                    localStorage.removeItem('auth_token');
+                    localStorage.removeItem('user');
+                    localStorage.removeItem('user_session');
+                    window.location.href = '/login?reset=true';
+                    return;
+                }
+            }
+        } catch (e) {
+            // token malformado, lo dejamos pasar
+        }
+        setChecking(false);
+    }, []);
 
     useEffect(() => {
         const fetchConfig = async () => {
@@ -69,6 +92,9 @@ export const MainLayout = ({ children }) => {
         };
         fetchConfig();
     }, []);
+
+    // Early return AFTER all hooks — respeta las reglas de React
+    if (checking) return <div style={{ width: '100vw', height: '100vh', background: '#18181b' }} />;
 
     const getErpCode = (serviceId) => {
         const map = {
