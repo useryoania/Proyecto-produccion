@@ -299,7 +299,7 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
                 if (googleWrapperRef.current) {
                     googleWrapperRef.current.innerHTML = '';
                 }
-                
+
                 try {
                     // Inicializamos GSI globalmente para evitar duplicados en el SDK
                     if (!window.__gsi_initialized) {
@@ -418,10 +418,10 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
     return (
         <div className="relative w-full overflow-hidden">
             {/* INACTIVE FORM */}
-            <InactiveAccountBox 
-                identifier={inactiveData ? inactiveData.identifier : ''} 
-                maskedEmail={inactiveData ? inactiveData.maskedEmail : ''} 
-                onBack={() => setInactiveData(null)} 
+            <InactiveAccountBox
+                identifier={inactiveData ? inactiveData.identifier : ''}
+                maskedEmail={inactiveData ? inactiveData.maskedEmail : ''}
+                onBack={() => setInactiveData(null)}
                 isVisible={!!inactiveData}
             />
 
@@ -433,84 +433,104 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
                         <p className="text-sm font-medium text-zinc-400 mt-1">Ingresá para acceder a tu producción.</p>
                     </div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-5 md:gap-4">
-                <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-100 uppercase tracking-wider ml-1">Usuario</label>
-                    <div className="relative group">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-cyan group-focus-within:text-custom-cyan transition-colors">
-                            <User size={18} />
+                    <form onSubmit={handleSubmit} className="flex flex-col gap-5 md:gap-4">
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-100 uppercase tracking-wider ml-1">Usuario</label>
+                            <div className="relative group">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-cyan group-focus-within:text-custom-cyan transition-colors">
+                                    <User size={18} />
+                                </div>
+                                <input
+                                    type="text"
+                                    className="w-full pl-10 pr-4 py-2.5 md:py-2 bg-[#111] border border-[#3f3f46] rounded-[10px] focus:ring-1 focus:ring-[#00AEEF] focus:border-[#00AEEF] transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
+                                    placeholder="ID de Cliente"
+                                    value={username}
+                                    onChange={(e) => setUsername(e.target.value)}
+                                />
+                            </div>
                         </div>
-                        <input
-                            type="text"
-                            className="w-full pl-10 pr-4 py-2.5 md:py-2 bg-[#111] border border-[#3f3f46] rounded-[10px] focus:ring-1 focus:ring-[#00AEEF] focus:border-[#00AEEF] transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
-                            placeholder="ID de Cliente"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                        />
-                    </div>
-                </div>
 
-                <div className="space-y-1">
-                    <label className="text-xs font-bold text-slate-100 uppercase tracking-wider ml-1">Contraseña</label>
-                    <div className="relative group">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-magenta group-focus-within:text-custom-magenta transition-colors">
-                            <Lock size={18} />
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold text-slate-100 uppercase tracking-wider ml-1">Contraseña</label>
+                            <div className="relative group">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-magenta group-focus-within:text-custom-magenta transition-colors">
+                                    <Lock size={18} />
+                                </div>
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    className="w-full pl-10 pr-10 py-2.5 md:py-2 bg-[#111] border border-[#3f3f46] rounded-[10px] focus:ring-1 focus:ring-[#00AEEF] focus:border-[#00AEEF] transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
+                                    placeholder="********"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                />
+                                <button
+                                    type="button"
+                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-magenta hover:text-custom-magenta cursor-pointer"
+                                    aria-label="Mostrar u ocultar contraseña"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                >
+                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
+                            </div>
                         </div>
-                        <input
-                            type={showPassword ? "text" : "password"}
-                            className="w-full pl-10 pr-10 py-2.5 md:py-2 bg-[#111] border border-[#3f3f46] rounded-[10px] focus:ring-1 focus:ring-[#00AEEF] focus:border-[#00AEEF] transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
-                            placeholder="********"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                        />
-                        <button
-                            type="button"
-                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-magenta hover:text-custom-magenta cursor-pointer"
-                            aria-label="Mostrar u ocultar contraseña"
-                            onClick={() => setShowPassword(!showPassword)}
+
+                        <div className="flex justify-end">
+                            <a href="/forgot-password" className="text-xs font-semibold text-zinc-500 hover:text-slate-100 transition-colors">
+                                ¿Olvidaste tu contraseña?
+                            </a>
+                        </div>
+
+                        {error && (
+                            <div className="text-custom-magenta p-3 rounded-xl text-xs font-bold flex items-center gap-2 justify-center animate-pulse">
+                                <AlertCircle size={14} />
+                                {error}
+                            </div>
+                        )}
+
+                        <Button
+                            type="submit"
+                            className="w-full py-[14px] px-4 rounded-xl font-bold active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2 text-[15px] !shadow-none border cursor-pointer"
+                            style={{
+                                background: 'linear-gradient(90deg, rgba(0,174,239,0.1) 0%, rgba(0,174,239,0.2) 100%)',
+                                borderColor: 'rgba(0,174,239,0.4)',
+                                color: '#00AEEF',
+                                backdropFilter: 'blur(4px)',
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.background = 'linear-gradient(90deg, rgba(0,174,239,0.15) 0%, rgba(0,174,239,0.3) 100%)';
+                                e.currentTarget.style.borderColor = 'rgba(0,174,239,0.7)';
+                                e.currentTarget.style.boxShadow = '0 0 15px rgba(0,174,239,0.2)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'linear-gradient(90deg, rgba(0,174,239,0.1) 0%, rgba(0,174,239,0.2) 100%)';
+                                e.currentTarget.style.borderColor = 'rgba(0,174,239,0.4)';
+                                e.currentTarget.style.boxShadow = 'none';
+                            }}
+                            isLoading={isLoading}
                         >
-                            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
+                            Ingresar al Sistema <LogIn size={18} />
+                        </Button>
+
+                        <p className="text-center text-sm text-zinc-500 mt-2">
+                            ¿No tenés cuenta?{' '}
+                            <a
+                                href="/register"
+                                className="font-bold border-b border-transparent hover:border-custom-cyan transition-all"
+                                style={{ color: '#00AEEF' }}
+                            >
+                                Crear una cuenta gratis
+                            </a>
+                        </p>
+                    </form>
+
+                    <div className="flex items-center gap-3 my-6">
+                        <div className="flex-1 h-px bg-zinc-100"></div>
+                        <span className="text-xs font-bold text-zinc-300 uppercase">o</span>
+                        <div className="flex-1 h-px bg-zinc-100"></div>
                     </div>
-                </div>
 
-                <div className="flex justify-end">
-                    <a href="/forgot-password" className="text-xs font-semibold text-zinc-500 hover:text-slate-100 transition-colors">
-                        ¿Olvidaste tu contraseña?
-                    </a>
-                </div>
-
-                {error && (
-                    <div className="text-custom-magenta p-3 rounded-xl text-xs font-bold flex items-center gap-2 justify-center animate-pulse">
-                        <AlertCircle size={14} />
-                        {error}
-                    </div>
-                )}
-
-                <Button
-                    type="submit"
-                    className="w-full py-[14px] px-4 bg-[#00AEEF]/[0.08] border border-[#00AEEF]/30 hover:bg-[#00AEEF]/20 text-[#00AEEF] rounded-xl font-bold active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2 text-[15px] !shadow-none"
-                    isLoading={isLoading}
-                >
-                    Ingresar al Sistema <LogIn size={18} />
-                </Button>
-
-                <p className="text-center text-sm text-zinc-500">
-                    ¿No tenés cuenta?{' '}
-                    <a href="/register" className="font-bold text-brand-cyan hover:text-custom-cyan transition-colors">
-                        Registrate
-                    </a>
-                </p>
-            </form>
-
-            <div className="flex items-center gap-3 my-6">
-                <div className="flex-1 h-px bg-zinc-100"></div>
-                <span className="text-xs font-bold text-zinc-300 uppercase">o</span>
-                <div className="flex-1 h-px bg-zinc-100"></div>
-            </div>
-
-                {/* Fijamos matemáticamente la caja a 40px (altura exacta del size="large" de GSI) con overflow-hidden para amputar cualquier sombra, rebote, o línea blanca muerta del iframe */}
-                <div className="flex justify-center h-[40px] overflow-hidden w-full" ref={googleWrapperRef}></div>
+                    {/* Fijamos matemáticamente la caja a 40px (altura exacta del size="large" de GSI) con overflow-hidden para amputar cualquier sombra, rebote, o línea blanca muerta del iframe */}
+                    <div className="flex justify-center h-[40px] overflow-hidden w-full" ref={googleWrapperRef}></div>
                 </div>
             </div>
         </div>
@@ -532,7 +552,7 @@ const LoginPage = () => {
     // Override global body overflow:hidden for this page
     useEffect(() => {
         document.body.style.overflow = 'auto';
-        
+
         const params = new URLSearchParams(window.location.search);
 
         // Check if we came from a redirect that requires reset
@@ -560,20 +580,20 @@ const LoginPage = () => {
         <div className="flex flex-col min-h-[100dvh] bg-[#19181B] relative overflow-x-hidden font-sans pt-[85px] pb-[85px]">
             <LandingNavbar />
             <ParticlesCanvas />
-            
+
             <div className="flex-1 flex items-center justify-center p-4 z-10 relative w-full">
                 <div className="relative w-full max-w-md md:max-w-sm z-10 md:rounded-3xl md:p-[2px] md:bg-gradient-to-br md:from-[#00AEEF] md:via-[#EC008C] md:to-[#FFF200]">
                     {/* Aqui inyectamos el componente extraido */}
                     <div className="bg-custom-dark md:rounded-[22px] overflow-hidden">
-                        <LoginFormBox 
-                          onRequireReset={handleRequireReset}
-                          onLoginSuccess={(result) => {
-                            if (result.userType === 'CLIENT') {
-                              navigate(postLoginRedirect || '/portal/profile');
-                            } else {
-                              navigate('/');
-                            }
-                          }}
+                        <LoginFormBox
+                            onRequireReset={handleRequireReset}
+                            onLoginSuccess={(result) => {
+                                if (result.userType === 'CLIENT') {
+                                    navigate(postLoginRedirect || '/portal/profile');
+                                } else {
+                                    navigate('/');
+                                }
+                            }}
                         />
                     </div>
                 </div>

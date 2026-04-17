@@ -191,7 +191,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
           {isPortalPage && (
             <>
               <div style={{ width: '1px', height: isMobile ? '28px' : '36px', background: 'rgba(255,255,255,0.2)' }}></div>
-              <span style={{ fontWeight: 700, fontSize: isMobile ? '15px' : '17px', color: '#fff', letterSpacing: '0.04em' }}>AUTOGESTIÓN</span>
+              <span style={{ fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: isMobile ? '15px' : '17px', color: '#fff', letterSpacing: '0.04em' }}>AUTOGESTIÓN</span>
             </>
           )}
         </div>
@@ -222,6 +222,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
                 <NavBtn onClick={() => navigate('/register')} style={{ padding: '0px 10px', fontSize: 13 }}>Registrarse</NavBtn>
               </div>
             )}
+
 
             <NavBtn onClick={() => navigate('/contacto')}>Contacto</NavBtn>
           </div>

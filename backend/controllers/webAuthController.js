@@ -25,7 +25,7 @@ exports.login = asyncHandler(async (req, res) => {
     const result = await pool.request()
         .input('Val', sql.NVarChar, identifier.trim())
         .query(`
-            SELECT c.*, t.Nombre AS VendedorNombre, d.Nombre AS DepartamentoNombre
+            SELECT c.*, t.Nombre AS VendedorNombre, t.Cedula AS VendedorCedula, t.telefonoasesor AS VendedorTelefono, d.Nombre AS DepartamentoNombre
             FROM Clientes c
             LEFT JOIN dbo.Trabajadores t ON c.VendedorID = t.ID
             LEFT JOIN dbo.Departamentos d ON c.DepartamentoID = d.ID
@@ -121,7 +121,9 @@ exports.login = asyncHandler(async (req, res) => {
             idCliente: client.IDCliente || identifier,
             ruc: client.CioRuc,
             departamentoNombre: client.DepartamentoNombre || null,
-            vendedorNombre: client.VendedorNombre || null
+            vendedorNombre: client.VendedorNombre || null,
+            vendedorCedula: client.VendedorCedula || null,
+            vendedorTelefono: client.VendedorTelefono || null
         },
         token
     });
@@ -284,7 +286,7 @@ exports.me = asyncHandler(async (req, res) => {
     const r = await pool.request()
         .input('ID', sql.Int, req.user.codCliente)
         .query(`
-            SELECT c.*, t.Nombre AS VendedorNombre, d.Nombre AS DepartamentoNombre
+            SELECT c.*, t.Nombre AS VendedorNombre, t.Cedula AS VendedorCedula, t.telefonoasesor AS VendedorTelefono, d.Nombre AS DepartamentoNombre
             FROM Clientes c
             LEFT JOIN dbo.Trabajadores t ON c.VendedorID = t.ID
             LEFT JOIN dbo.Departamentos d ON c.DepartamentoID = d.ID
@@ -311,6 +313,8 @@ exports.me = asyncHandler(async (req, res) => {
                 formaEnvioId: u.FormaEnvioID,
                 tipoClienteId: u.TClIdTipoCliente || null,
                 vendedorNombre: u.VendedorNombre || null,
+                vendedorCedula: u.VendedorCedula || null,
+                vendedorTelefono: u.VendedorTelefono || null,
                 role: 'WEB_CLIENT',
                 codCliente: u.CodCliente,
                 requireReset: u.WebResetPassword || (u.WebPasswordHash == null) || (u.WebPasswordHash === '')

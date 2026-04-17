@@ -87,9 +87,9 @@ export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sessionDropdown, setSessionDropdown] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [loginModalRedirect, setLoginModalRedirect] = useState('/portal');
+  const [loginModalRedirect, setLoginModalRedirect] = useState('/portal/profile');
 
-  const openLoginModal = (redirect = '/portal') => {
+  const openLoginModal = (redirect = '/portal/profile') => {
     setLoginModalRedirect(redirect);
     setShowLoginModal(true);
   };

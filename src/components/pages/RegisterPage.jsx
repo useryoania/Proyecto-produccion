@@ -502,15 +502,35 @@ const RegisterPage = () => {
 
                             <Button
                                 type="submit"
-                                className="w-full py-[14px] px-4 bg-[#00AEEF]/[0.08] border border-[#00AEEF]/30 hover:bg-[#00AEEF]/20 text-[#00AEEF] rounded-xl font-bold active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2 text-[15px] !shadow-none"
+                                className="w-full py-[14px] px-4 rounded-xl font-bold active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2 text-[15px] !shadow-none border cursor-pointer"
+                                style={{
+                                    background: 'linear-gradient(90deg, rgba(0,174,239,0.1) 0%, rgba(0,174,239,0.2) 100%)',
+                                    borderColor: 'rgba(0,174,239,0.4)',
+                                    color: '#00AEEF',
+                                    backdropFilter: 'blur(4px)',
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'linear-gradient(90deg, rgba(0,174,239,0.15) 0%, rgba(0,174,239,0.3) 100%)';
+                                    e.currentTarget.style.borderColor = 'rgba(0,174,239,0.7)';
+                                    e.currentTarget.style.boxShadow = '0 0 15px rgba(0,174,239,0.2)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = 'linear-gradient(90deg, rgba(0,174,239,0.1) 0%, rgba(0,174,239,0.2) 100%)';
+                                    e.currentTarget.style.borderColor = 'rgba(0,174,239,0.4)';
+                                    e.currentTarget.style.boxShadow = 'none';
+                                }}
                                 isLoading={isLoading}
                             >
                                 Crear Cuenta
                             </Button>
 
-                            <p className="text-center text-sm text-zinc-500">
+                            <p className="text-center text-sm text-zinc-500 mt-2">
                                 ¿Ya tenés cuenta?{' '}
-                                <a href="/login" className="font-bold text-brand-cyan hover:text-custom-cyan transition-colors">
+                                <a 
+                                  href="/login" 
+                                  className="font-bold border-b border-transparent hover:border-custom-cyan transition-all"
+                                  style={{ color: '#00AEEF' }}
+                                >
                                     Iniciá sesión
                                 </a>
                             </p>
