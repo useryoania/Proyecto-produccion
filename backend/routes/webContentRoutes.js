@@ -11,5 +11,6 @@ router.put('/:id', webContentController.updateContent);
 router.delete('/:id', webContentController.deleteContent);
 router.post('/contact', webContentController.sendContactForm);
 router.post('/jobs', uploadMemory.single('cv'), webContentController.sendJobApplication);
+router.post('/newsletter', webContentController.subscribeNewsletter);
 
 module.exports = router;

@@ -174,3 +174,30 @@ exports.sendJobApplication = async (req, res) => {
         res.status(500).json({ success: false, error: "Error interno del servidor procesando la postulación." });
     }
 };
+
+exports.subscribeNewsletter = async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ success: false, error: 'Correo electrónico es requerido.' });
+    
+    try {
+        const { getPool, sql } = require('../config/db');
+        const pool = await getPool();
+        const result = await pool.request()
+            .input('Email', sql.NVarChar, email.trim())
+            .query("SELECT CodCliente FROM Clientes WHERE LTRIM(RTRIM(Email)) = @Email");
+            
+        if (result.recordset.length > 0) {
+            const codCliente = result.recordset[0].CodCliente;
+            await pool.request()
+                .input('ID', sql.Int, codCliente)
+                .query("UPDATE Clientes SET Newsletter = 1 WHERE CodCliente = @ID");
+        }
+        
+        return res.json({ success: true, message: "Suscripción registrada exitosamente." });
+        
+    } catch (error) {
+        const logger = require('../utils/logger');
+        logger.error("Error suscribiéndose al newsletter:", error);
+        res.status(500).json({ success: false, error: "Error interno procesando suscripción." });
+    }
+};

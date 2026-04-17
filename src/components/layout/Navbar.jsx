@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import api from '../../services/apiClient';
+import logoMini from '../../assets/images/logo/logo-mini.svg';
 
 const Navbar = ({ onSwitchTab, currentView }) => {
   const { user, logout } = useAuth();
@@ -52,11 +53,14 @@ const Navbar = ({ onSwitchTab, currentView }) => {
     <nav className="h-14 px-6 bg-zinc-900 border-b border-zinc-700 flex items-center justify-between sticky top-0 z-50 shadow-md">
       {/* IZQUIERDA: Titulo y Breadcrumb */}
       <div
-        className="flex flex-col justify-center cursor-pointer group"
+        className="flex items-center cursor-pointer group"
         onClick={() => navigate('/')}
       >
-        <h1 className="font-black text-white tracking-tighter text-lg leading-none transition-colors uppercase">
-          GESTIÓN DE PRODUCCIÓN</h1>
+        <img src={logoMini} alt="User" className="h-6 w-auto mr-4 opacity-90 group-hover:opacity-100 transition-opacity" />
+        <div className="w-px h-6 bg-zinc-600 mr-4 opacity-50 hidden sm:block"></div>
+        <h1 className="font-black text-white tracking-tighter text-lg leading-none transition-colors uppercase mt-0.5">
+          GESTIÓN DE PRODUCCIÓN
+        </h1>
       </div>
       {/* Búsqueda Integral */}
       <div className="hidden md:block w-48 shrink-0">

@@ -427,6 +427,13 @@ export const PickupView = () => {
         try { const ld = await toBase64(logoSrc); if (ld) { const r = ld.width/ld.height; const h=12; doc.addImage(ld.dataUrl,'PNG',20,14,h*r,h); } } catch(e) {}
         let stampDataUrl = null, stampRatio = 1;
         if (data.status === 'Pagado') { try { const sd = await toBase64(pagadoStampSrc); if(sd){ stampDataUrl=sd.dataUrl; stampRatio=sd.width/sd.height; } } catch(e){} }
+        let gatewayDataUrl = null, gatewayRatio = 1, gatewayColor = null;
+        if (data.paymentMethod) {
+            const method = data.paymentMethod.toLowerCase();
+            const gwLogo = method.includes('handy') ? handyLogo : (method.includes('mercadopago') || method.includes('mp') ? mpLogo : null);
+            gatewayColor = method.includes('handy') ? '#722efa' : ((method.includes('mercadopago') || method.includes('mp')) ? '#ffe600' : null);
+            if (gwLogo) { try { const gd = await toBase64(gwLogo); if (gd) { gatewayDataUrl = gd.dataUrl; gatewayRatio = gd.width/gd.height; } } catch(e){} }
+        }
         doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(140);
         doc.text(data.transactionId || '', pageW-20, 25, { align:'right' });
         doc.setDrawColor(200); doc.line(20,32,pageW-20,32);
@@ -442,8 +449,21 @@ export const PickupView = () => {
         const drawCard=(x,w,label,val)=>{ doc.setFillColor(25,24,27); doc.roundedRect(x,y,w,7,2,2,'F'); doc.rect(x,y+5,w,2,'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(255,255,255); doc.text(label,x+w/2,y+5,{align:'center'}); doc.setFillColor(255,255,255); doc.setDrawColor(200); doc.rect(x,y+7,w,11,'FD'); doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(25,24,27); doc.text(val,x+w/2,y+14.5,{align:'center'}); };
         drawCard(20,hw,'CODIGO DE RETIRO',retiroCode); drawCard(20+hw+6,hw,'CODIGO DE CLIENTE',clientCode); y+=28;
         doc.setFont('helvetica','normal'); doc.setTextColor(120); doc.setFontSize(10);
-        doc.text('MEDIO DE PAGO',20,y); doc.setFont('helvetica','bold'); doc.setTextColor(40);
-        doc.text(String(data.paymentMethod||'-').toUpperCase(),pageW-20,y,{align:'right'}); y+=12;
+        doc.text('MEDIO DE PAGO',20,y); 
+        if (gatewayDataUrl) {
+            const gh = 7;
+            const gw = gh * gatewayRatio;
+            const px = 4, py = 2;
+            if (gatewayColor) {
+               doc.setFillColor(gatewayColor);
+               doc.roundedRect(pageW - 20 - gw - px * 2, y - 6 - py, gw + px * 2, gh + py * 2, 2, 2, 'F');
+            }
+            doc.addImage(gatewayDataUrl, 'PNG', pageW - 20 - gw - px, y - 6, gw, gh);
+        } else {
+            doc.setFont('helvetica','bold'); doc.setTextColor(40);
+            doc.text(String(data.paymentMethod||'-').toUpperCase(),pageW-20,y,{align:'right'}); 
+        }
+        y+=12;
         if(data.orders?.length>0){ const rh=8; doc.setFillColor(25,24,27); doc.rect(20,y,pageW-40,rh,'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(255,255,255); doc.text('PEDIDO',24,y+5.5); doc.text('IMPORTE',pageW-24,y+5.5,{align:'right'}); y+=rh; data.orders.forEach((o,i)=>{ i%2===0?doc.setFillColor(244,244,245):doc.setFillColor(212,212,216); doc.rect(20,y,pageW-40,rh,'F'); doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(40); doc.text(String(o.id||o.desc),24,y+5.5); doc.setFont('helvetica','bold'); doc.text(String(data.currencySymbol)+' '+Number(o.amount||0).toFixed(2),pageW-24,y+5.5,{align:'right'}); y+=rh; }); y+=6; }
         doc.setDrawColor(200); doc.line(20,y,pageW-20,y); y+=10;
         doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(25,24,27);

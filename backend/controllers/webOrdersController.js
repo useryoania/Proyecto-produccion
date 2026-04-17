@@ -93,7 +93,52 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
 
         // Medio de pago
         drawLeft('MEDIO DE PAGO', 50, y, 9, font, rgb(0.47, 0.47, 0.47));
-        drawRight(String(paymentMethod || '-').toUpperCase(), width - 50, y, 10, fontBold);
+        
+        let gatewayDrawn = false;
+        try {
+            const method = String(paymentMethod || '').toLowerCase();
+            let logoFilename = null, gwColor = null;
+            if (method.includes('handy')) { logoFilename = 'pasarelas/handy.svg'; gwColor = rgb(114/255, 46/255, 250/255); }
+            else if (method.includes('mercadopago') || method.includes('mp')) { logoFilename = 'pasarelas/mercadopago.svg'; gwColor = rgb(255/255, 230/255, 0/255); }
+            
+            if (logoFilename) {
+                const gwPath = findImage(logoFilename);
+                if (gwPath) {
+                    const sharp = require('sharp');
+                    const svgBuffer = fs.readFileSync(gwPath);
+                    const pngBuffer = await sharp(svgBuffer).resize({ height: 80 }).png().toBuffer();
+                    const gwImage = await doc.embedPng(pngBuffer);
+                    
+                    const gwHeight = 14;
+                    const gwWidth = gwHeight * (gwImage.width / gwImage.height);
+                    const px = 6, py = 4;
+                    
+                    if (gwColor) {
+                        page.drawRectangle({
+                            x: width - 50 - gwWidth - px * 2,
+                            y: y - 5 - py,
+                            width: gwWidth + px * 2,
+                            height: gwHeight + py * 2,
+                            color: gwColor
+                        });
+                    }
+                    
+                    page.drawImage(gwImage, {
+                        x: width - 50 - gwWidth - px,
+                        y: y - 5,
+                        width: gwWidth,
+                        height: gwHeight
+                    });
+                    gatewayDrawn = true;
+                }
+            }
+        } catch (gwErr) {
+            logger.warn('[HANDY RECEIPT] Error agregando logo pasarela:', gwErr.message);
+        }
+
+        if (!gatewayDrawn) {
+            drawRight(String(paymentMethod || '-').toUpperCase(), width - 50, y, 10, fontBold);
+        }
         y -= 25;
 
         // Detalle de pedidos

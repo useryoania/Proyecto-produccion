@@ -18,6 +18,15 @@ const { startAutoSync } = require('./scheduler'); // Asegúrate de crear este ar
 const app = express();
 app.set('trust proxy', 1); // Necesario para funcionar detrás de Nginx (proxy reverso)
 
+// --- REDIRECCIÓN DE DOMINIO (user.uy -> user.com.uy) ---
+app.use((req, res, next) => {
+    if (req.hostname === 'user.uy' || req.hostname === 'www.user.uy') {
+        // Redirige preservando la ruta (ej: /portal/pickup) y el código 301 (Permanente)
+        return res.redirect(301, 'https://user.com.uy' + req.originalUrl);
+    }
+    next();
+});
+
 // --- MIDDLEWARES DE SEGURIDAD ---
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');

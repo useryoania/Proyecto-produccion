@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
-import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck } from 'lucide-react';
+import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store } from 'lucide-react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster } from 'sonner';
@@ -169,6 +169,11 @@ const lucideIconMapRaw = {
     'depurar clientes': UserX,
     'sysadmin': Terminal,
     'consola': Terminal,
+    'agencias': Store,
+    'localidades': MapPin,
+    'agencias y localidades': MapPin,
+    'agencias/localidades': MapPin,
+    'agencias / localidades': MapPin,
     // Atención al Cliente sub-items
     'ingreso materiales': PackagePlus,
     'reposiciones': RefreshCw,
@@ -491,6 +496,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/admin/price-profiles" element={<PriceProfiles />} />
                                 <Route path="/admin/price-catalog" element={<CustomerPriceCatalogPage />} />
                                 <Route path="/admin/nomencladores" element={<NomenclatorsABM />} />
+                                <Route path="/nomencladores" element={<NomenclatorsABM />} />
                                 <Route path="/produccion/etiquetas" element={<LabelGenerationPage />} />
                                 <Route path="/caja/pagos" element={<CargaPagosView />} />
                                 <Route path="/caja/pagos-online" element={<VerificarPagosOnlineView />} />
@@ -550,6 +556,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/admin/audit') return <AuditPage />;
     if (menuItem.Ruta === '/produccion/etiquetas') return <LabelGenerationPage />;
     if (menuItem.Ruta === '/admin/clientes-integration') return <ClientsIntegration />;
+    if (menuItem.Ruta === '/admin/nomencladores' || menuItem.Ruta === '/nomencladores') return <NomenclatorsABM />;
     if (menuItem.Ruta === '/admin/products-integration') return <ProductsIntegration />;
     if (menuItem.Ruta === '/admin/price-catalog') return <CustomerPriceCatalogPage />;
     if (menuItem.Ruta === '/produccion/terminaciones' || menuItem.Ruta === '/area/ecouv/terminaciones') return <EcoUvFinishing />;
