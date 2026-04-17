@@ -276,15 +276,15 @@ const RegisterPage = () => {
     }, []);
 
     return (
-        <div className="flex flex-col min-h-screen bg-custom-dark relative overflow-x-hidden font-sans">
-            {/* <LandingNavbar /> */}
+        <div className="flex flex-col min-h-[100dvh] bg-[#19181B] relative overflow-x-hidden font-sans pt-[85px]">
+            <LandingNavbar />
 
             {/* Particles canvas (Reactivado a pedido del usuario) */}
             <ParticlesCanvas />
 
-            <div className="flex-1 flex items-center justify-center p-6 z-10 w-full">
+            <div className="flex-1 flex flex-col p-4 md:p-6 pb-12 z-10 w-full relative">
                 {/* Card wrapper with static CMY border instead of animated gradient to save GPU */}
-                <div className="relative w-full md:max-w-4xl z-10 mx-auto md:rounded-3xl md:p-[2px] md:bg-gradient-to-br md:from-[#00AEEF] md:via-[#EC008C] md:to-[#FFF200]">
+                <div className="relative w-full md:max-w-4xl z-10 mx-auto my-auto md:rounded-3xl md:p-[2px] md:bg-gradient-to-br md:from-[#00AEEF] md:via-[#EC008C] md:to-[#FFF200]">
                     {/* Contenedor interior oscuro para simular el borde */}
                     <div className="relative bg-custom-dark p-6 md:px-8 md:py-8 md:rounded-[22px] w-full overflow-hidden">
                         <div className="mb-6 text-center">
@@ -321,7 +321,7 @@ const RegisterPage = () => {
                                         <div className="relative group">
                                             <div className={iconClass}><Lock size={18} /></div>
                                             <input type={showPassword ? "text" : "password"} className={`${inputClass} ${fieldErrors.confirmPassword ? 'border-custom-magenta focus:ring-custom-magenta focus:border-custom-magenta' : ''}`} placeholder="********" value={form.confirmPassword} onChange={set('confirmPassword')} onBlur={handleBlur('confirmPassword')} />
-                                            <button type="button" className="absolute inset-y-0 right-0 pr-3 flex items-center text-brand-cyan hover:text-custom-cyan cursor-pointer" onClick={() => setShowPassword(!showPassword)}>
+                                            <button type="button" className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#00AEEF] hover:text-[#009bda] cursor-pointer" onClick={() => setShowPassword(!showPassword)}>
                                                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                             </button>
                                         </div>
@@ -343,7 +343,7 @@ const RegisterPage = () => {
                             </div>
 
                             {/* Vendedor checkbox + SweetAlert picker */}
-                            <div className={`bg-brand-dark border border-brand-cyan rounded-2xl p-4 space-y-3 ${!form.departamentoId || !form.localidadId ? 'opacity-50' : ''}`}>
+                            <div className={`bg-[#111] border border-[#3f3f46] rounded-[10px] p-4 space-y-3 ${!form.departamentoId || !form.localidadId ? 'opacity-50' : ''}`}>
                                 <label className={`flex items-center gap-3 select-none ${!form.departamentoId || !form.localidadId ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                                     onClick={async () => {
                                         if (!form.departamentoId || !form.localidadId) return;
@@ -355,12 +355,12 @@ const RegisterPage = () => {
                                             // Build HTML grid with photos
                                             const isMobile = window.innerWidth < 768;
                                             const grid = vendedores.map(v => {
-                                                const imgUrl = `/assets/images/asesores/${v.Cedula}.jpg`;
+                                                const imgUrl = `/assets/images/asesores/${v.Cedula}.webp`;
                                                 const firstName = v.Nombre.split(' ')[0];
                                                 if (isMobile) {
-                                                    return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:16px 14px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;">
-                                                        <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:72px;height:72px;border-radius:50%;object-fit:cover" /><div style="width:72px;height:72px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:24px">${firstName.charAt(0)}</div>
-                                                        <span style="font-weight:600;color:#f4f4f5;font-size:14px;text-transform:uppercase;letter-spacing:0.05em;text-align:center">${firstName}</span>
+                                                    return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:12px 8px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;">
+                                                        <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:86px;height:86px;border-radius:50%;object-fit:cover" /><div style="width:86px;height:86px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:28px">${firstName.charAt(0)}</div>
+                                                        <span style="font-weight:600;color:#f4f4f5;font-size:15px;text-transform:uppercase;letter-spacing:0.05em;text-align:center">${firstName}</span>
                                                     </div>`;
                                                 } else {
                                                     return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px 16px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;flex:1;min-width:140px;max-width:180px;">
@@ -369,13 +369,13 @@ const RegisterPage = () => {
                                                     </div>`;
                                                 }
                                             });
-                                            const separator = isMobile ? '<hr style="border:none;border-top:1px solid rgba(255,255,255,0.08);width:60%;margin:0 auto" />' : '';
+                                            const separator = '';
                                             const gridHtml = grid.join(separator);
 
                                             const selected = await new Promise((resolve) => {
                                                 Swal.fire({
                                                     title: 'SELECCIONÁ TU ASESOR',
-                                                    html: `<div style="display:flex;${isMobile ? 'flex-direction:column;align-items:center;' : 'flex-wrap:wrap;justify-content:center;'}gap:12px;padding:8px">${gridHtml}</div>`,
+                                                    html: `<div style="${isMobile ? 'display:grid;grid-template-columns:1fr 1fr;justify-items:center;gap:24px;' : 'display:flex;flex-wrap:wrap;justify-content:center;gap:12px;'}padding:8px">${gridHtml}</div>`,
                                                     showConfirmButton: false,
                                                     showCancelButton: false,
                                                     showCloseButton: isMobile,
@@ -450,19 +450,19 @@ const RegisterPage = () => {
                                         }
                                     }}
                                 >
-                                    <div className="flex items-center justify-center text-custom-cyan">
+                                    <div className="flex items-center justify-center text-[#00AEEF]">
                                         {hadVendedor ? (
-                                            <CheckCircle2 size={22} />
+                                            <CheckCircle2 size={22} className="text-[#00AEEF] drop-shadow-[0_0_8px_rgba(0,174,239,0.5)]" />
                                         ) : (
-                                            <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                            <div className="w-[22px] h-[22px] rounded-full border-2 border-[#3f3f46] group-hover:border-[#00AEEF]/50 transition-colors" />
                                         )}
                                     </div>
                                     <span className="text-sm font-semibold text-zinc-300">¿Fuiste atendido por algún asesor?</span>
                                 </label>
 
                                 {hadVendedor && selectedVendedorName && (
-                                    <div className="flex items-center gap-3 mt-2 p-3 bg-brand-dark border border-custom-cyan rounded-xl">
-                                        <UserCheck size={18} className="text-custom-cyan" />
+                                    <div className="flex items-center gap-3 mt-2 p-3 bg-[#19181B] border border-[#00AEEF]/30 rounded-xl">
+                                        <UserCheck size={18} className="text-[#00AEEF]" />
                                         <span className="text-sm font-semibold text-zinc-100">{selectedVendedorName}</span>
                                         <button type="button" className="ml-auto text-xs text-zinc-500 hover:text-custom-magenta" onClick={() => { setHadVendedor(false); setSelectedVendedorId(''); setSelectedVendedorName(''); }}>✕</button>
                                     </div>
@@ -484,25 +484,25 @@ const RegisterPage = () => {
                             )}
 
                             {/* Newsletter checkbox */}
-                            <div className="pl-4">
+                            <div>
                                 <label
                                     className="flex items-center gap-3 cursor-pointer select-none"
                                     onClick={() => setNewsletter(v => !v)}
                                 >
-                                    <div className="flex items-center justify-center text-custom-cyan">
+                                    <div className="flex items-center justify-center text-[#00AEEF]">
                                         {newsletter ? (
-                                            <CheckCircle2 size={22} />
+                                            <CheckCircle2 size={20} className="text-[#00AEEF] drop-shadow-[0_0_8px_rgba(0,174,239,0.5)]" />
                                         ) : (
-                                            <div className="w-[22px] h-[22px] rounded-full border-2 border-white/20" />
+                                            <div className="w-[20px] h-[20px] rounded-full border-2 border-[#3f3f46] group-hover:border-[#00AEEF]/50 transition-colors" />
                                         )}
                                     </div>
-                                    <span className="text-sm font-semibold text-zinc-300">Quiero recibir novedades y promociones exclusivas</span>
+                                    <span className="text-xs font-semibold text-zinc-400 group-hover:text-zinc-300 transition-colors">Recibir ofertas y novedades por correo</span>
                                 </label>
                             </div>
 
                             <Button
                                 type="submit"
-                                className="w-full py-2.5 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2"
+                                className="w-full py-[14px] px-4 bg-[#00AEEF]/[0.08] border border-[#00AEEF]/30 hover:bg-[#00AEEF]/20 text-[#00AEEF] rounded-xl font-bold active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2 text-[15px] !shadow-none"
                                 isLoading={isLoading}
                             >
                                 Crear Cuenta

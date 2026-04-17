@@ -25,7 +25,7 @@ async function createPaymentLink({
     totalAmount,
     currencyCode,
     commerceName = 'USER',
-    imageUrl = 'https://user.com.uy/assets/images/logo.jpg',
+    imageUrl = 'https://user.com.uy/assets/images/logo.png',
     ordersData = {},
     codCliente = 0,
     logPrefix = '[HANDY]'
@@ -54,8 +54,7 @@ async function createPaymentLink({
             CommerceName: commerceName,
             SiteUrl: `${siteUrl}/portal/payment-status?txId=${transactionId}`
         },
-        PostSuccessUrl: `${siteUrl}/portal/payment-status?txId=${transactionId}`,
-        CancelUrl: `${siteUrl}/portal/payment-status?txId=${transactionId}`,
+
         CallbackURL: `${siteUrl}/api/web-orders/handy-webhook`,
         ResponseType: "Json"
     };
@@ -63,11 +62,28 @@ async function createPaymentLink({
     logger.info(`${logPrefix} Creando link de pago (${isProduction ? 'PRODUCCIÓN' : 'TESTING'})...`);
     logger.info(`${logPrefix} Payload:`, JSON.stringify(handyPayload));
 
-    const response = await axios.post(handyUrl, handyPayload, {
-        headers: { 'merchant-secret-key': handySecret }
-    });
+    let response;
+    try {
+        response = await axios.post(handyUrl, handyPayload, {
+            headers: { 'merchant-secret-key': handySecret }
+        });
+    } catch (axiosErr) {
+        const status = axiosErr.response?.status;
+        const rawData = axiosErr.response?.data;
+        const headers = axiosErr.response?.headers;
+        logger.error(`${logPrefix} ══ ERROR HANDY HTTP ${status} ══`);
+        logger.error(`${logPrefix} URL destino:  ${handyUrl}`);
+        logger.error(`${logPrefix} Secret key usada (primeros 8 chars): ${String(handySecret || '').substring(0, 8)}...`);
+        logger.error(`${logPrefix} Payload enviado: ${JSON.stringify(handyPayload)}`);
+        logger.error(`${logPrefix} Response status: ${status}`);
+        logger.error(`${logPrefix} Response body:   ${rawData ? JSON.stringify(rawData) : '(vacío)'}`);
+        logger.error(`${logPrefix} Content-Type:    ${headers?.['content-type'] || 'N/A'}`);
+        logger.error(`${logPrefix} Axios message:   ${axiosErr.message}`);
+        return { success: false, error: `Handy HTTP ${status}: ${rawData ? JSON.stringify(rawData) : axiosErr.message}` };
+    }
 
     if (!response.data?.url) {
+        logger.error(`${logPrefix} Respuesta inesperada de Handy:`, JSON.stringify(response.data));
         return { success: false, error: 'La pasarela no devolvió una URL válida.' };
     }
 

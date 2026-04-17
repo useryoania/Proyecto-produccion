@@ -119,3 +119,58 @@ exports.sendContactForm = async (req, res) => {
         res.status(500).json({ success: false, error: "Error procesando petición." });
     }
 };
+
+exports.sendJobApplication = async (req, res) => {
+    const { name, phone, email, linkedin, intro } = req.body;
+    const cvFile = req.file;
+
+    if (!name || !phone || !email) {
+        return res.status(400).json({ success: false, error: "Faltan datos obligatorios." });
+    }
+
+    try {
+        const html = `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:30px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;">
+            <h2 style="color:#0f172a;margin-top:0;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #f1f5f9;">💼 Nueva Postulación</h2>
+            
+            <div style="margin-bottom:24px;">
+                <p style="margin:8px 0;font-size:15px;color:#334155;"><strong>🧑‍🦱 Nombre:</strong> ${name}</p>
+                <p style="margin:8px 0;font-size:15px;color:#334155;"><strong>📞 Celular:</strong> ${phone}</p>
+                <p style="margin:8px 0;font-size:15px;color:#334155;"><strong>✉️ Email:</strong> <a href="mailto:${email}" style="color:#0284c7;">${email}</a></p>
+                <p style="margin:8px 0;font-size:15px;color:#334155;"><strong>🔗 LinkedIn:</strong> ${linkedin ? `<a href="${linkedin}" style="color:#0284c7;">${linkedin}</a>` : '<span style="color:#94a3b8;">No provisto</span>'}</p>
+                <p style="margin:8px 0;font-size:15px;color:#334155;"><strong>📎 Currículum:</strong> ${cvFile ? `<span style="color:#10b981;font-weight:bold;">Adjunto (${(cvFile.size / 1024 / 1024).toFixed(2)} MB)</span>` : '<span style="color:#ef4444;font-weight:bold;">Sin adjuntar</span>'}</p>
+            </div>
+            
+            ${intro ? `
+            <div style="background:#f8fafc;padding:20px;border-radius:8px;border-left:4px solid #0ea5e9;">
+                <p style="margin:0 0 10px 0;font-size:13px;font-weight:bold;color:#64748b;text-transform:uppercase;">Presentación Corta / Dudas:</p>
+                <p style="margin:0;white-space:pre-wrap;color:#1e293b;font-size:14px;line-height:1.6;">${intro}</p>
+            </div>
+            ` : ''}
+            
+            <p style="color:#94a3b8;font-size:11px;text-align:center;margin-top:40px;margin-bottom:0;">
+                Este es un mensaje automático generado desde User Web.
+            </p>
+        </div>
+        `;
+        
+        let attachments = [];
+        if (cvFile) {
+            attachments.push({
+                filename: cvFile.originalname,
+                content: cvFile.buffer
+            });
+        }
+
+        const success = await emailService.sendMail('rrhh@user.uy', `Postulación: ${name}`, html, attachments);
+
+        if (success) {
+            res.json({ success: true, message: "Solicitud enviada exitosamente." });
+        } else {
+            res.status(500).json({ success: false, error: "Hubo un problema de red despachando el correo." });
+        }
+    } catch (error) {
+        logger.error("Error procesando solicitud de trabajo (Jobs):", error);
+        res.status(500).json({ success: false, error: "Error interno del servidor procesando la postulación." });
+    }
+};

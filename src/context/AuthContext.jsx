@@ -188,7 +188,7 @@ export function AuthProvider({ children }) {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user_session');
         // No llamar setUser(null) — provoca re-renders que crashean componentes antes del redirect
-        window.location.href = '/login';
+        window.location.href = '/';
     };
 
     const value = useMemo(() => ({ user, login, googleLogin, logout, loading }), [user, loading]);

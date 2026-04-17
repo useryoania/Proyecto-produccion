@@ -8,6 +8,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource/archivo": "^5.2.8",
+    "@fontsource/barlow": "^5.2.8",
+    "@fontsource/dm-sans": "^5.2.8",
+    "@fontsource/inter": "^5.2.8",
     "@fortawesome/fontawesome-free": "^7.1.0",
     "@headlessui/react": "^2.2.9",
     "@hello-pangea/dnd": "^18.0.1",

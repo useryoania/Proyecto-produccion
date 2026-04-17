@@ -121,12 +121,10 @@ export const AuthProvider = ({ children }) => {
     };
 
     const logout = () => {
-        setUser(null);
-        setIsLoggedIn(false);
         localStorage.removeItem('user_session');
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user');
-        window.location.href = '/login';
+        window.location.href = '/';
     };
 
     const updateProfile = async (updates) => {

@@ -19,8 +19,8 @@
   --color-amber-500: #f59e0b;
   --color-amber-600: #d97706;
 
-  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-heading: 'DM Sans', sans-serif;
+  --font-family: 'Archivo', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Barlow', sans-serif;
 
   --glass-bg: #19181B;
   --glass-border: rgba(63, 63, 70, 0.7);
@@ -49,8 +49,6 @@ h6 {
 /* Glassmorphism Utility Class */
 .glass-panel {
   background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
 }

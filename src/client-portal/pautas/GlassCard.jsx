@@ -1,11 +1,8 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 
 export const GlassCard = ({ title, icon: Icon, children, className = '', noPadding = false, ...props }) => {
     return (
-        <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
+        <div
             className={`glass-panel rounded-xl ${noPadding ? '' : 'p-6'} ${className}`}
             {...props}
         >
@@ -25,6 +22,6 @@ export const GlassCard = ({ title, icon: Icon, children, className = '', noPaddi
                 </div>
             )}
             {children}
-        </motion.div>
+        </div>
     );
 };

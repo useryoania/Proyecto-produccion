@@ -1,52 +1,79 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, cloneElement, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { Logo } from '../Logo';
-import logoWhite from '../../assets/images/logo-white.png';
+import logoWhite from "../../assets/images/logo/logo-white.webp";
 import { LoginFormBox } from './LoginPage';
 import LandingNavbar from '../shared/LandingNavbar';
 import { motion, AnimatePresence } from 'framer-motion';
 import Footer from '../Footer';
 import { useViewport } from '../../hooks/useViewport';
 import heroVideo from '../../assets/videos/hero.mp4';
-import heroMobileVideo from '../../assets/videos/hero_mobile.mp4';
-import imgSublimacion from '../../assets/images/service_sublimacion.png';
-import imgDtf from '../../assets/images/service_dtf.png';
-import imgGranFormato from '../../assets/images/service_gran_formato.png';
-import imgTpu from '../../assets/images/service_tpu.png';
+import heroMobileVideo from '../../assets/videos/hero_mobile.webm';
+import imgSublimacion from '../../assets/images/general/service_sublimacion.webp';
+import imgDtf from '../../assets/images/general/service_dtf.webp';
+import imgGranFormato from '../../assets/images/general/service_gran_formato.webp';
+import imgTpu from '../../assets/images/general/service_tpu.webp';
+import imgBordado from '../../assets/images/general/service_bordado.webp';
+import imgCorte from '../../assets/images/general/service_corte.webp';
+import { IdeaIcon, DisenoIcon, ProduccionIcon, EntregaIcon, PrinterCartridgeIcon } from '../icons/ProcessIcons.jsx';
 
 const SERVICES = [
   {
-    title: 'Sublimación',
-    desc: 'Transferencia de tinta por calor al tejido sintético. Colores vibrantes, lavados infinitos.',
-    img: imgSublimacion,
-    accent: '#06b6d4',       // cyan
-    gradFrom: 'rgba(6,182,212,0.18)',
-    gradTo: 'rgba(6,182,212,0)',
-  },
-  {
-    title: 'DTF',
-    desc: 'Impresión directa sobre film y transferencia universal a cualquier tela o algodón.',
-    img: imgDtf,
-    accent: '#e879f9',       // magenta
-    gradFrom: 'rgba(232,121,249,0.18)',
-    gradTo: 'rgba(232,121,249,0)',
+    title: 'Bordado',
+    desc: 'Acabado premium que dura. Logos y parches con presencia real en prendas, uniformes y accesorios.',
+    img: imgBordado,
+    accent: '#00AEEF',
+    gradFrom: 'rgba(0,174,239,0.18)',
+    gradTo: 'rgba(0,174,239,0)',
   },
   {
     title: 'Gran Formato',
-    desc: 'Gigantografías, banners y vinilos de hasta 3,2 m de ancho con colores impactantes.',
+    desc: 'Impacto visual donde lo necesitás. Banners, lonas y vinilos para locales, eventos y campañas.',
     img: imgGranFormato,
-    accent: '#eab308',       // yellow
-    gradFrom: 'rgba(234,179,8,0.18)',
-    gradTo: 'rgba(234,179,8,0)',
+    accent: '#FFF200',
+    gradFrom: 'rgba(255,242,0,0.18)',
+    gradTo: 'rgba(255,242,0,0)',
+  },
+  {
+    title: 'DTF Textil',
+    desc: 'Full color en cualquier tela, sin límites de diseño. Estampado vibrante con resistencia real al uso y al lavado.',
+    img: imgDtf,
+    accent: '#EC008C',
+    gradFrom: 'rgba(236,0,140,0.18)',
+    gradTo: 'rgba(236,0,140,0)',
+  },
+  {
+    title: 'Sublimación',
+    desc: 'Color integrado a la tela, sin tacto ni relieve. La solución ideal para deportiva, banderas y gorras en volumen.',
+    img: imgSublimacion,
+    accent: '#00AEEF',
+    gradFrom: 'rgba(0,174,239,0.18)',
+    gradTo: 'rgba(0,174,239,0)',
   },
   {
     title: 'TPU',
-    desc: 'Láminas termoplásticas de alta resistencia para protección y personalización premium.',
+    desc: 'Parches con relieve, texturas y acabados especiales. Para marcas que no se conforman con lo estándar.',
     img: imgTpu,
-    accent: '#f472b6',       // pink
-    gradFrom: 'rgba(244,114,182,0.18)',
-    gradTo: 'rgba(244,114,182,0)',
+    accent: '#f4f4f5',
+    gradFrom: 'rgba(244,244,245,0.18)',
+    gradTo: 'rgba(244,244,245,0)',
+  },
+  {
+    title: 'Corte y Costura',
+    desc: 'Confección industrial de punta a punta. Desde el molde hasta el producto terminado, sin tercerizaciones.',
+    img: imgCorte,
+    accent: '#EC008C',
+    gradFrom: 'rgba(236,0,140,0.18)',
+    gradTo: 'rgba(236,0,140,0)',
+  },
+  {
+    title: 'Impresión Directa',
+    desc: 'Impresión directa sobre telas. Mesh, blackout y bandera ideal para publicidad, locales y eventos.',
+    img: null,
+    accent: '#FFF200',
+    gradFrom: 'rgba(255,242,0,0.18)',
+    gradTo: 'rgba(255,242,0,0)',
   },
 ];
 
@@ -60,6 +87,12 @@ export default function LandingPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sessionDropdown, setSessionDropdown] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginModalRedirect, setLoginModalRedirect] = useState('/portal');
+
+  const openLoginModal = (redirect = '/portal') => {
+    setLoginModalRedirect(redirect);
+    setShowLoginModal(true);
+  };
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -108,8 +141,8 @@ export default function LandingPage() {
   // Recarga el video si cambia el viewport sin recrear el elemento
   useEffect(() => {
     if (videoRef.current) {
-        videoRef.current.load();
-        videoRef.current.play().catch(e => console.warn('Autoplay prevented:', e));
+      videoRef.current.load();
+      videoRef.current.play().catch(e => console.warn('Autoplay prevented:', e));
     }
   }, [isMobile]);
 
@@ -121,7 +154,7 @@ export default function LandingPage() {
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" />
 
       {/* ══════════ NAVBAR ══════════ */}
-      <LandingNavbar onOpenLoginModal={() => setShowLoginModal(true)} />
+      <LandingNavbar onOpenLoginModal={openLoginModal} />
 
       {/* ══════════ HERO ══════════ */}
       <section style={{
@@ -139,6 +172,7 @@ export default function LandingPage() {
           loop
           muted
           playsInline
+          preload="metadata"
           src={isMobile ? heroMobileVideo : heroVideo}
           onCanPlay={() => setHeroLoaded(true)}
           style={{
@@ -189,65 +223,55 @@ export default function LandingPage() {
 
           {/* CTA buttons */}
           <div style={{
-            display: 'flex', 
-            gap: 16, 
+            display: 'flex',
+            gap: 16,
             flexDirection: 'column',
             alignItems: (isMobile || isTablet) ? 'center' : 'flex-start',
             justifyContent: (isMobile || isTablet) ? 'center' : 'flex-start'
           }}>
-            <button style={{
-              padding: '14px 28px',
-              background: 'linear-gradient(135deg, #06b6d4, #3b82f6)',
-              border: 'none',
-              borderRadius: 999,
-              color: '#fff',
-              fontSize: 13,
-              fontWeight: 800,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-              boxShadow: '0 0 30px rgba(6,182,212,0.4)',
-              transition: 'all 0.2s',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 40px rgba(6,182,212,0.5)'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 0 30px rgba(6,182,212,0.4)'; }}
+            <button 
+              className={`py-[14px] px-8 bg-[#00AEEF]/[0.08] border border-[#00AEEF]/30 hover:bg-[#00AEEF]/20 text-[#00AEEF] rounded-xl font-bold active:scale-[0.98] transition-all flex justify-center items-center gap-2 text-[15px] !shadow-none ${isMobile ? 'w-full' : 'w-[260px]'}`}
               onClick={handleSessionBtn}
-            >Hacé tu pedido aquí →</button>
+            >
+              Hacé tu pedido aquí →
+            </button>
 
-            <button style={{
-              padding: '14px 28px',
-              background: 'transparent',
-              border: 'none',
-              borderRadius: 999,
-              color: '#fff',
-              fontSize: 13,
-              fontWeight: 700,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.35)'; e.currentTarget.style.background = 'transparent'; }}
+            <button 
+              className={`py-[14px] px-8 bg-[#EC008C]/[0.08] border border-[#EC008C]/30 hover:bg-[#EC008C]/20 text-[#EC008C] rounded-xl font-bold active:scale-[0.98] transition-all flex justify-center items-center gap-2 text-[15px] !shadow-none ${isMobile ? 'w-full' : 'w-[260px]'}`}
               onClick={() => navigate('/contacto')}
-            >Solicitar cotización →</button>
+            >
+              Solicitar cotización →
+            </button>
           </div>
 
 
         </div>
       </section>
 
-      {/* ══════════ SERVICES ══════════ */}
-      <section style={{ padding: isMobile ? '48px 20px 60px' : isTablet ? '64px 40px 80px' : '80px 80px 100px' }}>
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-          gap: isMobile ? 16 : 20,
-        }}>
-          {SERVICES.map(svc => (
-            <ServiceCard key={svc.title} {...svc} />
-          ))}
+      {/* ══════════ PROCESS FLOW ══════════ */}
+      <ProcessFlow isMobile={isMobile} isTablet={isTablet} />
+
+      {/* ══════════ SERVICES (INFINITE CAROUSEL) ══════════ */}
+      <section style={{
+        padding: isMobile ? '24px 0 64px' : '32px 0 80px',
+        background: '#111',
+        overflow: 'hidden',
+        position: 'relative'
+      }}>
+        {/* Title for the section */}
+        <div style={{ padding: isMobile ? '0 24px 24px' : '0 80px 40px' }}>
+          <h2 style={{
+            fontSize: isMobile ? 24 : 32,
+            fontWeight: 900,
+            textTransform: 'uppercase',
+            color: '#fff',
+            margin: 0
+          }}>
+            Nuestros <span style={{ color: '#00AEEF' }}>Servicios</span>
+          </h2>
         </div>
+
+        <InfiniteMarquee isMobile={isMobile} />
       </section>
 
       <Footer />
@@ -298,7 +322,7 @@ export default function LandingPage() {
                   }}
                   onLoginSuccess={(result) => {
                     setShowLoginModal(false);
-                    if (result.userType === 'CLIENT') navigate('/portal');
+                    if (result.userType === 'CLIENT') navigate(loginModalRedirect);
                     else navigate('/');
                   }}
                 />
@@ -327,18 +351,32 @@ function ServiceCard({ title, desc, img, accent, gradFrom, gradTo }) {
         cursor: 'pointer',
         transition: 'all 0.3s ease',
         transform: hovered ? 'translateY(-6px)' : 'none',
-        boxShadow: hovered ? `0 20px 50px ${accent}33` : '0 4px 20px rgba(0,0,0,0.4)',
-        minHeight: 260,
+        boxShadow: hovered ? `0 8px 24px ${accent}33` : '0 4px 20px rgba(0,0,0,0.4)',
+        height: 200,          // altura fija igual para todas
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       {/* Background image */}
-      <img src={img} alt={title} style={{
-        position: 'absolute', inset: 0,
-        width: '100%', height: '100%',
-        objectFit: 'cover',
-        opacity: hovered ? 0.35 : 0.18,
-        transition: 'opacity 0.4s ease',
-      }} />
+      {img && (
+        <img src={img} alt={title} style={{
+          position: 'absolute', inset: 0,
+          width: '100%', height: '100%',
+          objectFit: 'cover',
+          opacity: hovered ? 0.35 : 0.18,
+          transition: 'opacity 0.4s ease',
+        }} />
+      )}
+
+      {/* Glass/Glow effect for cards without images */}
+      {!img && (
+        <div style={{
+          position: 'absolute', inset: 0,
+          background: `radial-gradient(circle at 50% 120%, ${accent}33 0%, transparent 70%)`,
+          opacity: hovered ? 1 : 0.5,
+          transition: 'opacity 0.3s'
+        }} />
+      )}
 
       {/* Color gradient overlay */}
       <div style={{
@@ -348,60 +386,329 @@ function ServiceCard({ title, desc, img, accent, gradFrom, gradTo }) {
         transition: 'opacity 0.3s',
       }} />
 
-      {/* Accent top bar */}
-      <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0,
-        height: 9,
-        background: accent,
-        opacity: hovered ? 1 : 0.6,
-        transition: 'opacity 0.3s',
-      }} />
 
       {/* Content */}
-      <div style={{ position: 'relative', zIndex: 2, padding: 28 }}>
-        {/* Icon circle */}
-        <div style={{
-          width: 48, height: 48,
-          borderRadius: '50%',
-          background: `${accent}22`,
-          border: `1px solid ${accent}55`,
-          marginBottom: 20,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <div style={{ width: 16, height: 16, borderRadius: '50%', background: accent, opacity: 0.9 }} />
-        </div>
-
+      <div style={{
+        position: 'relative', zIndex: 2,
+        padding: '20px 22px',
+        display: 'flex', flexDirection: 'column',
+        flex: 1,
+        justifyContent: 'center',
+      }}>
         <h3 style={{
-          fontSize: 22,
+          fontSize: 18,
           fontWeight: 800,
-          margin: '0 0 10px',
+          margin: '0 0 8px',
           letterSpacing: '-0.01em',
         }}>{title}</h3>
 
         <p style={{
-          fontSize: 13,
+          fontSize: 12,
           color: 'rgba(255,255,255,0.55)',
-          lineHeight: 1.6,
+          lineHeight: 1.55,
           margin: 0,
         }}>{desc}</p>
-
-        {/* Arrow on hover */}
-        <div style={{
-          marginTop: 24,
-          fontSize: 13,
-          fontWeight: 700,
-          color: accent,
-          opacity: hovered ? 1 : 0,
-          transform: hovered ? 'translateX(0)' : 'translateX(-8px)',
-          transition: 'all 0.3s',
-          letterSpacing: '0.04em',
-        }}>
-          Ver más →
-        </div>
       </div>
     </div>
+  );
+}
+
+function InfiniteMarquee({ isMobile }) {
+  const doubledServices = [...SERVICES, ...SERVICES];
+  const trackRef = useRef(null);
+  const posRef = useRef(0);
+  const currentSpeedRef = useRef(0);
+  const targetSpeedRef  = useRef(0);
+  const rafRef = useRef(null);
+
+  const NORMAL_SPEED = isMobile ? 0.45 : 0.35;   // px/frame normal
+  const SLOW_SPEED   = isMobile ? 0.10 : 0.08;    // px/frame on hover
+
+  useEffect(() => {
+    currentSpeedRef.current = NORMAL_SPEED;
+    targetSpeedRef.current  = NORMAL_SPEED;
+
+    const track = trackRef.current;
+    if (!track) return;
+
+    const animate = () => {
+      // Lerp speed hacia el objetivo (suave aceleración / deceleración)
+      currentSpeedRef.current += (targetSpeedRef.current - currentSpeedRef.current) * 0.04;
+
+      posRef.current -= currentSpeedRef.current;
+
+      // Reset seamless: cuando se desplazó la mitad (= un juego completo)
+      const halfWidth = track.scrollWidth / 2;
+      if (Math.abs(posRef.current) >= halfWidth) {
+        posRef.current = 0;
+      }
+
+      track.style.transform = `translateX(${posRef.current}px)`;
+      rafRef.current = requestAnimationFrame(animate);
+    };
+
+    rafRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  return (
+    <div
+      style={{ width: '100%', overflow: 'hidden', userSelect: 'none' }}
+      onMouseEnter={() => { targetSpeedRef.current = SLOW_SPEED; }}
+      onMouseLeave={() => { targetSpeedRef.current = NORMAL_SPEED; }}
+      onTouchStart={() => { targetSpeedRef.current = SLOW_SPEED; }}
+      onTouchEnd={()   => { targetSpeedRef.current = NORMAL_SPEED; }}
+    >
+      <div
+        ref={trackRef}
+        style={{
+          display: 'flex',
+          gap: isMobile ? 16 : 24,
+          padding: '10px 0 40px',
+          willChange: 'transform',
+        }}
+      >
+        {doubledServices.map((svc, idx) => (
+          <div
+            key={`${svc.title}-${idx}`}
+            style={{ width: isMobile ? 280 : 340, flexShrink: 0 }}
+          >
+            <ServiceCard {...svc} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProcessFlow({ isMobile, isTablet }) {
+  const [activeStep, setActiveStep] = useState(null);
+  const [displayStep, setDisplayStep] = useState(null);
+  const [hoveredStep, setHoveredStep] = useState(null);
+  const timerRef = useRef(null);
+
+  const handleStepClick = (idx) => {
+    if (activeStep === idx) {
+      // cerrando: animar primero, limpiar después
+      setActiveStep(null);
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setDisplayStep(null), 420);
+    } else {
+      clearTimeout(timerRef.current);
+      setDisplayStep(idx);
+      setActiveStep(idx);
+    }
+  };
+
+  const steps = [
+    {
+      title: 'Idea',
+      icon: <IdeaIcon size={isMobile ? 52 : 72} />,
+      colorMain: '#006E97', colorCustom: '#00AEEF',
+      description: 'Todo empieza con una idea. Nos contás qué querés lograr — un uniforme, una promo, una colección — y nuestro equipo te ayuda a darle forma. Traducimos tu visión en un concepto viable, elegimos los materiales y técnicas más adecuadas, y te orientamos para que el resultado final supere tus expectativas.',
+    },
+    {
+      title: 'Diseño',
+      icon: <DisenoIcon size={isMobile ? 52 : 72} />,
+      colorMain: '#BD0C7E', colorCustom: '#EC008C',
+      description: 'Te damos los recursos necesarios para producir y te conectamos con una red de freelancers especializados para que puedas llevar tus diseños a la realidad. No importa en qué etapa estés — tenemos el entorno para que el proceso creativo fluya sin fricciones hasta la producción.',
+    },
+    {
+      title: 'Producción',
+      icon: <ProduccionIcon size={isMobile ? 52 : 72} />,
+      colorMain: '#DCB308', colorCustom: '#FDE047',
+      description: 'Sublimación textil, DTF, impresión directa, corte láser, parches TPU y bordados — cubrimos todos los procesos bajo un mismo techo. Cada trabajo pasa por control de calidad interno antes de salir de planta, ya sea una pieza única o una tirada a gran escala.',
+    },
+    {
+      title: 'Entrega',
+      icon: <EntregaIcon size={isMobile ? 52 : 72} />,
+      colorMain: '#71717a', colorCustom: '#d4d4d8',
+      description: 'Coordinamos el envío o retiro de tu pedido con total transparencia. Te mantenemos informado en cada etapa, desde que el producto sale de producción hasta que llega a tus manos. Trabajamos con logística confiable para que recibas tu pedido en tiempo y forma, donde estés.',
+    },
+  ];
+
+
+  return (
+    <section style={{
+      padding: isMobile ? '48px 20px' : isTablet ? '56px 40px' : '64px 80px',
+      background: '#111',
+      fontFamily: "'Inter', sans-serif",
+    }}>
+      <div style={{ maxWidth: 1000, margin: '0 auto' }}>
+        <h2 style={{
+          color: '#f4f4f5',
+          fontSize: isMobile ? 16 : 20,
+          fontWeight: 600,
+          letterSpacing: '-0.5px',
+          margin: 0,
+          marginBottom: isMobile ? 28 : 40,
+          textAlign: isMobile ? 'center' : 'left',
+        }}>
+          ¿Qué es USER?
+        </h2>
+
+        {/* Icons row */}
+        <div style={{
+          display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
+          alignItems: isMobile ? 'stretch' : 'center',
+          justifyContent: 'space-evenly',
+          gap: isMobile ? 16 : 0,
+          width: '100%',
+        }}>
+          {steps.map((step, idx) => {
+            const isActive = activeStep === idx;
+            const isHovered = hoveredStep === idx;
+            return (
+              <Fragment key={idx}>
+                {/* Step button (now acts as the direct flex item) */}
+                <div
+                  onClick={() => handleStepClick(idx)}
+                  onMouseEnter={() => setHoveredStep(idx)}
+                  onMouseLeave={() => setHoveredStep(null)}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    flex: isMobile ? 'none' : 1,
+                    width: isMobile ? '100%' : 'auto',
+                    boxSizing: 'border-box',
+                    cursor: 'pointer',
+                    padding: '16px 8px',
+                    borderRadius: 12,
+                    transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                    background: isActive ? `${step.colorMain}1E` : isHovered ? `${step.colorMain}0D` : 'transparent',
+                    border: isActive ? `1px solid ${step.colorCustom}40` : isHovered ? `1px solid ${step.colorCustom}20` : '1px solid transparent',
+                    boxShadow: isHovered && !isActive ? `0 12px 30px -10px ${step.colorCustom}33` : 'none',
+                    transform: isHovered && !isActive ? 'translateY(-4px)' : 'none',
+                    userSelect: 'none',
+                  }}
+                >
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    opacity: 1,
+                    transform: (isActive || isHovered) ? 'translateY(-3px) scale(1.03)' : 'none',
+                    transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                  }}>
+                    {cloneElement(step.icon, { isActive })}
+                  </div>
+                  <span style={{
+                    marginTop: 10,
+                    fontSize: 14, fontWeight: 600,
+                    color: isActive ? step.colorCustom : '#f4f4f5',
+                    letterSpacing: '0.02em',
+                    textTransform: 'uppercase',
+                    transition: 'color 0.2s',
+                  }}>
+                    {step.title}
+                  </span>
+                  {/* indicator dot */}
+                  <div style={{
+                    width: 4, borderRadius: '50%',
+                    background: step.colorMain,
+                    marginTop: 10,
+                    height: 4,
+                    opacity: isActive ? 1 : 0,
+                    transition: 'all 0.2s',
+                  }} />
+                  {/* inline mobile text */}
+                  {isMobile && (
+                    <div style={{
+                      overflow: 'hidden',
+                      maxHeight: isActive ? 300 : 0,
+                      opacity: isActive ? 1 : 0,
+                      transition: 'all 0.4s cubic-bezier(0.4,0,0.2,1)',
+                      width: '100%',
+                    }}>
+                      <div style={{
+                        padding: isActive ? '12px 8px 0' : '0 8px',
+                        textAlign: 'center'
+                      }}>
+                        <p style={{
+                          color: 'rgba(255,255,255,0.75)', fontSize: 13,
+                          lineHeight: 1.6, margin: 0
+                        }}>
+                          {step.description}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Arrow between steps (now a sibling) */}
+                {idx < steps.length - 1 && (
+                  <div style={{
+                    opacity: 0.2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: isMobile ? 0 : '0 4px',
+                    width: isMobile ? '100%' : 'auto',
+                    height: isMobile ? 24 : 'auto',
+                    flexShrink: 0,
+                  }}>
+                    <svg
+                      width="24" height="12" viewBox="0 0 32 16"
+                      fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+                      style={{ transform: isMobile ? 'rotate(90deg)' : 'none', display: 'block' }}
+                    >
+                      <path d="M0 8h30M24 2l6 6-6 6" />
+                    </svg>
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
+        </div>
+
+        {/* Desktop Drawer panel */}
+        {!isMobile && (
+          <div style={{
+            overflow: 'hidden',
+            maxHeight: activeStep !== null ? 240 : 0,
+            opacity: activeStep !== null ? 1 : 0,
+            transition: 'max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease',
+            maxWidth: 820,
+            margin: '0 auto',
+          }}>
+            {displayStep !== null && (
+              <div style={{
+                marginTop: 24,
+                padding: '24px 32px',
+                background: `${steps[displayStep].colorMain}1E`,
+                borderRadius: 12,
+                border: `1px solid ${steps[displayStep].colorCustom}40`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-start',
+                gap: 24,
+                minHeight: 190,
+                boxSizing: 'border-box',
+              }}>
+                <div style={{ flexShrink: 0, opacity: 0.5, width: 72, display: 'flex', justifyContent: 'center' }}>
+                  {cloneElement(steps[displayStep].icon, { isActive: true })}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <h3 style={{
+                    color: '#fff', fontSize: 17, fontWeight: 600,
+                    margin: '0 0 8px', letterSpacing: '-0.3px',
+                    textTransform: 'uppercase'
+                  }}>
+                    {steps[displayStep].title}
+                  </h3>
+                  <p style={{
+                    color: 'rgba(255,255,255,0.55)', fontSize: 14,
+                    lineHeight: 1.7, margin: 0, maxWidth: 700
+                  }}>
+                    {steps[displayStep].description}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -422,22 +729,37 @@ const VIDEO_TEXTS = [
 ];
 
 function VideoTypewriter({ videoRef, isMobile }) {
-  const [displayText, setDisplayText] = useState('');
-  const [cursorVisible, setCursorVisible] = useState(true);
-
-  // Titilado del cursor
-  useEffect(() => {
-    const int = setInterval(() => setCursorVisible(v => !v), 530);
-    return () => clearInterval(int);
-  }, []);
+  const [currentText, setCurrentText] = useState('');
+  const maskRef = useRef(null);
+  const printheadRef = useRef(null);
 
   useEffect(() => {
     if (!videoRef.current) return;
     const vid = videoRef.current;
     let reqId;
+    let lastText = '';
 
-    const loop = () => {
-      const ct = vid.currentTime;
+    let lastTime = performance.now();
+    let smoothCt = vid.currentTime;
+
+    const loop = (nowTime) => {
+      // Lerp temporal para que no dependa de la baja resolución de actualización de vid.currentTime (que salta en bloques)
+      const delta = (nowTime - lastTime) / 1000;
+      lastTime = nowTime;
+
+      if (!vid.paused) {
+        smoothCt += delta;
+        const diff = vid.currentTime - smoothCt;
+        if (Math.abs(diff) > 0.1) {
+          smoothCt = vid.currentTime; // Snap si hay un salto fuerte (como cuando reinicia el loop del video)
+        } else {
+          smoothCt += diff * 0.1; // Suavizado micro por si derrapa de sincronía
+        }
+      } else {
+        smoothCt = vid.currentTime;
+      }
+
+      const ct = smoothCt;
 
       const currentIndex = VIDEO_TEXTS.findIndex((item, i, arr) => {
         const next = arr[i + 1];
@@ -449,33 +771,64 @@ function VideoTypewriter({ videoRef, isMobile }) {
         const nextItem = VIDEO_TEXTS[currentIndex + 1];
 
         const targetText = currentItem.text;
+
+        // Evitamos que React renderice a lo bobo. Solo forzamos re-render si cambió la palabra base.
+        if (targetText !== lastText) {
+          lastText = targetText;
+          // Ocultamos la máscara ANTES del re-render para evitar el flash de ~1 frame
+          if (maskRef.current) maskRef.current.style.clipPath = 'inset(0 100% 0 0)';
+          if (printheadRef.current) printheadRef.current.style.left = '0%';
+          setCurrentText(targetText);
+        }
+
         const timeInState = Math.max(0, ct - currentItem.time);
 
-        const duration = (nextItem && nextItem.time < 999) ? (nextItem.time - currentItem.time) : 3.0;
-        
-        // Fase de escritura: toma el 35% del tiempo total
-        const typePhaseTime = duration * 0.35;
-        const typeSpeed = typePhaseTime / Math.max(targetText.length, 1);
+        // Usamos el tiempo restante real del video (vid.duration) como tope para que el rebobinado termine idénticamente con el loop
+        const duration = (nextItem && nextItem.time < 999) ? (nextItem.time - currentItem.time) : (vid.duration ? vid.duration - currentItem.time : 3.0);
 
-        if (nextItem && nextItem.time < 999) {
-          // Fase de borrado: toma el 25% del tiempo total
-          const erasePhaseTime = duration * 0.25;
-          const eraseSpeed = erasePhaseTime / Math.max(targetText.length, 1);
-          
-          // Debe terminar de borrar exactamente 50ms (0.05s) antes del siguiente
-          const startEraseTime = duration - 0.05 - erasePhaseTime;
+        // Curva ease-in-out (sinusoidal) para suavizar la aceleración en extremos
+        const easeInOut = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
 
-          if (timeInState > startEraseTime) {
-            const eraseProgress = timeInState - startEraseTime;
-            const charsLeft = Math.max(0, targetText.length - Math.floor(eraseProgress / eraseSpeed));
-            setDisplayText(targetText.substring(0, charsLeft));
-          } else {
-            const charsTyped = Math.floor(timeInState / typeSpeed);
-            setDisplayText(targetText.substring(0, Math.min(charsTyped, targetText.length)));
-          }
+        // ── TIMING REDESIGN ──
+        // 38% ida | 8% pausa derecha | 38% vuelta | 16% pausa izquierda (esperando próxima palabra)
+        // Ida y vuelta exactamente igual de rápidas. Entrada/salida suaves con easing.
+        const typePhaseTime = duration * 0.38;
+        const holdRightTime = duration * 0.08;
+        const returnPhaseTime = duration * 0.38;
+        const startHold = typePhaseTime;
+        const startReturn = startHold + holdRightTime;
+        const endReturn = startReturn + returnPhaseTime;
+
+        let sliderPhase = 0;
+
+        if (timeInState <= typePhaseTime) {
+          // Ida: 0 → 1 con ease-in-out
+          sliderPhase = easeInOut(Math.min(1, timeInState / typePhaseTime));
+        } else if (timeInState <= startReturn) {
+          // Pausa a la derecha
+          sliderPhase = 1;
+        } else if (timeInState <= endReturn) {
+          // Vuelta: 1 → 0 con ease-in-out (misma curva, simétrica)
+          sliderPhase = 1 - easeInOut((timeInState - startReturn) / returnPhaseTime);
         } else {
-          const charsTyped = Math.floor(timeInState / typeSpeed);
-          setDisplayText(targetText.substring(0, Math.min(charsTyped, targetText.length)));
+          // Pausa a la izquierda (off-screen) hasta la siguiente palabra
+          sliderPhase = 0;
+        }
+
+        // En mobile la máscara es exactamente del mismo tamaño de la pista de 130vw (1:1 sliderPhase)
+        // En desktop mantenemos la exclusión de las zonas de parking asimétricas.
+        let clipProgress = 0;
+        if (isMobile) {
+          clipProgress = sliderPhase;
+        } else {
+          clipProgress = (sliderPhase - 0.15) / 0.85;
+        }
+        clipProgress = Math.max(0, Math.min(1, clipProgress));
+
+        // Aplicamos matemáticas flotantes a 60FPS directamente al motor de Render
+        if (maskRef.current && printheadRef.current) {
+          maskRef.current.style.clipPath = `inset(0 ${100 - (clipProgress * 100)}% 0 0)`;
+          printheadRef.current.style.left = `${sliderPhase * 100}%`;
         }
       }
 
@@ -483,35 +836,86 @@ function VideoTypewriter({ videoRef, isMobile }) {
     };
 
     reqId = requestAnimationFrame(loop);
-    vid.addEventListener('timeupdate', loop);
+
+    // Ya no usamos timeupdate porque corre a poquísimos hertz y entorpece la animación.
+    // Con un requestAnimationFrame ininterrumpido atado a performanceNow tenemos 60 cuadros reales.
     return () => {
       cancelAnimationFrame(reqId);
-      vid.removeEventListener('timeupdate', loop);
     };
   }, [videoRef]);
 
   return (
     <div style={{
-      display: 'flex',
+      position: 'relative',
+      display: 'inline-flex',
       alignItems: 'center',
-      justifyContent: 'inherit',
-      fontSize: isMobile ? 'clamp(16px, 5.5vw, 24px)' : 44, 
+      justifyContent: 'center',
+      fontSize: isMobile ? 'clamp(16px, 5.5vw, 24px)' : 44,
       fontWeight: 600,
       color: '#fff',
       letterSpacing: '0.04em',
       whiteSpace: 'nowrap'
     }}>
-      <span style={{ color: '#00AEEF', fontWeight: 800 }}>{'>'}</span>
-      <span style={{ marginLeft: 8 }}>{displayText}</span>
+      {/* Contenedor estático que dicta el tamaño y centra la disposición en el layout padre */}
       <span style={{
-        opacity: cursorVisible ? 1 : 0,
-        transition: 'opacity 0.1s',
-        marginLeft: 6,
-        width: isMobile ? 4 : 5, 
-        height: isMobile ? 28 : 48, 
-        background: '#00AEEF',
-        display: 'inline-block'
-      }} />
+        opacity: 0,
+        userSelect: 'none',
+        padding: isMobile ? '0' : '0 65px 0 80px',
+        minWidth: 100
+      }}>
+        {currentText}
+      </span>
+
+      {/* Riel fantasma desvinculado de flexbox para que no se escale ni achique */}
+      <span style={{
+        position: 'absolute',
+        top: 0, bottom: 0,
+        // En mobile forzamos 120vw centrado, en desktop el 100% de la caja de arriba
+        left: isMobile ? '50%' : 0,
+        right: isMobile ? 'auto' : 0,
+        width: isMobile ? '120vw' : '100%',
+        transform: isMobile ? 'translateX(-50%)' : 'none',
+        display: 'flex',
+        justifyContent: isMobile ? 'center' : 'flex-start',
+        alignItems: 'center',
+        padding: isMobile ? '0' : '0 65px 0 80px',
+      }}>
+
+        {/* Enmascarador del texto visible atado al porcentaje del cabezal */}
+        <span
+          ref={maskRef}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            justifyContent: isMobile ? 'center' : 'inherit',
+            alignItems: 'center',
+            padding: isMobile ? '0' : '0 65px 0 80px',
+            clipPath: 'inset(0 100% 0 0)',
+            whiteSpace: 'nowrap',
+            zIndex: 1
+          }}
+        >
+          {currentText}
+        </span>
+
+        {/* Cabezal magnético operado por useRef a 60fps */}
+        <span
+          ref={printheadRef}
+          style={{
+            position: 'absolute',
+            left: '0%', // Corre localmente sobre su pista (de 0 a 100%)
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            pointerEvents: 'none',
+            zIndex: 10
+          }}
+        >
+          <PrinterCartridgeIcon size={isMobile ? 70 : 130} />
+        </span>
+      </span>
     </div>
   );
 }

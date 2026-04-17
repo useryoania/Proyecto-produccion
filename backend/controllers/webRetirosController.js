@@ -787,31 +787,19 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
             const fechaEntrega = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
             const UsuarioAlta = req.user?.id || 70;
 
-            // 1. Liberar del Estante Físico SOLO si tiene estante real (no aplica a "Fuera de Estante")
-            if (ubicacionId !== 'FUERA DE ESTANTE') {
-                const partsM = ubicacionId.split('-');
-                const estIdM = partsM[0];
-                const secM = parseInt(partsM[1], 10);
-                const posM = parseInt(partsM[2], 10);
+            // 1. Marcar entregadas en DB
+            // Se ordenan los IDs numéricamente de menor a mayor ANTES de actualizar.
+            // Esto es CRÍTICO para evitar Deadlocks (Error 1205) en SQL Server,
+            // ya que garantiza que las transacciones bloqueen los recursos siempre en el mismo orden.
+            const ordenesOrdenadas = ordenesParaEntregar
+                .map(ord => ({ ord, id: parseInt((ord || '').replace(/^[A-Za-z]+-0*/, ''), 10) }))
+                .filter(x => !isNaN(x.id))
+                .sort((a, b) => a.id - b.id);
 
-                for (const ord of ordenesParaEntregar) {
-                    await new sql.Request(transaction)
-                        .input('estId', sql.Char, estIdM)
-                        .input('sec', sql.Int, secM)
-                        .input('pos', sql.Int, posM)
-                        .input('Ord', sql.VarChar, ord)
-                        .query('DELETE FROM OcupacionEstantes WHERE EstanteID = @estId AND Seccion = @sec AND Posicion = @pos AND OrdenRetiro = @Ord');
-                }
-            }
-
-            // 2. Marcar entregadas en DB
-            // El código tiene prefijo variable: RL-0003, RW-0001, RT-0002, R-00123...
-            // Extraemos solo los dígitos finales
-            for (const ord of ordenesParaEntregar) {
-                const OReId = parseInt((ord || '').replace(/^[A-Za-z]+-0*/, ''), 10);
-                if (isNaN(OReId)) { logger.warn(`[ENTREGADO] OReId invalido para: ${ord}`); continue; }
-                logger.info(`[ENTREGADO MULTIPLE] ${ord} -> OReId ${OReId}`);
-                await marcarEntregado(transaction, OReId, new Date(fechaEntrega), UsuarioAlta);
+            for (const item of ordenesOrdenadas) {
+                logger.info(`[ENTREGADO MULTIPLE] ${item.ord} -> OReId ${item.id}`);
+                // marcarEntregado actualiza el historial, estados y ya elimina de OcupacionEstantes
+                await marcarEntregado(transaction, item.id, new Date(fechaEntrega), UsuarioAlta);
             }
 
             await transaction.commit();

@@ -21,6 +21,7 @@ import { SERVICES_LIST } from '../constants/services';
 import { Logo } from '../../components/Logo';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { PushNotificationBanner } from '../components/PushNotificationBanner';
+import LandingNavbar from '../../components/shared/LandingNavbar';
 
 const BASE_URL = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') : '';
 
@@ -130,19 +131,14 @@ export const MainLayout = ({ children }) => {
 
     return (
         <div className="flex h-screen bg-zinc-900 overflow-hidden font-sans text-zinc-100">
+            <LandingNavbar />
             {/* Sidebar Desktop */}
-            <aside className="hidden md:flex flex-col w-72 bg-custom-dark text-zinc-100 shadow-2xl z-20 m-4 rounded-2xl border border-brand-dark backdrop-blur-xl">
-                <div className="p-4 border-b border-brand-dark leading-none overflow-hidden">
-                    <div className="flex items-center">
-                        <Link to="/"><Logo className="h-12 w-auto text-white shrink-0" /></Link>
-                        <div className="w-px h-14 bg-zinc-700 mx-4 shrink-0"></div>
-                        <h1 className="text-lg font-bold tracking-tight text-zinc-100 flex-1 text-center">AUTOGESTIÓN</h1>
-                    </div>
-                </div>
+            <aside className="hidden md:flex flex-col w-72 bg-custom-dark text-zinc-100 shadow-2xl z-20 m-4 mt-[80px] rounded-2xl border border-brand-dark backdrop-blur-xl">
+
 
                 <nav className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-hide">
                     {/* 1. Mi Perfil (Primero según maqueta) */}
-                    <NavItem to="/portal/profile/edit" icon={User} label="Mi Perfil" />
+                    <NavItem to="/portal/profile" icon={User} label="Mi Perfil" />
 
                     {/* 2. Servicios (Link directo a catálogo) */}
                     <NavItem to="/portal" icon={Package} label="Servicios" />
@@ -266,48 +262,9 @@ export const MainLayout = ({ children }) => {
                 </div>
             </aside>
 
-            {/* Mobile Header */}
-            <div className="md:hidden fixed top-0 w-full bg-custom-dark backdrop-blur-md text-zinc-100 z-30 px-4 py-3 flex justify-between items-center shadow-lg border-b border-brand-dark">
-                <div className="flex items-center gap-3">
-                    <Link to="/"><Logo className="h-8 w-auto text-white mt-2" /></Link>
-                    <div className="w-px h-8 bg-zinc-700"></div>
-                    <span className="font-bold text-zinc-100">AUTOGESTIÓN</span>
-                </div>
-                <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 rounded-lg hover:text-custom-magenta">
-                    {isMobileMenuOpen ? <X /> : <Menu />}
-                </button>
-            </div>
-
-            {/* Mobile Menu Overlay */}
-            <AnimatePresence>
-                {isMobileMenuOpen && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
-                        className="md:hidden fixed inset-0 bg-custom-dark z-20 pt-20 px-4 pb-4 overflow-y-auto"
-                    >
-                        <div className="flex flex-col gap-2">
-                            <NavItem to="/portal/profile/edit" icon={UserPen} label="Mi Perfil" />
-                            <NavItem to="/portal" icon={Package} label="Servicios" />
-                            {/* <NavItem to="/portal/factory" icon={Factory} label="Fábrica / Estado" /> */}
-                            <NavItem to="/portal/pickup" icon={Package} label="Retiro de Pedidos" />
-                            <NavItem to="/portal/payments" icon={CreditCard} label="Pagos Pendientes" />
-                            <NavItem to="/portal/history" icon={History} label="Historial de Pedidos" />
-                            {/* <NavItem to="/portal/club" icon={Crown} label="Club Member" /> */}
-
-                            <button onClick={logout} className="mt-8 flex items-center gap-3 px-4 py-3 text-brand-magenta">
-                                <LogOut size={20} /> Cerrar Sesión
-                            </button>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
             {/* Main Content */}
-            <main className="flex-1 overflow-y-auto relative scrollbar-thin bg-zinc-900">
-                <div className="md:hidden h-16"></div> {/* Spacer for mobile header */}
-                <div className="p-4 pb-20 md:p-8 md:pb-8 max-w-7xl mx-auto min-h-full">
+            <main className="flex-1 overflow-y-auto relative scrollbar-thin bg-zinc-900 z-0">
+                <div className="p-4 pt-[90px] pb-20 md:p-8 md:pt-[90px] md:pb-8 max-w-7xl mx-auto min-h-full">
                     {children}
                 </div>
             </main>

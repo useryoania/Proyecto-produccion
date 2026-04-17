@@ -6,13 +6,16 @@ export function CustomSelect({ value, onChange, options, placeholder, disabled, 
     const selected = options.find(o => String(o.value) === String(value)) || null;
 
     const isLight = variant === 'light';
+    const isBlack = variant === 'black';
 
     const sizeClasses = size === 'small'
-        ? 'p-2.5 text-sm rounded-lg'
-        : 'p-3 text-base rounded-xl';
+        ? 'p-2.5 text-sm rounded-[10px]'
+        : 'p-3 text-base rounded-[10px]';
 
     const buttonColors = isLight
         ? 'border-slate-200 bg-white hover:border-blue-400'
+        : isBlack
+        ? 'border-[#3f3f46] bg-[#111] hover:border-[#00AEEF]'
         : 'border-zinc-700 bg-brand-dark hover:border-zinc-500';
 
     const textColor = isLight
@@ -21,17 +24,23 @@ export function CustomSelect({ value, onChange, options, placeholder, disabled, 
 
     const focusRing = isLight
         ? 'focus:ring-blue-500/20 focus:border-blue-500'
+        : isBlack
+        ? 'focus:ring-[#00AEEF]/30 border-[#00AEEF]'
         : 'focus:ring-brand-cyan/30';
 
     const dropdownColors = isLight
         ? 'bg-white border-slate-200 shadow-xl shadow-black/10'
+        : isBlack
+        ? 'bg-[#111] border-[#3f3f46] shadow-xl shadow-black/40'
         : 'bg-brand-dark border-zinc-700 shadow-xl shadow-black/40';
 
     const optionColors = (active, sel) => isLight
         ? `${active ? 'bg-blue-50 text-slate-800' : 'text-slate-600'} ${sel ? 'font-semibold' : 'font-normal'}`
+        : isBlack
+        ? `${active ? 'bg-[#00AEEF]/20 text-zinc-100' : 'text-zinc-300'} ${sel ? 'font-semibold' : 'font-normal'}`
         : `${active ? 'bg-brand-cyan/10 text-zinc-100' : 'text-zinc-300'} ${sel ? 'font-semibold' : 'font-normal'}`;
 
-    const checkColor = isLight ? 'text-blue-500' : 'text-custom-cyan';
+    const checkColor = isLight ? 'text-blue-500' : 'text-[#00AEEF]';
 
     return (
         <Listbox value={value} onChange={onChange} disabled={disabled}>

@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { jsPDF } from 'jspdf';
-import logoSrc from '../../assets/images/logo.png';
-import pagadoStampSrc from '../../assets/images/pagado-stamp.png';
+import logoSrc from '../../assets/images/logo/logo.webp';
+import pagadoStampSrc from '../../assets/images/general/pagado-stamp.png';
+import handyLogo from '../../assets/images/pasarelas/handy.svg';
+import mpLogo from '../../assets/images/pasarelas/mercadopago.svg';
 import { useSearchParams } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import Lottie from 'lottie-react';
 import loadingAnim from '../../assets/animations/loading.json';
 import { useAuth } from '../auth/AuthContext';
 import { apiClient } from '../api/apiClient'; // Assuming user comes from here
-import { CheckCircle, AlertCircle, ChevronRight, Truck, CreditCard, Download, MapPin, MapPinCheck, Package, PackageCheck, PackageOpen, Trash2, Plus, ArrowLeft } from 'lucide-react';
+import { CheckCircle, AlertCircle, ChevronRight, Truck, CreditCard, Download, MapPin, MapPinCheck, Package, PackageCheck, PackageOpen, Trash2, Plus, ArrowLeft, X } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 import { CustomButton } from '../pautas/CustomButton';
@@ -40,6 +43,7 @@ export const PickupView = () => {
     const [loading, setLoading] = useState(false);
     const [fetching, setFetching] = useState(true);
     const [confirmedWithoutPayment, setConfirmedWithoutPayment] = useState(false);
+    const [showPayModal, setShowPayModal] = useState(false);
 
     // Shipping/confirmation state
     const [shippingData, setShippingData] = useState(null);
@@ -60,6 +64,7 @@ export const PickupView = () => {
     const addAddressRef = useRef(null);
     const encomiendaRef = useRef(null);
     const creatingRef = useRef(false);
+    const isFirstMount = useRef(true);
 
     // Estados del nuevo flujo Handy (polling post-pago)
     const [pollingTxId, setPollingTxId] = useState(null);
@@ -68,8 +73,23 @@ export const PickupView = () => {
     const pollingRef = useRef(null);
 
     useEffect(() => {
-        if (step !== 'selection') return;
+        if (step !== 'selection' && readyOrders.length > 0) {
+            setFetching(false);
+            return;
+        }
+
         const loadPickupOrders = async () => {
+            // Si es el primer mount y no viene de un pago externo (txId), limpiar selección stale
+            if (isFirstMount.current) {
+                isFirstMount.current = false;
+                const txId = searchParams.get('txId');
+                if (!txId && step === 'selection') {
+                    sessionStorage.removeItem('pickup_selected');
+                    sessionStorage.removeItem('pickup_code');
+                    setSelectedOrders([]);
+                    setPickupCode(null);
+                }
+            }
             setFetching(true);
             try {
                 const res = await apiClient.get('/web-orders/pickup-orders');
@@ -82,6 +102,10 @@ export const PickupView = () => {
                         if (filtered.length !== prev.length) {
                             sessionStorage.setItem('pickup_selected', JSON.stringify(filtered));
                         }
+                        // Si estamos en confirmation y no hay selecciones validas (ej. recarga), volver
+                        if (step !== 'selection' && filtered.length === 0) {
+                            setStep('selection');
+                        }
                         return filtered;
                     });
                 }
@@ -92,6 +116,7 @@ export const PickupView = () => {
             }
         };
         loadPickupOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [step]);
 
     // Persist selected orders in sessionStorage
@@ -297,6 +322,47 @@ export const PickupView = () => {
         pollingRef.current = setInterval(poll, 4000);
         return () => clearInterval(pollingRef.current);
     }, [pollingTxId]);
+
+    // NUEVO FLUJO: genera link MercadoPago sin crear retiro, con redireccion directa
+    const handleInitMpPayment = async () => {
+        setLoading(true);
+        try {
+            const formaEnvioId = selectedFormaEnvio || shippingData?.defaultFormaEnvioID || 5;
+            const esEncomienda = shippingData?.formasEnvio?.find(f => f.ID === formaEnvioId)?.Nombre?.toLowerCase().includes('encomienda');
+            let dir = selectedDireccion || '';
+            let depto = '';
+            let loc = '';
+            const savedDir = shippingData?.direccionesGuardadas?.find(d => d.Direccion === selectedDireccion);
+            if (savedDir) { depto = savedDir.Ciudad || ''; loc = savedDir.Localidad || ''; }
+            else if (dir === shippingData?.defaultDireccion) { depto = defaultDepto || ''; loc = defaultLocalidad || ''; }
+            const ordersPayload = selectedOrders.map(selId => {
+                const order = readyOrders.find(o => o.id === selId);
+                if (!order) return null;
+                return { OrdIdOrden: order.rawId, orderNumber: order.id.replace('#', ''), desc: order.desc, amount: order.amount, currency: order.currency };
+            }).filter(Boolean);
+            const payload = {
+                orders: ordersPayload,
+                totalAmount: Number((totalAmount || 0).toFixed(2)),
+                activeCurrency: activeCurrency,
+                lugarRetiro: esEncomienda ? 2 : 1,
+                direccion: esEncomienda ? dir : null,
+                departamento: esEncomienda ? depto : null,
+                localidad: esEncomienda ? loc : null,
+                agenciaId: esEncomienda ? (selectedAgencia === -1 ? null : selectedAgencia) : null,
+                customAgencia: esEncomienda && selectedAgencia === -1 ? customAgencia : null,
+                receptorNombre: esEncomienda ? (receiverFirstName.trim() + ' ' + receiverLastName.trim()) : null
+            };
+            const res = await apiClient.post('/web-orders/pickup-orders/mp-payment', payload);
+            if (res.success && res.url) {
+                // MercadoPago no necesita ventana separada — redireccion directa
+                window.location.href = res.url;
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error de pago', text: 'No se pudo generar el link de MercadoPago' + (res.error ? ': ' + res.error : ''), background: '#212121', color: '#e4e4e7', confirmButtonColor: '#009ee3', customClass: { popup: 'rounded-xl border border-zinc-700' } });
+            }
+        } catch (err) {
+            Swal.fire({ icon: 'error', title: 'Error', text: 'Ocurrió un error al contactar MercadoPago.', background: '#212121', color: '#e4e4e7', confirmButtonColor: '#009ee3', customClass: { popup: 'rounded-xl border border-zinc-700' } });
+        } finally { setLoading(false); }
+    };
 
     // NUEVO FLUJO: genera link Handy sin crear retiro, pero con anti-popup blocker y redireccion
     const handleInitPayment = async () => {
@@ -924,7 +990,7 @@ export const PickupView = () => {
 
                     {totalAmount > 0 && (
                         <CustomButton
-                            onClick={handleInitPayment}
+                            onClick={() => setShowPayModal(true)}
                             isLoading={loading}
                             disabled={loading || !selectedFormaEnvio || needsAddress || needsReceiverName}
                             variant="primary"
@@ -936,6 +1002,172 @@ export const PickupView = () => {
                             Pagar ahora
                         </CustomButton>
                     )}
+
+                    {/* ── Modal selector de pasarela de pago ── */}
+                    {showPayModal && createPortal(
+                        <>
+                        <style>{`
+                            @keyframes slideUp {
+                                from { transform: translateY(40px); opacity: 0; }
+                                to   { transform: translateY(0);    opacity: 1; }
+                            }
+                            @keyframes fadeInModal {
+                                from { opacity: 0; transform: scale(0.96); }
+                                to   { opacity: 1; transform: scale(1); }
+                            }
+                            .pay-modal-overlay {
+                                position: fixed; inset: 0; z-index: 9999;
+                                background: rgba(0,0,0,0.88);
+                                backdrop-filter: blur(6px);
+                                display: flex; align-items: stretch;
+                                height: 100dvh; height: 100vh;
+                            }
+                            .pay-modal-box {
+                                background: linear-gradient(160deg, #1c1c1e, #141414);
+                                border: none;
+                                border-radius: 0;
+                                padding: 28px 24px 40px;
+                                width: 100%; height: 100%;
+                                display: flex; flex-direction: column;
+                                animation: slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1) both;
+                            }
+                            .pay-modal-btns {
+                                display: flex;
+                                flex-direction: column;
+                                align-items: center;
+                                justify-content: center;
+                                gap: 14px;
+                                flex: 1;
+                                margin-top: 8px;
+                            }
+                            .pay-modal-btns button { height: 30svh; aspect-ratio: 1; flex: unset; }
+                            @media (min-width: 600px) {
+                                .pay-modal-overlay {
+                                    align-items: center;
+                                    justify-content: center;
+                                    padding: 16px;
+                                    background: rgba(0,0,0,0.72);
+                                }
+                                .pay-modal-box {
+                                    border-radius: 20px;
+                                    max-width: 420px;
+                                    height: auto;
+                                    padding: 32px 28px;
+                                    display: block;
+                                    box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+                                    animation: fadeInModal 0.22s ease both;
+                                }
+                                .pay-modal-btns {
+                                    display: flex;
+                                    flex-direction: row;
+                                    justify-content: center;
+                                    gap: 14px;
+                                    flex: unset; margin-top: 0;
+                                }
+                                .pay-modal-btns button { flex: 1; height: 140px; aspect-ratio: unset; }
+                            }
+                        `}</style>
+                        <div
+                            className="pay-modal-overlay"
+                            onClick={() => setShowPayModal(false)}
+                        >
+                            <div
+                                className="pay-modal-box"
+                                onClick={e => e.stopPropagation()}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                                    <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, letterSpacing: '0.15em', textTransform: 'uppercase', margin: 0 }}>
+                                        Elegí cómo pagar
+                                    </p>
+                                    <button
+                                        onClick={() => setShowPayModal(false)}
+                                        style={{
+                                            background: 'rgba(255,255,255,0.08)',
+                                            border: '1px solid rgba(255,255,255,0.15)',
+                                            borderRadius: 10, padding: '8px 10px',
+                                            cursor: 'pointer', display: 'flex',
+                                            alignItems: 'center', color: 'rgba(255,255,255,0.7)',
+                                            transition: 'background 0.2s, color 0.2s',
+                                        }}
+                                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; e.currentTarget.style.color = '#fff'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                </div>
+                                <h2 style={{ color: '#fff', fontWeight: 800, fontSize: 20, margin: '0 0 10px 0' }}>
+                                    Método de pago
+                                </h2>
+
+                                <div className="pay-modal-btns">
+                                    {/* ── Botón Handy ── */}
+                                    <button
+                                        onClick={() => { setShowPayModal(false); handleInitPayment(); }}
+                                        disabled={loading}
+                                        style={{
+                                            display: 'flex', flexDirection: 'column',
+                                            alignItems: 'center', justifyContent: 'center',
+                                            gap: 12, padding: '24px 16px',
+                                            background: '#722efa',
+                                            border: '1px solid rgba(114,46,250,0.6)',
+                                            borderRadius: 16, cursor: 'pointer',
+                                            transition: 'background 0.2s, transform 0.15s',
+                                        }}
+                                        onMouseEnter={e => { e.currentTarget.style.background = '#5e1fe8'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.background = '#722efa'; e.currentTarget.style.transform = 'scale(1)'; }}
+                                    >
+                                        <img src={handyLogo} alt="Handy" style={{ height: 40, objectFit: 'contain', maxWidth: '100%' }} />
+                                        <div style={{ textAlign: 'center' }}>
+                                            <p style={{ color: '#fff', fontWeight: 700, fontSize: 14, margin: '0 0 2px' }}>Handy</p>
+                                            <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, margin: 0, lineHeight: 1.4 }}>Tarjeta crédito / débito</p>
+                                        </div>
+                                    </button>
+
+                                    {/* ── Botón MercadoPago ── */}
+                                    <button
+                                        onClick={() => { setShowPayModal(false); handleInitMpPayment(); }}
+                                        disabled={loading}
+                                        style={{
+                                            display: 'flex', flexDirection: 'column',
+                                            alignItems: 'center', justifyContent: 'center',
+                                            gap: 12, padding: '24px 16px',
+                                            background: '#ffe600',
+                                            border: '1px solid rgba(255,230,0,0.6)',
+                                            borderRadius: 16, cursor: 'pointer',
+                                            transition: 'background 0.2s, transform 0.15s',
+                                        }}
+                                        onMouseEnter={e => { e.currentTarget.style.background = '#e6cf00'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                                        onMouseLeave={e => { e.currentTarget.style.background = '#ffe600'; e.currentTarget.style.transform = 'scale(1)'; }}
+                                    >
+                                        <img src={mpLogo} alt="MercadoPago" style={{ height: 40, objectFit: 'contain', maxWidth: '100%' }} />
+                                        <div style={{ textAlign: 'center' }}>
+                                            <p style={{ color: '#1a1a1a', fontWeight: 700, fontSize: 14, margin: '0 0 2px' }}>MercadoPago</p>
+                                            <p style={{ color: 'rgba(0,0,0,0.55)', fontSize: 11, margin: 0, lineHeight: 1.4 }}>Saldo, tarjeta o cuotas</p>
+                                        </div>
+                                    </button>
+                                </div>
+
+                                {/* Nota de seguridad */}
+                                <div style={{
+                                    marginTop: 20,
+                                    padding: '10px 14px',
+                                    borderRadius: 10,
+                                    background: 'rgba(255,255,255,0.04)',
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    display: 'flex',
+                                    alignItems: 'flex-start',
+                                    gap: 8,
+                                }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, margin: 0, lineHeight: 1.5 }}>
+                                        Tus datos de tarjeta son procesados directamente por Handy o MercadoPago. USER no almacena ni accede a información financiera de ningún tipo.
+                                    </p>
+                                </div>
+
+                            </div>
+                        </div>
+                        </>
+                    , document.body)}
                 </div>
             </div>
         );

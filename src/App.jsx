@@ -1,5 +1,4 @@
-// src/App.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from './context/AuthContext';
@@ -7,15 +6,31 @@ import LoginPage from './components/pages/LoginPage';
 import RegisterPage from './components/pages/RegisterPage';
 import ForgotPasswordPage from './components/pages/ForgotPasswordPage';
 import ResetPasswordPage from './components/pages/ResetPasswordPage';
-import LandingPage from './components/pages/LandingPage';
-import ContactPage from './components/pages/ContactPage';
-import { ClientPortalApp } from './client-portal/ClientPortalApp';
-import MainAppContent from './components/layout/MainAppContent'; // ESTE ES EL IMPORT
 import PaymentResult from './components/pages/PaymentResult';
-import { TotemApp } from './client-portal/modulos/totem/TotemApp';
 import PrintStationPage from './components/logistics/PrintStationPage';
 import EncomiendaPrintStation from './components/logistics/EncomiendaPrintStation';
+
+// ⚡ CODE SPLITTING: Se independiza la descarga para no atorar celulares. Solo se bajará el JS que se esté mirando.
+const LandingPage = lazy(() => import('./components/pages/LandingPage'));
+const ContactPage = lazy(() => import('./components/pages/ContactPage'));
+const WorkWithUsPage = lazy(() => import('./components/pages/WorkWithUsPage'));
+const ColorPalettesPage = lazy(() => import('./components/pages/ColorPalettesPage'));
+const TermsPage = lazy(() => import('./components/pages/TermsPage'));
+const PrivacyPage = lazy(() => import('./components/pages/PrivacyPage'));
+const GuidesPage = lazy(() => import('./components/pages/GuidesPage'));
+const TemplatesPage = lazy(() => import('./components/pages/TemplatesPage'));
+const ClientPortalApp = lazy(() => import('./client-portal/ClientPortalApp').then(m => ({ default: m.ClientPortalApp })));
+const MainAppContent = lazy(() => import('./components/layout/MainAppContent')); 
+const TotemApp = lazy(() => import('./client-portal/modulos/totem/TotemApp').then(m => ({ default: m.TotemApp })));
+
+const PageFallback = () => <div style={{ minHeight: '100vh', background: '#0d0d0d' }} />;
 import { menuService } from './services/api';
+
+function ClientLoginRedirect() {
+  const location = useLocation();
+  const redirect = new URLSearchParams(location.search).get('redirect') || '/portal/profile';
+  return <Navigate to={redirect} replace />;
+}
 
 function App() {
   const { user, loading: authLoading } = useAuth();
@@ -54,19 +69,27 @@ function App() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
           >
-            <Routes location={location}>
-              <Route path="/" element={<Navigate to="/login" replace />} />
-              <Route path="/landing" element={<LandingPage />} />
-              <Route path="/contacto" element={<ContactPage />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-              <Route path="/reset-password" element={<ResetPasswordPage />} />
-              <Route path="/portal/*" element={<ClientPortalApp />} />
-              <Route path="/payment-status" element={<PaymentResult />} />
-              <Route path="/totem/*" element={<TotemApp />} />
-              <Route path="*" element={<Navigate to="/login" replace />} />
-            </Routes>
+            <Suspense fallback={<PageFallback />}>
+              <Routes location={location}>
+                <Route path="/" element={<LandingPage />} />
+                <Route path="/landing" element={<Navigate to="/" replace />} />
+                <Route path="/contacto" element={<ContactPage />} />
+                <Route path="/trabaja-con-nosotros" element={<WorkWithUsPage />} />
+                <Route path="/paletas" element={<ColorPalettesPage />} />
+                <Route path="/terminos" element={<TermsPage />} />
+                <Route path="/privacidad" element={<PrivacyPage />} />
+                <Route path="/guias" element={<GuidesPage />} />
+                <Route path="/plantillas" element={<TemplatesPage />} />
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
+                <Route path="/portal/*" element={<ClientPortalApp />} />
+                <Route path="/payment-status" element={<PaymentResult />} />
+                <Route path="/totem/*" element={<TotemApp />} />
+                <Route path="*" element={<Navigate to="/login" replace />} />
+              </Routes>
+            </Suspense>
           </motion.div>
         </AnimatePresence>
       </main>
@@ -78,30 +101,42 @@ function App() {
   if (isClient) {
     return (
       <main>
-        <Routes>
-          <Route path="/" element={<Navigate to="/portal/pickup" replace />} />
-          <Route path="/landing" element={<LandingPage />} />
-          <Route path="/contacto" element={<ContactPage />} />
-          <Route path="/portal/*" element={<ClientPortalApp />} />
-          <Route path="/payment-status" element={<PaymentResult />} />
-          <Route path="/totem/*" element={<TotemApp />} />
-          <Route path="*" element={<Navigate to="/portal/pickup" replace />} />
-        </Routes>
+        <Suspense fallback={<PageFallback />}>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/landing" element={<Navigate to="/" replace />} />
+            <Route path="/contacto" element={<ContactPage />} />
+            <Route path="/trabaja-con-nosotros" element={<WorkWithUsPage />} />
+            <Route path="/paletas" element={<ColorPalettesPage />} />
+            <Route path="/terminos" element={<TermsPage />} />
+            <Route path="/privacidad" element={<PrivacyPage />} />
+            <Route path="/guias" element={<GuidesPage />} />
+            <Route path="/plantillas" element={<TemplatesPage />} />
+            <Route path="/portal/*" element={<ClientPortalApp />} />
+            <Route path="/payment-status" element={<PaymentResult />} />
+            <Route path="/totem/*" element={<TotemApp />} />
+            <Route path="/login" element={<ClientLoginRedirect />} />
+            <Route path="/register" element={<Navigate to="/portal/profile" replace />} />
+            <Route path="*" element={<Navigate to="/portal/profile" replace />} />
+          </Routes>
+        </Suspense>
       </main>
     );
   }
   // ADMIN / INTERNAL ROUTING
   return (
     <main>
-      <Routes>
-        <Route path="/login" element={<Navigate to="/" replace />} />
-        <Route path="/totem/*" element={<TotemApp />} />
-        <Route path="/print-station" element={<PrintStationPage />} />
-        <Route path="/encomienda-station" element={<EncomiendaPrintStation />} />
-        {/* /portal pertenece al portal cliente — si un admin llega aquí, redirigir al dashboard */}
-        <Route path="/portal/*" element={<Navigate to="/" replace />} />
-        <Route path="*" element={<MainAppContent menuItems={menuItems} />} />
-      </Routes>
+      <Suspense fallback={<PageFallback />}>
+        <Routes>
+          <Route path="/login" element={<Navigate to="/" replace />} />
+          <Route path="/totem/*" element={<TotemApp />} />
+          <Route path="/print-station" element={<PrintStationPage />} />
+          <Route path="/encomienda-station" element={<EncomiendaPrintStation />} />
+          {/* /portal pertenece al portal cliente — si un admin llega aquí, redirigir al dashboard */}
+          <Route path="/portal/*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<MainAppContent menuItems={menuItems} />} />
+        </Routes>
+      </Suspense>
     </main>
   );
 }

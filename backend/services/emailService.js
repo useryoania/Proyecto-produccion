@@ -9,13 +9,14 @@ const BASE_URL = process.env.BASE_URL || 'https://localhost:5173';
 
 const FROM_EMAIL = 'User <notificaciones@user.com.uy>';
 
-exports.sendMail = async (to, subject, html) => {
+exports.sendMail = async (to, subject, html, attachments = []) => {
     try {
         const { data, error } = await resend.emails.send({
             from: FROM_EMAIL,
             to,
             subject,
-            html
+            html,
+            ...(attachments.length > 0 && { attachments })
         });
         if (error) {
             logger.error(`[Email] ❌ RESEND ERROR enviando a ${to}: ${JSON.stringify(error)}`);

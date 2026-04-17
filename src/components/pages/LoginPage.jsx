@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { Button } from '../ui/Button.jsx';
-import { User, Lock, Eye, EyeOff, AlertCircle, LogIn, KeyRound } from 'lucide-react';
+import { User, Lock, Eye, EyeOff, AlertCircle, LogIn, KeyRound, Mail, CheckCircle2, Send } from 'lucide-react';
 import LandingNavbar from '../shared/LandingNavbar.jsx';
 import { API_URL } from '../../services/apiClient';
 import ParticlesCanvas from '../ui/ParticlesCanvas';
@@ -136,6 +136,118 @@ const ResetPasswordScreen = ({ token, onSuccess }) => {
     );
 };
 
+// --- INACTIVE ACCOUNT EXTRACTED PARA REEMPLAZAR EL SWAL ---
+const InactiveAccountBox = ({ identifier, maskedEmail, onBack, isVisible }) => {
+    const [email, setEmail] = useState('');
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        setError('');
+        setSuccess('');
+
+        if (!email.trim()) { setError('Por favor ingresá un correo válido.'); return; }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) { setError('Por favor ingresá un correo válido.'); return; }
+
+        setIsLoading(true);
+        try {
+            const res = await fetch(`${API_URL}/web-auth/resend-activation`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ identifier, email })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                setError(data.message || 'El correo no coincide. Intentá de nuevo.');
+            } else {
+                setSuccess('¡Correo enviado! Revisá tu bandeja de entrada y hacé clic en el link de activación.');
+            }
+        } catch {
+            setError('Error de conexión. Intentá de nuevo.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    return (
+        <div className={`pt-8 px-6 sm:px-10 md:px-8 pb-10 md:pb-8 w-full transition-opacity duration-300 ease-in-out ${isVisible ? 'opacity-100 relative z-10' : 'opacity-0 absolute inset-0 pointer-events-none -z-10'}`}>
+            <div className="mb-6 text-center">
+                <h2 className="text-2xl font-black text-white tracking-tight">Cuenta sin activar</h2>
+                <div className="text-sm font-medium text-zinc-400 mt-2 space-y-2">
+                    <p>
+                        Para poder acceder, necesitás confirmar tu dirección de correo electrónico.
+                    </p>
+                    <p className="text-xs text-zinc-500">
+                        Si no encontrás el correo de activación en tu bandeja de entrada o spam, podés solicitar uno nuevo.
+                    </p>
+                </div>
+                {maskedEmail && (
+                    <div className="mt-4 p-2.5 bg-[#111] rounded-[10px] border border-[#3f3f46] text-left">
+                        <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-0.5">Correo registrado</p>
+                        <p className="text-sm font-bold text-zinc-200">
+                            {maskedEmail}
+                        </p>
+                    </div>
+                )}
+            </div>
+
+            <form onSubmit={handleSubmit} className="flex flex-col gap-5 md:gap-4" noValidate>
+                <div className="space-y-1">
+                    <label className="text-xs font-bold text-slate-100 uppercase tracking-wider ml-1">Confirmá tu correo</label>
+                    <div className="relative group">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-cyan group-focus-within:text-custom-cyan transition-colors">
+                            <Mail size={18} />
+                        </div>
+                        <input
+                            type="email"
+                            className="w-full pl-10 pr-4 py-2.5 md:py-2 bg-[#111] border border-[#3f3f46] rounded-[10px] focus:ring-1 focus:ring-[#00AEEF] focus:border-[#00AEEF] transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
+                            placeholder="tu@correo.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            autoFocus
+                        />
+                    </div>
+                </div>
+
+                {error && (
+                    <div className="text-custom-magenta p-3 rounded-xl text-xs font-bold flex items-center gap-2 justify-center animate-pulse">
+                        <AlertCircle size={14} />
+                        {error}
+                    </div>
+                )}
+
+                {success && (
+                    <div className="bg-emerald-950/60 border border-emerald-700/40 text-emerald-400 p-3 rounded-xl text-sm font-bold flex items-start gap-2">
+                        <CheckCircle2 size={16} className="mt-0.5 shrink-0" />
+                        {success}
+                    </div>
+                )}
+
+                <button
+                    type="submit"
+                    disabled={isLoading || success}
+                    className="w-full py-2.5 md:py-2 bg-transparent text-zinc-100 rounded-xl font-bold border border-[#00AEEF]/40 hover:bg-[#00AEEF]/5 hover:border-[#00AEEF] active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2 disabled:opacity-50 disabled:cursor-not-allowed md:text-sm"
+                >
+                    {isLoading ? (
+                        <span className="animate-spin h-5 w-5 border-2 border-[#00AEEF] border-t-transparent rounded-full" />
+                    ) : (
+                        <>Reenviar enlace <Send size={16} /></>
+                    )}
+                </button>
+
+                <p className="text-center text-sm text-zinc-500 mt-1">
+                    <button type="button" onClick={onBack} className="font-bold text-brand-cyan hover:text-custom-cyan transition-colors">
+                        ← Volver al login
+                    </button>
+                </p>
+            </form>
+        </div>
+    );
+};
+
 // --- LOGIN FORM EXTRACTED PARA REUTILIZAR EN MODAL ---
 export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
     const [username, setUsername] = useState('');
@@ -145,6 +257,7 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
     const navigate = useNavigate();
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [inactiveData, setInactiveData] = useState(null);
     const [googleLoading, setGoogleLoading] = useState(false);
     const googleWrapperRef = useRef(null);
     const googleCallbackRef = useRef(null);
@@ -158,7 +271,7 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
                 onLoginSuccess(result);
             } else {
                 if (result.userType === 'CLIENT') {
-                    navigate('/portal');
+                    navigate('/portal/profile');
                 } else {
                     navigate('/');
                 }
@@ -281,136 +394,19 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
                 onLoginSuccess(result);
             } else {
                 if (result.userType === 'CLIENT') {
-                    navigate('/portal');
+                    const params = new URLSearchParams(window.location.search);
+                    const redirect = params.get('redirect');
+                    navigate(redirect || '/portal/profile');
                 } else {
                     navigate('/');
                 }
             }
         } catch (err) {
             if (err.accountInactive) {
-                const isMobile = window.innerWidth < 768;
-                const identifier = err.identifier || username;
-                const maskedEmail = err.maskedEmail || '';
-
-                const showInactiveModal = async (errorMsg = '') => {
-                    // Inyectar estilo UNA VEZ antes de abrir el modal
-                    if (!document.getElementById('swal-inactive-style')) {
-                        const s = document.createElement('style');
-                        s.id = 'swal-inactive-style';
-                        s.textContent = `.swal-inactive .swal2-validation-message{background:transparent!important;border:none!important;color:#ec008c!important;font-size:12px!important;font-weight:700!important;} .swal-inactive .swal2-validation-message::before{display:none!important;}`;
-                        document.head.appendChild(s);
-                    }
-
-                    const result = await Swal.fire({
-                        title: 'Cuenta sin activar',
-                        html: `
-                            <p style="color:#a1a1aa;font-size:14px;margin-bottom:8px;line-height:1.6">
-                                Tu cuenta aún no fue activada.<br/>
-                                ${maskedEmail ? `Correo registrado: <strong style="color:#f4f4f5">${maskedEmail}</strong>` : ''}
-                            </p>
-                            <p style="color:#71717a;font-size:13px;margin-bottom:14px">Ingresá tu correo para reenviar el link de activación:</p>
-                            ${errorMsg ? `<p style="color:#ec008c;font-size:12px;font-weight:700;margin-bottom:10px">${errorMsg}</p>` : ''}
-                            <input id="swal-email-input" type="email" placeholder="tu@correo.com"
-                                style="width:100%;padding:10px 14px;background:#111;border:1px solid #3f3f46;border-radius:10px;color:#f4f4f5;font-size:14px;font-weight:600;outline:none;box-sizing:border-box"
-                            />
-                        `,
-                        confirmButtonText: 'Reenviar activación',
-                        showCancelButton: true,
-                        cancelButtonText: 'Cancelar',
-                        background: isMobile ? '#19181B' : 'linear-gradient(#19181B, #19181B) padding-box, linear-gradient(to bottom right, #00AEEF, #EC008C, #FFF200) border-box',
-                        color: '#f4f4f5',
-                        width: isMobile ? '100vw' : '420px',
-                        customClass: { popup: isMobile ? 'swal-mobile-full swal-inactive' : 'swal-inactive' },
-                        didOpen: () => {
-                            const popup = Swal.getPopup();
-                            if (isMobile) {
-                                popup.style.borderRadius = '0';
-                                popup.style.margin = '0';
-                                popup.style.position = 'fixed';
-                                popup.style.inset = '0';
-                                popup.style.width = '100vw';
-                                popup.style.maxWidth = '100vw';
-                                popup.style.height = '100dvh';
-                                popup.style.display = 'flex';
-                                popup.style.flexDirection = 'column';
-                                popup.style.justifyContent = 'center';
-                            } else {
-                                popup.style.border = '2px solid transparent';
-                                popup.style.borderRadius = '24px';
-                                popup.style.boxShadow = '0 25px 50px -12px rgba(0,0,0,0.7)';
-                            }
-                            const confirmBtn = Swal.getConfirmButton();
-                            if (confirmBtn) {
-                                confirmBtn.style.cssText = 'background:transparent;color:#f4f4f5;border:1px solid rgba(0,174,239,0.4);border-radius:10px;padding:10px 20px;font-weight:700;font-size:13px;cursor:pointer;transition:all 0.2s';
-                            }
-                            const cancelBtn = Swal.getCancelButton();
-                            if (cancelBtn) {
-                                cancelBtn.style.cssText = 'background:transparent;color:#71717a;border:1px solid #3f3f46;border-radius:10px;padding:10px 20px;font-weight:600;font-size:13px;cursor:pointer';
-                            }
-                            document.getElementById('swal-email-input')?.focus();
-                        },
-                        preConfirm: async () => {
-                            const val = document.getElementById('swal-email-input')?.value?.trim();
-                            if (!val || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
-                                Swal.showValidationMessage('Ingresá un correo válido.');
-                                return false;
-                            }
-                            try {
-                                const res = await fetch(`${API_URL}/web-auth/resend-activation`, {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ identifier, email: val })
-                                });
-                                const data = await res.json();
-                                if (!data.success) {
-                                    Swal.showValidationMessage(data.message || 'El correo no coincide. Intentá de nuevo.');
-                                    return false;
-                                }
-                                return true;
-                            } catch {
-                                Swal.showValidationMessage('Error de conexión. Intentá de nuevo.');
-                                return false;
-                            }
-                        }
-                    });
-
-                    if (result.isConfirmed) {
-                        Swal.fire({
-                            title: '¡Correo enviado!',
-                            text: 'Revisá tu bandeja de entrada y hacé clic en el link de activación.',
-                            icon: 'success',
-                            background: isMobile ? '#19181B' : 'linear-gradient(#19181B, #19181B) padding-box, linear-gradient(to bottom right, #00AEEF, #EC008C, #FFF200) border-box',
-                            color: '#f4f4f5',
-                            confirmButtonText: 'Ok',
-                            width: isMobile ? '100vw' : undefined,
-                            customClass: { popup: isMobile ? 'swal-mobile-full' : '' },
-                            didOpen: () => {
-                                const popup = Swal.getPopup();
-                                if (isMobile) {
-                                    popup.style.background = '#19181B';
-                                    popup.style.borderRadius = '0';
-                                    popup.style.margin = '0';
-                                    popup.style.position = 'fixed';
-                                    popup.style.inset = '0';
-                                    popup.style.width = '100vw';
-                                    popup.style.maxWidth = '100vw';
-                                    popup.style.height = '100dvh';
-                                    popup.style.display = 'flex';
-                                    popup.style.flexDirection = 'column';
-                                    popup.style.justifyContent = 'center';
-                                } else {
-                                    popup.style.border = '2px solid transparent';
-                                    popup.style.borderRadius = '20px';
-                                    popup.style.boxShadow = '0 25px 50px -12px rgba(0,0,0,0.7)';
-                                }
-                                const btn = Swal.getConfirmButton();
-                                if (btn) btn.style.cssText = 'background:#00AEEF;color:#fff;border:none;border-radius:10px;padding:10px 24px;font-weight:700;cursor:pointer;width:100%';
-                            }
-                        });
-                    }
-                };
-
-                showInactiveModal();
+                setInactiveData({
+                    identifier: err.identifier || username,
+                    maskedEmail: err.maskedEmail || ''
+                });
                 return;
             }
             setError(err.message || 'Credenciales inválidas. Por favor, intentá de nuevo.');
@@ -420,11 +416,22 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
     };
 
     return (
-        <div className="relative pt-8 px-6 sm:px-10 md:px-8 pb-10 md:pb-8 w-full">
-            <div className="mb-6 text-center">
-                <h2 className="text-2xl font-black text-white tracking-tight">Bienvenido de vuelta</h2>
-                <p className="text-sm font-medium text-zinc-400 mt-1">Ingresá para acceder a tu producción.</p>
-            </div>
+        <div className="relative w-full overflow-hidden">
+            {/* INACTIVE FORM */}
+            <InactiveAccountBox 
+                identifier={inactiveData ? inactiveData.identifier : ''} 
+                maskedEmail={inactiveData ? inactiveData.maskedEmail : ''} 
+                onBack={() => setInactiveData(null)} 
+                isVisible={!!inactiveData}
+            />
+
+            {/* LOGIN FORM AND GOOGLE BOX */}
+            <div className={`w-full transition-opacity duration-300 ease-in-out ${!inactiveData ? 'opacity-100 relative z-10' : 'opacity-0 absolute inset-0 pointer-events-none -z-10'}`}>
+                <div className="pt-8 px-6 sm:px-10 md:px-8 pb-10 md:pb-8 w-full">
+                    <div className="mb-6 text-center">
+                        <h2 className="text-2xl font-black text-white tracking-tight">Bienvenido de vuelta</h2>
+                        <p className="text-sm font-medium text-zinc-400 mt-1">Ingresá para acceder a tu producción.</p>
+                    </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-5 md:gap-4">
                 <div className="space-y-1">
@@ -435,7 +442,7 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
                         </div>
                         <input
                             type="text"
-                            className="w-full pl-10 pr-4 py-2.5 md:py-2 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan focus:bg-brand-dark transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
+                            className="w-full pl-10 pr-4 py-2.5 md:py-2 bg-[#111] border border-[#3f3f46] rounded-[10px] focus:ring-1 focus:ring-[#00AEEF] focus:border-[#00AEEF] transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
                             placeholder="ID de Cliente"
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
@@ -451,7 +458,7 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
                         </div>
                         <input
                             type={showPassword ? "text" : "password"}
-                            className="w-full pl-10 pr-10 py-2.5 md:py-2 bg-brand-dark border border-brand-magenta rounded-xl focus:ring-1 focus:ring-custom-magenta focus:border-custom-magenta focus:bg-brand-dark transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
+                            className="w-full pl-10 pr-10 py-2.5 md:py-2 bg-[#111] border border-[#3f3f46] rounded-[10px] focus:ring-1 focus:ring-[#00AEEF] focus:border-[#00AEEF] transition-all outline-none font-semibold text-zinc-100 placeholder-zinc-500 md:text-sm"
                             placeholder="********"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
@@ -482,7 +489,7 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
 
                 <Button
                     type="submit"
-                    className="w-full py-2.5 md:py-2 bg-brand-cyan hover:bg-custom-cyan text-zinc-100 rounded-xl font-bold shadow-lg shadow-zinc-900 active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2 md:text-sm"
+                    className="w-full py-[14px] px-4 bg-[#00AEEF]/[0.08] border border-[#00AEEF]/30 hover:bg-[#00AEEF]/20 text-[#00AEEF] rounded-xl font-bold active:scale-[0.98] transition-all flex justify-center items-center gap-2 mt-2 text-[15px] !shadow-none"
                     isLoading={isLoading}
                 >
                     Ingresar al Sistema <LogIn size={18} />
@@ -502,8 +509,10 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
                 <div className="flex-1 h-px bg-zinc-100"></div>
             </div>
 
-            {/* Fijamos matemáticamente la caja a 40px (altura exacta del size="large" de GSI) con overflow-hidden para amputar cualquier sombra, rebote, o línea blanca muerta del iframe */}
-            <div className="flex justify-center h-[40px] overflow-hidden w-full" ref={googleWrapperRef}></div>
+                {/* Fijamos matemáticamente la caja a 40px (altura exacta del size="large" de GSI) con overflow-hidden para amputar cualquier sombra, rebote, o línea blanca muerta del iframe */}
+                <div className="flex justify-center h-[40px] overflow-hidden w-full" ref={googleWrapperRef}></div>
+                </div>
+            </div>
         </div>
     );
 };
@@ -512,6 +521,8 @@ const LoginPage = () => {
     const navigate = useNavigate();
     const [requireReset, setRequireReset] = useState(false);
     const [resetToken, setResetToken] = useState(null);
+    // Capturamos redirect al montar — antes de que el auth state lo pise
+    const [postLoginRedirect] = useState(() => new URLSearchParams(window.location.search).get('redirect'));
 
     const handleRequireReset = (result) => {
         setResetToken(localStorage.getItem('auth_token'));
@@ -522,10 +533,10 @@ const LoginPage = () => {
     useEffect(() => {
         document.body.style.overflow = 'auto';
         
-        // Check if we came from a redirect that requires reset
         const params = new URLSearchParams(window.location.search);
+
+        // Check if we came from a redirect that requires reset
         if (params.get('reset') === 'true') {
-            // El guard del portal guarda el token en sessionStorage antes de limpiar localStorage
             const token = sessionStorage.getItem('reset_token') || localStorage.getItem('auth_token');
             setResetToken(token);
             setRequireReset(true);
@@ -546,15 +557,24 @@ const LoginPage = () => {
     }
 
     return (
-        <div className="flex flex-col min-h-screen bg-custom-dark relative overflow-x-hidden font-sans pt-[70px]">
-            {/* <LandingNavbar /> */}
+        <div className="flex flex-col min-h-[100dvh] bg-[#19181B] relative overflow-x-hidden font-sans pt-[85px] pb-[85px]">
+            <LandingNavbar />
             <ParticlesCanvas />
             
-            <div className="flex-1 flex items-center justify-center p-4 min-h-[calc(100vh-70px-100px)] z-10 w-full">
+            <div className="flex-1 flex items-center justify-center p-4 z-10 relative w-full">
                 <div className="relative w-full max-w-md md:max-w-sm z-10 md:rounded-3xl md:p-[2px] md:bg-gradient-to-br md:from-[#00AEEF] md:via-[#EC008C] md:to-[#FFF200]">
                     {/* Aqui inyectamos el componente extraido */}
                     <div className="bg-custom-dark md:rounded-[22px] overflow-hidden">
-                        <LoginFormBox onRequireReset={handleRequireReset} />
+                        <LoginFormBox 
+                          onRequireReset={handleRequireReset}
+                          onLoginSuccess={(result) => {
+                            if (result.userType === 'CLIENT') {
+                              navigate(postLoginRedirect || '/portal/profile');
+                            } else {
+                              navigate('/');
+                            }
+                          }}
+                        />
                     </div>
                 </div>
             </div>

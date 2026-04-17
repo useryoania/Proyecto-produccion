@@ -1091,22 +1091,22 @@ exports.getClientOrders = async (req, res) => {
         const result = await pool.request()
             .input('cod', sql.Int, codCliente)
             .query(`
-                SELECT TOP 100
-                    OrdenID,
-                    CodigoOrden,
-                    NoDocERP,
-                    AreaID,
-                    DescripcionTrabajo,
-                    Material,
-                    Variante,
-                    Prioridad,
-                    FechaIngreso,
-                    Estado,
-                    EstadoenArea,
-                    ProximoServicio
-                FROM Ordenes
-                WHERE CodCliente = @cod
-                ORDER BY FechaIngreso DESC
+                SELECT TOP 50
+                    o.OrdIdOrden AS OrdenID,
+                    o.OrdCodigoOrden AS CodigoOrden,
+                    o.OrdNombreTrabajo AS DescripcionTrabajo,
+                    art.Descripcion AS Material,
+                    o.OrdFechaEstadoActual AS FechaIngreso,
+                    e.EOrNombreEstado AS Estado,
+                    o.OrdCostoFinal AS Total,
+                    m.MonSimbolo AS Moneda
+                FROM OrdenesDeposito o WITH(NOLOCK)
+                INNER JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+                LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
+                LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
+                LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = o.ProIdProducto
+                WHERE c.CodCliente = @cod
+                ORDER BY o.OrdFechaEstadoActual DESC
             `);
 
         res.json({ success: true, data: result.recordset });
@@ -2378,45 +2378,84 @@ exports.handyWebhook = async (req, res) => {
 
 // --- PAYMENT STATUS ---
 // Consultar el estado de un pago por TransactionId (para la página de resultado)
+// Busca en HandyTransactions primero, luego en MercadoPagoTransactions
 exports.getPaymentStatus = async (req, res) => {
     try {
         const { transactionId } = req.params;
         if (!transactionId) return res.status(400).json({ error: 'TransactionId requerido' });
 
         const pool = await getPool();
-        const result = await pool.request()
+
+        // --- Buscar en Handy primero ---
+        const handyResult = await pool.request()
             .input('txId', sql.VarChar(100), transactionId)
             .query('SELECT TransactionId, TotalAmount, Currency, OrdersJson, Status, IssuerName, CreatedAt, PaidAt FROM HandyTransactions WHERE TransactionId = @txId');
 
-        if (result.recordset.length === 0) {
-            return res.status(404).json({ error: 'Transacción no encontrada' });
+        if (handyResult.recordset.length > 0) {
+            const tx = handyResult.recordset[0];
+            const storedData = JSON.parse(tx.OrdersJson || '{}');
+            const orders = storedData.orders || (Array.isArray(storedData) ? storedData : []);
+            return res.json({
+                transactionId: tx.TransactionId,
+                status: tx.Status,
+                totalAmount: tx.TotalAmount,
+                currency: tx.Currency === 840 ? 'USD' : 'UYU',
+                currencySymbol: tx.Currency === 840 ? 'US$' : '$',
+                ordenRetiro: storedData.ordenRetiro || null,
+                orders: orders.map(o => ({ id: o.id, desc: o.desc, amount: o.amount })),
+                paymentMethod: tx.IssuerName || 'Handy',
+                gateway: 'handy',
+                createdAt: tx.CreatedAt,
+                paidAt: tx.PaidAt
+            });
         }
 
-        const tx = result.recordset[0];
-        const storedData = JSON.parse(tx.OrdersJson || '{}');
-        const orders = storedData.orders || (Array.isArray(storedData) ? storedData : []);
+        // --- Buscar en MercadoPago ---
+        const mpResult = await pool.request()
+            .input('txId2', sql.VarChar(100), transactionId)
+            .query('SELECT TransactionId, OrdersJson, Status, CreatedAt, PaidAt FROM MercadoPagoTransactions WHERE TransactionId = @txId2');
 
-        res.json({
-            transactionId: tx.TransactionId,
-            status: tx.Status,
-            totalAmount: tx.TotalAmount,
-            currency: tx.Currency === 840 ? 'USD' : 'UYU',
-            currencySymbol: tx.Currency === 840 ? 'US$' : '$',
-            ordenRetiro: storedData.ordenRetiro || null,
-            orders: orders.map(o => ({
-                id: o.id,
-                desc: o.desc,
-                amount: o.amount
-            })),
-            paymentMethod: tx.IssuerName || null,
-            createdAt: tx.CreatedAt,
-            paidAt: tx.PaidAt
-        });
+        if (mpResult.recordset.length > 0) {
+            const tx = mpResult.recordset[0];
+            const storedData = JSON.parse(tx.OrdersJson || '{}');
+            const orders = storedData.orders || [];
+
+            // Normalizar estados de MP al formato de la UI
+            const mpStatusMap = {
+                'approved':   'Pagado',
+                'pending':    'Pendiente',
+                'in_process': 'Pendiente',
+                'rejected':   'Fallido',
+                'cancelled':  'Fallido'
+            };
+            const uiStatus = mpStatusMap[tx.Status] || 'Creado';
+
+            // Moneda: vienen del payload original
+            const currency = storedData.moneda || 'UYU';
+
+            return res.json({
+                transactionId: tx.TransactionId,
+                status: uiStatus,
+                totalAmount: storedData.totalCost || 0,
+                currency: currency,
+                currencySymbol: currency === 'USD' ? 'US$' : '$',
+                ordenRetiro: storedData.ordenRetiro || null,
+                orders: orders.map(o => ({ id: o.id, desc: o.desc, amount: o.amount })),
+                paymentMethod: 'MercadoPago',
+                gateway: 'mp',
+                createdAt: tx.CreatedAt,
+                paidAt: tx.PaidAt
+            });
+        }
+
+        return res.status(404).json({ error: 'Transacción no encontrada' });
+
     } catch (e) {
         logger.error('[PAYMENT STATUS] Error:', e.message);
         res.status(500).json({ error: e.message });
     }
 };
+
 
 // --- HANDY REFUND ---
 // Solicita una devolución a Handy usando DELETE con el TransactionExternalId original
@@ -2549,6 +2588,330 @@ exports.handyRefundWebhook = async (req, res) => {
 
     } catch (e) {
         logger.error("[HANDY REFUND WEBHOOK] Error procesando evento:", e.message);
+    }
+};
+
+// ══════════════════════════════════════════════════════════════
+// ─── MERCADOPAGO ───────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+// --- MP INIT PAYMENT ---
+// Genera una preferencia de MercadoPago y devuelve el init_point para redirigir al cliente
+exports.initMpPayment = async (req, res) => {
+    try {
+        const {
+            orders,
+            totalAmount,
+            activeCurrency,
+            lugarRetiro,
+            direccion,
+            departamento,
+            localidad,
+            agenciaId,
+            customAgencia,
+            receptorNombre
+        } = req.body;
+
+        if (!orders || orders.length === 0) {
+            return res.status(400).json({ error: 'No hay órdenes para pagar.' });
+        }
+
+        const currency = activeCurrency === 'USD' ? 'USD' : 'UYU';
+
+        const items = orders.map(o => ({
+            id: String(o.OrdIdOrden || o.id || ''),
+            title: (o.desc || o.orderNumber || 'Pedido').substring(0, 256),
+            quantity: 1,
+            unit_price: Number(Number(o.amount || 0).toFixed(2)),
+            currency_id: currency
+        }));
+
+        const { createPreference } = require('../services/mercadoPagoService');
+        const result = await createPreference({
+            items,
+            totalAmount,
+            currency,
+            commerceName: 'USER',
+            ordersData: {
+                type: 'pickup-deferred',
+                orders: orders.map(o => ({
+                    id: o.orderNumber,
+                    desc: o.desc || o.orderNumber || 'Pedido',
+                    amount: o.amount,
+                    rawId: o.OrdIdOrden
+                })),
+                ordIds: orders.map(o => o.OrdIdOrden).filter(Boolean),
+                totalCost: totalAmount,
+                lugarRetiro: lugarRetiro || 1,
+                direccion: direccion || null,
+                departamento: departamento || null,
+                localidad: localidad || null,
+                agenciaId: agenciaId || null,
+                customAgencia: customAgencia || null,
+                receptorNombre: receptorNombre || null,
+                moneda: currency
+            },
+            codCliente: req.user?.codCliente || 0,
+            logPrefix: '[MP INIT]'
+        });
+
+        if (!result.success) {
+            return res.status(500).json({ error: result.error });
+        }
+
+        res.json({ success: true, url: result.url, transactionId: result.transactionId });
+
+    } catch (error) {
+        logger.error('[MP INIT] Error:', error.message);
+        res.status(500).json({ error: 'Error al iniciar el pago con MercadoPago.' });
+    }
+};
+
+// --- MP WEBHOOK ---
+// Recibe notificaciones de MercadoPago sobre cambios de estado de pago
+// MP envía: { action: "payment.created" | "payment.updated", data: { id: "payment_id" } }
+exports.mpWebhook = async (req, res) => {
+    const body = req.body;
+
+    // ── Validación de firma HMAC-SHA256 ──────────────────────────────
+    // MP envía: x-signature: ts=TIMESTAMP,v1=HMAC_HEX
+    //           x-request-id: UUID del request
+    // El manifest a firmar: "id:{data.id};request-id:{x-request-id};ts:{ts};"
+    const crypto = require('crypto');
+    const xSignature  = req.headers['x-signature']  || '';
+    const xRequestId  = req.headers['x-request-id'] || '';
+    const webhookSecret = process.env.MP_WEBHOOK_SECRET;
+
+    if (webhookSecret && xSignature) {
+        try {
+            const ts  = xSignature.split(',').find(p => p.startsWith('ts='))?.split('=')[1] || '';
+            const v1  = xSignature.split(',').find(p => p.startsWith('v1='))?.split('=')[1] || '';
+            const dataId = String(body?.data?.id || '');
+            const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
+            const computed = crypto.createHmac('sha256', webhookSecret).update(manifest).digest('hex');
+
+            const valid = v1.length > 0 && crypto.timingSafeEqual(
+                Buffer.from(v1.padEnd(64, '0'), 'hex'),
+                Buffer.from(computed.padEnd(64, '0'), 'hex')
+            );
+
+            if (!valid) {
+                logger.warn('[MP WEBHOOK] ⚠️  Firma inválida — request rechazado.');
+                return res.status(403).send('Invalid signature');
+            }
+        } catch (sigErr) {
+            logger.warn('[MP WEBHOOK] Error validando firma:', sigErr.message);
+            return res.status(403).send('Signature validation error');
+        }
+    } else if (!webhookSecret) {
+        logger.warn('[MP WEBHOOK] MP_WEBHOOK_SECRET no configurado — saltando validación de firma.');
+    }
+    // ────────────────────────────────────────────────────────────────
+
+    // Responder 200 inmediatamente (requisito de MP — tiene timeout de 22s)
+    res.status(200).send('OK');
+
+    logger.info('------------------------------------------');
+    logger.info('🔔 [MP WEBHOOK] Evento recibido:');
+    logger.info(JSON.stringify(body, null, 2));
+    logger.info('------------------------------------------');
+
+    try {
+        const action = body.action;
+        const paymentId = body.data?.id;
+
+        if (!paymentId) {
+            logger.warn('[MP WEBHOOK] Evento sin data.id, ignorado.');
+            return;
+        }
+
+
+        // Consultar el estado real del pago a la API de MP (no confiar ciegamente en el webhook)
+        const accessToken = process.env.MP_ACCESS_TOKEN;
+        const { default: axios } = require('axios');
+        let paymentData;
+        try {
+            const mpResponse = await axios.get(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+            paymentData = mpResponse.data;
+        } catch (mpErr) {
+            logger.error(`[MP WEBHOOK] Error consultando pago ${paymentId}:`, mpErr.message);
+            return;
+        }
+
+        const mpStatus = paymentData.status; // "approved", "rejected", "pending", "in_process"
+        const externalRef = paymentData.external_reference; // nuestro transactionId
+
+        logger.info(`[MP WEBHOOK] PaymentId: ${paymentId}, Status: ${mpStatus}, ExternalRef: ${externalRef}`);
+
+        if (!externalRef) {
+            logger.warn('[MP WEBHOOK] external_reference vacío, no se puede reconciliar.');
+            return;
+        }
+
+        const pool = await getPool();
+
+        // Actualizar estado en MercadoPagoTransactions
+        await pool.request()
+            .input('txId',   sql.VarChar(100), externalRef)
+            .input('status', sql.VarChar(50),  mpStatus)
+            .input('mpId',   sql.VarChar(100), String(paymentId))
+            .query(`
+                UPDATE MercadoPagoTransactions
+                SET Status = @status, PaymentId = @mpId,
+                    PaidAt = CASE WHEN @status = 'approved' THEN GETDATE() ELSE PaidAt END,
+                    WebhookReceivedAt = GETDATE()
+                WHERE TransactionId = @txId
+            `);
+
+        logger.info(`[MP WEBHOOK] Estado actualizado a "${mpStatus}" para TX ${externalRef}`);
+
+        // Solo asentar el pago en el sistema si está aprobado
+        if (mpStatus !== 'approved') {
+            logger.info(`[MP WEBHOOK] Estado "${mpStatus}" no requiere acción adicional.`);
+            return;
+        }
+
+        // Obtener datos de la transacción para saber qué órdenes se pagaron
+        const txData = await pool.request()
+            .input('txId2', sql.VarChar(100), externalRef)
+            .query('SELECT OrdersJson, CodCliente FROM MercadoPagoTransactions WHERE TransactionId = @txId2');
+
+        if (txData.recordset.length === 0) {
+            logger.warn(`[MP WEBHOOK] TransactionId ${externalRef} no encontrado en MercadoPagoTransactions`);
+            return;
+        }
+
+        const tx = txData.recordset[0];
+        const storedData = JSON.parse(tx.OrdersJson || '{}');
+
+        const totalAmountPaid = paymentData.transaction_amount;
+        // Moneda: UYU=1, USD=2
+        const currencyCode = (paymentData.currency_id === 'USD') ? 2 : 1;
+        const orders = storedData.orders || [];
+        let storedOrdenRetiro = storedData.ordenRetiro;
+
+        // Crear el retiro diferido si aún no existe (mismo flujo que Handy)
+        if (storedData.type === 'pickup-deferred' && !storedOrdenRetiro && storedData.ordIds?.length > 0) {
+            try {
+                logger.info('[MP WEBHOOK] Creando retiro diferido...');
+                const { crearRetiro } = require('../services/retiroService');
+                const retiroTransaction = new sql.Transaction(pool);
+                await retiroTransaction.begin();
+                const OReIdOrdenRetiro = await crearRetiro(retiroTransaction, {
+                    ordIds:       storedData.ordIds,
+                    totalCost:    storedData.totalCost || totalAmountPaid,
+                    lugarRetiro:  storedData.lugarRetiro || 1,
+                    usuarioAlta:  70,
+                    formaRetiro:  'RW',
+                    codCliente:   tx.CodCliente || null,
+                    moneda:       storedData.moneda || 'UYU',
+                    direccion:    storedData.direccion || null,
+                    departamento: storedData.departamento || null,
+                    localidad:    storedData.localidad || null,
+                    agenciaId:    storedData.agenciaId || null
+                });
+                await retiroTransaction.commit();
+
+                storedOrdenRetiro = `RW-${OReIdOrdenRetiro}`;
+                logger.info(`[MP WEBHOOK] ✅ Retiro diferido creado: ${storedOrdenRetiro}`);
+
+                if (storedData.customAgencia) {
+                    await pool.request()
+                        .input('OReId', sql.Int, OReIdOrdenRetiro)
+                        .input('AgenciaOtra', sql.NVarChar(200), storedData.customAgencia)
+                        .query('UPDATE OrdenesRetiro SET AgenciaOtra = @AgenciaOtra WHERE OReIdOrdenRetiro = @OReId');
+                }
+                if (storedData.receptorNombre) {
+                    await pool.request()
+                        .input('OReId', sql.Int, OReIdOrdenRetiro)
+                        .input('Receptor', sql.NVarChar(200), storedData.receptorNombre)
+                        .query('UPDATE OrdenesRetiro SET ReceptorNombre = @Receptor WHERE OReIdOrdenRetiro = @OReId');
+                }
+
+                // Guardar la referencia al retiro en la tabla de MP
+                await pool.request()
+                    .input('txId3', sql.VarChar(100), externalRef)
+                    .input('jsonStr', sql.NVarChar(sql.MAX), JSON.stringify({ ...storedData, ordenRetiro: storedOrdenRetiro }))
+                    .query('UPDATE MercadoPagoTransactions SET OrdersJson = @jsonStr WHERE TransactionId = @txId3');
+
+                // Notificar a PrintStation
+                const ioInst = req.app?.get('socketio');
+                if (ioInst) {
+                    ioInst.emit('actualizado', { type: 'actualizacion' });
+                    ioInst.emit('retiros:update', { type: 'nuevo_retiro', ordenId: OReIdOrdenRetiro, formaRetiro: 'RW' });
+                }
+            } catch (retiroErr) {
+                logger.error('[MP WEBHOOK] Error creando retiro diferido:', retiroErr.message);
+                return;
+            }
+        }
+
+        // Asentar el pago en la BD (mismo flujo in-line que Handy webhook)
+        const ordenRetiroId = parseInt(String(storedOrdenRetiro || '').replace(/^[A-Za-z]+-0*/,''), 10);
+        if (isNaN(ordenRetiroId)) {
+            logger.warn('[MP WEBHOOK] No se pudo parsear ordenRetiroId:', storedOrdenRetiro);
+            return;
+        }
+
+        const retiroState = await pool.request()
+            .input('RID', sql.Int, ordenRetiroId)
+            .query('SELECT OReEstadoActual FROM OrdenesRetiro WITH(NOLOCK) WHERE OReIdOrdenRetiro = @RID');
+
+        const estadoActual = retiroState.recordset[0]?.OReEstadoActual || 1;
+        const nuevoEstado = estadoActual === 1 ? 3 : 8;
+        const usuarioId = 70;
+
+        // 1. INSERT Pago (MPaIdMetodoPago=10 = Pago en Línea MercadoPago)
+        const pagoResult = await pool.request()
+            .input('MetodoPago', sql.Int,   10)
+            .input('Moneda',     sql.Int,   currencyCode)
+            .input('Monto',      sql.Float, totalAmountPaid)
+            .input('Usr',        sql.Int,   usuarioId)
+            .query(`
+                INSERT INTO Pagos (MPaIdMetodoPago, PagIdMonedaPago, PagMontoPago, PagFechaPago, PagUsuarioAlta)
+                OUTPUT INSERTED.PagIdPago
+                VALUES (@MetodoPago, @Moneda, @Monto, GETDATE(), @Usr)
+            `);
+        const pagoId = pagoResult.recordset[0].PagIdPago;
+
+        // 2. UPDATE OrdenesRetiro
+        await pool.request()
+            .input('RID',    sql.Int, ordenRetiroId)
+            .input('Estado', sql.Int, nuevoEstado)
+            .input('PagoId', sql.Int, pagoId)
+            .query(`
+                UPDATE OrdenesRetiro SET PagIdPago = @PagoId, OReEstadoActual = @Estado,
+                    OReFechaEstadoActual = GETDATE(), ORePasarPorCaja = 0
+                WHERE OReIdOrdenRetiro = @RID
+            `);
+
+        // 3. INSERT Historico Retiro
+        await pool.request()
+            .input('RID',    sql.Int, ordenRetiroId)
+            .input('Estado', sql.Int, nuevoEstado)
+            .input('Usr',    sql.Int, usuarioId)
+            .query(`INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@RID, @Estado, GETDATE(), @Usr)`);
+
+        // 4. UPDATE Ordenes hijas
+        const hijasResult = await pool.request()
+            .input('RID2', sql.Int, ordenRetiroId)
+            .query('SELECT OrdIdOrden FROM OrdenesDeposito WHERE OReIdOrdenRetiro = @RID2');
+        const hijasIds = hijasResult.recordset.map(r => r.OrdIdOrden).filter(id => id > 0);
+
+        if (hijasIds.length > 0) {
+            await pool.request()
+                .input('PagoId', sql.Int, pagoId)
+                .query(`UPDATE OrdenesDeposito SET PagIdPago = @PagoId, OrdEstadoActual = 7, OrdFechaEstadoActual = GETDATE() WHERE OrdIdOrden IN (${hijasIds.join(',')})`);
+            const histValues = hijasIds.map(id => `(${id}, 7, GETDATE(), ${usuarioId})`).join(', ');
+            await pool.request().query(`INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES ${histValues}`);
+        }
+
+        logger.info(`[MP WEBHOOK] ✅ Pago registrado en DB: PagoId=${pagoId}, OrdenRetiro=${ordenRetiroId}`);
+
+    } catch (e) {
+        logger.error('[MP WEBHOOK] Error procesando evento:', e.message);
     }
 };
 

@@ -25,9 +25,11 @@ exports.login = asyncHandler(async (req, res) => {
     const result = await pool.request()
         .input('Val', sql.NVarChar, identifier.trim())
         .query(`
-            SELECT CodCliente, IDCliente, Nombre, WebPasswordHash, WebActive, Email, NombreFantasia, WebResetPassword 
-            FROM Clientes
-            WHERE LTRIM(RTRIM(IDCliente)) = @Val
+            SELECT c.*, t.Nombre AS VendedorNombre, d.Nombre AS DepartamentoNombre
+            FROM Clientes c
+            LEFT JOIN dbo.Trabajadores t ON c.VendedorID = t.ID
+            LEFT JOIN dbo.Departamentos d ON c.DepartamentoID = d.ID
+            WHERE LTRIM(RTRIM(c.IDCliente)) = @Val
         `);
 
     logger.info(`🔐 [LOGIN RESULT] Matches found: ${result.recordset.length}`);
@@ -116,7 +118,10 @@ exports.login = asyncHandler(async (req, res) => {
             role: 'WEB_CLIENT',
             codCliente: client.CodCliente,
             requireReset: mustReset,
-            idCliente: client.IDCliente || identifier
+            idCliente: client.IDCliente || identifier,
+            ruc: client.CioRuc,
+            departamentoNombre: client.DepartamentoNombre || null,
+            vendedorNombre: client.VendedorNombre || null
         },
         token
     });
@@ -279,9 +284,10 @@ exports.me = asyncHandler(async (req, res) => {
     const r = await pool.request()
         .input('ID', sql.Int, req.user.codCliente)
         .query(`
-            SELECT c.*, t.Nombre AS VendedorNombre
+            SELECT c.*, t.Nombre AS VendedorNombre, d.Nombre AS DepartamentoNombre
             FROM Clientes c
             LEFT JOIN dbo.Trabajadores t ON c.VendedorID = t.ID
+            LEFT JOIN dbo.Departamentos d ON c.DepartamentoID = d.ID
             WHERE c.CodCliente = @ID
         `);
 
@@ -299,6 +305,7 @@ exports.me = asyncHandler(async (req, res) => {
                 address: u.DireccionTrabajo,
                 ruc: u.CioRuc,
                 departamentoId: u.DepartamentoID,
+                departamentoNombre: u.DepartamentoNombre || null,
                 localidadId: u.LocalidadID,
                 agenciaId: u.AgenciaID,
                 formaEnvioId: u.FormaEnvioID,

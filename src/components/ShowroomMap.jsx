@@ -52,18 +52,9 @@ export default function ShowroomMap() {
         href="https://www.google.com/maps/search/Arenal+Grande+2667+Montevideo"
         target="_blank"
         rel="noopener noreferrer"
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-          background: 'rgba(0,0,0,0.6)', color: 'rgba(255,255,255,0.75)',
-          fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textDecoration: 'none',
-          padding: '7px 0', textTransform: 'uppercase',
-          borderTop: '1px solid rgba(255,255,255,0.08)',
-          transition: 'color 0.2s',
-        }}
-        onMouseEnter={e => e.currentTarget.style.color = '#fff'}
-        onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.75)'}
+        className="flex justify-center items-center gap-2 py-3 bg-[#EC008C]/10 text-[#EC008C] hover:bg-[#EC008C]/20 border-t border-[#EC008C]/20 font-bold text-[12px] uppercase tracking-widest transition-all cursor-pointer"
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
         </svg>
         Abrir en Google Maps

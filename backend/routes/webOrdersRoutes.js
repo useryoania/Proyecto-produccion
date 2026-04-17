@@ -53,6 +53,12 @@ router.post('/pickup-orders/init-payment', verifyToken, webOrdersController.init
 // POST /api/web-orders/handy-webhook (Webhook Callback desde Handy)
 router.post('/handy-webhook', webOrdersController.handyWebhook);
 
+// POST /api/web-orders/pickup-orders/mp-payment (Generar preferencia MercadoPago)
+router.post('/pickup-orders/mp-payment', verifyToken, webOrdersController.initMpPayment);
+
+// POST /api/web-orders/mp-webhook (Webhook Callback desde MercadoPago)
+router.post('/mp-webhook', webOrdersController.mpWebhook);
+
 // POST /api/web-orders/totem-lookup (Buscar órdenes por código, SIN AUTH - para tótem)
 router.post('/totem-lookup', webOrdersController.totemLookup);
 

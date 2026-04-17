@@ -5,8 +5,8 @@ import { Logo } from '../Logo';
 import { useAuth } from '../../client-portal/auth/AuthContext';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import logoSrc from '../../assets/images/logo.png';
-import pagadoStampSrc from '../../assets/images/pagado-stamp.png';
+import logoSrc from "../../assets/images/logo/logo.webp";
+import pagadoStampSrc from "../../assets/images/general/pagado-stamp.png";
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 

@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import { User, Phone, MapPin, FileText, Building, ChevronDown, Truck } from 'lucide-react';
 import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
 
-const inputClass = "w-full pl-10 pr-4 py-2 bg-brand-dark border border-brand-cyan rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan transition-all outline-none font-semibold text-sm text-zinc-100 placeholder-zinc-500 focus:placeholder-zinc-100";
-const selectClass = "w-full pl-10 pr-10 py-2 bg-brand-dark border border-zinc-700 rounded-xl focus:ring-1 focus:ring-custom-cyan focus:border-custom-cyan transition-all outline-none font-semibold text-sm text-zinc-100 appearance-none cursor-pointer hover:border-zinc-500";
+const inputClass = "w-full pl-10 pr-4 py-2 bg-[#111] border border-[#3f3f46] rounded-[10px] focus:ring-1 focus:ring-[#00AEEF] focus:border-[#00AEEF] transition-all outline-none font-semibold text-sm text-zinc-100 placeholder-zinc-500 focus:placeholder-zinc-100";
+const selectClass = "w-full pl-10 pr-10 py-2 bg-[#111] border border-[#3f3f46] rounded-[10px] focus:ring-1 focus:ring-[#00AEEF] focus:border-[#00AEEF] transition-all outline-none font-semibold text-sm text-zinc-100 appearance-none cursor-pointer hover:border-zinc-500";
 const labelClass = "text-xs font-bold text-zinc-100 uppercase tracking-wider ml-1";
-const iconClass = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-brand-cyan group-focus-within:text-custom-cyan transition-colors";
+const iconClass = "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#00AEEF] transition-colors";
 
 export const Field = ({ label, icon: Icon, required, error, children }) => (
     <div className="space-y-1">
@@ -130,7 +130,8 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
                                 placeholder="Seleccionar..."
                                 size="small"
                                 direction="up"
-                                className="!border-brand-cyan font-semibold"
+                                className="font-semibold transition-all"
+                                variant="black"
                             />
                             {fieldErrors.departamentoId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.departamentoId}</p>}
                         </div>
@@ -146,7 +147,8 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
                                 size="small"
                                 direction="up"
                                 disabled={!form.departamentoId}
-                                className="!border-brand-cyan font-semibold"
+                                className="font-semibold transition-all"
+                                variant="black"
                             />
                             {fieldErrors.localidadId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.localidadId}</p>}
                         </div>
@@ -162,7 +164,8 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
                             placeholder="Seleccionar agencia..."
                             size="small"
                             direction="up"
-                            className="!border-brand-cyan font-semibold"
+                            className="font-semibold transition-all"
+                            variant="black"
                         />
                         {fieldErrors.agenciaId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.agenciaId}</p>}
                     </div>
@@ -181,7 +184,8 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
                             placeholder="Seleccionar..."
                             size="small"
                             direction="up"
-                            className="!border-brand-cyan font-semibold"
+                            className="font-semibold transition-all"
+                            variant="black"
                         />
                         {fieldErrors.departamentoId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.departamentoId}</p>}
                     </div>
@@ -197,7 +201,8 @@ export const ClientFormFields = ({ form, set, fieldErrors = {}, handleBlur, depa
                             size="small"
                             direction="up"
                             disabled={!form.departamentoId}
-                            className="!border-brand-cyan font-semibold"
+                            className="font-semibold transition-all"
+                            variant="black"
                         />
                         {fieldErrors.localidadId && <p className="text-custom-magenta text-xs font-semibold ml-1 mt-0.5">{fieldErrors.localidadId}</p>}
                     </div>

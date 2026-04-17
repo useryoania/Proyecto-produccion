@@ -95,8 +95,16 @@ async function syncPriceList() {
             return { synced: 0, duration: Date.now() - startTime };
         }
 
-        // Saltar encabezados (fila 1)
-        const dataRows = rows.slice(1).filter(r => r.length >= 5 && r[0]?.trim());
+        // Saltar encabezados (fila 1 y cualquier fila que se vea como cabezal)
+        const headerKeywords = ['FAMILIA', 'PRODUCTO', 'NOMBRE', 'PRECIO', 'DESCRIPCION'];
+        const dataRows = rows.slice(1).filter(r => {
+            if (r.length < 5 || !r[0]?.trim()) return false;
+            // Si el primer o segundo campo es exactamente un encabezado, descartar
+            const col0 = r[0].trim().toUpperCase();
+            const col1 = r[1]?.trim().toUpperCase();
+            if (headerKeywords.includes(col0) || headerKeywords.includes(col1)) return false;
+            return true;
+        });
 
         const pool = await getPool();
         await ensureTable(pool);
