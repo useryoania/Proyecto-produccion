@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useViewport } from '../../hooks/useViewport';
 import logoWhite from '../../assets/images/logo/logo-white.webp';
 import logoMini from '../../assets/images/logo/logo-mini.svg';
+import { LogOut, MessageSquare } from 'lucide-react';
 
 
 
@@ -49,8 +50,8 @@ function DropdownRecursosDesktop({ navigate, user }) {
   ];
 
   return (
-    <div 
-      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2, height: '100%' }} 
+    <div
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2, height: '100%' }}
       className="cursor-pointer"
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
@@ -58,9 +59,9 @@ function DropdownRecursosDesktop({ navigate, user }) {
       <NavBtn onClick={(e) => e.preventDefault()} forceHover={open}>
         Recursos
       </NavBtn>
-      <svg className="transition-transform duration-300 text-white opacity-80" style={{ transform: open ? 'rotate(-180deg)' : 'none', marginTop: 1, marginLeft: -2 }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6"/></svg>
-      
-      <div 
+      <svg className="transition-transform duration-300 text-white opacity-80" style={{ transform: open ? 'rotate(-180deg)' : 'none', marginTop: 1, marginLeft: -2 }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+
+      <div
         style={{
           position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
           paddingTop: 8,
@@ -131,7 +132,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
   const { isMobile } = useViewport();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  
+
   const pathname = location?.pathname || (typeof window !== 'undefined' ? window.location.pathname : '');
   const isAuthPage = pathname === '/login' || pathname === '/register';
   const isPortalPage = pathname.startsWith('/portal');
@@ -158,7 +159,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
   }
 
   const sessionLabel = sessionType === 'production' ? 'Producción' : sessionType === 'client' ? 'Mi Portal' : 'Iniciar sesión';
-  
+
   const handleSessionBtn = () => {
     if (sessionType === 'production') {
       navigate('/retiros');
@@ -272,7 +273,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
                   padding: '12px 10px', borderRadius: 12, textAlign: 'center',
                   border: '1px solid rgba(0,174,239,0.3)', background: 'rgba(0,174,239,0.06)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>Hace tu pedido</a>
+                }}>Hacé tu pedido</a>
                 <a href="#" onClick={(e) => { e.preventDefault(); setMenuOpen(false); navigate(sessionType ? '/portal/pickup' : '/login?redirect=/portal/pickup'); }} style={{
                   color: '#00AEEF', textDecoration: 'none', fontSize: 14, fontWeight: 700,
                   padding: '12px 10px', borderRadius: 12, textAlign: 'center',
@@ -287,7 +288,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
               <button onClick={() => { setMenuOpen(false); handleSessionBtn(); }} style={{
                 width: '85%', padding: '14px', border: '1px solid rgba(0, 174, 239, 0.3)',
                 borderRadius: 12, background: 'rgba(0, 174, 239, 0.08)', color: '#00AEEF',
-                fontSize: 15, fontWeight: 700, cursor: 'pointer',
+                fontSize: 15, fontWeight: 600, cursor: 'pointer',
               }}>{sessionLabel}</button>
 
               {/* Portal links debajo del botón Mi Portal */}
@@ -300,7 +301,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
                       navigate(item.path);
                     }} style={{
                       color: '#00AEEF',
-                      fontSize: 13, fontWeight: 700, textDecoration: 'none',
+                      fontSize: 13, fontWeight: 600, textDecoration: 'none',
                       padding: '12px 10px', borderRadius: 12, textAlign: 'center',
                       border: '1px solid rgba(0,174,239,0.3)',
                       background: 'rgba(0,174,239,0.06)',
@@ -320,17 +321,11 @@ export default function LandingNavbar({ onOpenLoginModal }) {
                     width: '85%', padding: '14px',
                     border: '1px solid #3f3f46',
                     borderRadius: 12, background: '#111', color: '#fff',
-                    fontSize: 15, fontWeight: 700, cursor: 'pointer',
+                    fontSize: 15, fontWeight: 600, cursor: 'pointer',
                   }}
                 >Crear Cuenta</button>
               )}
-              {sessionType && (
-                <button onClick={() => { setMenuOpen(false); logout(); }} style={{
-                  width: '85%', padding: '14px', border: '1px solid rgba(236,0,140,0.3)',
-                  borderRadius: 12, background: 'rgba(236,0,140,0.06)', color: '#EC008C',
-                  fontSize: 15, fontWeight: 700, cursor: 'pointer',
-                }}>Cerrar Sesión</button>
-              )}
+
             </div>
 
             {/* Recursos — al final, separado */}
@@ -354,11 +349,11 @@ export default function LandingNavbar({ onOpenLoginModal }) {
                       navigate(item.path);
                     }
                   }} style={{
-                    color: item.requiresAuth ? '#F5C842' : '#EC008C',
-                    fontSize: 14, fontWeight: 700, textDecoration: 'none',
-                    padding: '12px 10px', borderRadius: 12, textAlign: 'center',
-                    border: `1px solid ${item.requiresAuth ? 'rgba(245,200,66,0.3)' : 'rgba(236,0,140,0.3)'}`,
-                    background: item.requiresAuth ? 'rgba(245,200,66,0.06)' : 'rgba(236,0,140,0.06)',
+                    color: '#a1a1aa',
+                    fontSize: 13, fontWeight: 600, textDecoration: 'none',
+                    padding: '10px 8px', borderRadius: 8, textAlign: 'center',
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid rgba(255,255,255,0.05)',
                     cursor: item.path ? 'pointer' : 'default',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
@@ -368,13 +363,31 @@ export default function LandingNavbar({ onOpenLoginModal }) {
               </div>
             </div>
 
-            <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
-            
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, marginTop: 8 }}>
+              <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.08)' }} />
+
               <button onClick={() => { setMenuOpen(false); navigate('/contacto'); }} style={{
-                width: '85%', padding: '14px', border: 'none', borderRadius: 12,
-                background: 'transparent', color: '#a1a1aa', fontSize: 15, fontWeight: 700, cursor: 'pointer',
-              }}>Contacto</button>
+                width: '85%', padding: '14px', border: '1px solid #3f3f46', borderRadius: 12,
+                background: '#18181b', color: '#f4f4f5', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+              }}>
+                <MessageSquare size={16} /> Contacto
+              </button>
+
+              {sessionType && (
+                <>
+                  <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.08)' }} />
+                  <button onClick={() => { setMenuOpen(false); logout(); }} style={{
+                    width: '85%', padding: '14px', border: '1px solid rgba(236,0,140,0.3)',
+                    borderRadius: 12, background: 'rgba(236,0,140,0.06)', color: '#EC008C',
+                    fontSize: 15, fontWeight: 600, cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                    marginBottom: '10px'
+                  }}>
+                    Cerrar Sesión <LogOut size={18} />
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
