@@ -87,7 +87,7 @@ function App() {
                 <Route path="/portal/*" element={<ClientPortalApp />} />
                 <Route path="/payment-status" element={<PaymentResult />} />
                 <Route path="/totem/*" element={<TotemApp />} />
-                <Route path="*" element={<Navigate to="/login" replace />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>
           </motion.div>

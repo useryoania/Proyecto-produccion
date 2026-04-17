@@ -116,7 +116,7 @@ export const PickupView = () => {
             }
         };
         loadPickupOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [step]);
 
     // Persist selected orders in sessionStorage
@@ -295,7 +295,7 @@ export const PickupView = () => {
             setSelectedOrders([]);
             setPickupCode(null);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // Polling del estado del pago
@@ -368,7 +368,7 @@ export const PickupView = () => {
     const handleInitPayment = async () => {
         // Anti-popup blocker: Abrir pestaña en blanco síncronamente en el momento del click
         const payWindow = window.open('about:blank', '_blank');
-        
+
         setLoading(true);
         try {
             const formaEnvioId = selectedFormaEnvio || shippingData?.defaultFormaEnvioID || 5;
@@ -397,11 +397,11 @@ export const PickupView = () => {
                 receptorNombre: esEncomienda ? (receiverFirstName.trim() + ' ' + receiverLastName.trim()) : null
             };
             const res = await apiClient.post('/web-orders/pickup-orders/init-payment', payload);
-            
+
             if (res.success && res.url) {
                 // Navegar URL popup a Handy
                 if (payWindow) payWindow.location.href = res.url;
-                
+
                 // Limpiar state y navegar la pestaña origin a status de pago
                 if (res.transactionId) {
                     window.location.href = `/portal/payment-status?txId=${res.transactionId}`;
@@ -424,54 +424,54 @@ export const PickupView = () => {
             img.onload = () => { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); resolve({ dataUrl: c.toDataURL('image/png'), width: img.naturalWidth, height: img.naturalHeight }); };
             img.onerror = () => resolve(null); img.src = src;
         });
-        try { const ld = await toBase64(logoSrc); if (ld) { const r = ld.width/ld.height; const h=12; doc.addImage(ld.dataUrl,'PNG',20,14,h*r,h); } } catch(e) {}
+        try { const ld = await toBase64(logoSrc); if (ld) { const r = ld.width / ld.height; const h = 12; doc.addImage(ld.dataUrl, 'PNG', 20, 14, h * r, h); } } catch (e) { }
         let stampDataUrl = null, stampRatio = 1;
-        if (data.status === 'Pagado') { try { const sd = await toBase64(pagadoStampSrc); if(sd){ stampDataUrl=sd.dataUrl; stampRatio=sd.width/sd.height; } } catch(e){} }
+        if (data.status === 'Pagado') { try { const sd = await toBase64(pagadoStampSrc); if (sd) { stampDataUrl = sd.dataUrl; stampRatio = sd.width / sd.height; } } catch (e) { } }
         let gatewayDataUrl = null, gatewayRatio = 1, gatewayColor = null;
         if (data.paymentMethod) {
             const method = data.paymentMethod.toLowerCase();
             const gwLogo = method.includes('handy') ? handyLogo : (method.includes('mercadopago') || method.includes('mp') ? mpLogo : null);
             gatewayColor = method.includes('handy') ? '#722efa' : ((method.includes('mercadopago') || method.includes('mp')) ? '#ffe600' : null);
-            if (gwLogo) { try { const gd = await toBase64(gwLogo); if (gd) { gatewayDataUrl = gd.dataUrl; gatewayRatio = gd.width/gd.height; } } catch(e){} }
+            if (gwLogo) { try { const gd = await toBase64(gwLogo); if (gd) { gatewayDataUrl = gd.dataUrl; gatewayRatio = gd.width / gd.height; } } catch (e) { } }
         }
-        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(140);
-        doc.text(data.transactionId || '', pageW-20, 25, { align:'right' });
-        doc.setDrawColor(200); doc.line(20,32,pageW-20,32);
-        let y=40;
-        doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(25,24,27);
-        doc.text('COMPROBANTE DE PAGO',20,y);
-        const dt = data.paidAt ? new Date(data.paidAt).toLocaleDateString('es-UY',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hour12:false}) : '';
-        doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(120);
-        doc.text(dt, pageW-20, y, {align:'right'}); y+=20;
+        doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(140);
+        doc.text(data.transactionId || '', pageW - 20, 25, { align: 'right' });
+        doc.setDrawColor(200); doc.line(20, 32, pageW - 20, 32);
+        let y = 40;
+        doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(25, 24, 27);
+        doc.text('COMPROBANTE DE PAGO', 20, y);
+        const dt = data.paidAt ? new Date(data.paidAt).toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+        doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(120);
+        doc.text(dt, pageW - 20, y, { align: 'right' }); y += 20;
         const retiroCode = data.ordenRetiro ? String(data.ordenRetiro) : '-';
         const clientCode = String(user?.codCliente || '-');
-        const cw=pageW-40; const hw=(cw-6)/2;
-        const drawCard=(x,w,label,val)=>{ doc.setFillColor(25,24,27); doc.roundedRect(x,y,w,7,2,2,'F'); doc.rect(x,y+5,w,2,'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(255,255,255); doc.text(label,x+w/2,y+5,{align:'center'}); doc.setFillColor(255,255,255); doc.setDrawColor(200); doc.rect(x,y+7,w,11,'FD'); doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(25,24,27); doc.text(val,x+w/2,y+14.5,{align:'center'}); };
-        drawCard(20,hw,'CODIGO DE RETIRO',retiroCode); drawCard(20+hw+6,hw,'CODIGO DE CLIENTE',clientCode); y+=28;
-        doc.setFont('helvetica','normal'); doc.setTextColor(120); doc.setFontSize(10);
-        doc.text('MEDIO DE PAGO',20,y); 
+        const cw = pageW - 40; const hw = (cw - 6) / 2;
+        const drawCard = (x, w, label, val) => { doc.setFillColor(25, 24, 27); doc.roundedRect(x, y, w, 7, 2, 2, 'F'); doc.rect(x, y + 5, w, 2, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(255, 255, 255); doc.text(label, x + w / 2, y + 5, { align: 'center' }); doc.setFillColor(255, 255, 255); doc.setDrawColor(200); doc.rect(x, y + 7, w, 11, 'FD'); doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(25, 24, 27); doc.text(val, x + w / 2, y + 14.5, { align: 'center' }); };
+        drawCard(20, hw, 'CODIGO DE RETIRO', retiroCode); drawCard(20 + hw + 6, hw, 'CODIGO DE CLIENTE', clientCode); y += 28;
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(120); doc.setFontSize(10);
+        doc.text('MEDIO DE PAGO', 20, y);
         if (gatewayDataUrl) {
             const gh = 7;
             const gw = gh * gatewayRatio;
             const px = 4, py = 2;
             if (gatewayColor) {
-               doc.setFillColor(gatewayColor);
-               doc.roundedRect(pageW - 20 - gw - px * 2, y - 6 - py, gw + px * 2, gh + py * 2, 2, 2, 'F');
+                doc.setFillColor(gatewayColor);
+                doc.roundedRect(pageW - 20 - gw - px * 2, y - 6 - py, gw + px * 2, gh + py * 2, 2, 2, 'F');
             }
             doc.addImage(gatewayDataUrl, 'PNG', pageW - 20 - gw - px, y - 6, gw, gh);
         } else {
-            doc.setFont('helvetica','bold'); doc.setTextColor(40);
-            doc.text(String(data.paymentMethod||'-').toUpperCase(),pageW-20,y,{align:'right'}); 
+            doc.setFont('helvetica', 'bold'); doc.setTextColor(40);
+            doc.text(String(data.paymentMethod || '-').toUpperCase(), pageW - 20, y, { align: 'right' });
         }
-        y+=12;
-        if(data.orders?.length>0){ const rh=8; doc.setFillColor(25,24,27); doc.rect(20,y,pageW-40,rh,'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(255,255,255); doc.text('PEDIDO',24,y+5.5); doc.text('IMPORTE',pageW-24,y+5.5,{align:'right'}); y+=rh; data.orders.forEach((o,i)=>{ i%2===0?doc.setFillColor(244,244,245):doc.setFillColor(212,212,216); doc.rect(20,y,pageW-40,rh,'F'); doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(40); doc.text(String(o.id||o.desc),24,y+5.5); doc.setFont('helvetica','bold'); doc.text(String(data.currencySymbol)+' '+Number(o.amount||0).toFixed(2),pageW-24,y+5.5,{align:'right'}); y+=rh; }); y+=6; }
-        doc.setDrawColor(200); doc.line(20,y,pageW-20,y); y+=10;
-        doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.setTextColor(25,24,27);
-        const totalStr = String(data.currencySymbol)+' '+Number(data.totalAmount).toFixed(2);
-        doc.text('TOTAL: ',pageW-20-doc.getTextWidth(totalStr),y,{align:'right'}); doc.setTextColor(5,150,105); doc.text(totalStr,pageW-20,y,{align:'right'});
-        if(stampDataUrl){ const sw=35,sh=sw/stampRatio; doc.saveGraphicsState(); doc.setGState(new doc.GState({opacity:0.5})); doc.addImage(stampDataUrl,'PNG',pageW/3-sw/2,y-sh/2+2,sw,sh); doc.restoreGraphicsState(); }
-        doc.setFontSize(8); doc.setTextColor(160); doc.text('ESTE COMPROBANTE FUE GENERADO AUTOMATICAMENTE.',pageW/2,280,{align:'center'});
-        doc.save('comprobante-'+retiroCode+'.pdf');
+        y += 12;
+        if (data.orders?.length > 0) { const rh = 8; doc.setFillColor(25, 24, 27); doc.rect(20, y, pageW - 40, rh, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(255, 255, 255); doc.text('PEDIDO', 24, y + 5.5); doc.text('IMPORTE', pageW - 24, y + 5.5, { align: 'right' }); y += rh; data.orders.forEach((o, i) => { i % 2 === 0 ? doc.setFillColor(244, 244, 245) : doc.setFillColor(212, 212, 216); doc.rect(20, y, pageW - 40, rh, 'F'); doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(40); doc.text(String(o.id || o.desc), 24, y + 5.5); doc.setFont('helvetica', 'bold'); doc.text(String(data.currencySymbol) + ' ' + Number(o.amount || 0).toFixed(2), pageW - 24, y + 5.5, { align: 'right' }); y += rh; }); y += 6; }
+        doc.setDrawColor(200); doc.line(20, y, pageW - 20, y); y += 10;
+        doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(25, 24, 27);
+        const totalStr = String(data.currencySymbol) + ' ' + Number(data.totalAmount).toFixed(2);
+        doc.text('TOTAL: ', pageW - 20 - doc.getTextWidth(totalStr), y, { align: 'right' }); doc.setTextColor(5, 150, 105); doc.text(totalStr, pageW - 20, y, { align: 'right' });
+        if (stampDataUrl) { const sw = 35, sh = sw / stampRatio; doc.saveGraphicsState(); doc.setGState(new doc.GState({ opacity: 0.5 })); doc.addImage(stampDataUrl, 'PNG', pageW / 3 - sw / 2, y - sh / 2 + 2, sw, sh); doc.restoreGraphicsState(); }
+        doc.setFontSize(8); doc.setTextColor(160); doc.text('ESTE COMPROBANTE FUE GENERADO AUTOMATICAMENTE.', pageW / 2, 280, { align: 'center' });
+        doc.save('comprobante-' + retiroCode + '.pdf');
     };
 
     // Pantalla: polling / resultado del pago Handy
@@ -1026,7 +1026,7 @@ export const PickupView = () => {
                     {/* ── Modal selector de pasarela de pago ── */}
                     {showPayModal && createPortal(
                         <>
-                        <style>{`
+                            <style>{`
                             @keyframes slideUp {
                                 from { transform: translateY(40px); opacity: 0; }
                                 to   { transform: translateY(0);    opacity: 1; }
@@ -1087,107 +1087,107 @@ export const PickupView = () => {
                                 .pay-modal-btns button { flex: 1; height: 140px; aspect-ratio: unset; }
                             }
                         `}</style>
-                        <div
-                            className="pay-modal-overlay"
-                            onClick={() => setShowPayModal(false)}
-                        >
                             <div
-                                className="pay-modal-box"
-                                onClick={e => e.stopPropagation()}
+                                className="pay-modal-overlay"
+                                onClick={() => setShowPayModal(false)}
                             >
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                                    <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, letterSpacing: '0.15em', textTransform: 'uppercase', margin: 0 }}>
-                                        Elegí cómo pagar
-                                    </p>
-                                    <button
-                                        onClick={() => setShowPayModal(false)}
-                                        style={{
-                                            background: 'rgba(255,255,255,0.08)',
-                                            border: '1px solid rgba(255,255,255,0.15)',
-                                            borderRadius: 10, padding: '8px 10px',
-                                            cursor: 'pointer', display: 'flex',
-                                            alignItems: 'center', color: 'rgba(255,255,255,0.7)',
-                                            transition: 'background 0.2s, color 0.2s',
-                                        }}
-                                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; e.currentTarget.style.color = '#fff'; }}
-                                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
-                                    >
-                                        <X size={20} />
-                                    </button>
+                                <div
+                                    className="pay-modal-box"
+                                    onClick={e => e.stopPropagation()}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                                        <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, letterSpacing: '0.15em', textTransform: 'uppercase', margin: 0 }}>
+                                            Elegí cómo pagar
+                                        </p>
+                                        <button
+                                            onClick={() => setShowPayModal(false)}
+                                            style={{
+                                                background: 'rgba(255,255,255,0.08)',
+                                                border: '1px solid rgba(255,255,255,0.15)',
+                                                borderRadius: 10, padding: '8px 10px',
+                                                cursor: 'pointer', display: 'flex',
+                                                alignItems: 'center', color: 'rgba(255,255,255,0.7)',
+                                                transition: 'background 0.2s, color 0.2s',
+                                            }}
+                                            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; e.currentTarget.style.color = '#fff'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.color = 'rgba(255,255,255,0.7)'; }}
+                                        >
+                                            <X size={20} />
+                                        </button>
+                                    </div>
+                                    <h2 style={{ color: '#fff', fontWeight: 800, fontSize: 20, margin: '0 0 10px 0' }}>
+                                        Método de pago
+                                    </h2>
+
+                                    <div className="pay-modal-btns">
+                                        {/* ── Botón Handy ── */}
+                                        <button
+                                            onClick={() => { setShowPayModal(false); handleInitPayment(); }}
+                                            disabled={loading}
+                                            style={{
+                                                display: 'flex', flexDirection: 'column',
+                                                alignItems: 'center', justifyContent: 'center',
+                                                gap: 12, padding: '24px 16px',
+                                                background: '#722efa',
+                                                border: '1px solid rgba(114,46,250,0.6)',
+                                                borderRadius: 16, cursor: 'pointer',
+                                                transition: 'background 0.2s, transform 0.15s',
+                                            }}
+                                            onMouseEnter={e => { e.currentTarget.style.background = '#5e1fe8'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.background = '#722efa'; e.currentTarget.style.transform = 'scale(1)'; }}
+                                        >
+                                            <img src={handyLogo} alt="Handy" style={{ height: 40, objectFit: 'contain', maxWidth: '100%' }} />
+                                            <div style={{ textAlign: 'center' }}>
+                                                <p style={{ color: '#fff', fontWeight: 700, fontSize: 14, margin: '0 0 2px' }}>Handy</p>
+                                                <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, margin: 0, lineHeight: 1.4 }}>Tarjeta crédito / débito</p>
+                                            </div>
+                                        </button>
+
+                                        {/* ── Botón MercadoPago ── */}
+                                        <button
+                                            onClick={() => { setShowPayModal(false); handleInitMpPayment(); }}
+                                            disabled={loading}
+                                            style={{
+                                                display: 'flex', flexDirection: 'column',
+                                                alignItems: 'center', justifyContent: 'center',
+                                                gap: 12, padding: '24px 16px',
+                                                background: '#ffe600',
+                                                border: '1px solid rgba(255,230,0,0.6)',
+                                                borderRadius: 16, cursor: 'pointer',
+                                                transition: 'background 0.2s, transform 0.15s',
+                                            }}
+                                            onMouseEnter={e => { e.currentTarget.style.background = '#e6cf00'; e.currentTarget.style.transform = 'scale(1.02)'; }}
+                                            onMouseLeave={e => { e.currentTarget.style.background = '#ffe600'; e.currentTarget.style.transform = 'scale(1)'; }}
+                                        >
+                                            <img src={mpLogo} alt="MercadoPago" style={{ height: 40, objectFit: 'contain', maxWidth: '100%' }} />
+                                            <div style={{ textAlign: 'center' }}>
+                                                <p style={{ color: '#1a1a1a', fontWeight: 700, fontSize: 14, margin: '0 0 2px' }}>MercadoPago</p>
+                                                <p style={{ color: 'rgba(0,0,0,0.55)', fontSize: 11, margin: 0, lineHeight: 1.4 }}>Saldo, tarjeta o cuotas</p>
+                                            </div>
+                                        </button>
+                                    </div>
+
+                                    {/* Nota de seguridad */}
+                                    <div style={{
+                                        marginTop: 20,
+                                        padding: '10px 14px',
+                                        borderRadius: 10,
+                                        background: 'rgba(255,255,255,0.04)',
+                                        border: '1px solid rgba(255,255,255,0.08)',
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: 8,
+                                    }}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+                                        <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, margin: 0, lineHeight: 1.5 }}>
+                                            Tus datos de tarjeta son procesados directamente por Handy o MercadoPago. USER no almacena ni accede a información financiera de ningún tipo.
+                                        </p>
+                                    </div>
+
                                 </div>
-                                <h2 style={{ color: '#fff', fontWeight: 800, fontSize: 20, margin: '0 0 10px 0' }}>
-                                    Método de pago
-                                </h2>
-
-                                <div className="pay-modal-btns">
-                                    {/* ── Botón Handy ── */}
-                                    <button
-                                        onClick={() => { setShowPayModal(false); handleInitPayment(); }}
-                                        disabled={loading}
-                                        style={{
-                                            display: 'flex', flexDirection: 'column',
-                                            alignItems: 'center', justifyContent: 'center',
-                                            gap: 12, padding: '24px 16px',
-                                            background: '#722efa',
-                                            border: '1px solid rgba(114,46,250,0.6)',
-                                            borderRadius: 16, cursor: 'pointer',
-                                            transition: 'background 0.2s, transform 0.15s',
-                                        }}
-                                        onMouseEnter={e => { e.currentTarget.style.background = '#5e1fe8'; e.currentTarget.style.transform = 'scale(1.02)'; }}
-                                        onMouseLeave={e => { e.currentTarget.style.background = '#722efa'; e.currentTarget.style.transform = 'scale(1)'; }}
-                                    >
-                                        <img src={handyLogo} alt="Handy" style={{ height: 40, objectFit: 'contain', maxWidth: '100%' }} />
-                                        <div style={{ textAlign: 'center' }}>
-                                            <p style={{ color: '#fff', fontWeight: 700, fontSize: 14, margin: '0 0 2px' }}>Handy</p>
-                                            <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, margin: 0, lineHeight: 1.4 }}>Tarjeta crédito / débito</p>
-                                        </div>
-                                    </button>
-
-                                    {/* ── Botón MercadoPago ── */}
-                                    <button
-                                        onClick={() => { setShowPayModal(false); handleInitMpPayment(); }}
-                                        disabled={loading}
-                                        style={{
-                                            display: 'flex', flexDirection: 'column',
-                                            alignItems: 'center', justifyContent: 'center',
-                                            gap: 12, padding: '24px 16px',
-                                            background: '#ffe600',
-                                            border: '1px solid rgba(255,230,0,0.6)',
-                                            borderRadius: 16, cursor: 'pointer',
-                                            transition: 'background 0.2s, transform 0.15s',
-                                        }}
-                                        onMouseEnter={e => { e.currentTarget.style.background = '#e6cf00'; e.currentTarget.style.transform = 'scale(1.02)'; }}
-                                        onMouseLeave={e => { e.currentTarget.style.background = '#ffe600'; e.currentTarget.style.transform = 'scale(1)'; }}
-                                    >
-                                        <img src={mpLogo} alt="MercadoPago" style={{ height: 40, objectFit: 'contain', maxWidth: '100%' }} />
-                                        <div style={{ textAlign: 'center' }}>
-                                            <p style={{ color: '#1a1a1a', fontWeight: 700, fontSize: 14, margin: '0 0 2px' }}>MercadoPago</p>
-                                            <p style={{ color: 'rgba(0,0,0,0.55)', fontSize: 11, margin: 0, lineHeight: 1.4 }}>Saldo, tarjeta o cuotas</p>
-                                        </div>
-                                    </button>
-                                </div>
-
-                                {/* Nota de seguridad */}
-                                <div style={{
-                                    marginTop: 20,
-                                    padding: '10px 14px',
-                                    borderRadius: 10,
-                                    background: 'rgba(255,255,255,0.04)',
-                                    border: '1px solid rgba(255,255,255,0.08)',
-                                    display: 'flex',
-                                    alignItems: 'flex-start',
-                                    gap: 8,
-                                }}>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                                    <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, margin: 0, lineHeight: 1.5 }}>
-                                        Tus datos de tarjeta son procesados directamente por Handy o MercadoPago. USER no almacena ni accede a información financiera de ningún tipo.
-                                    </p>
-                                </div>
-
                             </div>
-                        </div>
                         </>
-                    , document.body)}
+                        , document.body)}
                 </div>
             </div>
         );

@@ -205,7 +205,12 @@ const getLucideIcon = (name) => lucideIconMapRaw[name?.toLowerCase?.()?.trim?.()
 const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, isCollapsed, setIsCollapsed }) => {
     const hasChildren = item.children && item.children.length > 0;
     const isOpen = openMenus[item.IdModulo];
-    const isChildActive = hasChildren && item.children.some(c => location.pathname === c.Ruta || (c.Ruta && location.pathname.startsWith(c.Ruta + '/')));
+    const isChildActive = hasChildren && item.children.some(c => {
+        if (!c.Ruta) return false;
+        const nLoc = location.pathname.endsWith('/') && location.pathname !== '/' ? location.pathname.slice(0, -1) : location.pathname;
+        const nRut = c.Ruta.endsWith('/') && c.Ruta !== '/' ? c.Ruta.slice(0, -1) : c.Ruta;
+        return nLoc === nRut;
+    });
     const isSelected = location.pathname === item.Ruta || (hasChildren && isChildActive);
 
     const baseClasses = "flex items-center mx-2 rounded-md cursor-pointer select-none transition-all duration-200 group relative";
@@ -533,20 +538,20 @@ const DynamicRouter = ({ menuItems }) => {
         </div>
     );
 
-    const matches = menuItems.filter(item => item.Ruta && (currentPath === item.Ruta || currentPath.startsWith(item.Ruta + '/')));
+    const normalizedPath = currentPath.endsWith('/') && currentPath !== '/' ? currentPath.slice(0, -1) : currentPath;
+    const matches = menuItems.filter(item => {
+        if (!item.Ruta) return false;
+        const normalizedRuta = item.Ruta.endsWith('/') && item.Ruta !== '/' ? item.Ruta.slice(0, -1) : item.Ruta;
+        return normalizedPath === normalizedRuta;
+    });
     const menuItem = matches.sort((a, b) => b.Ruta.length - a.Ruta.length)[0];
 
     // Fallback si no se encuentra ruta exacta
     if (!menuItem) {
         if (currentPath === '/consultas/ordenes') return <OrdersQueryView />;
 
-        return (
-            <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400">
-                <i className="fa-solid fa-ghost text-4xl mb-4 opacity-50"></i>
-                <p className="text-lg font-medium">Ruta no definida</p>
-                <p className="text-sm">No se encontró configuración para {currentPath}</p>
-            </div>
-        );
+        // En lugar del fantasma, rebotamos al usuario silenciosamente de vuelta a su dashboard
+        return <Navigate to="/" replace />;
     }
 
     if (menuItem.Ruta === '/admin/database') return <ConfigPage />;
