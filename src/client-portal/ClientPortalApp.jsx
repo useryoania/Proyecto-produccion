@@ -17,6 +17,8 @@ import { HistorialView } from './modulos/HistorialView';
 import { ClubView } from './modulos/ClubView';
 import { PricesView } from './modulos/PricesView';
 import PaymentResult from '../components/pages/PaymentResult';
+import { TicketsClienteView } from './modulos/tickets/TicketsClienteView';
+import { TicketThreadWindow } from './modulos/tickets/TicketThreadWindow';
 
 export const ClientPortalApp = () => {
     return (
@@ -106,6 +108,22 @@ export const ClientPortalApp = () => {
                         <ProtectedRoute>
                             <MainLayout>
                                 <PricesView />
+                            </MainLayout>
+                        </ProtectedRoute>
+                    } />
+
+                    <Route path="/soporte" element={
+                        <ProtectedRoute>
+                            <MainLayout>
+                                <TicketsClienteView />
+                            </MainLayout>
+                        </ProtectedRoute>
+                    } />
+
+                    <Route path="/soporte/:id" element={
+                        <ProtectedRoute>
+                            <MainLayout>
+                                <TicketThreadWindow />
                             </MainLayout>
                         </ProtectedRoute>
                     } />

@@ -1,0 +1,361 @@
+const { sql, getPool } = require('../config/db');
+const logger = require('../utils/logger');
+const fs = require('fs');
+const path = require('path');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEPARTAMENTOS / CATEGORIAS (Ruteo Dinámico)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.getCategorias = async (req, res) => {
+    try {
+        const isClient = req.user && req.user.role === 'WEB_CLIENT';
+        const pool = await getPool();
+
+        // Si es cliente, filtramos los departamentos que sean "Públicos Web"
+        // Si no existe la configuración, mandamos un mapeo hardcodeado hasta que creen la tabla
+        
+        let query = `
+            SELECT DepIdDepartamento as ID, DepNombre as Nombre, DepAplicaClienteWeb as AplicaWeb 
+            FROM Tickets_Departamentos 
+            WHERE DepActivo = 1
+        `;
+        
+        if (isClient) {
+            query += ` AND DepAplicaClienteWeb = 1`;
+        }
+
+        query += ` ORDER BY DepOrden ASC`;
+
+        try {
+            const result = await pool.request().query(query);
+            if (result.recordset.length > 0) {
+                return res.json({ success: true, data: result.recordset });
+            }
+        } catch (e) {
+            // Fallback si la tabla aún no fue creada
+            const fakeData = isClient ? [
+                { ID: 1, Nombre: "Reclamo de Calidad / Producción" },
+                { ID: 2, Nombre: "Consultas de Finanzas / Pagos" },
+                { ID: 3, Nombre: "Dudas sobre mi Envío / Logística" },
+                { ID: 4, Nombre: "Presupuestos / Área de Ventas" },
+                { ID: 5, Nombre: "Cambios en mi Diseño / Pre-Prensa" }
+            ] : [
+                { ID: 1, Nombre: "Producción y Calidad" },
+                { ID: 2, Nombre: "Finanzas y Contabilidad" },
+                { ID: 3, Nombre: "Logística y Despacho" },
+                { ID: 4, Nombre: "Ventas / Comercial" },
+                { ID: 5, Nombre: "Archivo y Diseño" },
+                { ID: 10, Nombre: "Mantenimiento Preventivo" },
+                { ID: 11, Nombre: "Sistemas ERP/Web" },
+                { ID: 12, Nombre: "Soporte General Operativo" }
+            ];
+            return res.json({ success: true, data: fakeData });
+        }
+
+    } catch (err) {
+        logger.error('Error en getCategorias Tickets:', err.message);
+        res.status(500).json({ error: 'Error al obtener categorías' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CREACIÓN DE UN NUEVO TICKET
+// ─────────────────────────────────────────────────────────────────────────────
+exports.createTicket = async (req, res) => {
+    try {
+        const { asunto, departamentoId, prioridad, descripcion, ordenId } = req.body;
+        const isClient = req.user && req.user.role === 'WEB_CLIENT';
+        
+        const cliIdCliente = isClient ? req.user.id : null;
+        const usrIdCreador = !isClient ? req.user.id : null; // Asumiendo que admins tienen id en req.user
+        
+        if (!asunto || !departamentoId || !descripcion) {
+            return res.status(400).json({ error: 'El asunto, área y descripción son requeridos.' });
+        }
+
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. Insertar Cabecera
+            const ticketResult = await transaction.request()
+                .input('CliId', sql.Int, cliIdCliente)
+                .input('UsrId', sql.Int, usrIdCreador)
+                .input('DepId', sql.Int, parseInt(departamentoId))
+                .input('OrdId', sql.Int, ordenId ? parseInt(ordenId) : null)
+                .input('Asunto', sql.NVarChar(200), asunto)
+                .input('Prio', sql.Int, parseInt(prioridad) || 2) // Default Media
+                .query(`
+                    INSERT INTO Tickets (CliIdCliente, UsrIdCreador, DepIdDepartamento, OrdIdOrden, TicAsunto, TicPrioridad, TicEstado, TicFechaAlta, TicFechaActualizacion)
+                    OUTPUT INSERTED.TicIdTicket
+                    VALUES (@CliId, @UsrId, @DepId, @OrdId, @Asunto, @Prio, 1, GETDATE(), GETDATE())
+                `);
+            
+            const ticketId = ticketResult.recordset[0].TicIdTicket;
+
+            // 2. Insertar Primer Mensaje
+            const msgResult = await transaction.request()
+                .input('TicId', sql.Int, ticketId)
+                .input('UsrId', sql.Int, usrIdCreador)
+                .input('CliId', sql.Int, cliIdCliente)
+                .input('Txt', sql.NVarChar(sql.MAX), descripcion)
+                .query(`
+                    INSERT INTO Tickets_Mensajes (TicIdTicket, UsrIdAutor, CliIdAutor, TMenEsNotaInterna, TMenTexto, TMenFecha)
+                    OUTPUT INSERTED.TMenIdMensaje
+                    VALUES (@TicId, @UsrId, @CliId, 0, @Txt, GETDATE())
+                `);
+            
+            const mensajeId = msgResult.recordset[0].TMenIdMensaje;
+
+            // 3. Insertar Evidencia (Si hay archivos adjuntos vía Multer)
+            if (req.files && req.files.length > 0) {
+                for (const file of req.files) {
+                    await transaction.request()
+                        .input('MsgId', sql.Int, mensajeId)
+                        .input('Ruta', sql.VarChar(500), file.filename)
+                        .query(`
+                            INSERT INTO Tickets_Adjuntos (TMenIdMensaje, TAdjRutaArchivo)
+                            VALUES (@MsgId, @Ruta)
+                        `);
+                }
+            }
+
+            await transaction.commit();
+            
+            // TODO: Emitir evento Socket para el Departamento destino o notificar Admin
+            res.status(201).json({ success: true, message: 'Ticket creado exitosamente.', ticketId });
+
+        } catch (dbErr) {
+            await transaction.rollback();
+            throw dbErr;
+        }
+
+    } catch (err) {
+        logger.error('Error al crear Ticket:', err.message);
+        res.status(500).json({ error: 'Error interno al procesar su solicitud.' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LISTADO DE TICKETS (Bandeja)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.getTickets = async (req, res) => {
+    try {
+        const isClient = req.user && req.user.role === 'WEB_CLIENT';
+        const pool = await getPool();
+
+        let query = `
+            SELECT 
+                T.TicIdTicket, T.TicAsunto, T.TicPrioridad, T.TicEstado, T.TicFechaActualizacion,
+                D.DepNombre as Departamento,
+                (SELECT COUNT(*) FROM Tickets_Mensajes M WHERE M.TicIdTicket = T.TicIdTicket) as TotalMensajes
+            FROM Tickets T
+            LEFT JOIN Tickets_Departamentos D ON T.DepIdDepartamento = D.DepIdDepartamento
+            WHERE 1=1
+        `;
+
+        if (isClient) {
+            query += ` AND T.CliIdCliente = @UserId `;
+        }
+
+        query += ` ORDER BY T.TicFechaActualizacion DESC`;
+
+        const result = await pool.request()
+            .input('UserId', sql.Int, isClient ? req.user.id : null)
+            .query(query);
+
+        res.json({ success: true, data: result.recordset });
+
+    } catch (e) {
+        logger.error('Error getTickets:', e.message);
+        // Si falló por falta de tablas, devolver arreglo vacío para que el frontend no estalle
+        res.json({ success: true, data: [] });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOSTRAR DETALLE E HILO DEL TICKET
+// ─────────────────────────────────────────────────────────────────────────────
+exports.getTicketDetails = async (req, res) => {
+    try {
+        const ticketId = req.params.id;
+        const isClient = req.user && req.user.role === 'WEB_CLIENT';
+        const clientId = req.user.id;
+        const pool = await getPool();
+
+        // CABECERA
+        const tReq = pool.request().input('Id', sql.Int, ticketId);
+        
+        let tQuery = `
+            SELECT T.*, D.DepNombre, C.Nombre as ClienteNombre, C.TelefonoTrabajo as ClienteCelular, C.Email as ClienteEmail
+            FROM Tickets T
+            LEFT JOIN Tickets_Departamentos D ON T.DepIdDepartamento = D.DepIdDepartamento
+            LEFT JOIN Clientes C ON T.CliIdCliente = C.CodCliente
+            WHERE TicIdTicket = @Id
+        `;
+        // Seguridad cliente
+        if (isClient) {
+            tQuery += ` AND T.CliIdCliente = @CliId `;
+            tReq.input('CliId', sql.Int, clientId);
+        }
+
+        const tRes = await tReq.query(tQuery);
+        if (tRes.recordset.length === 0) {
+            return res.status(404).json({ error: 'Ticket no encontrado o sin permisos.' });
+        }
+        const ticket = tRes.recordset[0];
+
+        // MENSAJES E HILO
+        let mQuery = `
+            SELECT M.*, 
+                   C.Nombre as ClienteNombre, 
+                   U.Nombre as EmpleadoNombre 
+            FROM Tickets_Mensajes M
+            LEFT JOIN Clientes C ON M.CliIdAutor = C.CodCliente
+            LEFT JOIN dbo.Usuarios U ON M.UsrIdAutor = U.IdUsuario
+            WHERE M.TicIdTicket = @Id
+        `;
+        
+        // Si es un cliente, bloquear las notas de los empleados que son "EsNotaInterna = 1"
+        if (isClient) {
+            mQuery += ` AND M.TMenEsNotaInterna = 0 `;
+        }
+        mQuery += ` ORDER BY M.TMenFecha ASC`;
+
+        const mRes = await pool.request()
+            .input('Id', sql.Int, ticketId)
+            .query(mQuery);
+        
+        let mensajes = mRes.recordset;
+
+        // ADJUNTOS
+        if (mensajes.length > 0) {
+            const msgIds = mensajes.map(m => m.TMenIdMensaje);
+            const aRes = await pool.request()
+                .query(`SELECT * FROM Tickets_Adjuntos WHERE TMenIdMensaje IN (${msgIds.join(',')})`);
+            
+            // Asignar adjuntos a su respectivo mensaje
+            mensajes.forEach(m => {
+                m.adjuntos = aRes.recordset.filter(a => a.TMenIdMensaje === m.TMenIdMensaje);
+            });
+        }
+
+        res.json({ success: true, ticket, mensajes });
+
+    } catch (e) {
+        logger.error('Error getTicketDetails:', e.message);
+        res.status(500).json({ error: 'Error cargando datos del ticket' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RESPONDER AL TICKET (Añadir Mensaje / Nota Interna)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.replyToTicket = async (req, res) => {
+    try {
+        const ticketId = req.params.id;
+        const { texto, esNotaInterna } = req.body;
+        const isClient = req.user && req.user.role === 'WEB_CLIENT';
+        
+        const cliIdAutor = isClient ? req.user.id : null;
+        const usrIdAutor = !isClient ? req.user.id : null;
+
+        // Los clientes nunca pueden postear notas internas, forzamos false
+        const notaInternaFlag = isClient ? 0 : (esNotaInterna === 'true' || esNotaInterna === true ? 1 : 0);
+
+        if (!texto) return res.status(400).json({ error: 'Mensaje vacío.' });
+
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. Insertar Mensaje
+            const msgResult = await transaction.request()
+                .input('Tic', sql.Int, ticketId)
+                .input('Usr', sql.Int, usrIdAutor)
+                .input('Cli', sql.Int, cliIdAutor)
+                .input('Interna', sql.Bit, notaInternaFlag)
+                .input('Txt', sql.NVarChar(sql.MAX), texto)
+                .query(`
+                    INSERT INTO Tickets_Mensajes (TicIdTicket, UsrIdAutor, CliIdAutor, TMenEsNotaInterna, TMenTexto, TMenFecha)
+                    OUTPUT INSERTED.TMenIdMensaje
+                    VALUES (@Tic, @Usr, @Cli, @Interna, @Txt, GETDATE())
+                `);
+            
+            const mensajeId = msgResult.recordset[0].TMenIdMensaje;
+
+            // 2. Archivos Adjuntos
+            if (req.files && req.files.length > 0) {
+                for (const file of req.files) {
+                    await transaction.request()
+                        .input('MsgId', sql.Int, mensajeId)
+                        .input('Ruta', sql.VarChar(500), file.filename)
+                        .query(`
+                            INSERT INTO Tickets_Adjuntos (TMenIdMensaje, TAdjRutaArchivo)
+                            VALUES (@MsgId, @Ruta)
+                        `);
+                }
+            }
+
+            // 3. Actualizar touch date del ticket (y estado si un cliente contestó, volver a En Espera de Staff)
+            let updateQ = `UPDATE Tickets SET TicFechaActualizacion = GETDATE()`;
+            if (isClient) {
+                // Si el cliente contesta, obligatoriamente lo pasamos a "Abierto/En Proceso"  (1 o 2) 
+                // para que le reaparezca al staff
+                updateQ += `, TicEstado = 1`; 
+            } else if (!notaInternaFlag) {
+                // Si un staff contesta de forma publica, queda "Esperando al Cliente" (3)
+                updateQ += `, TicEstado = 3`;
+            }
+
+            updateQ += ` WHERE TicIdTicket = @Tic`;
+            await transaction.request().input('Tic', sql.Int, ticketId).query(updateQ);
+
+            await transaction.commit();
+            res.json({ success: true, message: 'Respuesta enviada.' });
+
+        } catch (dbErr) {
+            await transaction.rollback();
+            throw dbErr;
+        }
+    } catch (e) {
+        logger.error('Error respondiendo ticket:', e.message);
+        res.status(500).json({ error: 'Error al enviar la respuesta' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CERRAR / RESOLVER TICKET (Solo Admins o dueño)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.updateTicketStatus = async (req, res) => {
+    try {
+        const ticketId = req.params.id;
+        const { nuevoEstado, departamentoId } = req.body;
+        
+        // 4 = Resuelto, 5 = Cancelado
+        const estadoToSet = nuevoEstado ? parseInt(nuevoEstado) : 4; 
+
+        const pool = await getPool();
+        
+        // Si envían un departamentoId, es una derivación interna.
+        if (departamentoId) {
+            await pool.request()
+                .input('Tic', sql.Int, ticketId)
+                .input('DepId', sql.Int, departamentoId)
+                .query(`UPDATE Tickets SET DepIdDepartamento = @DepId, TicFechaActualizacion = GETDATE() WHERE TicIdTicket = @Tic`);
+            return res.json({ success: true, message: 'Ticket derivado a nueva área.' });
+        }
+
+        await pool.request()
+            .input('Tic', sql.Int, ticketId)
+            .input('E', sql.Int, estadoToSet)
+            .query(`UPDATE Tickets SET TicEstado = @E, TicFechaActualizacion = GETDATE() WHERE TicIdTicket = @Tic`);
+
+        res.json({ success: true, message: 'Estado del ticket modificado con éxito.' });
+    } catch (e) {
+        logger.error('Error cerrando ticket:', e.message);
+        res.status(500).json({ error: 'Fallo al modificar el estado' });
+    }
+};

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import api, { logisticsService } from '../../services/api';
+import api from '../../services/api';
+import { logisticsService } from '../../services/modules/logisticsService';
 import { toast } from 'sonner';
 
 const TransportView = () => {

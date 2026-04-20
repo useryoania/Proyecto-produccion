@@ -107,7 +107,8 @@ const getOrdenesRetiroQueryBase = `
     ag.Nombre AS AgenciaNombre,
     r.AgenciaOtra,
     r.ReceptorNombre,
-    r.LReIdLugarRetiro
+    r.LReIdLugarRetiro,
+    art.Descripcion AS articuloDescripcion
   FROM OrdenesRetiro r WITH(NOLOCK)
   LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
   LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
@@ -122,6 +123,7 @@ const getOrdenesRetiroQueryBase = `
   LEFT JOIN TiposClientes tcr WITH(NOLOCK) ON tcr.TClIdTipoCliente = cr.TClIdTipoCliente
   LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
   LEFT JOIN EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
+  LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = o.ProIdProducto
 `;
 
 const processRetirosRows = (rows) => {
@@ -168,7 +170,8 @@ const processRetirosRows = (rows) => {
         orderIdMetodoPago: row.orderIdMetodoPago,
         orderMetodoPago: row.orderMetodoPago,
         orderPago: row.monetPagoSimbolo ? `${row.monetPagoSimbolo} ${parseFloat(row.orderMontoPago).toFixed(2)}` : null,
-        orderFechaPago: row.orderFechaPago
+        orderFechaPago: row.orderFechaPago,
+        articuloDescripcion: row.articuloDescripcion ? row.articuloDescripcion.trim() : null
       });
     }
   }

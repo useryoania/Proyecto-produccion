@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { logisticsService, authService } from '../../services/api';
+import { authService } from '../../services/api';
+import { logisticsService } from '../../services/modules/logisticsService';
 import { toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 

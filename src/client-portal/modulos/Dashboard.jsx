@@ -77,12 +77,14 @@ export const Dashboard = () => {
                             key={service.id}
                             className="cursor-pointer transition-all duration-300 h-full md:aspect-square flex flex-col justify-center"
                             onClick={() => {
-                                if (service.externalUrl) {
+                                if (service.isTicketSystem) {
+                                    navigate('/portal/soporte');
+                                } else if (service.externalUrl) {
                                     const params = new URLSearchParams();
                                     params.append('usp', 'pp_url');
                                     if (service.formEntries) {
                                         if (service.formEntries.clienteId && user?.idCliente) {
-                                            params.append(service.formEntries.clienteId, user.idCliente);
+                                            params.append(service.formEntries.clienteId, user.idCliente.toString().trim());
                                         }
                                         if (service.formEntries.terminos) {
                                             params.append(service.formEntries.terminos.id, service.formEntries.terminos.value);

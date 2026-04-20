@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const mammoth = require('mammoth');
-const pdf = require('pdf-parse');
 const logger = require('../utils/logger');
 
 const MANUALS_DIR = path.join(__dirname, '../../Manuales');
@@ -30,6 +29,8 @@ async function extractText(filePath) {
             return result.value || "";
         }
         else if (ext === '.pdf') {
+            // Lazy-load pdf-parse to avoid crashing on startup if native deps fail
+            const pdf = require('pdf-parse');
             const dataBuffer = fs.readFileSync(filePath);
             const data = await pdf(dataBuffer);
             return data.text || "";

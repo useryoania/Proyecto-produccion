@@ -5,7 +5,8 @@ import {
     Printer,
     Scissors,
     Zap,
-    Box
+    Box,
+    LifeBuoy
 } from 'lucide-react';
 
 export const SERVICES_LIST = [
@@ -291,4 +292,14 @@ export const SERVICES_LIST = [
     //         { id: 'EST', label: 'Estampado (Planchado en USER)', fullWidth: true }
     //     ]
     // }
+    {
+        id: 'soporte',
+        dbId: '99',
+        areaId: 'SOPORTE',
+        codOrden: 'SOPORTE',
+        label: 'Ayuda y Reclamos',
+        desc: 'Centro de consultas y reclamos.',
+        icon: LifeBuoy,
+        isTicketSystem: true
+    }
 ];

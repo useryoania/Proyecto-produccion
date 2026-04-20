@@ -107,8 +107,11 @@ const PrintStationPage = () => {
         const ordenesHTML = ordenes.length > 0
             ? ordenes.map((o, i) => `
                 <tr style="background:${i % 2 === 0 ? '#fff' : '#e8e8e8'}">
-                    <td style="padding:5px 8px;font-size:12px;border:none;">${o.orderNumber || o.id || '-'}</td>
-                    <td style="padding:5px 8px;font-size:12px;border:none;text-align:right;font-weight:700;">${o.orderCosto || '0.00'}</td>
+                    <td style="padding:5px 8px;font-size:12px;border:none;">
+                        <div style="font-weight:700;">${o.orderNumber || o.id || '-'}</div>
+                        ${o.articuloDescripcion ? `<div style="font-size:10px;color:#555;margin-top:2px;text-transform:uppercase;">${o.articuloDescripcion}</div>` : ''}
+                    </td>
+                    <td style="padding:5px 8px;font-size:12px;border:none;text-align:right;font-weight:700;vertical-align:top;">${o.orderCosto || '0.00'}</td>
                 </tr>`).join('')
             : `<tr><td colspan="2" style="padding:8px;font-size:12px;color:#888;text-align:center;border:none;">Sin detalle de órdenes</td></tr>`;
 

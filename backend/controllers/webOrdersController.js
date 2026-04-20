@@ -10,7 +10,7 @@ const path = require('path');
 // ──────────────────────────────────────────────────
 // HELPER: Generar comprobante PDF y guardarlo en disco
 // ──────────────────────────────────────────────────
-async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalAmount, currency, currencySymbol, paymentMethod, paidAt, codCliente }) {
+async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalAmount, currency, currencySymbol, convertedTotalAmount, convertedCurrency, convertedCurrencySymbol, paymentMethod, paidAt, codCliente }) {
     try {
         const doc = await PDFDocument.create();
         const page = doc.addPage([595.28, 841.89]); // A4
@@ -45,7 +45,7 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
 
         // Logo (arriba a la izquierda)
         try {
-            const logoPath = findImage('logo.png');
+            const logoPath = findImage('pasarelas/u.png');
             if (logoPath) {
                 const logoBytes = fs.readFileSync(logoPath);
                 const logoImage = await doc.embedPng(logoBytes);
@@ -59,7 +59,7 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
                 });
             }
         } catch (logoErr) {
-            logger.warn('[HANDY RECEIPT] No se pudo agregar logo:', logoErr.message);
+            logger.warn('[RECEIPT] No se pudo agregar logo:', logoErr.message);
         }
 
         // Título
@@ -91,54 +91,13 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
         drawLeft(String(codCliente || '-'), 50, y, 14, fontBold);
         y -= 28;
 
-        // Medio de pago
-        drawLeft('MEDIO DE PAGO', 50, y, 9, font, rgb(0.47, 0.47, 0.47));
-        
-        let gatewayDrawn = false;
-        try {
-            const method = String(paymentMethod || '').toLowerCase();
-            let logoFilename = null, gwColor = null;
-            if (method.includes('handy')) { logoFilename = 'pasarelas/handy.svg'; gwColor = rgb(114/255, 46/255, 250/255); }
-            else if (method.includes('mercadopago') || method.includes('mp')) { logoFilename = 'pasarelas/mercadopago.svg'; gwColor = rgb(255/255, 230/255, 0/255); }
-            
-            if (logoFilename) {
-                const gwPath = findImage(logoFilename);
-                if (gwPath) {
-                    const sharp = require('sharp');
-                    const svgBuffer = fs.readFileSync(gwPath);
-                    const pngBuffer = await sharp(svgBuffer).resize({ height: 80 }).png().toBuffer();
-                    const gwImage = await doc.embedPng(pngBuffer);
-                    
-                    const gwHeight = 14;
-                    const gwWidth = gwHeight * (gwImage.width / gwImage.height);
-                    const px = 6, py = 4;
-                    
-                    if (gwColor) {
-                        page.drawRectangle({
-                            x: width - 50 - gwWidth - px * 2,
-                            y: y - 5 - py,
-                            width: gwWidth + px * 2,
-                            height: gwHeight + py * 2,
-                            color: gwColor
-                        });
-                    }
-                    
-                    page.drawImage(gwImage, {
-                        x: width - 50 - gwWidth - px,
-                        y: y - 5,
-                        width: gwWidth,
-                        height: gwHeight
-                    });
-                    gatewayDrawn = true;
-                }
-            }
-        } catch (gwErr) {
-            logger.warn('[HANDY RECEIPT] Error agregando logo pasarela:', gwErr.message);
-        }
-
-        if (!gatewayDrawn) {
-            drawRight(String(paymentMethod || '-').toUpperCase(), width - 50, y, 10, fontBold);
-        }
+        // Medio de pago: texto simple "PAGADO EN MERCADOPAGO / HANDY"
+        const method = String(paymentMethod || '').toLowerCase();
+        const gatewayLabel = method.includes('mercadopago') || method.includes('mp')
+            ? 'MERCADOPAGO'
+            : method.includes('handy') ? 'HANDY' : String(paymentMethod || '').toUpperCase();
+        drawLeft('PAGADO CON', 50, y, 9, font, rgb(0.47, 0.47, 0.47));
+        drawLeft(gatewayLabel, 50 + font.widthOfTextAtSize('PAGADO CON ', 9), y, 9, fontBold, rgb(0.02, 0.59, 0.41));
         y -= 25;
 
         // Detalle de pedidos
@@ -162,40 +121,27 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
             y -= 10;
         }
 
-        // Total
+        // Total original
         page.drawLine({ start: { x: 50, y }, end: { x: width - 50, y }, thickness: 0.5, color: rgb(0.78, 0.78, 0.78) });
         y -= 20;
-        drawRight('TOTAL:', width - 130, y, 12, fontBold);
+        drawRight('TOTAL ORIGINAL:', width - 130, y, 12, fontBold);
         drawRight(`${currencySymbol || '$'} ${Number(totalAmount).toFixed(2)}`, width - 50, y, 12, fontBold, rgb(0.02, 0.59, 0.41));
         y -= 14;
         drawRight(currency === 840 ? 'USD' : 'UYU', width - 50, y, 10, font);
 
-        // Sello PAGADO (a la izquierda del total)
-        let stampDrawn = false;
-        try {
-            const stampPath = findImage('pagado-stamp.png');
-            if (stampPath) {
-                const stampBytes = fs.readFileSync(stampPath);
-                const stampImage = await doc.embedPng(stampBytes);
-                const stampWidth = 120;
-                const stampHeight = stampWidth * (stampImage.height / stampImage.width);
-                page.drawImage(stampImage, {
-                    x: 50,
-                    y: y - stampHeight + 10,
-                    width: stampWidth,
-                    height: stampHeight,
-                    opacity: 0.7
-                });
-                stampDrawn = true;
-            } else {
-                logger.warn('[HANDY RECEIPT] No se encontró pagado-stamp.png en ninguna ruta conocida.');
-            }
-        } catch (stampErr) {
-            logger.warn('[HANDY RECEIPT] No se pudo agregar sello PAGADO:', stampErr.message);
+        // Conversión cobrada si existe diferencia entre monedas
+        if (convertedTotalAmount && convertedCurrency !== currency) {
+            y -= 18;
+            drawRight(`Cobrado final:`, width - 130, y, 10, font);
+            const eqStr = `= ${convertedCurrencySymbol || '$'} ${Number(convertedTotalAmount).toFixed(2)}`;
+            drawRight(eqStr, width - 50, y, 10, fontBold, rgb(0.5, 0.5, 0.5));
+            y -= 12;
+            drawRight(convertedCurrency === 840 ? 'USD' : 'UYU', width - 50, y, 8, font, rgb(0.5, 0.5, 0.5));
         }
-        if (!stampDrawn) {
-            drawLeft('PAGADO', 50, y, 18, fontBold, rgb(0.02, 0.59, 0.41));
-        }
+
+        // PAGADO en texto verde
+        y -= 25;
+        drawLeft('PAGADO', 50, y, 18, fontBold, rgb(0.02, 0.59, 0.41));
 
         // Footer
         drawCentered('ESTE COMPROBANTE FUE GENERADO AUTOMATICAMENTE.', 40, 8, font);
@@ -2170,6 +2116,111 @@ exports.createHandyPaymentLink = async (req, res) => {
     }
 };
 
+// --- ROLLBACK DE COBROS FALLIDOS ASÍNCRONOS ---
+// Desvincula las órdenes, anula el pago con valor $0 y crea Ticket de HelpDesk
+const performCheckoutRollback = async (pool, transactionId, ordenRetiroId, gatewayName, codCliente = null) => {
+    try {
+        const logger = require('../utils/logger');
+        logger.info(`[ROLLBACK] Iniciando desvinculación para TX ${transactionId} (Retiro: ${ordenRetiroId}) desde ${gatewayName}`);
+
+        // 1. Obtener la orden de retiro y su PagId
+        const sql = require('mssql');
+        const retiroRes = await pool.request()
+            .input('RID', sql.Int, ordenRetiroId)
+            .query('SELECT OReIdOrdenRetiro, PagIdPago FROM OrdenesRetiro WHERE OReIdOrdenRetiro = @RID');
+        
+        if (retiroRes.recordset.length === 0) {
+            logger.warn(`[ROLLBACK] OrdenRetiro ${ordenRetiroId} no existe. Ignorando.`);
+            return;
+        }
+
+        const retiro = retiroRes.recordset[0];
+        const pagoId = retiro.PagIdPago;
+        const realCodCliente = codCliente;
+
+        if (!pagoId) {
+            logger.warn(`[ROLLBACK] OrdenRetiro ${ordenRetiroId} no tiene PagIdPago asignado. Nada que revertir.`);
+            return;
+        }
+
+        const rollbackT = new sql.Transaction(pool);
+        await rollbackT.begin();
+
+        try {
+            // A. Desvincular OrdenesHijas (OrdenesDeposito)
+            const hijasResult = await rollbackT.request()
+                .input('PagoId', sql.Int, pagoId)
+                .query('SELECT OrdIdOrden FROM OrdenesDeposito WHERE PagIdPago = @PagoId');
+            
+            const hijasIds = hijasResult.recordset.map(r => r.OrdIdOrden);
+
+            if (hijasIds.length > 0) {
+                await rollbackT.request()
+                    .input('PagoId', sql.Int, pagoId)
+                    .query(`UPDATE OrdenesDeposito SET PagIdPago = NULL, OrdEstadoActual = 1, OrdFechaEstadoActual = GETDATE() WHERE OrdIdOrden IN (${hijasIds.join(',')})`);
+                
+                const histValues = hijasIds.map(id => `(${id}, 1, GETDATE(), 70)`).join(', ');
+                await rollbackT.request().query(`INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES ${histValues}`);
+            }
+
+            // B. Desvincular Retiro
+            await rollbackT.request()
+                .input('RID', sql.Int, ordenRetiroId)
+                .query(`UPDATE OrdenesRetiro SET PagIdPago = NULL, OReEstadoActual = 1, OReFechaEstadoActual = GETDATE() WHERE OReIdOrdenRetiro = @RID`);
+            
+            await rollbackT.request()
+                .input('RID', sql.Int, ordenRetiroId)
+                .query(`INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@RID, 1, GETDATE(), 70)`);
+
+            // C. Anular Pago (Monto = 0) e identificar el recibo como nulo
+            await rollbackT.request()
+                .input('PagoId', sql.Int, pagoId)
+                .query(`UPDATE Pagos SET PagMontoPago = 0, PagRutaComprobante = ISNULL(PagRutaComprobante, '') + ' - ANULADO-${gatewayName.toUpperCase()}' WHERE PagIdPago = @PagoId`);
+
+            // D. Emitir Ticket de Alerta (HelpDesk)
+            try {
+                // Cabecera (DepId 2 = Finanzas/Contaduría)
+                const asunto = `ALERTA FINANCIERA: Contracargo en Retiro RW-${ordenRetiroId}`;
+                const tResult = await rollbackT.request()
+                    .input('CliId', sql.Int, realCodCliente || null)
+                    .input('DepId', sql.Int, 2)
+                    .input('OrdId', sql.Int, ordenRetiroId)
+                    .input('Asunto', sql.NVarChar(200), asunto)
+                    .query(`
+                        INSERT INTO Tickets (CliIdCliente, UsrIdCreador, DepIdDepartamento, OrdIdOrden, TicAsunto, TicPrioridad, TicEstado, TicFechaAlta, TicFechaActualizacion)
+                        OUTPUT INSERTED.TicIdTicket
+                        VALUES (@CliId, 70, @DepId, @OrdId, @Asunto, 1, 1, GETDATE(), GETDATE())
+                    `);
+                
+                const ticketId = tResult.recordset[0].TicIdTicket;
+                
+                // Mensaje Oculto (Nota Interna)
+                const txt = `El sistema detectó un contracargo o rechazo tardío de la pasarela de pagos ${gatewayName} para la transacción:\n${transactionId}\n\nSe han desvinculado los pagos de las órdenes y han vuelto al estado "A Ingresar / Adeudado".\nPor favor, verifique si el cliente retiró ya las órdenes e inicie una gestión de cobro manual.`;
+                await rollbackT.request()
+                    .input('TicId', sql.Int, ticketId)
+                    .input('Txt', sql.NVarChar(sql.MAX), txt)
+                    .query(`
+                        INSERT INTO Tickets_Mensajes (TicIdTicket, UsrIdAutor, TMenEsNotaInterna, TMenTexto, TMenFecha)
+                        VALUES (@TicId, 70, 1, @Txt, GETDATE())
+                    `);
+            } catch (ticketErr) {
+                logger.error(`[ROLLBACK] Error creando ticket interno: ${ticketErr.message}`);
+                // Si falla el ticket, igual committeamos el rollback contable
+            }
+
+            await rollbackT.commit();
+            logger.info(`[ROLLBACK] ✅ Reversión contable completada. Se liberó y adeudó la orden RW-${ordenRetiroId}`);
+
+        } catch (dbErr) {
+            await rollbackT.rollback();
+            logger.error(`[ROLLBACK] ❌ Error estructurado: ${dbErr.message}`);
+        }
+    } catch (e) {
+        const logger = require('../utils/logger');
+        logger.error(`[ROLLBACK] ❌ Error fatal: ${e.message}`);
+    }
+};
+
 // --- HANDY WEBHOOK ---
 // Recibe notificaciones automáticas de Handy cuando un cobro cambia de estado
 // Docs V2.0: PurchaseData.Status → 0=Iniciado, 1=Exitoso, 2=Fallido, 3=Pendiente
@@ -2413,6 +2464,28 @@ exports.handyWebhook = async (req, res) => {
                 }
             } catch (reactErr) {
                 logger.error('[HANDY WEBHOOK] Error notificando a API React:', reactErr.response?.data || reactErr.message);
+            }
+        } else if (status === 2 || status === 5) {
+            // --- ROLLBACK DE OPERACIONES: ESTADO CAYÓ A FALLIDO (CONTRACARGO O RECHAZO TARDÍO) ---
+            try {
+                const txData = await pool.request()
+                    .input('txIdRb', sql.VarChar(100), transactionId)
+                    .query('SELECT OrdersJson, CodCliente, PaidAt FROM HandyTransactions WHERE TransactionId = @txIdRb');
+                
+                if (txData.recordset.length > 0) {
+                    const tx = txData.recordset[0];
+                    // Si PaidAt NO es nulo, significa que ANTES fue pagado. (Gatilla el rollback)
+                    if (tx.PaidAt) {
+                        const storedData = JSON.parse(tx.OrdersJson || '{}');
+                        const storedOrdenRetiro = storedData.ordenRetiro;
+                        const ordenRetiroId = parseInt(String(storedOrdenRetiro || '').replace(/^[A-Za-z]+-0*/, ''), 10);
+                        if (!isNaN(ordenRetiroId)) {
+                            await performCheckoutRollback(pool, transactionId, ordenRetiroId, 'Handy', tx.CodCliente);
+                        }
+                    }
+                }
+            } catch(e) {
+                logger.error('[HANDY WEBHOOK ROLLBACK ERROR]', e.message);
             }
         }
 
@@ -2729,15 +2802,19 @@ exports.mpWebhook = async (req, res) => {
 
     if (webhookSecret && xSignature) {
         try {
-            const ts  = xSignature.split(',').find(p => p.startsWith('ts='))?.split('=')[1] || '';
-            const v1  = xSignature.split(',').find(p => p.startsWith('v1='))?.split('=')[1] || '';
-            const dataId = String(body?.data?.id || '');
+            // Trim each part to handle headers like "ts=123, v1=abc" (space after comma)
+            const parts = xSignature.split(',').map(p => p.trim());
+            const ts  = parts.find(p => p.startsWith('ts='))?.slice(3) || '';
+            const v1  = parts.find(p => p.startsWith('v1='))?.slice(3) || '';
+            const dataId = String(req.query['data.id'] || body?.data?.id || '');
             const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
             const computed = crypto.createHmac('sha256', webhookSecret).update(manifest).digest('hex');
 
-            const valid = v1.length > 0 && crypto.timingSafeEqual(
-                Buffer.from(v1.padEnd(64, '0'), 'hex'),
-                Buffer.from(computed.padEnd(64, '0'), 'hex')
+            logger.info(`[MP WEBHOOK] Sig debug — ts="${ts}" v1="${v1.substring(0,8)}..." computed="${computed.substring(0,8)}..." manifest="${manifest}"`);
+
+            const valid = v1.length === 64 && computed.length === 64 && crypto.timingSafeEqual(
+                Buffer.from(v1, 'hex'),
+                Buffer.from(computed, 'hex')
             );
 
             if (!valid) {
@@ -2814,7 +2891,30 @@ exports.mpWebhook = async (req, res) => {
 
         // Solo asentar el pago en el sistema si está aprobado
         if (mpStatus !== 'approved') {
-            logger.info(`[MP WEBHOOK] Estado "${mpStatus}" no requiere acción adicional.`);
+            logger.info(`[MP WEBHOOK] Estado "${mpStatus}" no requiere acción de pago.`);
+            
+            // --- ROLLBACK SI SE RECHAZÓ O CONTRACARGÓ POST-PAGO ---
+            if (mpStatus === 'rejected' || mpStatus === 'refunded' || mpStatus === 'cancelled' || mpStatus === 'charged_back') {
+                try {
+                    const txData = await pool.request()
+                        .input('txIdRb', sql.VarChar(100), externalRef)
+                        .query('SELECT OrdersJson, CodCliente, PaidAt FROM MercadoPagoTransactions WHERE TransactionId = @txIdRb');
+                    
+                    if (txData.recordset.length > 0) {
+                        const tx = txData.recordset[0];
+                        if (tx.PaidAt) {
+                            const storedData = JSON.parse(tx.OrdersJson || '{}');
+                            const storedOrdenRetiro = storedData.ordenRetiro;
+                            const ordenRetiroId = parseInt(String(storedOrdenRetiro || '').replace(/^[A-Za-z]+-0*/, ''), 10);
+                            if (!isNaN(ordenRetiroId)) {
+                                await performCheckoutRollback(pool, externalRef, ordenRetiroId, 'MercadoPago', tx.CodCliente);
+                            }
+                        }
+                    }
+                } catch(e) {
+                    logger.error('[MP WEBHOOK ROLLBACK ERROR]', e.message);
+                }
+            }
             return;
         }
 
@@ -2954,6 +3054,34 @@ exports.mpWebhook = async (req, res) => {
         }
 
         logger.info(`[MP WEBHOOK] ✅ Pago registrado en DB: PagoId=${pagoId}, OrdenRetiro=${ordenRetiroId}`);
+
+        // Generar comprobante PDF (igual que Handy)
+        const originalCurrCode = storedData.moneda === 'USD' ? 840 : 858;
+        const mpCurrCode = paymentData.currency_id === 'USD' ? 840 : 858;
+
+        generateHandyReceipt({
+            transactionId: externalRef,
+            ordenRetiro:   `RW-${ordenRetiroId}`,
+            orders:        orders.map(o => ({ id: o.id, desc: o.desc, amount: o.amount })),
+            totalAmount:   storedData.totalCost || totalAmountPaid,
+            currency:      originalCurrCode,
+            currencySymbol: storedData.moneda === 'USD' ? 'US$' : '$',
+            convertedTotalAmount: totalAmountPaid,
+            convertedCurrency: mpCurrCode,
+            convertedCurrencySymbol: paymentData.currency_id === 'USD' ? 'US$' : '$',
+            paymentMethod: 'MercadoPago',
+            paidAt:        new Date(),
+            codCliente:    tx.CodCliente || 0
+        }).then(async (filePath) => {
+            if (filePath) {
+                const fileNameToSave = path.basename(filePath);
+                await pool.request()
+                    .input('PagoId', sql.Int, pagoId)
+                    .input('Ruta',   sql.VarChar, fileNameToSave)
+                    .query('UPDATE Pagos SET PagRutaComprobante = @Ruta WHERE PagIdPago = @PagoId');
+                logger.info(`[MP WEBHOOK] Comprobante guardado: ${fileNameToSave}`);
+            }
+        }).catch(e => logger.error('[MP WEBHOOK] Error generando comprobante:', e.message));
 
     } catch (e) {
         logger.error('[MP WEBHOOK] Error procesando evento:', e.message);

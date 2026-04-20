@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { logisticsService, authService } from '../../services/api';
+import { authService } from '../../services/api';
+import { logisticsService } from '../../services/modules/logisticsService';
 import QRCode from "react-qr-code";
 import { toast } from 'sonner';
 

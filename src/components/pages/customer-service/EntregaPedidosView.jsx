@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import TransportView from '../../logistics/TransportView';
 import { useAuth } from '../../../context/AuthContext';
-import api, { logisticsService } from '../../../services/api';
+import api from '../../../services/api';
+import { logisticsService } from '../../../services/modules/logisticsService';
 import { socket } from '../../../services/socketService';
 import { Package, Truck, Search, QrCode, FileText, CheckCircle, RefreshCcw, DollarSign, ChevronDown, ChevronRight, Printer, ClipboardList, Tag, History, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';

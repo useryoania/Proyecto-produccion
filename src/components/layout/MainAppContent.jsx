@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
-import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store } from 'lucide-react';
+import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket } from 'lucide-react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster } from 'sonner';
@@ -59,6 +59,7 @@ const CargaDepositoPage = lazyWithRetry(() => import('../logistics/CargaDeposito
 const VerificarCodigoPage = lazyWithRetry(() => import('../logistics/VerificarCodigoPage'));
 const CuadreDiarioView = lazyWithRetry(() => import('../pages/CuadreDiarioView'));
 const DuplicateClientsPage = lazyWithRetry(() => import('../pages/admin/DuplicateClientsPage'));
+const HelpDeskAdminView = lazyWithRetry(() => import('../pages/customer-service/HelpDeskAdminView').then(m => ({ default: m.HelpDeskAdminView })));
 const OrderSearchPage = lazyWithRetry(() => import('../logistics/OrderSearchPage'));
 const EntregaPedidosView = lazyWithRetry(() => import('../pages/customer-service/EntregaPedidosView'));
 const DepositoDashboard = lazyWithRetry(() => import('../logistics/DepositoDashboard'));
@@ -196,6 +197,10 @@ const lucideIconMapRaw = {
     'pagos online por la web (handy)': CreditCard,
     'pagos online / web (handy)': CreditCard,
     'cierre diario': CalendarCheck,
+    // Helpdesk
+    'helpdesk': LifeBuoy,
+    'helpdesk / tickets': LifeBuoy,
+    'tickets': Ticket,
 };
 const getLucideIcon = (name) => lucideIconMapRaw[name?.toLowerCase?.()?.trim?.()?.replace(/\s+/g, ' ')];
 
@@ -238,7 +243,7 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                             const firstChild = item.children.find(c => c.Ruta);
                             if (firstChild) {
                                 navigate(firstChild.Ruta);
-                                setIsCollapsed(true);
+                                // Modificado: Eliminamos setIsCollapsed(true) para que el padre quede desplegado
                             }
                         }
                     } else if (item.Ruta) {
@@ -495,6 +500,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/atencion-cliente/entrega-pedidos" element={<EntregaPedidosView />} />
                                 <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
                                 <Route path="/admin/duplicate-clients" element={<DuplicateClientsPage />} />
+                                <Route path="/admin/helpdesk" element={<HelpDeskAdminView />} />
                                 <Route path="/admin/products-integration" element={<ProductsIntegration />} />
                                 <Route path="/admin/special-prices" element={<SpecialPrices />} />
                                 <Route path="/admin/base-prices" element={<BasePrices />} />
@@ -549,6 +555,7 @@ const DynamicRouter = ({ menuItems }) => {
     // Fallback si no se encuentra ruta exacta
     if (!menuItem) {
         if (currentPath === '/consultas/ordenes') return <OrdersQueryView />;
+        if (currentPath === '/admin/helpdesk') return <HelpDeskAdminView />;
 
         // En lugar del fantasma, rebotamos al usuario silenciosamente de vuelta a su dashboard
         return <Navigate to="/" replace />;
@@ -582,6 +589,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/logistica/verificar-codigo') return <VerificarCodigoPage />;
     if (menuItem.Ruta === '/logistica/carga-deposito') return <CargaDepositoPage />;
     if (menuItem.Ruta === '/admin/duplicados') return <DuplicateClientsPage />;
+    if (menuItem.Ruta === '/admin/helpdesk' || menuItem.Ruta === '/atencion-cliente/helpdesk') return <HelpDeskAdminView />;
     if (menuItem.Ruta === '/logistica/precios') return <SpecialPrices />;
     if (menuItem.Ruta === '/admin/precios-base') return <BasePrices />;
     if (menuItem.Ruta === '/admin/perfiles-precio') return <PriceProfiles />;

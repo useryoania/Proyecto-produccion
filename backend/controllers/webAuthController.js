@@ -25,7 +25,7 @@ exports.login = asyncHandler(async (req, res) => {
     const result = await pool.request()
         .input('Val', sql.NVarChar, identifier.trim())
         .query(`
-            SELECT c.*, t.Nombre AS VendedorNombre, t.Cedula AS VendedorCedula, t.telefonoasesor AS VendedorTelefono, d.Nombre AS DepartamentoNombre
+            SELECT c.*, t.Nombre AS VendedorNombre, t.Cedula AS VendedorCedula, NULL AS VendedorTelefono, d.Nombre AS DepartamentoNombre
             FROM Clientes c
             LEFT JOIN dbo.Trabajadores t ON c.VendedorID = t.ID
             LEFT JOIN dbo.Departamentos d ON c.DepartamentoID = d.ID
@@ -118,7 +118,7 @@ exports.login = asyncHandler(async (req, res) => {
             role: 'WEB_CLIENT',
             codCliente: client.CodCliente,
             requireReset: mustReset,
-            idCliente: client.IDCliente || identifier,
+            idCliente: client.IDCliente ? client.IDCliente.trim() : (identifier ? identifier.trim() : ''),
             ruc: client.CioRuc,
             departamentoNombre: client.DepartamentoNombre || null,
             vendedorNombre: client.VendedorNombre || null,
@@ -286,7 +286,7 @@ exports.me = asyncHandler(async (req, res) => {
     const r = await pool.request()
         .input('ID', sql.Int, req.user.codCliente)
         .query(`
-            SELECT c.*, t.Nombre AS VendedorNombre, t.Cedula AS VendedorCedula, t.telefonoasesor AS VendedorTelefono, d.Nombre AS DepartamentoNombre
+            SELECT c.*, t.Nombre AS VendedorNombre, t.Cedula AS VendedorCedula, NULL AS VendedorTelefono, d.Nombre AS DepartamentoNombre
             FROM Clientes c
             LEFT JOIN dbo.Trabajadores t ON c.VendedorID = t.ID
             LEFT JOIN dbo.Departamentos d ON c.DepartamentoID = d.ID
@@ -299,7 +299,7 @@ exports.me = asyncHandler(async (req, res) => {
             success: true,
             user: {
                 id: u.CodCliente,
-                idCliente: u.IDCliente,
+                idCliente: u.IDCliente ? u.IDCliente.trim() : u.IDCliente,
                 email: u.Email,
                 name: u.Nombre,
                 company: u.NombreFantasia,
@@ -391,7 +391,7 @@ exports.updateProfile = asyncHandler(async (req, res) => {
             success: true,
             user: {
                 id: u.CodCliente,
-                idCliente: u.IDCliente,
+                idCliente: u.IDCliente ? u.IDCliente.trim() : u.IDCliente,
                 email: u.Email,
                 name: u.Nombre,
                 company: u.NombreFantasia,

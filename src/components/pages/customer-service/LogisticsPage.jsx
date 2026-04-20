@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../../context/AuthContext';
-import { logisticsService } from '../../../services/api';
+import { logisticsService } from '../../../services/modules/logisticsService';
 import api from '../../../services/apiClient';
 import CreateDispatchModal from '../../modals/CreateDispatchModal';
 import { Toaster, toast } from 'react-hot-toast';

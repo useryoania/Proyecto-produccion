@@ -222,6 +222,12 @@ const createOrden = async (req, res) => {
 
     const [CodigoOrden, CodigoClienteQR, NombreTrabajo, IdModo, IdProductoQR, Cantidad, CostoFinal] = parts;
 
+    // Validación estricta de estructura: Letras-Números (Ej: XSB-1234)
+    const orderFormatRegex = /^[A-Za-z]+-\d+$/;
+    if (!orderFormatRegex.test(CodigoOrden)) {
+      return res.status(400).json({ error: `Código de orden inválido o lectura de escáner incompleta (${CodigoOrden}). Se espera el formato LETRAS-NUMEROS.` });
+    }
+
     let cantidadDecimal = parseFloat(Cantidad.toString().replace(',', '.'));
     let costoFinalDecimal = parseFloat(CostoFinal.toString().replace(',', '.'));
 
@@ -762,6 +768,12 @@ const parseQROrden = async (req, res) => {
     }
 
     const [CodigoOrden, CodigoClienteQR, NombreTrabajo, IdModo, IdProductoQR, Cantidad, CostoFinal] = parts;
+
+    // Validación estricta de estructura: Letras-Números (Ej: XSB-1234)
+    const orderFormatRegex = /^[A-Za-z]+-\d+$/;
+    if (!orderFormatRegex.test(CodigoOrden)) {
+      return res.status(400).json({ valid: false, error: `Lectura de escáner incompleta (${CodigoOrden}). No respeta el formato LETRAS-NUMEROS.` });
+    }
 
     const pool = await getPool();
 

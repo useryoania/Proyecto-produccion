@@ -49,7 +49,7 @@ const limiter = rateLimit({
         return WHITELISTED_IPS.includes(clientIp);
     }
 });
-app.use(limiter);
+app.use('/api', limiter);
 
 app.use(cors());
 app.use(express.json({ limit: '200mb' }));
@@ -91,6 +91,7 @@ app.use('/api/web-auth', webAuthRoutes); // RUTAS AUTH CLIENTE WEB
 app.use('/api/web-orders', webOrdersRoutes); // RUTAS PEDIDOS CLIENTE WEB (DTF, Etc)
 app.use('/api/web-retiros', webRetirosRoutes);
 app.use('/api/web-content', require('./routes/webContentRoutes')); // RUTAS CONTENIDO WEB (Sidebar/Popup)
+app.use('/api/tickets', require('./routes/ticketsRoutes'));        // MÓDULO HELPDESK TICKETING
 app.use('/api/push', require('./routes/pushRoutes'));              // PUSH NOTIFICATIONS
 app.use('/api/nomenclators', nomenclatorsRoutes);
 app.use('/api/routes-config', require('./routes/routesConfigRoutes'));
