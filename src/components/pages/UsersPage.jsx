@@ -233,7 +233,7 @@ const UsersPage = () => {
                 </div>
 
                 {(editando || nuevoUsuario) && (
-                    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[1200] animate-in fade-in duration-200">
+                    <div className="fixed inset-0 bg-slate-900/60 flex items-center justify-center p-4 z-[1200] animate-in fade-in duration-200">
                         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100 flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
                             <div className="px-8 py-6 bg-slate-50 border-b border-slate-100 flex justify-between items-center shrink-0">
                                 <div>

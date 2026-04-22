@@ -100,6 +100,7 @@ const SysAdminPage = () => {
     const [tableFilter, setTableFilter] = useState('');
     const [clientErrors, setClientErrors] = useState({ errors: [], total: 0, recentCount: 0 });
     const [backupRunning, setBackupRunning] = useState(false);
+    const [syncRunning, setSyncRunning] = useState(false);
     const [auditEntries, setAuditEntries] = useState([]);
     const [auditFilter, setAuditFilter] = useState('');
     const logEndRef = useRef(null);
@@ -158,6 +159,18 @@ const SysAdminPage = () => {
         } catch (e) {
             Swal.fire('Error', e.response?.data?.error || e.message, 'error');
         } finally { setBackupRunning(false); }
+    };
+
+    const handleSyncPrices = async () => {
+        setSyncRunning(true);
+        try {
+            const { data } = await api.post('/admin/sync-precios');
+            Swal.fire('Sincronización Completada', `Insertados: ${data.inserted}, Actualizados: ${data.updated}, Total: ${data.synced} en ${data.duration}ms`, 'success');
+        } catch (e) {
+            Swal.fire('Error', e.response?.data?.error || 'Error al sincronizar precios', 'error');
+        } finally {
+            setSyncRunning(false);
+        }
     };
 
     const handleRestart = async () => {
@@ -318,6 +331,12 @@ const SysAdminPage = () => {
                 </div>
                 <div className="w-px h-8 bg-zinc-300" />
                 <div className="flex items-center gap-2">
+                    <button onClick={handleSyncPrices} disabled={syncRunning}
+                        className="p-2 disabled:opacity-50 transition-all hover:bg-zinc-100 rounded-xl flex items-center gap-2 font-bold text-xs"
+                        title="Sincronizar Precios de Sheets">
+                        {syncRunning ? <Loader2 size={18} className="animate-spin" style={{ color: '#00B4D8' }} /> : <RefreshCw size={18} style={{ color: '#00B4D8' }} />}
+                        <span className="hidden md:inline" style={{ color: '#00B4D8' }}>SYNC PRECIOS</span>
+                    </button>
                     <button onClick={runBackup} disabled={backupRunning}
                         className="p-2 disabled:opacity-50 transition-all hover:bg-zinc-100 rounded-xl"
                         title="Backup">

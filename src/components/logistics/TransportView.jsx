@@ -1,7 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../../services/api';
 import { logisticsService } from '../../services/modules/logisticsService';
 import { toast } from 'sonner';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+    Truck, RefreshCw, Search, Tag, Clock, Printer,
+    ListChecks, Navigation, History, FileDown, FileImage,
+    File, Camera, X, PackageCheck, Loader2
+} from 'lucide-react';
 
 const TransportView = () => {
     const [transports, setTransports] = useState([]);
@@ -28,8 +35,9 @@ const TransportView = () => {
     // MODAL STATE
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalData, setModalData] = useState(null);
-    const [modalFiles, setModalFiles] = useState([]); // [{id, file}]
-    const [bultoMappings, setBultoMappings] = useState({}); // { [bultoId]: { checked: boolean, fileId: 'none' | id } }
+    const [bultoMappings, setBultoMappings] = useState({}); // { [bultoId]: { checked: boolean, file: File | null } }
+    const [activeBultoId, setActiveBultoId] = useState(null);
+    const hiddenFileInputRef = useRef(null);
 
     const openUploadModal = async (transport) => {
         setLoading(true);
@@ -40,11 +48,10 @@ const TransportView = () => {
             const initialMap = {};
             details.items.forEach(i => {
                 if (i.BultoEstado !== 'ENTREGADO') {
-                    initialMap[i.BultoID] = { checked: false, fileId: 'none' };
+                    initialMap[i.BultoID] = { checked: false, file: null };
                 }
             });
             setBultoMappings(initialMap);
-            setModalFiles([{ id: Date.now(), file: null }]); // Start with 1 empty file slot
             setIsModalOpen(true);
         } catch (err) {
             console.error(err);
@@ -60,26 +67,18 @@ const TransportView = () => {
 
         setLoading(true);
         try {
-            // Group selected bultos by fileId
-            const groupsFromUI = {};
-            checkedBultos.forEach(([bultoId, map]) => {
-                if (!groupsFromUI[map.fileId]) groupsFromUI[map.fileId] = [];
-                groupsFromUI[map.fileId].push(bultoId);
-            });
-
-            // Send sequentially
-            for (const [fileId, bultosIds] of Object.entries(groupsFromUI)) {
+            // Send sequentially (1 file per bulto)
+            for (const [bultoId, map] of checkedBultos) {
                 const formData = new FormData();
-                if (fileId !== 'none') {
-                    const fileObj = modalFiles.find(mf => mf.id.toString() === fileId.toString())?.file;
-                    if (fileObj) formData.append('comprobante', fileObj);
+                if (map.file) {
+                    formData.append('comprobante', map.file);
                 }
-                formData.append('bultosIds', JSON.stringify(bultosIds));
+                formData.append('bultosIds', JSON.stringify([parseInt(bultoId)]));
 
                 await logisticsService.confirmDeliveryWithProof(modalData.transport.CodigoRemito, formData);
             }
 
-            toast.success('Entregas procesadas con éxito ✅');
+            toast.success('Entregas procesadas con Ã©xito âœ…');
             setIsModalOpen(false);
             loadData();
         } catch (error) {
@@ -90,6 +89,18 @@ const TransportView = () => {
         }
     };
 
+    const handleFileSelected = (e) => {
+        const file = e.target.files[0];
+        if (file && activeBultoId) {
+            setBultoMappings(prev => ({
+                ...prev,
+                [activeBultoId]: { ...prev[activeBultoId], checked: true, file }
+            }));
+        }
+        setActiveBultoId(null);
+        e.target.value = null; // reset para permitir subir el mismo archivo
+    };
+
     const handlePrint = async (transport) => {
         try {
             // Unconditionally fetch full data for Hoja de Despacho format
@@ -97,7 +108,7 @@ const TransportView = () => {
             const sel = resApi.data;
             
             if (!sel || sel.length === 0) {
-                return toast.warning('No se encontraron órdenes en este remito para imprimir.');
+                return toast.warning('No se encontraron Ã³rdenes en este remito para imprimir.');
             }
             
             const remitoCode = transport.CodigoRemito;
@@ -122,12 +133,12 @@ const TransportView = () => {
                     ? `<table style="width:100%;border-collapse:collapse;margin-top:6px;">
                         <thead><tr style="background:#f8fafc;">
                             <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">#</th>
-                            <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">Cód. Orden</th>
+                            <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">CÃ³d. Orden</th>
                             <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">Estado</th>
                             <th style="padding:5px 8px;font-size:11px;text-align:right;color:#64748b;border-bottom:1px solid #e2e8f0;">Importe</th>
                         </tr></thead><tbody>${ordenesList}</tbody>
                     </table>`
-                    : '<span style="font-size:12px;color:#aaa;">Sin órdenes registradas</span>';
+                    : '<span style="font-size:12px;color:#aaa;">Sin Ã³rdenes registradas</span>';
 
                 return `<tr style="border-bottom:1px solid #e2e8f0;vertical-align:top;">
                     <td style="padding:10px 8px;font-size:13px;font-weight:900;color:#1e293b;white-space:nowrap;">${enc.ordenDeRetiro}</td>
@@ -140,7 +151,7 @@ const TransportView = () => {
                         ${enc.departamentoEnvio ? `<div style="font-size:12px;"><strong>Dpto:</strong> ${enc.departamentoEnvio}</div>` : ''}
                         ${enc.localidadEnvio ? `<div style="font-size:12px;"><strong>Localidad:</strong> ${enc.localidadEnvio}</div>` : ''}
                         ${enc.direccionEnvio ? `<div style="font-size:12px;"><strong>Dir:</strong> ${enc.direccionEnvio}</div>` : ''}
-                        ${(!enc.departamentoEnvio && !enc.localidadEnvio && !enc.direccionEnvio) ? `<span style="color:#aaa;font-size:11px;">—</span>` : ''}
+                        ${(!enc.departamentoEnvio && !enc.localidadEnvio && !enc.direccionEnvio) ? `<span style="color:#aaa;font-size:11px;">â€”</span>` : ''}
                     </td>
                     <td style="padding:10px 8px;">${ordTable}</td>
                     <td style="padding:10px 8px;text-align:center;">
@@ -163,7 +174,7 @@ const TransportView = () => {
                             <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Retiro</th>
                             <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Cliente</th>
                             <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Destino</th>
-                            <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Órdenes</th>
+                            <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Ã“rdenes</th>
                             <th style="padding:7px 8px;font-size:11px;text-align:center;color:#334155;border-bottom:2px solid #e2e8f0;">Pago</th>
                         </tr></thead>
                         <tbody>${ordenes.map(renderFila).join('')}</tbody>
@@ -188,7 +199,7 @@ const TransportView = () => {
                         <div style="flex:1;text-align:center;">
                             <div style="border-top:1.5px solid #334155;padding-top:8px;margin-top:50px;">
                                 <div style="font-size:13px;font-weight:700;">Confirma Comprobante</div>
-                                <div style="font-size:11px;color:#64748b;margin-top:2px;">Aclaración y sello</div>
+                                <div style="font-size:11px;color:#64748b;margin-top:2px;">AclaraciÃ³n y sello</div>
                             </div>
                         </div>
                     </div>
@@ -205,7 +216,7 @@ const TransportView = () => {
                 <div style="display:flex;align-items:center;gap:20px;">
                     <div>
                         <div style="font-size:24px;font-weight:900;color:#0070bc;letter-spacing:1px;">USER</div>
-                        <div style="font-size:15px;font-weight:700;color:#475569;">Logística &mdash; Hoja de Despacho</div>
+                        <div style="font-size:15px;font-weight:700;color:#475569;">LogÃ­stica &mdash; Hoja de Despacho</div>
                     </div>
                     ${remitoCode ?
                     `<div style="text-align:center;border-left:2px solid #e2e8f0;padding-left:20px;margin-left:5px;">
@@ -221,7 +232,7 @@ const TransportView = () => {
             ${seccionesHtml}
             ${firmasHtml}
             <div style="margin-top:24px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center;">
-                USER &mdash; Sistema de Gestión Logística &mdash; Documento interno
+                USER &mdash; Sistema de GestiÃ³n LogÃ­stica &mdash; Documento interno
             </div>
             <div style="text-align:center;margin-top:16px;">
                 <button onclick="window.print()" style="background:#0070bc;color:#fff;border:none;padding:9px 30px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">&#128438; Imprimir Reporte</button>
@@ -257,96 +268,112 @@ const TransportView = () => {
     });
 
     return (
-        <div className="p-6 h-full overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h2 className="text-xl font-bold text-slate-800">Transporte en Curso</h2>
-                    <p className="text-slate-500 text-sm">Mercadería en poder de transportistas</p>
+        <div className="p-4 md:p-6 h-full overflow-y-auto">
+
+            {/* Header */}
+            <div className="flex flex-col gap-3 mb-5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-brand-cyan/10 flex items-center justify-center shrink-0">
+                        <Truck size={20} className="text-brand-cyan" />
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-black text-slate-800">Transporte en Curso</h2>
+                        <p className="text-slate-500 text-sm">MercaderÃ­a en poder de transportistas</p>
+                    </div>
                 </div>
-                <div className="flex gap-2">
-                    <div className="bg-slate-100 p-1 rounded-lg flex text-sm font-bold">
+                <div className="flex items-center gap-2">
+                    {/* Filtro En Viaje / Todos */}
+                    <div className="bg-slate-100 p-1 rounded-lg flex text-sm font-bold flex-1 sm:flex-none">
                         <button
                             onClick={() => setFilterStatus('ACTIVE')}
-                            className={`px-3 py-1 rounded transition-all ${filterStatus === 'ACTIVE' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            className={`flex-1 sm:flex-none px-3 py-1.5 rounded transition-all ${filterStatus === 'ACTIVE' ? 'bg-white shadow text-brand-cyan' : 'text-slate-500 hover:text-slate-700'}`}
                         >
                             En Viaje
                         </button>
                         <button
                             onClick={() => setFilterStatus('ALL')}
-                            className={`px-3 py-1 rounded transition-all ${filterStatus === 'ALL' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                            className={`flex-1 sm:flex-none px-3 py-1.5 rounded transition-all ${filterStatus === 'ALL' ? 'bg-white shadow text-brand-cyan' : 'text-slate-500 hover:text-slate-700'}`}
                         >
                             Todos
                         </button>
                     </div>
-                    <button onClick={loadData} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg">
-                        <i className={`fa-solid fa-rotate ${loading ? 'fa-spin' : ''}`}></i>
+                    <button onClick={loadData} className="p-2 text-brand-cyan hover:bg-brand-cyan/10 rounded-lg shrink-0">
+                        <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     </button>
                 </div>
             </div>
 
             {/* Search */}
-            <div className="mb-6 relative max-w-sm">
-                <i className="fa-solid fa-search absolute left-3 top-3 text-slate-400"></i>
+            <div className="mb-5 relative w-full">
+                <Search size={16} className="absolute left-3 top-3.5 text-slate-400" />
                 <input
                     type="text"
                     placeholder="Buscar por remito, chofer..."
-                    className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-100 outline-none"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-cyan/20 focus:border-brand-cyan outline-none text-sm"
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
                 />
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
+            {/* Cards */}
+            <div className="flex flex-col gap-3">
                 {loading ? (
                     <div className="text-center py-10 text-slate-400">Cargando...</div>
                 ) : filtered.length === 0 ? (
-                    <div className="text-center py-10 bg-slate-50 rounded-xl border border-dashed border-slate-300">
-                        <i className="fa-solid fa-road text-4xl text-slate-300 mb-3"></i>
-                        <p className="text-slate-500">No hay vehículos registrados con este filtro.</p>
+                    <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                        <Navigation size={40} className="text-slate-300 mb-3 mx-auto" />
+                        <p className="text-slate-500 font-medium">No hay vehÃ­culos registrados con este filtro.</p>
                     </div>
                 ) : (
                     filtered.map(t => (
-                        <div key={t.EnvioID} className={`bg-white p-4 rounded-xl shadow-sm border flex justify-between items-center hover:shadow-md transition-shadow 
-                            ${t.Estado.includes('RECIBIDO') ? 'border-slate-200 opacity-75' : 'border-indigo-100'}`}>
-                            <div>
-                                <div className="flex items-center gap-3 mb-1">
-                                    <span className="font-bold text-lg text-slate-800 bg-indigo-50 px-2 rounded border border-indigo-100">{t.CodigoRemito}</span>
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded border uppercase
-                                        ${t.Estado === 'ESPERANDO_RETIRO' ? 'bg-amber-50 text-amber-600 border-amber-200' :
-                                            t.Estado.includes('RECIBIDO') ? 'bg-slate-100 text-slate-500 border-slate-200' :
-                                                'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
-                                        {t.Estado.replace('_', ' ')}
-                                    </span>
-                                </div>
-                                <div className="text-sm text-slate-600 mt-2">
-                                    <i className="fa-solid fa-user-tag text-slate-400 mr-2"></i>
-                                    {/* Mostrar solo la parte del transportista si es muy larga la obs */}
-                                    <span className="font-medium text-slate-800">{t.Observaciones}</span>
-                                </div>
-                                <div className="text-xs text-slate-400 mt-1">
-                                    <i className="fa-solid fa-clock mr-1"></i>
-                                    Salida: {new Date(t.Fecha).toLocaleString()} | {t.TotalBultos} Bultos
+                        <div
+                            key={t.EnvioID}
+                            className={`bg-white rounded-xl shadow-sm border p-4 hover:shadow-md transition-shadow
+                                ${t.Estado.includes('RECIBIDO') ? 'border-slate-200 opacity-75' : 'border-brand-cyan/20'}`}
+                        >
+                            {/* Top row: cÃ³digo + badge */}
+                            <div className="flex items-start gap-3 mb-3">
+                                <Truck size={20} className="text-brand-cyan/30 mt-0.5 shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                                        <span className="font-black text-base text-brand-cyan bg-brand-cyan/5 px-2 py-0.5 rounded border border-brand-cyan/20">
+                                            {t.CodigoRemito}
+                                        </span>
+                                        <span className={`text-xs font-bold px-2 py-0.5 rounded border uppercase
+                                            ${t.Estado === 'ESPERANDO_RETIRO' ? 'bg-amber-50 text-amber-600 border-amber-200' :
+                                                t.Estado.includes('RECIBIDO') ? 'bg-slate-100 text-slate-500 border-slate-200' :
+                                                    'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+                                            {t.Estado.replace(/_/g, ' ')}
+                                        </span>
+                                    </div>
+                                    <div className="text-sm text-slate-700 font-medium truncate flex items-center gap-1.5">
+                                        <Tag size={13} className="text-slate-400 shrink-0" />
+                                        {t.Observaciones}
+                                    </div>
+                                    <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
+                                        <Clock size={11} className="shrink-0" />
+                                        {new Date(t.Fecha).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                        &nbsp;Â·&nbsp;{t.TotalBultos} bulto{t.TotalBultos !== 1 ? 's' : ''}
+                                    </div>
                                 </div>
                             </div>
 
-                            <div className="text-right flex flex-col items-end gap-2">
-                                <div className="text-2xl font-black text-slate-200">
-                                    <i className="fa-solid fa-truck-fast"></i>
-                                </div>
+                            {/* Actions row */}
+                            <div className="flex gap-2 border-t border-slate-100 pt-3">
                                 <button
                                     onClick={() => handlePrint(t)}
-                                    className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1 rounded-full font-bold transition-colors flex items-center gap-1"
+                                    className="flex-1 text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-xl font-bold transition-colors flex items-center justify-center gap-1.5"
                                 >
-                                    <i className="fa-solid fa-print"></i>
+                                    <Printer size={13} />
                                     Reimprimir
                                 </button>
                                 {t.Estado !== 'ENTREGADO' && (
                                     <button
                                         onClick={() => openUploadModal(t)}
-                                        className="text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-700 px-3 py-1 rounded-full font-bold transition-colors flex items-center gap-1 mt-2"
+                                        className="flex-1 text-xs bg-brand-cyan/10 hover:bg-brand-cyan/20 text-brand-cyan px-3 py-2 rounded-xl font-bold transition-colors flex items-center justify-center gap-1.5"
                                         title="Seleccionar bultos y subir comprobante"
                                     >
-                                        <i className="fa-solid fa-list-check"></i>
+                                        <ListChecks size={13} />
                                         Cerrar / Upload
                                     </button>
                                 )}
@@ -357,193 +384,200 @@ const TransportView = () => {
             </div>
 
             {/* UPLOAD PROOF MODAL */}
-            {isModalOpen && modalData && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh]">
-                        <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                            <h3 className="font-bold text-lg text-slate-800">
-                                <i className="fa-solid fa-truck-ramp-box text-emerald-600 mr-2"></i>
-                                Gestionar Entregas - {modalData.transport.CodigoRemito}
-                            </h3>
-                            <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                                <i className="fa-solid fa-xmark text-lg"></i>
+            {createPortal(
+                <AnimatePresence>
+                {isModalOpen && modalData && (
+                    <motion.div
+                        key="modal-backdrop"
+                        className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                    >
+                        <div className="absolute inset-0 bg-slate-900/80" onClick={() => setIsModalOpen(false)} />
+                        <motion.div
+                            className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh]"
+                            initial={{ y: '100%', opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            exit={{ y: '60%', opacity: 0 }}
+                            transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+                        >
+
+                        {/* Header */}
+                        <div className="bg-gradient-to-r from-brand-cyan to-[#005080] px-5 py-4 flex justify-between items-center shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center">
+                                    <PackageCheck size={18} className="text-white" />
+                                </div>
+                                <div>
+                                    <p className="font-black text-white text-base leading-tight">Gestionar Entregas</p>
+                                    <p className="text-white/70 text-xs font-medium">{modalData.transport.CodigoRemito}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setIsModalOpen(false)}
+                                className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/25 text-white transition-colors"
+                            >
+                                <X size={16} />
                             </button>
                         </div>
 
-                        <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
-                            {/* COL ARCHIVOS */}
-                            <div className="w-full md:w-1/3 bg-slate-50 p-5 border-r border-slate-200 overflow-y-auto">
+                        {/* Body */}
+                        <div className="flex-1 overflow-y-auto p-4 md:p-5">
 
-                                {/* HISTORIAL DE ARCHIVOS YA SUBIDOS */}
-                                {(() => {
-                                    const prevPaths = Array.from(new Set(modalData.items.filter(i => i.ComprobantePath).map(i => i.ComprobantePath)));
-                                    if (prevPaths.length === 0) return null;
-                                    return (
-                                        <div className="mb-6">
-                                            <h4 className="font-bold text-slate-700 text-sm mb-2"><i className="fa-solid fa-clock-rotate-left mr-1"></i> Subidos Previamente</h4>
+                            {/* HISTORIAL DE ARCHIVOS YA SUBIDOS */}
+                            {(() => {
+                                const prevPaths = Array.from(new Set(modalData.items.filter(i => i.ComprobantePath).map(i => i.ComprobantePath)));
+                                if (prevPaths.length === 0) return null;
+                                return (
+                                    <div className="mb-5 bg-brand-cyan/5 p-4 rounded-xl border border-brand-cyan/20">
+                                        <h4 className="font-bold text-brand-cyan text-xs uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                                            <History size={13} /> Comprobantes ya subidos en este remito
+                                        </h4>
+                                        <div className="flex flex-wrap gap-2">
                                             {prevPaths.map(path => {
                                                 const fileName = path.split('/').pop();
                                                 const bultosAsociados = modalData.items.filter(i => i.ComprobantePath === path);
                                                 return (
-                                                    <div key={path} className="bg-white p-2.5 rounded-lg border border-slate-200 mb-2 shadow-sm">
-                                                        <a href={`http://localhost:5038${path}`} target="_blank" rel="noreferrer" className="text-xs font-bold text-indigo-600 hover:text-indigo-800 truncate block bg-indigo-50 p-1.5 rounded" title={fileName}>
-                                                            <i className="fa-solid fa-file-arrow-down mr-1"></i> {fileName}
+                                                    <div key={path} className="bg-white p-2.5 flex-1 min-w-[220px] rounded-lg border border-brand-cyan/20 shadow-sm">
+                                                        <a href={`http://localhost:5038${path}`} target="_blank" rel="noreferrer"
+                                                            className="text-xs font-bold text-brand-cyan hover:opacity-80 truncate flex items-center gap-1 bg-brand-cyan/5 p-1.5 rounded mb-2" title={fileName}>
+                                                            <FileDown size={12} /> {fileName}
                                                         </a>
-                                                        <div className="mt-2 flex flex-wrap gap-1">
+                                                        <div className="flex flex-wrap gap-1">
                                                             {bultosAsociados.map(b => (
-                                                                <span key={b.BultoID} className="bg-slate-100 border border-slate-200 text-slate-500 text-[10px] px-1.5 py-0.5 rounded font-bold">{b.CodigoEtiqueta}</span>
+                                                                <span key={b.BultoID} className="bg-brand-cyan/10 border border-brand-cyan/20 text-brand-cyan text-[10px] px-1.5 py-0.5 rounded font-bold">{b.CodigoEtiqueta}</span>
                                                             ))}
                                                         </div>
                                                     </div>
                                                 )
                                             })}
                                         </div>
-                                    )
-                                })()}
+                                    </div>
+                                )
+                            })()}
 
-                                <div className="flex justify-between items-center mb-4 pt-2 border-t border-slate-200">
-                                    <h4 className="font-bold text-slate-700">Comprobantes Nuevos</h4>
-                                    <button
-                                        onClick={() => setModalFiles([...modalFiles, { id: Date.now(), file: null }])}
-                                        className="text-[11px] bg-indigo-100 text-indigo-700 px-2 py-1 rounded font-bold hover:bg-indigo-200"
-                                    >
-                                        + Agregar
-                                    </button>
-                                </div>
-                                <div className="space-y-4">
-                                    {modalFiles.map((mf, index) => (
-                                        <div key={mf.id} className="bg-white p-3 rounded-lg border shadow-sm relative">
-                                            {modalFiles.length > 1 && (
-                                                <button
-                                                    onClick={() => {
-                                                        const newFiles = modalFiles.filter(f => f.id !== mf.id);
-                                                        setModalFiles(newFiles);
-                                                        const newMappings = { ...bultoMappings };
-                                                        Object.keys(newMappings).forEach(k => {
-                                                            if (newMappings[k].fileId === mf.id) newMappings[k].fileId = 'none';
-                                                        });
-                                                        setBultoMappings(newMappings);
-                                                    }}
-                                                    className="absolute top-2 right-2 text-slate-400 hover:text-red-500"
-                                                >
-                                                    <i className="fa-solid fa-trash-can"></i>
-                                                </button>
-                                            )}
-                                            <label className="text-xs font-bold text-indigo-600 mb-1 block">Archivo {index + 1}</label>
-                                            <input
-                                                type="file"
-                                                accept="image/*,application/pdf"
-                                                onChange={e => {
-                                                    const newArr = [...modalFiles];
-                                                    const idx = newArr.findIndex(x => x.id === mf.id);
-                                                    newArr[idx].file = e.target.files[0];
-                                                    setModalFiles(newArr);
-                                                }}
-                                                className="block w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-[11px] file:font-bold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200 cursor-pointer"
-                                            />
-                                        </div>
-                                    ))}
-                                    {modalFiles.length === 0 && (
-                                        <p className="text-xs text-slate-400 italic text-center py-4">Sin comprobantes asociados.</p>
-                                    )}
-                                </div>
+                            {/* InstrucciÃ³n */}
+                            <div className="mb-4">
+                                <h4 className="font-black text-slate-800 text-base">Bultos de esta tanda</h4>
+                                <p className="text-sm text-slate-500 mt-0.5">SeleccionÃ¡ los bultos entregados. Doble click para adjuntar foto de comprobante.</p>
                             </div>
 
-                            {/* COL BULTOS */}
-                            <div className="w-full md:w-2/3 p-5 overflow-y-auto">
-                                <h4 className="font-bold text-slate-700 mb-2">2. Bultos de esta tanda</h4>
-                                <p className="text-xs text-slate-500 mb-4">Marcá los entregados y asigales a qué archivo de la izquierda corresponden.</p>
+                            {/* HIDDEN CAMERA INPUT */}
+                            <input
+                                type="file"
+                                ref={hiddenFileInputRef}
+                                style={{ display: 'none' }}
+                                accept="image/*,application/pdf"
+                                capture="environment"
+                                onChange={handleFileSelected}
+                            />
 
-                                <div className="space-y-2">
-                                    {modalData.items.map(item => {
-                                        const isDelivered = item.BultoEstado === 'ENTREGADO';
+                            {/* BULTO CARDS */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {modalData.items.map(item => {
+                                    const isDelivered = item.BultoEstado === 'ENTREGADO';
 
-                                        if (isDelivered) {
-                                            const fname = item.ComprobantePath ? item.ComprobantePath.split('/').pop() : 'Sin archivo';
-                                            return (
-                                                <div key={item.BultoID} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-lg border bg-slate-50 opacity-60">
-                                                    <div>
-                                                        <p className="font-bold text-sm text-slate-500">{item.CodigoEtiqueta}</p>
-                                                        <p className="text-xs text-slate-400">{item.Descripcion || 'Sin desc'}</p>
-                                                    </div>
-                                                    <div className="flex flex-col items-end mt-2 sm:mt-0">
-                                                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-1 rounded uppercase mb-1">Ya Entregado</span>
-                                                        <span className="text-[10px] text-slate-400 font-bold break-all" title={fname}><i className="fa-solid fa-file"></i> {fname}</span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        }
-
-                                        const map = bultoMappings[item.BultoID] || { checked: false, fileId: 'none' };
-
+                                    if (isDelivered) {
+                                        const fname = item.ComprobantePath ? item.ComprobantePath.split('/').pop() : 'Sin archivo';
                                         return (
-                                            <div key={item.BultoID} className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-lg border transition-all ${map.checked ? 'border-emerald-300 bg-emerald-50/30 shadow-sm' : 'bg-white hover:border-slate-300'}`}>
-                                                <label className="flex items-center gap-3 cursor-pointer flex-1">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={map.checked}
-                                                        onChange={(e) => {
-                                                            const newMap = { ...bultoMappings };
-                                                            const isChecked = e.target.checked;
-                                                            // si se clickea y no tenia archivo, asignar automatico al primero si hay
-                                                            let fId = map.fileId;
-                                                            if (isChecked && fId === 'none' && modalFiles.length > 0) {
-                                                                fId = modalFiles[0].id;
-                                                            }
-                                                            newMap[item.BultoID] = { ...map, checked: isChecked, fileId: fId };
-                                                            setBultoMappings(newMap);
-                                                        }}
-                                                        className="w-5 h-5 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500"
-                                                    />
-                                                    <div>
-                                                        <p className={`font-bold text-sm ${map.checked ? 'text-emerald-700' : 'text-slate-700'}`}>{item.CodigoEtiqueta}</p>
-                                                        <p className="text-xs text-slate-500">{item.Descripcion || 'Sin desc'}</p>
-                                                    </div>
-                                                </label>
-
-                                                {/* SELECTOR DE ARCHIVO */}
-                                                <div className="mt-3 sm:mt-0 w-full sm:w-48 ml-8 sm:ml-0">
-                                                    <select
-                                                        disabled={!map.checked}
-                                                        value={map.fileId}
-                                                        onChange={(e) => {
-                                                            const newMap = { ...bultoMappings };
-                                                            newMap[item.BultoID] = { ...map, fileId: e.target.value === 'none' ? 'none' : e.target.value };
-                                                            setBultoMappings(newMap);
-                                                        }}
-                                                        className="w-full text-[11px] p-2 rounded-md border-slate-200 bg-white disabled:bg-slate-100 disabled:text-slate-400 focus:border-emerald-500 focus:ring-emerald-500 font-bold"
-                                                    >
-                                                        <option value="none" className="text-slate-400">--- Sin Archivo ---</option>
-                                                        {modalFiles.map((mf, i) => (
-                                                            <option key={mf.id} value={mf.id} className="text-slate-700">
-                                                                Archivo {i + 1} {mf.file ? `(${mf.file.name})` : ''}
-                                                            </option>
-                                                        ))}
-                                                    </select>
+                                            <div key={item.BultoID} className="flex flex-col justify-between p-4 rounded-xl border border-slate-200 bg-slate-50 opacity-60">
+                                                <div>
+                                                    <p className="font-bold text-slate-500 text-sm">{item.CodigoEtiqueta}</p>
+                                                    <p className="text-xs text-slate-400">{item.Descripcion || 'Sin desc'}</p>
+                                                </div>
+                                                <div className="flex flex-col items-start mt-2 gap-1">
+                                                    <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full uppercase">Ya Entregado</span>
+                                                    <span className="text-[11px] text-slate-400 font-bold break-all flex items-center gap-1" title={fname}><File size={11} /> {fname}</span>
                                                 </div>
                                             </div>
                                         );
-                                    })}
-                                </div>
+                                    }
+
+                                    const map = bultoMappings[item.BultoID] || { checked: false, file: null };
+
+                                    return (
+                                        <div
+                                            key={item.BultoID}
+                                            onDoubleClick={() => {
+                                                setActiveBultoId(item.BultoID);
+                                                hiddenFileInputRef.current?.click();
+                                            }}
+                                            className={`flex flex-col justify-between p-4 rounded-xl border transition-all cursor-pointer
+                                                ${map.checked
+                                                    ? 'border-brand-cyan bg-brand-cyan/5 shadow-md ring-1 ring-brand-cyan/30'
+                                                    : 'bg-white border-slate-200 hover:border-brand-cyan/30 shadow-sm'}`}
+                                        >
+                                            <label className="flex items-center gap-3 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={map.checked}
+                                                    onChange={(e) => {
+                                                        const isChecked = e.target.checked;
+                                                        setBultoMappings(prev => ({
+                                                            ...prev,
+                                                            [item.BultoID]: { ...map, checked: isChecked }
+                                                        }));
+                                                    }}
+                                                    className="w-5 h-5 rounded accent-brand-cyan border-slate-300"
+                                                />
+                                                <div>
+                                                    <p className={`font-black text-base leading-tight ${map.checked ? 'text-brand-cyan' : 'text-slate-700'}`}>{item.CodigoEtiqueta}</p>
+                                                    <p className="text-xs text-slate-500">{item.Descripcion || 'Sin desc'}</p>
+                                                </div>
+                                            </label>
+
+                                            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                                                {map.file ? (
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                        <FileImage size={14} className="text-brand-cyan shrink-0" />
+                                                        <span className="text-xs font-bold text-brand-cyan truncate">{map.file.name}</span>
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-xs text-slate-400">Sin foto adjunta</span>
+                                                )}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setActiveBultoId(item.BultoID);
+                                                        hiddenFileInputRef.current?.click();
+                                                    }}
+                                                    className={`shrink-0 text-xs px-3 py-1.5 rounded-lg font-bold transition-colors flex items-center gap-1.5
+                                                        ${map.file
+                                                            ? 'bg-brand-cyan/10 hover:bg-brand-cyan/20 text-brand-cyan'
+                                                            : 'bg-slate-100 hover:bg-slate-200 text-slate-600'}}`}
+                                                >
+                                                    {map.file ? <RefreshCw size={12} /> : <Camera size={12} />}
+                                                    {map.file ? 'Cambiar' : 'Foto'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
 
-                        <div className="p-4 border-t bg-slate-50 flex justify-end gap-2">
-                            <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-lg font-bold text-slate-600 hover:bg-slate-200 text-sm">
+                        {/* Footer */}
+                        <div className="p-4 border-t bg-slate-50 flex gap-3 shrink-0">
+                            <button onClick={() => setIsModalOpen(false)} className="flex-1 sm:flex-none px-5 py-2.5 rounded-xl font-bold text-slate-600 hover:bg-slate-200 text-sm transition-colors border border-slate-200">
                                 Cancelar
                             </button>
                             <button
                                 onClick={handleConfirmDelivery}
                                 disabled={Object.values(bultoMappings).filter(m => m.checked).length === 0 || loading}
-                                className="px-6 py-2 rounded-lg font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-2 text-sm"
+                                className="flex-1 px-6 py-2.5 rounded-xl font-black text-white bg-brand-cyan hover:bg-[#005080] disabled:opacity-50 flex items-center justify-center gap-2 text-sm transition-colors shadow-md"
                             >
-                                {loading && <i className="fa-solid fa-spinner fa-spin"></i>}
-                                Procesar Seleccionados
+                                {loading && <Loader2 size={14} className="animate-spin" />}
+                                Procesar {Object.values(bultoMappings).filter(m => m.checked).length > 0 ? `(${Object.values(bultoMappings).filter(m => m.checked).length})` : ''}
                             </button>
                         </div>
-                    </div>
-                </div>
-            )}
+                        </motion.div>
+                    </motion.div>
+                )}
+                </AnimatePresence>
+            , document.body)}
+
         </div>
     );
 };

@@ -26,6 +26,7 @@ const RegisterPage = () => {
     const [vendedores, setVendedores] = useState([]);
     const [selectedVendedorId, setSelectedVendedorId] = useState('');
     const [selectedVendedorName, setSelectedVendedorName] = useState('');
+    const [isModalOpen, setIsModalOpen] = useState(false);
     const [newsletter, setNewsletter] = useState(true);
     const navigate = useNavigate();
 
@@ -184,6 +185,8 @@ const RegisterPage = () => {
 
                 let seconds = 10;
                 const isMobile = window.innerWidth < 768;
+                document.body.style.overflow = 'hidden'; // Ocultar scroll subyacente
+                setIsModalOpen(true);
                 const swalResult = Swal.fire({
                     title: '¡Ya casi terminás!',
                     html: `
@@ -255,6 +258,8 @@ const RegisterPage = () => {
                 });
 
                 swalResult.then((result) => {
+                    document.body.style.overflow = 'auto'; // Restaurar scroll por si acaso (aunque navigate lo reescriba)
+                    setIsModalOpen(false);
                     if (result.isConfirmed) {
                         navigate('/login');
                     }
@@ -283,10 +288,16 @@ const RegisterPage = () => {
             <ParticlesCanvas />
 
             <div className="flex-1 flex flex-col p-4 md:p-6 pb-12 z-10 w-full relative">
+                {/* Estilos dinámicos para pausar hover/keyframes */}
+                <style>{`
+                    .login-gradient-border.modal-open-freeze {
+                        animation-play-state: paused !important;
+                    }
+                `}</style>
                 {/* Card wrapper with static CMY border instead of animated gradient to save GPU */}
-                <div className="relative w-full md:max-w-4xl z-10 mx-auto my-auto md:rounded-3xl md:p-[2px] md:bg-gradient-to-br md:from-[#00AEEF] md:via-[#EC008C] md:to-[#FFF200]">
+                <div className={`relative w-full md:max-w-4xl z-10 mx-auto my-auto rounded-3xl p-[2px] login-gradient-border shadow-2xl shadow-black/50 ${isModalOpen ? 'modal-open-freeze' : ''}`}>
                     {/* Contenedor interior oscuro para simular el borde */}
-                    <div className="relative bg-custom-dark p-6 md:px-8 md:py-8 md:rounded-[22px] w-full overflow-hidden">
+                    <div className="relative bg-custom-dark p-6 md:px-8 md:py-8 rounded-[22px] w-full overflow-hidden">
                         <div className="mb-6 text-center">
                             <h2 className="text-2xl font-black text-white tracking-tight">Crear cuenta</h2>
                             <p className="text-sm font-medium text-zinc-400 mt-1">Industrializá tu producción hoy mismo.</p>
@@ -354,13 +365,15 @@ const RegisterPage = () => {
                                             }
                                             // Build HTML grid with photos
                                             const isMobile = window.innerWidth < 768;
-                                            const grid = vendedores.map(v => {
+                                            const grid = vendedores.map((v, idx) => {
                                                 const imgUrl = `/assets/images/asesores/${v.Cedula}.webp`;
                                                 const firstName = v.Nombre.split(' ')[0];
                                                 if (isMobile) {
-                                                    return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:12px 8px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;">
-                                                        <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:86px;height:86px;border-radius:50%;object-fit:cover" /><div style="width:86px;height:86px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:28px">${firstName.charAt(0)}</div>
-                                                        <span style="font-weight:600;color:#f4f4f5;font-size:15px;text-transform:uppercase;letter-spacing:0.05em;text-align:center">${firstName}</span>
+                                                    const staggerStyle = idx % 2 !== 0 ? 'transform: translateY(96px);' : '';
+                                                    return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 4px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;${staggerStyle}">
+                                                        <img src="${imgUrl}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" style="width:120px;height:120px;border-radius:50%;object-fit:cover;box-shadow:0 8px 20px -8px rgba(0,0,0,0.8)" />
+                                                        <div style="width:120px;height:120px;border-radius:50%;background:#006E97;display:none;align-items:center;justify-content:center;color:#f4f4f5;font-weight:bold;font-size:40px;box-shadow:0 8px 20px -8px rgba(0,0,0,0.8)">${firstName.charAt(0)}</div>
+                                                        <span style="font-weight:700;color:#f4f4f5;font-size:16px;text-transform:uppercase;letter-spacing:0.05em;text-align:center">${firstName}</span>
                                                     </div>`;
                                                 } else {
                                                     return `<div class="swal-asesor" data-id="${v.ID}" data-nombre="${v.Nombre}" style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px 16px;border-radius:16px;cursor:pointer;transition:all 0.2s;background:transparent;flex:1;min-width:140px;max-width:180px;">
@@ -372,10 +385,12 @@ const RegisterPage = () => {
                                             const separator = '';
                                             const gridHtml = grid.join(separator);
 
+                                            document.body.style.overflow = 'hidden'; // Ocultar scroll subyacente durante el modal
+                                            setIsModalOpen(true);
                                             const selected = await new Promise((resolve) => {
                                                 Swal.fire({
                                                     title: 'SELECCIONÁ TU ASESOR',
-                                                    html: `<div style="${isMobile ? 'display:grid;grid-template-columns:1fr 1fr;justify-items:center;gap:24px;' : 'display:flex;flex-wrap:wrap;justify-content:center;gap:12px;'}padding:8px">${gridHtml}</div>`,
+                                                    html: `<div style="${isMobile ? 'display:grid;grid-template-columns:auto auto;justify-content:center;justify-items:center;row-gap:20px;column-gap:24px;padding-bottom:96px;transform:translateY(-50px);' : 'display:flex;flex-wrap:wrap;justify-content:center;gap:12px;'}padding:8px">${gridHtml}</div>`,
                                                     showConfirmButton: false,
                                                     showCancelButton: false,
                                                     showCloseButton: isMobile,
@@ -394,7 +409,7 @@ const RegisterPage = () => {
                                                             popup.style.top = '0';
                                                             popup.style.left = '0';
                                                             popup.style.width = '100vw';
-                                                            popup.style.height = '100vh';
+                                                            popup.style.height = '100dvh';
                                                             popup.style.display = 'flex';
                                                             popup.style.flexDirection = 'column';
                                                             const htmlContainer = popup.querySelector('.swal2-html-container');
@@ -428,12 +443,15 @@ const RegisterPage = () => {
                                                             el.addEventListener('mouseenter', () => { el.style.background = '#2a2a2a'; });
                                                             el.addEventListener('mouseleave', () => { el.style.background = 'transparent'; });
                                                             el.addEventListener('click', () => {
+                                                                document.body.style.overflow = 'auto';
                                                                 resolve({ id: el.dataset.id, nombre: el.dataset.nombre });
                                                                 Swal.close();
                                                             });
                                                         });
                                                     },
                                                 }).then((result) => {
+                                                    document.body.style.overflow = 'auto';
+                                                    setIsModalOpen(false);
                                                     if (result.dismiss) resolve(null);
                                                 });
                                             });

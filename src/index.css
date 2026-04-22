@@ -29,7 +29,24 @@ body {
   from { transform: translateY(-100%); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+@keyframes slideInRight {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
 @keyframes slideOutRight {
   from { transform: translateY(0); opacity: 1; }
   to { transform: translateY(-100%); opacity: 0; }
+}
+
+/* Login modal — animated gradient border */
+@keyframes gradient-spin {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.login-gradient-border {
+  background: linear-gradient(270deg, #00AEEF, #EC008C, #FFF200, #EC008C, #00AEEF);
+  background-size: 300% 300%;
+  animation: gradient-spin 4s ease infinite;
 }

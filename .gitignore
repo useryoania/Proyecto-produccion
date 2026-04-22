@@ -31,6 +31,7 @@ backend/token.json
 !package.json
 !package-lock.json
 !tsconfig.json
+.antigravity_rules.md
 
 # Carpetas de dependencias adicionales
 backend/node_modules/

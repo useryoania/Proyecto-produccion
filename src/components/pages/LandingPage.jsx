@@ -302,7 +302,7 @@ export default function LandingPage() {
                 mass: 0.8
               }}
               style={{ willChange: 'transform, opacity' }}
-              className="relative w-full max-w-sm rounded-3xl z-10 p-[2px] bg-gradient-to-br from-[#00AEEF] via-[#EC008C] to-[#FFF200] shadow-2xl shadow-black/50"
+              className="relative w-full max-w-sm rounded-3xl z-10 p-[2px] login-gradient-border shadow-2xl shadow-black/50"
             >
 
               {/* Close button */}
@@ -335,24 +335,50 @@ export default function LandingPage() {
   );
 }
 
-function ServiceCard({ title, desc, img, accent, gradFrom, gradTo }) {
-  const [hovered, setHovered] = useState(false);
+function ServiceCard({ title, desc, img, accent, gradFrom, gradTo, isMobile, forceActive, onToggleActive, setHoverCount }) {
+  const [localHover, setLocalHover] = useState(false);
+
+  // En móvil usamos el tap forzado, en escritorio usamos el hover nativo
+  const isActive = isMobile ? forceActive : localHover;
+
+  const handleMouseEnter = () => {
+    if (!isMobile) {
+      setLocalHover(true);
+      setHoverCount(prev => prev + 1);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (!isMobile) {
+      setLocalHover(false);
+      setHoverCount(prev => Math.max(0, prev - 1));
+    }
+  };
+
+  const handleClick = (e) => {
+    if (isMobile) {
+      e.stopPropagation();
+      onToggleActive();
+    }
+  };
 
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      className="service-card-wrapper"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onClick={handleClick}
       style={{
         position: 'relative',
         borderRadius: 20,
         overflow: 'hidden',
-        border: `1.5px solid ${hovered ? accent : 'rgba(255,255,255,0.1)'}`,
+        border: `1.5px solid ${isActive ? accent : 'rgba(255,255,255,0.1)'}`,
         background: '#111',
         cursor: 'pointer',
         transition: 'all 0.3s ease',
-        transform: hovered ? 'translateY(-6px)' : 'none',
-        boxShadow: hovered ? `0 8px 24px ${accent}33` : '0 4px 20px rgba(0,0,0,0.4)',
-        height: 200,          // altura fija igual para todas
+        transform: isActive ? 'translateY(-6px)' : 'none',
+        boxShadow: isActive ? `0 8px 24px ${accent}33` : '0 4px 20px rgba(0,0,0,0.4)',
+        height: 200,
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -363,7 +389,7 @@ function ServiceCard({ title, desc, img, accent, gradFrom, gradTo }) {
           position: 'absolute', inset: 0,
           width: '100%', height: '100%',
           objectFit: 'cover',
-          opacity: hovered ? 0.35 : 0.18,
+          opacity: isActive ? 0.35 : 0.18,
           transition: 'opacity 0.4s ease',
         }} />
       )}
@@ -373,7 +399,7 @@ function ServiceCard({ title, desc, img, accent, gradFrom, gradTo }) {
         <div style={{
           position: 'absolute', inset: 0,
           background: `radial-gradient(circle at 50% 120%, ${accent}33 0%, transparent 70%)`,
-          opacity: hovered ? 1 : 0.5,
+          opacity: isActive ? 1 : 0.5,
           transition: 'opacity 0.3s'
         }} />
       )}
@@ -382,10 +408,9 @@ function ServiceCard({ title, desc, img, accent, gradFrom, gradTo }) {
       <div style={{
         position: 'absolute', inset: 0,
         background: `linear-gradient(135deg, ${gradFrom} 0%, ${gradTo} 100%)`,
-        opacity: hovered ? 1 : 0.5,
+        opacity: isActive ? 1 : 0.5,
         transition: 'opacity 0.3s',
       }} />
-
 
       {/* Content */}
       <div style={{
@@ -420,9 +445,36 @@ function InfiniteMarquee({ isMobile }) {
   const currentSpeedRef = useRef(0);
   const targetSpeedRef  = useRef(0);
   const rafRef = useRef(null);
+  const dragRef = useRef({ isDragging: false, startX: 0, currentX: 0 });
 
-  const NORMAL_SPEED = isMobile ? 0.45 : 0.35;   // px/frame normal
-  const SLOW_SPEED   = isMobile ? 0.10 : 0.08;    // px/frame on hover
+  const [hoverCount, setHoverCount] = useState(0);
+  const [activeIdx, setActiveIdx] = useState(null);
+
+  const NORMAL_SPEED = isMobile ? 0.85 : 0.75; // Doble de rápido que antes por defecto
+  const SLOW_SPEED   = isMobile ? 0.10 : 0.08;   
+
+  // Manejo reactivo de la velocidad del carrusel
+  useEffect(() => {
+    if (isMobile) {
+      targetSpeedRef.current = activeIdx !== null ? SLOW_SPEED : NORMAL_SPEED;
+    } else {
+      targetSpeedRef.current = hoverCount > 0 ? SLOW_SPEED : NORMAL_SPEED;
+    }
+  }, [activeIdx, hoverCount, isMobile, SLOW_SPEED, NORMAL_SPEED]);
+
+  // Inyectar detector de touch global para toques en "vacíos" fuera de la pista
+  useEffect(() => {
+    if (!isMobile) return;
+    const handleGlobalTouch = (e) => {
+      // Si tocaron algo pero no fue una tarjeta, apagar
+      if (!e.target.closest('.service-card-wrapper')) {
+        setActiveIdx(null);
+      }
+    };
+    
+    document.addEventListener('touchstart', handleGlobalTouch);
+    return () => document.removeEventListener('touchstart', handleGlobalTouch);
+  }, [isMobile]);
 
   useEffect(() => {
     currentSpeedRef.current = NORMAL_SPEED;
@@ -432,15 +484,20 @@ function InfiniteMarquee({ isMobile }) {
     if (!track) return;
 
     const animate = () => {
-      // Lerp speed hacia el objetivo (suave aceleración / deceleración)
-      currentSpeedRef.current += (targetSpeedRef.current - currentSpeedRef.current) * 0.04;
+      if (!dragRef.current.isDragging) {
+        currentSpeedRef.current += (targetSpeedRef.current - currentSpeedRef.current) * 0.04;
+        posRef.current -= currentSpeedRef.current;
+      }
 
-      posRef.current -= currentSpeedRef.current;
-
-      // Reset seamless: cuando se desplazó la mitad (= un juego completo)
       const halfWidth = track.scrollWidth / 2;
-      if (Math.abs(posRef.current) >= halfWidth) {
-        posRef.current = 0;
+      
+      // Control seamless para movimiento izquierdo natural
+      if (posRef.current <= -halfWidth) {
+        posRef.current += halfWidth;
+      }
+      // Control seamless para drag manual forzado hacia la derecha
+      else if (posRef.current > 0) {
+        posRef.current -= halfWidth;
       }
 
       track.style.transform = `translateX(${posRef.current}px)`;
@@ -453,11 +510,43 @@ function InfiniteMarquee({ isMobile }) {
 
   return (
     <div
-      style={{ width: '100%', overflow: 'hidden', userSelect: 'none' }}
-      onMouseEnter={() => { targetSpeedRef.current = SLOW_SPEED; }}
-      onMouseLeave={() => { targetSpeedRef.current = NORMAL_SPEED; }}
-      onTouchStart={() => { targetSpeedRef.current = SLOW_SPEED; }}
-      onTouchEnd={()   => { targetSpeedRef.current = NORMAL_SPEED; }}
+      style={{ width: '100%', overflow: 'hidden', userSelect: 'none', touchAction: 'pan-y' }}
+      onClick={() => {
+        // Si tocan el fondo vacío en mobile, reseteamos la card activa
+        if (isMobile) setActiveIdx(null);
+      }}
+      onClickCapture={(e) => {
+        // Si soltaron el dedo pero fue después de un drag importante, matamos el evento
+        // click para evitar que se auto-seleccione una Card falsamente.
+        if (isMobile) {
+          const totalMoved = Math.abs(dragRef.current.currentX - dragRef.current.startX);
+          if (totalMoved > 10) {
+            e.stopPropagation();
+            e.preventDefault();
+          }
+        }
+      }}
+      onTouchStart={(e) => {
+        if (!isMobile) return;
+        dragRef.current.isDragging = true;
+        dragRef.current.startX = e.touches[0].clientX;
+        dragRef.current.currentX = e.touches[0].clientX;
+      }}
+      onTouchMove={(e) => {
+        if (!isMobile || !dragRef.current.isDragging) return;
+        const currentX = e.touches[0].clientX;
+        const delta = currentX - dragRef.current.currentX;
+        posRef.current += delta;
+        dragRef.current.currentX = currentX;
+      }}
+      onTouchEnd={() => {
+        if (!isMobile) return;
+        dragRef.current.isDragging = false;
+      }}
+      onTouchCancel={() => {
+        if (!isMobile) return;
+        dragRef.current.isDragging = false;
+      }}
     >
       <div
         ref={trackRef}
@@ -473,7 +562,13 @@ function InfiniteMarquee({ isMobile }) {
             key={`${svc.title}-${idx}`}
             style={{ width: isMobile ? 280 : 340, flexShrink: 0 }}
           >
-            <ServiceCard {...svc} />
+            <ServiceCard 
+              {...svc} 
+              isMobile={isMobile}
+              forceActive={activeIdx === idx}
+              onToggleActive={() => setActiveIdx(prev => prev === idx ? null : idx)}
+              setHoverCount={setHoverCount}
+            />
           </div>
         ))}
       </div>

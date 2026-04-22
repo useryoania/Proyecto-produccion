@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/apiClient';
 import logoMini from '../../assets/images/logo/logo-mini.svg';
 
-const Navbar = ({ onSwitchTab, currentView }) => {
-  const { user, logout } = useAuth();
+const Navbar = ({ onSwitchTab, currentView, onToggleMobileMenu, isMobileMenuOpen }) => {
+  const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -50,17 +51,48 @@ const Navbar = ({ onSwitchTab, currentView }) => {
   };
 
   return (
-    <nav className="h-14 px-6 bg-zinc-900 border-b border-zinc-700 flex items-center justify-between sticky top-0 z-50 shadow-md">
-      {/* IZQUIERDA: Titulo y Breadcrumb */}
-      <div
-        className="flex items-center cursor-pointer group"
+    <nav className="h-14 px-4 sm:px-6 bg-zinc-900 border-b border-zinc-700 flex items-center justify-between sticky top-0 z-50 shadow-md gap-4">
+      {/* Móvil: Logo Centrado Flotante */}
+      <div 
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer group md:hidden flex items-center justify-center z-0"
         onClick={() => navigate('/')}
       >
-        <img src={logoMini} alt="User" className="h-6 w-auto mr-4 opacity-90 group-hover:opacity-100 transition-opacity" />
-        <div className="w-px h-6 bg-zinc-600 mr-4 opacity-50 hidden sm:block"></div>
-        <h1 className="font-black text-white tracking-tighter text-lg leading-none transition-colors uppercase mt-0.5">
-          GESTIÓN DE PRODUCCIÓN
-        </h1>
+        <img src={logoMini} alt="Logo" className="h-9 w-auto object-contain opacity-90 active:opacity-100 transition-opacity drop-shadow-md" />
+      </div>
+
+      {/* IZQUIERDA: Menú Móvil, Titulo y Logo */}
+      <div className="flex items-center flex-1 min-w-0 relative z-10">
+        {onToggleMobileMenu && (
+          <button
+            onClick={onToggleMobileMenu}
+            className="p-2 -ml-1 text-slate-300 hover:text-white active:bg-zinc-800 transition-colors md:hidden shrink-0 bg-transparent border-none cursor-pointer flex flex-col gap-[5px] rounded-lg relative z-10"
+            title="Abrir Menú"
+          >
+            {[0, 1, 2].map(i => (
+              <span key={i} className="block w-[22px] h-[2px] bg-current rounded-sm transition-all duration-300 origin-center"
+                style={{
+                  transform: isMobileMenuOpen
+                    ? i === 0 ? 'translateY(7px) rotate(45deg)'
+                      : i === 2 ? 'translateY(-7px) rotate(-45deg)'
+                        : 'scaleX(0)'
+                    : 'none',
+                }}
+              />
+            ))}
+          </button>
+        )}
+        
+        {/* Escritorio: Título y Logo Lineal */}
+        <div
+          className="hidden md:flex items-center cursor-pointer group min-w-0"
+          onClick={() => navigate('/')}
+        >
+          <img src={logoMini} alt="Logo" className="h-8 w-auto mr-4 opacity-90 group-hover:opacity-100 transition-opacity shrink-0 drop-shadow-sm" />
+          <div className="w-px h-6 bg-zinc-600 mr-4 opacity-50 shrink-0"></div>
+          <h1 className="font-black text-white tracking-tighter text-lg leading-none transition-colors uppercase mt-0.5 truncate">
+            GESTIÓN DE PRODUCCIÓN
+          </h1>
+        </div>
       </div>
       {/* Búsqueda Integral */}
       <div className="hidden md:block w-48 shrink-0">
@@ -103,7 +135,6 @@ const Navbar = ({ onSwitchTab, currentView }) => {
 
       {/* DERECHA: Notificaciones y Usuario */}
       <div className="flex items-center gap-6">
-        {/* Notificaciones */}
         {/* <div
           className="relative cursor-pointer group"
           onClick={() => setShowNotifications(!showNotifications)}
@@ -114,12 +145,12 @@ const Navbar = ({ onSwitchTab, currentView }) => {
           <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white border-2 border-white shadow-sm">
             3
           </span> 
-        </div>
+        </div> */}
 
         {/* Usuario */}
-        <div className="flex items-center gap-4">
-          <div className="text-right hidden sm:block px-2">
-            <div className="flex text-md font-bold leading-none align-center justify-center text-white">{user?.nombre || user?.usuario}</div>
+        <div className="flex items-center gap-4 scale-[0.80] sm:scale-100 origin-right">
+          <div className="text-right px-2">
+            <div className="flex text-base font-bold leading-none align-center justify-center text-white">{user?.nombre || user?.usuario}</div>
             <div className="w-full h-px bg-zinc-800 my-1"></div>
             <div className="flex items-center justify-center gap-1">
               <span className={`w-2 h-2 rounded-full ${serverStatus === 'ok' ? 'bg-emerald-500 animate-pulse' : serverStatus === 'slow' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500 animate-pulse'}`}></span>
@@ -128,13 +159,6 @@ const Navbar = ({ onSwitchTab, currentView }) => {
               </span>
             </div>
           </div>
-          <button
-            onClick={logout}
-            className="w-10 h-10 flex items-center justify-center text-slate-100 hover:text-red-500 transition-all"
-            title="Cerrar Sesión"
-          >
-            <i className="fa-solid fa-right-from-bracket"></i>
-          </button>
         </div>
       </div>
     </nav >

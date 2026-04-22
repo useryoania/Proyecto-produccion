@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
-import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket } from 'lucide-react';
+import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket, ScanLine } from 'lucide-react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster } from 'sonner';
@@ -65,6 +65,7 @@ const EntregaPedidosView = lazyWithRetry(() => import('../pages/customer-service
 const DepositoDashboard = lazyWithRetry(() => import('../logistics/DepositoDashboard'));
 const NomenclatorsABM = lazyWithRetry(() => import('../pages/admin/NomenclatorsABM')); // <-- ADDED
 const SysAdminPage = lazyWithRetry(() => import('../pages/admin/SysAdminPage'));
+const AuditDepositoView = lazyWithRetry(() => import('../pages/AuditDepositoView'));
 const ContabilidadCuentasView    = lazyWithRetry(() => import('../pages/ContabilidadCuentasView'));
 const ContabilidadAntiguedadView  = lazyWithRetry(() => import('../pages/ContabilidadAntiguedadView'));
 const ContabilidadColaEstadosView = lazyWithRetry(() => import('../pages/ContabilidadColaEstadosView'));
@@ -76,6 +77,8 @@ const lucideIconMapRaw = {
     'dashboard': LayoutDashboard,
     'logística wms': Warehouse,
     'logistica wms': Warehouse,
+    'logística': Warehouse,
+    'logistica': Warehouse,
     'producción': Printer,
     'produccion': Printer,
     'informes': ClipboardList,
@@ -154,6 +157,12 @@ const lucideIconMapRaw = {
     'insumos': Package,
     'control de transporte': Bus,
     'control transporte': Bus,
+    'auditoría de depósito': ScanLine,
+    'auditoria de deposito': ScanLine,
+    'auditoría depósito': ScanLine,
+    'auditoria deposito': ScanLine,
+    'control físico': ScanLine,
+    'control fisico': ScanLine,
     // Sys Admin sub-items
     'gestion menu': Menu,
     'gestión menu': Menu,
@@ -227,7 +236,9 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                     ${baseClasses}
                     ${isSelected
                         ? "bg-brand-cyan text-white shadow-md shadow-brand-cyan/30"
-                        : "text-slate-100 opacity-70 hover:opacity-100 hover:bg-zinc-800 hover:text-white"
+                        : isOpen && hasChildren
+                            ? "bg-zinc-800/70 text-white opacity-100"
+                            : "text-slate-100 opacity-70 hover:opacity-100 md:hover:bg-zinc-800 md:hover:text-white active:bg-zinc-800 active:text-white"
                     }
                     py-2.5
                 `}
@@ -241,7 +252,7 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                         toggleMenu(item.IdModulo);
                         if (!wasOpen) {
                             const firstChild = item.children.find(c => c.Ruta);
-                            if (firstChild) {
+                            if (firstChild && window.innerWidth >= 768) {
                                 navigate(firstChild.Ruta);
                                 // Modificado: Eliminamos setIsCollapsed(true) para que el padre quede desplegado
                             }
@@ -254,20 +265,20 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                 title={isCollapsed ? item.Nombre : ''}
             >
 
-                <div className="w-12 flex-shrink-0 flex items-center justify-center text-base group-hover:scale-110 transition-transform duration-300">
+                <div className="w-12 flex-shrink-0 flex items-center justify-center text-base md:group-hover:scale-110 transition-transform duration-300">
                     {getLucideIcon(item.Nombre) ? (
-                        (() => { const LucideIcon = getLucideIcon(item.Nombre); return <LucideIcon size={22} className={isSelected ? 'text-white' : 'text-slate-300 group-hover:text-brand-cyan'} />; })()
+                        (() => { const LucideIcon = getLucideIcon(item.Nombre); return <LucideIcon size={22} className={isSelected ? 'text-white' : (isOpen && hasChildren ? 'text-brand-cyan' : 'text-slate-300 md:group-hover:text-brand-cyan')} />; })()
                     ) : (
                         <i className={`
                             fa-solid ${item.Icono || (hasChildren ? 'fa-folder' : 'fa-circle')} 
-                            ${isSelected ? "text-white" : "text-slate-300 group-hover:text-brand-cyan"}
+                            ${isSelected ? "text-white" : (isOpen && hasChildren ? "text-brand-cyan" : "text-slate-300 md:group-hover:text-brand-cyan")}
                         `}></i>
                     )}
                 </div>
 
                 {!isCollapsed && (
                     <>
-                        <span className={`flex-1 text-xs font-medium tracking-wide whitespace-nowrap ${isSelected ? 'text-white' : 'text-slate-100'}`}>
+                        <span className={`flex-1 text-xs font-medium tracking-wide whitespace-nowrap ${isSelected || isOpen ? 'text-white font-bold' : 'text-slate-100'}`}>
                             {item.Nombre}
                         </span>
 
@@ -275,7 +286,7 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                             <i className={`
                                 fa-solid fa-chevron-right text-[10px] mr-4 transition-transform duration-300
                                 ${isOpen ? "rotate-90" : ""}
-                                ${isSelected ? "text-blue-500" : "text-slate-100"}
+                                ${isSelected || isOpen ? "text-blue-400" : "text-slate-100"}
                             `}></i>
                         )}
                     </>
@@ -284,30 +295,32 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
             </div>
 
             <div
-                className="overflow-hidden transition-all duration-300 ease-in-out"
+                className="grid transition-all duration-300 ease-in-out"
                 style={{
-                    maxHeight: hasChildren && isOpen && !isCollapsed ? '1000px' : '0px',
+                    gridTemplateRows: hasChildren && isOpen && !isCollapsed ? '1fr' : '0fr',
                     opacity: hasChildren && isOpen && !isCollapsed ? 1 : 0,
                     transform: hasChildren && isOpen && !isCollapsed ? 'translateY(0)' : 'translateY(-8px)',
                 }}
             >
-                {hasChildren && (
-                    <div className="mt-1">
-                        {item.children.map(child => (
-                            <NavNode
-                                key={child.IdModulo}
-                                item={child}
-                                openMenus={openMenus}
-                                toggleMenu={toggleMenu}
-                                navigate={navigate}
-                                location={location}
-                                level={level + 1}
-                                isCollapsed={isCollapsed}
-                                setIsCollapsed={setIsCollapsed}
-                            />
-                        ))}
-                    </div>
-                )}
+                <div className="overflow-hidden">
+                    {hasChildren && (
+                        <div className="mt-1">
+                            {item.children.map(child => (
+                                <NavNode
+                                    key={child.IdModulo}
+                                    item={child}
+                                    openMenus={openMenus}
+                                    toggleMenu={toggleMenu}
+                                    navigate={navigate}
+                                    location={location}
+                                    level={level + 1}
+                                    isCollapsed={isCollapsed}
+                                    setIsCollapsed={setIsCollapsed}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -317,14 +330,33 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
 // 2. COMPONENTE PRINCIPAL (Layout)
 // ============================================
 const MainAppContent = ({ menuItems = [] }) => {
-    const { user } = useAuth();
+    const { user, logout } = useAuth();
     const navigate = useNavigate();
     const location = useLocation();
     const [openMenus, setOpenMenus] = useState({});
     const [isCollapsed, setIsCollapsed] = useState(true);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [showLogoutModal, setShowLogoutModal] = useState(false);
 
-    const handleSidebarEnter = useCallback(() => setIsCollapsed(false), []);
-    const handleSidebarLeave = useCallback(() => setIsCollapsed(true), []);
+    useEffect(() => {
+        setIsMobileMenuOpen(false);
+    }, [location.pathname]);
+
+    // Ocultador dinámico del glitch de Safari Mobile
+    useEffect(() => {
+        if (isMobileMenuOpen) {
+            document.body.style.backgroundColor = '#18181b'; // Fondo negro continuo cuando el menú está abierto
+        } else {
+            document.body.style.backgroundColor = '#f8fafc'; // Fondo gris (slate-50) mimetizado cuando está cerrado
+        }
+        
+        return () => {
+            document.body.style.backgroundColor = '#18181b'; // Default al desmontar a login u otras rutas
+        };
+    }, [isMobileMenuOpen]);
+
+    const handleSidebarEnter = useCallback(() => { if (window.innerWidth >= 768) setIsCollapsed(false); }, []);
+    const handleSidebarLeave = useCallback(() => { if (window.innerWidth >= 768) setIsCollapsed(true); }, []);
 
     // Dynamic sidebar width based on which parent is expanded
     const expandedWidth = 300;
@@ -388,8 +420,56 @@ const MainAppContent = ({ menuItems = [] }) => {
         setOpenMenus({});
     };
 
+    const cachedRoutes = useMemo(() => (
+        <Suspense fallback={
+            <div className="flex items-center justify-center h-full ">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-cyan"></div>
+            </div>
+        }>
+            <Routes location={location}>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/consultas/ordenes" element={<OrdersQueryView />} />
+                <Route path="/consultas/integral" element={<IntegralOrderView />} />
+                <Route path="/consultas/rollos" element={<RollHistory />} />
+                <Route path="/production/machine/:area/:machineId" element={<MachineDetailView />} />
+                <Route path="/area/:areaId/*" element={<DynamicRouter menuItems={menuItems} />} />
+                <Route path="/atencion-cliente/despachos" element={<ActiveStockPage />} />
+                <Route path="/atencion-cliente/reposiciones" element={<CustomerReplacementPage />} />
+                <Route path="/logistica/transporte" element={<TransportControlPage />} />
+                <Route path="/logistica/stock-deposito" element={<DepositStockPage />} />
+                <Route path="/logistica/retiros-web" element={<WebRetirosPage />} />
+                <Route path="/logistica/excepciones" element={<ExcepcionesDeudaView />} />
+                <Route path="/logistica/carga-deposito" element={<CargaDepositoPage />} />
+                <Route path="/logistica/verificar-codigo" element={<VerificarCodigoPage />} />
+                <Route path="/logistica/buscar-ordenes" element={<OrderSearchPage />} />
+                <Route path="/logistica/dashboard-deposito" element={<DepositoDashboard />} />
+                <Route path="/atencion-cliente/entrega-pedidos" element={<EntregaPedidosView />} />
+                <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
+                <Route path="/admin/duplicate-clients" element={<DuplicateClientsPage />} />
+                <Route path="/admin/helpdesk" element={<HelpDeskAdminView />} />
+                <Route path="/admin/products-integration" element={<ProductsIntegration />} />
+                <Route path="/admin/special-prices" element={<SpecialPrices />} />
+                <Route path="/admin/base-prices" element={<BasePrices />} />
+                <Route path="/admin/price-profiles" element={<PriceProfiles />} />
+                <Route path="/admin/price-catalog" element={<CustomerPriceCatalogPage />} />
+                <Route path="/admin/nomencladores" element={<NomenclatorsABM />} />
+                <Route path="/nomencladores" element={<NomenclatorsABM />} />
+                <Route path="/produccion/etiquetas" element={<LabelGenerationPage />} />
+                <Route path="/caja/pagos" element={<CargaPagosView />} />
+                <Route path="/caja/pagos-online" element={<VerificarPagosOnlineView />} />
+                <Route path="/caja/cuadre" element={<CuadreDiarioView />} />
+                <Route path="/admin/consola" element={<SysAdminPage />} />
+                <Route path="/contabilidad/cuentas"      element={<ContabilidadCuentasView />} />
+                <Route path="/contabilidad/antiguedad"    element={<ContabilidadAntiguedadView />} />
+                <Route path="/contabilidad/cola-estados"  element={<ContabilidadColaEstadosView />} />
+                <Route path="/contabilidad/recursos"      element={<Navigate to="/contabilidad/cuentas" replace />} />
+                <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
+            </Routes>
+        </Suspense>
+    ), [location, menuItems]);
+
     return (
-        <div className="flex flex-col h-screen bg-slate-50 font-sans">
+        <div className="flex flex-col h-[100dvh] bg-slate-50 font-sans">
             <Toaster
                 position="top-right"
                 expand
@@ -414,17 +494,74 @@ const MainAppContent = ({ menuItems = [] }) => {
                     }
                 }}
             />
-            <Navbar />
+            <Navbar 
+                onToggleMobileMenu={() => setIsMobileMenuOpen(prev => !prev)} 
+                isMobileMenuOpen={isMobileMenuOpen} 
+            />
+
+            {/* Modal de Confirmación de Cierre de Sesión */}
+            <AnimatePresence>
+              {showLogoutModal && (
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="absolute inset-0 bg-black/60" 
+                    onClick={() => setShowLogoutModal(false)} 
+                  />
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                    transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                    className="bg-custom-dark border border-zinc-700/50 rounded-xl max-w-sm w-full p-6 relative z-10 shadow-2xl"
+                  >
+                    <h3 className="text-xl font-bold text-white mb-2">Cerrar Sesión</h3>
+                    <p className="text-zinc-400 text-sm mb-6">¿Estás seguro que deseas salir del sistema?</p>
+                    <div className="flex gap-3 justify-end">
+                      <button 
+                        type="button"
+                        onClick={() => setShowLogoutModal(false)}
+                        className="px-4 py-2 rounded-lg text-sm font-semibold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setShowLogoutModal(false);
+                          logout();
+                        }}
+                        className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-500 transition-colors"
+                      >
+                        Salir
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
             <div className="flex flex-1 overflow-hidden relative">
-                {/* Spacer to reserve collapsed sidebar width */}
-                <div className="w-16 flex-shrink-0" />
+                {/* Backdrop Móvil con Degradado animado */}
+                <div 
+                    className={`absolute inset-0 bg-gradient-to-r from-black/95 via-black/60 to-black/10 z-[90] md:hidden transition-opacity duration-300 ease-in-out
+                        ${isMobileMenuOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                />
+                
+                {/* Spacer to reserve collapsed sidebar width - Solo en Desktop */}
+                <div className="hidden md:block w-16 flex-shrink-0" />
                 <aside
                     className={`
                         flex flex-col bg-custom-dark z-[100]
                         transition-all duration-300 ease-in-out h-full absolute left-0 top-0
-                        ${isCollapsed ? "w-16" : ""}
+                        w-[280px] md:w-[300px]
+                        ${isMobileMenuOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full md:translate-x-0"}
+                        ${(isCollapsed && !isMobileMenuOpen) ? "!w-16" : ""}
                     `}
-                    style={!isCollapsed ? { width: expandedWidth } : undefined}
                     onMouseEnter={handleSidebarEnter}
                     onMouseLeave={handleSidebarLeave}
                 >
@@ -454,18 +591,35 @@ const MainAppContent = ({ menuItems = [] }) => {
                                     toggleMenu={toggleMenu}
                                     navigate={navigate}
                                     location={location}
-                                    isCollapsed={isCollapsed}
+                                    isCollapsed={isCollapsed && !isMobileMenuOpen}
                                     setIsCollapsed={setIsCollapsed}
                                 />
                             </div>
                         ))}
                     </nav>
 
+                    {/* Botón de Cerrar Sesión en Sidebar */}
+                    <div className="border-t border-zinc-700/50 p-2 mt-auto flex-shrink-0">
+                        <button
+                            onClick={() => setShowLogoutModal(true)}
+                            className="flex items-center w-full rounded-md text-red-500 opacity-80 hover:opacity-100 md:hover:bg-zinc-800 active:bg-zinc-800 transition-all duration-200 group py-2.5"
+                            title="Cerrar Sesión"
+                        >
+                            <div className="w-12 flex-shrink-0 flex items-center justify-center text-lg md:group-hover:scale-110 active:scale-110 transition-transform duration-300">
+                                <i className="fa-solid fa-right-from-bracket"></i>
+                            </div>
+                            {(!isCollapsed || isMobileMenuOpen) && (
+                                <span className="flex-1 text-xs font-bold tracking-wide whitespace-nowrap text-left overflow-hidden">
+                                    CERRAR SESIÓN
+                                </span>
+                            )}
+                        </button>
+                    </div>
 
                 </aside>
 
                 <main className="flex-1 overflow-hidden relative bg-slate-100 w-full">
-                    <div className="absolute inset-0 overflow-y-auto p-6 scroll-smooth">
+                    <div className="absolute inset-0 overflow-y-auto p-0 md:p-6 scroll-smooth">
                         <AnimatePresence mode="wait">
                             <motion.div
                                 key={location.pathname}
@@ -475,52 +629,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 transition={{ duration: 0.15, ease: "easeOut" }}
                                 className="h-full"
                             >
-                                <Suspense fallback={
-                                    <div className="flex items-center justify-center h-full ">
-                                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-cyan"></div>
-                                    </div>
-                                }>
-                                    <Routes location={location}>
-                                <Route path="/" element={<Dashboard />} />
-                                <Route path="/consultas/ordenes" element={<OrdersQueryView />} />
-                                <Route path="/consultas/integral" element={<IntegralOrderView />} />
-                                <Route path="/consultas/rollos" element={<RollHistory />} />
-                                <Route path="/production/machine/:area/:machineId" element={<MachineDetailView />} />
-                                <Route path="/area/:areaId/*" element={<DynamicRouter menuItems={menuItems} />} />
-                                <Route path="/atencion-cliente/despachos" element={<ActiveStockPage />} />
-                                <Route path="/atencion-cliente/reposiciones" element={<CustomerReplacementPage />} />
-                                <Route path="/logistica/transporte" element={<TransportControlPage />} />
-                                <Route path="/logistica/stock-deposito" element={<DepositStockPage />} />
-                                <Route path="/logistica/retiros-web" element={<WebRetirosPage />} />
-                                <Route path="/logistica/excepciones" element={<ExcepcionesDeudaView />} />
-                                <Route path="/logistica/carga-deposito" element={<CargaDepositoPage />} />
-                                <Route path="/logistica/verificar-codigo" element={<VerificarCodigoPage />} />
-                                <Route path="/logistica/buscar-ordenes" element={<OrderSearchPage />} />
-                                <Route path="/logistica/dashboard-deposito" element={<DepositoDashboard />} />
-                                <Route path="/atencion-cliente/entrega-pedidos" element={<EntregaPedidosView />} />
-                                <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
-                                <Route path="/admin/duplicate-clients" element={<DuplicateClientsPage />} />
-                                <Route path="/admin/helpdesk" element={<HelpDeskAdminView />} />
-                                <Route path="/admin/products-integration" element={<ProductsIntegration />} />
-                                <Route path="/admin/special-prices" element={<SpecialPrices />} />
-                                <Route path="/admin/base-prices" element={<BasePrices />} />
-                                <Route path="/admin/price-profiles" element={<PriceProfiles />} />
-                                <Route path="/admin/price-catalog" element={<CustomerPriceCatalogPage />} />
-                                <Route path="/admin/nomencladores" element={<NomenclatorsABM />} />
-                                <Route path="/nomencladores" element={<NomenclatorsABM />} />
-                                <Route path="/produccion/etiquetas" element={<LabelGenerationPage />} />
-                                <Route path="/caja/pagos" element={<CargaPagosView />} />
-                                <Route path="/caja/pagos-online" element={<VerificarPagosOnlineView />} />
-                                <Route path="/caja/cuadre" element={<CuadreDiarioView />} />
-                                <Route path="/admin/consola" element={<SysAdminPage />} />
-                                <Route path="/contabilidad/cuentas"      element={<ContabilidadCuentasView />} />
-                                <Route path="/contabilidad/antiguedad"    element={<ContabilidadAntiguedadView />} />
-                                <Route path="/contabilidad/cola-estados"  element={<ContabilidadColaEstadosView />} />
-                                <Route path="/contabilidad/recursos"      element={<Navigate to="/contabilidad/cuentas" replace />} />
-
-                                <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
-                            </Routes>
-                                </Suspense>
+                                {cachedRoutes}
                             </motion.div>
                         </AnimatePresence>
                     </div>
@@ -566,6 +675,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/admin/roles') return <RolesPage />;
     if (menuItem.Ruta === '/admin/users') return <UsersPage />;
     if (menuItem.Ruta === '/admin/audit') return <AuditPage />;
+    if (menuItem.Ruta === '/logistica/auditoria-deposito') return <AuditDepositoView />;
     if (menuItem.Ruta === '/produccion/etiquetas') return <LabelGenerationPage />;
     if (menuItem.Ruta === '/admin/clientes-integration') return <ClientsIntegration />;
     if (menuItem.Ruta === '/admin/nomencladores' || menuItem.Ruta === '/nomencladores') return <NomenclatorsABM />;

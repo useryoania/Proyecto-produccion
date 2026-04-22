@@ -51,8 +51,8 @@ const ResetPasswordScreen = ({ token, onSuccess }) => {
             <ParticlesCanvas />
 
             <div className="flex-1 flex items-center justify-center p-4 min-h-[calc(100vh-70px-100px)] z-10 w-full">
-                <div className="relative w-full max-w-md md:max-w-sm z-10 md:rounded-3xl md:p-[2px] md:bg-gradient-to-br md:from-[#00AEEF] md:via-[#EC008C] md:to-[#FFF200]">
-                    <div className="bg-custom-dark md:rounded-[22px] overflow-hidden">
+                <div className="relative w-full max-w-md md:max-w-sm z-10 rounded-3xl p-[2px] login-gradient-border shadow-2xl shadow-black/50">
+                    <div className="bg-custom-dark rounded-[22px] overflow-hidden">
                         <div className="relative pt-8 px-6 sm:px-10 md:px-8 pb-8 w-full">
 
                             <div className="flex flex-col items-center mb-6">
@@ -582,9 +582,9 @@ const LoginPage = () => {
             <ParticlesCanvas />
 
             <div className="flex-1 flex items-center justify-center p-4 z-10 relative w-full">
-                <div className="relative w-full max-w-md md:max-w-sm z-10 md:rounded-3xl md:p-[2px] md:bg-gradient-to-br md:from-[#00AEEF] md:via-[#EC008C] md:to-[#FFF200]">
+                <div className="relative w-full max-w-md md:max-w-sm z-10 rounded-3xl p-[2px] login-gradient-border shadow-2xl shadow-black/50">
                     {/* Aqui inyectamos el componente extraido */}
-                    <div className="bg-custom-dark md:rounded-[22px] overflow-hidden">
+                    <div className="bg-custom-dark rounded-[22px] overflow-hidden">
                         <LoginFormBox
                             onRequireReset={handleRequireReset}
                             onLoginSuccess={(result) => {

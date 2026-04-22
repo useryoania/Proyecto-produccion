@@ -78,9 +78,12 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
         const fechaStr = paidAt ? new Date(paidAt).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : new Date().toLocaleDateString('es-UY');
         drawRight(fechaStr, width - 50, y, 9, font, rgb(0.47, 0.47, 0.47));
 
-        // Código de retiro y cliente: limpiamos prefijos como R-, RT-, RW-, PW-, etc.
-        const rawId = String(ordenRetiro || '').replace(/^[A-Za-z]+-0*/i, '');
-        const retiroCode = rawId ? `RW-${rawId}` : '-';
+        // Código de retiro: solo aceptamos códigos con prefijo RW- (retiros web reales).
+        // Si viene otro prefijo (DF-, SB-, etc.) significa que es un código de orden
+        // individual usado como fallback — en ese caso mostramos '-' para evitar
+        // imprimir un número de retiro inexistente (ej: RW-91468 cuando el retiro era RW-4594).
+        const rwMatch = String(ordenRetiro || '').match(/^RW-(\d+)$/i);
+        const retiroCode = rwMatch ? `RW-${rwMatch[1]}` : '-';
         drawLeft('CÓDIGO DE RETIRO', 50, y, 9, fontBold);
         y -= 16;
         drawLeft(retiroCode, 50, y, 14, fontBold);
@@ -2370,7 +2373,8 @@ exports.handyWebhook = async (req, res) => {
                                 .input('jsonStr', sql.NVarChar(sql.MAX), updatedOrdersJson)
                                 .query('UPDATE HandyTransactions SET OrdersJson = @jsonStr WHERE TransactionId = @txId3');
                         } catch (retiroErr) {
-                            logger.error('[HANDY WEBHOOK] Error creando retiro diferido:', retiroErr.message);
+                            logger.error('[HANDY WEBHOOK] Error creando retiro diferido — se aborta el flujo de pago para evitar registrar un pago sin retiro confirmado:', retiroErr.message);
+                            return res.status(200).json({ received: true, warning: 'retiro_deferred_failed' });
                         }
                     }
 

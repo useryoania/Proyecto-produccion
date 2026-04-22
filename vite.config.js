@@ -18,6 +18,7 @@ export default defineConfig({
     include: ['ag-grid-community', 'ag-grid-react', 'jspdf', 'jspdf-autotable']
   },
   server: {
+    host: true,  // Permite conexiones externas (celular en red local)
     port: 5173,
     https: true,
     proxy: {

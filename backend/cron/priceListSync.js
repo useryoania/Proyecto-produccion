@@ -86,7 +86,7 @@ async function syncPriceList() {
 
         const res = await sheets.spreadsheets.values.get({
             spreadsheetId: PRICE_SPREADSHEET_ID,
-            range: `'${PRICE_SHEET_NAME}'!A:F`,
+            range: `'${PRICE_SHEET_NAME}'!A:G`,
         });
 
         const rows = res.data.values || [];
@@ -124,8 +124,12 @@ async function syncPriceList() {
             const precio = parseFloat(precioStr) || 0;
             const proIdRaw = (row[5] || '').trim();
             const proIdProducto = proIdRaw ? parseInt(proIdRaw, 10) : null;
+            const ocultar = (row[6] || '').trim();
 
             if (!producto) continue;
+            
+            // Si la columna "MOSTRAR" (G) no está vacía, ocultamos el producto (lo salteamos para que quede Activo=0)
+            if (ocultar) continue;
 
             // MERGE: buscar por Familia + Producto + Moneda
             const req = pool.request()

@@ -9,9 +9,9 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/api'; // Axios instance base
 
-// ─── HELPER: Comprobante unificado de Orden de Retiro ───
-// Patrón: mismo encabezado que LogisticsPage + ReceptionPage (MACROSOFT TEXTIL)
-// Campos: código retiro, cliente, tipo, estado, local, monto, órdenes, fecha, firma
+// â”€â”€â”€ HELPER: Comprobante unificado de Orden de Retiro â”€â”€â”€
+// PatrÃ³n: mismo encabezado que LogisticsPage + ReceptionPage (MACROSOFT TEXTIL)
+// Campos: cÃ³digo retiro, cliente, tipo, estado, local, monto, órdenes, fecha, firma
 const printRetiroTicket = (item) => {
   const now = new Date().toLocaleString('es-UY', {
     day: '2-digit', month: '2-digit', year: 'numeric',
@@ -21,7 +21,7 @@ const printRetiroTicket = (item) => {
   // Array de objetos completo para mostrar costo por orden
   const orderObjs = (item.orders || []);
   const orders = orderObjs.map(o => o.orderNumber || o.codigoOrden || '').filter(Boolean);
-  const tipoDesc = item.TClDescripcion || 'Común';
+  const tipoDesc = item.TClDescripcion || 'ComÃºn';
   const local = (item.lugarRetiro && item.lugarRetiro !== '-' && item.lugarRetiro !== 'Web')
     ? item.lugarRetiro : 'Retiro Web';
   const monto = item.totalCost && item.totalCost !== '-' ? item.totalCost : null;
@@ -43,7 +43,7 @@ const printRetiroTicket = (item) => {
       padding: 10mm 10mm 8mm;
     }
 
-    /* ── ENCABEZADO ── */
+    /* â”€â”€ ENCABEZADO â”€â”€ */
     .header {
       text-align: center;
       border-bottom: 2px solid #222;
@@ -68,7 +68,7 @@ const printRetiroTicket = (item) => {
       font-style: italic;
     }
 
-    /* ── CÓDIGO PRINCIPAL ── */
+    /* â”€â”€ CÃ“DIGO PRINCIPAL â”€â”€ */
     .codigo-principal {
       text-align: center;
       font-size: 32px;
@@ -80,7 +80,7 @@ const printRetiroTicket = (item) => {
       border-bottom: 1px dashed #ccc;
     }
 
-    /* ── ESTADO BADGE ── */
+    /* â”€â”€ ESTADO BADGE â”€â”€ */
     .estado-badge {
       display: inline-block;
       padding: 5px 14px;
@@ -93,7 +93,7 @@ const printRetiroTicket = (item) => {
       letter-spacing: 1px;
     }
 
-    /* ── TABLA DE DATOS ── */
+    /* â”€â”€ TABLA DE DATOS â”€â”€ */
     .info-table {
       width: 100%;
       border-collapse: collapse;
@@ -119,7 +119,7 @@ const printRetiroTicket = (item) => {
       font-size: 15px;
     }
 
-    /* ── TABLA DE ÓRDENES ── */
+    /* â”€â”€ TABLA DE Ã“RDENES â”€â”€ */
     .orders-table {
       width: 100%;
       border-collapse: collapse;
@@ -144,10 +144,10 @@ const printRetiroTicket = (item) => {
       font-weight: 600;
     }
 
-    /* ── SEPARADOR ── */
+    /* â”€â”€ SEPARADOR â”€â”€ */
     .sep { border-top: 1px dashed #bbb; margin: 12px 0; }
 
-    /* ── FIRMA ── */
+    /* â”€â”€ FIRMA â”€â”€ */
     .firma-row {
       display: flex;
       justify-content: space-between;
@@ -162,7 +162,7 @@ const printRetiroTicket = (item) => {
       color: #555;
     }
 
-    /* ── PIE ── */
+    /* â”€â”€ PIE â”€â”€ */
     .footer {
       margin-top: 14px;
       font-size: 12px;
@@ -182,16 +182,16 @@ const printRetiroTicket = (item) => {
   <!-- ENCABEZADO igual a todos los comprobantes Macrosoft -->
   <div class="header">
     <div class="empresa">USER</div>
-    <div class="modulo">Logística — Comprobante de Retiro</div>
-    <div class="doc-tipo">${esWeb ? 'Pedido Web' : 'Retiro Local'} · Local: ${local}</div>
+    <div class="modulo">LogÃ­stica â€” Comprobante de Retiro</div>
+    <div class="doc-tipo">${esWeb ? 'Pedido Web' : 'Retiro Local'} Â· Local: ${local}</div>
   </div>
 
-  <!-- CÓDIGO PRINCIPAL -->
+  <!-- CÃ“DIGO PRINCIPAL -->
   <div class="codigo-principal">${item.displayLabel || item.ordenDeRetiro}</div>
 
   <!-- ESTADO -->
   <div style="text-align:center; margin-bottom:18px;">
-    <span class="estado-badge">${pagado ? '✓ PAGADO' : 'PENDIENTE DE PAGO'}</span>
+    <span class="estado-badge">${pagado ? 'âœ“ PAGADO' : 'PENDIENTE DE PAGO'}</span>
   </div>
 
   <!-- DATOS DEL RETIRO -->
@@ -219,8 +219,8 @@ const printRetiroTicket = (item) => {
       <td>${item.fechaAlta ? new Date(item.fechaAlta).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</td>
     </tr>
     ${(item.direccionEnvio || item.departamentoEnvio || item.localidadEnvio || item.agenciaNombre) ? `
-    <tr><td colspan="2" style="padding-top:6px;padding-bottom:2px;font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Datos de Envío</td></tr>
-    ${item.direccionEnvio ? `<tr><td>Dirección</td><td>${item.direccionEnvio}</td></tr>` : ''}
+    <tr><td colspan="2" style="padding-top:6px;padding-bottom:2px;font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Datos de EnvÃ­o</td></tr>
+    ${item.direccionEnvio ? `<tr><td>DirecciÃ³n</td><td>${item.direccionEnvio}</td></tr>` : ''}
     ${item.departamentoEnvio ? `<tr><td>Departamento</td><td>${item.departamentoEnvio}</td></tr>` : ''}
     ${item.localidadEnvio ? `<tr><td>Localidad</td><td>${item.localidadEnvio}</td></tr>` : ''}
     ${item.agenciaNombre ? `<tr><td>Agencia</td><td><strong>${item.agenciaNombre}</strong></td></tr>` : ''}
@@ -229,15 +229,15 @@ const printRetiroTicket = (item) => {
 
   <div class="sep"></div>
 
-  <!-- TABLA DE ÓRDENES con importe -->
+  <!-- TABLA DE Ã“RDENES con importe -->
   <div style="font-size:11px;color:#000;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:800;">
-    Órdenes incluidas (${orderObjs.length})
+    Ã“rdenes incluidas (${orderObjs.length})
   </div>
   <table class="orders-table">
     <thead>
       <tr>
         <th>#</th>
-        <th>Código de Orden</th>
+        <th>CÃ³digo de Orden</th>
         <th style="text-align:right;">Importe</th>
       </tr>
     </thead>
@@ -266,7 +266,7 @@ const printRetiroTicket = (item) => {
 
   <div class="sep"></div>
 
-  <!-- PIE: impresión + firmas (igual a LogisticsPage) -->
+  <!-- PIE: impresiÃ³n + firmas (igual a LogisticsPage) -->
   <table style="width:100%;font-size:9px;color:#666;">
     <tr>
       <td>Impreso:</td>
@@ -274,7 +274,7 @@ const printRetiroTicket = (item) => {
     </tr>
   </table>
 
-  <!-- QR del retiro (igual patrón que labelPrinter.js) -->
+  <!-- QR del retiro (igual patrÃ³n que labelPrinter.js) -->
   <div style="text-align:center; margin:8px 0 14px;">
     <img
       src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(item.displayLabel || item.ordenDeRetiro)}&color=000000&bgcolor=ffffff&margin=2"
@@ -285,12 +285,12 @@ const printRetiroTicket = (item) => {
   </div>
 
   <div class="firma-row">
-    <div class="firma-box">Firma y Aclaración Cliente</div>
-    <div class="firma-box">Firma Responsable Logística</div>
+    <div class="firma-box">Firma y AclaraciÃ³n Cliente</div>
+    <div class="firma-box">Firma Responsable LogÃ­stica</div>
   </div>
 
   <div class="footer">
-    USER — Documento interno. Conserve este comprobante.
+    USER â€” Documento interno. Conserve este comprobante.
   </div>
 
 </body>
@@ -301,11 +301,11 @@ const printRetiroTicket = (item) => {
     win.document.write(html);
     win.document.close();
     win.focus();
-    // No auto-print: el usuario ve la vista previa y decide cuando imprimir (Ctrl+P o botón del browser)
+    // No auto-print: el usuario ve la vista previa y decide cuando imprimir (Ctrl+P o botÃ³n del browser)
   }
 };
 
-// ─── HELPER: Etiqueta de despacho ───
+// â”€â”€â”€ HELPER: Etiqueta de despacho â”€â”€â”€
 const printRetiroLabel = (items) => {
   const labelsArr = Array.isArray(items) ? items : [items];
   const labelsHtml = labelsArr.map(item => {
@@ -512,12 +512,152 @@ const printRetiroLabel = (items) => {
   }
 };
 
+const ShelfSlot = ({ 
+  id, 
+  dataList, 
+  slotColors, 
+  isSlotAnnounced, 
+  allOrders, 
+  hasOrders, 
+  dragOverSlot, 
+  directEntregar, 
+  handleDesasignar, 
+  handleDrop, 
+  setIsDragging, 
+  setDragItem, 
+  setDragOverSlot 
+}) => {
+  const [isHovered, setIsHovered] = React.useState(false);
+  const [popoverPos, setPopoverPos] = React.useState('up'); // 'up' or 'down'
+  const [zIndex, setZIndex] = React.useState(1);
+  const zIndexTimeout = React.useRef(null);
+  const slotRef = React.useRef(null);
+
+  const calculatePosition = () => {
+    if (!slotRef.current) return;
+    const rect = slotRef.current.getBoundingClientRect();
+    const estimatedHeight = allOrders.length * 30 + 40;
+    const scrollContainer = slotRef.current.closest('.overflow-y-auto') || document.body;
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const spaceAbove = rect.top - containerRect.top;
+    const spaceBelow = containerRect.bottom - rect.bottom;
+
+    if (spaceAbove >= estimatedHeight || spaceAbove >= spaceBelow) {
+      setPopoverPos('up');
+    } else {
+      setPopoverPos('down');
+    }
+  };
+
+  return (
+    <motion.div
+      ref={slotRef}
+      layout
+      id={`box-${id}`}
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.8 }}
+      transition={{ duration: 0.15, ease: 'easeOut' }}
+      draggable
+      onDragStart={(e) => {
+        setIsDragging(true);
+        setDragItem({ ...dataList[0], ubicacionId: id });
+        e.dataTransfer.effectAllowed = 'move';
+      }}
+      onDragEnd={() => { setIsDragging(false); setDragOverSlot(null); }}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverSlot(id); }}
+      onDragLeave={(e) => { e.preventDefault(); setDragOverSlot(prev => prev === id ? null : prev); }}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDrop(id); setDragOverSlot(null); }}
+      onMouseEnter={() => {
+        if (zIndexTimeout.current) clearTimeout(zIndexTimeout.current);
+        calculatePosition();
+        setIsHovered(true);
+        setZIndex(50);
+      }}
+      onMouseLeave={() => {
+        setIsHovered(false);
+        zIndexTimeout.current = setTimeout(() => {
+          setZIndex(1);
+        }, 150);
+      }}
+      onDoubleClick={() => directEntregar(id, dataList)}
+      className="h-14 w-32 relative group cursor-pointer"
+      style={{ zIndex }}
+    >
+      {/* Scaling Background Layer */}
+      <motion.div
+        className={`absolute inset-0 rounded-xl ${slotColors.bg} shadow-md`}
+        animate={{ 
+          scale: isHovered ? 1.06 : 1,
+          boxShadow: isHovered 
+            ? "0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.25)" 
+            : "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)"
+        }}
+        transition={{ duration: 0.12, ease: 'easeOut' }}
+      />
+
+      <AnimatePresence>
+        {isHovered && hasOrders && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: popoverPos === 'up' ? 10 : -10, x: '-50%' }}
+            animate={{ opacity: 1, scale: 1, y: 0, x: '-50%', transition: { delay: 0.2, duration: 0.15 } }}
+            exit={{ opacity: 0, scale: 0.95, y: popoverPos === 'up' ? 10 : -10, x: '-50%', transition: { delay: 0, duration: 0.1 } }}
+            className={`absolute left-1/2 w-max min-w-[130px] max-w-[220px] bg-custom-dark text-white rounded-xl p-2.5 shadow-xl z-[60] pointer-events-none origin-center
+              ${popoverPos === 'up' ? 'bottom-full mb-3' : 'top-full mt-3'}
+            `}
+          >
+            <div className="flex flex-col">
+              {allOrders.map((o, i) => (
+                <div key={i} className={`flex justify-center items-center gap-2 text-sm leading-none py-1 ${i !== allOrders.length - 1 ? 'border-b border-slate-700/50' : ''}`}>
+                  <span className="text-sm font-medium text-zinc-100">{o.orderNumber}</span>
+                  {dataList.length > 1 && <span className="text-[9px] text-slate-500 font-bold opacity-70">({o.retiro.replace('R-', '')})</span>}
+                </div>
+              ))}
+            </div>
+            <div className={`absolute left-1/2 -translate-x-1/2 border-4 border-transparent ${popoverPos === 'up' ? 'top-[calc(100%-1px)] border-t-custom-dark' : 'bottom-[calc(100%-1px)] border-b-custom-dark'}`} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Rings & Feedback (Static) */}
+      <div className={`absolute inset-0 rounded-xl pointer-events-none transition-all duration-150
+          ${dragOverSlot === id ? 'ring-2 ring-blue-400' : ''}
+          ${isSlotAnnounced ? 'ring-4 ring-pink-400 animate-pulse shadow-lg shadow-pink-200' : ''}
+      `} />
+
+      {/* Announcement Bell */}
+      {isSlotAnnounced && (
+        <div className="absolute -top-1 -left-1 bg-pink-500 text-white text-[8px] font-black w-5 h-5 rounded-full flex items-center justify-center z-30 pointer-events-none shadow-md">
+          <BellRing size={10} />
+        </div>
+      )}
+
+      {/* Unassign Button */}
+      <button draggable={false}
+        onClick={(e) => { e.stopPropagation(); handleDesasignar(dataList[0]?.OrdenRetiro, id); }}
+        className="absolute top-1.5 right-1.5 text-white/40 hover:text-white transition-all opacity-0 group-hover:opacity-100 z-30 p-0.5"
+      >
+        <X size={14} strokeWidth={3} />
+      </button>
+
+      {/* Slot Content (Static & Sharp) */}
+      <div className="absolute inset-0 grid place-items-center pointer-events-none select-none z-10">
+        <span className="text-base font-black text-white leading-none tracking-tight">
+          {dataList[0]?.PagoHandy 
+            ? dataList[0]?.OrdenRetiro?.replace('R-', 'PW-') 
+            : dataList[0]?.OrdenRetiro}
+        </span>
+      </div>
+    </motion.div>
+  );
+};
+
 // La configuración visual de los estantes ahora se trae de la BDD dinámicamente.
 
 const WebRetirosPage = () => {
 
-  // ─── HELPER: Calcula el estante destino según los últimos 2 dígitos del retiro ───
-  // 00-24 → A | 25-49 → B | 50-74 → C | 75-99 → D
+  // ——— HELPER: Calcula el estante destino según los últimos 2 dígitos del retiro ———
+  // 00-24 â†’ A | 25-49 â†’ B | 50-74 â†’ C | 75-99 â†’ D
   const getEstanteForRetiro = (ordenDeRetiro) => {
     const match = (ordenDeRetiro || '').match(/(\d+)$/);
     if (!match) return null;
@@ -546,17 +686,18 @@ const WebRetirosPage = () => {
   const [filtroLugarRetiro, setFiltroLugarRetiro] = React.useState('ALL');
   const [expandedCol, setExpandedCol] = React.useState(null); // null = both, 'RT' | 'RWRL' = solo esa
   const [confirmDelivery, setConfirmDelivery] = React.useState(null);
-  // excepcionDelivery removido — reemplazado por estado 9
+  // excepcionDelivery removido â€” reemplazado por estado 9
   const [adminPassword, setAdminPassword] = React.useState('');
   // excepcionExplicacion removido
   const [deliveryScannedBultos, setDeliveryScannedBultos] = React.useState({});
   const [deliveryBarcodeInput, setDeliveryBarcodeInput] = React.useState('');
   const [deliverySelectedOrders, setDeliverySelectedOrders] = React.useState({});
-  const [announcedOrders, setAnnouncedOrders] = React.useState(new Set()); // Órdenes anunciadas desde el tótem
+  const [announcedOrders, setAnnouncedOrders] = React.useState(new Set()); // Ã“rdenes anunciadas desde el tÃ³tem
   const [duplicateDeliveryWarn, setDuplicateDeliveryWarn] = React.useState(null);
   const [layoutLocked, setLayoutLocked] = React.useState(false); // lock de layout de columnas
   const [lockedWeights, setLockedWeights] = React.useState(null); // pesos congelados
   const deliveryInputRef = React.useRef(null);
+  const searchInputRef = React.useRef(null);
   const knownApiOrdersRef = React.useRef(new Set()); // Ref para delta detection sin closure stale
   const lastComputedWeightsRef = React.useRef({}); // Ref para capturar pesos al hacer lock
 
@@ -573,6 +714,24 @@ const WebRetirosPage = () => {
     window.addEventListener('keydown', handleScannerFocus);
     return () => window.removeEventListener('keydown', handleScannerFocus);
   }, [confirmDelivery]);
+
+  // Global search focus on keydown (Type-to-search)
+  useEffect(() => {
+    if (view !== 'entrega') return;
+    const handleTypeToSearch = (e) => {
+      const active = document.activeElement;
+      // No interferir si ya estamos en un input o si hay un modal abierto (confirmDelivery)
+      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+      if (confirmDelivery || ubicationMode || selectedRetiro) return;
+
+      // Solo disparar para caracteres imprimibles, sin modificadores
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        searchInputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleTypeToSearch);
+    return () => window.removeEventListener('keydown', handleTypeToSearch);
+  }, [view, confirmDelivery, ubicationMode, selectedRetiro]);
 
   // Cerrar modales con ESC
   useEffect(() => {
@@ -649,7 +808,7 @@ const WebRetirosPage = () => {
         if (item.Posicion > configMap[cleanEstanteId].posiciones) configMap[cleanEstanteId].posiciones = item.Posicion;
       });
 
-      // Garantizar que los 4 estantes siempre aparezcan (aunque D esté vacío)
+      // Garantizar que los 4 estantes siempre aparezcan (aunque D estÃ© vacÃ­o)
       const ESTANTES_DEFAULT = [
         { id: 'A', secciones: 4, posiciones: 20 },
         { id: 'B', secciones: 4, posiciones: 20 },
@@ -680,7 +839,7 @@ const WebRetirosPage = () => {
           }
         }));
         // Filter out retiros already in apiOrders (web/totem) to avoid duplicates
-        // apiOrders use format "RT-18", otrosRetiros use "RT-0018" — compare by numeric ID
+        // apiOrders use format "RT-18", otrosRetiros use "RT-0018" â€” compare by numeric ID
         const apiOrderIds = new Set(formattedRetiros.map(o => {
           const match = (o.ordenDeRetiro || '').match(/(\d+)$/);
           return match ? parseInt(match[1], 10) : null;
@@ -698,7 +857,7 @@ const WebRetirosPage = () => {
 
 
 
-      // 3. Lanzar sincronización pesada en segundo plano si aplica (sin bloquear UI)
+      // 3. Lanzar sincronizaciÃ³n pesada en segundo plano si aplica (sin bloquear UI)
       if (backgroundSync) {
         api.post('/web-retiros/sincronizar').then(() => {
           // Solo refrescamos la lista de retiros izquierda en background, no bloqueamos
@@ -771,7 +930,7 @@ const WebRetirosPage = () => {
     } catch (e) { console.warn('[fetchPendingUpdate]', e); }
   }, []);
 
-  // ─── SOCKET: actualizar en tiempo real ───
+  // â”€â”€â”€ SOCKET: actualizar en tiempo real â”€â”€â”€
   useEffect(() => {
     let socket;
     const initSocket = async () => {
@@ -782,7 +941,7 @@ const WebRetirosPage = () => {
       socket.on("retiros:update", (data) => {
         fetchPendingUpdate();
         // Cualquier evento de retiros recalcula otrosRetiros para evitar estado obsoleto
-        // (ej. cancelaciones que cambian estado 1→5 y deben desaparecer de empaques)
+        // (ej. cancelaciones que cambian estado 1â†’5 y deben desaparecer de empaques)
         if (data?.type === 'asignado_estante' || data?.type === 'desasignado' || data?.type === 'entregado' || data?.type === 'estado' || data?.type === 'pago_web' || !data?.type) {
           api.get('/web-retiros/estantes').then(async res => {
             const estantesData = res.data || [];
@@ -840,7 +999,7 @@ const WebRetirosPage = () => {
       });
       socket.on("actualizado", () => { fetchPendingUpdate(); });
       socket.on("totem:cliente-anunciado", (data) => {
-        console.log('[WebRetiros] 📢 Cliente anunciado desde tótem:', data);
+        console.log('[WebRetiros] ðŸ“¢ Cliente anunciado desde tÃ³tem:', data);
         // Buscar todas las variantes posibles del ID del retiro (RT-123, RW-123, RL-123)
         const numId = data.ordenRetiro;
         setAnnouncedOrders(prev => {
@@ -848,7 +1007,7 @@ const WebRetirosPage = () => {
           next.add(numId);
           return next;
         });
-        // Notificación visual al operario
+        // NotificaciÃ³n visual al operario
         Swal.fire({
           toast: true,
           position: 'top-end',
@@ -859,7 +1018,7 @@ const WebRetirosPage = () => {
           background: '#fdf2f8',
           color: '#831843',
         });
-        // Auto-limpiar después de 30 minutos
+        // Auto-limpiar despuÃ©s de 30 minutos
         setTimeout(() => {
           setAnnouncedOrders(prev => {
             const next = new Set(prev);
@@ -883,13 +1042,13 @@ const WebRetirosPage = () => {
   const handleAsignarUbicacion = async (estanteId, sec, pos) => {
     if (!selectedRetiro) return;
 
-    // === VALIDACIÓN DE ESTANTE: el retiro debe ir al estante que corresponde a sus últimos 2 dígitos ===
+    // === VALIDACIÃ“N DE ESTANTE: el retiro debe ir al estante que corresponde a sus Ãºltimos 2 dÃ­gitos ===
     const intendedEstante = getEstanteForRetiro(selectedRetiro.ordenDeRetiro);
     if (intendedEstante && estanteId.trim() !== intendedEstante) {
       Swal.fire({
         iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>`,
         title: 'Estante incorrecto',
-        html: `La orden <strong style="color: #00AEEF;">${selectedRetiro.ordenDeRetiro}</strong> debe ir al estante <strong style="color: #00AEEF;">${intendedEstante}</strong> (rango ${intendedEstante === 'A' ? '00–24' : intendedEstante === 'B' ? '25–49' : intendedEstante === 'C' ? '50–74' : '75–99'}).<br><br>No se puede asignar al estante <strong>${estanteId}</strong>.`,
+        html: `La orden <strong style="color: #00AEEF;">${selectedRetiro.ordenDeRetiro}</strong> debe ir al estante <strong style="color: #00AEEF;">${intendedEstante}</strong> (rango ${intendedEstante === 'A' ? '00â€“24' : intendedEstante === 'B' ? '25â€“49' : intendedEstante === 'C' ? '50â€“74' : '75â€“99'}).<br><br>No se puede asignar al estante <strong>${estanteId}</strong>.`,
         confirmButtonText: 'Entendido',
         confirmButtonColor: '#dc2626',
         background: '#212121',
@@ -906,7 +1065,7 @@ const WebRetirosPage = () => {
     const ubicacionId = `${estanteId}-${sec}-${pos}`;
     const retiroParaAsignar = selectedRetiro; // Capturamos para optimismo
 
-    // === VALIDACIÓN DE CLIENTE ===
+    // === VALIDACIÃ“N DE CLIENTE ===
     const dataList = ocupacionEstantes[ubicacionId] || [];
     if (dataList.length > 0) {
       // Tomamos el primer ocupante para chequear
@@ -1013,7 +1172,7 @@ const WebRetirosPage = () => {
       };
     });
 
-    // Verificar autorización: pagada o estado 9 (Autorizado) — tipo 2 siempre pasa
+    // Verificar autorizaciÃ³n: pagada o estado 9 (Autorizado) â€” tipo 2 siempre pasa
     for (const item of listEnriquecida) {
       const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
       const retiroFull = freshRetiros.find(o => o.ordenDeRetiro === ordenStr) || apiOrders.find(o => o.ordenDeRetiro === ordenStr) || otrosRetiros.find(o => o.ordenDeRetiro === ordenStr);
@@ -1045,7 +1204,7 @@ const WebRetirosPage = () => {
   };
 
 
-  // handleExcepcionSubmit removido — reemplazado por estado 9 desde caja
+  // handleExcepcionSubmit removido â€” reemplazado por estado 9 desde caja
 
   const handleEntregar = async () => {
     if (!confirmDelivery) return;
@@ -1066,7 +1225,7 @@ const WebRetirosPage = () => {
     // === OPTIMISMO UI: Liberar el casillero visualmente de inmediato ===
     setOcupacionEstantes(prev => {
       const next = { ...prev };
-      // Si seleccionaron TODO, eliminamos la ubicación entera. Si no, sólo retiramos de la UI las seleccionadas
+      // Si seleccionaron TODO, eliminamos la ubicaciÃ³n entera. Si no, sÃ³lo retiramos de la UI las seleccionadas
       if (next[ubicacionId]) {
         const remaining = next[ubicacionId].filter(item => !ordenesSeleccionadas.includes(item.OrdenRetiro || item.ordenDeRetiro));
         if (remaining.length === 0) {
@@ -1088,7 +1247,7 @@ const WebRetirosPage = () => {
         ubicacionId,
         ordenesParaEntregar: ordenesSeleccionadas
       });
-      // El fetch vendrá por socket 
+      // El fetch vendrÃ¡ por socket 
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Error al liberar el estante');
       // Revertimos la UI si falla
@@ -1096,7 +1255,7 @@ const WebRetirosPage = () => {
     }
   };
 
-  // Entrega directa desde estante (doble clic) — sin abrir control de bultos
+  // Entrega directa desde estante (doble clic) â€” sin abrir control de bultos
   const directEntregar = async (ubicacionId, dataList) => {
     const list = Array.isArray(dataList) ? dataList : [dataList];
 
@@ -1107,7 +1266,7 @@ const WebRetirosPage = () => {
       freshRetiros = Array.isArray(data) ? data : [];
     } catch (e) { console.warn('No se pudo verificar estado actual de retiros:', e); }
 
-    // Verificar pago/autorización — tipo 2 siempre pasa
+    // Verificar pago/autorizaciÃ³n â€” tipo 2 siempre pasa
     for (const item of list) {
       const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
       const retiroFull = freshRetiros.find(o => o.ordenDeRetiro === ordenStr) || apiOrders.find(o => o.ordenDeRetiro === ordenStr);
@@ -1158,9 +1317,8 @@ const WebRetirosPage = () => {
   const handleDesasignar = async (ordenRetiro, ubicacionId) => {
     if (!ordenRetiro || !ubicacionId) return;
 
-    // ⚠️ Confirmación: desasignar devuelve la orden a empaques sin entregarla
+    // âš ï¸ Confirmación: desasignar devuelve la orden a empaques sin entregarla
     const { isConfirmed } = await Swal.fire({
-      // icon: 'warning',
       iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><path d="m7.5 4.27 9 5.15"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/><path d="m17 13 5 5"/><path d="m17 18 5-5"/></svg>`,
       title: '¿Quitar del estante?',
       html: `La orden <strong style="color: #00AEEF;">${ordenRetiro}</strong> se quitará del estante<br>y volverá a la sección de empaques.<br><br>Confirmá si querés hacer esto.`,
@@ -1220,7 +1378,7 @@ const WebRetirosPage = () => {
 
     try {
       const parts = targetId.split('-');
-      // targetId format: "A-2-3" → destEstanteId=A, destSeccion=2, destPosicion=3
+      // targetId format: "A-2-3" â†’ destEstanteId=A, destSeccion=2, destPosicion=3
       const destEstanteId = parts[0];
       const destSeccion = parseInt(parts[1]);
       const destPosicion = parseInt(parts[2]);
@@ -1236,9 +1394,9 @@ const WebRetirosPage = () => {
     }
   };
 
-  // Scroll + focus visual al casillero cuando se busca (por retiro, cliente o depósito)
+  // Scroll + focus visual al casillero cuando se busca (por retiro, cliente o depÃ³sito)
   useEffect(() => {
-    if (!searchTerm || searchTerm.length < 2) return;
+    if (!searchTerm) return;
     const term = searchTerm.toLowerCase();
 
     for (const id in ocupacionEstantes) {
@@ -1255,14 +1413,6 @@ const WebRetirosPage = () => {
       );
 
       if (matches) {
-        const el = document.getElementById(`box-${id}`);
-        if (el) {
-          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          el.classList.add('ring-4', 'ring-yellow-400', 'ring-offset-2', 'scale-110', 'z-50');
-          setTimeout(() => {
-            el.classList.remove('ring-4', 'ring-yellow-400', 'ring-offset-2', 'scale-110', 'z-50');
-          }, 2500);
-        }
         break;
       }
     }
@@ -1318,12 +1468,12 @@ const WebRetirosPage = () => {
 
         if (tryAssignIn(estConfig)) return;
 
-        // Estante correcto lleno — no hacer overflow, solo informar y abortar
-        const rangoLabel = targetEstanteId === 'A' ? '00–24' : targetEstanteId === 'B' ? '25–49' : targetEstanteId === 'C' ? '50–74' : '75–99';
+        // Estante correcto lleno â€” no hacer overflow, solo informar y abortar
+        const rangoLabel = targetEstanteId === 'A' ? '00â€“24' : targetEstanteId === 'B' ? '25â€“49' : targetEstanteId === 'C' ? '50â€“74' : '75â€“99';
         Swal.fire({
           iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>`,
           title: `Estante ${targetEstanteId} lleno`,
-          html: `No hay casilleros disponibles en el estante <strong style="color: #00AEEF;">${targetEstanteId}</strong> (rango ${rangoLabel}).<br><br>Debés liberar espacio antes de poder asignar esta orden.`,
+          html: `No hay casilleros disponibles en el estante <strong style="color: #00AEEF;">${targetEstanteId}</strong> (rango ${rangoLabel}).<br><br>DebÃ©s liberar espacio antes de poder asignar esta orden.`,
           confirmButtonText: 'Entendido',
           confirmButtonColor: '#dc2626',
           background: '#212121',
@@ -1579,7 +1729,7 @@ const WebRetirosPage = () => {
 
 
   // Etiqueta descriptiva para cada estante basada en su rango
-  const ESTANTE_LABELS = { A: '00 – 24', B: '25 – 49', C: '50 – 74', D: '75 – 99' };
+  const ESTANTE_LABELS = { A: '00 - 24', B: '25 - 49', C: '50 - 74', D: '75 - 99' };
   const getEstanteLabel = (id) => ESTANTE_LABELS[id?.trim()] || id;
 
   return (
@@ -1599,6 +1749,7 @@ const WebRetirosPage = () => {
             <div className="relative w-56 shrink-0">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
               <input
+                ref={searchInputRef}
                 type="text"
                 placeholder="Buscar orden o cliente..."
                 className="w-full pl-7 pr-3 py-1.5 bg-slate-50 rounded-lg border border-slate-200 focus:border-blue-400 focus:bg-white outline-none text-xs font-medium transition-all"
@@ -1636,7 +1787,7 @@ const WebRetirosPage = () => {
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Toggle de vista: un solo botón que lleva a la otra */}
+          {/* Toggle de vista: un solo botÃ³n que lleva a la otra */}
           <button
             onClick={() => setView(view === 'empaque' ? 'entrega' : 'empaque')}
             className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors shrink-0 uppercase"
@@ -1663,7 +1814,7 @@ const WebRetirosPage = () => {
         view === 'empaque' ? (
           <>
             <div className="animate-in fade-in duration-300">
-              {/* ─── LISTA UNIFICADA DE RETIROS ─── */}
+              {/* â”€â”€â”€ LISTA UNIFICADA DE RETIROS â”€â”€â”€ */}
               {(() => {
                 const PRIORITY_META = {
                   '-1': { label: 'Anunciadas', color: 'text-pink-600', dot: 'bg-pink-500', badge: 'bg-pink-50 border-pink-200 text-pink-700', icon: BellRing },
@@ -1675,7 +1826,7 @@ const WebRetirosPage = () => {
                 };
 
                 const getPriority = (item) => {
-                  // Anunciadas desde el tótem = prioridad máxima (-1)
+                  // Anunciadas desde el tÃ³tem = prioridad mÃ¡xima (-1)
                   const itemNum = (item.ordenDeRetiro || '').match(/(\d+)$/);
                   if (itemNum && announcedOrders.has(parseInt(itemNum[1], 10))) return -1;
                   if (item.pagorealizado === 1 || item.pagorealizado === true) return 0;
@@ -1720,7 +1871,7 @@ const WebRetirosPage = () => {
                   idcliente: o.CliCodigoCliente,
                   displayLabel: o.ordenDeRetiro,
                   pagorealizado: o.pagorealizado,
-                  estadoNumerico: o.OReEstadoActual,   // <-- estado numérico para detectar estado 9
+                  estadoNumerico: o.OReEstadoActual,   // <-- estado numÃ©rico para detectar estado 9
                   OReEstadoActual: o.OReEstadoActual,
                   TClDescripcion: o.TClDescripcion || '',
                   fechaAlta: o.fechaAlta || o.FechaAlta || null,
@@ -1762,7 +1913,7 @@ const WebRetirosPage = () => {
                   }
                   // Filtro lugar
                   if (filtroLugarRetiro !== 'ALL' && item.lugarRetiro !== filtroLugarRetiro) return false;
-                  // Búsqueda por retiro, cliente o número de orden de depósito
+                  // BÃºsqueda por retiro, cliente o nÃºmero de orden de depÃ³sito
                   if (searchTerm) {
                     const term = searchTerm.toLowerCase();
                     const matchRetiro = item.ordenDeRetiro && item.ordenDeRetiro.toLowerCase().includes(term);
@@ -1810,7 +1961,7 @@ const WebRetirosPage = () => {
                   return (raw === 'RW' || raw === 'RL') ? 'RWRL' : raw;
                 };
 
-                // Siempre mostrar las 3 columnas aunque estén vacías
+                // Siempre mostrar las 3 columnas aunque estÃ©n vacÃ­as
                 const activeCols = TYPE_COLS;
 
                 const renderCard = (item, meta) => {
@@ -1986,7 +2137,7 @@ const WebRetirosPage = () => {
             )}
           </>
         ) : (
-          /* VISTA MOSTRADOR - MATRIZ DE ESTANTERÍA */
+          /* VISTA MOSTRADOR - MATRIZ DE ESTANTERÃA */
           <div className="animate-in fade-in duration-300">
             <div className="mt-4">
 
@@ -2047,7 +2198,8 @@ const WebRetirosPage = () => {
                               return false;
                             });
                             const isMismatched = searchTerm && !matchesSearch;
-                            const isMatched = searchTerm && matchesSearch;
+                            if (isMismatched) return null; // Ocultar completamente los que no coinciden
+
 
                             const retiroInfo = firstData ? (
                               apiOrders.find(o => o.ordenDeRetiro === firstData.OrdenRetiro)
@@ -2055,15 +2207,14 @@ const WebRetirosPage = () => {
                             ) : null;
 
                             const getSlotColors = () => {
-                              if (isMatched) return { bg: 'bg-green-600', border: 'border-green-500', subText: 'text-green-100' };
                               const pagado = retiroInfo?.pagorealizado === 1 || retiroInfo?.pagorealizado === true
                                 || firstData?.Pagado === true || firstData?.Pagado === 1;
                               const autorizado = retiroInfo?.estadoNumerico === 9 || retiroInfo?.OReEstadoActual === 9 || firstData?.Autorizado === true;
                               const desc = (retiroInfo?.TClDescripcion || firstData?.TClDescripcion || '').toLowerCase();
-                              if (desc.includes('rollo') || desc.includes('semanal')) return { bg: 'bg-purple-600', border: 'border-purple-700', subText: 'text-purple-100' };
-                              if (pagado) return { bg: 'bg-emerald-600', border: 'border-emerald-700', subText: 'text-emerald-200' };
-                              if (autorizado) return { bg: 'bg-amber-500', border: 'border-amber-600', subText: 'text-amber-100' };
-                              return { bg: 'bg-red-500', border: 'border-red-600', subText: 'text-red-100' };
+                              if (desc.includes('rollo') || desc.includes('semanal')) return { bg: 'bg-gradient-to-br from-purple-600 to-purple-700', border: 'border-purple-700', subText: 'text-purple-100' };
+                              if (pagado) return { bg: 'bg-gradient-to-br from-emerald-600 to-emerald-700', border: 'border-emerald-700', subText: 'text-emerald-100' };
+                              if (autorizado) return { bg: 'bg-gradient-to-br from-indigo-600 to-indigo-700', border: 'border-indigo-700', subText: 'text-indigo-100' };
+                              return { bg: 'bg-gradient-to-br from-rose-600 to-rose-700', border: 'border-rose-700', subText: 'text-rose-100' };
                             };
                             const slotColors = getSlotColors();
 
@@ -2072,69 +2223,26 @@ const WebRetirosPage = () => {
                               return m ? announcedOrders.has(parseInt(m[1], 10)) : false;
                             });
 
+                            const allOrders = dataList.flatMap(d => Array.isArray(d.orders) ? d.orders.map(o => ({...o, retiro: d.OrdenRetiro})) : []);
+                            const hasOrders = allOrders.length > 0;
+
                             return (
-                                <motion.div
-                                  layout
-                                  id={`box-${id}`}
-                                  key={`${id}-${dataList.map(d => d.OrdenRetiro).join(',')}`}
-                                  initial={{ opacity: 0, scale: 0.5, filter: 'blur(4px)' }}
-                                  animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                                  exit={{ opacity: 0, scale: 0.5, filter: 'blur(4px)' }}
-                                  whileHover={{ scale: 1.08 }}
-                                  transition={{ duration: 0.25, type: 'spring', bounce: 0.2 }}
-                                draggable
-                                onDragStart={(e) => {
-                                  setIsDragging(true);
-                                  setDragItem({ ...dataList[0], ubicacionId: id });
-                                  e.dataTransfer.effectAllowed = 'move';
-                                }}
-                                onDragEnd={() => { setIsDragging(false); setDragOverSlot(null); }}
-                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverSlot(id); }}
-                                onDragLeave={(e) => { e.preventDefault(); setDragOverSlot(prev => prev === id ? null : prev); }}
-                                onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleDrop(id); setDragOverSlot(null); }}
-                                className={`h-14 w-32 rounded-xl border-2 transition-colors flex flex-col items-center justify-center gap-0.5 relative group overflow-hidden cursor-pointer
-                                    ${slotColors.bg} ${slotColors.border} shadow-sm
-                                    ${isMismatched ? 'opacity-20 grayscale' : ''}
-                                    ${isMatched ? 'ring-4 ring-green-400 scale-[1.02]' : ''}
-                                    ${dragOverSlot === id ? 'ring-2 ring-blue-400' : ''}
-                                    ${isSlotAnnounced ? 'ring-4 ring-pink-400 animate-pulse shadow-lg shadow-pink-200' : ''}
-                                  `}
-                                onDoubleClick={() => directEntregar(id, dataList)}
-                              >
-                                {dataList.length > 1 && (
-                                  <div className="absolute top-0.5 right-1 bg-rose-500 text-white text-[7px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center z-20 pointer-events-none">
-                                    {dataList.length}
-                                  </div>
-                                )}
-
-                                {isSlotAnnounced && (
-                                  <div className="absolute -top-1 -left-1 bg-pink-500 text-white text-[8px] font-black w-5 h-5 rounded-full flex items-center justify-center z-30 pointer-events-none shadow-md">
-                                    <BellRing size={10} />
-                                  </div>
-                                )}
-
-                                <button draggable={false}
-                                  onClick={(e) => { e.stopPropagation(); handleDesasignar(dataList[0]?.OrdenRetiro, id); }}
-                                  className={`absolute top-0 right-0 w-6 h-6 flex items-center justify-center text-zinc-100 hover:scale-125 z-30 opacity-0 group-hover:opacity-100 transition-all ${isDragging ? 'pointer-events-none' : ''}`}
-                                ><X size={14} strokeWidth={2.5} /></button>
-
-                                <div className="flex flex-col items-center justify-center gap-0 w-full overflow-hidden px-1 select-none pointer-events-none flex-1">
-                                  {dataList.slice(0, 2).map((data, idx) => {
-                                    const subLabel = dataList.length === 1 && Array.isArray(data.orders) && data.orders.length === 1
-                                      ? data.orders[0].orderNumber : null;
-                                    return (
-                                      <React.Fragment key={idx}>
-                                        <span className="text-[11px] font-black text-white truncate leading-tight text-center w-full">
-                                          {data.PagoHandy ? data.OrdenRetiro.replace('R-', 'PW-') : data.OrdenRetiro}
-                                        </span>
-                                        {subLabel && (
-                                          <span className={`text-[11px] font-black truncate leading-tight text-center w-full ${slotColors.subText || 'text-indigo-200'}`}>{subLabel}</span>
-                                        )}
-                                      </React.Fragment>
-                                    );
-                                  })}
-                                </div>
-                              </motion.div>
+                              <ShelfSlot
+                                key={`${id}-${dataList.map(d => d.OrdenRetiro).join(',')}`}
+                                id={id}
+                                dataList={dataList}
+                                slotColors={slotColors}
+                                isSlotAnnounced={isSlotAnnounced}
+                                allOrders={allOrders}
+                                hasOrders={hasOrders}
+                                dragOverSlot={dragOverSlot}
+                                directEntregar={directEntregar}
+                                handleDesasignar={handleDesasignar}
+                                handleDrop={handleDrop}
+                                setIsDragging={setIsDragging}
+                                setDragItem={setDragItem}
+                                setDragOverSlot={setDragOverSlot}
+                              />
                             );
                           })}
                         </AnimatePresence>
@@ -2240,11 +2348,11 @@ const WebRetirosPage = () => {
               <h3 className="text-2xl font-black text-slate-800 mb-2 tracking-tight">Confirmar Entrega</h3>
               <p className="text-slate-500 mb-4 font-medium">
                 {confirmDelivery.id === 'FUERA DE ESTANTE'
-                  ? <>Orden de retiro: <strong className="text-blue-600">{confirmDelivery.dataList[0]?.ordenDeRetiro || confirmDelivery.dataList[0]?.OrdenRetiro}</strong><span className="ml-2 text-slate-400">· {confirmDelivery.dataList[0]?.CliNombre || confirmDelivery.dataList[0]?.idcliente || confirmDelivery.dataList[0]?.CodigoCliente || ''}</span></>
+                  ? <>Orden de retiro: <strong className="text-blue-600">{confirmDelivery.dataList[0]?.ordenDeRetiro || confirmDelivery.dataList[0]?.OrdenRetiro}</strong><span className="ml-2 text-slate-400"> · {confirmDelivery.dataList[0]?.CliNombre || confirmDelivery.dataList[0]?.idcliente || confirmDelivery.dataList[0]?.CodigoCliente || ''}</span></>
                   : <>Ubicación a entregar: <strong className="text-blue-600">{confirmDelivery.id}</strong></>}
               </p>
 
-              {/* SELECCIÓN DE ÓRDENES MULTPLES */}
+              {/* SELECCIÓN DE ÓRDENES MÚLTIPLES */}
               {confirmDelivery.dataList.length > 1 && (
                 <div className="mb-4 bg-slate-100 p-4 rounded-2xl border border-slate-200">
                   <p className="text-xs font-bold text-slate-500 uppercase mb-2">Seleccione las órdenes a retirar:</p>
@@ -2421,7 +2529,7 @@ const WebRetirosPage = () => {
         )
       }
 
-      {/* Modal excepción eliminado — las órdenes sin pago deben ser autorizadas desde Caja (estado 9) */}
+      {/* Modal excepciÃ³n eliminado â€” las Ã³rdenes sin pago deben ser autorizadas desde Caja (estado 9) */}
     </div >
   );
 };
