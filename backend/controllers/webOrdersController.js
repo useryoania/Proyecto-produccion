@@ -1405,10 +1405,7 @@ exports.getPickupOrders = async (req, res) => {
                 AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar')
                 AND o.OReIdOrdenRetiro IS NULL
             `);
-
         const externalOrders = ordersResult.recordset;
-        logger.info(`🔍 [DEBUG PICKUP] Query returned ${externalOrders?.length || 0} orders for client ${idClienteString}:`, externalOrders?.map(o => o.CodigoOrden));
-
         if (!externalOrders || externalOrders.length === 0) {
             return res.json({ success: true, data: [] });
         }
@@ -2373,6 +2370,9 @@ exports.handyWebhook = async (req, res) => {
                                 .input('jsonStr', sql.NVarChar(sql.MAX), updatedOrdersJson)
                                 .query('UPDATE HandyTransactions SET OrdersJson = @jsonStr WHERE TransactionId = @txId3');
                         } catch (retiroErr) {
+                            if (retiroTransaction) {
+                                try { await retiroTransaction.rollback(); } catch (e) { /* ignore */ }
+                            }
                             logger.error('[HANDY WEBHOOK] Error creando retiro diferido — se aborta el flujo de pago para evitar registrar un pago sin retiro confirmado:', retiroErr.message);
                             return res.status(200).json({ received: true, warning: 'retiro_deferred_failed' });
                         }
@@ -2796,25 +2796,29 @@ exports.mpWebhook = async (req, res) => {
     const body = req.body;
 
     // ── Validación de firma HMAC-SHA256 ──────────────────────────────
-    // MP envía: x-signature: ts=TIMESTAMP,v1=HMAC_HEX
-    //           x-request-id: UUID del request
-    // El manifest a firmar: "id:{data.id};request-id:{x-request-id};ts:{ts};"
     const crypto = require('crypto');
     const xSignature  = req.headers['x-signature']  || '';
     const xRequestId  = req.headers['x-request-id'] || '';
     const webhookSecret = process.env.MP_WEBHOOK_SECRET;
 
-    if (webhookSecret && xSignature) {
+    // Diferenciar IPN antiguo vs Webhook moderno
+    const isIPN = !!req.query.topic;
+
+    if (isIPN) {
+        logger.info(`[MP WEBHOOK] Recibida notificación IPN (topic: ${req.query.topic}). Saltando validación de firma para consultar la API directamente.`);
+    } else if (webhookSecret) {
+        if (!xSignature) {
+            logger.warn('[MP WEBHOOK] ⚠️ Falta el header x-signature en Webhook. Request rechazado.');
+            return res.status(403).send('Missing signature');
+        }
+
         try {
-            // Trim each part to handle headers like "ts=123, v1=abc" (space after comma)
             const parts = xSignature.split(',').map(p => p.trim());
             const ts  = parts.find(p => p.startsWith('ts='))?.slice(3) || '';
             const v1  = parts.find(p => p.startsWith('v1='))?.slice(3) || '';
-            const dataId = String(req.query['data.id'] || body?.data?.id || '');
+            const dataId = String(req.query['data.id'] || req.query.id || body?.data?.id || body?.id || '');
             const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
-            const computed = crypto.createHmac('sha256', webhookSecret).update(manifest).digest('hex');
-
-            logger.info(`[MP WEBHOOK] Sig debug — ts="${ts}" v1="${v1.substring(0,8)}..." computed="${computed.substring(0,8)}..." manifest="${manifest}"`);
+            const computed = crypto.createHmac('sha256', webhookSecret.trim()).update(manifest).digest('hex');
 
             const valid = v1.length === 64 && computed.length === 64 && crypto.timingSafeEqual(
                 Buffer.from(v1, 'hex'),
@@ -2823,13 +2827,14 @@ exports.mpWebhook = async (req, res) => {
 
             if (!valid) {
                 logger.warn('[MP WEBHOOK] ⚠️  Firma inválida — request rechazado.');
+                logger.info(`[MP DEBUG] ts="${ts}" v1="${v1.substring(0,8)}..." computed="${computed.substring(0,8)}..." manifest="${manifest}"`);
                 return res.status(403).send('Invalid signature');
             }
         } catch (sigErr) {
             logger.warn('[MP WEBHOOK] Error validando firma:', sigErr.message);
             return res.status(403).send('Signature validation error');
         }
-    } else if (!webhookSecret) {
+    } else {
         logger.warn('[MP WEBHOOK] MP_WEBHOOK_SECRET no configurado — saltando validación de firma.');
     }
     // ────────────────────────────────────────────────────────────────
@@ -2843,11 +2848,19 @@ exports.mpWebhook = async (req, res) => {
     logger.info('------------------------------------------');
 
     try {
-        const action = body.action;
-        const paymentId = body.data?.id;
+        const action = body.action || req.query.topic;
+        
+        // En webhooks modernos viene en body.data.id, en IPN viene en req.query.id
+        const paymentId = body.data?.id || req.query['data.id'] || req.query.id;
+
+        // Solo nos interesan los eventos de pago. Los merchant_order los ignoramos limpiamente.
+        if (req.query.topic === 'merchant_order' || action === 'merchant_order') {
+            logger.info('[MP WEBHOOK] Ignorando evento merchant_order (solo procesamos pagos).');
+            return;
+        }
 
         if (!paymentId) {
-            logger.warn('[MP WEBHOOK] Evento sin data.id, ignorado.');
+            logger.warn('[MP WEBHOOK] Evento sin paymentId (ni data.id ni query.id), ignorado.');
             return;
         }
 
@@ -3030,9 +3043,14 @@ exports.mpWebhook = async (req, res) => {
             .input('RID',    sql.Int, ordenRetiroId)
             .input('Estado', sql.Int, nuevoEstado)
             .input('PagoId', sql.Int, pagoId)
+            .input('Ref',    sql.VarChar(200), externalRef)
             .query(`
-                UPDATE OrdenesRetiro SET PagIdPago = @PagoId, OReEstadoActual = @Estado,
-                    OReFechaEstadoActual = GETDATE(), ORePasarPorCaja = 0
+                UPDATE OrdenesRetiro SET 
+                    PagIdPago = @PagoId, 
+                    ReferenciaPagoOnline = @Ref,
+                    OReEstadoActual = @Estado,
+                    OReFechaEstadoActual = GETDATE(), 
+                    ORePasarPorCaja = 0
                 WHERE OReIdOrdenRetiro = @RID
             `);
 

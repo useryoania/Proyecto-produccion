@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { apiClient } from '../api/apiClient';
+import Swal from 'sweetalert2';
 import {
     Factory,
     User,
@@ -14,7 +15,8 @@ import {
     Crown,
     ChevronDown,
     CreditCard,
-    History
+    History,
+    MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SERVICES_LIST } from '../constants/services';
@@ -41,6 +43,7 @@ export const MainLayout = ({ children }) => {
     const [visibleConfig, setVisibleConfig] = useState(null);
     const [webContent, setWebContent] = useState({ sidebar: [], popup: [] });
     const [showPopup, setShowPopup] = useState(false);
+    const [showLogoutModal, setShowLogoutModal] = useState(false);
 
     // Push notifications (pre-permission banner)
     const { showBanner, acceptPush, dismissPush } = usePushNotifications();
@@ -112,6 +115,10 @@ export const MainLayout = ({ children }) => {
     };
 
     const isActive = (path) => location.pathname === path;
+    
+    const handleLogout = () => {
+        setShowLogoutModal(true);
+    };
 
     const NavItem = ({ to, icon: Icon, label }) => (
         <Link
@@ -132,6 +139,51 @@ export const MainLayout = ({ children }) => {
     return (
         <div className="flex h-screen bg-zinc-900 overflow-hidden font-sans text-zinc-100">
             <LandingNavbar />
+
+            {/* Modal de Confirmación de Cierre de Sesión (Estilo Producción) */}
+            <AnimatePresence>
+                {showLogoutModal && (
+                    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="absolute inset-0 bg-black/60"
+                            onClick={() => setShowLogoutModal(false)}
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                            transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                            className="bg-custom-dark border border-zinc-700/50 rounded-xl max-w-sm w-full p-6 relative z-10 shadow-2xl"
+                        >
+                            <h3 className="text-xl font-bold text-white mb-2">Cerrar Sesión</h3>
+                            <p className="text-zinc-400 text-sm mb-6">¿Estás seguro que deseas salir del sistema?</p>
+                            <div className="flex gap-3 justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowLogoutModal(false)}
+                                    className="px-4 py-2 rounded-lg text-sm font-semibold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowLogoutModal(false);
+                                        logout();
+                                    }}
+                                    className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-500 transition-colors"
+                                >
+                                    Salir
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
             {/* Sidebar Desktop */}
             <aside className="hidden md:flex flex-col w-72 bg-custom-dark text-zinc-100 shadow-2xl z-20 m-4 mt-[80px] rounded-2xl border border-brand-dark backdrop-blur-xl">
 
@@ -210,6 +262,7 @@ export const MainLayout = ({ children }) => {
                     <NavItem to="/portal/pickup" icon={Package} label="Retiro de Pedidos" />
                     <NavItem to="/portal/payments" icon={CreditCard} label="Pagos Pendientes" />
                     <NavItem to="/portal/history" icon={History} label="Historial" />
+                    <NavItem to="/portal/soporte" icon={MessageSquare} label="Soporte / Ayuda" />
 
                     {/* <div className="pt-4 mt-4 border-t border-zinc-800">
                         <Link to="/portal/club">
@@ -254,7 +307,7 @@ export const MainLayout = ({ children }) => {
                         </div>
                     </div>
                     <button
-                        onClick={logout}
+                        onClick={handleLogout}
                         className="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-300 transition-colors w-full px-3 py-2.5 rounded-xl justify-center border border-zinc-800 hover:border-brand-magenta/40 hover:bg-brand-magenta/5"
                     >
                         <LogOut size={16} /> Cerrar Sesión

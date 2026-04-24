@@ -58,7 +58,8 @@ export const TicketsClienteView = () => {
             </div>
 
             <GlassCard className="p-0 overflow-hidden">
-                <div className="overflow-x-auto">
+                {/* Vista Desktop (Tabla) */}
+                <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-zinc-800/50 text-zinc-400 text-xs uppercase tracking-wider">
@@ -104,6 +105,40 @@ export const TicketsClienteView = () => {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Vista Mobile (Tarjetas) */}
+                <div className="md:hidden flex flex-col">
+                    {loading ? (
+                        <div className="p-8 flex justify-center text-zinc-500">
+                            <Clock className="w-6 h-6 animate-spin" />
+                        </div>
+                    ) : tickets.length === 0 ? (
+                        <div className="p-8 text-center text-zinc-500 text-sm">
+                            No tenés tickets abiertos. ¡Todo marcha bien!
+                        </div>
+                    ) : (
+                        tickets.map(t => (
+                            <div key={t.TicIdTicket} className="flex flex-col p-4 border-b border-zinc-800/60 last:border-0 gap-3 hover:bg-zinc-800/20 transition-colors">
+                                <div className="flex justify-between items-start">
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-zinc-300 font-mono text-xs">#{t.TicIdTicket} • {new Date(t.TicFechaActualizacion).toLocaleDateString('es-UY')}</span>
+                                        <span className="text-zinc-200 font-semibold">{t.TicAsunto}</span>
+                                    </div>
+                                    <div>{getStatusBadge(t.TicEstado)}</div>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-zinc-400 text-xs">{t.Departamento || '-'}</span>
+                                    <button 
+                                        onClick={() => navigate(`/portal/soporte/${t.TicIdTicket}`)}
+                                        className="text-custom-cyan hover:text-white text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1"
+                                    >
+                                        Ver Chat <MessageSquare size={12} />
+                                    </button>
+                                </div>
+                            </div>
+                        ))
+                    )}
                 </div>
             </GlassCard>
 

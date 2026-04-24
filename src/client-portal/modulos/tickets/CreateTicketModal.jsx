@@ -78,20 +78,7 @@ export default function CreateTicketModal({ isOpen, onClose, onCreated }) {
                 formData.append('evidencia', file);
             });
 
-            // AXIOS req manual porque apiClient.post default asume json
-            // Vamos a usar el endpoint fetch directo o un wrapper custom si existe, sino usamos axios
-            // Suponemos que usamos la api fetch nativa logica del proyecto con Headers correctos
-            const token = localStorage.getItem('token');
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/tickets`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                    // No poner Content-Type: multipart/form-data, fetch lo hace solo con el boundary boundary
-                },
-                body: formData
-            });
-
-            const data = await response.json();
+            const data = await apiClient.postFormData('/tickets', formData);
 
             if (data.success) {
                 onCreated();

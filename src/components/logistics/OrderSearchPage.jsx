@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { Search, Loader2, Save, Trash2, Download, Filter, RefreshCcw, CheckSquare, Square, ChevronDown, CheckCircle, Database, X } from 'lucide-react';
+import { Search, Loader2, Save, Trash2, Download, Filter, RefreshCcw, CheckSquare, Square, ChevronDown, CheckCircle, Database, X, Ban } from 'lucide-react';
 import api from '../../services/api';
 import { utils, writeFile } from 'xlsx';
 import Swal from 'sweetalert2';
@@ -191,7 +191,64 @@ const OrderSearchPage = () => {
         }
     };
 
+    const handleAnularRetiro = async () => {
+        if (selectedOrders.size === 0) return;
+
+        // Identificar los retiros involucrados en la selección
+        const selectedOrderObjects = orders.filter(o => selectedOrders.has(o.IdOrden));
+        const retiros = Array.from(new Set(selectedOrderObjects.map(o => o.OrdenRetiro).filter(Boolean)));
+
+        if (retiros.length === 0) {
+            Toast.fire({ icon: 'warning', title: 'Ninguna de las órdenes seleccionadas pertenece a un retiro.' });
+            return;
+        }
+
+        if (retiros.length > 1) {
+            Toast.fire({ icon: 'warning', title: 'Seleccionaste órdenes de diferentes retiros. Seleccioná solo de uno.' });
+            return;
+        }
+
+        const idRetiro = retiros[0];
+
+        const { value: motivo } = await Swal.fire({
+            title: 'Anular Orden de Retiro',
+            html: `¿Estás seguro de que deseas anular el retiro <strong>${idRetiro}</strong>?<br>Las órdenes volverán a estar disponibles para un nuevo retiro.`,
+            input: 'text',
+            inputLabel: 'Motivo de la anulación',
+            inputPlaceholder: 'Ej: Error en bultos, Cliente cancela...',
+            showCancelButton: true,
+            confirmButtonText: 'Anular Retiro',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#e11d48',
+            background: '#1c1c1e',
+            color: '#f4f4f5',
+            inputValidator: (value) => {
+                if (!value) return 'Debes ingresar un motivo';
+            }
+        });
+
+        if (!motivo) return;
+
+        try {
+            setBulkUpdating(true);
+            const idLimpio = String(idRetiro).replace(/^[A-Za-z]+-/, '');
+            console.log(`[DEBUG] Intentando anular retiro. URL: /web-retiros/anular/${idLimpio}`);
+            await api.post(`/web-retiros/anular/${idLimpio}`, { motivo });
+
+            Toast.fire({ icon: 'success', title: 'Orden de retiro anulada correctamente.' });
+            setSelectedOrders(new Set());
+            fetchAllOrders(filters);
+        } catch (error) {
+            console.error('Error anular retiro:', error);
+            const msg = error.response?.data?.error || error.response?.data?.message || error.message || 'Error al anular retiro.';
+            Swal.fire({ icon: 'error', title: 'No se pudo anular', text: msg, background: '#1c1c1e', color: '#f4f4f5' });
+        } finally {
+            setBulkUpdating(false);
+        }
+    };
+
     const handleDeleteOrders = async () => {
+
         if (selectedOrders.size === 0) return;
 
         const { value } = await Swal.fire({
@@ -535,6 +592,17 @@ const OrderSearchPage = () => {
 
                     <button
                         disabled={selectedOrders.size === 0 || bulkUpdating}
+                        onClick={handleAnularRetiro}
+                        className={`py-2.5 px-6 rounded-lg font-black flex items-center gap-2 uppercase text-sm tracking-wider transition-all
+                            ${selectedOrders.size > 0 && !bulkUpdating ? 'bg-amber-100 text-amber-600 border border-amber-200 shadow-sm hover:bg-amber-500 hover:text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed'} 
+                        `}
+                    >
+                        {bulkUpdating ? <Loader2 size={16} className="animate-spin" /> : <Ban size={16} />}
+                        Anular Retiro
+                    </button>
+
+                    <button
+                        disabled={selectedOrders.size === 0 || bulkUpdating}
                         onClick={handleDeleteOrders}
                         className={`py-2.5 px-6 rounded-lg font-black flex items-center gap-2 uppercase text-sm tracking-wider transition-all
                             ${selectedOrders.size > 0 && !bulkUpdating ? 'bg-rose-100 text-rose-600 border border-rose-200 shadow-sm hover:bg-rose-500 hover:text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed'} 
@@ -542,6 +610,7 @@ const OrderSearchPage = () => {
                     >
                         <Trash2 size={16} /> Eliminar Órdenes
                     </button>
+
                 </div>
             </div>
 

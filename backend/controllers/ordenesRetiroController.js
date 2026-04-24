@@ -80,7 +80,14 @@ const getOrdenesRetiroQueryBase = `
     r.PagIdPago,
     r.ORePasarPorCaja,
     r.FormaRetiro,
-    fe.Nombre AS lugarRetiro,
+    COALESCE(fe.Nombre, 
+        CASE WHEN LEN(ISNULL(r.DireccionEnvio, '')) > 0 
+               OR r.AgenciaEnvio IS NOT NULL 
+               OR LEN(ISNULL(r.AgenciaOtra, '')) > 0 
+             THEN 'Envío / Encomienda' 
+             ELSE 'Retiro en el Local' 
+        END
+    ) AS lugarRetiro,
     er.EORNombreEstado AS estado,
     o.OrdIdOrden AS orderId,
     o.OrdCodigoOrden AS orderNumber,

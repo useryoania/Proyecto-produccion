@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { apiClient } from '../../api/apiClient';
+import { apiClient, API_BASE_URL } from '../../api/apiClient';
+import { socket } from '../../../services/socketService';
 import { GlassCard } from '../../pautas/GlassCard';
 import { CustomButton } from '../../pautas/CustomButton';
-import { ArrowLeft, Send, UploadCloud, AlertCircle, FileText, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Send, UploadCloud, AlertCircle, FileText, CheckCircle, Image as ImageIcon } from 'lucide-react';
 import { useAuth } from '../../auth/AuthContext';
 
 export const TicketThreadWindow = () => {
@@ -45,12 +46,25 @@ export const TicketThreadWindow = () => {
 
     useEffect(() => {
         fetchDetail();
-        
-        // Simple polling just for thread freshness (every 30s)
-        const interval = setInterval(() => {
-            fetchDetail();
-        }, 30000);
-        return () => clearInterval(interval);
+
+        // Unirse al room del ticket para recibir mensajes en tiempo real
+        socket.emit('join:ticket', { ticketId: id });
+
+        const handleNewMessage = (data) => {
+            // Solo refrescar si el evento es de este ticket y no fue enviado por nosotros
+            if (String(data.ticketId) === String(id)) {
+                fetchDetail();
+            }
+        };
+
+        socket.on('ticket:new_message', handleNewMessage);
+        socket.on('ticket:updated', handleNewMessage);
+
+        return () => {
+            socket.emit('leave:ticket', { ticketId: id });
+            socket.off('ticket:new_message', handleNewMessage);
+            socket.off('ticket:updated', handleNewMessage);
+        };
     }, [id]);
 
     useEffect(() => {
@@ -81,14 +95,7 @@ export const TicketThreadWindow = () => {
                 formData.append('evidencia', file);
             });
 
-            const token = localStorage.getItem('token');
-            const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/tickets/${id}/responder`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-                body: formData
-            });
-
-            const data = await response.json();
+            const data = await apiClient.postFormData(`/tickets/${id}/responder`, formData);
             if (data.success) {
                 setNuevoMensaje('');
                 setArchivos([]);
@@ -129,19 +136,24 @@ export const TicketThreadWindow = () => {
         <div className="animate-fade-in max-w-4xl mx-auto flex flex-col h-[85vh]">
             
             {/* Header del Ticket */}
-            <div className="flex items-center justify-between bg-zinc-900 border border-zinc-700/50 p-4 rounded-t-2xl shadow-lg shrink-0">
-                <div className="flex items-center gap-4">
-                    <button onClick={() => navigate('/portal/soporte')} className="text-zinc-400 hover:text-white transition-colors">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sm:gap-0 bg-zinc-900 border border-zinc-700/50 p-4 rounded-t-2xl shadow-lg shrink-0">
+                <div className="flex items-start sm:items-center gap-3 w-full sm:w-auto">
+                    <button onClick={() => navigate('/portal/soporte')} className="text-zinc-400 hover:text-white transition-colors mt-0.5 sm:mt-0 shrink-0">
                         <ArrowLeft size={24} />
                     </button>
-                    <div>
-                        <h2 className="text-lg font-bold text-zinc-200">Ticket #{ticket.TicIdTicket} <span className="text-custom-cyan font-normal uppercase text-xs px-2 py-1 bg-zinc-800 rounded ml-2">{ticket.DepNombre}</span></h2>
-                        <p className="text-sm text-zinc-500 font-medium truncate max-w-sm sm:max-w-md">{ticket.TicAsunto}</p>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                            <h2 className="text-lg font-bold text-zinc-200">Ticket #{ticket.TicIdTicket}</h2>
+                            <span className="text-custom-cyan font-bold uppercase text-[10px] px-2 py-0.5 bg-zinc-800 rounded shrink-0">
+                                {ticket.DepNombre}
+                            </span>
+                        </div>
+                        <p className="text-sm text-zinc-500 font-medium truncate w-full">{ticket.TicAsunto}</p>
                     </div>
                 </div>
-                <div className="text-right">
-                    <div className="text-xs uppercase font-semibold text-zinc-500 mb-1">Estado actual</div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${isClosed ? 'bg-zinc-800 text-zinc-400' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
+                <div className="text-left sm:text-right w-full sm:w-auto pl-9 sm:pl-0">
+                    <div className="text-[10px] uppercase font-semibold text-zinc-500 mb-1">Estado actual</div>
+                    <span className={`inline-block whitespace-nowrap px-3 py-1 rounded-full text-xs font-bold ${isClosed ? 'bg-zinc-800 text-zinc-400' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'}`}>
                         {getStatusText(ticket.TicEstado)}
                     </span>
                 </div>
@@ -166,7 +178,8 @@ export const TicketThreadWindow = () => {
                                     <div className="mt-3 flex flex-wrap gap-2">
                                         {msg.adjuntos.map(adj => {
                                             const isPdf = adj.TAdjRutaArchivo.toLowerCase().endsWith('.pdf');
-                                            const url = `/uploads/${adj.TAdjRutaArchivo}`;
+                                            const baseUrl = API_BASE_URL.replace(/\/api$/, '');
+                                            const url = `${baseUrl}/uploads/${adj.TAdjRutaArchivo}`;
                                             return (
                                                 <a 
                                                     key={adj.TAdjIdAdjunto} 
@@ -175,7 +188,7 @@ export const TicketThreadWindow = () => {
                                                     rel="noopener noreferrer"
                                                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold hover:opacity-80 transition-opacity ${isMine ? 'bg-black/10' : 'bg-black/30'}`}
                                                 >
-                                                    {isPdf ? <FileText size={14} /> : <img src={url} alt="Evidencia" className="w-5 h-5 object-cover rounded" />}
+                                                    {isPdf ? <FileText size={14} /> : <ImageIcon size={14} />}
                                                     Adjunto
                                                 </a>
                                             );

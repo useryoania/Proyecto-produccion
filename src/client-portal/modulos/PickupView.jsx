@@ -984,7 +984,7 @@ export const PickupView = () => {
                 )}
 
                 {/* Botones finales */}
-                <div className={`flex ${user?.tipoClienteId === 1 ? 'justify-end' : 'justify-between'} items-stretch gap-3`}>
+                <div className={`flex ${(user?.tipoClienteId === 1 && totalAmount > 0) ? 'justify-end' : 'justify-between'} items-stretch gap-3`}>
                     {/* "Pagar después" — solo para cuentas corrientes (tipo 2 y 3) */}
                     {(user?.tipoClienteId === 2 || user?.tipoClienteId === 3) && (
                         <CustomButton
@@ -1005,6 +1005,29 @@ export const PickupView = () => {
                             whileTap={{ scale: 1 }}
                         >
                             Pagar después
+                        </CustomButton>
+                    )}
+
+                    {/* "Confirmar Retiro" — para tipo 1 cuando totalAmount === 0 (órdenes ya pagadas) */}
+                    {user?.tipoClienteId === 1 && totalAmount === 0 && (
+                        <CustomButton
+                            onClick={async () => {
+                                const code = await handleCreatePickup();
+                                if (!code) return;
+                                setConfirmedWithoutPayment(false);
+                                setStep('success');
+                                sessionStorage.removeItem('pickup_selected');
+                                sessionStorage.removeItem('pickup_code');
+                            }}
+                            isLoading={loading}
+                            disabled={loading || !selectedFormaEnvio || needsAddress || needsReceiverName}
+                            variant="primary"
+                            icon={PackageCheck}
+                            className="w-full md:w-auto !bg-custom-dark !text-zinc-400 hover:!text-zinc-100 !shadow-none border border-zinc-800 hover:!border-brand-cyan/40 hover:!bg-brand-cyan/5"
+                            whileHover={{ scale: 1 }}
+                            whileTap={{ scale: 1 }}
+                        >
+                            Confirmar Retiro
                         </CustomButton>
                     )}
 

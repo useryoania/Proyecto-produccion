@@ -4,7 +4,7 @@ import { printRetiroStation } from './webPrintHelper';
 import {
   Package, Search, Check, AlertCircle, ArrowLeft, CheckCircle,
   Loader2, LayoutGrid, MapPin, Clock, Printer, Tag,
-  XCircle, MoveHorizontal, X, BellRing, PackageCheck, Lock, Unlock
+  XCircle, MoveHorizontal, X, BellRing, PackageCheck, Lock, Unlock, Ban
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/api'; // Axios instance base
@@ -1357,6 +1357,58 @@ const WebRetirosPage = () => {
     }
   };
 
+  const handleAnularRetiro = async (idRetiro) => {
+    if (!idRetiro) return;
+
+    const { value: motivo } = await Swal.fire({
+      title: 'Anular Orden de Retiro',
+      html: `¿Estás seguro de que deseas anular el retiro <strong style="color: #00AEEF;">${idRetiro}</strong>?<br>Esta acción desvinculará las órdenes y liberará estantes.`,
+      input: 'text',
+      inputLabel: 'Motivo de la anulación',
+      inputPlaceholder: 'Ej: Error del cliente, cambio de envío...',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, anular retiro',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#64748b',
+      background: '#212121',
+      color: '#f8fafc',
+      customClass: {
+        popup: '!rounded-xl !pb-8 !px-2',
+        input: 'text-slate-800'
+      },
+      inputValidator: (value) => {
+        if (!value) return 'Debes ingresar un motivo';
+      }
+    });
+
+    if (!motivo) return;
+
+    try {
+      const idLimpio = String(idRetiro).replace(/^[A-Za-z]+-/, '');
+      await api.post(`/web-retiros/anular/${idLimpio}`, { motivo });
+      
+      Swal.fire({ 
+        toast: true, position: 'top-end', icon: 'success', 
+        title: 'Retiro anulado correctamente', showConfirmButton: false, timer: 3000 
+      });
+
+      setSelectedRetiro(null);
+      fetchAllData(false);
+    } catch (err) {
+      console.error('Error al anular:', err);
+      const msg = err.response?.data?.error || err.response?.data?.message || err.message || 'No se pudo al anular el retiro.';
+      Swal.fire({ 
+        icon: 'error', 
+        title: 'Error', 
+        text: msg, 
+        background: '#212121', 
+        color: '#f8fafc' 
+      });
+    }
+  };
+
+
   const handleDrop = async (targetId) => {
     if (!dragItem || !targetId) return;
     const sourceId = dragItem.ubicacionId;
@@ -1587,8 +1639,15 @@ const WebRetirosPage = () => {
             </div>
           </div>
           <div className="flex gap-3 justify-center">
-            <button onClick={() => setSelectedRetiro(null)} className="flex-1 py-3 px-4 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors">Cancelar</button>
+            <button 
+              onClick={() => handleAnularRetiro(selectedRetiro.ordenDeRetiro)}
+              className="flex-1 py-3 px-4 bg-rose-50 text-rose-600 border border-rose-100 font-bold rounded-xl hover:bg-rose-600 hover:text-white transition-all flex items-center justify-center gap-2"
+            >
+              <Ban size={18} /> Anular Retiro
+            </button>
+            <button onClick={() => setSelectedRetiro(null)} className="flex-1 py-3 px-4 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors">Cerrar</button>
           </div>
+
         </div>
       </div>
     );
@@ -2185,15 +2244,12 @@ const WebRetirosPage = () => {
                           })
                           .map(([id, dataList]) => {
                             const firstData = dataList[0];
-                            const term = searchTerm.toLowerCase();
-                            const matchesSearch = dataList.some(item => {
+                            const term = searchTerm.toLowerCase().trim();
+                            const matchesSearch = !term || dataList.some(item => {
                               if (item.OrdenRetiro && item.OrdenRetiro.toLowerCase().includes(term)) return true;
-                              if (item.CodigoCliente && String(item.CodigoCliente).toLowerCase().includes(term)) return true;
-                              if (item.ClientName && item.ClientName.toLowerCase().includes(term)) return true;
-                              const retiroFull = apiOrders.find(o => o.ordenDeRetiro === item.OrdenRetiro)
-                                || otrosRetiros.find(o => o.ordenDeRetiro === item.OrdenRetiro);
-                              if (retiroFull && Array.isArray(retiroFull.orders)) {
-                                return retiroFull.orders.some(o => o.orderNumber && o.orderNumber.toLowerCase().includes(term));
+                              // Buscar en las órdenes internas del casillero (ya vienen en item.orders desde BultosJSON)
+                              if (Array.isArray(item.orders)) {
+                                return item.orders.some(o => o.orderNumber && o.orderNumber.toLowerCase().includes(term));
                               }
                               return false;
                             });

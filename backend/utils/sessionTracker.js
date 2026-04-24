@@ -7,7 +7,7 @@
 const activeSessions = new Map(); // userId -> { username, ip, loginAt, lastActivity, userType }
 const loginHistory = [];          // { timestamp, username, ip, success, userType, reason }
 const MAX_HISTORY = 500;
-const SESSION_EXPIRATION_MS = 14400000; // 4 horas de inactividad máxima
+const SESSION_EXPIRATION_MS = 1500000; // 25 minutos de inactividad máxima
 
 const trackLogin = (userId, username, ip, userType, success, reason) => {
     // Always log to history
@@ -72,6 +72,6 @@ setInterval(() => {
             activeSessions.delete(userId);
         }
     }
-}, 900000); // 15 minutos
+}, 300000); // 5 minutos
 
 module.exports = { trackLogin, touchSession, removeSession, getActiveSessions, getLoginHistory };

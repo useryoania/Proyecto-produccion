@@ -122,8 +122,13 @@ exports.createTicket = async (req, res) => {
             }
 
             await transaction.commit();
-            
-            // TODO: Emitir evento Socket para el Departamento destino o notificar Admin
+
+            // Notificar al panel admin que llegó un ticket nuevo
+            const io = req.app.get('socketio');
+            if (io) {
+                io.to('helpdesk:admin').emit('ticket:new', { ticketId, asunto, departamentoId });
+            }
+
             res.status(201).json({ success: true, message: 'Ticket creado exitosamente.', ticketId });
 
         } catch (dbErr) {
@@ -314,6 +319,21 @@ exports.replyToTicket = async (req, res) => {
             await transaction.request().input('Tic', sql.Int, ticketId).query(updateQ);
 
             await transaction.commit();
+
+            // Emitir al room del ticket (cliente + admin mirando ese hilo)
+            const io = req.app.get('socketio');
+            if (io) {
+                const payload = {
+                    ticketId: parseInt(ticketId),
+                    esNotaInterna: notaInternaFlag === 1,
+                    autor: isClient ? 'client' : 'staff'
+                };
+                // Al room del ticket específico
+                io.to(`ticket:${ticketId}`).emit('ticket:new_message', payload);
+                // Al panel admin para refrescar la bandeja
+                io.to('helpdesk:admin').emit('ticket:updated', payload);
+            }
+
             res.json({ success: true, message: 'Respuesta enviada.' });
 
         } catch (dbErr) {
@@ -345,6 +365,8 @@ exports.updateTicketStatus = async (req, res) => {
                 .input('Tic', sql.Int, ticketId)
                 .input('DepId', sql.Int, departamentoId)
                 .query(`UPDATE Tickets SET DepIdDepartamento = @DepId, TicFechaActualizacion = GETDATE() WHERE TicIdTicket = @Tic`);
+            const io = req.app.get('socketio');
+            if (io) io.to(`ticket:${ticketId}`).to('helpdesk:admin').emit('ticket:updated', { ticketId: parseInt(ticketId) });
             return res.json({ success: true, message: 'Ticket derivado a nueva área.' });
         }
 
@@ -352,6 +374,9 @@ exports.updateTicketStatus = async (req, res) => {
             .input('Tic', sql.Int, ticketId)
             .input('E', sql.Int, estadoToSet)
             .query(`UPDATE Tickets SET TicEstado = @E, TicFechaActualizacion = GETDATE() WHERE TicIdTicket = @Tic`);
+
+        const io2 = req.app.get('socketio');
+        if (io2) io2.to(`ticket:${ticketId}`).to('helpdesk:admin').emit('ticket:updated', { ticketId: parseInt(ticketId), nuevoEstado: estadoToSet });
 
         res.json({ success: true, message: 'Estado del ticket modificado con éxito.' });
     } catch (e) {

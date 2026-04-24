@@ -75,7 +75,7 @@ exports.getDepositoDashboard = async (req, res) => {
                        COUNT(DISTINCT r.OReIdOrdenRetiro) AS total
                 FROM OrdenesRetiro r WITH(NOLOCK)
                 LEFT JOIN OrdenesDeposito o WITH(NOLOCK) ON o.OReIdOrdenRetiro = r.OReIdOrdenRetiro
-                LEFT JOIN Clientes c WITH(NOLOCK) ON c.CodCliente = o.CodCliente
+                LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                 LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
                 WHERE r.OReEstadoActual NOT IN (5, 6)
                 GROUP BY tc.TClDescripcion

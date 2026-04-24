@@ -307,7 +307,7 @@
 .ci-tree-client:hover .ci-tree-edit-btn { opacity: 1; }
 
 /* ── MODALS ───────────────────────────────────────────────────────────────── */
-.ci-overlay { position: fixed; inset: 0; background: rgba(15,15,35,.45); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(2px); }
+.ci-overlay { position: fixed; inset: 0; background: rgba(15,15,35,.45); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .ci-modal { background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.2); width: 100%; max-width: 660px; max-height: 92vh; overflow-y: auto; animation: modal-in .18s ease; }
 @keyframes modal-in { from { opacity:0; transform: scale(.96) translateY(8px); } to { opacity:1; transform: scale(1) translateY(0); } }
 
@@ -358,4 +358,7 @@
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%       { opacity: .4; transform: scale(.85); }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }

@@ -124,7 +124,14 @@ exports.getAllLocalRetiros = async (req, res) => {
                 r.OReFechaAlta AS fechaAlta,
                 r.FormaRetiro,
                 c.Nombre AS NombreCliente,
-                fe.Nombre AS LugarRetiro,
+                COALESCE(fe.Nombre, 
+                    CASE WHEN LEN(ISNULL(r.DireccionEnvio, '')) > 0 
+                           OR r.AgenciaEnvio IS NOT NULL 
+                           OR LEN(ISNULL(r.AgenciaOtra, '')) > 0 
+                         THEN 'Envío / Encomienda' 
+                         ELSE 'Retiro en el Local' 
+                    END
+                ) AS LugarRetiro,
                 COALESCE(ag.Nombre, r.AgenciaOtra) AS AgenciaNombre,
                 r.DireccionEnvio,
                 r.DepartamentoEnvio,
@@ -254,7 +261,35 @@ exports.createHandyPaymentLinkForRetiro = async (req, res) => {
             return res.status(400).json({ error: "No se proporcionó orden de retiro." });
         }
 
+        // Por defecto tomamos lo que diga el frontend
         let currencyCode = activeCurrency === 'USD' ? 840 : 858;
+
+        // --- INICIO FIX DE MONEDA ---
+        // Verificar la moneda real en la base de datos para no cobrar en pesos lo que es en dólares
+        try {
+            const pool = await getPool();
+            const numMatch = String(ordenRetiro).match(/(\d+)$/);
+            const OReIdOrdenRetiro = numMatch ? parseInt(numMatch[1], 10) : NaN;
+            
+            if (!isNaN(OReIdOrdenRetiro)) {
+                const resMon = await pool.request()
+                    .input('ID', sql.Int, OReIdOrdenRetiro)
+                    .query('SELECT MonIdMoneda FROM OrdenesRetiro WITH(NOLOCK) WHERE OReIdOrdenRetiro = @ID');
+                
+                if (resMon.recordset.length > 0) {
+                    const dbMoneda = resMon.recordset[0].MonIdMoneda;
+                    // Mapeo defensivo: 2 o 840 suele ser USD; 1 o 858 suele ser UYU
+                    if (dbMoneda === 2 || dbMoneda === 840 || dbMoneda === 'USD') {
+                        currencyCode = 840; // USD para Handy
+                    } else if (dbMoneda === 1 || dbMoneda === 858 || dbMoneda === 'UYU') {
+                        currencyCode = 858; // UYU para Handy
+                    }
+                }
+            }
+        } catch (dbErr) {
+            logger.warn("[HANDY RETIRO] No se pudo verificar la moneda en BD, usando activeCurrency:", dbErr.message);
+        }
+        // --- FIN FIX DE MONEDA ---
 
         // Determinar description
         let products = [];
@@ -943,11 +978,12 @@ exports.getCuadreDiario = async (req, res) => {
 exports.getHistorialPagos = async (req, res) => {
     try {
         const pool = await getPool();
-        const { startDate, endDate, clientFilter, orderFilter, metodoPago } = req.query;
+        const { startDate, endDate, clientFilter, orderFilter, metodoPago, offset } = req.query;
+        const offsetVal = parseInt(offset) || 0;
         const request = pool.request();
 
         let queryStr = `
-            SELECT TOP 1000
+            SELECT
                 p.PagIdPago AS Id,
                 p.PagFechaPago AS Fecha,
                 p.PagMontoPago AS Monto,
@@ -1030,7 +1066,8 @@ exports.getHistorialPagos = async (req, res) => {
             request.input('MetodoPago', sql.Int, parseInt(metodoPago));
         }
 
-        queryStr += ` ORDER BY p.PagFechaPago DESC`;
+        request.input('Offset', sql.Int, offsetVal);
+        queryStr += ` ORDER BY p.PagFechaPago DESC OFFSET @Offset ROWS FETCH NEXT 50 ROWS ONLY`;
         const result = await request.query(queryStr);
 
         const data = result.recordset.map(row => ({
@@ -1050,11 +1087,12 @@ exports.getHistorialPagos = async (req, res) => {
 exports.getPagosOnlineFallidos = async (req, res) => {
     try {
         const pool = await getPool();
-        const { startDate, endDate, clientFilter } = req.query;
+        const { startDate, endDate, clientFilter, offset } = req.query;
+        const offsetVal = parseInt(offset) || 0;
         const request = pool.request();
 
         let queryStr = `
-            SELECT TOP 500
+            SELECT
                 h.Id, h.TransactionId, h.PaymentUrl,
                 h.TotalAmount, h.Currency,
                 h.OrdersJson, h.CodCliente,
@@ -1095,7 +1133,8 @@ exports.getPagosOnlineFallidos = async (req, res) => {
             request.input('ClientFilter', sql.NVarChar, clientFilter);
         }
 
-        queryStr += ` ORDER BY h.CreatedAt DESC`;
+        request.input('Offset', sql.Int, offsetVal);
+        queryStr += ` ORDER BY h.CreatedAt DESC OFFSET @Offset ROWS FETCH NEXT 50 ROWS ONLY`;
         const result = await request.query(queryStr);
         res.json(result.recordset);
     } catch (err) {
@@ -1110,10 +1149,11 @@ exports.getPagosOnlineFallidos = async (req, res) => {
 exports.getPagosOnline = async (req, res) => {
     try {
         const pool = await getPool();
-        const { startDate, endDate, clientFilter, orderFilter } = req.query;
+        const { startDate, endDate, clientFilter, orderFilter, offset } = req.query;
+        const offsetVal = parseInt(offset) || 0;
 
         let queryStr = `
-            SELECT TOP (1000) 
+            SELECT 
                 h.Id,
                 h.TransactionId,
                 h.PaymentUrl,
@@ -1145,7 +1185,7 @@ exports.getPagosOnline = async (req, res) => {
                     'RW-',''),'R-',''),'PW-','')
                 AS INT)
             ) orr_h
-            WHERE 1=1
+            WHERE LOWER(ISNULL(h.Status, '')) IN ('paid', 'pagado', 'success', 'approved')
         `;
 
         const request = pool.request();
@@ -1175,13 +1215,161 @@ exports.getPagosOnline = async (req, res) => {
             request.input('NumFilter', sql.NVarChar, numFilter);
         }
 
-        queryStr += ` ORDER BY h.CreatedAt DESC`;
+        request.input('Offset', sql.Int, offsetVal);
+        queryStr += ` ORDER BY h.CreatedAt DESC OFFSET @Offset ROWS FETCH NEXT 50 ROWS ONLY`;
 
         const result = await request.query(queryStr);
         res.json(result.recordset);
     } catch (err) {
         logger.error("[PAGOS ONLINE] Error fetching Handy Transactions:", err);
         res.status(500).json({ error: "Fallo al traer pagos online", details: err.message });
+    }
+};
+
+
+/**
+ * Traer Transacciones de MercadoPago (todas)
+ */
+exports.getPagosMp = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { startDate, endDate, clientFilter, orderFilter, offset } = req.query;
+        const offsetVal = parseInt(offset) || 0;
+
+        let queryStr = `
+            SELECT
+                m.Id,
+                m.TransactionId,
+                m.PreferenceId,
+                m.PaymentUrl,
+                TRY_CAST(JSON_VALUE(m.OrdersJson, '$.totalCost') AS DECIMAL(18,2)) AS TotalAmount,
+                ISNULL(JSON_VALUE(m.OrdersJson, '$.moneda'), 'UYU')               AS Currency,
+                m.OrdersJson,
+                m.CodCliente,
+                m.Status,
+                m.PaymentId,
+                m.PaidAt,
+                m.WebhookReceivedAt,
+                m.CreatedAt,
+                c.Nombre AS NombreCliente,
+                -- Orden de retiro con prefijo real de la BD (no hardcodeado)
+                CASE
+                    WHEN orr_m.OReIdOrdenRetiro IS NOT NULL
+                    THEN ISNULL(orr_m.FormaRetiro, 'R') + '-' + CAST(orr_m.OReIdOrdenRetiro AS VARCHAR)
+                    ELSE NULL
+                END AS OrdenRetiroFormatted
+            FROM MercadoPagoTransactions m
+            LEFT JOIN Clientes c ON CAST(m.CodCliente AS VARCHAR) = CAST(c.CodCliente AS VARCHAR)
+            OUTER APPLY (
+                SELECT TOP 1 orr2.OReIdOrdenRetiro, orr2.FormaRetiro
+                FROM OrdenesRetiro orr2 WITH(NOLOCK)
+                WHERE orr2.OReIdOrdenRetiro = TRY_CAST(
+                    REPLACE(REPLACE(REPLACE(
+                        ISNULL(JSON_VALUE(m.OrdersJson, '$.ordenRetiro'), ''),
+                    'RW-',''),'R-',''),'PW-','')
+                AS INT)
+            ) orr_m
+            WHERE LOWER(ISNULL(m.Status, '')) = 'approved'
+        `;
+
+        const request = pool.request();
+
+        if (startDate) {
+            queryStr += ` AND CAST(m.CreatedAt AS DATE) >= @StartDate`;
+            request.input('StartDate', sql.Date, startDate);
+        }
+        if (endDate) {
+            queryStr += ` AND CAST(m.CreatedAt AS DATE) <= @EndDate`;
+            request.input('EndDate', sql.Date, endDate);
+        }
+        if (clientFilter) {
+            queryStr += ` AND (c.Nombre LIKE '%' + @ClientFilter + '%' OR CAST(m.CodCliente AS VARCHAR) LIKE '%' + @ClientFilter + '%')`;
+            request.input('ClientFilter', sql.NVarChar, clientFilter);
+        }
+        if (orderFilter) {
+            let cleanFilter = orderFilter.trim();
+            let numFilter = cleanFilter.toUpperCase().replace(/^[A-Z]+-/, '');
+            queryStr += ` AND (m.OrdersJson LIKE '%' + @OrderFilter + '%' OR m.OrdersJson LIKE '%' + @NumFilter + '%' OR m.TransactionId LIKE '%' + @OrderFilter + '%')`;
+            request.input('OrderFilter', sql.NVarChar, cleanFilter);
+            request.input('NumFilter', sql.NVarChar, numFilter);
+        }
+
+        request.input('Offset', sql.Int, offsetVal);
+        queryStr += ` ORDER BY m.CreatedAt DESC OFFSET @Offset ROWS FETCH NEXT 50 ROWS ONLY`;
+
+        const result = await request.query(queryStr);
+        res.json(result.recordset);
+    } catch (err) {
+        logger.error("[PAGOS MP] Error fetching MercadoPago Transactions:", err);
+        res.status(500).json({ error: "Fallo al traer pagos de MercadoPago", details: err.message });
+    }
+};
+
+/**
+ * Traer Transacciones FALLIDAS de MercadoPago
+ */
+exports.getPagosMpFallidos = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const { startDate, endDate, clientFilter, offset } = req.query;
+        const offsetVal = parseInt(offset) || 0;
+        const request = pool.request();
+
+        let queryStr = `
+            SELECT
+                m.Id,
+                m.TransactionId,
+                m.PreferenceId,
+                m.PaymentUrl,
+                TRY_CAST(JSON_VALUE(m.OrdersJson, '$.totalCost') AS DECIMAL(18,2)) AS TotalAmount,
+                ISNULL(JSON_VALUE(m.OrdersJson, '$.moneda'), 'UYU')               AS Currency,
+                m.OrdersJson,
+                m.CodCliente,
+                m.Status,
+                m.PaymentId,
+                m.PaidAt,
+                m.WebhookReceivedAt,
+                m.CreatedAt,
+                c.Nombre AS NombreCliente,
+                CASE
+                    WHEN orr_m.OReIdOrdenRetiro IS NOT NULL
+                    THEN ISNULL(orr_m.FormaRetiro, 'R') + '-' + CAST(orr_m.OReIdOrdenRetiro AS VARCHAR)
+                    ELSE NULL
+                END AS OrdenRetiroFormatted
+            FROM MercadoPagoTransactions m
+            LEFT JOIN Clientes c ON CAST(m.CodCliente AS VARCHAR) = CAST(c.CodCliente AS VARCHAR)
+            OUTER APPLY (
+                SELECT TOP 1 orr2.OReIdOrdenRetiro, orr2.FormaRetiro
+                FROM OrdenesRetiro orr2 WITH(NOLOCK)
+                WHERE orr2.OReIdOrdenRetiro = TRY_CAST(
+                    REPLACE(REPLACE(REPLACE(
+                        ISNULL(JSON_VALUE(m.OrdersJson, '$.ordenRetiro'), ''),
+                    'RW-',''),'R-',''),'PW-','')
+                AS INT)
+            ) orr_m
+            WHERE LOWER(ISNULL(m.Status, '')) NOT IN ('approved')
+        `;
+
+        if (startDate) {
+            queryStr += ` AND CAST(m.CreatedAt AS DATE) >= @StartDate`;
+            request.input('StartDate', sql.Date, startDate);
+        }
+        if (endDate) {
+            queryStr += ` AND CAST(m.CreatedAt AS DATE) <= @EndDate`;
+            request.input('EndDate', sql.Date, endDate);
+        }
+        if (clientFilter) {
+            queryStr += ` AND (c.Nombre LIKE '%' + @ClientFilter + '%' OR CAST(m.CodCliente AS VARCHAR) LIKE '%' + @ClientFilter + '%')`;
+            request.input('ClientFilter', sql.NVarChar, clientFilter);
+        }
+
+        request.input('Offset', sql.Int, offsetVal);
+        queryStr += ` ORDER BY m.CreatedAt DESC OFFSET @Offset ROWS FETCH NEXT 50 ROWS ONLY`;
+        const result = await request.query(queryStr);
+        res.json(result.recordset);
+    } catch (err) {
+        logger.error('[PAGOS MP FALLIDOS] Error:', err);
+        res.status(500).json({ error: 'Fallo al obtener pagos MP fallidos', details: err.message });
     }
 };
 
@@ -1401,8 +1589,19 @@ exports.getMyRetirosHistorial = async (req, res) => {
                 r.CodCliente,
                 r.OReFechaAlta AS Fecha,
                 r.FormaRetiro,
-                fe.Nombre AS LugarRetiro,
+                COALESCE(fe.Nombre, 
+                    CASE WHEN LEN(ISNULL(r.DireccionEnvio, '')) > 0 
+                           OR r.AgenciaEnvio IS NOT NULL 
+                           OR LEN(ISNULL(r.AgenciaOtra, '')) > 0 
+                         THEN 'Envío / Encomienda' 
+                         ELSE 'Retiro en el Local' 
+                    END
+                ) AS LugarRetiro,
                 COALESCE(ag.Nombre, r.AgenciaOtra) AS AgenciaNombre,
+                r.DireccionEnvio,
+                r.LocalidadEnvio,
+                r.DepartamentoEnvio,
+                r.ReceptorNombre,
                 o.OrdCodigoOrden,
                 o.OrdNombreTrabajo,
                 o.OrdCostoFinal,
@@ -1435,6 +1634,10 @@ exports.getMyRetirosHistorial = async (req, res) => {
                     FormaRetiro: row.FormaRetiro,
                     LugarRetiro: row.LugarRetiro,
                     AgenciaNombre: row.AgenciaNombre,
+                    DireccionEnvio: row.DireccionEnvio,
+                    LocalidadEnvio: row.LocalidadEnvio,
+                    DepartamentoEnvio: row.DepartamentoEnvio,
+                    ReceptorNombre: row.ReceptorNombre,
                     Ordenes: []
                 };
             }
@@ -1549,4 +1752,105 @@ exports.autorizarRetiro = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+
+/**
+ * ANULAR ORDEN DE RETIRO
+ * Reversiona estados, desvincula órdenes y libera estantes.
+ * POST /api/web-retiros/anular/:id
+ */
+exports.anularRetiro = async (req, res) => {
+    const { id } = req.params;
+    const { motivo } = req.body;
+    const usuarioId = req.user?.id || 70;
+
+    if (!id) return res.status(400).json({ error: "Falta ID de retiro" });
+    if (!motivo) return res.status(400).json({ error: "Debe proporcionar un motivo breve de anulación" });
+
+    let transaction;
+    try {
+        const pool = await getPool();
+        const OReId = parseInt(String(id).replace(/^[A-Za-z]+-0*/, ''), 10);
+        if (isNaN(OReId)) return res.status(400).json({ error: "ID de retiro inválido" });
+
+        // 1. Validaciones previas
+        const checkRes = await pool.request()
+            .input('ID', sql.Int, OReId)
+            .query('SELECT OReEstadoActual, PagIdPago, FormaRetiro FROM OrdenesRetiro WITH(NOLOCK) WHERE OReIdOrdenRetiro = @ID');
+
+        if (checkRes.recordset.length === 0) {
+            return res.status(404).json({ error: "Orden de retiro no encontrada" });
+        }
+
+        const { OReEstadoActual, PagIdPago, FormaRetiro } = checkRes.recordset[0];
+
+        if (OReEstadoActual === 5) {
+            return res.status(400).json({ error: "No se puede anular esta orden (ya fue entregada), diríjase a sistemas" });
+        }
+        if (PagIdPago) {
+            return res.status(400).json({ error: "No se puede anular esta orden (ya posee un pago registrado), diríjase a sistemas" });
+        }
+
+        transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        // 2. Anular el Retiro (Estado 6)
+        await transaction.request()
+            .input('ID', sql.Int, OReId)
+            .input('Usr', sql.Int, usuarioId)
+            .input('Motivo', sql.NVarChar(255), motivo)
+            .query(`
+                UPDATE OrdenesRetiro 
+                SET OReEstadoActual = 6, 
+                    OReFechaEstadoActual = GETDATE(),
+                    OReNotaInterna = COALESCE(OReNotaInterna, '') + ' [ANULADO: ' + @Motivo + ']'
+                WHERE OReIdOrdenRetiro = @ID;
+
+                INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+                VALUES (@ID, 6, GETDATE(), @Usr);
+            `);
+
+        // 3. Desvincular y Revertir Órdenes de Depósito (Estado 1)
+        await transaction.request()
+            .input('ID', sql.Int, OReId)
+            .input('Usr', sql.Int, usuarioId)
+            .query(`
+                INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+                SELECT OrdIdOrden, 1, GETDATE(), @Usr 
+                FROM OrdenesDeposito 
+                WHERE OReIdOrdenRetiro = @ID;
+
+                UPDATE OrdenesDeposito 
+                SET OReIdOrdenRetiro = NULL,
+                    OrdEstadoActual = 1,
+                    OrdFechaEstadoActual = GETDATE()
+                WHERE OReIdOrdenRetiro = @ID;
+            `);
+
+        // 4. Liberar Estantes Físicos
+        const codigoRetiro = (FormaRetiro || 'R') + '-' + OReId;
+        await transaction.request()
+            .input('Cod', sql.VarChar(50), codigoRetiro)
+            .query('DELETE FROM OcupacionEstantes WHERE OrdenRetiro = @Cod');
+
+        await transaction.commit();
+
+        // Notificar por sockets
+        const io = req.app.get('socketio');
+        if (io) {
+            io.emit('actualizado', { type: 'actualizacion' });
+            io.emit('retiros:update', { type: 'anulado', id: codigoRetiro });
+        }
+
+        logger.info(`[ANULACION] Retiro ${codigoRetiro} anulado por usuario ${usuarioId}. Motivo: ${motivo}`);
+        res.json({ success: true, message: "Orden de retiro anulada correctamente" });
+
+    } catch (err) {
+        logger.error("[ANULACION] Error al anular retiro:", err);
+        if (transaction) {
+            try { await transaction.rollback(); } catch (e) { /* ignore */ }
+        }
+        res.status(500).json({ error: "Error interno al procesar la anulación", details: err.message });
+    }
+};
+
 

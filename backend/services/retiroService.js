@@ -333,47 +333,50 @@ async function marcarEntregado(transactionOrReq, OReIdOrdenRetiro, fecha, usuari
     // ── Descuento de recursos (Planes de Metros) ─────────────────────────────
     // Por cada orden del retiro, si el cliente tiene cuenta METROS/KG,
     // descontamos la cantidad de su plan activo.
-    try {
-        const svc = require('./contabilidadService');
-        const pool = await (require('../config/db')).getPool();
+    // SE EJECUTA DE FORMA ASÍNCRONA (Fire and Forget) para no dejar la transacción SQL abierta.
+    (async () => {
+        try {
+            const svc = require('./contabilidadService');
+            const pool = await (require('../config/db')).getPool();
 
-        // Obtener órdenes con su cliente, artículo y cantidad
-        const ordenesRes = await pool.request()
-            .input('OReId', sql.Int, OReIdOrdenRetiro)
-            .query(`
-                SELECT
-                    od.OrdIdOrden,
-                    od.OrdCantidad,
-                    od.OrdCodigo,
-                    o.CodCliente,
-                    cl.CliIdCliente,
-                    art.IDArticulo AS ProIdProducto
-                FROM dbo.OrdenesDeposito od WITH(NOLOCK)
-                JOIN dbo.Ordenes         o   WITH(NOLOCK) ON o.OrdenID     = od.OrdIdOrdenExterna
-                JOIN dbo.Clientes        cl  WITH(NOLOCK) ON cl.CodCliente = o.CodCliente
-                LEFT JOIN dbo.Articulos  art WITH(NOLOCK) ON art.IDArticulo = od.OrdIdArticulo
-                WHERE od.OReIdOrdenRetiro = @OReId
-                  AND od.OrdEstadoActual  = 9
-            `);
+            // Obtener órdenes con su cliente, artículo y cantidad
+            const ordenesRes = await pool.request()
+                .input('OReId', sql.Int, OReIdOrdenRetiro)
+                .query(`
+                    SELECT
+                        od.OrdIdOrden,
+                        od.OrdCantidad,
+                        od.OrdCodigo,
+                        o.CodCliente,
+                        cl.CliIdCliente,
+                        art.IDArticulo AS ProIdProducto
+                    FROM dbo.OrdenesDeposito od WITH(NOLOCK)
+                    JOIN dbo.Ordenes         o   WITH(NOLOCK) ON o.OrdenID     = od.OrdIdOrdenExterna
+                    JOIN dbo.Clientes        cl  WITH(NOLOCK) ON cl.CodCliente = o.CodCliente
+                    LEFT JOIN dbo.Articulos  art WITH(NOLOCK) ON art.IDArticulo = od.OrdIdArticulo
+                    WHERE od.OReIdOrdenRetiro = @OReId
+                      AND od.OrdEstadoActual  = 9
+                `);
 
-        for (const ord of ordenesRes.recordset) {
-            if (!ord.CliIdCliente || !ord.ProIdProducto) continue;
-            try {
-                await svc.hookEntregaMetros({
-                    CliIdCliente:  ord.CliIdCliente,
-                    ProIdProducto: ord.ProIdProducto,
-                    Cantidad:      Number(ord.OrdCantidad) || 1,
-                    OrdIdOrden:    ord.OrdIdOrden,
-                    UsuarioAlta:   usuarioId,
-                });
-            } catch (hookErr) {
-                // No bloquear la entrega si el hook falla — solo loguear
-                logger.warn(`[hookEntregaMetros] CliId=${ord.CliIdCliente} OrdId=${ord.OrdIdOrden}: ${hookErr.message}`);
+            for (const ord of ordenesRes.recordset) {
+                if (!ord.CliIdCliente || !ord.ProIdProducto) continue;
+                try {
+                    await svc.hookEntregaMetros({
+                        CliIdCliente:  ord.CliIdCliente,
+                        ProIdProducto: ord.ProIdProducto,
+                        Cantidad:      Number(ord.OrdCantidad) || 1,
+                        OrdIdOrden:    ord.OrdIdOrden,
+                        UsuarioAlta:   usuarioId,
+                    });
+                } catch (hookErr) {
+                    // No bloquear la entrega si el hook falla — solo loguear
+                    logger.warn(`[hookEntregaMetros] CliId=${ord.CliIdCliente} OrdId=${ord.OrdIdOrden}: ${hookErr.message}`);
+                }
             }
+        } catch (err) {
+            logger.warn(`[marcarEntregado] Error en descuento de metros: ${err.message}`);
         }
-    } catch (err) {
-        logger.warn(`[marcarEntregado] Error en descuento de metros: ${err.message}`);
-    }
+    })();
 }
 
 /**

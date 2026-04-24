@@ -16,6 +16,8 @@ router.get('/mis-retiros/historial', verifyToken, webRetirosController.getMyReti
 router.get('/pagos-online', verifyToken, webRetirosController.getPagosOnline);
 router.get('/historial-pagos', verifyToken, webRetirosController.getHistorialPagos);
 router.get('/pagos-online-fallidos', verifyToken, webRetirosController.getPagosOnlineFallidos);
+router.get('/pagos-mp', verifyToken, webRetirosController.getPagosMp);
+router.get('/pagos-mp-fallidos', verifyToken, webRetirosController.getPagosMpFallidos);
 router.get('/cuadre-diario', verifyToken, webRetirosController.getCuadreDiario);
 
 // RUTAS API PARA ESTANTES FÍSICOS
@@ -31,6 +33,7 @@ router.post('/excepcional', verifyToken, webRetirosController.marcarExcepcional)
 router.get('/excepciones', verifyToken, webRetirosController.getExcepciones);
 router.put('/excepciones/:id/gestionar', verifyToken, webRetirosController.gestionarExcepcion);
 
+router.post('/anular/:id', verifyToken, webRetirosController.anularRetiro);
 router.post('/autorizar', verifyToken, webRetirosController.autorizarRetiro);
 
 module.exports = router;

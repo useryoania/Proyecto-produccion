@@ -36,14 +36,29 @@ module.exports = (req, res, next) => {
     const start = Date.now();
 
     res.on('finish', () => {
+        // Ignorar rutas muy ruidosas que no aportan valor de auditoría
+        const noisyPaths = [
+            '/api/health',
+            '/assets/',
+            '/sw.js',
+            '/manifest.json',
+            '/favicon.ico'
+        ];
+        
+        const url = req.originalUrl || req.url;
+        const isNoisy = noisyPaths.some(p => url.startsWith(p) || url === p);
+
         const duration = Date.now() - start;
         const userId = req.user?.id || '-';
-        const line = `[HTTP] ${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms — user:${userId}`;
+        const line = `[HTTP] ${req.method} ${url} ${res.statusCode} ${duration}ms — user:${userId}`;
 
         if (res.statusCode >= 500) {
-            mainLogger.error(line);  // Errores sí van al combined
+            mainLogger.error(line);  // Errores sí van al combined siempre
         }
-        httpLogger.info(line);       // Todo va al http.log
+        
+        if (!isNoisy || res.statusCode >= 400) {
+            httpLogger.info(line);       // Solo loguear si no es ruido o si dio error
+        }
     });
 
     next();

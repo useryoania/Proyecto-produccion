@@ -2,7 +2,14 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import './ClientsIntegration.css';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
+import Lottie from 'lottie-react';
 import api from '../../services/apiClient';
+import loadingAnim from '../../assets/animations/loading-cmyk.json';
+
+// ─── Spinner Lottie reutilizable ──────────────────────────────────────────────
+function LottieSpinner({ size = 48 }) {
+    return <Lottie animationData={loadingAnim} loop style={{ width: size, height: size, flexShrink: 0 }} />;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const AVATAR_COLORS = ['#4f46e5','#0891b2','#059669','#d97706','#dc2626','#7c3aed','#2563eb','#be185d'];
@@ -319,6 +326,8 @@ function ClientModal({ client, catalogs, onClose, onSaved, onDeleted }) {
 }
 
 // ─── TAB 1: Lista memoizada (NO se re-renderiza cuando el modal abre/cierra) ───
+const LAZY_PAGE = 50;
+
 const TabTablaList = React.memo(function TabTablaList({ catalogs, onEdit, clients, setClients, loading }) {
     const [search, setSearch]             = useState('');
     const [filterEstado, setFilterEstado] = useState('');
@@ -329,6 +338,8 @@ const TabTablaList = React.memo(function TabTablaList({ catalogs, onEdit, client
     const [sortDir, setSortDir]           = useState('asc');
     const [filterDup, setFilterDup]       = useState('');
     const [focusDup, setFocusDup]         = useState(null);
+    const [visibleCount, setVisibleCount] = useState(LAZY_PAGE);
+    const sentinelRef = useRef(null);
 
     const dupSets = useMemo(() => {
         const fields = ['Email','TelefonoTrabajo','Nombre','IDCliente','IDReact'];
@@ -380,6 +391,27 @@ const TabTablaList = React.memo(function TabTablaList({ catalogs, onEdit, client
     const toggleSort = useCallback(col => { if(sortCol===col)setSortDir(d=>d==='asc'?'desc':'asc'); else{setSortCol(col);setSortDir('asc');} }, [sortCol]);
 
     const dupCount = Object.keys(dupSets).length;
+
+    // Reset visible count cuando cambian los filtros
+    useEffect(() => { setVisibleCount(LAZY_PAGE); }, [sorted]);
+
+    // IntersectionObserver: al ver el sentinel, cargar más
+    useEffect(() => {
+        let obs;
+        const tid = setTimeout(() => {
+            const el = sentinelRef.current;
+            if (!el) return;
+            obs = new IntersectionObserver(entries => {
+                if (entries[0].isIntersecting) {
+                    setVisibleCount(prev => Math.min(prev + LAZY_PAGE, sorted.length));
+                }
+            }, { threshold: 0.1 });
+            obs.observe(el);
+        }, 100);
+        return () => { clearTimeout(tid); obs?.disconnect(); };
+    }, [sorted.length, viewMode, visibleCount]);
+
+    const visibleSorted = sorted.slice(0, visibleCount);
 
     return (
         <div style={{display:'flex',flexDirection:'column',flex:1,overflow:'hidden',gap:0}}>
@@ -439,13 +471,13 @@ const TabTablaList = React.memo(function TabTablaList({ catalogs, onEdit, client
 
             {/* Content */}
             <div className="ci-content">
-                {loading && <p style={{textAlign:'center',padding:40,color:'#888'}}>Cargando clientes…</p>}
+                {loading && <div style={{display:'flex',justifyContent:'center',padding:'32px 0'}}><LottieSpinner size={64}/></div>}
 
                 {/* KANBAN */}
                 {!loading && viewMode==='kanban' && (
                     <div className="ci-kanban">
                         {sorted.length===0 && <p style={{gridColumn:'1/-1',textAlign:'center',padding:40,color:'#aaa'}}>Sin resultados</p>}
-                        {sorted.map(c => {
+                        {visibleSorted.map(c => {
                             const dups = dupSets[c.CodCliente];
                             const firstDupField = dups ? [...dups][0] : null;
                             return (
@@ -496,6 +528,13 @@ const TabTablaList = React.memo(function TabTablaList({ catalogs, onEdit, client
                                 </div>
                             );
                         })}
+                        {/* Sentinel kanban: dentro del scroll de ci-content */}
+                        {visibleCount < sorted.length && (
+                            <div ref={sentinelRef} style={{gridColumn:'1/-1',display:'flex',alignItems:'center',justifyContent:'center',gap:8,padding:'12px 0',color:'#888',fontSize:12,fontWeight:600}}>
+                                <LottieSpinner size={40}/>
+                                Cargando más clientes…
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -513,7 +552,7 @@ const TabTablaList = React.memo(function TabTablaList({ catalogs, onEdit, client
                             </thead>
                             <tbody>
                                 {sorted.length===0 && <tr><td colSpan={11} style={{textAlign:'center',padding:40,color:'#aaa'}}>Sin resultados</td></tr>}
-                                {sorted.map((c,i)=>{
+                                {visibleSorted.map((c,i)=>{
                                     const dups=dupSets[c.CodCliente];
                                     const firstDup=dups?[...dups][0]:null;
                                     return (
@@ -562,10 +601,21 @@ const TabTablaList = React.memo(function TabTablaList({ catalogs, onEdit, client
                                         </tr>
                                     );
                                 })}
+                                {visibleCount < sorted.length && (
+                                    <tr ref={sentinelRef}>
+                                        <td colSpan={11} style={{padding:'10px 0'}}>
+                                            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:8,color:'#888',fontSize:12,fontWeight:600}}>
+                                                <LottieSpinner size={36}/>
+                                                Cargando más clientes…
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
                 )}
+
             </div>
 
         </div>
@@ -683,7 +733,7 @@ function TabArbol({ catalogs }) {
             </div>
             <div className="ci-content">
                 <div className="ci-tree">
-                    {loading && <p style={{textAlign:'center',padding:40,color:'#888'}}>Cargando…</p>}
+                    {loading && <div style={{display:'flex',justifyContent:'center',padding:'32px 0'}}><LottieSpinner size={64}/></div>}
                     {!loading && filteredGroups.map(g => (
                         <div key={g.label} className="ci-tree-group">
                             <div className={`ci-tree-header ${expanded.has(g.label)?'open':''}`} onClick={()=>toggle(g.label)}>
@@ -839,7 +889,7 @@ function TabPlanilla() {
             </div>
 
             {loading ? (
-                <div style={{textAlign:'center',padding:40,color:'#888'}}>Cargando planilla Google Sheets…</div>
+                <div style={{display:'flex',justifyContent:'center',padding:'32px 0'}}><LottieSpinner size={64}/></div>
             ) : (
                 <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2e8f0',overflow:'auto',boxShadow:'0 1px 4px rgba(0,0,0,.05)'}}>
                     <table className="ci-table">
@@ -968,7 +1018,7 @@ function TabMacrosoft({ msClients = [], loading = false, onReload }) {
 
                 <span style={{fontSize:12,color:'#888',whiteSpace:'nowrap',fontWeight:600}}>{filtered.length} / {msClients.length}</span>
             </div>
-            {loading ? <div style={{textAlign:'center',padding:40,color:'#888'}}>Cargando clientes Macrosoft…</div> : (
+            {loading ? <div style={{display:'flex',justifyContent:'center',padding:'32px 0'}}><LottieSpinner size={64}/></div> : (
                 <div style={{background:'#fff',borderRadius:12,border:'1.5px solid #e2e8f0',overflow:'auto',boxShadow:'0 1px 4px rgba(0,0,0,.05)'}}>
                     <table className="ci-table">
                         <thead><tr><th>Cód MS</th><th>CodRef</th><th>Nombre</th><th style={{color:'#9ca3af'}}>Fantasía</th><th>RUC/CI</th><th>Teléfono</th><th>Email</th><th>Dirección</th></tr></thead>

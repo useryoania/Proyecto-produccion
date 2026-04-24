@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/apiClient';
-import { ChevronDown, Package, Clock, CheckCircle, XCircle, Truck, AlertCircle, History } from 'lucide-react';
+import { ChevronDown, Package, Clock, CheckCircle, XCircle, Truck, AlertCircle, History, MapPin, User } from 'lucide-react';
 
 const ESTADO_MAP = {
     1: { label: 'Pendiente de Pago', color: 'text-amber-400 bg-amber-400/10 border-amber-400/30', icon: Clock },
@@ -161,9 +161,35 @@ export const HistorialView = () => {
                                 >
                                     <div className="px-4 pb-3 pt-3 border-t border-zinc-800">
                                         {retiro.LugarRetiro && (
-                                            <p className="text-xs text-zinc-500 py-2">
-                                                <span className="text-zinc-400 font-medium">{retiro.LugarRetiro}</span>{retiro.AgenciaNombre ? ` (${retiro.AgenciaNombre})` : ''}
-                                            </p>
+                                            <div className="flex flex-col gap-1 py-2">
+                                                <p className="text-xs text-zinc-500">
+                                                    <span className="text-zinc-400 font-medium">{retiro.LugarRetiro}</span>{retiro.AgenciaNombre ? ` (${retiro.AgenciaNombre})` : ''}
+                                                </p>
+                                                {(retiro.DireccionEnvio || retiro.LocalidadEnvio || retiro.ReceptorNombre) && (
+                                                    <div className="flex flex-col gap-1.5 mt-1">
+                                                        {retiro.ReceptorNombre && (
+                                                            <div className="flex items-center gap-1.5 text-[11px] text-zinc-300">
+                                                                <User size={12} className="shrink-0 text-brand-gold" />
+                                                                <span>Recibe: <span className="font-medium">{retiro.ReceptorNombre}</span></span>
+                                                            </div>
+                                                        )}
+                                                        {(retiro.DireccionEnvio || retiro.LocalidadEnvio) && (
+                                                            <div className="flex items-start gap-1.5 text-[11px] text-zinc-400">
+                                                                <MapPin size={12} className="mt-0.5 shrink-0 text-brand-gold" />
+                                                                <p>
+                                                                    {retiro.DireccionEnvio && <span>{retiro.DireccionEnvio}</span>}
+                                                                    {(retiro.LocalidadEnvio || retiro.DepartamentoEnvio) && (
+                                                                        <span className="text-zinc-500">
+                                                                            {retiro.DireccionEnvio ? ' • ' : ''}
+                                                                            {retiro.LocalidadEnvio}{retiro.DepartamentoEnvio ? `, ${retiro.DepartamentoEnvio}` : ''}
+                                                                        </span>
+                                                                    )}
+                                                                </p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
                                         )}
                                         {retiro.Ordenes?.length > 0 ? (
                                             <div className="space-y-1">

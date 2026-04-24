@@ -46,22 +46,43 @@ self.addEventListener('fetch', (event) => {
     // Navigation requests → network-first, fallback to offline page
     if (request.mode === 'navigate') {
         event.respondWith(
-            fetch(request).catch(() => caches.match(OFFLINE_URL))
+            fetch(request)
+                .then((response) => {
+                    // Si el servidor responde OK, devolver directamente
+                    if (response.ok) return response;
+                    // Para rutas SPA (HTML), intentar servir desde cache root
+                    return caches.match('/') || caches.match(OFFLINE_URL);
+                })
+                .catch(() => caches.match(OFFLINE_URL))
         );
         return;
     }
 
-    // Static assets → cache-first
+    // Static assets → cache-first, fallback a red, fallback a offline
     event.respondWith(
         caches.match(request).then((cached) => {
-            return cached || fetch(request).then((response) => {
-                // Cache successful responses for static assets
-                if (response.ok && (request.url.match(/\.(css|js|woff2?|png|svg|jpg|ico)$/))) {
-                    const clone = response.clone();
-                    caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
-                }
-                return response;
-            });
+            if (cached) return cached;
+
+            return fetch(request)
+                .then((response) => {
+                    // Guardar en cache solo assets estáticos exitosos
+                    if (response.ok && request.url.match(/\.(css|js|woff2?|png|svg|jpg|ico)$/)) {
+                        const clone = response.clone();
+                        caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
+                    }
+                    return response;
+                })
+                .catch(() => {
+                    // Red no disponible y no está en cache
+                    if (request.destination === 'document') {
+                        return caches.match(OFFLINE_URL);
+                    }
+                    // Para otros assets (imágenes, fonts, etc.) devolver respuesta vacía
+                    return new Response('', {
+                        status: 408,
+                        statusText: 'Network timeout — recurso no disponible offline'
+                    });
+                });
         })
     );
 });

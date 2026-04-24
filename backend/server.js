@@ -223,6 +223,23 @@ io.on('connection', (socket) => {
     // Si el cliente ya conocía otro timestamp → detecta restart y hace hard-reload.
     socket.emit('server:started', { startTime: SERVER_START_TIME });
 
+    // --- HELPDESK ROOMS ---
+    socket.on('join:helpdesk_admin', () => {
+        socket.join('helpdesk:admin');
+    });
+
+    socket.on('leave:helpdesk_admin', () => {
+        socket.leave('helpdesk:admin');
+    });
+
+    socket.on('join:ticket', ({ ticketId }) => {
+        if (ticketId) socket.join(`ticket:${ticketId}`);
+    });
+
+    socket.on('leave:ticket', ({ ticketId }) => {
+        if (ticketId) socket.leave(`ticket:${ticketId}`);
+    });
+
     socket.on('error', (err) => {
         logger.error("[SOCKET] ERROR:", err);
     });

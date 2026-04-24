@@ -4,7 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useViewport } from '../../hooks/useViewport';
 import logoWhite from '../../assets/images/logo/logo-white.webp';
 import logoMini from '../../assets/images/logo/logo-mini.svg';
-import { LogOut, MessageSquare } from 'lucide-react';
+import { LogOut, MessageSquare, HelpCircle } from 'lucide-react';
+import Swal from 'sweetalert2';
+import { motion, AnimatePresence } from 'framer-motion';
 
 
 
@@ -121,8 +123,58 @@ const PORTAL_ITEMS = [
   { label: 'Historial', path: '/portal/history' },
 ];
 
-function DropdownPortalDesktop({ navigate, user, sessionLabel, handleSessionBtn }) {
-  return <NavBtn onClick={handleSessionBtn}>{sessionLabel}</NavBtn>;
+function DropdownPortalDesktop({ navigate, user, sessionLabel, handleSessionBtn, handleLogout }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 2, height: '100%' }}
+      className="cursor-pointer"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <NavBtn onClick={handleSessionBtn} forceHover={open}>
+        {sessionLabel}
+      </NavBtn>
+      <svg className="transition-transform duration-300 text-white opacity-80" style={{ transform: open ? 'rotate(-180deg)' : 'none', marginTop: 1, marginLeft: -2 }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+
+      <div
+        style={{
+          position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+          paddingTop: 8,
+          opacity: open ? 1 : 0, visibility: open ? 'visible' : 'hidden', pointerEvents: open ? 'auto' : 'none',
+          transition: 'all 0.3s ease', zIndex: 50
+        }}
+      >
+        <div style={{
+          background: 'rgba(17,17,17,0.95)',
+          backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: 16,
+          padding: 8,
+          minWidth: 160,
+          boxShadow: '0 12px 30px rgba(0,0,0,0.5)',
+          display: 'flex', flexDirection: 'column', gap: 2,
+        }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpen(false); handleLogout(); }}
+            style={{
+              color: '#ef4444',
+              fontSize: 13, fontWeight: 600, padding: '10px 16px', borderRadius: 10,
+              textDecoration: 'none', transition: 'all 0.2s', whiteSpace: 'nowrap',
+              cursor: 'pointer',
+              background: 'transparent', border: 'none',
+              display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-start'
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <LogOut size={16} /> Cerrar Sesión
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function LandingNavbar({ onOpenLoginModal }) {
@@ -132,6 +184,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
   const { isMobile } = useViewport();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const pathname = location?.pathname || (typeof window !== 'undefined' ? window.location.pathname : '');
   const isAuthPage = pathname === '/login' || pathname === '/register';
@@ -174,8 +227,56 @@ export default function LandingNavbar({ onOpenLoginModal }) {
     }
   };
 
+  const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
   return (
     <>
+      <AnimatePresence>
+        {showLogoutModal && (
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 bg-black/60"
+              onClick={() => setShowLogoutModal(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ type: "spring", stiffness: 350, damping: 25 }}
+              className="bg-[#18181b] border border-zinc-700/50 rounded-xl max-w-sm w-full p-6 relative z-[100000] shadow-2xl"
+            >
+              <h3 className="text-xl font-bold text-white mb-2">Cerrar Sesión</h3>
+              <p className="text-zinc-400 text-sm mb-6">¿Estás seguro que deseas salir del sistema?</p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutModal(false)}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowLogoutModal(false);
+                    logout();
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-500 transition-colors"
+                >
+                  Salir
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <nav style={{
         position: isAuthPage ? 'absolute' : 'fixed', top: 0, left: 0, right: 0, zIndex: 9999,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -215,7 +316,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
 
             {/* Autenticación o Mi Portal dependiendo del estado */}
             {sessionType ? (
-              <NavBtn onClick={handleSessionBtn}>{sessionLabel}</NavBtn>
+              <DropdownPortalDesktop navigate={navigate} user={user} sessionLabel={sessionLabel} handleSessionBtn={handleSessionBtn} handleLogout={handleLogout} />
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                 <NavBtn onClick={handleSessionBtn} style={{ padding: '0px 10px', fontSize: 13 }}>{sessionLabel}</NavBtn>
@@ -374,10 +475,18 @@ export default function LandingNavbar({ onOpenLoginModal }) {
                 <MessageSquare size={16} /> Contacto
               </button>
 
+              <button onClick={() => { setMenuOpen(false); navigate('/portal/soporte'); }} style={{
+                width: '85%', padding: '14px', border: '1px solid rgba(0,174,239,0.3)', borderRadius: 12,
+                background: 'rgba(0,174,239,0.06)', color: '#00AEEF', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+              }}>
+                <HelpCircle size={16} /> Soporte / Ayuda
+              </button>
+
               {sessionType && (
                 <>
                   <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.08)' }} />
-                  <button onClick={() => { setMenuOpen(false); logout(); }} style={{
+                  <button onClick={() => { setMenuOpen(false); handleLogout(); }} style={{
                     width: '85%', padding: '14px', border: '1px solid rgba(236,0,140,0.3)',
                     borderRadius: 12, background: 'rgba(236,0,140,0.06)', color: '#EC008C',
                     fontSize: 15, fontWeight: 600, cursor: 'pointer',
