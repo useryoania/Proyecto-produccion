@@ -394,16 +394,21 @@ async function procesarVentaDirecta(payload) {
 async function getProductosVenta() {
   const pool = await getPool();
   const res = await pool.request().query(`
-    SELECT LTRIM(RTRIM(p.CodArticulo)) as CodArticulo, 
-           LTRIM(RTRIM(p.Descripcion)) as Descripcion, 
-           c.NombreReferencia as GrupoNombre,
-           pl.Precio as PrecioBase,
-           pl.Moneda as MonedaBase
-    FROM dbo.Articulos p WITH(NOLOCK)
-    INNER JOIN dbo.ConfigMapeoERP c WITH(NOLOCK) ON LTRIM(RTRIM(p.Grupo)) = LTRIM(RTRIM(c.CodigoERP)) COLLATE Database_Default
-    LEFT JOIN dbo.PreciosListaPublica pl WITH(NOLOCK) ON p.ProIdProducto = pl.ProIdProducto AND pl.Activo = 1
-    WHERE p.Mostrar = 1 AND p.IDProdReact IS NOT NULL
-    ORDER BY c.NombreReferencia, p.Descripcion
+      SELECT LTRIM(RTRIM(p.CodArticulo)) as CodArticulo, 
+             LTRIM(RTRIM(p.Descripcion)) as Descripcion, 
+             ISNULL(c.NombreReferencia, 
+                CASE WHEN LTRIM(RTRIM(p.CodStock)) = '2.2.1.1' THEN 'Insumos' 
+                     WHEN LTRIM(RTRIM(p.CodStock)) = '2.2.1.2' THEN 'Productos en el local' 
+                     ELSE 'Otros' END
+             ) as GrupoNombre,
+             LTRIM(RTRIM(p.CodStock)) as CodStock,
+             pl.Precio as PrecioBase,
+             pl.Moneda as MonedaBase
+      FROM dbo.Articulos p WITH(NOLOCK)
+      LEFT JOIN dbo.ConfigMapeoERP c WITH(NOLOCK) ON LTRIM(RTRIM(p.Grupo)) = LTRIM(RTRIM(c.CodigoERP)) COLLATE Database_Default
+      LEFT JOIN dbo.PreciosListaPublica pl WITH(NOLOCK) ON p.ProIdProducto = pl.ProIdProducto AND pl.Activo = 1
+      WHERE p.Mostrar = 1 AND (p.IDProdReact IS NOT NULL OR p.Grupo = '2.1')
+      ORDER BY GrupoNombre, p.Descripcion
   `);
   return res.recordset;
 }

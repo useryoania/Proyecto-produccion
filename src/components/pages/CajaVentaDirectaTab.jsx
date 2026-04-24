@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Search, Plus, Trash2, Loader2, User, CheckCircle, ArrowRight, Wallet, History } from 'lucide-react';
 import api from '../../services/apiClient';
 import { toast } from 'sonner';
@@ -6,7 +6,8 @@ import ClienteBilletera from '../common/ClienteBilletera';
 
 const TIPOS_VENTA = [
   { value: 'RECURSO', label: 'Bolsa de Recursos (Plan Metros)' },
-  { value: 'VENTA_GENERICA', label: 'Venta Genérica' }
+  { value: 'VENTA_INSUMOS', label: 'Insumos' },
+  { value: 'VENTA_PRODUCTOS', label: 'Productos en el local' }
 ];
 
 export default function CajaVentaDirectaTab({
@@ -20,6 +21,7 @@ export default function CajaVentaDirectaTab({
   onTotalChange, // notifica al padre el total cuando cambian los items
   onClienteChange,
   defaultTipo = 'RECURSO',
+  allowedTipos = null,
 }) {
   // Cliente
   const [qCliente, setQCliente] = useState('');
@@ -262,38 +264,42 @@ export default function CajaVentaDirectaTab({
               {items.map((it, idx) => (
                 <div key={it.id} className="flex flex-col gap-6 bg-slate-50/50 rounded-[2rem] p-6 border border-slate-100 relative group/item hover:bg-slate-50 transition-colors">
                   {idx > 0 && <button onClick={()=>setItems(p=>p.filter(x=>x.id!==it.id))} className="absolute top-5 right-5 text-slate-300 hover:text-rose-600 p-1.5 transition-all hover:bg-rose-50 rounded-xl"><Trash2 size={18} /></button>}
-                             <div className={`grid ${['RECURSO', 'PRODUCTO', 'VENTA_GENERICA'].includes(it.tipo) ? 'grid-cols-3' : 'grid-cols-2'} gap-6`}>
+                             <div className={`grid ${['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? 'grid-cols-3' : 'grid-cols-2'} gap-6`}>
                     <div className="flex flex-col gap-2.5">
                       <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-2">Operación</label>
                       <select value={it.tipo} onChange={e=>{
                         const t=e.target.value;
-                        setItems(p=>p.map(x=>x.id===it.id ? {...x, tipo:t, grupo:'', codigo: t==='FACT_CREDITO' ? 'FACT' : ''}:x));
+                        setItems(p=>p.map(x=>x.id===it.id ? {...x, tipo:t, grupo: t === 'VENTA_INSUMOS' ? 'Insumos' : t === 'VENTA_PRODUCTOS' ? 'Productos en el local' : '', codigo: '', descripcion: ''}:x));
                       }} className="bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all shadow-sm">
-                        {TIPOS_VENTA.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                        {TIPOS_VENTA.filter(o => !allowedTipos || allowedTipos.includes(o.value)).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                     </div>
-                    {['RECURSO', 'PRODUCTO', 'VENTA_GENERICA'].includes(it.tipo) && (
+                    {['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) && (
                       <div className="flex flex-col gap-2.5">
                         <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-2">Grupo</label>
                         <select value={it.grupo || ''} onChange={e => {
                           const val = e.target.value;
                           setItems(p=>p.map(x=>x.id===it.id ? {...x, grupo: val, codigo: '', descripcion: ''} : x));
-                        }} className="bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all shadow-sm">
+                        }} className="bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all shadow-sm" disabled={it.tipo === 'VENTA_INSUMOS' || it.tipo === 'VENTA_PRODUCTOS'}>
                           <option value="">Seleccione grupo...</option>
-                          {Object.keys(productosAgrupados).filter(g => /dtf|sublimaci/i.test(g)).map(g => (<option key={g} value={g}>{g}</option>))}
+                          {Object.keys(productosAgrupados).filter(g => {
+                             if (it.tipo === 'VENTA_INSUMOS') return g === 'Insumos';
+                             if (it.tipo === 'VENTA_PRODUCTOS') return g === 'Productos en el local';
+                             return /dtf|sublimaci|impresi|corte/i.test(g);
+                          }).map(g => (<option key={g} value={g}>{g}</option>))}
                         </select>
                       </div>
                     )}
                     <div className="flex flex-col gap-2.5">
-                      <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-2">{['RECURSO', 'PRODUCTO', 'VENTA_GENERICA'].includes(it.tipo) ? 'Producto' : 'Referencia'}</label>
-                      {['RECURSO', 'PRODUCTO', 'VENTA_GENERICA'].includes(it.tipo) ? (
+                      <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-2">{['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? 'Producto' : 'Referencia'}</label>
+                      {['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? (
                         <select value={it.codigo} onChange={e => {
                           const val = e.target.value;
                           const prod = (productosAgrupados[it.grupo] || []).find(x => String(x.CodArticulo) === String(val));
                           setItems(p => p.map(x => {
                             if (x.id !== it.id) return x;
                             let newObj = { ...x, codigo: val, descripcion: prod ? prod.Descripcion : x.descripcion };
-                            if (x.tipo === 'VENTA_GENERICA' && prod) {
+                            if ((x.tipo === 'VENTA_GENERICA' || x.tipo === 'VENTA_INSUMOS' || x.tipo === 'VENTA_PRODUCTOS') && prod) {
                                let precio = prod.PrecioBase || 0;
                                if (prod.MonedaBase === 'DOLAR' && monedaExhibicion === 'UYU') {
                                    precio = precio * (cotizacion || 40);
@@ -325,7 +331,7 @@ export default function CajaVentaDirectaTab({
                           setItems(p=>p.map(x=>{
                             if (x.id !== it.id) return x;
                             let newObj = { ...x, cantidad: val };
-                            if (x.tipo === 'VENTA_GENERICA' && x.codigo) {
+                            if ((x.tipo === 'VENTA_GENERICA' || x.tipo === 'VENTA_INSUMOS' || x.tipo === 'VENTA_PRODUCTOS') && x.codigo) {
                                const prod = (productosAgrupados[x.grupo] || []).find(p => String(p.CodArticulo) === String(x.codigo));
                                if (prod) {
                                   let precio = prod.PrecioBase || 0;
@@ -375,4 +381,6 @@ export default function CajaVentaDirectaTab({
     </div>
   );
 }
+
+
 

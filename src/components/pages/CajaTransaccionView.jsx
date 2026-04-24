@@ -567,7 +567,7 @@ export default function CajaTransaccionView() {
                 {[
                    { id:'COBRO', label:'Pago de Pedidos', icon:ShoppingCart },
                    { id:'VENTA', label:'Venta de Recursos Adelantados', icon:Plus },
-                   { id:'VENTA_GENERICA', label:'Venta GenÃ©rica', icon:Tag },
+                   { id:'VENTA_DIRECTA', label:'Venta Libre', icon:Tag },
                    { id:'SALDO_FAVOR', label:'Ingreso de Saldo Anticipado', icon:Wallet },
                    { id:'PAGO_DEUDAS', label:'Pago de Deudas', icon:FileMinus },
                    { id:'AUTORIZAR', label:'Autorizar Entrega', icon:ShieldCheck }
@@ -783,6 +783,7 @@ export default function CajaTransaccionView() {
                 {subTabIngreso === 'VENTA' && (
                   <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                      <CajaVentaDirectaTab
+                        allowedTipos={['RECURSO']}
                         metodosPago={metodosPago}
                         cotizacion={cotizacion}
                         onVentaExitosa={()=>{ fetchRetiros(); setVentaPagos([{ id: Date.now(), metodoPagoId: '', moneda: 'UYU', monedaId: 1, monto: '' }]); setVentaObs(''); setVentaTotalACubrir(0); setVentaMoneda('UYU'); setVentaClienteId(''); setVentaClienteNombre(''); }}
@@ -855,10 +856,10 @@ export default function CajaTransaccionView() {
                   </div>
                 )}
                 {/* --- SUBTAB VENTA GENERICA --- */}
-                {subTabIngreso === 'VENTA_GENERICA' && (
+                {subTabIngreso === 'VENTA_DIRECTA' && (
                   <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                      <CajaVentaDirectaTab
-                        defaultTipo="VENTA_GENERICA"
+                        defaultTipo="VENTA_INSUMOS" allowedTipos={['VENTA_INSUMOS', 'VENTA_PRODUCTOS']}
                         metodosPago={metodosPago}
                         cotizacion={cotizacion}
                         onVentaExitosa={()=>{ fetchRetiros(); setVentaPagos([{ id: Date.now(), metodoPagoId: '', moneda: 'UYU', monedaId: 1, monto: '' }]); setVentaObs(''); setVentaTotalACubrir(0); setVentaMoneda('UYU'); setVentaClienteId(''); setVentaClienteNombre(''); }}
@@ -875,12 +876,12 @@ export default function CajaTransaccionView() {
                         procesando={procesandoVenta}
                         onConfirmar={async (payload) => {
                           if (!payload.header.clienteId) { toast.warning('Debe seleccionar un cliente.'); return; }
-                          if (!payload.items.every(i => i.codigo && i.precioTotal && i.cantidad)) { toast.warning('Complete todos los campos de los ítems.'); return; }
+                          if (!payload.items.every(i => i.codigo && i.precioTotal && i.cantidad)) { toast.warning('Complete todos los campos de los ï¿½tems.'); return; }
                           setProcesandoVenta(true);
                           try {
                             const ventaPayload = { ...payload, pagos: ventaPagos.filter(p => p.monto && p.metodoPagoId).map(p => ({ metodoPagoId: parseInt(p.metodoPagoId), montoOriginal: parseFloat(p.monto), monedaId: p.moneda === 'USD' ? 2 : 1, cotizacion: p.moneda === 'USD' ? cotizacion : null, referenciaNumero: '' })) };
                             const res = await api.post('/contabilidad/caja/venta-directa', ventaPayload);
-                            toast.success(Venta procesada);
+                            toast.success('Venta procesada');
                             fetchRetiros(); setVentaPagos([{ id: Date.now(), metodoPagoId: '', moneda: 'UYU', monedaId: 1, monto: '' }]); setVentaObs(''); setVentaTotalACubrir(0); setVentaMoneda('UYU');
                           } catch(e) { toast.error('Error al procesar venta'); }
                           finally { setProcesandoVenta(false); }
@@ -921,7 +922,7 @@ export default function CajaTransaccionView() {
                           </div>
                           <h3 className="text-2xl font-black text-slate-800 mb-2">Pago de Deudas</h3>
                           <p className="text-slate-500 font-medium leading-relaxed">
-                              Esta función se está preparando para liquidar deudas desde caja.
+                              Esta funciï¿½n se estï¿½ preparando para liquidar deudas desde caja.
                           </p>
                       </div>
                   </div>
@@ -1222,7 +1223,7 @@ export default function CajaTransaccionView() {
              </div>
 
              {/* 3) COLUMNA DERECHA: PANEL FIJO DE PAGO */}
-             {(subTabIngreso === 'COBRO' || subTabIngreso === 'MOTOR' || subTabIngreso === 'VENTA' || subTabIngreso === 'VENTA_GENERICA') && (
+             {(subTabIngreso === 'COBRO' || subTabIngreso === 'MOTOR' || subTabIngreso === 'VENTA' || subTabIngreso === 'VENTA_DIRECTA') && (
                 <CajaPanelPago 
                    mode={subTabIngreso}
                    tiposDocDisponibles={tiposDocumentos}
@@ -1550,5 +1551,8 @@ export default function CajaTransaccionView() {
     </>
   );
 }
+
+
+
 
 
