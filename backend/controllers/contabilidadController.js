@@ -504,6 +504,7 @@ exports.crearPlan = async (req, res) => {
       PlaImportePagado    = null,
       MonedaPagoId        = null,
       MetodoPagoId        = null,
+      DocTipo             = 'FACTURA',   // 'FACTURA' | 'RECIBO' | 'TICKET'
     } = req.body;
     const UsuarioAlta = req.user?.id ?? 1;
 
@@ -560,8 +561,115 @@ exports.crearPlan = async (req, res) => {
 
     const PlaIdPlan = insert.recordset[0].PlaIdPlan;
 
-    logger.info(`[CONTABILIDAD] Plan #${PlaIdPlan} creado: ${PlaCantidadTotal} unidades para CueIdCuenta=${CueIdCuenta}`);
-    res.json({ success: true, data: { PlaIdPlan }, message: `Plan creado: ${PlaCantidadTotal} unidades disponibles.` });
+    // ── 1. ENTRADA en inventario de recursos (siempre) ─────────────────────
+    await svc.registrarMovimiento({
+      CueIdCuenta:     parseInt(CueIdCuenta),
+      MovTipo:         'ENTRADA',
+      MovConcepto:     `Saldo inicial plan #${PlaIdPlan}${PlaDescripcion ? ' — ' + PlaDescripcion : ''}`,
+      MovImporte:      parseFloat(PlaCantidadTotal),
+      MovUsuarioAlta:  UsuarioAlta,
+    });
+
+    // ── 2. Documento contable según DocTipo ────────────────────────────────
+    let docNumero = null;
+    let DocIdDocumento = null;
+
+    if (DocTipo !== 'TICKET') {
+      // Generar número correlativo con prefijo según tipo
+      const prefijo    = DocTipo === 'RECIBO' ? 'RC' : 'FC';
+      const secTipo    = DocTipo === 'RECIBO' ? 'RECIBO_PLAN' : 'FACTURA_PLAN';
+      const anio       = new Date().getFullYear();
+      const seqRes     = await pool.request()
+        .input('Tipo', sql.VarChar(30), secTipo)
+        .input('Anio', sql.Int, anio)
+        .query(`
+          IF NOT EXISTS (SELECT 1 FROM dbo.SecuenciaDocumentos WHERE SecTipo = @Tipo)
+            INSERT INTO dbo.SecuenciaDocumentos (SecTipo, SecUltimoNum, SecAnio) VALUES (@Tipo, 0, @Anio);
+          UPDATE dbo.SecuenciaDocumentos
+          SET SecUltimoNum = SecUltimoNum + 1, SecAnio = @Anio
+          OUTPUT INSERTED.SecUltimoNum
+          WHERE SecTipo = @Tipo;
+        `);
+      const numero  = seqRes.recordset[0].SecUltimoNum;
+      docNumero = `${prefijo}-${anio}-${String(numero).padStart(5, '0')}`;
+      const importe = PlaImportePagado ? parseFloat(PlaImportePagado) : 0;
+
+      // Insertar DocumentoContable
+      const docEstado = (DocTipo === 'FACTURA' && importe <= 0) ? 'EMITIDO' : 'COBRADO';
+      const docRes = await pool.request()
+        .input('CueIdCuenta',  sql.Int,           parseInt(CueIdCuenta))
+        .input('CliIdCliente', sql.Int,           parseInt(CliIdCliente))
+        .input('DocTipo',      sql.VarChar(20),  DocTipo)
+        .input('DocNumero',    sql.VarChar(50),  docNumero)
+        .input('DocTotal',     sql.Decimal(18,4), importe)
+        .input('DocSubtotal',  sql.Decimal(18,4), importe)
+        .input('MonIdMoneda',  sql.Int,           MonedaPagoId ? parseInt(MonedaPagoId) : 1)
+        .input('DocEstado',    sql.VarChar(20),  docEstado)
+        .input('UsuarioAlta',  sql.Int,           UsuarioAlta)
+        .query(`
+          INSERT INTO dbo.DocumentosContables
+            (CueIdCuenta, CliIdCliente, DocTipo, DocNumero, DocSerie,
+             DocSubtotal, DocTotal, MonIdMoneda, DocEstado,
+             DocFechaEmision, DocUsuarioAlta)
+          OUTPUT INSERTED.DocIdDocumento
+          VALUES
+            (@CueIdCuenta, @CliIdCliente, @DocTipo, @DocNumero, 'A',
+             @DocSubtotal, @DocTotal, @MonIdMoneda, @DocEstado,
+             GETDATE(), @UsuarioAlta)
+        `);
+      DocIdDocumento = docRes.recordset[0].DocIdDocumento;
+
+      if (DocTipo === 'FACTURA') {
+        if (importe > 0) {
+          // Pago al contado con factura: registrar cobro en cuenta monetaria
+          const cueTipoDin = (MonedaPagoId === 2 || MonedaPagoId === '2') ? 'DINERO_USD' : 'DINERO_UYU';
+          const cuentaDinRes = await pool.request()
+            .input('CliIdCliente', sql.Int,      parseInt(CliIdCliente))
+            .input('CueTipo',      sql.VarChar(20), cueTipoDin)
+            .query(`SELECT TOP 1 CueIdCuenta FROM dbo.CuentasCliente WHERE CliIdCliente=@CliIdCliente AND CueTipo=@CueTipo AND CueActiva=1`);
+          if (cuentaDinRes.recordset.length > 0) {
+            await svc.registrarMovimiento({
+              CueIdCuenta:    cuentaDinRes.recordset[0].CueIdCuenta,
+              MovTipo:        'PAGO',
+              MovConcepto:    `Pago plan #${PlaIdPlan} (${docNumero})`,
+              MovImporte:     importe,
+              MovUsuarioAlta: UsuarioAlta,
+              DocIdDocumento,
+            });
+          }
+        } else {
+          // Factura sin pago inmediato → crear DeudaDocumento
+          // No se crea deuda sin importe — el importe es obligatorio si DocTipo=FACTURA sin pago
+          // (deja pendiente para cuando el cliente pague)
+          logger.info(`[CONTABILIDAD] Plan #${PlaIdPlan}: Factura ${docNumero} emitida sin pago inmediato. Sin DeudaDocumento (se registrará al cobrar).`);
+        }
+      } else if (DocTipo === 'RECIBO' && importe > 0) {
+        // Recibo: solo registrar cobro, sin deuda
+        const cueTipoDin = (MonedaPagoId === 2 || MonedaPagoId === '2') ? 'DINERO_USD' : 'DINERO_UYU';
+        const cuentaDinRes = await pool.request()
+          .input('CliIdCliente', sql.Int,      parseInt(CliIdCliente))
+          .input('CueTipo',      sql.VarChar(20), cueTipoDin)
+          .query(`SELECT TOP 1 CueIdCuenta FROM dbo.CuentasCliente WHERE CliIdCliente=@CliIdCliente AND CueTipo=@CueTipo AND CueActiva=1`);
+        if (cuentaDinRes.recordset.length > 0) {
+          await svc.registrarMovimiento({
+            CueIdCuenta:    cuentaDinRes.recordset[0].CueIdCuenta,
+            MovTipo:        'PAGO',
+            MovConcepto:    `Cobro plan #${PlaIdPlan} (${docNumero})`,
+            MovImporte:     importe,
+            MovUsuarioAlta: UsuarioAlta,
+            DocIdDocumento,
+          });
+        }
+      }
+    }
+    // TICKET: solo inventario, sin documento contable
+
+    logger.info(`[CONTABILIDAD] Plan #${PlaIdPlan} creado: ${PlaCantidadTotal} uds | DocTipo=${DocTipo}${docNumero ? ' | ' + docNumero : ''}`);
+    res.json({
+      success: true,
+      data: { PlaIdPlan, DocIdDocumento, docNumero, DocTipo },
+      message: `Plan creado: ${PlaCantidadTotal} unidades${docNumero ? ` — ${DocTipo} ${docNumero}` : ''}.`,
+    });
   } catch (err) {
     logger.error('[CONTABILIDAD] crearPlan:', err.message);
     res.status(500).json({ success: false, error: err.message });
@@ -1300,19 +1408,18 @@ exports.registrarPagoCruzado = async (req, res) => {
     const cuentaRes = await pool.request()
       .input('CueIdCuenta', sql.Int, parseInt(CueIdCuenta))
       .query(`
-        SELECT cc.CueTipo, mon.MonSimbolo, mon.MonDescripcionMoneda AS MonNombre, mon.MonIdMoneda
-        FROM dbo.CuentasCliente cc
-        JOIN dbo.Monedas mon ON mon.MonIdMoneda = cc.MonIdMoneda
-        WHERE cc.CueIdCuenta = @CueIdCuenta
+        SELECT cc.CueTipo, cc.MonIdMoneda,
+               ISNULL(mon.MonSimbolo, CASE WHEN cc.CueTipo LIKE '%USD%' THEN 'US
       `);
 
     if (!cuentaRes.recordset.length)
       return res.status(404).json({ success: false, error: 'Cuenta no encontrada.' });
 
-    const { MonSimbolo, MonNombre, MonIdMoneda } = cuentaRes.recordset[0];
+    const { CueTipo, MonSimbolo, MonNombre, MonIdMoneda } = cuentaRes.recordset[0];
 
     // Determinar si hay conversión necesaria
-    const monedaCuenta  = MonIdMoneda === 2 ? 'USD' : 'UYU';
+    // Derive moneda de la cuenta desde CueTipo (más fiable que MonIdMoneda)
+    const monedaCuenta  = CueTipo?.toUpperCase().includes('USD') ? 'USD' : 'UYU';
     const esConversion  = monedaCuenta !== MonedaPago;
 
     let importeConvertido = parseFloat(ImporteOriginal);
@@ -1385,6 +1492,252 @@ exports.registrarPagoCruzado = async (req, res) => {
     });
   } catch (err) {
     logger.error('[CONTABILIDAD] registrarPagoCruzado:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// ============================================================
+// SECCIÓN: CATÁLOGO DE TIPOS DE MOVIMIENTO
+// ============================================================
+
+/**
+ * GET /api/contabilidad/tipos-movimiento
+ */
+exports.getTiposMovimiento = async (req, res) => {
+  try {
+    const pool = await getPool();
+    const result = await pool.request().query(`
+      SELECT TmoId, TmoNombre, TmoDescripcion,
+             TmoPrefijo, TmoSecuencia,
+             TmoAfectaSaldo, TmoGeneraDeuda,
+             TmoAplicaRecurso, TmoRequiereDoc,
+             TmoActivo, TmoOrden
+      FROM dbo.TiposMovimiento
+      ORDER BY TmoOrden ASC, TmoId ASC
+    `);
+    res.json({ success: true, data: result.recordset });
+  } catch (err) {
+    logger.error('[CONTABILIDAD] getTiposMovimiento:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/**
+ * PATCH /api/contabilidad/tipos-movimiento/:TmoId
+ * Body: campos editables (solo los que se envíen se modifican)
+ */
+exports.updateTipoMovimiento = async (req, res) => {
+  try {
+    const { TmoId } = req.params;
+    const { TmoNombre, TmoDescripcion, TmoPrefijo,
+            TmoAfectaSaldo, TmoGeneraDeuda,
+            TmoAplicaRecurso, TmoRequiereDoc,
+            TmoActivo, TmoOrden } = req.body;
+
+    const pool = await getPool();
+    const existe = await pool.request()
+      .input('TmoId', sql.VarChar(30), TmoId)
+      .query(`SELECT TmoId FROM dbo.TiposMovimiento WHERE TmoId = @TmoId`);
+    if (!existe.recordset.length)
+      return res.status(404).json({ success: false, error: `Tipo '${TmoId}' no encontrado.` });
+
+    await pool.request()
+      .input('TmoId',            sql.VarChar(30),  TmoId)
+      .input('TmoNombre',        sql.NVarChar(100), TmoNombre        ?? null)
+      .input('TmoDescripcion',   sql.NVarChar(500), TmoDescripcion   ?? null)
+      .input('TmoPrefijo',       sql.VarChar(5),    TmoPrefijo       ?? null)
+      .input('TmoAfectaSaldo',   sql.SmallInt,      TmoAfectaSaldo   != null ? parseInt(TmoAfectaSaldo) : null)
+      .input('TmoGeneraDeuda',   sql.Bit,           TmoGeneraDeuda   ?? null)
+      .input('TmoAplicaRecurso', sql.Bit,           TmoAplicaRecurso ?? null)
+      .input('TmoRequiereDoc',   sql.Bit,           TmoRequiereDoc   ?? null)
+      .input('TmoActivo',        sql.Bit,           TmoActivo        ?? null)
+      .input('TmoOrden',         sql.Int,           TmoOrden         ?? null)
+      .query(`
+        UPDATE dbo.TiposMovimiento SET
+          TmoNombre        = ISNULL(@TmoNombre,        TmoNombre),
+          TmoDescripcion   = ISNULL(@TmoDescripcion,   TmoDescripcion),
+          TmoPrefijo       = ISNULL(@TmoPrefijo,       TmoPrefijo),
+          TmoAfectaSaldo   = ISNULL(@TmoAfectaSaldo,   TmoAfectaSaldo),
+          TmoGeneraDeuda   = ISNULL(@TmoGeneraDeuda,   TmoGeneraDeuda),
+          TmoAplicaRecurso = ISNULL(@TmoAplicaRecurso, TmoAplicaRecurso),
+          TmoRequiereDoc   = ISNULL(@TmoRequiereDoc,   TmoRequiereDoc),
+          TmoActivo        = ISNULL(@TmoActivo,        TmoActivo),
+          TmoOrden         = ISNULL(@TmoOrden,         TmoOrden)
+        WHERE TmoId = @TmoId
+      `);
+
+    logger.info(`[CONTABILIDAD] TipoMovimiento '${TmoId}' actualizado.`);
+    res.json({ success: true, message: `Tipo '${TmoId}' actualizado correctamente.` });
+  } catch (err) {
+    logger.error('[CONTABILIDAD] updateTipoMovimiento:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+ ELSE '$U' END) AS MonSimbolo,
+               ISNULL(mon.MonDescripcionMoneda, cc.CueTipo) AS MonNombre
+        FROM dbo.CuentasCliente cc
+        LEFT JOIN dbo.Monedas mon ON mon.MonIdMoneda = cc.MonIdMoneda
+        WHERE cc.CueIdCuenta = @CueIdCuenta
+      `);
+
+    if (!cuentaRes.recordset.length)
+      return res.status(404).json({ success: false, error: 'Cuenta no encontrada.' });
+
+    const { CueTipo, MonSimbolo, MonNombre, MonIdMoneda } = cuentaRes.recordset[0];
+
+    // Determinar si hay conversión necesaria
+    // Derive moneda de la cuenta desde CueTipo (más fiable que MonIdMoneda)
+    const monedaCuenta  = CueTipo?.toUpperCase().includes('USD') ? 'USD' : 'UYU';
+    const esConversion  = monedaCuenta !== MonedaPago;
+
+    let importeConvertido = parseFloat(ImporteOriginal);
+    let tcUsado = null;
+
+    if (esConversion) {
+      // Obtener cotización vigente
+      let tc = TipoCambio ? parseFloat(TipoCambio) : null;
+      if (!tc) {
+        const cotRes = await pool.request().query(`SELECT TOP 1 (CotCompra + CotVenta)/2.0 AS tc FROM dbo.Cotizaciones ORDER BY CotFecha DESC`);
+        if (!cotRes.recordset.length)
+          return res.status(400).json({ success: false, error: 'Sin cotización disponible. Ingresá el tipo de cambio manualmente.' });
+        tc = Number(cotRes.recordset[0].tc);
+      }
+      tcUsado = tc;
+
+      // Convertir: si paga en USD y debe en UYU → multiplica; inverso → divide
+      importeConvertido = MonedaPago === 'USD' && monedaCuenta === 'UYU'
+        ? parseFloat(ImporteOriginal) * tc
+        : parseFloat(ImporteOriginal) / tc;
+    }
+
+    // Acreditar en cuenta destino
+    const { MovIdGenerado, SaldoResultante } = await svc.registrarMovimiento({
+      CueIdCuenta:    parseInt(CueIdCuenta),
+      MovTipo:        'PAGO',
+      MovConcepto:    `${MovConcepto} (${MonedaPago} → ${monedaCuenta}${tcUsado ? ` TC:${tcUsado}` : ''})`,
+      MovImporte:     importeConvertido,
+      MovUsuarioAlta: UsuarioAlta,
+      MovRefExterna:  Referencia,
+      MovObservaciones: esConversion
+        ? `Importe original: ${ImporteOriginal} ${MonedaPago}. TC: ${tcUsado}. Convertido: ${importeConvertido.toFixed(2)} ${monedaCuenta}`
+        : null,
+    });
+
+    // Imputar contra deudas PEPS
+    const { MontoExcedente } = await svc.imputarPago({
+      PagIdPago:       MovIdGenerado,
+      MontoDisponible: importeConvertido,
+      CueIdCuenta:     parseInt(CueIdCuenta),
+      UsuarioAlta,
+    });
+
+    if (MontoExcedente > 0) {
+      await svc.registrarMovimiento({
+        CueIdCuenta:    parseInt(CueIdCuenta),
+        MovTipo:        'NOTA_CREDITO',
+        MovConcepto:    `Crédito a favor por pago cruzado (excedente)`,
+        MovImporte:     MontoExcedente,
+        MovUsuarioAlta: UsuarioAlta,
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        MovIdGenerado,
+        SaldoResultante,
+        importeOriginal:   parseFloat(ImporteOriginal),
+        monedaPago:        MonedaPago,
+        tipoCambio:        tcUsado,
+        importeConvertido: importeConvertido.toFixed(4),
+        monedaCuenta,
+        imputado:          (importeConvertido - MontoExcedente).toFixed(2),
+        credito:           MontoExcedente,
+      },
+      message: esConversion
+        ? `✅ Pago ${ImporteOriginal} ${MonedaPago} convertido a ${importeConvertido.toFixed(2)} ${monedaCuenta} (TC: ${tcUsado}). Imputado: ${(importeConvertido - MontoExcedente).toFixed(2)}.`
+        : `✅ Pago ${ImporteOriginal} ${MonedaPago} imputado. Excedente: ${fmt(MontoExcedente)}.`,
+    });
+  } catch (err) {
+    logger.error('[CONTABILIDAD] registrarPagoCruzado:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// ============================================================
+// SECCIÓN: CATÁLOGO DE TIPOS DE MOVIMIENTO
+// ============================================================
+
+/**
+ * GET /api/contabilidad/tipos-movimiento
+ */
+exports.getTiposMovimiento = async (req, res) => {
+  try {
+    const pool = await getPool();
+    const result = await pool.request().query(`
+      SELECT TmoId, TmoNombre, TmoDescripcion,
+             TmoPrefijo, TmoSecuencia,
+             TmoAfectaSaldo, TmoGeneraDeuda,
+             TmoAplicaRecurso, TmoRequiereDoc,
+             TmoActivo, TmoOrden
+      FROM dbo.TiposMovimiento
+      ORDER BY TmoOrden ASC, TmoId ASC
+    `);
+    res.json({ success: true, data: result.recordset });
+  } catch (err) {
+    logger.error('[CONTABILIDAD] getTiposMovimiento:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/**
+ * PATCH /api/contabilidad/tipos-movimiento/:TmoId
+ * Body: campos editables (solo los que se envíen se modifican)
+ */
+exports.updateTipoMovimiento = async (req, res) => {
+  try {
+    const { TmoId } = req.params;
+    const { TmoNombre, TmoDescripcion, TmoPrefijo,
+            TmoAfectaSaldo, TmoGeneraDeuda,
+            TmoAplicaRecurso, TmoRequiereDoc,
+            TmoActivo, TmoOrden } = req.body;
+
+    const pool = await getPool();
+    const existe = await pool.request()
+      .input('TmoId', sql.VarChar(30), TmoId)
+      .query(`SELECT TmoId FROM dbo.TiposMovimiento WHERE TmoId = @TmoId`);
+    if (!existe.recordset.length)
+      return res.status(404).json({ success: false, error: `Tipo '${TmoId}' no encontrado.` });
+
+    await pool.request()
+      .input('TmoId',            sql.VarChar(30),  TmoId)
+      .input('TmoNombre',        sql.NVarChar(100), TmoNombre        ?? null)
+      .input('TmoDescripcion',   sql.NVarChar(500), TmoDescripcion   ?? null)
+      .input('TmoPrefijo',       sql.VarChar(5),    TmoPrefijo       ?? null)
+      .input('TmoAfectaSaldo',   sql.SmallInt,      TmoAfectaSaldo   != null ? parseInt(TmoAfectaSaldo) : null)
+      .input('TmoGeneraDeuda',   sql.Bit,           TmoGeneraDeuda   ?? null)
+      .input('TmoAplicaRecurso', sql.Bit,           TmoAplicaRecurso ?? null)
+      .input('TmoRequiereDoc',   sql.Bit,           TmoRequiereDoc   ?? null)
+      .input('TmoActivo',        sql.Bit,           TmoActivo        ?? null)
+      .input('TmoOrden',         sql.Int,           TmoOrden         ?? null)
+      .query(`
+        UPDATE dbo.TiposMovimiento SET
+          TmoNombre        = ISNULL(@TmoNombre,        TmoNombre),
+          TmoDescripcion   = ISNULL(@TmoDescripcion,   TmoDescripcion),
+          TmoPrefijo       = ISNULL(@TmoPrefijo,       TmoPrefijo),
+          TmoAfectaSaldo   = ISNULL(@TmoAfectaSaldo,   TmoAfectaSaldo),
+          TmoGeneraDeuda   = ISNULL(@TmoGeneraDeuda,   TmoGeneraDeuda),
+          TmoAplicaRecurso = ISNULL(@TmoAplicaRecurso, TmoAplicaRecurso),
+          TmoRequiereDoc   = ISNULL(@TmoRequiereDoc,   TmoRequiereDoc),
+          TmoActivo        = ISNULL(@TmoActivo,        TmoActivo),
+          TmoOrden         = ISNULL(@TmoOrden,         TmoOrden)
+        WHERE TmoId = @TmoId
+      `);
+
+    logger.info(`[CONTABILIDAD] TipoMovimiento '${TmoId}' actualizado.`);
+    res.json({ success: true, message: `Tipo '${TmoId}' actualizado correctamente.` });
+  } catch (err) {
+    logger.error('[CONTABILIDAD] updateTipoMovimiento:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 };

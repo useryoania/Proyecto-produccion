@@ -69,6 +69,7 @@ const AuditDepositoView = lazyWithRetry(() => import('../pages/AuditDepositoView
 const ContabilidadCuentasView    = lazyWithRetry(() => import('../pages/ContabilidadCuentasView'));
 const ContabilidadAntiguedadView  = lazyWithRetry(() => import('../pages/ContabilidadAntiguedadView'));
 const ContabilidadColaEstadosView = lazyWithRetry(() => import('../pages/ContabilidadColaEstadosView'));
+const TiposMovimientoAdmin        = lazyWithRetry(() => import('../pages/TiposMovimientoAdmin'));
 
 // ============================================
 // 1. LUCIDE ICON MAP (override FA icons)
@@ -462,6 +463,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <Route path="/contabilidad/cuentas"      element={<ContabilidadCuentasView />} />
                 <Route path="/contabilidad/antiguedad"    element={<ContabilidadAntiguedadView />} />
                 <Route path="/contabilidad/cola-estados"  element={<ContabilidadColaEstadosView />} />
+                <Route path="/contabilidad/tipos-movimiento" element={<TiposMovimientoAdmin />} />
                 <Route path="/contabilidad/recursos"      element={<Navigate to="/contabilidad/cuentas" replace />} />
                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
             </Routes>
@@ -615,7 +617,6 @@ const MainAppContent = ({ menuItems = [] }) => {
                             )}
                         </button>
                     </div>
-
                 </aside>
 
                 <main className="flex-1 overflow-hidden relative bg-slate-100 w-full">
@@ -709,10 +710,11 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/caja/verificar-pagos') return <VerificarPagosOnlineView />;
     if (menuItem.Ruta === '/admin/excepciones-deuda') return <ExcepcionesDeudaView />;
     if (menuItem.Ruta === '/admin/consola') return <SysAdminPage />;
-    if (menuItem.Ruta === '/contabilidad/cuentas')       return <ContabilidadCuentasView />;
-    if (menuItem.Ruta === '/contabilidad/antiguedad')     return <ContabilidadAntiguedadView />;
-    if (menuItem.Ruta === '/contabilidad/cola-estados')   return <ContabilidadColaEstadosView />;
-    if (menuItem.Ruta === '/contabilidad/recursos')       return <ContabilidadCuentasView />;
+    if (menuItem.Ruta === '/contabilidad/cuentas')              return <ContabilidadCuentasView />;
+    if (menuItem.Ruta === '/contabilidad/antiguedad')            return <ContabilidadAntiguedadView />;
+    if (menuItem.Ruta === '/contabilidad/cola-estados')          return <ContabilidadColaEstadosView />;
+    if (menuItem.Ruta === '/contabilidad/tipos-movimiento')      return <TiposMovimientoAdmin />;
+    if (menuItem.Ruta === '/contabilidad/recursos')              return <ContabilidadCuentasView />;
 
     // NEW: Historial de Lotes
     if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;

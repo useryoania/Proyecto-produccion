@@ -2,6 +2,7 @@ const { getPool, sql } = require('../config/db');
 const moment = require('moment-timezone');
 const { crearRetiro, marcarEntregado } = require('../services/retiroService');
 const logger = require('../utils/logger');
+const contabilidadSvc = require('../services/contabilidadService');
 
 const createOrdenRetiro = async (req, res) => {
   const { orders, totalCost, lugarRetiro, direccion, departamento, localidad, agenciaId } = req.body;
@@ -91,6 +92,7 @@ const getOrdenesRetiroQueryBase = `
     er.EORNombreEstado AS estado,
     o.OrdIdOrden AS orderId,
     o.OrdCodigoOrden AS orderNumber,
+    o.OrdNombreTrabajo AS orderNombreTrabajo,    -- ← nota de cobertura (Plan #X / ciclo)
     o.OrdEstadoActual AS orderEstado,
     eo.EOrNombreEstado AS orderEstadoNombre,
     o.OrdCostoFinal as costoFinal,
@@ -167,17 +169,20 @@ const processRetirosRows = (rows) => {
 
     if (row.orderId) {
       map[row.OReIdOrdenRetiro].orders.push({
-        orderNumber: row.orderNumber,
-        orderId: row.orderId,
-        orderEstado: row.orderEstadoNombre || row.orderEstado,
-        orderCosto: row.costoFinal != null ? `${row.orderMonedaId === 2 ? 'US$' : '$'} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
-        orderCantidad: row.orderCantidad != null ? parseFloat(row.orderCantidad) : null,
-        simbolo: row.orderMonedaId === 2 ? 'US$' : '$',
-        monedaId: row.orderMonedaId || 1,
-        orderIdMetodoPago: row.orderIdMetodoPago,
-        orderMetodoPago: row.orderMetodoPago,
-        orderPago: row.monetPagoSimbolo ? `${row.monetPagoSimbolo} ${parseFloat(row.orderMontoPago).toFixed(2)}` : null,
-        orderFechaPago: row.orderFechaPago,
+        orderNumber:         row.orderNumber,
+        orderId:             row.orderId,
+        orderEstado:         row.orderEstadoNombre || row.orderEstado,
+        orderNombreTrabajo:  row.orderNombreTrabajo || null,
+        // Cubierta = no requiere pasar por caja (plan de recursos o saldo anticipado cubre el costo)
+        orderCobertura:      (row.ORePasarPorCaja === 0 && !row.PagIdPago) ? 'Cubierto por plan/saldo' : null,
+        orderCosto:          row.costoFinal != null ? `${row.orderMonedaId === 2 ? 'US$' : '$'} ${parseFloat(row.costoFinal).toFixed(2)}` : null,
+        orderCantidad:       row.orderCantidad != null ? parseFloat(row.orderCantidad) : null,
+        simbolo:             row.orderMonedaId === 2 ? 'US$' : '$',
+        monedaId:            row.orderMonedaId || 1,
+        orderIdMetodoPago:   row.orderIdMetodoPago,
+        orderMetodoPago:     row.orderMetodoPago,
+        orderPago:           row.monetPagoSimbolo ? `${row.monetPagoSimbolo} ${parseFloat(row.orderMontoPago).toFixed(2)}` : null,
+        orderFechaPago:      row.orderFechaPago,
         articuloDescripcion: row.articuloDescripcion ? row.articuloDescripcion.trim() : null
       });
     }
@@ -552,6 +557,41 @@ const marcarDespachoEntregadoAutorizado = async (req, res) => {
       io.emit('retiros:update', { type: 'entregado', ordenesRetiro: ordenesParaEntregar });
       io.emit('actualizado', { type: 'actualizacion' });
     }
+
+    // ── HOOK CONTABILIDAD: Fiado (post-commit, fire-and-forget) ────────────
+    setImmediate(async () => {
+      try {
+        const { getPool: _gp, sql: _sql } = require('../config/db');
+        const _pool = await _gp();
+        for (const ordenDeRetiro of ordenesParaEntregar) {
+          const retiroId = parseInt((ordenDeRetiro || '').replace(/^[A-Za-z]+-0*/, ''), 10);
+          if (isNaN(retiroId)) continue;
+          const dataRes = await _pool.request()
+            .input('ID', _sql.Int, retiroId)
+            .query(`
+              SELECT od.OrdIdOrden, od.CliIdCliente, od.OrdCostoFinal, od.PagIdPago
+              FROM OrdenesRetiro r WITH(NOLOCK)
+              JOIN OrdenesDeposito od WITH(NOLOCK) ON od.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+              WHERE r.OReIdOrdenRetiro = @ID
+            `);
+          const rows = dataRes.recordset;
+          if (!rows.length) continue;
+          const impaga = rows.some(r => !r.PagIdPago);
+          if (!impaga) continue;
+          const CliIdCliente = rows[0].CliIdCliente;
+          const OrdIds = rows.map(r => r.OrdIdOrden);
+          const Monto = rows.reduce((s, r) => s + (parseFloat(r.OrdCostoFinal) || 0), 0);
+          await contabilidadSvc.hookRetiroSinPago({
+            OReIdOrdenRetiro: retiroId,
+            CliIdCliente, OrdIds, Monto,
+            UsuarioAlta,
+            Observacion: observacion || '',
+          });
+        }
+      } catch (hookErr) {
+        logger.warn('[FIADO] hookRetiroSinPago error (no afecta entrega):', hookErr.message);
+      }
+    });
   } catch (err) {
     if (transaction) try { await transaction.rollback(); } catch (e) { }
     logger.error("Error al marcar despacho entregado:", err);

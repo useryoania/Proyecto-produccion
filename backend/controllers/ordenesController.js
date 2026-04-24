@@ -1,6 +1,7 @@
-const { getPool, sql }       = require('../config/db');
-const logger                  = require('../utils/logger');
-const contabilidadService     = require('../services/contabilidadService');
+const { getPool, sql }           = require('../config/db');
+const logger                      = require('../utils/logger');
+const contabilidadService         = require('../services/contabilidadService');
+const ordenesExternasSvc          = require('../services/ordenesExternasService');
 
 // Controlador para obtener las órdenes
 const getOrdenesByFilter = async (req, res) => {
@@ -208,6 +209,55 @@ const getProductoPorIDReact = async (pool, idProdReactQR) => {
 };
 
 
+/**
+ * parsearDatosOrden
+ * ──────────────────────────────────────────────────────────────────────────
+ * Extrae la cantidad y el producto de un string QR de orden.
+ *
+ * ► Órdenes NORMALES (no XSB/XDF):
+ *     Lee cantidad de la posición [5] del string.
+ *     No sobreescribe el producto (usa el del QR).
+ *
+ * ► Órdenes EXTERNAS (XSB, XDF, ...):
+ *     Consulta la API de Google Sheets para obtener la cantidad REAL
+ *     de material consumido y el producto correcto.
+ *     El string QR trae el dato del último sector → NO es confiable.
+ *
+ * @param {string} ordenString  String completo del QR
+ * @param {string} codigoOrden  Código ya parseado (partes[0])
+ * @returns {Promise<{
+ *   cantidad:         number,   siempre un decimal
+ *   idProdReactExt:  number|null  null = usar el producto del QR
+ * }>}
+ */
+async function parsearDatosOrden(ordenString, codigoOrden) {
+
+  // ── Orden externa (XSB / XDF / ...) → fuente: Google Sheets ─────────────
+  if (ordenesExternasSvc.esOrdenExterna(codigoOrden)) {
+    try {
+      const datos = await ordenesExternasSvc.getDatosDesdeSheets(codigoOrden);
+      return {
+        cantidad:        datos.cantidad,
+        idProdReactExt:  datos.idProdReact,
+      };
+    } catch (err) {
+      // Si Sheets falla, loguear y caer al valor del QR (degradación elegante)
+      logger.warn(`[EXTERNAS] No se pudo obtener datos de Sheets para ${codigoOrden}: ${err.message}. Usando valor del QR como fallback.`);
+    }
+  }
+
+  // ── Orden normal (o fallback) → fuente: string QR posición [5] ──────────
+  const parts      = ordenString.trim().split('$*');
+  const rawCantidad = parts[5] ?? '0';
+  const cantidad   = parseFloat(rawCantidad.toString().replace(',', '.'));
+
+  return {
+    cantidad:       isNaN(cantidad) ? 0 : cantidad,
+    idProdReactExt: null,   // usa el producto que viene en el QR
+  };
+}
+
+
 const createOrden = async (req, res) => {
   const { ordenString } = req.body;
   const UsuarioAlta = req.user ? req.user.id : 70;
@@ -220,7 +270,7 @@ const createOrden = async (req, res) => {
       return res.status(400).json({ error: 'Código malformado. Faltan datos o no contiene las 7 partes exactas.' });
     }
 
-    const [CodigoOrden, CodigoClienteQR, NombreTrabajo, IdModo, IdProductoQR, Cantidad, CostoFinal] = parts;
+    const [CodigoOrden, CodigoClienteQR, NombreTrabajo, IdModo, IdProductoQR, , CostoFinal] = parts;
 
     // Validación estricta de estructura: Letras-Números (Ej: XSB-1234)
     const orderFormatRegex = /^[A-Za-z]+-\d+$/;
@@ -228,7 +278,8 @@ const createOrden = async (req, res) => {
       return res.status(400).json({ error: `Código de orden inválido o lectura de escáner incompleta (${CodigoOrden}). Se espera el formato LETRAS-NUMEROS.` });
     }
 
-    let cantidadDecimal = parseFloat(Cantidad.toString().replace(',', '.'));
+    // Parsear cantidad y producto (puede consultar Sheets si es XSB/XDF)
+    const { cantidad: cantidadDecimal, idProdReactExt } = await parsearDatosOrden(ordenString, CodigoOrden);
     let costoFinalDecimal = parseFloat(CostoFinal.toString().replace(',', '.'));
 
     const pool = await getPool();
@@ -324,15 +375,33 @@ const createOrden = async (req, res) => {
     if (!productoMapeado) {
       return res.status(405).json({ error: 'Producto no encontrado asociando IDProdReact.' });
     }
-    const monIdMoneda = productoMapeado.MonIdMoneda || 1; // Desde Articulos, fallback UYU
+
+    // ── Producto para la DB: SIEMPRE el de la etiqueta QR ─────────────────────
+    // La orden queda como documento fiel a lo que generó la etiqueta.
+    const monIdMoneda      = productoMapeado.MonIdMoneda || 1;
+    const cantidadQR       = parseFloat((ordenString.trim().split('$*')[5] ?? '0').replace(',', '.')) || cantidadDecimal;
+
+    // ── Producto para hooks de contabilidad: usa Sheets si es XSB/XDF ─────────
+    // Solo se aplica para el descuento de recursos y el débito; la DB no se toca.
+    let productoContabilidad = productoMapeado;
+    if (idProdReactExt !== null && idProdReactExt !== productoMapeado.ProIdProducto) {
+      const productoSheets = await getProductoPorIDReact(pool, idProdReactExt);
+      if (productoSheets) {
+        logger.info(`[EXTERNAS] ${CodigoOrden}: contabilidad usa producto Sheets (IDProdReact ${IdProductoQR} → ${idProdReactExt}). DB conserva el original.`);
+        productoContabilidad = productoSheets;
+      } else {
+        logger.warn(`[EXTERNAS] ${CodigoOrden}: IDProdReact ${idProdReactExt} de Sheets no existe en BD. Contabilidad usará el del QR.`);
+      }
+    }
 
     const result = await pool.request()
       .input('CodigoOrden', sql.VarChar(100), CodigoOrden)
-      .input('Cantidad', sql.Float, cantidadDecimal)
-      .input('CodigoCliente', sql.Int, reqClientId)
+      .input('Cantidad',    sql.Float,        cantidadQR)                    // ← cantidad original del QR
+      .input('CodigoCliente', sql.Int,        reqClientId)
       .input('NombreTrabajo', sql.VarChar(100), NombreTrabajo)
-      .input('IdModo', sql.Int, parseInt(IdModo, 10) || null)
-      .input('IdProducto', sql.Int, productoMapeado.ProIdProducto)
+      .input('IdModo',      sql.Int,          parseInt(IdModo, 10) || null)
+      .input('IdProducto',  sql.Int,          productoMapeado.ProIdProducto) // ← producto original del QR
+
       .input('CostoFinal', sql.Float, costoFinalDecimal)
       .input('FechaIngresoOrden', sql.DateTime, new Date())
       .input('UsuarioAlta', sql.Int, UsuarioAlta)
@@ -412,28 +481,46 @@ const createOrden = async (req, res) => {
     // Ambos se disparan al ingreso de la orden al depósito.
     // Fire-and-forget: la respuesta ya fue enviada. Si fallan, solo se loguea.
 
-    // 1. Débito en cuenta de dinero (se saltea si el cliente tiene plan de recursos)
-    contabilidadService.hookOrdenCreada({
-      OrdIdOrden:   newOrderId,
-      CliIdCliente: reqClientId,
-      Importe:      costoFinalDecimal,
-      MonIdMoneda:  monIdMoneda,
-      CodigoOrden,
-      UsuarioAlta,
-      ProIdProducto: productoMapeado.ProIdProducto,
-    });
+    // ⚠️ REPOSICIONES: Las órdenes que empiezan con "R" (RXSB, RDXDF, etc.)
+    // son reposiciones por error/garantía. NO generan débito ni consumen recursos.
+    const esReposicion = CodigoOrden.toUpperCase().startsWith('R');
 
-    // 2. Descuento del plan de metros/kg (solo actúa si el cliente
-    //    tiene una cuenta METROS/KG activa para este artículo)
-    contabilidadService.hookEntregaMetros({
-      OrdIdOrden:   newOrderId,
-      CliIdCliente: reqClientId,
-      ProIdProducto: productoMapeado.ProIdProducto,
-      Cantidad:     cantidadDecimal,
-      CodigoOrden,
-      UsuarioAlta,
-    });
+    if (esReposicion) {
+      // Registrar en historial con $0 — sin afectar saldo ni recursos
+      contabilidadService.hookReposicion({
+        OrdIdOrden:   newOrderId,
+        CliIdCliente: reqClientId,
+        MonIdMoneda:  monIdMoneda,
+        CodigoOrden,
+        NombreTrabajo,
+        UsuarioAlta,
+      });
+    } else {
+      // 1. Débito en cuenta de dinero (se saltea si el cliente tiene plan de recursos)
+      contabilidadService.hookOrdenCreada({
+        OrdIdOrden:    newOrderId,
+        CliIdCliente:  reqClientId,
+        Importe:       costoFinalDecimal,
+        MonIdMoneda:   monIdMoneda,
+        CodigoOrden,
+        NombreTrabajo,
+        UsuarioAlta,
+        ProIdProducto: productoContabilidad.ProIdProducto,   // ← producto real (Sheets si XSB/XDF)
+      });
+
+      // 2. Descuento del plan de metros/kg — usa cantidad y producto REALES de Sheets
+      contabilidadService.hookEntregaMetros({
+        OrdIdOrden:    newOrderId,
+        CliIdCliente:  reqClientId,
+        ProIdProducto: productoContabilidad.ProIdProducto,   // ← producto real
+        Cantidad:      cantidadDecimal,                      // ← cantidad real (de Sheets si XSB/XDF)
+        CodigoOrden,
+        UsuarioAlta,
+      });
+
+    }
     // ─────────────────────────────────────────────────────────────────────────
+
 
   } catch (err) {
     logger.error('Error al crear la orden:', err);
