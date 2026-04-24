@@ -18,7 +18,14 @@ const getProfileDetails = async (req, res) => {
     try {
         const pool = await getPool();
         const profile = await pool.request().input('ID', sql.Int, id).query("SELECT * FROM PerfilesPrecios WHERE ID = @ID");
-        const items = await pool.request().input('ID', sql.Int, id).query("SELECT * FROM PerfilesItems WHERE PerfilID = @ID");
+        const items = await pool.request().input('ID', sql.Int, id).query(`
+            SELECT PI.ID, PI.PerfilID, 
+                   LTRIM(RTRIM(COALESCE(PI.CodGrupo, A.CodArticulo, CASE WHEN PI.ProIdProducto = 0 THEN 'TOTAL' ELSE CAST(PI.ProIdProducto AS VARCHAR) END))) as CodArticulo, 
+                   PI.ProIdProducto, PI.CodGrupo, PI.TipoRegla, PI.Valor, CASE WHEN PI.MonIdMoneda = 2 THEN 'USD' ELSE 'UYU' END as Moneda, PI.CantidadMinima 
+            FROM PerfilesItems PI
+            LEFT JOIN Articulos A ON PI.ProIdProducto = A.ProIdProducto
+            WHERE PI.PerfilID = @ID
+        `);
 
         if (profile.recordset.length === 0) return res.status(404).json({ error: "Perfil no encontrado" });
 
@@ -29,7 +36,7 @@ const getProfileDetails = async (req, res) => {
 };
 
 const saveProfile = async (req, res) => {
-    const { id, nombre, descripcion, items, esGlobal } = req.body;
+    const { id, nombre, descripcion, items, esGlobal, categoria } = req.body;
     // items: [{ CodArticulo, TipoRegla, Valor }]
 
     const pool = await getPool();
@@ -40,6 +47,7 @@ const saveProfile = async (req, res) => {
 
         let profileId = id;
         const isGlobalBit = esGlobal ? 1 : 0;
+        const catStr = categoria || 'Todos';
 
         // 1. Upsert Header
         const headerReq = new sql.Request(transaction);
@@ -49,13 +57,15 @@ const saveProfile = async (req, res) => {
                 .input('Nom', sql.NVarChar, nombre)
                 .input('Desc', sql.NVarChar, descripcion)
                 .input('Glob', sql.Bit, isGlobalBit)
-                .query("UPDATE PerfilesPrecios SET Nombre = @Nom, Descripcion = @Desc, EsGlobal = @Glob WHERE ID = @ID");
+                .input('Cat', sql.VarChar, catStr)
+                .query("UPDATE PerfilesPrecios SET Nombre = @Nom, Descripcion = @Desc, EsGlobal = @Glob, Categoria = @Cat WHERE ID = @ID");
         } else {
             const result = await headerReq
                 .input('Nom', sql.NVarChar, nombre)
                 .input('Desc', sql.NVarChar, descripcion)
                 .input('Glob', sql.Bit, isGlobalBit)
-                .query("INSERT INTO PerfilesPrecios (Nombre, Descripcion, EsGlobal) OUTPUT INSERTED.ID VALUES (@Nom, @Desc, @Glob)");
+                .input('Cat', sql.VarChar, catStr)
+                .query("INSERT INTO PerfilesPrecios (Nombre, Descripcion, EsGlobal, Categoria) OUTPUT INSERTED.ID VALUES (@Nom, @Desc, @Glob, @Cat)");
             profileId = result.recordset[0].ID;
         }
 
@@ -66,14 +76,30 @@ const saveProfile = async (req, res) => {
         // 3. Insert Items
         if (items && items.length > 0) {
             for (const item of items) {
-                await new sql.Request(transaction)
-                    .input('pid', sql.Int, profileId)
-                    .input('cod', sql.NVarChar, item.CodArticulo || 'TOTAL')
-                    .input('tipo', sql.NVarChar, item.TipoRegla || 'percentage_discount')
-                    .input('val', sql.Decimal(18, 4), item.Valor)
-                    .input('mon', sql.VarChar, item.Moneda || 'UYU') // Guardar Moneda
-                    .input('min', sql.Int, item.CantidadMinima || 1)
-                    .query("INSERT INTO PerfilesItems (PerfilID, CodArticulo, TipoRegla, Valor, Moneda, CantidadMinima) VALUES (@pid, @cod, @tipo, @val, @mon, @min)");
+                let finalProIdProducto = (item.ProIdProducto !== undefined && item.ProIdProducto !== null) ? item.ProIdProducto : null;
+                let finalCodGrupo = item.CodGrupo || null;
+                
+                // Conversión de fallback para la UI que use 'TOTAL' o 'GRUPO:'
+                const codArtStr = (item.CodArticulo || '').toString();
+                if (codArtStr === 'TOTAL') {
+                    finalProIdProducto = 0;
+                    finalCodGrupo = null;
+                } else if (codArtStr.startsWith('GRUPO:')) {
+                    finalProIdProducto = null;
+                    finalCodGrupo = codArtStr.replace('GRUPO:', '').trim();
+                }
+
+                if (finalProIdProducto !== null || finalCodGrupo !== null) {
+                    await new sql.Request(transaction)
+                        .input('pid', sql.Int, profileId)
+                        .input('proId', sql.Int, finalProIdProducto)
+                        .input('grupo', sql.VarChar, finalCodGrupo)
+                        .input('tipo', sql.NVarChar, item.TipoRegla || 'percentage_discount')
+                        .input('val', sql.Decimal(18, 4), item.Valor)
+                        .input('mon', sql.Int, (item.MonIdMoneda === 'USD' || item.MonIdMoneda === 2 || item.Moneda === 'USD') ? 2 : 1) // Guardar MonIdMoneda (fallback)
+                        .input('min', sql.Int, item.CantidadMinima || 1)
+                        .query("INSERT INTO PerfilesItems (PerfilID, ProIdProducto, CodGrupo, TipoRegla, Valor, MonIdMoneda, CantidadMinima) VALUES (@pid, @proId, @grupo, @tipo, @val, @mon, @min)");
+                }
             }
         }
 
@@ -120,11 +146,9 @@ const getAllCustomersWithProfile = async (req, res) => {
         const pool = await getPool();
         const result = await pool.request().query(`
             SELECT 
-                PE.ClienteID, PE.NombreCliente, PE.PerfilID, PE.PerfilesIDs,
-                PP.Nombre as NombrePerfil,
-                (SELECT COUNT(*) FROM PreciosEspecialesItems WHERE ClienteID = PE.ClienteID) as CantReglas
+                PE.CliIdCliente as ClienteID, PE.PerfilesIDs,
+                (SELECT COUNT(*) FROM PreciosEspecialesItems WHERE CliIdCliente = PE.CliIdCliente) as CantReglas
             FROM PreciosEspeciales PE
-            LEFT JOIN PerfilesPrecios PP ON PE.PerfilID = PP.ID
         `);
         res.json(result.recordset);
     } catch (e) {
@@ -154,22 +178,18 @@ const assignProfileToCustomer = async (req, res) => {
         // Upsert en PreciosEspeciales
         await pool.request()
             .input('CID', sql.Int, clienteId)
-            .input('Nom', sql.NVarChar, nombreCliente || `Cliente ${clienteId}`)
-            .input('PID', sql.Int, mainPid)
             .input('PIDs', sql.NVarChar, pidsStr)
             .query(`
-                IF NOT EXISTS (SELECT 1 FROM PreciosEspeciales WHERE ClienteID = @CID)
+                IF NOT EXISTS (SELECT 1 FROM PreciosEspeciales WHERE CliIdCliente = @CID)
                 BEGIN
-                    INSERT INTO PreciosEspeciales (ClienteID, NombreCliente, PerfilID, PerfilesIDs) VALUES (@CID, @Nom, @PID, @PIDs)
+                    INSERT INTO PreciosEspeciales (CliIdCliente, PerfilesIDs) VALUES (@CID, @PIDs)
                 END
                 ELSE
                 BEGIN
                     UPDATE PreciosEspeciales SET 
-                        PerfilID = @PID, 
                         PerfilesIDs = @PIDs,
-                        NombreCliente = COALESCE(@Nom, NombreCliente),
                         UltimaActualizacion = GETDATE()
-                    WHERE ClienteID = @CID
+                    WHERE CliIdCliente = @CID
                 END
             `);
 

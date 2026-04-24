@@ -316,7 +316,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                     if (comp.active) {
                         let cabecera = { variante: serviceSubType, material: mapMaterial(globalMaterial) };
                         if (id === 'TWC' || id === 'laser') {
-                            cabecera = { variante: 'Corte Laser', material: { name: 'Corte Laser por prenda', codArt: '111', codStock: '1.1.6.1' } };
+                            cabecera = { variante: 'Corte Laser', material: { name: 'Corte Laser por prenda', id: 90, codArt: '1375', codStock: '1.1.6.1' } };
                         } else if (id === 'EST' || id === 'estampado') {
                             cabecera = {
                                 variante: 'Estampado',
@@ -376,7 +376,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                         archivo: (tizadaFiles && tizadaFiles.length > 0) ? { name: tizadaFiles[0].name } : null,
                         cabecera: {
                             variante: 'Corte Laser',
-                            material: { name: 'Corte Laser por prenda', codArt: '111', codStock: '1.1.6.1' }
+                            material: { name: 'Corte Laser por prenda', id: 90, codArt: '1375', codStock: '1.1.6.1' }
                         },
                         // Pass specific technical data if needed in a custom field
                         metadata: { moldType, fabricOrigin, clientFabricName, selectedSubOrderId }

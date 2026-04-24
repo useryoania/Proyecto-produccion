@@ -48,7 +48,7 @@ router.post('/pickup-orders/pdf', verifyToken, webOrdersController.generatePicku
 router.post('/pickup-orders/handy-payment', verifyToken, webOrdersController.createHandyPaymentLink);
 
 // POST /api/web-orders/pickup-orders/init-payment (Nuevo flujo: generar link sin crear retiro)
-router.post('/pickup-orders/init-payment', verifyToken, webOrdersController.initHandyPayment);
+// router.post('/pickup-orders/init-payment', verifyToken, webOrdersController.initHandyPayment);
 
 // POST /api/web-orders/handy-webhook (Webhook Callback desde Handy)
 router.post('/handy-webhook', webOrdersController.handyWebhook);

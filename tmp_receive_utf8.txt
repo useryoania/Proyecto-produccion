@@ -1,0 +1,277 @@
+﻿
+> exports.receiveDispatch = async (req, res) => {
+      let { envioId, itemsRecibidos, usuarioId, areaReceptora, codigoEtiqueta } = req.body;
+      // itemsRecibidos: [{ bultoId, estado: 'ESCANEADO' | 'FALTANTE' }]
+  
+      try {
+          const pool = await getPool();
+          const transaction = new sql.Transaction(pool);
+          await transaction.begin();
+  
+          try {
+              // AUTO-DETECT AREA & SINGLE MODE SUPPORT
+              if (!areaReceptora) {
+                  // Fetch from Remito Destino
+                  const remitoCheck = await new sql.Request(transaction)
+                      .input('EID', sql.Int, envioId)
+                      .query("SELECT AreaDestinoID FROM Logistica_Envios WHERE EnvioID = @EID");
+                  if (remitoCheck.recordset.length > 0) {
+                      areaReceptora = remitoCheck.recordset[0].AreaDestinoID;
+                  }
+              }
+  
+              // SINGLE ITEM MODE (Scanner)
+              if (codigoEtiqueta && !itemsRecibidos) {
+                  // Resolve BultoID
+                  const bultoReq = await new sql.Request(transaction)
+                      .input('C', sql.VarChar, codigoEtiqueta)
+                      .query("SELECT BultoID FROM Logistica_Bultos WHERE CodigoEtiqueta = @C");
+  
+                  if (bultoReq.recordset.length === 0) throw new Error("Bulto no encontrado: " + codigoEtiqueta);
+  
+                  const bId = bultoReq.recordset[0].BultoID;
+                  itemsRecibidos = [{ bultoId: bId, estado: 'ESCANEADO' }];
+              }
+  
+              let receivedCount = 0;
+  
+              for (const item of itemsRecibidos) {
+                  // Update Logistica_EnvioItems
+                  await new sql.Request(transaction)
+                      .input('Est', sql.VarChar, item.estado)
+                      .input('EID', sql.Int, envioId)
+                      .input('BID', sql.Int, item.bultoId)
+                      .query(`UPDATE Logistica_EnvioItems SET EstadoRecepcion = @Est, FechaEscaneo = GETDATE() WHERE 
+EnvioID = @EID AND BultoID = @BID`);
+  
+                  // Update Bulto Location logic
+                  if (item.estado === 'ESCANEADO') {
+                      await new sql.Request(transaction)
+                          .input('Ubi', sql.VarChar, areaReceptora)
+                          .input('BID', sql.Int, item.bultoId)
+                          .query(`UPDATE Logistica_Bultos SET Estado = 'EN_STOCK', UbicacionActual = @Ubi WHERE 
+BultoID = @BID`);
+  
+                      // UPDATE INVENTARIO (SYNC OR CREATE)
+                      // 1. Get Code
+                      const codeReq = await new sql.Request(transaction).input('BID', sql.Int, 
+item.bultoId).query("SELECT CodigoEtiqueta FROM Logistica_Bultos WHERE BultoID = @BID");
+                      const code = codeReq.recordset[0]?.CodigoEtiqueta;
+  
+                      // SCOPED VARIABLES
+                      let bultoInfo = {};
+                      let CodigoEtiqueta = null;
+                      let OrdenID = null;
+  
+                      if (code) {
+                          // 1. Get Extended Data (Try Order first, then Reception)
+                          // This logic handles both internal Orders (linked in Logistica_Bultos) and Client Fabrics 
+(Linked to Recepciones via Code)
+                          const extData = await new sql.Request(transaction).input('BID', sql.Int, 
+item.bultoId).input('Code', sql.VarChar, code)
+                              .query(`
+                              SELECT 
+                                  b.CodigoEtiqueta, 
+                                  b.OrdenID, 
+                                  b.Descripcion,
+                                  b.Tipocontenido,
+                                  o.NoDocERP,
+                                  r.Referencias, -- Fetch raw references
+                                  COALESCE(o.Cliente, r.Cliente) as Cliente
+                              FROM Logistica_Bultos b
+                              LEFT JOIN Ordenes o ON b.OrdenID = o.OrdenID
+                              LEFT JOIN Recepciones r ON b.CodigoEtiqueta = r.Codigo
+                              WHERE b.BultoID = @BID
+                          `);
+  
+                          bultoInfo = extData.recordset[0] || {};
+                          CodigoEtiqueta = bultoInfo.CodigoEtiqueta;
+  
+                          // Parse OrdenID from Referencias manually to be safer
+                          OrdenID = bultoInfo.OrdenID;
+                          if (!OrdenID) {
+                              // Try to extract "Ord: 1234" from desc/ref
+                              const combined = (bultoInfo.Referencias || '') + ' ' + (bultoInfo.Descripcion || '');
+                              const match = combined.match(/Ord(?:en)?:?\s*(\d+)/i);
+                              if (match) OrdenID = parseInt(match[1]);
+                          }
+  
+                          const { Cliente } = bultoInfo;
+                          logger.info("Resolved Order Data:", { OrdenID, Cliente, Ref: bultoInfo.Referencias });
+  
+                          // --- AUTO-FULFILL REQUIREMENT ON CHECK-IN ---
+                          if (OrdenID && areaReceptora) {
+                              // --- LOGICA INTELIGENTE: ORIGEN -> ENTREGA ---
+                              let reqTypeToFulfill = null;
+                              let originAreaID = '';
+  
+                              // 1. Averiguar ORIGEN del Remito asociado
+                              const remitoRes = await new sql.Request(transaction)
+                                  .input('BID', sql.Int, bultoInfo.BultoID)
+                                  .query(`
+                                      SELECT TOP 1 e.AreaOrigenID, a.Entrega
+                                      FROM Logistica_EnvioItems ei
+                                      JOIN Logistica_Envios e ON ei.EnvioID = e.EnvioID
+                                      LEFT JOIN Areas a ON e.AreaOrigenID = a.AreaID
+                                      WHERE ei.BultoID = @BID
+                                      ORDER BY e.EnvioID DESC
+                                  `);
+  
+                              if (remitoRes.recordset.length > 0) {
+                                  const row = remitoRes.recordset[0];
+                                  originAreaID = row.AreaOrigenID;
+                                  if (row.Entrega) {
+                                      reqTypeToFulfill = row.Entrega; // Ej: 'DTF', 'PRENDAS', 'TELA'
+                                      logger.info(`[AutoCheck] Requisito detectado por Origen ${originAreaID}: 
+${reqTypeToFulfill}`);
+                                  }
+                              }
+  
+                              // FALLBACK (Usando .includes para TELA DE CLIENTE)
+                              if (!reqTypeToFulfill) {
+                                  const tipoBulto = (bultoInfo.Tipocontenido || '').toUpperCase();
+                                  if (tipoBulto.includes('TELA') || tipoBulto.includes('INSUMO')) reqTypeToFulfill = 
+'TELA';
+                                  else if (tipoBulto.includes('PRENDA')) reqTypeToFulfill = 'PRENDA';
+                                  else if (tipoBulto.includes('DTF') || tipoBulto.includes('DISENO')) reqTypeToFulfill 
+= 'DTF';
+                              }
+  
+                              if (reqTypeToFulfill) {
+                                  const obsAuto = `Recibido en ${areaReceptora} ${originAreaID ? 'desde ' + 
+originAreaID : ''} (Item: ${code})`;
+  
+                                  // Ajuste para bÃºsqueda LIKE
+                                  let searchPattern = reqTypeToFulfill;
+  
+                                  // NormalizaciÃ³n de Plurales/SinÃ³nimos para coincidir con ConfigRequisitos
+                                  if (searchPattern === 'PRENDAS') searchPattern = 'PRENDA';
+                                  if (searchPattern === 'CORTES') searchPattern = 'CORTES';
+                                  if (searchPattern === 'DTF') searchPattern = 'DISENO'; // Si definimos que DTF 
+satisface REQ-DISENO
+  
+                                  // Query de cumplimiento
+                                  await new sql.Request(transaction)
+                                      .input('OID', sql.Int, OrdenID)
+                                      .input('Type', sql.VarChar(50), `%${searchPattern}%`)
+                                      .input('Area', sql.VarChar(50), areaReceptora)
+                                      .input('Doc', sql.VarChar, bultoInfo.NoDocERP || '')
+                                      .input('Obs', sql.NVarChar(200), obsAuto)
+                                      .query(`
+                                          MERGE OrdenCumplimientoRequisitos AS target
+                                          USING (
+                                              SELECT DISTINCT req.RequisitoID, req.AreaID, dest.OrdenID
+                                              FROM ConfigRequisitosProduccion req
+                                              CROSS JOIN (
+                                                  SELECT OrdenID FROM Ordenes 
+                                                  WHERE (@Doc != '' AND NoDocERP = @Doc AND AreaID = @Area AND Estado 
+!= 'CANCELADO')
+                                                     OR (@Doc = '' AND OrdenID = @OID)
+                                              ) dest
+                                              WHERE (
+                                                  req.CodigoRequisito LIKE @Type
+                                                  OR (@Type LIKE '%DISENO%' AND req.CodigoRequisito LIKE '%DTF%')
+                                                  OR (@Type LIKE '%DTF%' AND req.CodigoRequisito LIKE '%DISENO%')
+                                              )
+                                              AND (
+                                                  (@Type LIKE '%TELA%' OR @Type LIKE '%DISENO%' OR @Type LIKE 
+'%PRENDA%' OR @Type LIKE '%DTF%')
+                                                  OR req.AreaID = @Area
+                                              )
+                                          ) AS source
+                                          ON (target.OrdenID = source.OrdenID AND target.RequisitoID = 
+source.RequisitoID)
+                                          WHEN MATCHED THEN
+                                              UPDATE SET Estado = 'CUMPLIDO', FechaCumplimiento = GETDATE(), 
+Observaciones = @Obs
+                                          WHEN NOT MATCHED THEN
+                                              INSERT (OrdenID, AreaID, RequisitoID, Estado, FechaCumplimiento, 
+Observaciones)
+                                              VALUES (source.OrdenID, source.AreaID, source.RequisitoID, 'CUMPLIDO', 
+GETDATE(), @Obs);
+                                      `);
+                              }
+                          }
+  
+                          // Check if exists
+                          const invCheck = await new sql.Request(transaction)
+                              .input('C', sql.VarChar, code)
+                              .query("SELECT BobinaID, CodigoEtiqueta FROM InventarioBobinas WHERE Referencia = @C OR 
+CodigoEtiqueta = @C");
+  
+                          const isCoilCandidate = code && (code.startsWith('PRE-') || code.startsWith('BOB-'));
+  
+                          if (invCheck.recordset.length === 0 && isCoilCandidate) {
+                              // CREATE (Alta en Inventario)
+                              let mts = 100;
+                              if (bultoInfo && bultoInfo.Referencias) {
+                                  const mMatch = bultoInfo.Referencias.match(/Mts:([\d\.]+)/);
+                                  if (mMatch) mts = parseFloat(mMatch[1]);
+                              }
+  
+                              const newLabel = `BOB-${Date.now()}-${Math.floor(Math.random() * 100)}`;
+                              logger.info("Creating NEW Bobina:", newLabel, "for Ref:", code, "Client:", Cliente, 
+"Mts:", mts);
+  
+                              await new sql.Request(transaction)
+                                  .input('Ubi', sql.VarChar, areaReceptora)
+                                  .input('Ref', sql.VarChar, code)
+                                  .input('NewCode', sql.VarChar, newLabel)
+                                  .input('Cli', sql.VarChar, Cliente || null)
+                                  .input('Ord', sql.Int, OrdenID || null)
+                                  .input('Mts', sql.Decimal(10, 2), mts)
+                                  .query(`
+                                      INSERT INTO InventarioBobinas 
+                                      (InsumoID, AreaID, CodigoEtiqueta, Referencia, ClienteID, OrdenID, 
+MetrosIniciales, MetrosRestantes, Estado, FechaIngreso, LoteProveedor)
+                                      SELECT TOP 1 InsumoID, @Ubi, @NewCode, @Ref, @Cli, @Ord, @Mts, @Mts, 
+'Disponible', GETDATE(), 'INGRESO-CHECKIN'
+                                      FROM Insumos 
+                                      WHERE EsProductivo = 1 
+                                      ORDER BY InsumoID ASC
+                                  `);
+  
+                              // [DISABLED] SYNC Logistica_Bultos & BAJA ORIGINAL - User Request: Avoid Duplicates in 
+Logistics View
+                              // The Coil (BOB) exists in Inventory only. The original Pack (PRE) remains in Logistics.
+  
+                              // 1. UPDATE LOGISTICS FOR ORIGINAL PACK (PRE) 
+                              // Ensure it's marked as received in the area
+                              if (code) {
+                                  await new sql.Request(transaction)
+                                      .input('Ubi', sql.VarChar, areaReceptora)
+                                      .input('C', sql.VarChar, code)
+                                      .query("UPDATE Logistica_Bultos SET UbicacionActual = @Ubi, Estado = 'EN_STOCK' 
+WHERE CodigoEtiqueta = @C");
+  
+                                  await registrarMovimiento(transaction, {
+                                      codigoBulto: code, tipo: 'INGRESO', area: areaReceptora, usuario: usuarioId,
+                                      obs: 'Check-In (Linked to Inv)', estAnt: null, estNew: 'EN_STOCK', esRecep: true
+                                  });
+                              }
+                          } else if (invCheck.recordset.length === 0) {
+                              // CASO: Item NO es Bobina/Insumo (ej. Producto Terminado SB, EMB, etc)
+                              // Solo actualizamos LogÃ­stica, no Inventario de Bobinas.
+                              logger.info("Check-In Non-Coil Item (Product):", code);
+  
+                              await new sql.Request(transaction)
+                                  .input('Ubi', sql.VarChar, areaReceptora)
+                                  .input('C', sql.VarChar, code)
+                                  .query("UPDATE Logistica_Bultos SET UbicacionActual = @Ubi, Estado = 'EN_STOCK' 
+WHERE CodigoEtiqueta = @C");
+  
+                              await registrarMovimiento(transaction, {
+                                  codigoBulto: code,
+                                  tipo: 'INGRESO',
+                                  area: areaReceptora,
+                                  usuario: usuarioId,
+                                  obs: 'Ingreso Producto',
+                                  estAnt: null,
+                                  estNew: 'EN_STOCK',
+                                  esRecep: true
+                              });
+  
+                          } else {
+                              // UPDATE (Movimiento y Normalizacion)
+
+

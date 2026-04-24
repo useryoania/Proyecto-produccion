@@ -3,9 +3,11 @@ const driveService = require('../services/driveService');
 const axios = require('axios');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib')
 const logger = require('../utils/logger');
+const ERPSyncService = require('../services/erpSyncService');
 const fs = require('fs');
 const path = require('path');
-
+// const contabilidadService = require('../services/contabilidadService'); // Removido temporalmente por fallo de módulo
+// const contabilidadCore = require('../services/contabilidadCore'); // Falta el módulo, crashea nodemon
 
 // ──────────────────────────────────────────────────
 // HELPER: Generar comprobante PDF y guardarlo en disco
@@ -32,36 +34,6 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
 
         let y = 780;
 
-        // Helper: buscar imagen en múltiples rutas posibles
-        const findImage = (filename) => {
-            const paths = [
-                path.join(__dirname, '..', '..', 'public', 'assets', 'images', filename),
-                path.join(__dirname, '..', '..', 'src', 'assets', 'images', filename),
-                path.join(process.cwd(), 'public', 'assets', 'images', filename),
-                path.join(process.cwd(), 'src', 'assets', 'images', filename),
-            ];
-            return paths.find(p => fs.existsSync(p)) || null;
-        };
-
-        // Logo (arriba a la izquierda)
-        try {
-            const logoPath = findImage('logo.png');
-            if (logoPath) {
-                const logoBytes = fs.readFileSync(logoPath);
-                const logoImage = await doc.embedPng(logoBytes);
-                const logoHeight = 40;
-                const logoWidth = logoHeight * (logoImage.width / logoImage.height);
-                page.drawImage(logoImage, {
-                    x: 50,
-                    y: y - 12,
-                    width: logoWidth,
-                    height: logoHeight,
-                });
-            }
-        } catch (logoErr) {
-            logger.warn('[HANDY RECEIPT] No se pudo agregar logo:', logoErr.message);
-        }
-
         // Título
         drawCentered('COMPROBANTE DE PAGO', y, 18, fontBold);
         y -= 30;
@@ -80,7 +52,7 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
 
         // Código de retiro y cliente: siempre con prefijo PW-
         const rawId = String(ordenRetiro || '').replace(/^R-/i, '').replace(/^PW-/i, '').replace(/^RW-/i, '');
-        const retiroCode = rawId ? `RW-${rawId}` : '-';
+        const retiroCode = rawId ? `PW-${rawId}` : '-';
         drawLeft('CÓDIGO DE RETIRO', 50, y, 9, fontBold);
         y -= 16;
         drawLeft(retiroCode, 50, y, 14, fontBold);
@@ -128,8 +100,8 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
         // Sello PAGADO (a la izquierda del total)
         let stampDrawn = false;
         try {
-            const stampPath = findImage('pagado-stamp.png');
-            if (stampPath) {
+            const stampPath = path.join(__dirname, '..', '..', 'public', 'assets', 'images', 'pagado-stamp.png');
+            if (fs.existsSync(stampPath)) {
                 const stampBytes = fs.readFileSync(stampPath);
                 const stampImage = await doc.embedPng(stampBytes);
                 const stampWidth = 120;
@@ -142,8 +114,6 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
                     opacity: 0.7
                 });
                 stampDrawn = true;
-            } else {
-                logger.warn('[HANDY RECEIPT] No se encontró pagado-stamp.png en ninguna ruta conocida.');
             }
         } catch (stampErr) {
             logger.warn('[HANDY RECEIPT] No se pudo agregar sello PAGADO:', stampErr.message);
@@ -160,7 +130,7 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
         const dir = path.join(baseDir, 'handy');
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-        const fileName = `Comprobante-${retiroCode}.pdf`;
+        const fileName = `comprobante-${retiroCode}.pdf`;
         const filePath = path.join(dir, fileName);
         const pdfBytes = await doc.save();
         fs.writeFileSync(filePath, pdfBytes);
@@ -1067,6 +1037,18 @@ exports.uploadOrderFile = async (req, res) => {
                 // TAMBIEN EstadoenArea = 'Pendiente'
                 await pool.request().input('OID', sql.Int, orderID).query(`UPDATE Ordenes SET Estado = 'Pendiente', EstadoenArea = 'Pendiente' WHERE OrdenID = @OID AND Estado = 'Cargando...'`);
 
+                // 🎯 EARLY PRICING & SYNC: Cotizar y sincronizar financieramente tras asegurar los archivos.
+                try {
+                    // Busca el NoDocERP
+                    const orderInfRes = await pool.request().input('OID', sql.Int, orderID).query("SELECT NoDocERP FROM Ordenes WHERE OrdenID = @OID");
+                    if (orderInfRes.recordset.length > 0 && orderInfRes.recordset[0].NoDocERP) {
+                        await ERPSyncService.syncFinalOrderIntegration(orderInfRes.recordset[0].NoDocERP, 1, 'Web-Upload-Bot');
+                        logger.info(`✅ [Pedido Completo] Early Pricing aplicado para DocERP: ${orderInfRes.recordset[0].NoDocERP}`);
+                    }
+                } catch (errSync) {
+                    logger.error(`⚠️ [Pedido Completo] Early Pricing falló para Orden ${orderID}: ${errSync.message}`);
+                }
+
                 // Notificar sockets
                 const io = req.app.get('socketio');
                 if (io) io.emit('server:ordersUpdated', { count: 1, source: 'web-upload' });
@@ -1174,28 +1156,42 @@ exports.deleteIncompleteOrder = async (req, res) => {
 
 // --- ELIMINAR PROYECTO COMPLETO (BUNDLE) ---
 exports.deleteOrderBundle = async (req, res) => {
+    const roleStr = String(req.user?.role || req.user?.rol || '').toLowerCase();
+    const isAdmin = req.user?.userType === 'INTERNAL' || roleStr.includes('admin') || roleStr.includes('produccion') || roleStr.includes('logistic');
     const codCliente = req.user?.codCliente;
     const { docId } = req.params; // NoDocERP or CodigoOrden base
 
-    if (!codCliente || !docId) return res.status(400).json({ error: "Datos inválidos" });
+    if (!docId) return res.status(400).json({ error: "Datos inválidos (Falta DocID)" });
+    if (!isAdmin && !codCliente) return res.status(403).json({ error: "No autorizado" });
 
     try {
         const pool = await getPool();
 
         // 1. Identificar todas las órdenes del bundle
-        const findQuery = `
+        let findQuery = `
             SELECT OrdenID, Estado, CodigoOrden 
             FROM Ordenes 
-            WHERE CodCliente = @Cod 
-            AND (NoDocERP = @Doc OR CodigoOrden = @Doc)
+            WHERE (NoDocERP = @Doc OR CodigoOrden = @Doc)
         `;
+        if (!isAdmin) {
+            findQuery += ` AND CodCliente = @Cod`;
+        }
 
-        const check = await pool.request()
-            .input('Doc', sql.VarChar(50), docId)
-            .input('Cod', sql.Int, codCliente)
-            .query(findQuery);
+        const request = pool.request().input('Doc', sql.VarChar(50), docId);
+        if (!isAdmin) {
+            request.input('Cod', sql.Int, codCliente);
+        }
 
-        if (check.recordset.length === 0) return res.status(404).json({ error: "Proyecto no encontrado." });
+        const check = await request.query(findQuery);
+
+        if (check.recordset.length === 0) {
+            // Purgar posibles cabeceras contables fantasmas (si el admin lo solicita)
+            if (isAdmin) {
+                await pool.request().input('DocERP', sql.VarChar(50), docId).query(`DELETE FROM PedidosCobranza WHERE NoDocERP = @DocERP`);
+                return res.json({ success: true, message: `Proyecto ${docId} purgado de registros residuales.` });
+            }
+            return res.status(404).json({ error: "Proyecto no encontrado." });
+        }
 
         const orders = check.recordset;
         const ids = orders.map(o => o.OrdenID);
@@ -1223,8 +1219,12 @@ exports.deleteOrderBundle = async (req, res) => {
                 await reqTx.query(`DELETE FROM ArchivosOrden WHERE OrdenID = ${oid}`);
                 await reqTx.query(`DELETE FROM ArchivosReferencia WHERE OrdenID = ${oid}`);
                 await reqTx.query(`DELETE FROM ServiciosExtraOrden WHERE OrdenID = ${oid}`);
+                await reqTx.query(`DELETE FROM PedidosCobranzaDetalle WHERE OrdenID = ${oid}`);
                 await reqTx.query(`DELETE FROM Ordenes WHERE OrdenID = ${oid}`);
             }
+
+            // También purgar la cabecera contable atada a este proyecto
+            await reqTx.input('DocERP', sql.VarChar(50), docId).query(`DELETE FROM PedidosCobranza WHERE NoDocERP = @DocERP`);
 
             await transaction.commit();
             res.json({ success: true, message: `Proyecto ${docId} eliminado (${ids.length} órdenes canceladas).` });
@@ -1796,7 +1796,7 @@ const parseAmount = (amt) => {
 
 // --- CREAR ORDEN DE RETIRO (QUERY DIRECTA A DB) ---
 exports.createPickupOrder = async (req, res) => {
-    const { selectedOrderIds, orders, totalCost, clientName, moneda, direccion, departamento, localidad, agenciaId, customAgencia, receptorNombre } = req.body;
+    const { selectedOrderIds, orders, totalCost, clientName, moneda, direccion, departamento, localidad, agenciaId, customAgencia } = req.body;
 
     if ((!selectedOrderIds || !selectedOrderIds.length) && (!orders || !orders.length)) {
         return res.status(400).json({ error: "No hay órdenes seleccionadas." });
@@ -1895,14 +1895,6 @@ exports.createPickupOrder = async (req, res) => {
                     .query('UPDATE OrdenesRetiro SET AgenciaOtra = @AgenciaOtra WHERE OReIdOrdenRetiro = @OReId');
             }
 
-            // Guardar nombre del receptor si es encomienda
-            if (receptorNombre) {
-                await pool.request()
-                    .input('OReId', sql.Int, OReIdOrdenRetiro)
-                    .input('Receptor', sql.NVarChar(200), receptorNombre)
-                    .query('UPDATE OrdenesRetiro SET ReceptorNombre = @Receptor WHERE OReIdOrdenRetiro = @OReId');
-            }
-
             const ordIdRetiro = `RW-${OReIdOrdenRetiro}`;
 
             // Emitir socket
@@ -1992,82 +1984,6 @@ exports.generatePickupReceipt = async (req, res) => {
     } catch (error) {
         logger.error("PDF Generate Error:", error);
         res.status(500).json({ error: "Error generando PDF" });
-    }
-};
-
-
-// --- INIT HANDY PAYMENT (nuevo flujo: retiro se crea solo si el pago es exitoso) ---
-exports.initHandyPayment = async (req, res) => {
-    try {
-        const {
-            orders,          // [{ OrdIdOrden, orderNumber, desc, amount, currency }]
-            totalAmount,
-            activeCurrency,
-            lugarRetiro,
-            direccion,
-            departamento,
-            localidad,
-            agenciaId,
-            customAgencia,
-            receptorNombre
-        } = req.body;
-
-        if (!orders || orders.length === 0) {
-            return res.status(400).json({ error: 'No hay órdenes para pagar.' });
-        }
-
-        const currencyCode = activeCurrency === 'USD' ? 840 : 858;
-
-        // Productos para Handy
-        const products = orders.map(o => {
-            const amt = Number(Number(o.amount || 0).toFixed(2));
-            return {
-                Name: (o.desc || o.orderNumber || 'Pedido').substring(0, 50),
-                Quantity: 1,
-                Amount: amt,
-                TaxedAmount: Number((amt / 1.22).toFixed(2))
-            };
-        });
-
-        const { createPaymentLink } = require('../services/handyService');
-        const result = await createPaymentLink({
-            products,
-            totalAmount,
-            currencyCode,
-            commerceName: 'USER',
-            ordersData: {
-                type: 'pickup-deferred',       // marca el nuevo flujo
-                orders: orders.map(o => ({
-                    id: o.orderNumber,
-                    desc: o.desc || o.orderNumber || 'Pedido',
-                    amount: o.amount,
-                    rawId: o.OrdIdOrden        // necesario para crear el retiro
-                })),
-                ordIds: orders.map(o => o.OrdIdOrden).filter(Boolean),
-                totalCost: totalAmount,
-                lugarRetiro: lugarRetiro || 1,
-                direccion: direccion || null,
-                departamento: departamento || null,
-                localidad: localidad || null,
-                agenciaId: agenciaId || null,
-                customAgencia: customAgencia || null,
-                receptorNombre: receptorNombre || null,
-                moneda: activeCurrency === 'USD' ? 'USD' : 'UYU'
-            },
-            codCliente: req.user?.codCliente || 0,
-            logPrefix: '[HANDY INIT]'
-        });
-
-        if (!result.success) {
-            return res.status(500).json({ error: result.error });
-        }
-
-        res.json({ success: true, url: result.url, transactionId: result.transactionId });
-
-    } catch (error) {
-        const logger = require('../utils/logger');
-        logger.error('[HANDY INIT] Error:', error.message);
-        res.status(500).json({ error: 'Error al iniciar el pago.' });
     }
 };
 
@@ -2211,59 +2127,6 @@ exports.handyWebhook = async (req, res) => {
 
                     logger.info('[HANDY WEBHOOK] Registrando pago directamente en DB...', JSON.stringify(payloadPago));
 
-                    // NUEVO FLUJO: crear el retiro ahora si aún no existía
-                    if (storedData.type === 'pickup-deferred' && !storedOrdenRetiro && storedData.ordIds?.length > 0) {
-                        try {
-                            logger.info('[HANDY WEBHOOK] Creando retiro diferido...');
-                            const { crearRetiro } = require('../services/retiroService');
-                            const retiroTransaction = new sql.Transaction(pool);
-                            await retiroTransaction.begin();
-                            const OReIdOrdenRetiro = await crearRetiro(retiroTransaction, {
-                                ordIds:        storedData.ordIds,
-                                totalCost:     storedData.totalCost || tx.TotalAmount,
-                                lugarRetiro:   storedData.lugarRetiro || 1,
-                                usuarioAlta:   70,
-                                formaRetiro:   'RW',
-                                codCliente:    tx.CodCliente || null,
-                                moneda:        storedData.moneda || 'UYU',
-                                direccion:     storedData.direccion || null,
-                                departamento:  storedData.departamento || null,
-                                localidad:     storedData.localidad || null,
-                                agenciaId:     storedData.agenciaId || null
-                            });
-                            await retiroTransaction.commit();
-
-                            const codigoRetiro = `RW-${OReIdOrdenRetiro}`;
-                            logger.info(`[HANDY WEBHOOK] ✅ Retiro diferido creado: ${codigoRetiro}`);
-
-                            // Guardar customAgencia si aplica
-                            if (storedData.customAgencia) {
-                                await pool.request()
-                                    .input('OReId', sql.Int, OReIdOrdenRetiro)
-                                    .input('AgenciaOtra', sql.NVarChar(200), storedData.customAgencia)
-                                    .query('UPDATE OrdenesRetiro SET AgenciaOtra = @AgenciaOtra WHERE OReIdOrdenRetiro = @OReId');
-                            }
-                            if (storedData.receptorNombre) {
-                                await pool.request()
-                                    .input('OReId', sql.Int, OReIdOrdenRetiro)
-                                    .input('Receptor', sql.NVarChar(200), storedData.receptorNombre)
-                                    .query('UPDATE OrdenesRetiro SET ReceptorNombre = @Receptor WHERE OReIdOrdenRetiro = @OReId');
-                            }
-
-                            // Guardar código en HandyTransactions para que el polling lo encuentre
-                            await pool.request()
-                                .input('txId3', sql.VarChar(100), transactionId)
-                                .input('orCode', sql.VarChar(50), codigoRetiro)
-                                .query('UPDATE HandyTransactions SET OrdenRetiroCreada = @orCode WHERE TransactionId = @txId3');
-
-                            // Usar el nuevo retiro en el resto del flujo de pago
-                            payloadPago.ordenRetiro = codigoRetiro;
-                            orderNumbers = [OReIdOrdenRetiro];
-                        } catch (retiroErr) {
-                            logger.error('[HANDY WEBHOOK] Error creando retiro diferido:', retiroErr.message);
-                        }
-                    }
-
                     // --- MIGRACIÓN: Escribir directamente en DB en vez de llamar a API React ---
                     const ordenRetiroId = parseInt(String(payloadPago.ordenRetiro).replace(/^[A-Za-z]+-0*/, ''), 10);
                     if (!isNaN(ordenRetiroId)) {
@@ -2323,6 +2186,31 @@ exports.handyWebhook = async (req, res) => {
 
                         logger.info(`[HANDY WEBHOOK] ✅ Pago registrado en DB: PagoId=${pagoId}, OrdenRetiro=${ordenRetiroId}`);
 
+                        // --- INICIO INYECCIÓN CONTABLE HANDY (MIGRADO AL MOTOR UNIFICADO) ---
+                        try {
+                            const cliRes = await pool.request()
+                                .input('CodCli', sql.Int, tx.CodCliente)
+                                .query('SELECT CliIdCliente FROM Clientes WITH(NOLOCK) WHERE CodCliente = @CodCli');
+
+                            if (cliRes.recordset.length > 0) {
+                                const CliIdCliente = cliRes.recordset[0].CliIdCliente;
+
+                                // Delegamos 100% de la responsabilidad financiera y de asientos al Motor Unificado.
+                                await contabilidadService.procesarEventoContable('COBRO_CTA', {
+                                    PagIdPago: pagoId,
+                                    CliIdCliente: CliIdCliente,
+                                    Importe: payloadPago.monto,
+                                    MonIdMoneda: payloadPago.monedaId,
+                                    UsuarioAlta: usuarioId,
+                                    ConceptoGlobal: `Cobro Online Handy (Tx: ${transactionId})`
+                                });
+                                logger.info(`[CONTABILIDAD] Cobro Handy procesado en Motor Unificado para Tx=${transactionId}`);
+                            }
+                        } catch (errContabil) {
+                            logger.error(`[CONTABILIDAD] Error al contabilizar pago de Handy: ${errContabil.message}`);
+                        }
+                        // --- FIN INYECCIÓN CONTABLE HANDY ---
+
                         // Generar comprobante PDF y guardarlo en disco
                         generateHandyReceipt({
                             transactionId,
@@ -2362,7 +2250,7 @@ exports.getPaymentStatus = async (req, res) => {
         const pool = await getPool();
         const result = await pool.request()
             .input('txId', sql.VarChar(100), transactionId)
-            .query('SELECT TransactionId, TotalAmount, Currency, OrdersJson, Status, IssuerName, CreatedAt, PaidAt, OrdenRetiroCreada FROM HandyTransactions WHERE TransactionId = @txId');
+            .query('SELECT TransactionId, TotalAmount, Currency, OrdersJson, Status, IssuerName, CreatedAt, PaidAt FROM HandyTransactions WHERE TransactionId = @txId');
 
         if (result.recordset.length === 0) {
             return res.status(404).json({ error: 'Transacción no encontrada' });
@@ -2378,7 +2266,7 @@ exports.getPaymentStatus = async (req, res) => {
             totalAmount: tx.TotalAmount,
             currency: tx.Currency === 840 ? 'USD' : 'UYU',
             currencySymbol: tx.Currency === 840 ? 'US$' : '$',
-            ordenRetiro: tx.OrdenRetiroCreada || storedData.ordenRetiro || null,
+            ordenRetiro: storedData.ordenRetiro || null,
             orders: orders.map(o => ({
                 id: o.id,
                 desc: o.desc,

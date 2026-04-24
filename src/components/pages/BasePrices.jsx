@@ -74,10 +74,9 @@ const PriceRow = ({ item, changes, onChange, onAdd }) => {
             </td>
             <td className="p-3 text-center w-24">
                 <select
-                    className={`text-xs border rounded p-1 outline-none transition-colors ${!canEditCurrency ? 'bg-slate-50 text-slate-400 cursor-not-allowed border-slate-200' : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
+                    className={`text-xs border rounded p-1 outline-none transition-colors ${isDirty && changes?.moneda !== undefined ? 'bg-amber-50 text-slate-900 border-amber-400 ring-2 ring-amber-100 font-bold' : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-400 focus:ring-2 focus:ring-indigo-100'}`}
                     value={displayMoneda}
                     onChange={(e) => onChange(rowId, { moneda: e.target.value })}
-                    disabled={!canEditCurrency}
                 >
                     <option value="UYU">UYU</option>
                     <option value="USD">USD</option>
@@ -182,7 +181,8 @@ const BasePrices = () => {
             if (!item) return;
 
             itemsToSave.push({
-                id: item.ID, // Incluir ID para saber si es actualización
+                id: item.ID,                    // null = INSERT, number = UPDATE
+                proIdProducto: item.ProIdProducto,  // ← FK necesaria para INSERT
                 codArticulo: item.CodArticulo,
                 precio: changes.precio !== undefined ? parseFloat(changes.precio) : parseFloat(item.Precio || 0),
                 moneda: changes.moneda !== undefined ? changes.moneda : (item.Moneda || 'UYU')

@@ -5,7 +5,17 @@ const logger = require('../utils/logger');
 const getClients = async (req, res) => {
     try {
         const pool = await getPool();
-        const result = await pool.request().query("SELECT ClienteID, NombreCliente FROM PreciosEspeciales ORDER BY ClienteID");
+        const result = await pool.request().query(`
+            SELECT 
+                PE.CliIdCliente as ClienteID,
+                C.Nombre,
+                C.NombreFantasia,
+                C.IDCliente,
+                (SELECT COUNT(*) FROM PreciosEspecialesItems WHERE CliIdCliente = PE.CliIdCliente) as CantReglas
+            FROM PreciosEspeciales PE
+            LEFT JOIN Clientes C ON C.CliIdCliente = PE.CliIdCliente
+            ORDER BY COALESCE(C.Nombre, CAST(PE.CliIdCliente AS VARCHAR))
+        `);
         res.json(result.recordset);
     } catch (e) {
         logger.error("Error getting special clients:", e);
@@ -21,7 +31,7 @@ const getClientRules = async (req, res) => {
         // 1. Verificar si existe el cliente
         const clientRes = await pool.request()
             .input('CID', sql.Int, clientId)
-            .query("SELECT * FROM PreciosEspeciales WHERE ClienteID = @CID");
+            .query("SELECT * FROM PreciosEspeciales WHERE CliIdCliente = @CID");
 
         if (clientRes.recordset.length === 0) {
             return res.status(404).json({ error: "Cliente no encontrado" });
@@ -30,11 +40,28 @@ const getClientRules = async (req, res) => {
         // 2. Obtener Items
         const itemsRes = await pool.request()
             .input('CID', sql.Int, clientId)
-            .query("SELECT CodArticulo, TipoRegla, Valor, Moneda, MinCantidad FROM PreciosEspecialesItems WHERE ClienteID = @CID");
+            .query(`
+                SELECT COALESCE(PI.CodGrupo, A.CodArticulo, CASE WHEN PI.ProIdProducto = 0 THEN 'TOTAL' ELSE CAST(PI.ProIdProducto AS VARCHAR) END) as CodArticulo, 
+                       PI.ProIdProducto, PI.CodGrupo, PI.TipoRegla, PI.Valor, PI.MonIdMoneda as Moneda, PI.MinCantidad as CantidadMinima 
+                FROM PreciosEspecialesItems PI
+                LEFT JOIN Articulos A ON PI.ProIdProducto = A.ProIdProducto
+                WHERE PI.CliIdCliente = @CID
+            `);
+
+        // 3. Obtener Perfiles Generales Asignados (Para info del usuario en la UI)
+        const perfilesRes = await pool.request()
+            .input('CID', sql.Int, clientId)
+            .query(`
+                SELECT P.NombrePerfil, P.Global, CP.FechaAsignacion
+                FROM ClientePerfil CP
+                JOIN Perfiles P ON CP.PerfilID = P.PerfilID
+                WHERE CP.ClienteID = @CID AND CP.Activo = 1 AND P.Activo = 1
+            `);
 
         res.json({
-            client: clientRes.recordset[0],
-            rules: itemsRes.recordset
+            client: clientRes.recordset[0] || { CliIdCliente: clientId },
+            rules: itemsRes.recordset,
+            profiles: perfilesRes.recordset
         });
     } catch (e) {
         logger.error("Error getting client rules:", e);
@@ -55,39 +82,53 @@ const saveClientProfile = async (req, res) => {
         // 1. Upsert Cabecera
         const headerReq = new sql.Request(transaction);
         await headerReq
-            .input('CID', sql.Int, clientId)
-            .input('Nom', sql.NVarChar, nombre || `Cliente ${clientId}`)
+            .input('CliId', sql.Int, clientId)
             .query(`
-                IF NOT EXISTS (SELECT 1 FROM PreciosEspeciales WHERE ClienteID = @CID)
+                IF NOT EXISTS (SELECT 1 FROM PreciosEspeciales WHERE CliIdCliente = @CliId)
                 BEGIN
-                    INSERT INTO PreciosEspeciales (ClienteID, NombreCliente) VALUES (@CID, @Nom)
+                    INSERT INTO PreciosEspeciales (CliIdCliente) VALUES (@CliId)
                 END
                 ELSE
                 BEGIN
-                    UPDATE PreciosEspeciales SET UltimaActualizacion = GETDATE() WHERE ClienteID = @CID
+                    UPDATE PreciosEspeciales SET UltimaActualizacion = GETDATE() WHERE CliIdCliente = @CliId
                 END
             `);
 
-        // 2. Limpiar Items Anteriores (Estrategia simple: Borrar y Recrear para evitar diff complejo)
-        // Ojo: Si hay muchos items esto es un delete grande, pero para perfiles de precios es aceptable.
+        // 2. Limpiar Items Anteriores
         const delReq = new sql.Request(transaction);
-        await delReq.input('CID', sql.Int, clientId).query("DELETE FROM PreciosEspecialesItems WHERE ClienteID = @CID");
+        await delReq.input('CID', sql.Int, clientId).query("DELETE FROM PreciosEspecialesItems WHERE CliIdCliente = @CID");
 
         // 3. Insertar Nuevos Items
         if (rules && rules.length > 0) {
             for (const rule of rules) {
                 const itemReq = new sql.Request(transaction);
-                await itemReq
-                    .input('CID', sql.Int, clientId)
-                    .input('Cod', sql.NVarChar, rule.CodArticulo || 'TOTAL')
-                    .input('Tipo', sql.NVarChar, rule.TipoRegla || 'fixed')
-                    .input('Val', sql.Decimal(18, 4), rule.Valor || 0)
-                    .input('Mon', sql.NVarChar, rule.Moneda || 'UYU')
-                    .input('Min', sql.Decimal(18, 2), rule.MinCantidad || 0)
-                    .query(`
-                        INSERT INTO PreciosEspecialesItems (ClienteID, CodArticulo, TipoRegla, Valor, Moneda, MinCantidad)
-                        VALUES (@CID, @Cod, @Tipo, @Val, @Mon, @Min)
-                    `);
+
+                const codArtStr = (rule.CodArticulo || '').toString();
+                let finalProIdProducto = rule.ProIdProducto !== undefined ? rule.ProIdProducto : null;
+                let finalCodGrupo = rule.CodGrupo || null;
+
+                if (codArtStr === 'TOTAL') {
+                    finalProIdProducto = 0;
+                    finalCodGrupo = null;
+                } else if (codArtStr.startsWith('GRUPO:')) {
+                    finalProIdProducto = null;
+                    finalCodGrupo = codArtStr.replace('GRUPO:', '').trim();
+                }
+
+                if (finalProIdProducto !== null || finalCodGrupo !== null) {
+                    await itemReq
+                        .input('CliId', sql.Int, clientId)
+                        .input('ProId', sql.Int, finalProIdProducto)
+                        .input('Grupo', sql.VarChar, finalCodGrupo)
+                        .input('Tipo', sql.NVarChar, rule.TipoRegla || 'fixed')
+                        .input('Val', sql.Decimal(18, 4), rule.Valor || 0)
+                        .input('MonIdMoneda', sql.Int, (rule.MonIdMoneda === 'USD' || rule.MonIdMoneda === 2 || rule.Moneda === 'USD') ? 2 : 1)
+                        .input('Min', sql.Decimal(18, 2), rule.MinCantidad || 0)
+                        .query(`
+                            INSERT INTO PreciosEspecialesItems (CliIdCliente, ProIdProducto, CodGrupo, TipoRegla, Valor, MonIdMoneda, MinCantidad)
+                            VALUES (@CliId, @ProId, @Grupo, @Tipo, @Val, @MonIdMoneda, @Min)
+                        `);
+                }
             }
         }
 
@@ -109,8 +150,8 @@ const deleteClient = async (req, res) => {
     try {
         await transaction.begin();
 
-        await new sql.Request(transaction).input('CID', sql.Int, clientId).query("DELETE FROM PreciosEspecialesItems WHERE ClienteID = @CID");
-        await new sql.Request(transaction).input('CID', sql.Int, clientId).query("DELETE FROM PreciosEspeciales WHERE ClienteID = @CID");
+        await new sql.Request(transaction).input('CID', sql.Int, clientId).query("DELETE FROM PreciosEspecialesItems WHERE CliIdCliente = @CID");
+        await new sql.Request(transaction).input('CID', sql.Int, clientId).query("DELETE FROM PreciosEspeciales WHERE CliIdCliente = @CID");
 
         await transaction.commit();
         res.json({ success: true });

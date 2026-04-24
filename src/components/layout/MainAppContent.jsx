@@ -1,71 +1,65 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
-import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck } from 'lucide-react';
+import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, FileText, Activity, Cog, Cpu } from 'lucide-react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from './Navbar';
-
-// ── Auto-reload en caso de chunks desactualizados (cache stale post-deploy) ──
-const lazyWithRetry = (importFn) => lazy(() =>
-    importFn().catch((err) => {
-        const key = 'chunk_reload_' + window.location.pathname;
-        if (!sessionStorage.getItem(key)) {
-            sessionStorage.setItem(key, '1');
-            console.warn('[LazyRetry] Chunk load failed, reloading page...', err);
-            window.location.reload();
-            return new Promise(() => {}); // never resolves — page is reloading
-        }
-        sessionStorage.removeItem(key);
-        throw err; // already retried once, let it fail normally
-    })
-);
-
-const MachineDetailView = lazyWithRetry(() => import('../pages/MachineDetailView'));
+const MachineDetailView = lazy(() => import('../pages/MachineDetailView'));
 import Dashboard from '../pages/Dashboard';
 import AreaView from '../production/areas/AreaView';
-const ConfigPage = lazyWithRetry(() => import('../pages/ConfigPage'));
-const LogisticsDashboard = lazyWithRetry(() => import('../logistics/LogisticsDashboard'));
-const OrdersQueryView = lazyWithRetry(() => import('../pages/OrdersQueryView'));
-const RollHistory = lazyWithRetry(() => import('../pages/RollHistory'));
-const MenuAdmin = lazyWithRetry(() => import('../pages/MenuAdmin'));
-const RolesPage = lazyWithRetry(() => import('../pages/RolesPage'));
-const UsersPage = lazyWithRetry(() => import('../pages/UsersPage'));
-const AuditPage = lazyWithRetry(() => import('../pages/AuditPage'));
-const InventoryPage = lazyWithRetry(() => import('../pages/InventoryPage'));
-const InsumosCatalogPage = lazyWithRetry(() => import('../pages/InsumosCatalogPage'));
-const StockRequestsPage = lazyWithRetry(() => import('../pages/StockRequestsPage'));
-const ReceptionPage = lazyWithRetry(() => import('../pages/customer-service/ReceptionPage'));
-const LogisticsPage = lazyWithRetry(() => import('../pages/customer-service/LogisticsPage'));
-const ActiveStockPage = lazyWithRetry(() => import('../pages/customer-service/ActiveStockPage'));
-const TransportControlPage = lazyWithRetry(() => import('../pages/TransportControlPage'));
-const EcoUvFinishing = lazyWithRetry(() => import('../pages/EcoUvFinishing'));
-const WebRetirosPage = lazyWithRetry(() => import('../logistics/WebRetirosPage'));
-const ClientsIntegration = lazyWithRetry(() => import('../pages/ClientsIntegration'));
+const ConfigPage = lazy(() => import('../pages/ConfigPage'));
+const LogisticsDashboard = lazy(() => import('../logistics/LogisticsDashboard'));
+const OrdersQueryView = lazy(() => import('../pages/OrdersQueryView'));
+const RollHistory = lazy(() => import('../pages/RollHistory'));
+const MenuAdmin = lazy(() => import('../pages/MenuAdmin'));
+const RolesPage = lazy(() => import('../pages/RolesPage'));
+const UsersPage = lazy(() => import('../pages/UsersPage'));
+const AuditPage = lazy(() => import('../pages/AuditPage'));
+const InventoryPage = lazy(() => import('../pages/InventoryPage'));
+const InsumosCatalogPage = lazy(() => import('../pages/InsumosCatalogPage'));
+const StockRequestsPage = lazy(() => import('../pages/StockRequestsPage'));
+const ReceptionPage = lazy(() => import('../pages/customer-service/ReceptionPage'));
+const LogisticsPage = lazy(() => import('../pages/customer-service/LogisticsPage'));
+const ActiveStockPage = lazy(() => import('../pages/customer-service/ActiveStockPage'));
+const TransportControlPage = lazy(() => import('../pages/TransportControlPage'));
+const EcoUvFinishing = lazy(() => import('../pages/EcoUvFinishing'));
+const WebRetirosPage = lazy(() => import('../logistics/WebRetirosPage'));
+const ClientsIntegration = lazy(() => import('../pages/ClientsIntegration'));
 import ChatWidget from '../common/ChatWidget';
-const ProductsIntegration = lazyWithRetry(() => import('../pages/ProductsIntegration'));
-const SpecialPrices = lazyWithRetry(() => import('../pages/SpecialPrices'));
-const BasePrices = lazyWithRetry(() => import('../pages/BasePrices'));
-const PriceProfiles = lazyWithRetry(() => import('../pages/PriceProfiles'));
-const LabelGenerationPage = lazyWithRetry(() => import('../pages/LabelGenerationPage'));
-const DepositStockPage = lazyWithRetry(() => import('../logistics/DepositStockPage'));
-const CustomerReplacementPage = lazyWithRetry(() => import('../pages/customer-service/CustomerReplacementPage'));
-const CustomerPriceCatalogPage = lazyWithRetry(() => import('../pages/CustomerPriceCatalogPage'));
-const IntegralOrderView = lazyWithRetry(() => import('../pages/IntegralOrderView'));
-const CargaPagosView = lazyWithRetry(() => import('../pages/CargaPagosView'));
-const VerificarPagosOnlineView = lazyWithRetry(() => import('../pages/VerificarPagosOnlineView'));
-const ExcepcionesDeudaView = lazyWithRetry(() => import('../pages/ExcepcionesDeudaView'));
-const CargaDepositoPage = lazyWithRetry(() => import('../logistics/CargaDepositoPage'));
-const VerificarCodigoPage = lazyWithRetry(() => import('../logistics/VerificarCodigoPage'));
-const CuadreDiarioView = lazyWithRetry(() => import('../pages/CuadreDiarioView'));
-const DuplicateClientsPage = lazyWithRetry(() => import('../pages/admin/DuplicateClientsPage'));
-const OrderSearchPage = lazyWithRetry(() => import('../logistics/OrderSearchPage'));
-const EntregaPedidosView = lazyWithRetry(() => import('../pages/customer-service/EntregaPedidosView'));
-const DepositoDashboard = lazyWithRetry(() => import('../logistics/DepositoDashboard'));
-const NomenclatorsABM = lazyWithRetry(() => import('../pages/admin/NomenclatorsABM')); // <-- ADDED
-const SysAdminPage = lazyWithRetry(() => import('../pages/admin/SysAdminPage'));
-const ContabilidadCuentasView    = lazyWithRetry(() => import('../pages/ContabilidadCuentasView'));
-const ContabilidadAntiguedadView  = lazyWithRetry(() => import('../pages/ContabilidadAntiguedadView'));
-const ContabilidadColaEstadosView = lazyWithRetry(() => import('../pages/ContabilidadColaEstadosView'));
+const ProductsIntegration = lazy(() => import('../pages/ProductsIntegration'));
+const SpecialPrices = lazy(() => import('../pages/SpecialPrices'));
+const BasePrices = lazy(() => import('../pages/BasePrices'));
+const PriceProfiles = lazy(() => import('../pages/PriceProfiles'));
+const LabelGenerationPage = lazy(() => import('../pages/LabelGenerationPage'));
+const DepositStockPage = lazy(() => import('../logistics/DepositStockPage'));
+const CustomerReplacementPage = lazy(() => import('../pages/customer-service/CustomerReplacementPage'));
+const CustomerPriceCatalogPage = lazy(() => import('../pages/CustomerPriceCatalogPage'));
+const IntegralOrderView = lazy(() => import('../pages/IntegralOrderView'));
+const CargaPagosView = lazy(() => import('../pages/CargaPagosView'));
+const VerificarPagosOnlineView = lazy(() => import('../pages/VerificarPagosOnlineView'));
+const ExcepcionesDeudaView = lazy(() => import('../pages/ExcepcionesDeudaView'));
+const CargaDepositoPage = lazy(() => import('../logistics/CargaDepositoPage'));
+const VerificarCodigoPage = lazy(() => import('../logistics/VerificarCodigoPage'));
+const CuadreDiarioView = lazy(() => import('../pages/CuadreDiarioView'));
+
+
+const DuplicateClientsPage = lazy(() => import('../pages/admin/DuplicateClientsPage'));
+const OrderSearchPage = lazy(() => import('../logistics/OrderSearchPage'));
+const EntregaPedidosView = lazy(() => import('../pages/customer-service/EntregaPedidosView'));
+const DepositoDashboard = lazy(() => import('../logistics/DepositoDashboard'));
+const SysAdminPage = lazy(() => import('../pages/admin/SysAdminPage'));
+const ContabilidadCuentasView    = lazy(() => import('../pages/ContabilidadCuentasView'));
+const ContabilidadAntiguedadView  = lazy(() => import('../pages/ContabilidadAntiguedadView'));
+const ContabilidadColaEstadosView = lazy(() => import('../pages/ContabilidadColaEstadosView'));
+const ImportadorManualView = lazy(() => import('../production/ImportadorManualView'));
+const CajaTransaccionView = lazy(() => import('../pages/CajaTransaccionView'));
+const LibroMayorView = lazy(() => import('../pages/LibroMayorView'));
+const PlanCuentasView = lazy(() => import('../pages/PlanCuentasView'));
+const ContabilidadMotorReglasAdmin = lazy(() => import('../pages/ContabilidadMotorReglasAdmin'));
+const ContabilidadReconciliacionView = lazy(() => import('../pages/ContabilidadReconciliacionView'));
+const ContabilidadTesoreriaView = lazy(() => import('../pages/ContabilidadTesoreriaView'));
+const ContabilidadBandejaCFE = lazy(() => import('../pages/ContabilidadBandejaCFE'));
+const CronAdminView = lazy(() => import('../pages/CronAdminView'));
 
 // ============================================
 // 1. LUCIDE ICON MAP (override FA icons)
@@ -108,11 +102,6 @@ const lucideIconMapRaw = {
     'impresión': Printer,
     'impresion': Printer,
     'generar etiquetas': QrCode,
-    'comprobar codigo qr': QrCode,
-    'comprobar código qr': QrCode,
-    'verificar codigo qr': QrCode,
-    'verificar código qr': QrCode,
-    'comprobar qr': QrCode,
     'tpu': ShieldBan,
     'impresión directa': PrinterCheck,
     'impresion directa': PrinterCheck,
@@ -172,14 +161,24 @@ const lucideIconMapRaw = {
     // Contabilidad
     'contabilidad cuentas': CreditCard,
     'cuentas clientes':     CreditCard,
+    'cuentas':              CreditCard,
     'antigüedad de deuda':  Calendar,
     'antiguedad de deuda':  Calendar,
+    'antiguedades de deuda': Calendar,
     'cola estados cuenta':  BookOpen,
+    'estados de cuenta':    BookOpen,
+    'plan de cuentas': ClipboardList,
+    'libro mayor': BookOpen,
+    'tipos movimientos':    FileText,
+    'tipos de movimientos': FileText,
+    'recursos y planes':    Layers,
+    'recursos':             Layers,
+    'motor asientos generales': Cpu,
     // Administración sub-items
     'caja': Banknote,
     'pagos': CreditCard,
     'autorizaciones de pagos': ShieldCheck,
-    'cierre diario': CalendarCheck,
+    'operaciones de caja': Banknote,
 };
 const getLucideIcon = (name) => lucideIconMapRaw[name?.toLowerCase?.()?.trim?.()?.replace(/\s+/g, ' ')];
 
@@ -215,9 +214,9 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                         toggleMenu(item.IdModulo);
                         if (!wasOpen) {
                             const firstChild = item.children.find(c => c.Ruta);
-                            if (firstChild) navigate(firstChild.Ruta);
+                            if (firstChild) navigate(firstChild.Ruta.trim());
                         }
-                    } else if (item.Ruta) navigate(item.Ruta);
+                    } else if (item.Ruta) navigate(item.Ruta.trim());
                 }}
                 title={isCollapsed ? item.Nombre : ''}
             >
@@ -470,16 +469,26 @@ const MainAppContent = ({ menuItems = [] }) => {
                                 <Route path="/admin/base-prices" element={<BasePrices />} />
                                 <Route path="/admin/price-profiles" element={<PriceProfiles />} />
                                 <Route path="/admin/price-catalog" element={<CustomerPriceCatalogPage />} />
-                                <Route path="/admin/nomencladores" element={<NomenclatorsABM />} />
-                                <Route path="/produccion/etiquetas" element={<LabelGenerationPage />} />
+                                <Route path="/produccion/etiquetas" element={<Navigate to="/logistica" replace />} />
+                                <Route path="/produccion/importar" element={<Navigate to="/logistica" replace />} />
                                 <Route path="/caja/pagos" element={<CargaPagosView />} />
                                 <Route path="/caja/pagos-online" element={<VerificarPagosOnlineView />} />
                                 <Route path="/caja/cuadre" element={<CuadreDiarioView />} />
+
                                 <Route path="/admin/consola" element={<SysAdminPage />} />
-                                <Route path="/contabilidad/cuentas"      element={<ContabilidadCuentasView />} />
-                                <Route path="/contabilidad/antiguedad"    element={<ContabilidadAntiguedadView />} />
-                                <Route path="/contabilidad/cola-estados"  element={<ContabilidadColaEstadosView />} />
-                                <Route path="/contabilidad/recursos"      element={<Navigate to="/contabilidad/cuentas" replace />} />
+                                <Route path="/contabilidad/cuentas"           element={<ContabilidadCuentasView />} />
+                                <Route path="/contabilidad/antiguedad"         element={<ContabilidadAntiguedadView />} />
+                                <Route path="/contabilidad/cola-estados"       element={<ContabilidadColaEstadosView />} />
+                                <Route path="/contabilidad/tipos-movimiento"   element={<Navigate to="/contabilidad/motor" replace />} />
+                                <Route path="/contabilidad/recursos"           element={<Navigate to="/contabilidad/cuentas" replace />} />
+                                <Route path="/caja/transaccion"                element={<CajaTransaccionView />} />
+                                <Route path="/contabilidad/libro-mayor"        element={<LibroMayorView />} />
+                                <Route path="/contabilidad/plan-cuentas"       element={<PlanCuentasView />} />
+                                <Route path="/contabilidad/motor"              element={<ContabilidadMotorReglasAdmin />} />
+                                <Route path="/contabilidad/reconciliacion"      element={<ContabilidadReconciliacionView />} />
+                                <Route path="/contabilidad/bandeja-cfe"         element={<ContabilidadBandejaCFE />} />
+                                <Route path="/contabilidad/tesoreria"           element={<ContabilidadTesoreriaView />} />
+                                <Route path="/admin/cron"                        element={<CronAdminView />} />
 
                                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
                             </Routes>
@@ -505,8 +514,9 @@ const DynamicRouter = ({ menuItems }) => {
         </div>
     );
 
-    const matches = menuItems.filter(item => item.Ruta && (currentPath === item.Ruta || currentPath.startsWith(item.Ruta + '/')));
-    const menuItem = matches.sort((a, b) => b.Ruta.length - a.Ruta.length)[0];
+    const clean = r => r ? r.trim() : '';
+    const matches = menuItems.filter(item => clean(item.Ruta) && (currentPath === clean(item.Ruta) || currentPath.startsWith(clean(item.Ruta) + '/')));
+    const menuItem = matches.sort((a, b) => clean(b.Ruta).length - clean(a.Ruta).length)[0];
 
     // Fallback si no se encuentra ruta exacta
     if (!menuItem) {
@@ -521,55 +531,68 @@ const DynamicRouter = ({ menuItems }) => {
         );
     }
 
-    if (menuItem.Ruta === '/admin/database') return <ConfigPage />;
-    if (menuItem.Ruta === '/admin/menu') return <MenuAdmin />;
-    if (menuItem.Ruta === '/admin/roles') return <RolesPage />;
-    if (menuItem.Ruta === '/admin/users') return <UsersPage />;
-    if (menuItem.Ruta === '/admin/audit') return <AuditPage />;
-    if (menuItem.Ruta === '/produccion/etiquetas') return <LabelGenerationPage />;
-    if (menuItem.Ruta === '/admin/clientes-integration') return <ClientsIntegration />;
-    if (menuItem.Ruta === '/admin/products-integration') return <ProductsIntegration />;
-    if (menuItem.Ruta === '/admin/price-catalog') return <CustomerPriceCatalogPage />;
-    if (menuItem.Ruta === '/produccion/terminaciones' || menuItem.Ruta === '/area/ecouv/terminaciones') return <EcoUvFinishing />;
-    if (menuItem.Ruta === '/logistica' || menuItem.Ruta.toLowerCase() === '/logistica/') return <LogisticsDashboard />;
-    if (menuItem.Ruta === '/ops/inventory') return <LogisticsDashboard />;
-    if (menuItem.Ruta === '/inventario') return <InventoryPage />;
-    if (menuItem.Ruta === '/insumos') return <InsumosCatalogPage />;
-    if (menuItem.Ruta === '/solicitudes') return <StockRequestsPage />;
-    if (menuItem.Ruta === '/atencion-cliente/recepcion') return <ReceptionPage />;
-    if (menuItem.Ruta === '/atencion-cliente/control') return <LogisticsPage />;
-    if (menuItem.Ruta === '/atencion-cliente/despachos') return <ActiveStockPage />;
-    if (menuItem.Ruta === '/atencion-cliente/reposiciones') return <CustomerReplacementPage />;
-    if (menuItem.Ruta === '/atencion-cliente/entrega-pedidos') return <EntregaPedidosView />;
-    if (menuItem.Ruta === '/logistica/retiros-web') return <WebRetirosPage />;
-    if (menuItem.Ruta === '/logistica/dashboard-deposito') return <DepositoDashboard />;
-    if (menuItem.Ruta === '/caja/pagos' || menuItem.Ruta.toLowerCase() === '/caja/pagos/') return <CargaPagosView />;
-    if (menuItem.Ruta === '/caja/cuadre') return <CuadreDiarioView />;
-    if (menuItem.Ruta === '/logistica/verificar-codigo') return <VerificarCodigoPage />;
-    if (menuItem.Ruta === '/logistica/carga-deposito') return <CargaDepositoPage />;
-    if (menuItem.Ruta === '/admin/duplicados') return <DuplicateClientsPage />;
-    if (menuItem.Ruta === '/logistica/precios') return <SpecialPrices />;
-    if (menuItem.Ruta === '/admin/precios-base') return <BasePrices />;
-    if (menuItem.Ruta === '/admin/perfiles-precio') return <PriceProfiles />;
-    if (menuItem.Ruta === '/logistica/transporte') return <TransportControlPage />;
-    if (menuItem.Ruta === '/logistica/buscar-ordenes') return <OrderSearchPage />;
-    if (menuItem.Ruta === '/logistica/orden-integral') return <IntegralOrderView />;
-    if (menuItem.Ruta === '/caja/verificar-pagos') return <VerificarPagosOnlineView />;
-    if (menuItem.Ruta === '/admin/excepciones-deuda') return <ExcepcionesDeudaView />;
-    if (menuItem.Ruta === '/admin/consola') return <SysAdminPage />;
-    if (menuItem.Ruta === '/contabilidad/cuentas')       return <ContabilidadCuentasView />;
-    if (menuItem.Ruta === '/contabilidad/antiguedad')     return <ContabilidadAntiguedadView />;
-    if (menuItem.Ruta === '/contabilidad/cola-estados')   return <ContabilidadColaEstadosView />;
-    if (menuItem.Ruta === '/contabilidad/recursos')       return <ContabilidadCuentasView />;
+    const mRuta = clean(menuItem.Ruta);
+    const mRutaLower = mRuta.toLowerCase();
+
+    if (mRuta === '/admin/database') return <ConfigPage />;
+    if (mRuta === '/admin/menu') return <MenuAdmin />;
+    if (mRuta === '/admin/roles') return <RolesPage />;
+    if (mRuta === '/admin/users') return <UsersPage />;
+    if (mRuta === '/admin/audit') return <AuditPage />;
+    if (mRuta === '/produccion/etiquetas') return <LogisticsDashboard />;
+    if (mRuta === '/produccion/importar') return <LogisticsDashboard />;
+    if (mRuta === '/admin/clientes-integration') return <ClientsIntegration />;
+    if (mRuta === '/admin/products-integration') return <ProductsIntegration />;
+    if (mRuta === '/admin/price-catalog') return <CustomerPriceCatalogPage />;
+    if (mRuta === '/produccion/terminaciones' || mRuta === '/area/ecouv/terminaciones') return <EcoUvFinishing />;
+    if (mRuta === '/logistica' || mRutaLower === '/logistica/') return <LogisticsDashboard />;
+    if (mRuta === '/ops/inventory') return <LogisticsDashboard />;
+    if (mRuta === '/inventario') return <InventoryPage />;
+    if (mRuta === '/insumos') return <InsumosCatalogPage />;
+    if (mRuta === '/solicitudes') return <StockRequestsPage />;
+    if (mRuta === '/atencion-cliente/recepcion') return <ReceptionPage />;
+    if (mRuta === '/atencion-cliente/control') return <LogisticsPage />;
+    if (mRuta === '/atencion-cliente/despachos') return <ActiveStockPage />;
+    if (mRuta === '/atencion-cliente/reposiciones') return <CustomerReplacementPage />;
+    if (mRuta === '/atencion-cliente/entrega-pedidos') return <EntregaPedidosView />;
+    if (mRuta === '/logistica/retiros-web') return <WebRetirosPage />;
+    if (mRuta === '/logistica/dashboard-deposito') return <DepositoDashboard />;
+    if (mRuta === '/caja/pagos' || mRutaLower === '/caja/pagos/') return <CargaPagosView />;
+    if (mRuta === '/caja/cuadre') return <CuadreDiarioView />;
+
+    if (mRuta === '/logistica/verificar-codigo') return <VerificarCodigoPage />;
+    if (mRuta === '/logistica/carga-deposito') return <CargaDepositoPage />;
+    if (mRuta === '/admin/duplicados') return <DuplicateClientsPage />;
+    if (mRuta === '/logistica/precios') return <SpecialPrices />;
+    if (mRuta === '/admin/precios-base') return <BasePrices />;
+    if (mRuta === '/admin/perfiles-precio') return <PriceProfiles />;
+    if (mRuta === '/logistica/transporte') return <TransportControlPage />;
+    if (mRuta === '/logistica/buscar-ordenes') return <OrderSearchPage />;
+    if (mRuta === '/logistica/orden-integral') return <IntegralOrderView />;
+    if (mRuta === '/caja/verificar-pagos') return <VerificarPagosOnlineView />;
+    if (mRuta === '/admin/excepciones-deuda') return <ExcepcionesDeudaView />;
+    if (mRuta === '/admin/consola') return <SysAdminPage />;
+    if (mRuta === '/contabilidad/cuentas')              return <ContabilidadCuentasView />;
+    if (mRuta === '/contabilidad/antiguedad')            return <ContabilidadAntiguedadView />;
+    if (mRuta === '/contabilidad/cola-estados')          return <ContabilidadColaEstadosView />;
+    if (mRuta === '/contabilidad/recursos')              return <ContabilidadCuentasView />;
+    if (mRuta === '/caja/transaccion')                   return <CajaTransaccionView />;
+    if (mRuta === '/contabilidad/libro-mayor')           return <LibroMayorView />;
+    if (mRuta === '/contabilidad/plan-cuentas')          return <PlanCuentasView />;
+    if (mRuta === '/contabilidad/motor')                 return <ContabilidadMotorReglasAdmin />;
+    if (mRuta === '/contabilidad/reconciliacion')         return <ContabilidadReconciliacionView />;
+    if (mRuta === '/contabilidad/bandeja-cfe')           return <ContabilidadBandejaCFE />;
+    if (mRuta === '/contabilidad/tesoreria')             return <ContabilidadTesoreriaView />;
+    if (mRuta === '/admin/cron')                          return <CronAdminView />;
 
     // NEW: Historial de Lotes
-    if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;
+    if (mRuta === '/consultas/rollos') return <RollHistory />;
 
     if (currentPath === '/consultas/ordenes') return <OrdersQueryView />;
 
 
 
-    const segments = menuItem.Ruta.split('/').filter(Boolean);
+    const segments = mRuta.split('/').filter(Boolean);
 
     // CORRECCIÓN: Si la ruta actual es más profunda (ej: /area/ecouv), usar ese segmento
     let areaKeyFinal = '';

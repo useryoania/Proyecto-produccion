@@ -1,0 +1,1 @@
+const {getPool}=require('./config/db'); getPool().then(async pool=>{ const r1 = await pool.request().query(\SELECT * FROM PedidosCobranza WHERE OrdCodigo IN ('DF-91536','UVDF-91537') OR OrdCodigoOdoo IN ('DF-91536','UVDF-91537')\); console.table(r1.recordset); process.exit(0); });

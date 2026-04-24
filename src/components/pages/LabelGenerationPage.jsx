@@ -3,6 +3,8 @@ import toast, { Toaster } from 'react-hot-toast';
 import api from '../../services/api';
 
 import { useAuth } from '../../context/AuthContext'; // Import Auth
+import { logisticsService } from '../../services/modules/logisticsService';
+import DispatchView from '../logistics/DispatchView';
 
 const LabelGenerationPage = () => {
     const { user } = useAuth(); // Get user
@@ -12,6 +14,7 @@ const LabelGenerationPage = () => {
     const [searchFilter, setSearchFilter] = useState('');
     const [batchFilter, setBatchFilter] = useState('');
     const [statusFilter, setStatusFilter] = useState('all'); // all, generable, blocked
+    const [hideLabeled, setHideLabeled] = useState(true);
 
     const [selection, setSelection] = useState([]);
     const [generating, setGenerating] = useState(false);
@@ -22,6 +25,11 @@ const LabelGenerationPage = () => {
     const [bultosInput, setBultosInput] = useState(1);
     const [pendingServices, setPendingServices] = useState([]);
     const [selectedNextService, setSelectedNextService] = useState('');
+
+    // Remito Modal State
+    const [showRemitoModal, setShowRemitoModal] = useState(false);
+    const [remitoDestino, setRemitoDestino] = useState('DEPOSITO');
+    const [creatingRemito, setCreatingRemito] = useState(false);
 
     useEffect(() => {
         loadProductiveAreas();
@@ -139,6 +147,9 @@ const LabelGenerationPage = () => {
             if (!matchCod && !matchCli && !matchMat) return false;
         }
 
+        // Ocultar etiquetadas
+        if (hideLabeled && o.CantidadEtiquetas > 0) return false;
+
         // Filtro por Rollo (Lotes)
         if (batchFilter) {
             const rollInfo = (o.NombreRollo || o.RolloID || '').toLowerCase();
@@ -255,8 +266,20 @@ const LabelGenerationPage = () => {
         fetchOrders(); // Reload to update label counts
     };
 
-    // Preview URL Logic
+        // Logic is now delegated to DispatchView's onActionOverride.
+        // Old handleCreateRemitoLote logic removed as it's fully handled by the modal.
+
     const [previewTimestamp, setPreviewTimestamp] = useState(Date.now());
+
+    const getFormattedDispatchOrders = () => {
+        return visibleOrders.filter(o => selection.includes(o.OrdenID)).map(o => ({
+            id: o.OrdenID,
+            code: o.CodigoOrden,
+            desc: o.Descripcion || o.Material,
+            destino: o.ProximoServicio || 'LOGISTICA', // Will properly trigger the Review Step if LOGISTICA
+            bultos: [] // Triggers new bultos or backend auto-fetch
+        }));
+    };
 
     // Update preview URL to include timestamp for cache busting/refresh
     const previewUrl = selection.length > 0
@@ -275,7 +298,17 @@ const LabelGenerationPage = () => {
                             <h1 className="text-xl font-bold text-slate-800">Ordenes de Producción</h1>
                             <p className="text-xs text-slate-500">Gestión de Etiquetas</p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-3 items-center">
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded text-sm text-slate-600 border border-slate-200">
+                                <input 
+                                    type="checkbox" 
+                                    id="hideLabeled"
+                                    checked={hideLabeled}
+                                    onChange={(e) => setHideLabeled(e.target.checked)}
+                                    className="rounded text-indigo-500 transform scale-110"
+                                />
+                                <label htmlFor="hideLabeled" className="cursor-pointer font-medium select-none text-xs">Ocultar Ya Etiquetadas</label>
+                            </div>
                             <select
                                 value={areaFilter}
                                 onChange={(e) => setAreaFilter(e.target.value)}
@@ -347,7 +380,20 @@ const LabelGenerationPage = () => {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex gap-2 mt-2 px-6">
+                    <button
+                        onClick={() => setShowRemitoModal(true)}
+                        disabled={selection.length === 0}
+                        className={`flex-1 py-3 px-4 rounded-lg font-bold text-sm shadow-md transition flex items-center justify-center gap-2 border-2
+                            ${selection.length > 0 ? 'bg-white text-emerald-600 border-emerald-600 hover:bg-emerald-50' : 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed'}
+                        `}
+                    >
+                        <i className="fa-solid fa-truck-fast"></i>
+                        Crear Remito en Lote ({selection.length})
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto mt-4 px-6 md:px-0">
                     {loading ? (
                         <div className="flex justify-center items-center h-40">
                             <i className="fa-solid fa-circle-notch fa-spin text-2xl text-slate-300"></i>
@@ -599,6 +645,40 @@ const LabelGenerationPage = () => {
                             </div>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Modal Crear Remito usando DispatchView nativo */}
+            {showRemitoModal && (
+                <div className="fixed inset-0 z-50 flex flex-col bg-white overflow-hidden shadow-2xl">
+                    <DispatchView
+                        selectedOrders={getFormattedDispatchOrders()}
+                        areaFilter={areaFilter}
+                        originArea={areaFilter}
+                        onClose={() => setShowRemitoModal(false)}
+                        onSuccess={() => {
+                            // Don't auto-close the modal on success because we want them to see the generated Ticket!
+                            fetchOrders();
+                            setSelection([]);
+                        }}
+                        mode="create"
+                        onActionOverride={async (payload) => {
+                            // Call the advanced endpoint that handles orders directly without bultos
+                            const res = await logisticsService.createRemitoFromOrders({
+                                areaOrigen: areaFilter,
+                                areaDestino: payload.areaDestino,
+                                usuarioId: payload.usuarioId,
+                                orderIds: selection,
+                                observations: payload.observations
+                            });
+                            
+                            if (res.success) {
+                                return { ...res, createdCount: res.createdCount || 0, itemCount: selection.length };
+                            } else {
+                                throw new Error(res.error || "Error al crear el remito desde las órdenes");
+                            }
+                        }}
+                    />
                 </div>
             )}
         </div>
