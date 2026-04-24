@@ -1,10 +1,14 @@
 const LogisticsLayout = ({ children, activeTab, setActiveTab, globalArea, setGlobalArea, areasList = [], disabled = false }) => {
     const tabs = [
-        { id: 'dispatch', label: '1. Crear Remito', icon: 'fa-file-invoice' },
-        { id: 'history', label: '2. Historial', icon: 'fa-clock-rotate-left' },
-        { id: 'transport', label: '3. En Viaje', icon: 'fa-truck-arrow-right' },
-        { id: 'reception', label: '4. Check-in', icon: 'fa-clipboard-check' },
-        { id: 'stock', label: '5. Stock', icon: 'fa-boxes-stacked' },
+        { id: 'dashboard', label: '📊 Dashboard', icon: 'fa-chart-bar' },
+        { id: 'import', label: 'Cargar Órdenes', icon: 'fa-file-import' },
+        { id: 'quotation', label: 'Cotización', icon: 'fa-file-invoice-dollar' },
+        { id: 'labels', label: 'Etiquetas', icon: 'fa-tags' },
+        { id: 'dispatch', label: 'Crear Remito', icon: 'fa-file-invoice' },
+        { id: 'history', label: 'Historial', icon: 'fa-clock-rotate-left' },
+        { id: 'transport', label: 'En Viaje', icon: 'fa-truck-arrow-right' },
+        { id: 'reception', label: 'Check-in', icon: 'fa-clipboard-check' },
+        { id: 'stock', label: 'Stock', icon: 'fa-boxes-stacked' },
         { id: 'lost', label: 'Extraviados', icon: 'fa-triangle-exclamation' }
     ];
 

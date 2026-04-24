@@ -1,10 +1,10 @@
-﻿'use strict';
+'use strict';
 const express = require('express');
 const router = express.Router();
 const ctrl = require('../controllers/contabilidadController');
-const { authenticateToken } = require('../middleware/authMiddleware');
+const { verifyToken } = require('../middleware/authMiddleware');
 
-router.use(authenticateToken);
+router.use(verifyToken);
 
 router.get('/grupos-erp', ctrl.getGruposERP);
 router.get('/unidades', ctrl.getUnidades);

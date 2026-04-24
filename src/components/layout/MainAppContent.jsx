@@ -70,6 +70,14 @@ const ContabilidadCuentasView    = lazyWithRetry(() => import('../pages/Contabil
 const ContabilidadAntiguedadView  = lazyWithRetry(() => import('../pages/ContabilidadAntiguedadView'));
 const ContabilidadColaEstadosView = lazyWithRetry(() => import('../pages/ContabilidadColaEstadosView'));
 const TiposMovimientoAdmin        = lazyWithRetry(() => import('../pages/TiposMovimientoAdmin'));
+const CajaTransaccionView         = lazyWithRetry(() => import('../pages/CajaTransaccionView'));
+const LibroMayorView              = lazyWithRetry(() => import('../pages/LibroMayorView'));
+const PlanCuentasView             = lazyWithRetry(() => import('../pages/PlanCuentasView'));
+const ContabilidadMotorReglasAdmin= lazyWithRetry(() => import('../pages/ContabilidadMotorReglasAdmin'));
+const ContabilidadReconciliacionView= lazyWithRetry(() => import('../pages/ContabilidadReconciliacionView'));
+const ContabilidadBandejaCFE      = lazyWithRetry(() => import('../pages/ContabilidadBandejaCFE'));
+const ContabilidadTesoreriaView   = lazyWithRetry(() => import('../pages/ContabilidadTesoreriaView'));
+const CronAdminView               = lazyWithRetry(() => import('../pages/CronAdminView'));
 
 // ============================================
 // 1. LUCIDE ICON MAP (override FA icons)
@@ -464,6 +472,14 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <Route path="/contabilidad/antiguedad"    element={<ContabilidadAntiguedadView />} />
                 <Route path="/contabilidad/cola-estados"  element={<ContabilidadColaEstadosView />} />
                 <Route path="/contabilidad/tipos-movimiento" element={<TiposMovimientoAdmin />} />
+                <Route path="/caja/transaccion"          element={<CajaTransaccionView />} />
+                <Route path="/contabilidad/libro-mayor"  element={<LibroMayorView />} />
+                <Route path="/contabilidad/plan-cuentas" element={<PlanCuentasView />} />
+                <Route path="/contabilidad/motor"        element={<ContabilidadMotorReglasAdmin />} />
+                <Route path="/contabilidad/reconciliacion" element={<ContabilidadReconciliacionView />} />
+                <Route path="/contabilidad/bandeja-cfe"  element={<ContabilidadBandejaCFE />} />
+                <Route path="/contabilidad/tesoreria"    element={<ContabilidadTesoreriaView />} />
+                <Route path="/admin/cron"                element={<CronAdminView />} />
                 <Route path="/contabilidad/recursos"      element={<Navigate to="/contabilidad/cuentas" replace />} />
                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
             </Routes>
@@ -714,6 +730,14 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/contabilidad/antiguedad')            return <ContabilidadAntiguedadView />;
     if (menuItem.Ruta === '/contabilidad/cola-estados')          return <ContabilidadColaEstadosView />;
     if (menuItem.Ruta === '/contabilidad/tipos-movimiento')      return <TiposMovimientoAdmin />;
+    if (menuItem.Ruta === '/caja/transaccion')                   return <CajaTransaccionView />;
+    if (menuItem.Ruta === '/contabilidad/libro-mayor')           return <LibroMayorView />;
+    if (menuItem.Ruta === '/contabilidad/plan-cuentas')          return <PlanCuentasView />;
+    if (menuItem.Ruta === '/contabilidad/motor')                 return <ContabilidadMotorReglasAdmin />;
+    if (menuItem.Ruta === '/contabilidad/reconciliacion')        return <ContabilidadReconciliacionView />;
+    if (menuItem.Ruta === '/contabilidad/bandeja-cfe')           return <ContabilidadBandejaCFE />;
+    if (menuItem.Ruta === '/contabilidad/tesoreria')             return <ContabilidadTesoreriaView />;
+    if (menuItem.Ruta === '/admin/cron')                         return <CronAdminView />;
     if (menuItem.Ruta === '/contabilidad/recursos')              return <ContabilidadCuentasView />;
 
     // NEW: Historial de Lotes

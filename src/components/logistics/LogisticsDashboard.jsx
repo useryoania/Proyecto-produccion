@@ -9,6 +9,9 @@ import ReceptionView from './ReceptionView';
 import StockView from './StockView';
 import LostView from './LostView';
 import DepositoDashboard from './DepositoDashboard';
+import ImportadorManualView from '../production/ImportadorManualView';
+import LabelGenerationPage from '../pages/LabelGenerationPage';
+import QuotationView from './QuotationView';
 // Dynamic Import with auto-reload on stale chunks
 const DepositStockPage = React.lazy(() =>
     import('./DepositStockPage').catch((err) => {
@@ -28,7 +31,7 @@ const LogisticsDashboard = () => {
     const isAdmin = user?.rol?.toLowerCase() === 'admin';
     const isDeposito = user?.areaKey?.trim().toUpperCase() === 'DEPOSITO';
     const hasFullAccess = isAdmin || isDeposito;
-    const [activeTab, setActiveTab] = useState('dispatch');
+    const [activeTab, setActiveTab] = useState('import');
 
     // Global Area Filter
     const [globalArea, setGlobalArea] = useState('TODOS');
@@ -96,6 +99,12 @@ const LogisticsDashboard = () => {
         const commonProps = { areaFilter: globalArea };
 
         switch (activeTab) {
+            case 'import':
+                return <div className="absolute inset-0 overflow-y-auto"><ImportadorManualView embedded={true} /></div>;
+            case 'quotation':
+                return <div className="absolute inset-0"><QuotationView {...commonProps} /></div>;
+            case 'labels':
+                return <div className="absolute inset-0"><LabelGenerationPage embedded={true} /></div>;
             case 'dashboard':
                 return <DepositoDashboard />;
             case 'dispatch':
@@ -124,7 +133,7 @@ const LogisticsDashboard = () => {
             case 'lost':
                 return <LostView {...commonProps} />;
             default:
-                return <DispatchView {...commonProps} mode="create" />;
+                return <div className="absolute inset-0 overflow-y-auto"><ImportadorManualView embedded={true} /></div>;
         }
     };
 

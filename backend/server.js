@@ -106,7 +106,7 @@ app.use('/api/configuraciones', require('./routes/configuracionesRoutes'));
 try {
     app.use('/api/contabilidad', require('./routes/contabilidadRoutes'));
     logger.info('✅ [MÓDULO] Contabilidad de Clientes activado en /api/contabilidad');
-} catch (e) { logger.error('❌ Error loading contabilidad routes:', e.message); }
+} catch (e) { console.error('❌ [CONTABILIDAD ROUTES ERROR]', e); logger.error('❌ Error loading contabilidad routes:', e.message); }
 
 // --- RUTAS INTEGRADAS DEL SISTEMA REACT ---
 app.use('/api/apicotizaciones', require('./routes/getwayCotizaciones'));
