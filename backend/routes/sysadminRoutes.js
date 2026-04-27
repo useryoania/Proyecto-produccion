@@ -34,4 +34,26 @@ router.get('/tables', ctrl.getTableInfo);
 router.get('/tables/:tableName', ctrl.getTableColumns);
 router.get('/audit', ctrl.getAuditTrail);
 
+// ── CRON JOBS ─────────────────────────────────────────────────────────────────
+const jobRegistry = require('../jobs/jobRegistry');
+
+/** GET /api/sysadmin/cron – lista todos los jobs con su estado */
+router.get('/cron', (req, res) => {
+    res.json({ success: true, data: jobRegistry.getAll() });
+});
+
+/** POST /api/sysadmin/cron/:jobId/ejecutar – dispara un job manualmente */
+router.post('/cron/:jobId/ejecutar', async (req, res) => {
+    const { jobId } = req.params;
+    try {
+        // Fire and forget — responde inmediato, el job corre en background
+        jobRegistry.ejecutarManual(jobId)
+            .then(() => {})
+            .catch(e => console.error(`[CRON-MANUAL] Error en ${jobId}:`, e.message));
+        res.json({ success: true, message: `Job "${jobId}" iniciado en background.` });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+});
+
 module.exports = router;

@@ -1,6 +1,5 @@
 const LogisticsLayout = ({ children, activeTab, setActiveTab, globalArea, setGlobalArea, areasList = [], disabled = false }) => {
     const tabs = [
-        { id: 'dashboard', label: '📊 Dashboard', icon: 'fa-chart-bar' },
         { id: 'import', label: 'Cargar Órdenes', icon: 'fa-file-import' },
         { id: 'quotation', label: 'Cotización', icon: 'fa-file-invoice-dollar' },
         { id: 'labels', label: 'Etiquetas', icon: 'fa-tags' },

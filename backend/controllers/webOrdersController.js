@@ -1062,6 +1062,20 @@ exports.uploadOrderFile = async (req, res) => {
                 // TAMBIEN EstadoenArea = 'Pendiente'
                 await pool.request().input('OID', sql.Int, orderID).query(`UPDATE Ordenes SET Estado = 'Pendiente', EstadoenArea = 'Pendiente' WHERE OrdenID = @OID AND Estado = 'Cargando...'`);
 
+                // Sincronizar con ERP y Cobranzas (Crucial para el módulo de Cotización)
+                try {
+                    const orderRes = await pool.request().input('OID', sql.Int, orderID).query("SELECT NoDocERP FROM Ordenes WHERE OrdenID = @OID");
+                    if (orderRes.recordset.length > 0) {
+                        const noDocERP = orderRes.recordset[0].NoDocERP;
+                        const ERPSyncService = require('../services/erpSyncService');
+                        ERPSyncService.syncFinalOrderIntegration(noDocERP, req.user?.id || 1, req.user?.usuario || 'WebUpload')
+                            .then(res => logger.info(`[WebOrder] Sync exitosa para ${noDocERP}`))
+                            .catch(e => logger.error(`[WebOrder] Error post-sync para ${noDocERP}:`, e.message));
+                    }
+                } catch(errSync) {
+                    logger.error("Error al ejecutar ERPSyncService post-upload:", errSync);
+                }
+
                 // Notificar sockets
                 const io = req.app.get('socketio');
                 if (io) io.emit('server:ordersUpdated', { count: 1, source: 'web-upload' });

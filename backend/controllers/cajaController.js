@@ -144,7 +144,7 @@ const cerrarSesion = async (req, res) => {
     const pool = await getPool();
     const result = await pool.request()
       .input('StuIdSesion',   sql.Int,           id)
-      .input('UsuarioId',     sql.Int,           usuarioId)
+      .input('UsuarioId',     sql.Int,           userId)
       .input('MontoFinal',    sql.Decimal(18,2),  parseFloat(montoFinal))
       .input('Observaciones', sql.NVarChar(500),  observaciones || null)
       .execute('SP_CerrarSesionCaja');
