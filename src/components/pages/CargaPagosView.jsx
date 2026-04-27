@@ -449,7 +449,7 @@ export const CargaGestionPagosView = () => {
                     {/* Moneda — toggle segmentado */}
                     <div className="flex flex-col gap-1">
                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Moneda</label>
-                        <div
+                        <div 
                             className="flex rounded-lg border border-slate-200 overflow-hidden cursor-pointer select-none"
                             onClick={() => handleCurrencyChange({ target: { value: moneda === 'USD' ? 'UYU' : 'USD' } })}
                         >
@@ -633,68 +633,61 @@ export const CargaGestionPagosView = () => {
 
                     {/* Detalle del Retiro */}
                     <div className="bg-white rounded-2xl border border-transparent shadow-[0_2px_8px_rgba(0,0,0,0.35)] p-5 flex flex-col flex-1">
-                        {selectedRetiro ? (
-                            <>
-                                {/* Header del retiro — sin total duplicado */}
-                                <div className="flex items-center gap-3 mb-4">
-                                    <h2 className="text-3xl font-black text-brand-cyan">{selectedRetiro.ordenDeRetiro}</h2>
-                                    <span className="text-sm text-slate-400 font-medium mt-1">{selectedRetiro.lugarRetiro} • {selectedRetiro.estado}</span>
-                                </div>
+                    {selectedRetiro ? (
+                        <>
+                            {/* Header del retiro — sin total duplicado */}
+                            <div className="flex items-center gap-3 mb-4">
+                                <h2 className="text-3xl font-black text-brand-cyan">{selectedRetiro.ordenDeRetiro}</h2>
+                                <span className="text-sm text-slate-400 font-medium mt-1">{selectedRetiro.lugarRetiro} • {selectedRetiro.estado}</span>
+                            </div>
 
-                                {/* Datos del cliente */}
-                                <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-4 grid grid-cols-2 gap-3">
-                                    <div className="flex items-center gap-2">
-                                        <User size={14} className="text-slate-400" />
-                                        <div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase">Cliente</p>
-                                            <p className="text-sm font-bold text-slate-800 truncate">{selectedRetiro.CliNombre || '—'}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <Phone size={14} className="text-slate-400" />
-                                        <div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase">Teléfono</p>
-                                            <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliTelefono || '—'}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <FileText size={14} className="text-slate-400" />
-                                        <div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase">ID</p>
-                                            <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliCodigoCliente || '—'}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        <Package size={14} className="text-slate-400" />
-                                        <div>
-                                            <p className="text-[10px] font-bold text-slate-400 uppercase">Tipo</p>
-                                            <p className="text-sm font-bold text-slate-800">{selectedRetiro.TClDescripcion || '—'}</p>
-                                        </div>
+                            {/* Datos del cliente */}
+                            <div className="bg-slate-50 rounded-xl border border-slate-200 p-3 mb-4 grid grid-cols-2 gap-3">
+                                <div className="flex items-center gap-2">
+                                    <User size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Cliente</p>
+                                        <p className="text-sm font-bold text-slate-800 truncate">{selectedRetiro.CliNombre || '—'}</p>
                                     </div>
                                 </div>
-
-                                {/* Sub-órdenes */}
-                                <div className="flex items-center justify-between mb-2">
-                                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Órdenes del retiro</h3>
-                                    {selectedRetiro.fechaAlta && (
-                                        <span className="text-xs font-bold text-brand-dark">
-                                            CREADO: {new Date(selectedRetiro.fechaAlta).toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                                        </span>
-                                    )}
+                                <div className="flex items-center gap-2">
+                                    <Phone size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Teléfono</p>
+                                        <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliTelefono || '—'}</p>
+                                    </div>
                                 </div>
-                                <div className="flex flex-col gap-2 overflow-y-auto max-h-[40vh] pr-1">
-                                    {getOrdenes(selectedRetiro).length > 0 ? (
-                                        getOrdenes(selectedRetiro).map((po, i) => {
-                                            const costStr = po.orderCosto || "";
-                                            const curSym = po.monedaId === 2 ? 'US$' : '$';
-                                            const rawValor = parseFloat(costStr.replace(/[^0-9.-]+/g, "")) || 0;
-                                            const isPaid = po.orderIdMetodoPago !== null || po.orderPago !== null;
+                                <div className="flex items-center gap-2">
+                                    <FileText size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">ID</p>
+                                        <p className="text-sm font-bold text-slate-800">{selectedRetiro.CliCodigoCliente || '—'}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Package size={14} className="text-slate-400" />
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase">Tipo</p>
+                                        <p className="text-sm font-bold text-slate-800">{selectedRetiro.TClDescripcion || '—'}</p>
+                                    </div>
+                                </div>
+                            </div>
 
-                                            let valorConvertidoDest = "";
-                                            if (moneda === 'UYU' && curSym === 'US$' && cotizacion)
-                                                valorConvertidoDest = ` ($ ${(rawValor * cotizacion).toFixed(2)})`;
-                                            if (moneda === 'USD' && curSym === '$' && cotizacion)
-                                                valorConvertidoDest = ` (US$ ${(rawValor / cotizacion).toFixed(2)})`;
+                            {/* Sub-órdenes */}
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Órdenes del retiro</h3>
+                            <div className="flex flex-col gap-2 overflow-y-auto max-h-[40vh] pr-1">
+                                {getOrdenes(selectedRetiro).length > 0 ? (
+                                    getOrdenes(selectedRetiro).map((po, i) => {
+                                        const costStr  = po.orderCosto || "";
+                                        const curSym   = po.monedaId === 2 ? 'US$' : '$';
+                                        const rawValor = parseFloat(costStr.replace(/[^0-9.-]+/g, "")) || 0;
+                                        const isPaid   = po.orderIdMetodoPago !== null || po.orderPago !== null;
+
+                                        let valorConvertidoDest = "";
+                                        if (moneda === 'UYU' && curSym === 'US$' && cotizacion)
+                                            valorConvertidoDest = ` ($ ${(rawValor * cotizacion).toFixed(2)})`;
+                                        if (moneda === 'USD' && curSym === '$' && cotizacion)
+                                            valorConvertidoDest = ` (US$ ${(rawValor / cotizacion).toFixed(2)})`;
 
                                         return (
                                             <div
@@ -745,116 +738,116 @@ export const CargaGestionPagosView = () => {
                                 ) : (
                                     <p className="text-slate-400 text-sm text-center py-4">No hay detalles de órdenes.</p>
                                 )}
+                            </div>
+
+                            {/* Botón Autorizar sin pago — abre modal */}
+                            {getOrdenes(selectedRetiro).some(o => o.orderIdMetodoPago === null && o.orderPago === null) && (
+                                <div className="mt-3 pt-3 border-t border-slate-200">
+                                    <button
+                                        onClick={() => { setObservacionAutorizo(''); setModalAutorizar(true); }}
+                                        className="w-full bg-amber-500 hover:bg-amber-600 text-white text-sm font-black py-2.5 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.97] flex items-center justify-center gap-2 uppercase tracking-wider"
+                                    >
+                                        <ShieldCheck size={16} /> Autorizar entrega sin pago
+                                    </button>
                                 </div>
-
-                                {/* Botón Autorizar sin pago — abre modal */}
-                                {getOrdenes(selectedRetiro).some(o => o.orderIdMetodoPago === null && o.orderPago === null) && (
-                                    <div className="mt-3 pt-3 border-t border-slate-200">
-                                        <button
-                                            onClick={() => { setObservacionAutorizo(''); setModalAutorizar(true); }}
-                                            className="w-full bg-amber-500 hover:bg-amber-600 text-white text-sm font-black py-2.5 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.97] flex items-center justify-center gap-2 uppercase tracking-wider"
-                                        >
-                                            <ShieldCheck size={16} /> Autorizar entrega sin pago
-                                        </button>
-                                    </div>
-                                )}
+                            )}
 
 
 
-                            </>
-                        ) : (
-                            <div className="flex flex-col items-center justify-center flex-1 text-slate-300">
-                                <CreditCard size={64} className="mb-4" />
-                                <p className="text-lg font-bold">Seleccione un retiro para cobrar</p>
-                                <p className="text-sm mt-1">Haga clic en un retiro de la lista izquierda</p>
-                            </div>
-                        )}
-                    </div>  {/* cierra detalle del retiro */}
-                </div>  {/* cierra col-span-3 wrapper */}
-            </div>
-
-            {/* ─── MODAL AUTORIZAR SIN PAGO ─── */}
-            {modalAutorizar && selectedRetiro && (() => {
-                const sinPago = getOrdenes(selectedRetiro).filter(o => o.orderIdMetodoPago === null && o.orderPago === null);
-                const tipoCliente = selectedRetiro.TClDescripcion || 'Desconocido';
-                return (
-                    <div
-                        className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
-                        onClick={() => setModalAutorizar(false)}
-                    >
-                        <div
-                            className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-amber-200"
-                            onClick={e => e.stopPropagation()}
-                        >
-                            {/* Encabezado */}
-                            <div className="flex items-center justify-between mb-4">
-                                <div>
-                                    <h3 className="text-xl font-black text-slate-800">Autorizar sin cobrar</h3>
-                                    <p className="text-sm text-slate-500">{selectedRetiro.ordenDeRetiro} — {selectedRetiro.CliNombre}</p>
-                                </div>
-                                <button onClick={() => setModalAutorizar(false)} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
-                            </div>
-
-                            {/* Tipo de cliente pre-cargado */}
-                            <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 mb-4 flex items-center gap-3">
-                                <Package size={16} className="text-slate-400 shrink-0" />
-                                <div>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Tipo de cliente</p>
-                                    <p className="text-sm font-black text-slate-700">{tipoCliente}</p>
-                                </div>
-                                <div className="ml-auto">
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase">Sin pago</p>
-                                    <p className="text-sm font-black text-rose-600 text-right">{sinPago.length} {sinPago.length === 1 ? 'orden' : 'órdenes'}</p>
-                                </div>
-                            </div>
-
-                            {/* Órdenes sin pago (resumen) */}
-                            <div className="flex flex-col gap-1 mb-4 max-h-32 overflow-y-auto">
-                                {sinPago.map((o, i) => {
-                                    const v = parseFloat((o.orderCosto || '').replace(/[^0-9.-]+/g, '')) || 0;
-                                    const sym = o.monedaId === 2 ? 'US$' : '$';
-                                    return (
-                                        <div key={i} className="flex items-center justify-between bg-rose-50 border border-rose-100 rounded-lg px-3 py-1.5 text-sm">
-                                            <span className="font-bold text-slate-700">{o.orderNumber}</span>
-                                            <span className="text-xs text-rose-600 font-bold">✗ Sin pago</span>
-                                            <span className="font-black text-slate-800">{sym} {v.toFixed(2)}</span>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-
-                            {/* Observaciones */}
-                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Observaciones <span className="text-rose-500">*</span></label>
-                            <textarea
-                                rows={3}
-                                value={observacionAutorizo}
-                                onChange={e => setObservacionAutorizo(e.target.value)}
-                                autoFocus
-                                placeholder={`Motivo de autorizar sin cobrar (${tipoCliente})...`}
-                                className="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 resize-none mb-4 text-slate-700"
-                            />
-
-                            {/* Botones */}
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => setModalAutorizar(false)}
-                                    className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
-                                >
-                                    Cancelar
-                                </button>
-                                <button
-                                    onClick={handleAutorizarSinPago}
-                                    disabled={autorizando || !observacionAutorizo.trim()}
-                                    className="flex-[2] py-3 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-black rounded-xl transition-all flex items-center justify-center gap-2"
-                                >
-                                    <ShieldCheck size={16} />
-                                    {autorizando ? 'Autorizando...' : 'Confirmar autorización'}
-                                </button>
-                            </div>
+                        </>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center flex-1 text-slate-300">
+                            <CreditCard size={64} className="mb-4" />
+                            <p className="text-lg font-bold">Seleccione un retiro para cobrar</p>
+                            <p className="text-sm mt-1">Haga clic en un retiro de la lista izquierda</p>
                         </div>
-                    </div>
-                );
-            })()}
+                    )}
+                                </div>  {/* cierra detalle del retiro */}
+                            </div>  {/* cierra col-span-3 wrapper */}
+                        </div>
+
+                        {/* ─── MODAL AUTORIZAR SIN PAGO ─── */}
+                        {modalAutorizar && selectedRetiro && (() => {
+                            const sinPago = getOrdenes(selectedRetiro).filter(o => o.orderIdMetodoPago === null && o.orderPago === null);
+                            const tipoCliente = selectedRetiro.TClDescripcion || 'Desconocido';
+                            return (
+                                <div
+                                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4"
+                                    onClick={() => setModalAutorizar(false)}
+                                >
+                                    <div
+                                        className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-amber-200"
+                                        onClick={e => e.stopPropagation()}
+                                    >
+                                        {/* Encabezado */}
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div>
+                                                <h3 className="text-xl font-black text-slate-800">Autorizar sin cobrar</h3>
+                                                <p className="text-sm text-slate-500">{selectedRetiro.ordenDeRetiro} — {selectedRetiro.CliNombre}</p>
+                                            </div>
+                                            <button onClick={() => setModalAutorizar(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                                        </div>
+
+                                        {/* Tipo de cliente pre-cargado */}
+                                        <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 mb-4 flex items-center gap-3">
+                                            <Package size={16} className="text-slate-400 shrink-0" />
+                                            <div>
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase">Tipo de cliente</p>
+                                                <p className="text-sm font-black text-slate-700">{tipoCliente}</p>
+                                            </div>
+                                            <div className="ml-auto">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase">Sin pago</p>
+                                                <p className="text-sm font-black text-rose-600 text-right">{sinPago.length} {sinPago.length === 1 ? 'orden' : 'órdenes'}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Órdenes sin pago (resumen) */}
+                                        <div className="flex flex-col gap-1 mb-4 max-h-32 overflow-y-auto">
+                                            {sinPago.map((o, i) => {
+                                                const v = parseFloat((o.orderCosto || '').replace(/[^0-9.-]+/g, '')) || 0;
+                                                const sym = o.monedaId === 2 ? 'US$' : '$';
+                                                return (
+                                                    <div key={i} className="flex items-center justify-between bg-rose-50 border border-rose-100 rounded-lg px-3 py-1.5 text-sm">
+                                                        <span className="font-bold text-slate-700">{o.orderNumber}</span>
+                                                        <span className="text-xs text-rose-600 font-bold">✗ Sin pago</span>
+                                                        <span className="font-black text-slate-800">{sym} {v.toFixed(2)}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Observaciones */}
+                                        <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Observaciones <span className="text-rose-500">*</span></label>
+                                        <textarea
+                                            rows={3}
+                                            value={observacionAutorizo}
+                                            onChange={e => setObservacionAutorizo(e.target.value)}
+                                            autoFocus
+                                            placeholder={`Motivo de autorizar sin cobrar (${tipoCliente})...`}
+                                            className="w-full text-sm bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 resize-none mb-4 text-slate-700"
+                                        />
+
+                                        {/* Botones */}
+                                        <div className="flex gap-3">
+                                            <button
+                                                onClick={() => setModalAutorizar(false)}
+                                                className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                onClick={handleAutorizarSinPago}
+                                                disabled={autorizando || !observacionAutorizo.trim()}
+                                                className="flex-[2] py-3 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-black rounded-xl transition-all flex items-center justify-center gap-2"
+                                            >
+                                                <ShieldCheck size={16}/>
+                                                {autorizando ? 'Autorizando...' : 'Confirmar autorización'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
             {/* ─── MODAL DE BÚSQUEDA (SITUACIÓN DE PAGO) ── */}
             {

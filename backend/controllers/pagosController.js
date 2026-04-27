@@ -1,6 +1,7 @@
 const { getPool, sql }   = require('../config/db');
 const logger              = require('../utils/logger');
 const contabilidadService = require('../services/contabilidadService');
+const contabilidadCore = require('../services/contabilidadCore');
 
 // Controlador para obtener métodos de pago
 const obtenerMetodosPago = async (req, res) => {
@@ -169,32 +170,29 @@ const realizarPago = async (req, res) => {
 
     res.status(200).json({ message: 'Pago registrado correctamente', pagoId });
 
-    // ── HOOK CONTABILIDAD ─────────────────────────────────────────────────────
-    // Obtener CliIdCliente de la primera orden del lote (todas son del mismo cliente)
+    // ── MOTOR DE CONTABILIDAD UNIFICADO ──────────────────────────────────────
+    // Reemplazamos toda la lógica manual de asiento y hooks por el procesador del Motor.
+    // Buscamos el CliIdCliente para el contexto contable.
     if (orderNumbers && orderNumbers.length > 0) {
-      (async () => {
-        try {
-          const hookPool = await getPool();
-          const cliRes = await hookPool.request()
-            .input('OrdIdOrden', sql.Int, parseInt(orderNumbers[0]))
-            .query('SELECT CliIdCliente, MonIdMoneda FROM OrdenesDeposito WITH(NOLOCK) WHERE OrdIdOrden = @OrdIdOrden');
-
-          if (cliRes.recordset.length > 0) {
-            const { CliIdCliente, MonIdMoneda } = cliRes.recordset[0];
-            await contabilidadService.hookPagoRegistrado({
-              PagIdPago:   pagoId,
-              CliIdCliente,
-              MontoPago:   monto,
-              MonIdMoneda: MonIdMoneda ?? monedaId,
-              UsuarioAlta: usuarioId,
-            });
-          }
-        } catch (hookErr) {
-          logger.warn('[CONTABILIDAD] hookPagoRegistrado falló (no afecta el pago):', hookErr.message);
-        }
-      })();
+       const cliPool = await getPool();
+       const cliRes = await cliPool.request()
+          .input('O', sql.Int, parseInt(orderNumbers[0]))
+          .query('SELECT CliIdCliente FROM OrdenesDeposito WITH(NOLOCK) WHERE OrdIdOrden=@O');
+          
+       if (cliRes.recordset.length > 0) {
+          const { CliIdCliente } = cliRes.recordset[0];
+          contabilidadService.procesarEventoContable('PAGO', {
+             PagIdPago: pagoId,
+             CliIdCliente,
+             Importe: monto,
+             MonIdMoneda: monedaId,
+             UsuarioAlta: usuarioId,
+             OReIdOrdenRetiro: ordenRetiroId
+          }).catch(e => logger.error(`[CONTABILIDAD] Error motor en pago ${pagoId}: ${e.message}`));
+       }
     }
     // ─────────────────────────────────────────────────────────────────────────
+
   } catch (error) {
     if (transaction) {
       try { await transaction.rollback(); } catch (e) { }

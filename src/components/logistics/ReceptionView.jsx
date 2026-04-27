@@ -1,8 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
+import api from '../../services/api';
+import { socket } from '../../services/socketService';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { logisticsService } from '../../services/modules/logisticsService';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'sonner';
+import { Phone, Send, User, ShoppingBag, Tag, Loader2, XCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
     const { user } = useAuth();
@@ -10,6 +14,10 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
 
     // Steps: 1 = Scan/Select Remito, 2 = Process Items
     const [step, setStep] = useState(1);
+
+    // Hybrid Universal Scans (CargaDeposito clone)
+    const [recentScans, setRecentScans] = useState([]);
+    const [modosMap, setModosMap] = useState({});
 
     // Data
     const [remitoCode, setRemitoCode] = useState('');
@@ -35,6 +43,113 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
         refetchInterval: 15000
     });
 
+    // --- MODOS AND WSP SOCKETS ---
+    useEffect(() => {
+        api.get('/apiordenes/modos').then(res => {
+            if (res.data) {
+                const map = {};
+                res.data.forEach(m => { map[m.MOrIdModoOrden] = m.MOrNombreModo; });
+                setModosMap(map);
+            }
+        }).catch(e => console.error(e));
+
+        const handleWspUpdate = (data) => {
+            if (data && data.ordId) {
+                setRecentScans(prev => {
+                    const idx = prev.findIndex(c => c.idOrden === data.ordId);
+                    if (idx < 0) return prev;
+                    const newScans = [...prev];
+                    const target = { ...newScans[idx] };
+                    if (data.status === 'success') {
+                        target.status = 'wsp_success';
+                        target.message = 'Aviso de WhatsApp enviado correctamente.';
+                        setTimeout(() => removeScanRow(target.id), 8000);
+                    } else if (data.status === 'error') {
+                        target.status = 'wsp_error';
+                        target.message = data.reason || 'Error conectando con Callbell.';
+                        target.wspError = true;
+                    }
+                    newScans[idx] = target;
+                    return newScans;
+                });
+            }
+        };
+        socket.on('actualizado_wsp', handleWspUpdate);
+        return () => socket.off('actualizado_wsp', handleWspUpdate);
+    }, []);
+
+    const removeScanRow = (id) => setRecentScans(prev => prev.filter(c => c.id !== id));
+
+    const handleUpdatePhone = async (idOrden, cbNuevo) => {
+        try {
+            await api.post('/apiordenes/update-phone', { ordId: idOrden, nuevoTelefono: cbNuevo });
+            setRecentScans(prev => prev.map(c => c.idOrden === idOrden ? { ...c, status: 'wsp_waiting', message: 'Número corregido. Intentando...', wspError: false } : c));
+        } catch (error) { toast.error("No se pudo redespachar."); }
+    };
+
+    const handleOmitirWsp = async (idOrden) => {
+        try {
+            await api.post('/apiordenes/omitir-wsp', { ordId: idOrden });
+            setRecentScans(prev => prev.map(c => c.idOrden === idOrden ? { ...c, status: 'wsp_success', message: 'WSP omitido.', wspError: false } : c));
+            setTimeout(() => removeScanRow(idOrden), 8000); // clear omitido early
+        } catch (error) { toast.error("No se pudo omitir el WSP."); }
+    };
+
+    // --- UNIVERSAL SCAN (AUTO INGRESO) ---
+    const processUniversalScan = async (code) => {
+        const scanId = Date.now();
+        const isDuplicateMsg = recentScans.some(c => c.value === code && !['wsp_error', 'error'].includes(c.status));
+        if (isDuplicateMsg) {
+            toast.warning(`El código ${code} ya ha sido procesado.`);
+            return;
+        }
+
+        setRecentScans(prev => [{ id: scanId, value: code, status: 'loading', message: 'Resolviendo y procesando orden...', parsed: null }, ...prev]);
+        
+        try {
+            // 1. Resolve QR
+            let qrString = code;
+            let resolvedOrdId = null;
+            if (!code.includes('$*')) {
+                const resQr = await api.post('/api/logistics/bultos/resolve-qr', { code });
+                qrString = resQr.data.qrString;
+                resolvedOrdId = resQr.data.ordenId;
+            }
+
+            let parsedData = null;
+            try {
+                const parseRes = await api.post('/apiordenes/parse-qr', { ordenString: qrString });
+                if (parseRes.data.valid) parsedData = parseRes.data.data;
+            } catch (e) {}
+
+            setRecentScans(prev => prev.map(c => c.id === scanId ? { ...c, status: 'validating', message: 'Registrando en Stock...', parsed: parsedData } : c));
+
+            // 2. Si fue un bulto, ingresarlo silenciosamente si no estamos en remito mode (esto asegura Tracking Logistico real)
+            if (code.startsWith('PAQ-') || code.startsWith('PRE-')) {
+                try {
+                     await receiveItemMutation.mutateAsync({ envioId: null, codigoEtiqueta: code, usuarioId: user?.id || 1 });
+                } catch(e) {} // ignore generic receipt error here if it was done elsewhere
+            }
+
+            // 3. Ejecutar Ingreso Nativo (Sheets/Whatsapp)
+            const resData = await api.post('/apiordenes/data', { ordenString: qrString, estado: 'Ingresado' });
+            
+            // 4. Update the card
+            setRecentScans(prev => prev.map(c => c.id === scanId ? { 
+                ...c, 
+                status: resData.status === 202 ? 'info' : 'wsp_waiting', 
+                message: resData.status === 202 ? 'La orden se reingresó exitosamente al depósito.' : 'Orden guardada. Esperando WhatsApp...',
+                idOrden: resData.data.idOrden || resolvedOrdId
+            } : c));
+        } catch (err) {
+            const msg = err.response?.data?.error || err.message || 'Error inesperado.';
+            setRecentScans(prev => prev.map(c => c.id === scanId ? { ...c, status: 'error', message: msg } : c));
+            toast.error(msg);
+        }
+    };
+
+    const renderScanCard = useScanCardRenderer(handleUpdatePhone, handleOmitirWsp, removeScanRow, modosMap);
+
     // --- STEP 1: FETCH REMITO ---
     const handleSearchRemito = async (e, codeOverride) => {
         if (e) e.preventDefault();
@@ -43,46 +158,51 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
 
         setLoading(true);
         try {
-            const data = await logisticsService.getRemitoByCode(code);
+            if (code.toUpperCase().startsWith('REM-')) {
+                const data = await logisticsService.getRemitoByCode(code);
 
-            // VALIDATIONS
-            if (data.Estado === 'ESPERANDO_RETIRO') {
-                toast.warning('Remito sin validación de transporte');
-                if (!confirm("⚠️ ALERTA DE SEGURIDAD\n\nEste remito aún figura como 'ESPERANDO RETIRO'.\nEl transportista o cadete NO ha escaneado/validado la salida de la mercadería.\n\n¿Desea FORZAR la recepción de todos modos?")) {
-                    setRemitoCode('');
-                    setLoading(false);
-                    return;
+                // VALIDATIONS
+                if (data.Estado === 'ESPERANDO_RETIRO') {
+                    toast.warning('Remito sin validación de transporte');
+                    if (!confirm("⚠️ ALERTA DE SEGURIDAD\n\nEste remito aún figura como 'ESPERANDO RETIRO'.\nEl transportista o cadete NO ha escaneado/validado la salida de la mercadería.\n\n¿Desea FORZAR la recepción de todos modos?")) {
+                        setRemitoCode('');
+                        setLoading(false);
+                        return;
+                    }
                 }
-            }
 
-            // AREA VALIDATION
-            if (currentArea && data.AreaDestinoID !== currentArea && currentArea !== 'ADMIN' && currentArea !== 'TODOS') {
-                if (!confirm(`⛔ ALERTA DE AREA INCORRECTA\n\nEste remito está destinado a: ${data.AreaDestinoID}\nEstás recepcionando en: ${currentArea}\n\n¿Estás seguro que deseas recepcionarlo aquí?`)) {
-                    setRemitoCode('');
-                    setLoading(false);
-                    return;
+                // AREA VALIDATION
+                if (currentArea && data.AreaDestinoID !== currentArea && currentArea !== 'ADMIN' && currentArea !== 'TODOS') {
+                    if (!confirm(`⛔ ALERTA DE AREA INCORRECTA\n\nEste remito está destinado a: ${data.AreaDestinoID}\nEstás recepcionando en: ${currentArea}\n\n¿Estás seguro que deseas recepcionarlo aquí?`)) {
+                        setRemitoCode('');
+                        setLoading(false);
+                        return;
+                    }
                 }
+
+                setLoadedRemito(data);
+                setRemitoCode(code); // Ensure state sync
+
+                // Build Map
+                const map = {};
+                data.items.forEach(item => {
+                    map[item.CodigoEtiqueta] = {
+                        ...item,
+                        scanned: item.EstadoRecepcion === 'ESCANEADO' || item.EstadoRecepcion === 'RECIBIDO'
+                    };
+                });
+                setItemMap(map);
+                setStep(2);
+                setLastScanMsg(null);
+                setTimeout(() => scannerRef.current?.focus(), 100);
+            } else {
+                // UNIVERSAL SCAN (AUTO INGRESO/LOGISTICA)
+                await processUniversalScan(code);
+                setRemitoCode(''); // clear so they can scan again
             }
-
-            setLoadedRemito(data);
-            setRemitoCode(code); // Ensure state sync
-
-            // Build Map
-            const map = {};
-            data.items.forEach(item => {
-                map[item.CodigoEtiqueta] = {
-                    ...item,
-                    scanned: item.EstadoRecepcion === 'ESCANEADO' || item.EstadoRecepcion === 'RECIBIDO'
-                };
-            });
-            setItemMap(map);
-            setStep(2);
-            setLastScanMsg(null);
-            setTimeout(() => scannerRef.current?.focus(), 100);
-
         } catch (err) {
             console.error(err);
-            toast.error("Remito no encontrado: " + err.message);
+            toast.error("Error al buscar: " + err.message);
             setRemitoCode('');
         } finally {
             setLoading(false);
@@ -143,6 +263,8 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
                     codigoEtiqueta: code,
                     usuarioId: user?.id || 1
                 });
+                // SILENTLY ALSO DO UNIVERSAL SCAN
+                processUniversalScan(code);
             }
         } else {
             setLastScanMsg({ type: 'error', text: `NO PERTENECE: ${code}` });
@@ -435,22 +557,199 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
                                     </div>
                                 </div>
                             </div>
+
+                            {/* RECENT SCANS CARDS IF ANY IN STEP 2 */}
+                            {recentScans.length > 0 && (
+                                <div className="mt-8 border-t pt-8">
+                                    <h3 className="text-sm font-bold text-slate-500 mb-4 flex items-center gap-2 uppercase tracking-wider">
+                                        Notificaciones de Whatsapp / Sync
+                                    </h3>
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                                        {recentScans.map(renderScanCard)}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8">
-                        <div className="w-24 h-24 bg-slate-200 rounded-full flex items-center justify-center mb-6">
-                            <i className="fa-solid fa-truck-ramp-box text-4xl text-slate-300"></i>
-                        </div>
-                        <h2 className="text-xl font-bold text-slate-600 mb-2">Centro de Recepción</h2>
-                        <p className="max-w-md text-center text-sm mb-8">
-                            Seleccione un remito entrante del menú izquierdo para validar su ingreso al stock, o escanee un código manualmente.
-                        </p>
+                    <div className="flex flex-col h-full bg-slate-50 p-6 overflow-y-auto">
+                        {recentScans.length > 0 ? (
+                            <div className="w-full max-w-7xl mx-auto">
+                                <div className="mb-6 flex items-center justify-between">
+                                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">Panel de Ingresos Rápidos</h2>
+                                    <button onClick={() => setRecentScans([])} className="text-sm border border-slate-300 px-3 py-1.5 rounded-lg text-slate-500 hover:text-slate-800 font-bold transition-all hover:bg-slate-200">Limpiar Todo</button>
+                                </div>
+                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 auto-rows-max">
+                                    <AnimatePresence>
+                                        {recentScans.map(renderScanCard)}
+                                    </AnimatePresence>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8">
+                                <div className="w-24 h-24 bg-slate-200 rounded-full flex items-center justify-center mb-6">
+                                    <i className="fa-solid fa-truck-ramp-box text-4xl text-slate-300"></i>
+                                </div>
+                                <h2 className="text-xl font-bold text-slate-600 mb-2">Centro de Recepción</h2>
+                                <p className="max-w-md text-center text-sm mb-8">
+                                    Seleccione un remito entrante del menú izquierdo para validar su ingreso al stock, o escanee un código/bulto manualmente en el panel izquierdo.
+                                </p>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
         </div>
     );
 };
+
+// Extracted UI Render for Scan Card (CargaDeposito clone)
+function useScanCardRenderer(handleUpdatePhone, handleOmitirWsp, removeScanRow, modosMap) {
+    const [expandedCardId, setExpandedCardId] = useState(null);
+
+    return (code) => {
+        const isError = code.status === 'error' || code.status === 'wsp_error';
+        const isWspSuccess = code.status === 'wsp_success';
+        const isWspWaiting = code.status === 'wsp_waiting';
+        const isInfo = code.status === 'info';
+        const isLoading = code.status === 'loading' || code.status === 'validating';
+
+        const rawStringDisplay = code.parsed ? code.parsed.CodigoOrden : (code.value.length > 25 ? code.value.substring(0, 25) + '...' : code.value);
+
+        return (
+            <motion.div 
+                key={`card-${code.id}`}
+                layout
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className={`px-4 py-3 rounded-xl border-2 flex flex-col justify-between gap-3 transition-all shadow-sm cursor-pointer self-start
+                    ${isError ? 'bg-rose-50 border-rose-300 hover:bg-rose-100' :
+                        isWspSuccess ? 'bg-emerald-50 border-emerald-300 hover:bg-emerald-100' :
+                            isWspWaiting ? 'bg-violet-50 border-violet-300 hover:bg-violet-100' :
+                                isInfo ? 'bg-blue-50 border-blue-300 hover:bg-blue-100' :
+                                    isLoading ? 'bg-amber-50 border-amber-300' :
+                                        'bg-white border-slate-200 hover:bg-slate-50'
+                    }
+                `}
+                onClick={(e) => {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+                    setExpandedCardId(prev => prev === code.id ? null : code.id);
+                }}
+            >
+                <div className="flex items-center justify-between gap-2">
+                    <span className={`font-black text-lg truncate ${isError ? 'text-rose-800' : isWspSuccess ? 'text-emerald-800' : isWspWaiting ? 'text-violet-800' : isLoading ? 'text-amber-800' : 'text-slate-800'}`}>
+                        {rawStringDisplay}
+                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {isLoading && <Loader2 className="text-amber-500 animate-spin" size={16} />}
+                        <span className={`px-2.5 py-1 text-[0.65rem] font-bold uppercase rounded-lg tracking-wider border
+                            ${isError ? 'bg-rose-100 text-rose-700 border-rose-300' :
+                                isWspSuccess ? 'bg-emerald-100 text-emerald-700 border-emerald-300' :
+                                    isWspWaiting ? 'bg-violet-100 text-violet-700 border-violet-300' :
+                                        isInfo ? 'bg-blue-100 text-blue-700 border-blue-300' :
+                                            code.status === 'validating' ? 'bg-amber-100 text-amber-700 border-amber-300' :
+                                                isLoading ? 'bg-blue-100 text-blue-700 border-blue-300' :
+                                                    'bg-slate-100 text-slate-600 border-slate-300'
+                            }
+                        `}>
+                            {isError ? 'RECHAZADO' :
+                                isWspSuccess ? 'ENVIADO' :
+                                    isWspWaiting ? 'EN ESPERA' :
+                                        isInfo ? 'REINGRESADO' :
+                                            code.status === 'validating' ? 'VALIDANDO...' :
+                                                isLoading ? 'GUARDANDO...' : 'LISTO'}
+                        </span>
+                        {code.parsed && (
+                            <span className={`text-xs transition-transform ${expandedCardId === code.id ? 'rotate-180' : ''} ${isError ? 'text-rose-400' : 'text-slate-400'}`}>▼</span>
+                        )}
+                        <button onClick={(e) => { e.stopPropagation(); removeScanRow(code.id); }} className="text-slate-400 hover:text-slate-700 ml-1"><XCircle size={16} /></button>
+                    </div>
+                </div>
+
+                {/* Información expandida */}
+                <AnimatePresence>
+                {(expandedCardId === code.id || isError || isWspWaiting || code.wspError) && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2, ease: 'easeOut' }}
+                        className="overflow-hidden"
+                    >
+                    <div className="mt-3 flex flex-col gap-2" onClick={e => e.stopPropagation()}>
+                        {/* Info parseada */}
+                        {code.parsed && (
+                            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 bg-white/70 rounded-lg p-2 border border-slate-100 text-xs">
+                                <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><User size={10} /> Cliente</span>
+                                    <span className="text-slate-800 font-semibold truncate">{code.parsed.CodigoCliente}</span>
+                                </div>
+                                <div className="flex flex-col gap-0.5 col-span-2 sm:col-span-1">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><ShoppingBag size={10} /> Producto</span>
+                                    <span className="text-slate-800 font-semibold truncate">{code.parsed.ProductoNombre}</span>
+                                </div>
+                                <div className="flex flex-col gap-0.5 col-span-2">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Tag size={10} /> Trabajo</span>
+                                    <span className="text-slate-700 italic truncate">{code.parsed.NombreTrabajo || 'Sin Descripción'}</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Mensaje de error / WSP */}
+                        {code.message && (
+                            <div className={`text-[0.8rem] font-semibold px-3 py-2 rounded-lg border flex justify-between items-center gap-2
+                                ${isError ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                    isWspSuccess ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                        isWspWaiting ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                            'bg-blue-50 text-blue-800 border-blue-200'
+                                }
+                            `}>
+                                <span className="flex-1 text-center font-medium">{code.message}</span>
+                                {isWspWaiting && code.idOrden && (
+                                    <button
+                                        title="Marcar como avisado sin enviar WhatsApp"
+                                        onClick={() => handleOmitirWsp(code.idOrden)}
+                                        className="shrink-0 bg-violet-100 hover:bg-violet-200 text-violet-700 rounded-md px-2 py-0.5 text-[0.7rem] font-bold transition-colors flex items-center gap-1"
+                                    >
+                                        <XCircle size={10} /> Saltar WSP
+                                    </button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Re-Despacho si falla WhatsApp */}
+                        {code.wspError && code.idOrden && (
+                            <div className="bg-white p-2 border border-rose-200 rounded-lg flex items-center gap-2 mt-1 shadow-sm">
+                                <div className="flex bg-rose-50 text-rose-500 p-1.5 border border-rose-100 rounded-md">
+                                    <Phone size={14} />
+                                </div>
+                                <div className="flex-1">
+                                    <input
+                                        type="text"
+                                        placeholder="Celular válido..."
+                                        className="w-full bg-slate-50 border border-slate-200 py-[4px] px-2 rounded-md text-[0.8rem] outline-none focus:border-[#409cf9]"
+                                        id={`phone-input-${code.idOrden}`}
+                                    />
+                                </div>
+                                <button
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 flex items-center gap-1.5 px-3 rounded-md text-[0.75rem] transition-colors"
+                                    onClick={() => {
+                                        const val = document.getElementById(`phone-input-${code.idOrden}`).value;
+                                        if (val) handleUpdatePhone(code.idOrden, val);
+                                    }}
+                                >
+                                    <Send size={12} /> Redespachar
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                    </motion.div>
+                )}
+                </AnimatePresence>
+            </motion.div>
+        );
+    };
+}
 
 export default ReceptionView;

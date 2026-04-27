@@ -3,38 +3,64 @@
  * Cuentas de clientes — lista activos, búsqueda, ciclos de crédito y registro de pagos.
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   Search, RefreshCw, TrendingDown, TrendingUp, AlertTriangle,
   CheckCircle2, Clock, CreditCard, BarChart3, FileText,
   Calendar, PlayCircle, StopCircle, X,
   ArrowUpCircle, ArrowDownCircle, Info, Users, Zap,
-  DollarSign, PlusCircle, Package, RotateCcw, Layers,
+  DollarSign, PlusCircle, Package, RotateCcw, Layers, Download, Printer
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-const API = import.meta.env.VITE_API_URL || '';
-const tok = () => { try { return JSON.parse(localStorage.getItem('user'))?.token || ''; } catch { return ''; } };
+import api from '../../services/api';
 
 const fetchAPI = async (url, opts = {}) => {
-  const res = await fetch(`${API}${url}`, {
-    headers: { Authorization: `Bearer ${tok()}`, 'Content-Type': 'application/json', ...opts.headers },
-    ...opts,
-  });
-  if (!res.ok) throw new Error((await res.json()).error || `Error ${res.status}`);
-  return res.json();
+  try {
+    const cleanUrl = url.startsWith('/api') ? url.replace('/api', '') : url;
+    const isPostFile = opts.body instanceof FormData;
+    const config = {
+      method: opts.method || 'GET',
+      url: cleanUrl,
+      data: opts.body,
+      headers: opts.headers || {},
+    };
+    if (!isPostFile) config.headers['Content-Type'] = 'application/json';
+    const res = await api.request(config);
+    // Para simplificar la retrocompatibilidad con fetch, simulamos { data, message, etc } de axios
+    // y lo devolvemos directo.
+    return res.data;
+  } catch (error) {
+    if (error.response?.data) throw new Error(error.response.data.error || error.response.data.message || 'Error en la solicitud');
+    throw error;
+  }
 };
 
-const fmt      = (n, sym) => `${sym || '$U'} ${new Intl.NumberFormat('es-UY', { minimumFractionDigits: 2 }).format(Number(n ?? 0))}`;
-const fmtNum   = (n) => new Intl.NumberFormat('es-UY', { minimumFractionDigits: 2 }).format(Number(n ?? 0));
+const fmt      = (n, sym) => `${sym || '$'} ${new Intl.NumberFormat('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n ?? 0))}`;
+const fmtNum   = (n) => new Intl.NumberFormat('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n ?? 0));
 const fmtFecha = (f) => f ? new Date(f).toLocaleDateString('es-UY') : '—';
 const diasRestantes = (fc) => fc ? Math.ceil((new Date(fc) - new Date()) / 86400000) : null;
 
 // Extrae solo el código de orden de conceptos tipo "Entrega 0.93 uds orden XDF-76630 (Plan 1)"
 const extraerOrden = (concepto) => {
   if (!concepto) return '';
-  const m = concepto.match(/orden\s+([\w-]+)/i);
+  const m = concepto.match(/orden$s+([$w-]+)/i);
   return m ? m[1] : concepto;
+};
+
+const handleDescargarRecibo = async (e, m) => {
+  e.preventDefault();
+  try {
+    const toastId = toast.loading('Generando recibo...');
+    const res = await api.get(`/contabilidad/movimientos/${m.MovIdMovimiento}/recibo/pdf`, { responseType: 'blob' });
+    const blob = new Blob([res.data], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    toast.dismiss(toastId);
+  } catch (err) {
+    toast.error('Error al descargar el recibo.');
+  }
 };
 
 // ── Badge ─────────────────────────────────────────────────────────────────────
@@ -43,8 +69,8 @@ const Badge = ({ children, color = 'slate' }) => {
     slate:  'bg-slate-100 text-slate-600 border-slate-200',
     amber:  'bg-amber-100 text-amber-700 border-amber-200',
     red:    'bg-red-100 text-red-700 border-red-200',
-    green:  'bg-green-100 text-green-700 border-green-200',
-    blue:   'bg-blue-100 text-blue-700 border-blue-200',
+    green:  'bg-green-100 text-green-700 border-emerald-500/20',
+    blue:   'bg-blue-100 text-blue-700 border-indigo-500/20',
     indigo: 'bg-indigo-100 text-indigo-700 border-indigo-200',
   }[color] || 'bg-slate-100 text-slate-600 border-slate-200';
   return <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${c}`}>{children}</span>;
@@ -58,15 +84,15 @@ const FilaCliente = ({ c, seleccionado, onClick }) => {
 
   return (
     <button onClick={onClick}
-      className={`w-full text-left px-3 py-3 hover:bg-blue-50 transition-colors border-b border-slate-100
-        ${seleccionado ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'border-l-4 border-l-transparent'}`}>
+      className={`w-full text-left px-3 py-3 hover:bg-indigo-50 transition-colors border-b border-slate-200
+        ${seleccionado ? 'bg-indigo-50 border-l-4 border-l-indigo-400' : 'border-l-4 border-l-transparent'}`}>
       <div className="flex items-center gap-2 mb-1">
         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0
           ${negativo ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
           {c.Nombre?.[0]?.toUpperCase()}
         </div>
         <span className="text-sm font-semibold text-slate-800 truncate flex-1">{c.Nombre}</span>
-        <span className="text-[10px] font-mono text-slate-400 shrink-0">#{c.CodCliente || c.CliIdCliente}</span>
+        <span className="text-[10px] font-mono text-slate-500 shrink-0">#{c.CodCliente || c.CliIdCliente}</span>
       </div>
       <div className="flex items-center gap-1 pl-9">
         {c.EsSemanal      == 1 && <Badge color="indigo"><Calendar size={9} /> Sem.</Badge>}
@@ -87,7 +113,7 @@ const FilaCliente = ({ c, seleccionado, onClick }) => {
 const ModalPago = ({ cuenta, onClose, onSuccess }) => {
   // Moneda de la cuenta (la de la deuda)
   const monedaCuenta   = cuenta.MonIdMoneda === 2 ? 'USD' : 'UYU';
-  const simboloCuenta  = cuenta.MonSimbolo || (monedaCuenta === 'USD' ? 'U$S' : '$U');
+  const simboloCuenta  = cuenta.MonSimbolo || (monedaCuenta === 'USD' ? 'US$' : '$');
 
   const [form, setForm] = useState({
     MovTipo:      'ANTICIPO',
@@ -123,7 +149,7 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
 
   const info       = tiposInfo[tipo];
   const colorHeader = { green: 'from-green-500 to-emerald-500', blue: 'from-blue-500 to-cyan-500', amber: 'from-amber-500 to-orange-500', indigo: 'from-indigo-500 to-violet-500', red: 'from-red-500 to-rose-500' }[info.color];
-  const colorBtn   = { green: 'bg-green-600 hover:bg-green-700', blue: 'bg-blue-600 hover:bg-blue-700', amber: 'bg-amber-500 hover:bg-amber-600', indigo: 'bg-indigo-600 hover:bg-indigo-700', red: 'bg-red-600 hover:bg-red-700' }[info.color];
+  const colorBtn   = { green: 'bg-green-600 hover:bg-green-700', blue: 'bg-blue-600 hover:bg-blue-700', amber: 'bg-amber-900/100 hover:bg-amber-600', indigo: 'bg-indigo-600 hover:bg-indigo-700', red: 'bg-red-600 hover:bg-red-700' }[info.color];
 
   // Cargar métodos de pago y monedas desde la BD al montar
   useEffect(() => {
@@ -215,13 +241,13 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] overflow-y-auto">
-        <div className={`px-6 py-4 flex items-center justify-between bg-gradient-to-r ${colorHeader} text-white sticky top-0`}>
+      <div className="bg-[#f1f5f9] rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] overflow-y-auto">
+        <div className={`px-6 py-4 flex items-center justify-between bg-gradient-to-r ${colorHeader} text-slate-800 sticky top-0`}>
           <div>
             <p className="text-xs uppercase tracking-widest opacity-80">Cuenta #{cuenta.CueIdCuenta} · {cuenta.UnidadLabel || cuenta.CueTipo} · {simboloCuenta}</p>
             <h2 className="text-lg font-bold mt-0.5">Registrar Movimiento</h2>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-white/20 rounded-lg"><X size={16} /></button>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg"><X size={16} /></button>
         </div>
 
         <form onSubmit={guardar} className="px-6 py-5 space-y-4">
@@ -234,12 +260,12 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
                 <button type="button" key={key}
                   onClick={() => setForm(f => ({ ...f, MovTipo: key, MovConcepto: '' }))}
                   className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all text-left
-                    ${form.MovTipo === key ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-blue-300 hover:bg-blue-50'}`}>
+                    ${form.MovTipo === key ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-slate-50/50 text-slate-600 border-slate-200 hover:border-blue-300 hover:bg-indigo-50'}`}>
                   {val.label}
                 </button>
               ))}
             </div>
-            <p className="mt-2 text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2">{info.desc}</p>
+            <p className="mt-2 text-[11px] text-slate-400 bg-slate-50/50 rounded-lg px-3 py-2">{info.desc}</p>
           </div>
 
           {/* Moneda y Forma de pago en la misma fila */}
@@ -248,11 +274,11 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Moneda del pago</label>
                 {loadingMeta ? (
-                  <div className="flex items-center gap-2 py-2 text-xs text-slate-400"><RefreshCw size={11} className="animate-spin" /> Cargando...</div>
+                  <div className="flex items-center gap-2 py-2 text-xs text-slate-500"><RefreshCw size={11} className="animate-spin" /> Cargando...</div>
                 ) : (
                   <select value={form.MonedaPagoId}
                     onChange={e => setForm(f => ({ ...f, MonedaPagoId: e.target.value, TipoCambio: '' }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white">
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-[#f1f5f9]">
                     {monedas.map(m => (
                       <option key={m.MonIdMoneda} value={m.MonIdMoneda}>
                         {m.MonSimbolo} — {m.MonNombre}
@@ -263,7 +289,7 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
                 )}
                 {/* Aviso conversión cruzada */}
                 {esCruzado && (
-                  <p className="text-[10px] text-amber-600 font-semibold mt-1 bg-amber-50 px-2 py-1 rounded">
+                  <p className="text-[10px] text-amber-600 font-semibold mt-1 bg-amber-900/10 px-2 py-1 rounded">
                     ⚡ Pago en {monedaPagoObj?.MonSimbolo} → imputa en {simboloCuenta}
                   </p>
                 )}
@@ -272,11 +298,11 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Forma de pago</label>
                 {loadingMeta ? (
-                  <div className="flex items-center gap-2 py-2 text-xs text-slate-400"><RefreshCw size={11} className="animate-spin" /> Cargando...</div>
+                  <div className="flex items-center gap-2 py-2 text-xs text-slate-500"><RefreshCw size={11} className="animate-spin" /> Cargando...</div>
                 ) : (
                   <select value={form.MetodoPagoId}
                     onChange={e => setForm(f => ({ ...f, MetodoPagoId: e.target.value }))}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white">
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-[#f1f5f9]">
                     {metodosPago.map(mp => (
                       <option key={mp.MPaIdMetodoPago} value={mp.MPaIdMetodoPago}>
                         {mp.MPaDescripcionMetodo}
@@ -292,7 +318,7 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
 
           {/* Tipo de cambio (solo si es cruzado) */}
           {esCruzado && (
-            <div className="bg-amber-50 rounded-xl p-3 border border-amber-200">
+            <div className="bg-amber-900/10 rounded-xl p-3 border border-amber-200">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs font-semibold text-amber-800">Tipo de cambio</p>
                 {cotizacion && (
@@ -304,21 +330,21 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">1 {form.Moneda} =</span>
+                <span className="text-xs text-slate-400">1 {form.Moneda} =</span>
                 <input type="number" min="0.01" step="0.0001" required
                   value={form.TipoCambio}
                   onChange={e => setForm(f => ({ ...f, TipoCambio: e.target.value }))}
                   placeholder="Ej: 43.50"
-                  className="flex-1 px-3 py-2 border border-amber-200 bg-white rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 font-mono" />
-                <span className="text-xs text-slate-500">{monedaCuenta}</span>
+                  className="flex-1 px-3 py-2 border border-amber-200 bg-[#f1f5f9] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 font-mono" />
+                <span className="text-xs text-slate-400">{monedaCuenta}</span>
               </div>
               {/* Preview conversión */}
               {importeConvertido !== null && (
                 <div className="mt-2 flex items-center gap-2 text-xs">
-                  <span className="text-slate-500">{importeNum} {form.Moneda}</span>
+                  <span className="text-slate-400">{importeNum} {form.Moneda}</span>
                   <span className="text-amber-500">→</span>
                   <span className="font-bold text-slate-700">{fmtNum(importeConvertido)} {monedaCuenta}</span>
-                  <span className="text-[10px] text-slate-400">(se imputa en la cuenta)</span>
+                  <span className="text-[10px] text-slate-500">(se imputa en la cuenta)</span>
                 </div>
               )}
             </div>
@@ -330,7 +356,7 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
               Importe ({simboloPago})
             </label>
             <div className="relative">
-              <DollarSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <DollarSign size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input type="number" min="0.01" step="0.01" required
                 value={form.MovImporte}
                 onChange={e => setForm(f => ({ ...f, MovImporte: e.target.value }))}
@@ -364,11 +390,11 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
           {/* Acciones */}
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
-              className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 transition-colors">
+              className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50/50 transition-colors">
               Cancelar
             </button>
             <button type="submit" disabled={saving}
-              className={`flex-1 py-2.5 rounded-lg text-sm text-white font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${colorBtn}`}>
+              className={`flex-1 py-2.5 rounded-lg text-sm text-slate-800 font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2 ${colorBtn}`}>
               {saving ? <RefreshCw size={14} className="animate-spin" /> : <PlusCircle size={14} />}
               Confirmar
             </button>
@@ -380,7 +406,7 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
 };
 
 // ── Panel movimientos ─────────────────────────────────────────────────────────
-const MovimientosPanel = ({ CueIdCuenta, simbolo = '$U', onClose }) => {
+const MovimientosPanel = ({ CueIdCuenta, simbolo = '$', onClose }) => {
   const [movs, setMovs]       = useState([]);
   const [loading, setLoading] = useState(false);
   const [desde, setDesde]     = useState('');
@@ -400,51 +426,61 @@ const MovimientosPanel = ({ CueIdCuenta, simbolo = '$U', onClose }) => {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const esCredito = (t) => ['PAGO','ANTICIPO','NOTA_CREDITO','AJUSTE_POS','DEVOLUCION','SALDO_INICIAL'].includes(t);
+  const esCredito = (mov) => Number(mov.MovImporte) > 0;
 
   return (
     <div className="mt-3 rounded-xl border border-slate-200 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 bg-blue-600 text-white">
         <div className="flex items-center gap-2"><BarChart3 size={14} /><span className="text-sm font-semibold">Libro Mayor</span></div>
         <div className="flex items-center gap-2">
-          <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className="text-xs bg-white/10 border border-white/20 rounded px-2 py-1 text-white" />
-          <span className="text-white/50 text-xs">→</span>
-          <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className="text-xs bg-white/10 border border-white/20 rounded px-2 py-1 text-white" />
-          <button onClick={cargar} className="text-xs px-3 py-1 bg-white/20 hover:bg-white/30 rounded-lg">Filtrar</button>
-          <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-lg"><X size={14} /></button>
+          <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className="text-xs bg-slate-50 border border-white/20 rounded px-2 py-1 text-slate-800" />
+          <span className="text-slate-800/50 text-xs">→</span>
+          <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className="text-xs bg-slate-50 border border-white/20 rounded px-2 py-1 text-slate-800" />
+          <button onClick={cargar} className="text-xs px-3 py-1 bg-slate-50 hover:bg-slate-200 rounded-lg">Filtrar</button>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg"><X size={14} /></button>
         </div>
       </div>
       {loading ? (
-        <div className="flex justify-center py-6 bg-white"><div className="animate-spin h-5 w-5 border-2 border-blue-400 border-t-transparent rounded-full" /></div>
+        <div className="flex justify-center py-6 bg-[#f1f5f9]"><div className="animate-spin h-5 w-5 border-2 border-blue-400 border-t-transparent rounded-full" /></div>
       ) : (
-        <div className="overflow-x-auto max-h-64 bg-white">
+        <div className="overflow-x-auto max-h-64 bg-[#f1f5f9]">
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-slate-50 border-b border-slate-200">
-              <tr className="text-left text-slate-400">
+            <thead className="sticky top-0 bg-slate-50/50 border-b border-slate-200">
+              <tr className="text-left text-slate-500">
                 <th className="px-4 py-2">Fecha</th>
                 <th className="px-4 py-2">Tipo</th>
                 <th className="px-4 py-2">Concepto</th>
+                <th className="px-4 py-2 text-right">Saldo In.</th>
                 <th className="px-4 py-2 text-right">Importe</th>
-                <th className="px-4 py-2 text-right">Saldo</th>
+                <th className="px-4 py-2 text-right">Saldo Fn.</th>
+                <th className="px-4 py-2 text-center w-10"></th>
               </tr>
             </thead>
             <tbody>
               {movs.map(m => (
-                <tr key={m.MovIdMovimiento} className="border-b border-slate-100 hover:bg-blue-50/30 transition-colors">
-                  <td className="px-4 py-2 text-slate-400 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
+                <tr key={m.MovIdMovimiento} className="border-b border-slate-200 hover:bg-indigo-50/30 transition-colors">
+                  <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
                   <td className="px-4 py-2"><span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{m.MovTipo}</span></td>
                   <td className="px-4 py-2 text-slate-600 max-w-xs" title={m.MovConcepto}><span className="block truncate text-xs font-medium">{m.MovConcepto || '—'}</span></td>
-                  <td className={`px-4 py-2 text-right font-semibold ${esCredito(m.MovTipo) ? 'text-green-600' : 'text-red-600'}`}>
+                  <td className="px-4 py-2 text-right text-slate-500 font-medium"><span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(Number(m.MovSaldoPosterior) - Number(m.MovImporte))}</td>
+                  <td className={`px-4 py-2 text-right font-semibold ${esCredito(m) ? 'text-green-600' : 'text-red-600'}`}>
                     <span className="flex items-center justify-end gap-0.5">
-                      {esCredito(m.MovTipo) ? <ArrowUpCircle size={10} /> : <ArrowDownCircle size={10} />}
+                      {esCredito(m) ? <ArrowUpCircle size={10} /> : <ArrowDownCircle size={10} />}
                       <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>
                       {fmtNum(Math.abs(Number(m.MovImporte)))}
                     </span>
                   </td>
-                  <td className="px-4 py-2 text-right text-slate-700 font-medium"><span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(Number(m.MovSaldoPosterior))}</td>
+                  <td className="px-4 py-2 text-right text-slate-800 font-bold"><span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(Number(m.MovSaldoPosterior))}</td>
+                  <td className="px-4 py-2 text-center">
+                    {(m.MovTipo === 'PAGO' || m.MovTipo === 'ANTICIPO' || m.MovTipo === 'COBRO' || m.MovTipo === 'SALDO_INICIAL') && (
+                      <button onClick={(e) => handleDescargarRecibo(e, m)} title="Descargar Recibo" className="inline-flex p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                        <Download size={14} />
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
-              {movs.length === 0 && <tr><td colSpan={5} className="text-center py-6 text-slate-400">Sin movimientos</td></tr>}
+              {movs.length === 0 && <tr><td colSpan={7} className="text-center py-6 text-slate-500">Sin movimientos</td></tr>}
             </tbody>
           </table>
         </div>
@@ -472,35 +508,35 @@ const DeudasPanel = ({ CueIdCuenta, simbolo, onClose }) => {
 
   return (
     <div className="mt-3 rounded-xl border border-slate-200 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 bg-amber-500 text-white">
+      <div className="flex items-center justify-between px-4 py-3 bg-amber-900/100 text-slate-800">
         <div className="flex items-center gap-2"><FileText size={14} /><span className="text-sm font-semibold">Documentos Pendientes</span></div>
-        <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-lg"><X size={14} /></button>
+        <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg"><X size={14} /></button>
       </div>
       {loading ? (
-        <div className="flex justify-center py-6 bg-white"><div className="animate-spin h-5 w-5 border-2 border-amber-400 border-t-transparent rounded-full" /></div>
+        <div className="flex justify-center py-6 bg-[#f1f5f9]"><div className="animate-spin h-5 w-5 border-2 border-amber-400 border-t-transparent rounded-full" /></div>
       ) : (
-        <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto bg-white">
+        <div className="divide-y divide-slate-100 max-h-64 overflow-y-auto bg-[#f1f5f9]">
           {deudas.map(d => (
             <div key={d.DDeIdDocumento}
-              className={`flex items-center justify-between px-4 py-3 hover:bg-amber-50/30 ${d.DiasVencido > 0 ? 'bg-red-50/30' : ''}`}>
+              className={`flex items-center justify-between px-4 py-3 hover:bg-amber-900/10/30 ${d.DiasVencido > 0 ? 'bg-rose-900/10/30' : ''}`}>
               <div className="flex items-center gap-3">
-                <Clock size={13} className={d.DiasVencido > 0 ? 'text-red-500' : 'text-slate-400'} />
+                <Clock size={13} className={d.DiasVencido > 0 ? 'text-red-500' : 'text-slate-500'} />
                 <div>
-                  <p className="text-xs font-semibold text-slate-700">Orden #{d.OrdIdOrden}</p>
-                  <p className="text-[11px] text-slate-400">Vence: {fmtFecha(d.DDeFechaVencimiento)}</p>
+                  <p className="text-xs font-semibold text-slate-700">Orden #{d.CodigoOrden || d.OrdIdOrden}</p>
+                  <p className="text-[11px] text-slate-500">Vence: {fmtFecha(d.DDeFechaVencimiento)}</p>
                 </div>
                 <Badge color={d.DiasVencido > 0 ? 'red' : d.DDeEstado === 'COBRADO' ? 'green' : 'amber'}>
                   {d.DiasVencido > 0 ? `${d.DiasVencido}d vencido` : d.DDeEstado}
                 </Badge>
               </div>
               <div className="text-right">
-                <p className="text-[11px] text-slate-400">Total: {fmt(d.DDeImporteOriginal, simbolo)}</p>
+                <p className="text-[11px] text-slate-500">Total: {fmt(d.DDeImporteOriginal, simbolo)}</p>
                 <p className="text-sm font-bold text-slate-800">Pend: {fmt(d.DDeImportePendiente, simbolo)}</p>
               </div>
             </div>
           ))}
           {deudas.length === 0 && (
-            <div className="text-center py-6 text-slate-400 text-sm">
+            <div className="text-center py-6 text-slate-500 text-sm">
               <CheckCircle2 size={24} className="mx-auto mb-2 text-green-400" />Sin deudas
             </div>
           )}
@@ -561,11 +597,11 @@ const CiclosPanel = ({ cuenta, CliIdCliente, onClose, onCicloChanged }) => {
         <div className="flex gap-2">
           {!cicloAbierto && (
             <button onClick={abrirCiclo} disabled={working}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors font-medium disabled:opacity-50">
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-50 hover:bg-slate-200 rounded-lg transition-colors font-medium disabled:opacity-50">
               {working ? <RefreshCw size={11} className="animate-spin" /> : <PlayCircle size={11} />}Abrir ciclo
             </button>
           )}
-          <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-lg"><X size={14} /></button>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg"><X size={14} /></button>
         </div>
       </div>
 
@@ -574,15 +610,15 @@ const CiclosPanel = ({ cuenta, CliIdCliente, onClose, onCicloChanged }) => {
           <div className="flex items-start justify-between gap-4">
             <div className="grid grid-cols-3 gap-4 flex-1">
               <div>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wide">Período</p>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Período</p>
                 <p className="text-xs font-bold text-slate-700">{fmtFecha(cicloAbierto.CicFechaInicio)} → {fmtFecha(cicloAbierto.CicFechaCierre)}</p>
               </div>
               <div>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wide">Órdenes</p>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Órdenes</p>
                 <p className="text-sm font-bold text-red-600">{fmt(cicloAbierto.CicTotalOrdenes, cuenta.MonSimbolo)}</p>
               </div>
               <div>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wide">Pagos</p>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Pagos</p>
                 <p className="text-sm font-bold text-green-600">{fmt(cicloAbierto.CicTotalPagos, cuenta.MonSimbolo)}</p>
               </div>
             </div>
@@ -595,7 +631,7 @@ const CiclosPanel = ({ cuenta, CliIdCliente, onClose, onCicloChanged }) => {
                 </div>;
               })()}
               <button onClick={() => cerrarCiclo(cicloAbierto.CicIdCiclo)} disabled={working}
-                className="flex items-center gap-1 text-xs px-3 py-1.5 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors font-medium disabled:opacity-50">
+                className="flex items-center gap-1 text-xs px-3 py-1.5 bg-rose-900/10 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors font-medium disabled:opacity-50">
                 {working ? <RefreshCw size={11} className="animate-spin" /> : <StopCircle size={11} />}Cerrar ciclo
               </button>
             </div>
@@ -604,21 +640,21 @@ const CiclosPanel = ({ cuenta, CliIdCliente, onClose, onCicloChanged }) => {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-5 bg-white"><div className="animate-spin h-5 w-5 border-2 border-indigo-400 border-t-transparent rounded-full" /></div>
+        <div className="flex justify-center py-5 bg-[#f1f5f9]"><div className="animate-spin h-5 w-5 border-2 border-indigo-400 border-t-transparent rounded-full" /></div>
       ) : (
-        <div className="divide-y divide-slate-100 max-h-44 overflow-y-auto bg-white">
+        <div className="divide-y divide-slate-100 max-h-44 overflow-y-auto bg-[#f1f5f9]">
           {ciclos.filter(c => c.CicEstado !== 'ABIERTO').map(c => (
-            <div key={c.CicIdCiclo} className="px-4 py-2.5 flex items-center justify-between text-xs hover:bg-slate-50">
+            <div key={c.CicIdCiclo} className="px-4 py-2.5 flex items-center justify-between text-xs hover:bg-slate-50/50">
               <div className="flex items-center gap-2">
                 <Badge color={estadoColor(c.CicEstado)}>{c.CicEstado}</Badge>
-                <span className="text-slate-500">{fmtFecha(c.CicFechaInicio)} → {fmtFecha(c.CicFechaCierre)}</span>
+                <span className="text-slate-400">{fmtFecha(c.CicFechaInicio)} → {fmtFecha(c.CicFechaCierre)}</span>
                 {c.CicNumeroFactura && <span className="font-mono bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded text-[10px]">{c.CicNumeroFactura}</span>}
               </div>
               <span className="font-semibold text-slate-700">{fmt(c.CicSaldoFacturar, cuenta.MonSimbolo)}</span>
             </div>
           ))}
           {ciclos.length === 0 && (
-            <div className="text-center py-5 text-slate-400 text-xs"><Info size={18} className="mx-auto mb-1 opacity-40" />Sin ciclos</div>
+            <div className="text-center py-5 text-slate-500 text-xs"><Info size={18} className="mx-auto mb-1 opacity-40" />Sin ciclos</div>
           )}
         </div>
       )}
@@ -687,12 +723,14 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
     try {
       const data = await fetchAPI(`/api/contabilidad/cuentas/${cuenta.CueIdCuenta}/movimientos?top=200`);
       const todos = data.data || [];
-      // Filtrar los que pertenecen a este plan por el texto del concepto
+      // Filtrar los que pertenecen a este plan por el texto del concepto u observaciones
       const delPlan = todos.filter(m =>
         m.MovConcepto?.includes(`(Plan ${id})`) ||
         m.MovConcepto?.includes(`Plan #${id}`) ||
         m.MovConcepto?.includes(`plan ${id}`) ||
-        m.MovConcepto?.toLowerCase().includes(`plan${id}`)
+        m.MovConcepto?.toLowerCase().includes(`plan${id}`) ||
+        m.MovObservaciones?.includes(`Plan #${id}`) ||
+        m.MovObservaciones?.includes(`plan ${id}`)
       );
       setMovsPlan(p => ({ ...p, [id]: delPlan }));
     } catch (e) { toast.error(e.message); }
@@ -758,17 +796,17 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
 
   return (
     <div className="mt-3 rounded-xl border border-violet-200 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 bg-violet-600 text-white">
+      <div className="flex items-center justify-between px-4 py-3 bg-violet-600 text-slate-800">
         <div className="flex items-center gap-2">
           <Layers size={14} /><span className="text-sm font-semibold">Planes de Recursos</span>
           {planActivo && <Badge color="green"><span className="animate-pulse">●</span> ACTIVO</Badge>}
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-1 text-xs px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors font-medium">
+            className="flex items-center gap-1 text-xs px-3 py-1.5 bg-slate-50 hover:bg-slate-200 rounded-lg transition-colors font-medium">
             <PlusCircle size={11} /> Nuevo plan
           </button>
-          <button onClick={onClose} className="p-1 hover:bg-white/20 rounded-lg"><X size={14} /></button>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg"><X size={14} /></button>
         </div>
       </div>
 
@@ -778,13 +816,13 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
           <p className="text-xs font-semibold text-violet-800">Nuevo plan de recursos</p>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[10px] text-slate-500 uppercase">Cantidad</label>
+              <label className="text-[10px] text-slate-400 uppercase">Cantidad</label>
               <input type="number" required min="0.01" step="0.01"
                 value={form.PlaCantidadTotal} onChange={e => setForm(f => ({ ...f, PlaCantidadTotal: e.target.value }))}
                 className="w-full mt-0.5 px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/30" />
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 uppercase">Unidad</label>
+              <label className="text-[10px] text-slate-400 uppercase">Unidad</label>
               <div className="w-full mt-0.5 px-2 py-1.5 border border-violet-200 rounded text-sm bg-violet-100 text-violet-800 font-semibold">
                 {unidadLabel}
               </div>
@@ -792,13 +830,13 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="text-[10px] text-slate-500 uppercase">Importe pagado</label>
+              <label className="text-[10px] text-slate-400 uppercase">Importe pagado</label>
               <input type="number" min="0" step="0.01"
                 value={form.PlaImportePagado} onChange={e => setForm(f => ({ ...f, PlaImportePagado: e.target.value }))}
                 className="w-full mt-0.5 px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none" />
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 uppercase">Moneda</label>
+              <label className="text-[10px] text-slate-400 uppercase">Moneda</label>
               <select value={form.MonedaPagoId} onChange={e => setForm(f => ({ ...f, MonedaPagoId: e.target.value }))}
                 className="w-full mt-0.5 px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none">
                 {monedas.map(m => <option key={m.MonIdMoneda} value={m.MonIdMoneda}>{m.MonSimbolo} — {m.MonNombre}</option>)}
@@ -806,7 +844,7 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
               </select>
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 uppercase">Forma de pago</label>
+              <label className="text-[10px] text-slate-400 uppercase">Forma de pago</label>
               <select value={form.MetodoPagoId} onChange={e => setForm(f => ({ ...f, MetodoPagoId: e.target.value }))}
                 className="w-full mt-0.5 px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none">
                 {metodos.map(m => <option key={m.MetodoPagoId} value={m.MetodoPagoId}>{m.MetNombre}</option>)}
@@ -816,12 +854,12 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[10px] text-slate-500 uppercase">Vencimiento (opcional)</label>
+              <label className="text-[10px] text-slate-400 uppercase">Vencimiento (opcional)</label>
               <input type="date" value={form.PlaFechaVencimiento} onChange={e => setForm(f => ({ ...f, PlaFechaVencimiento: e.target.value }))}
                 className="w-full mt-0.5 px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none" />
             </div>
             <div>
-              <label className="text-[10px] text-slate-500 uppercase">Descripción / Referencia</label>
+              <label className="text-[10px] text-slate-400 uppercase">Descripción / Referencia</label>
               <input type="text" value={form.PlaDescripcion} onChange={e => setForm(f => ({ ...f, PlaDescripcion: e.target.value }))}
                 placeholder="Ej: Rollo Nov-2026"
                 className="w-full mt-0.5 px-2 py-1.5 border border-slate-200 rounded text-sm focus:outline-none" />
@@ -830,7 +868,7 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
 
           {/* Tipo de documento contable */}
           <div>
-            <label className="text-[10px] text-slate-500 uppercase">Tipo de documento</label>
+            <label className="text-[10px] text-slate-400 uppercase">Tipo de documento</label>
             <div className="flex gap-2 mt-1">
               {[
                 { val: 'FACTURA', label: '🧾 Factura',  desc: 'Obliga al cliente a pagar (contado o crédito)' },
@@ -844,15 +882,15 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
                   onClick={() => setForm(f => ({ ...f, DocTipo: opt.val }))}
                   className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
                     form.DocTipo === opt.val
-                      ? 'bg-violet-600 text-white border-violet-600 shadow-sm'
-                      : 'bg-white text-slate-600 border-slate-200 hover:border-violet-400 hover:text-violet-600'
+                      ? 'bg-violet-600 text-slate-800 border-violet-600 shadow-sm'
+                      : 'bg-[#f1f5f9] text-slate-600 border-slate-200 hover:border-violet-400 hover:text-violet-600'
                   }`}
                 >
                   {opt.label}
                 </button>
               ))}
             </div>
-            <p className="text-[10px] text-slate-400 mt-1">
+            <p className="text-[10px] text-slate-500 mt-1">
               {form.DocTipo === 'FACTURA' && '🧾 Se genera una factura. Si no hay pago inmediato, queda como deuda pendiente.'}
               {form.DocTipo === 'RECIBO'  && '✅ El cliente ya abonó. Se registra el cobro y se emite recibo sin deuda.'}
               {form.DocTipo === 'TICKET'  && '📋 Solo queda constancia interna. No genera obligación contable.'}
@@ -860,8 +898,8 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
           </div>
 
           <div className="flex gap-2 justify-end">
-            <button type="button" onClick={() => setShowForm(false)} className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Cancelar</button>
-            <button type="submit" disabled={working} className="px-4 py-1.5 text-xs bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50">
+            <button type="button" onClick={() => setShowForm(false)} className="px-3 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50/50">Cancelar</button>
+            <button type="submit" disabled={working} className="px-4 py-1.5 text-xs bg-violet-600 text-slate-800 rounded-lg hover:bg-violet-700 disabled:opacity-50">
               {working ? <RefreshCw size={11} className="animate-spin inline" /> : null} Crear plan
             </button>
           </div>
@@ -869,9 +907,9 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-5 bg-white"><div className="animate-spin h-5 w-5 border-2 border-violet-400 border-t-transparent rounded-full" /></div>
+        <div className="flex justify-center py-5 bg-[#f1f5f9]"><div className="animate-spin h-5 w-5 border-2 border-violet-400 border-t-transparent rounded-full" /></div>
       ) : (
-        <div className="divide-y divide-slate-100 bg-white">
+        <div className="divide-y divide-slate-100 bg-[#f1f5f9]">
           {planes.map(p => {
             const pct     = Number(p.PorcentajeUsado);
             const agotado = pct >= 100;
@@ -892,24 +930,24 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
                         {p.PlaActivo ? (agotado ? 'AGOTADO' : 'ACTIVO') : 'CERRADO'}
                       </Badge>
                       <span className="text-xs font-semibold text-slate-700">{p.NombreArticulo || `Producto #${p.ProIdProducto}`}</span>
-                      <span className="text-[10px] text-slate-400">Plan #{p.PlaIdPlan}</span>
+                      <span className="text-[10px] text-slate-500">Plan #{p.PlaIdPlan}</span>
                     </div>
-                    {p.PlaObservacion && <p className="text-[11px] text-slate-500 mt-0.5">{p.PlaObservacion}</p>}
+                    {p.PlaObservacion && <p className="text-[11px] text-slate-400 mt-0.5">{p.PlaObservacion}</p>}
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-bold text-slate-800">{fmtNum(p.PlaCantidadRestante)} / {fmtNum(p.PlaCantidadTotal)} {p.PlaUnidad}</p>
-                    {p.PlaImportePagado && <p className="text-[11px] text-slate-400">Pagó: {fmt(p.PlaImportePagado, cuenta.MonSimbolo)}</p>}
-                    {p.DiasParaVencer !== null && <p className={`text-[11px] font-semibold ${p.DiasParaVencer <= 7 ? 'text-red-600' : 'text-slate-400'}`}>Vence en {p.DiasParaVencer}d</p>}
+                    {p.PlaImportePagado && <p className="text-[11px] text-slate-500">Pagó: {fmt(p.PlaImportePagado, cuenta.MonSimbolo)}</p>}
+                    {p.DiasParaVencer !== null && <p className={`text-[11px] font-semibold ${p.DiasParaVencer <= 7 ? 'text-red-600' : 'text-slate-500'}`}>Vence en {p.DiasParaVencer}d</p>}
                   </div>
                 </div>
 
                 {/* Barra de progreso */}
                 <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
                   <div className={`h-full rounded-full transition-all ${
-                    agotado ? 'bg-red-500' : alerta ? 'bg-amber-400' : 'bg-emerald-500'
+                    agotado ? 'bg-rose-900/100' : alerta ? 'bg-amber-400' : 'bg-emerald-500'
                   }`} style={{ width: `${Math.min(pct, 100)}%` }} />
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                <div className="flex items-center justify-between text-[10px] text-slate-500">
                   <span>Usado: {fmtNum(p.PlaCantidadUsada)} {p.PlaUnidad} ({pct}%)</span>
                   <span>Inicio: {fmtFecha(p.PlaFechaInicio)}</span>
                 </div>
@@ -919,7 +957,7 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
                   {/* Ver movimientos toggle */}
                   <button onClick={() => toggleMovs(p)}
                     className={`flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors
-                      ${movsOpen ? 'bg-slate-700 text-white border-slate-700' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
+                      ${movsOpen ? 'bg-slate-700 text-slate-800 border-slate-100' : 'bg-slate-50/50 text-slate-600 border-slate-200 hover:bg-slate-700/50'}`}>
                     <BarChart3 size={10} /> {movsOpen ? 'Ocultar' : 'Ver entregas'}
                   </button>
 
@@ -934,7 +972,7 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
                             value={rec.importe || ''} onChange={e => setFormRecarga(prev => ({ ...prev, [p.PlaIdPlan]: { ...prev[p.PlaIdPlan], importe: e.target.value } }))}
                             className="w-24 px-2 py-1 border border-slate-200 rounded text-xs focus:outline-none" />
                           <button onClick={() => recargar(p.PlaIdPlan)} disabled={working}
-                            className="px-2 py-1 bg-violet-600 text-white text-xs rounded hover:bg-violet-700 disabled:opacity-50">
+                            className="px-2 py-1 bg-violet-600 text-slate-800 text-xs rounded hover:bg-violet-700 disabled:opacity-50">
                             <CheckCircle2 size={11} />
                           </button>
                           <button onClick={() => setFormRecarga(prev => ({ ...prev, [p.PlaIdPlan]: undefined }))}
@@ -949,7 +987,7 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
                         </button>
                       )}
                       <button onClick={() => desactivar(p.PlaIdPlan)} disabled={working}
-                        className="flex items-center gap-1 text-xs px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded hover:bg-red-100 ml-auto">
+                        className="flex items-center gap-1 text-xs px-2 py-1 bg-rose-900/10 text-red-700 border border-red-200 rounded hover:bg-red-100 ml-auto">
                         <X size={10} /> Cerrar plan
                       </button>
                     </>
@@ -959,38 +997,44 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
                 {/* ── Movimientos del plan (expandibles) ───────────────── */}
                 {movsOpen && (
                   <div className="mt-3 rounded-lg border border-slate-200 overflow-hidden">
-                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <div className="px-3 py-2 bg-slate-50/50 border-b border-slate-200 flex items-center justify-between">
                       <span className="text-[11px] font-semibold text-slate-600">Entregas del Plan #{p.PlaIdPlan}</span>
-                      <span className="text-[10px] text-slate-400">{movsDelPlan.length} movimientos</span>
+                      <span className="text-[10px] text-slate-500">{movsDelPlan.length} movimientos</span>
                     </div>
                     {movsLoading ? (
                       <div className="flex justify-center py-4">
                         <div className="animate-spin h-4 w-4 border-2 border-violet-400 border-t-transparent rounded-full" />
                       </div>
                     ) : movsDelPlan.length === 0 ? (
-                      <p className="text-xs text-slate-400 text-center py-4">Sin entregas registradas en este plan</p>
+                      <p className="text-xs text-slate-500 text-center py-4">Sin entregas registradas en este plan</p>
                     ) : (
                       <table className="w-full text-xs">
                         <thead>
-                          <tr className="text-[10px] text-slate-400 uppercase">
+                          <tr className="text-[10px] text-slate-500 uppercase">
                             <th className="px-3 py-1.5 text-left">Fecha</th>
-                            <th className="px-3 py-1.5 text-left">Orden</th>
+                            <th className="px-3 py-1.5 text-left">Orden / Trabajo</th>
+                            <th className="px-3 py-1.5 text-right">Saldo In.</th>
                             <th className="px-3 py-1.5 text-right">Consumo</th>
-                            <th className="px-3 py-1.5 text-right">Quedan</th>
+                            <th className="px-3 py-1.5 text-right">Saldo Fn.</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                           {[...movsDelPlan].reverse().reduce((acc, m) => {
-                            const acum = Math.abs(Number(m.MovSaldoPosterior));
-                            const quedan = totalPlan - acum;
-                            acc.push({ ...m, _quedan: quedan });
+                            const consumo = Math.abs(Number(m.MovImporte));
+                            const basePlanAcum = acc.planAcum || 0;
+                            const currentPlanAcum = basePlanAcum + consumo;
+                            const quedan = (p.PlaCantidadTotal || 0) - currentPlanAcum;
+                            
+                            acc.push({ ...m, _movImporteAbs: consumo, _quedan: quedan, _saldoIn: (p.PlaCantidadTotal || 0) - basePlanAcum });
+                            acc.planAcum = currentPlanAcum;
                             return acc;
                           }, []).reverse().map(m => (
-                            <tr key={m.MovIdMovimiento} className="hover:bg-slate-50">
-                              <td className="px-3 py-2 text-slate-400">{fmtFecha(m.MovFecha)}</td>
+                            <tr key={m.MovIdMovimiento} className="hover:bg-slate-50/50">
+                              <td className="px-3 py-2 text-slate-500">{fmtFecha(m.MovFecha)}</td>
                               <td className="px-3 py-2 max-w-xs" title={m.MovConcepto}><span className="block truncate text-xs text-slate-700">{m.MovConcepto || '—'}</span></td>
-                              <td className="px-3 py-2 text-right text-slate-700">{fmtNum(Math.abs(Number(m.MovImporte)))} {p.PlaUnidad}</td>
-                              <td className={`px-3 py-2 text-right font-bold ${m._quedan < totalPlan * 0.1 ? 'text-amber-600' : 'text-violet-700'}`}>
+                              <td className="px-3 py-2 text-right text-slate-500 font-medium">{fmtNum(m._saldoIn)} {p.PlaUnidad}</td>
+                              <td className="px-3 py-2 text-right text-rose-600 font-semibold">-{fmtNum(m._movImporteAbs)} {p.PlaUnidad}</td>
+                              <td className={`px-3 py-2 text-right font-bold ${m._quedan < (p.PlaCantidadTotal || 0) * 0.1 ? 'text-amber-600' : 'text-violet-700'}`}>
                                 {fmtNum(m._quedan)} {p.PlaUnidad}
                               </td>
                             </tr>
@@ -1004,7 +1048,7 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
             );
           })}
           {planes.length === 0 && (
-            <div className="text-center py-6 text-slate-400 text-xs"><Package size={22} className="mx-auto mb-1 opacity-30" />Sin planes de recursos</div>
+            <div className="text-center py-6 text-slate-500 text-xs"><Package size={22} className="mx-auto mb-1 opacity-30" />Sin planes de recursos</div>
           )}
         </div>
       )}
@@ -1069,9 +1113,9 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
 
   const toggle = (id) => setExpandidos(p => ({ ...p, [id]: !p[id] }));
 
-  const TIPOS_MONETARIOS = ['DINERO_USD','DINERO_UYU'];
-  const cuentasMonetarias = cuentas.filter(c => TIPOS_MONETARIOS.includes(c.CueTipo?.toUpperCase()));
-  const cuentasRecursos   = cuentas.filter(c => !TIPOS_MONETARIOS.includes(c.CueTipo?.toUpperCase()));
+  const TIPOS_MONETARIOS = ['USD','UYU','ARS','EUR','PYG','BRL','CORRIENTE','CREDITO','DEBITO','CAJA','DINERO_USD','DINERO_UYU'];
+  const cuentasRecursos   = cuentas.filter(c => c.ProIdProducto != null || !TIPOS_MONETARIOS.includes(c.CueTipo?.toUpperCase()));
+  const cuentasMonetarias = cuentas.filter(c => !cuentasRecursos.includes(c));
 
   // Para cada cuenta de recursos, arma tabla de movimientos con saldo restante calculado desde el plan
   const planDeCuenta = (c) => planes.find(p =>
@@ -1081,27 +1125,27 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-6 pb-4 px-4"
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col border border-slate-200"
+      <div className="bg-slate-50/50 rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col border border-slate-200"
         style={{ maxHeight: '92vh' }}>
 
         {/* ── Header ──────────────────────────────────────────────────────── */}
-        <div className="px-6 py-4 bg-white rounded-t-2xl border-b border-slate-200 shrink-0">
+        <div className="px-6 py-4 bg-[#f1f5f9] rounded-t-2xl border-b border-slate-200 shrink-0">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Estado de cuenta</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Estado de cuenta</p>
               <h2 className="text-xl font-black text-slate-800 mt-0.5">{cliente.Nombre}</h2>
-              {cliente.NombreFantasia && <p className="text-xs text-slate-400">{cliente.NombreFantasia}</p>}
+              {cliente.NombreFantasia && <p className="text-xs text-slate-500">{cliente.NombreFantasia}</p>}
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg text-slate-400"><X size={16} /></button>
+            <button onClick={onClose} className="p-2 hover:bg-slate-700/50 rounded-lg text-slate-500"><X size={16} /></button>
           </div>
           <div className="flex gap-2 mt-3 items-center">
             <input type="date" value={desde} onChange={e => setDesde(e.target.value)}
-              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400/30" />
-            <span className="text-slate-300 text-sm">→</span>
+              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-[#f1f5f9] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400/30" />
+            <span className="text-slate-600 text-sm">→</span>
             <input type="date" value={hasta} onChange={e => setHasta(e.target.value)}
-              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400/30" />
+              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-[#f1f5f9] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400/30" />
             <button onClick={cargar}
-              className="flex items-center gap-1 text-xs px-3 py-1.5 bg-slate-800 text-white rounded-lg font-medium hover:bg-slate-700">
+              className="flex items-center gap-1 text-xs px-3 py-1.5 bg-slate-50 text-slate-800 rounded-lg font-medium hover:bg-slate-700">
               <RefreshCw size={11} className={cargando ? 'animate-spin' : ''} /> Filtrar
             </button>
           </div>
@@ -1124,53 +1168,55 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
                 const saldo   = Number(c.CueSaldoActual ?? 0);
 
                 return (
-                  <div key={c.CueIdCuenta} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                  <div key={c.CueIdCuenta} className="bg-[#f1f5f9] rounded-xl border border-slate-200 overflow-hidden">
                     {/* Cabecera de sección */}
                     <button onClick={() => toggle(c.CueIdCuenta)}
-                      className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors">
+                      className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50/50 transition-colors">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                          <DollarSign size={15} className="text-slate-500" />
+                          <DollarSign size={15} className="text-slate-400" />
                         </div>
                         <div className="text-left">
                           <p className="text-sm font-bold text-slate-800">{c.UnidadLabel || c.CueTipo}</p>
-                          <p className="text-[11px] text-slate-400">{movs.length} movimientos · {c.CondicionPago || 'Contado'}</p>
+                          <p className="text-[11px] text-slate-500">{movs.length} movimientos · {c.CondicionPago || 'Contado'}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
                         <div className="text-right">
-                          <p className="text-[10px] text-slate-400 uppercase">Saldo actual</p>
+                          <p className="text-[10px] text-slate-500 uppercase">Saldo actual</p>
                           <p className={`text-base font-black ${saldo < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                             {c.MonSimbolo} {fmtNum(saldo)}
                           </p>
                         </div>
-                        <div className={`w-5 h-5 rounded flex items-center justify-center text-slate-400 transition-transform ${abierto ? 'rotate-180' : ''}`}>
+                        <div className={`w-5 h-5 rounded flex items-center justify-center text-slate-500 transition-transform ${abierto ? 'rotate-180' : ''}`}>
                           ▾
                         </div>
                       </div>
                     </button>
 
                     {abierto && (
-                      <div className="border-t border-slate-100">
+                      <div className="border-t border-slate-200">
                         {movs.length === 0 ? (
-                          <p className="text-xs text-slate-400 text-center py-5">Sin movimientos en el período</p>
+                          <p className="text-xs text-slate-500 text-center py-5">Sin movimientos en el período</p>
                         ) : (
                           <table className="w-full text-xs">
                             <thead>
-                              <tr className="bg-slate-50 text-slate-400 uppercase tracking-wide text-[10px]">
+                              <tr className="bg-slate-50/50 text-slate-500 uppercase tracking-wide text-[10px]">
                                 <th className="px-5 py-2 text-left font-semibold">Fecha</th>
                                 <th className="px-4 py-2 text-left font-semibold">Tipo</th>
                                 <th className="px-4 py-2 text-left font-semibold">Concepto</th>
+                                <th className="px-4 py-2 text-right font-semibold">Saldo In.</th>
                                 <th className="px-4 py-2 text-right font-semibold">Importe</th>
-                                <th className="px-4 py-2 text-right font-semibold">Saldo</th>
+                                <th className="px-4 py-2 text-right font-semibold">Saldo Fn.</th>
+                                <th className="px-4 py-2 text-center font-semibold w-12">Recibo</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
                               {movs.map(m => {
                                 const cred = esCreditoTipo(m.MovTipo);
                                 return (
-                                  <tr key={m.MovIdMovimiento} className="hover:bg-slate-50 transition-colors">
-                                    <td className="px-5 py-2.5 text-slate-400 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
+                                  <tr key={m.MovIdMovimiento} className="hover:bg-slate-50/50 transition-colors">
+                                    <td className="px-5 py-2.5 text-slate-500 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
                                     <td className="px-4 py-2.5">
                                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
                                         {ETIQUETA_TIPO[m.MovTipo] || m.MovTipo}
@@ -1179,11 +1225,21 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
                                     <td className="px-4 py-2.5 text-slate-600 max-w-[200px] truncate" title={m.MovConcepto}>
                                       {m.MovConcepto}
                                     </td>
+                                    <td className="px-4 py-2.5 text-right text-slate-500 font-medium whitespace-nowrap">
+                                      {fmtNum(Number(m.MovSaldoPosterior) - Number(m.MovImporte))} {c.MonSimbolo}
+                                    </td>
                                     <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${cred ? 'text-emerald-600' : 'text-red-500'}`}>
                                       {cred ? '+' : '-'}{fmtNum(Math.abs(Number(m.MovImporte)))} {c.MonSimbolo}
                                     </td>
-                                    <td className="px-4 py-2.5 text-right text-slate-700 font-medium whitespace-nowrap">
+                                    <td className="px-4 py-2.5 text-right text-slate-800 font-bold whitespace-nowrap">
                                       {fmtNum(Number(m.MovSaldoPosterior))} {c.MonSimbolo}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-center">
+                                      {(m.MovTipo === 'PAGO' || m.MovTipo === 'ANTICIPO' || m.MovTipo === 'COBRO' || m.MovTipo === 'SALDO_INICIAL') && (
+                                        <button onClick={(e) => handleDescargarRecibo(e, m)} title="Imprimir Recibo" className="inline-flex p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100">
+                                          <Printer size={15} />
+                                        </button>
+                                      )}
                                     </td>
                                   </tr>
                                 );
@@ -1210,23 +1266,23 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
                 const uni         = c.UniSimbolo || c.UnidadLabel || '';
 
                 return (
-                  <div key={c.CueIdCuenta} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                  <div key={c.CueIdCuenta} className="bg-[#f1f5f9] rounded-xl border border-slate-200 overflow-hidden">
                     {/* Cabecera */}
                     <button onClick={() => toggle(c.CueIdCuenta)}
-                      className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors">
+                      className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50/50 transition-colors">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center">
                           <Layers size={15} className="text-violet-600" />
                         </div>
                         <div className="text-left">
                           <p className="text-sm font-bold text-slate-800">{c.UnidadLabel || c.CueTipo}</p>
-                          {c.NombreArticulo && <p className="text-[11px] text-slate-400">{c.NombreArticulo}</p>}
+                          {c.NombreArticulo && <p className="text-[11px] text-slate-500">{c.NombreArticulo}</p>}
                         </div>
                       </div>
                       <div className="flex items-center gap-4">
                         {restante !== null ? (
                           <div className="text-right">
-                            <p className="text-[10px] text-slate-400 uppercase">Restante del plan</p>
+                            <p className="text-[10px] text-slate-500 uppercase">Restante del plan</p>
                             <p className={`text-base font-black ${restante < totalPlan * 0.1 ? 'text-amber-600' : 'text-violet-700'}`}>
                               {fmtNum(restante)} {uni}
                             </p>
@@ -1234,28 +1290,28 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
                               <div className="h-1.5 bg-violet-500 rounded-full transition-all"
                                 style={{ width: `${pct}%` }} />
                             </div>
-                            <p className="text-[10px] text-slate-400 mt-0.5">{fmtNum(saldoCuenta)} / {fmtNum(totalPlan)} {uni} usados</p>
+                            <p className="text-[10px] text-slate-500 mt-0.5">{fmtNum(saldoCuenta)} / {fmtNum(totalPlan)} {uni} usados</p>
                           </div>
                         ) : (
                           <div className="text-right">
-                            <p className="text-[10px] text-slate-400 uppercase">Consumido</p>
+                            <p className="text-[10px] text-slate-500 uppercase">Consumido</p>
                             <p className="text-base font-black text-slate-700">{fmtNum(saldoCuenta)} {uni}</p>
                           </div>
                         )}
-                        <div className={`w-5 h-5 rounded flex items-center justify-center text-slate-400 transition-transform ${abierto ? 'rotate-180' : ''}`}>
+                        <div className={`w-5 h-5 rounded flex items-center justify-center text-slate-500 transition-transform ${abierto ? 'rotate-180' : ''}`}>
                           ▾
                         </div>
                       </div>
                     </button>
 
                     {abierto && (
-                      <div className="border-t border-slate-100">
+                      <div className="border-t border-slate-200">
                         {movs.length === 0 ? (
-                          <p className="text-xs text-slate-400 text-center py-5">Sin movimientos en el período</p>
+                          <p className="text-xs text-slate-500 text-center py-5">Sin movimientos en el período</p>
                         ) : (
                           <table className="w-full text-xs">
                             <thead>
-                              <tr className="bg-slate-50 text-slate-400 uppercase tracking-wide text-[10px]">
+                              <tr className="bg-slate-50/50 text-slate-500 uppercase tracking-wide text-[10px]">
                                 <th className="px-5 py-2 text-left font-semibold">Fecha</th>
                                 <th className="px-4 py-2 text-left font-semibold">Tipo</th>
                                 <th className="px-4 py-2 text-left font-semibold">Concepto</th>
@@ -1273,8 +1329,8 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
                                 acc.push({ ...m, _consumo: consumo, _acum: acumUsado, _quedan: quedan });
                                 return acc;
                               }, []).reverse().map(m => (
-                                <tr key={m.MovIdMovimiento} className="hover:bg-slate-50 transition-colors">
-                                  <td className="px-5 py-2.5 text-slate-400 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
+                                <tr key={m.MovIdMovimiento} className="hover:bg-slate-50/50 transition-colors">
+                                  <td className="px-5 py-2.5 text-slate-500 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
                                   <td className="px-4 py-2.5">
                                     <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">
                                       {ETIQUETA_TIPO[m.MovTipo] || m.MovTipo}
@@ -1286,7 +1342,7 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
                                   <td className="px-4 py-2.5 text-right font-semibold text-slate-700 whitespace-nowrap">
                                     {fmtNum(m._consumo)} {uni}
                                   </td>
-                                  <td className="px-4 py-2.5 text-right text-slate-500 whitespace-nowrap">
+                                  <td className="px-4 py-2.5 text-right text-slate-400 whitespace-nowrap">
                                     {fmtNum(m._acum)} {uni}
                                   </td>
                                   {totalPlan && (
@@ -1306,7 +1362,7 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
               })}
 
               {Object.keys(secciones).length === 0 && !cargando && (
-                <div className="text-center py-16 text-slate-400">
+                <div className="text-center py-16 text-slate-500">
                   <BarChart3 size={32} className="mx-auto mb-3 opacity-20" />
                   <p className="text-sm">Sin movimientos registrados</p>
                 </div>
@@ -1316,8 +1372,8 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
         </div>
 
         {/* ── Footer ──────────────────────────────────────────────────────── */}
-        <div className="px-6 py-2.5 border-t border-slate-200 bg-white rounded-b-2xl shrink-0
-          flex items-center justify-between text-[11px] text-slate-400">
+        <div className="px-6 py-2.5 border-t border-slate-200 bg-[#f1f5f9] rounded-b-2xl shrink-0
+          flex items-center justify-between text-[11px] text-slate-500">
           <span>{cuentas.length} cuenta{cuentas.length !== 1 ? 's' : ''} · {planes.length} plan{planes.length !== 1 ? 'es' : ''}</span>
           <span>Más reciente primero</span>
         </div>
@@ -1334,17 +1390,17 @@ const CuentaCard = ({ cuenta, CliIdCliente, panelActivo, onToggle, onCicloChange
   const esSemanal  = (cuenta.CueDiasCiclo ?? 0) > 0;
   // Detectar cuenta de recursos: tiene UnidadLabel o su CueTipo no es monetario
   const TIPOS_MONETARIOS = ['USD','UYU','ARS','EUR','PYG','BRL','CORRIENTE','CREDITO','DEBITO','CAJA','DINERO_USD','DINERO_UYU'];
-  const esRecursos = !TIPOS_MONETARIOS.includes(cuenta.CueTipo?.toUpperCase()) && !cuenta.MonSimbolo;
+  const esRecursos = cuenta.ProIdProducto != null || !TIPOS_MONETARIOS.includes(cuenta.CueTipo?.toUpperCase());
   const unidadLabel = cuenta.UnidadLabel || cuenta.CueTipo;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+    <div className="bg-[#f1f5f9] rounded-xl border border-slate-200 shadow-sm overflow-hidden">
       <div className={`px-5 py-4 flex items-center justify-between
         ${esRecursos
           ? 'bg-gradient-to-r from-violet-500 to-purple-500'
           : negativo
             ? 'bg-gradient-to-r from-red-500 to-rose-500'
-            : 'bg-gradient-to-r from-emerald-500 to-teal-500'} text-white`}>
+            : 'bg-gradient-to-r from-emerald-500 to-teal-500'} text-slate-800`}>
         <div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold tracking-widest uppercase opacity-80">{unidadLabel}</span>
@@ -1363,17 +1419,17 @@ const CuentaCard = ({ cuenta, CliIdCliente, panelActivo, onToggle, onCicloChange
       </div>
 
       {!esRecursos && (
-        <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-100">
+        <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-200">
           <div className="px-4 py-2.5 text-center">
-            <p className="text-[10px] text-slate-400 uppercase tracking-wide">Deuda</p>
-            <p className={`text-sm font-bold ${deuda > 0 ? 'text-red-600' : 'text-slate-400'}`}>{fmt(deuda, cuenta.MonSimbolo)}</p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Deuda</p>
+            <p className={`text-sm font-bold ${deuda > 0 ? 'text-red-600' : 'text-slate-500'}`}>{fmt(deuda, cuenta.MonSimbolo)}</p>
           </div>
           <div className="px-4 py-2.5 text-center">
-            <p className="text-[10px] text-slate-400 uppercase tracking-wide">Cond. Pago</p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Cond. Pago</p>
             <p className="text-sm font-semibold text-slate-700 truncate">{cuenta.CondicionPago || '—'}</p>
           </div>
           <div className="px-4 py-2.5 text-center">
-            <p className="text-[10px] text-slate-400 uppercase tracking-wide">Docs Venc.</p>
+            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Docs Venc.</p>
             <p className={`text-sm font-bold ${cuenta.DocumentosVencidos > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
               {cuenta.DocumentosVencidos > 0
                 ? <><AlertTriangle size={11} className="inline mr-0.5" />{cuenta.DocumentosVencidos}</>
@@ -1388,12 +1444,12 @@ const CuentaCard = ({ cuenta, CliIdCliente, panelActivo, onToggle, onCicloChange
           <>
             <button onClick={() => onToggle('mov')}
               className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors
-                ${panelActivo === 'mov' ? 'bg-blue-600 text-white border-blue-600' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200'}`}>
+                ${panelActivo === 'mov' ? 'bg-blue-600 text-white border-blue-600' : 'bg-indigo-50 text-blue-700 hover:bg-blue-100 border-indigo-500/20'}`}>
               <BarChart3 size={12} /> Movimientos
             </button>
             <button onClick={() => onToggle('deuda')}
               className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors
-                ${panelActivo === 'deuda' ? 'bg-amber-500 text-white border-amber-500' : 'bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200'}`}>
+                ${panelActivo === 'deuda' ? 'bg-amber-900/100 text-slate-800 border-amber-500' : 'bg-amber-900/10 text-amber-700 hover:bg-amber-100 border-amber-200'}`}>
               <FileText size={12} /> Deudas
               {deuda > 0 && <span className="bg-amber-200 text-amber-800 px-1 rounded-full text-[10px]">{cuenta.DocumentosVencidos}</span>}
             </button>
@@ -1409,15 +1465,15 @@ const CuentaCard = ({ cuenta, CliIdCliente, panelActivo, onToggle, onCicloChange
         {esRecursos && (
           <button onClick={() => onToggle('planes')}
             className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors
-              ${panelActivo === 'planes' ? 'bg-violet-600 text-white border-violet-600' : 'bg-violet-50 text-violet-700 hover:bg-violet-100 border-violet-200'}`}>
+              ${panelActivo === 'planes' ? 'bg-violet-600 text-slate-800 border-violet-600' : 'bg-violet-50 text-violet-700 hover:bg-violet-100 border-violet-200'}`}>
             <Layers size={12} /> Planes
           </button>
         )}
         <button onClick={() => onRegistrarPago(cuenta)}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors bg-green-50 text-green-700 hover:bg-green-100 border-green-200">
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors bg-emerald-900/10 text-green-700 hover:bg-green-100 border-emerald-500/20">
           <DollarSign size={12} /> Pago / Ajuste
         </button>
-        <span className="ml-auto text-[10px] text-slate-400 font-mono bg-slate-100 px-2 py-0.5 rounded">
+        <span className="ml-auto text-[10px] text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded">
           #{cuenta.CueIdCuenta}{cuenta.CueDiasCiclo > 0 ? ` · ${cuenta.CueDiasCiclo}d` : ''}
         </span>
       </div>
@@ -1428,6 +1484,7 @@ const CuentaCard = ({ cuenta, CliIdCliente, panelActivo, onToggle, onCicloChange
 // ── VISTA PRINCIPAL ───────────────────────────────────────────────────────────
 export default function ContabilidadCuentasView() {
   const [busqueda, setBusqueda]               = useState('');
+  const [filtroTipo, setFiltroTipo]           = useState('TODOS');
   const [clientesActivos, setClientesActivos] = useState([]);
   const [clienteSel, setClienteSel]           = useState(null);
   const [cuentas, setCuentas]                 = useState([]);
@@ -1440,12 +1497,14 @@ export default function ContabilidadCuentasView() {
   const cargarClientesActivos = useCallback(async (q = '') => {
     setLoadingLista(true);
     try {
-      const params = q.trim() ? `?q=${encodeURIComponent(q)}` : '';
-      const data = await fetchAPI(`/api/contabilidad/clientes-activos${params}`);
+      const qp = new URLSearchParams();
+      if (q.trim()) qp.append('q', q.trim());
+      if (filtroTipo === 'HISTORICOS') qp.append('todos', 'true');
+      const data = await fetchAPI(`/api/contabilidad/clientes-activos?${qp.toString()}`);
       setClientesActivos(data.data || []);
     } catch (e) { toast.error(e.message); }
     finally { setLoadingLista(false); }
-  }, []);
+  }, [filtroTipo]);
 
   useEffect(() => { cargarClientesActivos(); }, [cargarClientesActivos]);
 
@@ -1479,6 +1538,16 @@ export default function ContabilidadCuentasView() {
   const deudaTotal   = cuentas.reduce((s, c) => s + Number(c.DeudaPendienteTotal ?? 0), 0);
   const docsVencidos = cuentas.reduce((s, c) => s + Number(c.DocumentosVencidos ?? 0), 0);
 
+  const mostrarClientes = useMemo(() => {
+    return clientesActivos.filter(c => {
+      const s = Number(c.SaldoTotal||0);
+      const d = Number(c.DeudaTotal||0);
+      if (filtroTipo === 'DEUDORES') return d > 0 || s < 0;
+      if (filtroTipo === 'ACREEDORES') return s > 0 && d === 0;
+      return true;
+    });
+  }, [clientesActivos, filtroTipo]);
+
   return (
     <>
       {/* Modal pago */}
@@ -1499,23 +1568,23 @@ export default function ContabilidadCuentasView() {
         />
       )}
 
-      <div className="flex gap-6 h-full min-h-0" style={{ maxHeight: 'calc(100vh - 120px)' }}>
+      <div className="h-full bg-[#f1f5f9] p-2 sm:p-4 overflow-y-auto text-slate-700 font-sans custom-scrollbar"><div className="flex gap-6 h-full min-h-0 max-w-[1500px] mx-auto w-full" style={{ maxHeight: 'calc(100vh - 50px)' }}>
 
         {/* ── Columna izquierda: lista ────────────────────────────────────── */}
-        <div className="w-96 shrink-0 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-4 py-4 border-b border-slate-100">
+        <div className="w-96 shrink-0 flex flex-col bg-[#f1f5f9] rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-4 border-b border-slate-200">
             <div className="flex items-center justify-between mb-3">
               <h1 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                <Users size={16} className="text-blue-500" />Clientes con Saldo
+                <Users size={16} className="text-indigo-400" />Clientes con Saldo
               </h1>
               <button onClick={() => cargarClientesActivos(busqueda)} title="Actualizar"
-                className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600">
+                className="p-1.5 hover:bg-slate-700/50 rounded-lg transition-colors text-slate-500 hover:text-slate-600">
                 <RefreshCw size={13} className={loadingLista ? 'animate-spin' : ''} />
               </button>
             </div>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
                 <input type="text" placeholder="Buscar..."
                   value={busqueda}
                   onChange={e => setBusqueda(e.target.value)}
@@ -1528,18 +1597,26 @@ export default function ContabilidadCuentasView() {
                 <Search size={12} />
               </button>
             </div>
+            <div className="mt-2">
+              <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} className="w-full bg-[#f1f5f9] border border-slate-200 rounded-lg text-[11px] text-slate-600 py-1.5 px-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="TODOS">Todos (Con saldo o deuda)</option>
+                <option value="DEUDORES">Deudores (Deuda pendiente o saldo total negativo)</option>
+                <option value="ACREEDORES">Acreedores (Saldo a favor)</option>
+                <option value="HISTORICOS">Histórico completo (Incluye clientes sin saldo)</option>
+              </select>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {loadingLista ? (
               <div className="flex justify-center py-12"><div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" /></div>
             ) : clientesActivos.length === 0 ? (
-              <div className="text-center py-12 text-slate-400">
+              <div className="text-center py-12 text-slate-500">
                 <Zap size={28} className="mx-auto mb-2 opacity-30" />
                 <p className="text-xs">Sin clientes con saldo activo</p>
               </div>
             ) : (
-              clientesActivos.map(c => (
+              mostrarClientes.map(c => (
                 <FilaCliente key={c.CliIdCliente} c={c}
                   seleccionado={clienteSel?.CliIdCliente === c.CliIdCliente}
                   onClick={() => seleccionarCliente(c)} />
@@ -1547,22 +1624,22 @@ export default function ContabilidadCuentasView() {
             )}
           </div>
 
-          <div className="px-4 py-2.5 border-t border-slate-100 text-[11px] text-slate-400 text-center">
-            {clientesActivos.length} clientes con saldo o deuda pendiente
+          <div className="px-4 py-2.5 border-t border-slate-200 text-[11px] text-slate-500 text-center">
+            {mostrarClientes.length} clientes mostrando
           </div>
         </div>
 
         {/* ── Columna derecha: detalle ────────────────────────────────────── */}
         <div className="flex-1 overflow-y-auto space-y-4 min-w-0">
           {!clienteSel ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-400">
+            <div className="flex flex-col items-center justify-center h-full text-slate-500">
               <CreditCard size={48} className="mb-4 opacity-20" />
               <p className="text-base font-medium">Seleccioná un cliente</p>
               <p className="text-sm mt-1">para ver sus cuentas, movimientos y ciclos</p>
             </div>
           ) : (
             <>
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-5 py-4">
+              <div className="bg-[#f1f5f9] rounded-xl border border-slate-200 shadow-sm px-5 py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold">
@@ -1570,30 +1647,30 @@ export default function ContabilidadCuentasView() {
                     </div>
                     <div>
                       <h2 className="text-base font-bold text-slate-800">{clienteSel.Nombre}</h2>
-                      {clienteSel.NombreFantasia && <p className="text-xs text-slate-400">{clienteSel.NombreFantasia}</p>}
+                      {clienteSel.NombreFantasia && <p className="text-xs text-slate-500">{clienteSel.NombreFantasia}</p>}
                     </div>
                   </div>
                   <div className="flex items-center gap-6">
                     <div className="text-center">
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Saldo</p>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wide">Saldo</p>
                       <p className={`text-base font-black ${saldoTotal < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(saldoTotal)}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Deuda</p>
-                      <p className={`text-base font-black ${deudaTotal > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{fmt(deudaTotal)}</p>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wide">Deuda</p>
+                      <p className={`text-base font-black ${deudaTotal > 0 ? 'text-amber-600' : 'text-slate-500'}`}>{fmt(deudaTotal)}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-[10px] text-slate-400 uppercase tracking-wide">Vencidos</p>
-                      <p className={`text-base font-black ${docsVencidos > 0 ? 'text-red-600' : 'text-slate-400'}`}>{docsVencidos}</p>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-wide">Vencidos</p>
+                      <p className={`text-base font-black ${docsVencidos > 0 ? 'text-red-600' : 'text-slate-500'}`}>{docsVencidos}</p>
                     </div>
                     <button
                       onClick={() => setModalEstado(true)}
                       disabled={cuentas.length === 0}
-                      className="flex items-center gap-1.5 text-xs px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-40">
+                      className="flex items-center gap-1.5 text-xs px-3 py-2 bg-slate-50 hover:bg-slate-700 text-slate-800 rounded-lg font-semibold transition-colors disabled:opacity-40">
                       <FileText size={13} /> Estado de Cuenta
                     </button>
                     <button onClick={recargarCuentas} disabled={loadingCuentas}
-                      className="p-2 hover:bg-slate-100 rounded-lg transition-colors text-slate-400">
+                      className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors text-slate-500">
                       <RefreshCw size={15} className={loadingCuentas ? 'animate-spin' : ''} />
                     </button>
                   </div>
@@ -1603,9 +1680,9 @@ export default function ContabilidadCuentasView() {
               {loadingCuentas ? (
                 <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 border-2 border-blue-600 border-t-transparent rounded-full" /></div>
               ) : cuentas.length === 0 ? (
-                <div className="text-center py-12 bg-white rounded-xl border border-slate-200">
-                  <CreditCard size={32} className="mx-auto mb-3 text-slate-300" />
-                  <p className="text-sm text-slate-500">Sin cuentas contables registradas</p>
+                <div className="text-center py-12 bg-[#f1f5f9] rounded-xl border border-slate-200">
+                  <CreditCard size={32} className="mx-auto mb-3 text-slate-600" />
+                  <p className="text-sm text-slate-400">Sin cuentas contables registradas</p>
                 </div>
               ) : (
                 cuentas.map(cuenta => (
@@ -1619,7 +1696,7 @@ export default function ContabilidadCuentasView() {
                       onRegistrarPago={setModalPago}
                     />
                     {paneles[cuenta.CueIdCuenta] === 'mov' && (
-                      <MovimientosPanel CueIdCuenta={cuenta.CueIdCuenta} simbolo={cuenta.MonSimbolo || '$U'} onClose={() => togglePanel(cuenta.CueIdCuenta, 'mov')} />
+                      <MovimientosPanel CueIdCuenta={cuenta.CueIdCuenta} simbolo={cuenta.MonSimbolo || '$'} onClose={() => togglePanel(cuenta.CueIdCuenta, 'mov')} />
                     )}
                     {paneles[cuenta.CueIdCuenta] === 'deuda' && (
                       <DeudasPanel CueIdCuenta={cuenta.CueIdCuenta} simbolo={cuenta.MonSimbolo} onClose={() => togglePanel(cuenta.CueIdCuenta, 'deuda')} />
@@ -1646,6 +1723,7 @@ export default function ContabilidadCuentasView() {
             </>
           )}
         </div>
+      </div>
       </div>
     </>
   );

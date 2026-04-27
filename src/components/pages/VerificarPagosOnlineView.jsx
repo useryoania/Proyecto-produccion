@@ -1,18 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '../../services/apiClient';
-import Lottie from 'lottie-react';
-import loadingAnim from '../../assets/animations/loading.json';
 import {
     CreditCard, Wifi, WifiOff, Search, Calendar, RefreshCw,
     ChevronDown, ChevronRight, Package, X, AlertTriangle,
     CheckCircle, DollarSign, Filter
 } from 'lucide-react';
-
-const LottieSpinner = ({ size = 64 }) => (
-    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '24px 0' }}>
-        <Lottie animationData={loadingAnim} loop style={{ width: size, height: size }} />
-    </div>
-);
 
 // ─── SHARED: Filtros de fecha + cliente + orden ────────────────────────────
 
@@ -53,8 +45,6 @@ const FilterBar = ({ filters, onChange, onSearch, extra, loading }) => (
 
 // ─── TAB 1: HISTORIAL DE TODOS LOS PAGOS ──────────────────────────────────
 
-const PAGE_SIZE = 50;
-
 const HistorialPagos = () => {
     const [pagos, setPagos] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -62,52 +52,22 @@ const HistorialPagos = () => {
     const [metodos, setMetodos] = useState([]);
     const [filters, setFilters] = useState({ startDate: '', endDate: '', clientFilter: '', orderFilter: '', metodoPago: '' });
     const [busqueda, setBusqueda] = useState('');
-    const [hasMore, setHasMore] = useState(true);
 
-    const offsetRef = useRef(0);
-    const loadingRef = useRef(false);
-    const sentinelRef = useRef(null);
-
-    const fetchPagos = async (append = false) => {
-        if (loadingRef.current) return;
-        loadingRef.current = true;
+    const fetchPagos = async () => {
         setLoading(true);
         try {
             const params = new URLSearchParams();
             Object.entries(filters).forEach(([k, v]) => { if (v) params.append(k, v); });
-            params.append('offset', offsetRef.current);
             const res = await api.get(`/web-retiros/historial-pagos?${params}`);
-            const data = res.data;
-            if (append) setPagos(prev => [...prev, ...data]);
-            else setPagos(data);
-            const more = data.length === PAGE_SIZE;
-            setHasMore(more);
-            offsetRef.current += data.length;
+            setPagos(res.data);
         } catch (e) { console.error(e); }
-        finally { setLoading(false); loadingRef.current = false; }
-    };
-
-    const handleSearch = () => {
-        offsetRef.current = 0;
-        setHasMore(true);
-        fetchPagos(false);
+        finally { setLoading(false); }
     };
 
     useEffect(() => {
         api.get('/apipagos/metodos').then(r => setMetodos(r.data || [])).catch(() => {});
-        fetchPagos(false);
+        fetchPagos();
     }, []);
-
-    useEffect(() => {
-        const sentinel = sentinelRef.current;
-        if (!sentinel) return;
-        const observer = new IntersectionObserver(
-            ([entry]) => { if (entry.isIntersecting && hasMore && !loadingRef.current) fetchPagos(true); },
-            { threshold: 0.1 }
-        );
-        observer.observe(sentinel);
-        return () => observer.disconnect();
-    }, [hasMore]);
 
     const filtered = useMemo(() => {
         if (!busqueda.trim()) return pagos;
@@ -128,7 +88,7 @@ const HistorialPagos = () => {
             <FilterBar
                 filters={filters}
                 onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))}
-                onSearch={handleSearch}
+                onSearch={fetchPagos}
                 loading={loading}
                 extra={
                     <div className="flex flex-col gap-1 min-w-[150px]">
@@ -169,7 +129,9 @@ const HistorialPagos = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {loading && pagos.length === 0 ? (
-                            <tr><td colSpan={7}><LottieSpinner size={72} /></td></tr>
+                            <tr><td colSpan={7} className="text-center py-10 text-slate-400">
+                                <RefreshCw className="inline animate-spin mr-2" size={16} />Cargando pagos...
+                            </td></tr>
                         ) : filtered.length === 0 ? (
                             <tr><td colSpan={7} className="text-center py-10 text-slate-400">No se encontraron pagos.</td></tr>
                         ) : filtered.map(pago => {
@@ -274,95 +236,50 @@ const HistorialPagos = () => {
                 </table>
             </div>
             <div className="text-xs text-slate-400 text-right">{filtered.length} resultado{filtered.length !== 1 ? 's' : ''}</div>
-            {/* Sentinel para infinite scroll */}
-            <div ref={sentinelRef} style={{ height: 1 }} />
-            {loading && pagos.length > 0 && <div style={{display:'flex',justifyContent:'center',padding:'8px'}}><LottieSpinner size={40}/></div>}
-            {!hasMore && pagos.length > 0 && <div className="text-center text-xs text-slate-400 py-2">— Fin de los resultados —</div>}
         </div>
     );
 };
 
 // ─── TAB 2 & 3: TABLA PAGOS ONLINE (compartida) ───────────────────────────
 
-const TablaPagosOnline = ({ endpoint, fallidos = false, gatewayLabel = 'Transacción' }) => {
+const TablaPagosOnline = ({ endpoint, fallidos = false }) => {
     const [pagos, setPagos] = useState([]);
     const [loading, setLoading] = useState(false);
     const [selected, setSelected] = useState(null);
     const [filters, setFilters] = useState({ startDate: '', endDate: '', clientFilter: '' });
-    const [hasMore, setHasMore] = useState(true);
 
-    const offsetRef = useRef(0);
-    const loadingRef = useRef(false);
-    const sentinelRef = useRef(null);
-
-    const fetchOnline = async (append = false) => {
-        if (loadingRef.current) return;
-        loadingRef.current = true;
+    const fetchOnline = async () => {
         setLoading(true);
         try {
             const params = new URLSearchParams();
             Object.entries(filters).forEach(([k, v]) => { if (v) params.append(k, v); });
-            params.append('offset', offsetRef.current);
             const res = await api.get(`${endpoint}?${params}`);
-            const data = res.data;
-            if (append) setPagos(prev => [...prev, ...data]);
-            else setPagos(data);
-            const more = data.length === PAGE_SIZE;
-            setHasMore(more);
-            offsetRef.current += data.length;
+            setPagos(res.data);
         } catch (e) { console.error(e); }
-        finally { setLoading(false); loadingRef.current = false; }
+        finally { setLoading(false); }
     };
 
-    const handleSearch = () => {
-        offsetRef.current = 0;
-        setHasMore(true);
-        fetchOnline(false);
-    };
-
-    useEffect(() => { fetchOnline(false); }, []);
-
-    useEffect(() => {
-        const sentinel = sentinelRef.current;
-        if (!sentinel) return;
-        const observer = new IntersectionObserver(
-            ([entry]) => { if (entry.isIntersecting && hasMore && !loadingRef.current) fetchOnline(true); },
-            { threshold: 0.1 }
-        );
-        observer.observe(sentinel);
-        return () => observer.disconnect();
-    }, [hasMore]);
+    useEffect(() => { fetchOnline(); }, []);
 
     const parseOrders = (jsonStr) => { try { return JSON.parse(jsonStr || '[]'); } catch { return []; } };
-
-    const MP_STATUS_MAP = {
-        'approved':   'Pagado',
-        'pending':    'Pendiente',
-        'in_process': 'Pendiente',
-        'rejected':   'Fallido',
-        'cancelled':  'Cancelado',
-        'refunded':   'Devuelto',
-        'charged_back': 'Contracargo',
-    };
-    const normalizeStatus = (st) => MP_STATUS_MAP[(st || '').toLowerCase()] || st || 'Sin estado';
 
     const statusColor = (st) => {
         const s = (st || '').toLowerCase();
         if (['paid', 'pagado', 'success', 'approved'].includes(s)) return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-        if (['pending', 'pendiente', 'created', 'in_process'].includes(s)) return 'bg-amber-100 text-amber-700 border-amber-200';
+        if (['pending', 'pendiente', 'created'].includes(s)) return 'bg-amber-100 text-amber-700 border-amber-200';
         return 'bg-rose-100 text-rose-700 border-rose-200';
     };
 
     return (
         <div className="flex flex-col gap-3">
-            <FilterBar filters={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} onSearch={handleSearch} loading={loading} />
+            <FilterBar filters={filters} onChange={(k, v) => setFilters(f => ({ ...f, [k]: v }))} onSearch={fetchOnline} loading={loading} />
 
             <div className="overflow-auto rounded-xl border border-slate-200 bg-white">
                 <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-slate-100 text-slate-600 text-xs font-black uppercase tracking-wide z-10">
                         <tr>
                             <th className="px-4 py-3 text-left">Fecha</th>
-                            <th className="px-4 py-3 text-left">{gatewayLabel}</th>
+                            <th className="px-4 py-3 text-left">Transacción Handy</th>
                             <th className="px-4 py-3 text-left">Cliente</th>
                             <th className="px-4 py-3 text-right">Monto</th>
                             <th className="px-4 py-3 text-center">Estado</th>
@@ -371,7 +288,9 @@ const TablaPagosOnline = ({ endpoint, fallidos = false, gatewayLabel = 'Transacc
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                         {loading && pagos.length === 0 ? (
-                            <tr><td colSpan={6}><LottieSpinner size={72} /></td></tr>
+                            <tr><td colSpan={6} className="text-center py-10 text-slate-400">
+                                <RefreshCw className="inline animate-spin mr-2" size={16} />Cargando...
+                            </td></tr>
                         ) : pagos.length === 0 ? (
                             <tr><td colSpan={6} className="text-center py-10 text-slate-400">
                                 {fallidos ? '¡No hay pagos fallidos con esos filtros!' : 'No se encontraron pagos.'}
@@ -396,7 +315,7 @@ const TablaPagosOnline = ({ endpoint, fallidos = false, gatewayLabel = 'Transacc
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold border ${statusColor(pago.Status)}`}>
-                                            {normalizeStatus(pago.Status)}
+                                            {pago.Status || 'Sin estado'}
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 text-center">
@@ -410,9 +329,6 @@ const TablaPagosOnline = ({ endpoint, fallidos = false, gatewayLabel = 'Transacc
                     </tbody>
                 </table>
             </div>
-            <div ref={sentinelRef} style={{ height: 1 }} />
-            {loading && pagos.length > 0 && <div style={{display:'flex',justifyContent:'center',padding:'8px'}}><LottieSpinner size={40}/></div>}
-            {!hasMore && pagos.length > 0 && <div className="text-center text-xs text-slate-400 py-2">— Fin de los resultados —</div>}
             <div className="text-xs text-slate-400 text-right">{pagos.length} resultado{pagos.length !== 1 ? 's' : ''}</div>
 
             {/* Modal detalle */}
@@ -438,10 +354,10 @@ const TablaPagosOnline = ({ endpoint, fallidos = false, gatewayLabel = 'Transacc
                                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
                                     <p className="text-xs font-bold text-slate-400 uppercase mb-1">Monto / Estado</p>
                                     <p className="font-black text-blue-700 text-lg">
-                                        {selected.Currency === 858 || selected.Currency === 'UYU' ? 'UYU' : 'USD'} {Number(selected.TotalAmount || 0).toFixed(2)}
+                                        {selected.Currency === 858 ? 'UYU' : 'USD'} {Number(selected.TotalAmount || 0).toFixed(2)}
                                     </p>
                                     <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold border mt-1 ${statusColor(selected.Status)}`}>
-                                        {normalizeStatus(selected.Status)} {selected.IssuerName ? `· ${selected.IssuerName}` : ''}
+                                        {selected.Status || '—'} {selected.IssuerName ? `· ${selected.IssuerName}` : ''}
                                     </span>
                                 </div>
                             </div>
@@ -454,7 +370,7 @@ const TablaPagosOnline = ({ endpoint, fallidos = false, gatewayLabel = 'Transacc
                                         {retiro && (
                                             <p className="mb-2">
                                                 <span className="bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 rounded-full text-sm font-bold">
-                                                    Retiro: {/^[A-Za-z]/.test(String(retiro)) ? String(retiro) : 'R-' + String(retiro)}
+                                                    Retiro: R-{String(retiro).replace('R-', '')}
                                                 </span>
                                             </p>
                                         )}
@@ -493,20 +409,10 @@ const TablaPagosOnline = ({ endpoint, fallidos = false, gatewayLabel = 'Transacc
 // ─── VISTA PRINCIPAL CON TABS ─────────────────────────────────────────────
 
 const TABS = [
-    { id: 'historial',   label: 'Todos los Pagos',       icon: <DollarSign size={15} />,   color: 'emerald' },
-    { id: 'online',      label: 'Handy',                  icon: <Wifi size={15} />,          color: 'blue' },
-    { id: 'fallidos',    label: 'Handy Fallidos',         icon: <WifiOff size={15} />,       color: 'rose' },
-    { id: 'mp',          label: 'MercadoPago',            icon: <CreditCard size={15} />,    color: 'violet' },
-    { id: 'mp-fallidos', label: 'MercadoPago Fallidos',   icon: <AlertTriangle size={15} />, color: 'orange' },
+    { id: 'historial', label: 'Todos los Pagos', icon: <DollarSign size={15} />, color: 'emerald' },
+    { id: 'online',    label: 'Pagos Online',    icon: <Wifi size={15} />,       color: 'blue' },
+    { id: 'fallidos',  label: 'Online Fallidos', icon: <WifiOff size={15} />,    color: 'rose' },
 ];
-
-const TAB_COLOR = {
-    emerald: 'bg-emerald-600 text-white shadow',
-    blue:    'bg-blue-600 text-white shadow',
-    rose:    'bg-rose-600 text-white shadow',
-    violet:  'bg-violet-600 text-white shadow',
-    orange:  'bg-orange-500 text-white shadow',
-};
 
 const VerificarPagosOnlineView = () => {
     const [tab, setTab] = useState('historial');
@@ -515,14 +421,18 @@ const VerificarPagosOnlineView = () => {
         <div className="min-h-full flex flex-col p-4 lg:p-8 gap-4 font-sans bg-[#f6f8fb]">
             <div className="flex items-center gap-4 flex-wrap">
                 <h2 className="text-2xl font-black text-slate-800">Gestión de Pagos</h2>
-                <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm flex-wrap">
+                <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
                     {TABS.map(t => (
                         <button key={t.id} onClick={() => setTab(t.id)}
                             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all whitespace-nowrap ${
-                                tab === t.id ? TAB_COLOR[t.color] : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                                tab === t.id
+                                    ? t.color === 'emerald' ? 'bg-emerald-600 text-white shadow'
+                                    : t.color === 'rose'    ? 'bg-rose-600 text-white shadow'
+                                    :                         'bg-blue-600 text-white shadow'
+                                    : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
                             }`}>
                             {t.icon} {t.label}
-                            {(t.id === 'fallidos' || t.id === 'mp-fallidos') && tab !== t.id && (
+                            {t.id === 'fallidos' && tab !== 'fallidos' && (
                                 <span className="ml-1 bg-rose-100 text-rose-600 text-[10px] font-black px-1.5 py-0.5 rounded-full">!</span>
                             )}
                         </button>
@@ -531,11 +441,9 @@ const VerificarPagosOnlineView = () => {
             </div>
 
             <div className="flex-1">
-                {tab === 'historial'   && <HistorialPagos />}
-                {tab === 'online'      && <TablaPagosOnline endpoint="/web-retiros/pagos-online" gatewayLabel="Transacción Handy" />}
-                {tab === 'fallidos'    && <TablaPagosOnline endpoint="/web-retiros/pagos-online-fallidos" fallidos gatewayLabel="Transacción Handy" />}
-                {tab === 'mp'          && <TablaPagosOnline endpoint="/web-retiros/pagos-mp" gatewayLabel="Transacción MP" />}
-                {tab === 'mp-fallidos' && <TablaPagosOnline endpoint="/web-retiros/pagos-mp-fallidos" fallidos gatewayLabel="Transacción MP" />}
+                {tab === 'historial' && <HistorialPagos />}
+                {tab === 'online'    && <TablaPagosOnline endpoint="/web-retiros/pagos-online" />}
+                {tab === 'fallidos'  && <TablaPagosOnline endpoint="/web-retiros/pagos-online-fallidos" fallidos />}
             </div>
         </div>
     );
