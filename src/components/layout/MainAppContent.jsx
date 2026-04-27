@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
-import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket, ScanLine, FileText, Cpu } from 'lucide-react';
+import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket, ScanLine, FileText, Cpu, FileDown, Inbox } from 'lucide-react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster } from 'sonner';
@@ -131,6 +131,8 @@ const lucideIconMapRaw = {
     'impresión directa': PrinterCheck,
     'impresion directa': PrinterCheck,
     'historial de lotes': History,
+    'importar ordenes': FileDown,
+    'importar órdenes': FileDown,
     // Logística WMS sub-items
     'dashboard depósito': LayoutGrid,
     'dashboard deposito': LayoutGrid,
@@ -222,6 +224,9 @@ const lucideIconMapRaw = {
     'reconciliacion':       ShieldCheck,
     'tesorería':            Banknote,
     'tesoreria':            Banknote,
+    'bandeja de tesorería': Inbox,
+    'bandeja de tesoreria': Inbox,
+    'bandeja tesoreria':    Inbox,
     'bandeja cfe':          ClipboardList,
     'cron':                 Terminal,
     // Administración sub-items
@@ -692,7 +697,7 @@ const DynamicRouter = ({ menuItems }) => {
     const matches = menuItems.filter(item => {
         if (!item.Ruta) return false;
         const normalizedRuta = item.Ruta.endsWith('/') && item.Ruta !== '/' ? item.Ruta.slice(0, -1) : item.Ruta;
-        return normalizedPath === normalizedRuta;
+        return normalizedPath === normalizedRuta || normalizedPath.startsWith(normalizedRuta + '/');
     });
     const menuItem = matches.sort((a, b) => b.Ruta.length - a.Ruta.length)[0];
 
