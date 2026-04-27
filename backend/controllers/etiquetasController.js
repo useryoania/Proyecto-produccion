@@ -152,12 +152,13 @@ const getOrdersForLabels = async (req, res) => {
                 O.Magnitud,
                 O.ValidacionOBS,
                 O.RolloID,
+                O.CostoTotal,
                 R.Nombre as NombreRollo,
                 (SELECT COUNT(*) FROM Etiquetas E WITH (NOLOCK) WHERE E.OrdenID = O.OrdenID) as CantidadEtiquetas
             FROM Ordenes O WITH (NOLOCK)
             LEFT JOIN Rollos R ON O.RolloID = R.RolloID
             WHERE 
-                O.Estado != 'CANCELADO'
+                O.Estado NOT IN ('CANCELADO', 'FINALIZADO', 'ENTREGADO')
                 AND (@Area = '' OR O.AreaID = @Area)
                 AND (
                     @Search IS NULL 
@@ -392,7 +393,7 @@ const printEtiquetas = async (req, res) => {
                             width: 150, height: 150, correctLevel: QRCode.CorrectLevel.M
                         });
                         new QRCode(document.getElementById("qr-orden-${index}"), {
-                            text: "${baseOrderCode}",
+                            text: "${label.CodigoQR || baseOrderCode}",
                             width: 150, height: 150, correctLevel: QRCode.CorrectLevel.M
                         });
                     </script>

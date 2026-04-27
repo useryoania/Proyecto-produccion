@@ -11,10 +11,12 @@ router.post('/process-batch', logisticsController.processBatch);
 // --- NEW WMS (Bultos & Remitos) ---
 // Bultos
 router.post('/bultos', logisticsController.createBulto);
+router.post('/bultos/resolve-qr', logisticsController.resolveBultoQR);
 router.get('/bultos/:label', logisticsController.getBultoByLabel);
 
 // Remitos (Dispatch)
 router.post('/remitos', logisticsController.createRemito);
+router.post('/remitos/from-orders', logisticsController.createRemitoFromOrders);
 router.post('/remitos/validate', logisticsController.validateDispatch);
 router.get('/remitos/incoming', logisticsController.getIncomingRemitos);
 router.get('/remitos/outgoing', logisticsController.getOutgoingRemitos);

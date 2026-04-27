@@ -32,6 +32,11 @@ const logisticsService = {
         return response.data;
     },
 
+    createRemitoFromOrders: async (data) => {
+        const response = await api.post('/logistics/remitos/from-orders', data);
+        return response.data;
+    },
+
     getRemitoByCode: async (code) => {
         const response = await api.get(`/logistics/remitos/${encodeURIComponent(code)}`);
         return response.data;

@@ -1,5 +1,6 @@
 const { sql, getPool } = require('../config/db');
 const logger = require('../utils/logger');
+const ERPSyncService = require('./erpSyncService');
 
 class LabelGenerationService {
 
@@ -61,7 +62,59 @@ class LabelGenerationService {
                 }
             }
 
-            // QR Simplificado para Control Interno
+            // --- EXTRACCION DE PRECIO Y QR DE DB (NUEVA LOGICA UNIFICADA) ---
+            let importeTotalStr = '0.00';
+            let targetCurrency = 'UYU';
+            let dbQrString = null;
+            let dbDetalleCostos = null;
+            let dbPerfilesPrecio = null;
+
+            try {
+                // Buscamos en PedidosCobranza ya que guarda la fuente de la verdad
+                const pRes = await pool.request().input('Doc', sql.NVarChar, o.NoDocERP || '').query("SELECT MontoTotal, Moneda, QR_String, DetalleCostos, PerfilesPrecio FROM PedidosCobranza WHERE NoDocERP = @Doc");
+                if (pRes.recordset.length > 0) {
+                    importeTotalStr = Number(pRes.recordset[0].MontoTotal || 0).toFixed(2);
+                    targetCurrency = pRes.recordset[0].Moneda || 'UYU';
+                    dbQrString = pRes.recordset[0].QR_String;
+                    dbDetalleCostos = pRes.recordset[0].DetalleCostos;
+                    dbPerfilesPrecio = pRes.recordset[0].PerfilesPrecio;
+                } else if (o.CostoTotal) {
+                    importeTotalStr = Number(o.CostoTotal).toFixed(2);
+                }
+            } catch (ignore) {
+                if (o.CostoTotal) importeTotalStr = Number(o.CostoTotal).toFixed(2);
+            }
+
+            // Validar costo > 0, EXCEPTO para órdenes de Reposición o Prepago.
+            // En Reposición o Prepago el $0 es intencional, se permite imprimir igual.
+            const esReposicion = (o.CodigoOrden || o.NoDocERP || '').trim().toUpperCase().startsWith('R');
+            const esPrepago = (dbPerfilesPrecio && dbPerfilesPrecio.toLowerCase().includes('prepago')) || (dbDetalleCostos && dbDetalleCostos.toLowerCase().includes('prepago'));
+            
+            if (!esReposicion && !esPrepago && (importeTotalStr === '0.00' || importeTotalStr === '0' || Number(importeTotalStr) <= 0)) {
+                return { success: false, error: 'Calculo Frio: La orden no cuenta con un costo válido (Es $0). Vaya a Edit Cotización e ingrese un valor, o asegúrese de aplicar prepago o código R para habilitar $0.' };
+            }
+
+            // --- GENERACIÓN / RESCATE DEL STRING QR ($*) CLASICO ---
+            let finalQrStringToSave = dbQrString;
+
+            // Si la base de datos es antigua y no tiene QR guardado aún, realizamos un fallback/re-armado
+            if (!finalQrStringToSave) {
+                const baseOrderMatch = o.CodigoOrden ? o.CodigoOrden.match(/^(\d+)/) : null;
+                const baseOrderNum = baseOrderMatch ? baseOrderMatch[1] : (o.CodigoOrden || o.OrdenID);
+
+                const qrPedido = baseOrderNum;
+                const qrCliente = o.IdClienteReact || '0';
+                const qrTrabajo = (o.DescripcionTrabajo || '').replace(/\$\*/g, ' ').trim();
+                const isUrgent = (o.Prioridad && (o.Prioridad.toLowerCase().includes('urgente') || o.Prioridad.toLowerCase().includes('alta')));
+                const qrUrgencia = isUrgent ? '2' : '1';
+                const qrProducto = targetCurrency === 'USD' ? '150' : '82';
+                const qrCantidad = o.Magnitud || '1';
+                
+                const SEP = '$*';
+                finalQrStringToSave = `${qrPedido}${SEP}${qrCliente}${SEP}${qrTrabajo}${SEP}${qrUrgencia}${SEP}${qrProducto}${SEP}${qrCantidad}${SEP}${importeTotalStr}`;
+            }
+
+            // QR Simplificado para Control Interno (Fallback/Logística)
             const qrSimple = `ORD-${o.OrdenID}`;
 
             // --- TRANSACCION DB ---
@@ -98,22 +151,27 @@ class LabelGenerationService {
             const tipoBulto = esUltimoServicio ? 'PROD_TERMINADO' : 'EN_PROCESO';
 
             for (let i = 1; i <= totalBultos; i++) {
+                // Opcional: Para debugging, pasemos a Etiquetas el CodigoQR con formato legacy (finalQrStringToSave)
                 await new sql.Request(transaction)
                     .input('OID', sql.Int, ordenId)
                     .input('Num', sql.Int, i)
                     .input('Tot', sql.Int, totalBultos)
-                    .input('QR', sql.NVarChar(sql.MAX), qrSimple)
+                    .input('QR', sql.NVarChar(sql.MAX), finalQrStringToSave)
                     .input('User', sql.VarChar(100), userName)
                     .input('Area', sql.VarChar(20), o.AreaID || 'GEN')
                     .input('UID', sql.Int, userId)
                     .input('Job', sql.NVarChar(255), (o.DescripcionTrabajo || '').substring(0, 255))
                     .input('Tipo', sql.VarChar(50), tipoBulto)
+                    .input('DC', sql.NVarChar(sql.MAX), dbDetalleCostos)
+                    .input('PP', sql.NVarChar(sql.MAX), dbPerfilesPrecio)
+                    .input('Doc', sql.VarChar(50), o.NoDocERP || o.CodigoOrden || String(ordenId))
                     .query(`
-                        INSERT INTO Etiquetas(OrdenID, NumeroBulto, TotalBultos, CodigoQR, FechaGeneracion, Usuario)
-                        VALUES(@OID, @Num, @Tot, @QR, GETDATE(), @User);
+                        INSERT INTO Etiquetas(OrdenID, NumeroBulto, TotalBultos, CodigoQR, FechaGeneracion, Usuario, CreadoPor, DetalleCostos, PerfilesPrecio)
+                        VALUES(@OID, @Num, @Tot, @QR, GETDATE(), @User, @User, @DC, @PP);
 
                         DECLARE @NewID INT = SCOPE_IDENTITY();
-                        DECLARE @Code NVARCHAR(50) = 'B' + CAST(@NewID AS NVARCHAR) + '-' + @Area + FORMAT(GETDATE(), 'MMdd');
+                        -- Formato: B(IdBulto)-(NumeroDeOrden/ERP)
+                        DECLARE @Code NVARCHAR(50) = 'B' + CAST(@NewID AS NVARCHAR) + '-' + @Doc;
                         
                         UPDATE Etiquetas SET CodigoEtiqueta = @Code WHERE EtiquetaID = @NewID;
 

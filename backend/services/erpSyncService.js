@@ -10,7 +10,7 @@ class ERPSyncService {
      * Este es el nuevo "punto logístico" robusto solicitado.
      */
     static async syncFinalOrderIntegration(noDocERP, userId = 1, userName = 'Sistema', bultoCode = null, options = {}) {
-        const { onlyCalculate = false, userNotes = '', priceOverride = null, quantityOverride = null, profileOverride = null, syncTarget = null, forcedReactPayload = null, forcedErpPayload = null } = options;
+        const { onlyCalculate = false, userNotes = '', priceOverride = null, quantityOverride = null, profileOverride = null, syncTarget = null, forcedReactPayload = null, forcedErpPayload = null, skipDeposito = false } = options;
         if (!noDocERP) throw new Error("NoDocERP es requerido para la sincronización.");
 
         const pool = await getPool();
@@ -20,10 +20,21 @@ class ERPSyncService {
         const orderRes = await pool.request()
             .input('Doc', sql.NVarChar, noDocERP.toString())
             .query(`
-                SELECT O.*, PB.Moneda as MonedaBase, A.Descripcion as NombreArticulo, A.IDProdReact as ArtIdReact
+                SELECT O.*, 
+                       CASE WHEN PB.MonIdMoneda = 2 THEN 'USD' ELSE 'UYU' END as MonedaBase, 
+                       A.Descripcion as NombreArticulo, 
+                       A.IDProdReact as ArtIdReact, 
+                       C.CliIdCliente as Cli_CliIdCliente,
+                       C.IDReact as Cli_IDReact
                 FROM Ordenes O
-                LEFT JOIN PreciosBase PB ON LTRIM(RTRIM(O.CodArticulo)) = LTRIM(RTRIM(PB.CodArticulo))
-                LEFT JOIN Articulos A ON LTRIM(RTRIM(O.CodArticulo)) = LTRIM(RTRIM(A.CodArticulo))
+                LEFT JOIN PreciosBase PB ON O.ProIdProducto = PB.ProIdProducto
+                OUTER APPLY (
+                    SELECT TOP 1 Descripcion, IDProdReact 
+                    FROM Articulos WITH(NOLOCK) 
+                    WHERE ProIdProducto = O.ProIdProducto 
+                       OR (O.CodArticulo IS NOT NULL AND LTRIM(RTRIM(CodArticulo)) = LTRIM(RTRIM(O.CodArticulo)))
+                ) A
+                LEFT JOIN Clientes C ON (O.CliIdCliente = C.CliIdCliente OR (O.CodCliente IS NOT NULL AND LTRIM(RTRIM(O.CodCliente)) = LTRIM(RTRIM(C.CodCliente))))
                 WHERE LTRIM(RTRIM(O.NoDocERP)) = LTRIM(RTRIM(@Doc)) 
                    OR LTRIM(RTRIM(O.NoDocERP)) = LTRIM(RTRIM(REPLACE(@Doc, 'ORD-', '')))
             `);
@@ -39,7 +50,21 @@ class ERPSyncService {
         let totalMagnitudeSum = 0;
         const detallesCobranza = [];
 
-        // 3. Cálculo de Precios (Lógica movida desde LabelGenerationService)
+        // 2b. Leer perfiles especiales por nombre desde PerfilesPrecios
+        // No requiere configuración manual — se busca por nombre automáticamente
+        let idReposicion = null;
+        try {
+            const repRes = await pool.request().query(
+                "SELECT TOP 1 ID FROM PerfilesPrecios WHERE Nombre LIKE '%eposici%' AND Activo = 1"
+            );
+            if (repRes.recordset.length > 0) {
+                idReposicion = repRes.recordset[0].ID;
+                logger.info(`[ERPSync] Perfil Reposicion cargado: ID=${idReposicion}`);
+            }
+        } catch(eCfg) {
+            logger.warn('[ERPSync] No se pudo cargar perfil Reposicion:', eCfg.message);
+        }
+
         for (const sib of siblings) {
             try {
                 // Resolver Magnitud
@@ -58,13 +83,20 @@ class ERPSyncService {
                 totalMagnitudeSum += magVal;
 
                 // Resolver ID Cliente
-                let internalClientId = sib.CodCliente || null;
+                // Se usa CliIdCliente en lugar de CodCliente porque PreciosEspeciales ahora relaciona a través de CliIdCliente
+                let internalClientId = sib.Cli_CliIdCliente || sib.CliIdCliente || null;
 
-                // Perfiles Extra (Urgencia, Tinta)
+                // Perfiles Extra (Urgencia, Tinta, Reposición)
                 const extraProfiles = profileOverride ? [parseInt(profileOverride)] : [];
                 if (extraProfiles.length === 0) {
                     if (sib.Prioridad && sib.Prioridad.toString().trim().toLowerCase().includes('urgente')) extraProfiles.push(2);
                     if (sib.Tinta && (sib.Tinta.toUpperCase().includes('UV') || sib.Tinta.toUpperCase().includes('LATEX'))) extraProfiles.push(3);
+                    // Reposición: aplicar si el código de orden comienza con R (ej: R-12345, REPO-xxx)
+                    const codigoOrdenCheck = (sib.CodigoOrden || sib.NoDocERP || '').trim().toUpperCase();
+                    if (idReposicion && codigoOrdenCheck.startsWith('R')) {
+                        extraProfiles.push(idReposicion);
+                        logger.info(`[ERPSync] 🔄 Orden de Reposición detectada (${codigoOrdenCheck}), inyectando Perfil #${idReposicion}`);
+                    }
                 }
 
                 // Variables Técnicas
@@ -87,17 +119,25 @@ class ERPSyncService {
                 let costoCalculado = 0;
                 let precioUnitario = 0;
                 let textLog = "Precio Calculado";
+                let perfilAplicado = "Precio Base";
+                let PUOriginal = 0;
+                let SubtotalOriginal = 0;
+                let MonedaOriginal = targetCurrency;
 
                 if (priceOverride !== null && !isNaN(parseFloat(priceOverride))) {
                     costoCalculado = parseFloat(priceOverride);
                     precioUnitario = effectiveQty > 0 ? costoCalculado / effectiveQty : costoCalculado;
                     textLog = "Precio Ajustado Manualmente";
+                    perfilAplicado = "Manual/Override";
+                    PUOriginal = precioUnitario;
+                    SubtotalOriginal = costoCalculado;
+                    MonedaOriginal = targetCurrency;
                     logger.info(`[ERPSync] Aplicando Precio Override: ${costoCalculado}`);
                 } else {
                     const priceResult = await PricingService.calculatePrice(
-                        sib.CodArticulo || '',
+                        { codArticulo: sib.CodArticulo || '', proIdProducto: sib.ProIdProducto || null },
                         effectiveQty || 1,
-                        internalClientId,
+                        { cliIdCliente: internalClientId, clienteLegacy: sib.CodCliente || internalClientId },
                         extraProfiles,
                         vars,
                         targetCurrency,
@@ -107,25 +147,149 @@ class ERPSyncService {
                     costoCalculado = priceResult.precioTotal || 0;
                     precioUnitario = priceResult.precioUnitario || 0;
                     textLog = priceResult.txt;
+                    perfilAplicado = (priceResult.perfilesAplicados && priceResult.perfilesAplicados.length > 0) ? priceResult.perfilesAplicados.join(', ') : 'Precio Base';
+                    PUOriginal = priceResult.precioUnitarioOriginal || precioUnitario;
+                    SubtotalOriginal = priceResult.precioTotalOriginal || costoCalculado;
+                    MonedaOriginal = priceResult.monedaOriginal || targetCurrency;
                 }
 
-                // Actualizar Costo y Observaciones en Orden
-                await pool.request()
-                    .input('Cost', sql.Decimal(18, 2), costoCalculado)
-                    .input('Obs', sql.NVarChar(sql.MAX), userNotes)
-                    .input('OID', sql.Int, sib.OrdenID)
-                    .query("UPDATE Ordenes SET CostoTotal = @Cost, Observaciones = CASE WHEN @Obs <> '' THEN @Obs ELSE Observaciones END WHERE OrdenID = @OID");
+                // ---- LÓGICA DE PREPAGO (PlanesMetros) ----
+                // Verificar si el cliente tiene un plan activo para este producto
+                let metrosDisponibles = 0;
+                let planIdActivo = null;
+                if (internalClientId && sib.ProIdProducto) {
+                    try {
+                        const planRes = await pool.request()
+                            .input('Cli', sql.Int, internalClientId)
+                            .input('Pro', sql.Int, sib.ProIdProducto)
+                            .query(`SELECT TOP 1 PlaIdPlan,
+                                        ISNULL(PlaCantidadTotal, 0) - ISNULL(PlaCantidadUsada, 0) AS MetrosDisponibles
+                                    FROM PlanesMetros WITH(NOLOCK)
+                                    WHERE CliIdCliente = @Cli
+                                      AND ProIdProducto = @Pro
+                                      AND PlaActivo = 1
+                                      AND (PlaFechaVencimiento IS NULL OR PlaFechaVencimiento >= CAST(GETDATE() AS DATE))
+                                    ORDER BY PlaFechaVencimiento ASC`);
+                        if (planRes.recordset.length > 0) {
+                            metrosDisponibles = parseFloat(planRes.recordset[0].MetrosDisponibles) || 0;
+                            planIdActivo = planRes.recordset[0].PlaIdPlan;
+                        }
+                    } catch (ePlan) {
+                        logger.warn(`[ERPSync] No se pudo verificar PlanesMetros para Orden ${sib.OrdenID}:`, ePlan.message);
+                    }
+                }
 
-                totalPriceSum += costoCalculado;
+                // Determinar si aplica cobertura de prepago
+                const metrosPedido = effectiveQty;
+                const hayPlan = planIdActivo !== null && metrosDisponibles > 0;
+                const coberturaTotal = hayPlan && metrosDisponibles >= metrosPedido;
+                const coberturaParcial = hayPlan && !coberturaTotal;
 
-                detallesCobranza.push({
-                    OrdenID: sib.OrdenID,
-                    CodArticulo: sib.CodArticulo,
-                    Cantidad: effectiveQty,
-                    PrecioUnitario: precioUnitario,
-                    Subtotal: costoCalculado,
-                    LogPrecioAplicado: textLog
-                });
+                if (coberturaTotal) {
+                    // ► CASO 1: El plan cubre todo — 1 línea a $0
+                    logger.info(`[ERPSync] 🎟️  Prepago TOTAL para Orden ${sib.OrdenID}: ${metrosPedido}m cubiertos por Plan #${planIdActivo} (disponibles: ${metrosDisponibles}m)`);
+                    costoCalculado = 0;
+                    precioUnitario = 0;
+                    perfilAplicado = 'Prepago (Rollo Pre-Comprado)';
+                    textLog = `Cubierto 100% por Plan #${planIdActivo} (${metrosDisponibles}m disponibles)`;
+
+                    await pool.request()
+                        .input('Cost', sql.Decimal(18, 2), 0)
+                        .input('Obs', sql.NVarChar(sql.MAX), userNotes)
+                        .input('OID', sql.Int, sib.OrdenID)
+                        .query("UPDATE Ordenes SET CostoTotal = @Cost, Observaciones = CASE WHEN @Obs <> '' THEN @Obs ELSE Observaciones END WHERE OrdenID = @OID");
+
+                    // totalPriceSum += 0 → no suma nada
+                    detallesCobranza.push({
+                        OrdenID: sib.OrdenID,
+                        CodArticulo: sib.CodArticulo,
+                        ProIdProducto: sib.ProIdProducto,
+                        Cantidad: metrosPedido,
+                        PrecioUnitario: 0,
+                        Subtotal: 0,
+                        PrecioUnitarioOriginal: PUOriginal,
+                        SubtotalOriginal: SubtotalOriginal,
+                        Moneda: MonedaOriginal,
+                        MonedaOriginal: MonedaOriginal,
+                        LogPrecioAplicado: textLog,
+                        Perfiles: perfilAplicado
+                    });
+
+                } else if (coberturaParcial) {
+                    // ► CASO 2: El plan cubre PARCIALMENTE — 2 líneas
+                    const metrosRestantes = metrosPedido - metrosDisponibles;
+                    const proporcion = metrosPedido > 0 ? metrosRestantes / metrosPedido : 1;
+                    const costoExcedente = parseFloat((costoCalculado * proporcion).toFixed(2));
+                    const puExcedente = metrosRestantes > 0 ? costoExcedente / metrosRestantes : precioUnitario;
+
+                    logger.info(`[ERPSync] 🎟️  Prepago PARCIAL para Orden ${sib.OrdenID}: ${metrosDisponibles}m a $0 + ${metrosRestantes}m a $${costoExcedente} (Plan #${planIdActivo})`);
+
+                    // Actualizar Ordenes con el costo del excedente solamente
+                    await pool.request()
+                        .input('Cost', sql.Decimal(18, 2), costoExcedente)
+                        .input('Obs', sql.NVarChar(sql.MAX), userNotes)
+                        .input('OID', sql.Int, sib.OrdenID)
+                        .query("UPDATE Ordenes SET CostoTotal = @Cost, Observaciones = CASE WHEN @Obs <> '' THEN @Obs ELSE Observaciones END WHERE OrdenID = @OID");
+
+                    totalPriceSum += costoExcedente;
+
+                    // Línea 1: metros cubiertos → $0
+                    detallesCobranza.push({
+                        OrdenID: sib.OrdenID,
+                        CodArticulo: sib.CodArticulo,
+                        ProIdProducto: sib.ProIdProducto,
+                        Cantidad: metrosDisponibles,
+                        PrecioUnitario: 0,
+                        Subtotal: 0,
+                        PrecioUnitarioOriginal: PUOriginal,
+                        SubtotalOriginal: 0,
+                        Moneda: MonedaOriginal,
+                        MonedaOriginal: MonedaOriginal,
+                        LogPrecioAplicado: `Prepago Parcial — ${metrosDisponibles}m cubiertos por Plan #${planIdActivo}`,
+                        Perfiles: 'Prepago Parcial (Rollo Pre-Comprado)'
+                    });
+
+                    // Línea 2: metros restantes → precio proporcional
+                    detallesCobranza.push({
+                        OrdenID: sib.OrdenID,
+                        CodArticulo: sib.CodArticulo,
+                        ProIdProducto: sib.ProIdProducto,
+                        Cantidad: metrosRestantes,
+                        PrecioUnitario: PUOriginal,
+                        Subtotal: SubtotalOriginal,
+                        PrecioUnitarioOriginal: PUOriginal,
+                        SubtotalOriginal: SubtotalOriginal,
+                        Moneda: MonedaOriginal,
+                        MonedaOriginal: MonedaOriginal,
+                        LogPrecioAplicado: `Excedente de prepago — ${metrosRestantes}m a precio normal`,
+                        Perfiles: 'Precio Base (Excedente de Rollo)'
+                    });
+
+                } else {
+                    // ► CASO 3: Sin plan activo — precio normal sin cambios
+                    await pool.request()
+                        .input('Cost', sql.Decimal(18, 2), costoCalculado)
+                        .input('Obs', sql.NVarChar(sql.MAX), userNotes)
+                        .input('OID', sql.Int, sib.OrdenID)
+                        .query("UPDATE Ordenes SET CostoTotal = @Cost, Observaciones = CASE WHEN @Obs <> '' THEN @Obs ELSE Observaciones END WHERE OrdenID = @OID");
+
+                    totalPriceSum += costoCalculado;
+
+                    detallesCobranza.push({
+                        OrdenID: sib.OrdenID,
+                        CodArticulo: sib.CodArticulo,
+                        ProIdProducto: sib.ProIdProducto,
+                        Cantidad: effectiveQty,
+                        PrecioUnitario: PUOriginal,
+                        Subtotal: SubtotalOriginal,
+                        PrecioUnitarioOriginal: PUOriginal,
+                        SubtotalOriginal: SubtotalOriginal,
+                        Moneda: MonedaOriginal,
+                        MonedaOriginal: MonedaOriginal,
+                        LogPrecioAplicado: textLog,
+                        Perfiles: perfilAplicado
+                    });
+                }
 
                 // --- SERVICIOS EXTRA ---
                 const srvRes = await pool.request()
@@ -143,13 +307,25 @@ class ERPSyncService {
                     const srvCostoTotal = srvPriceRes.precioTotal || 0;
                     totalPriceSum += srvCostoTotal;
 
+                    const srvPerfil = (srvPriceRes.perfilesAplicados && srvPriceRes.perfilesAplicados.length > 0) ? srvPriceRes.perfilesAplicados.join(', ') : 'Precio Base';
+
+                    const srvPUOrig = srvPriceRes.precioUnitarioOriginal || (srvPriceRes.precioUnitario || 0);
+                    const srvSubOrig = srvPriceRes.precioTotalOriginal || srvCostoTotal;
+                    const srvMonOrig = srvPriceRes.monedaOriginal || targetCurrency;
+
                     detallesCobranza.push({
                         OrdenID: sib.OrdenID,
                         CodArticulo: srv.CodArt,
+                        ProIdProducto: srvPriceRes.proIdProducto || null,
                         Cantidad: srvQty,
-                        PrecioUnitario: srvPriceRes.precioUnitario || 0,
-                        Subtotal: srvCostoTotal,
-                        LogPrecioAplicado: srvPriceRes.txt
+                        PrecioUnitario: srvPUOrig,
+                        Subtotal: srvSubOrig,
+                        PrecioUnitarioOriginal: srvPUOrig,
+                        SubtotalOriginal: srvSubOrig,
+                        Moneda: srvMonOrig,
+                        MonedaOriginal: srvMonOrig,
+                        LogPrecioAplicado: srvPriceRes.txt,
+                        Perfiles: srvPerfil
                     });
 
                     // Update Servicio en DB
@@ -165,26 +341,33 @@ class ERPSyncService {
             }
         }
 
-        // 4. Actualizar PedidosCobranza (Local)
-        await this.updatePedidosCobranza(pool, noDocERP, siblings[0].CodCliente, totalPriceSum, targetCurrency, detallesCobranza, userNotes);
-
-        // 5. Preparar Envío a REACT (Formato QR Exacto con $*)
-        // $[Bulto/Pedido]$*Cliente$*Trabajo$*Urgencia$*Producto$*Cantidad$*Importe
+        // 4. Preparar Envío a REACT (Formato QR Exacto con $*)
+        // [Bulto/Pedido]$*Cliente$*Trabajo$*Urgencia$*Producto$*Cantidad$*Importe
         const first = siblings[0];
         const rawCode = bultoCode || (first.CodigoOrden?.split('(')[0]?.trim() || first.CodigoOrden);
-        const qrPedido = `$${rawCode}`; // Código con signo de pesos prefijado
-        const qrCliente = first.IdClienteReact || '0';
+        const qrPedido = `${rawCode}`;
+        // Usar el IDReact del cliente (columna aliaseada para evitar conflicto con O.*)
+        const qrCliente = (first.Cli_IDReact || '0').toString();
         const qrTrabajo = (first.DescripcionTrabajo || '').trim();
         const qrUrgencia = (first.Prioridad && (first.Prioridad.toLowerCase().includes('urgente') || first.Prioridad.toLowerCase().includes('alta'))) ? '2' : '1';
-
-        // CORRECCIÓN: Usar IDProdReact del artículo si existe, sino fallback a genérico
-        const qrProducto = first.ArtIdReact || first.IdProductoReact || (targetCurrency === 'USD' ? '150' : '82');
-
-        const qrCantidad = totalMagnitudeSum || '1';
+        const qrProducto = (first.ArtIdReact || first.IdProductoReact || (targetCurrency === 'USD' ? '150' : '82')).toString();
+        const qrCantidad = (totalMagnitudeSum || '1').toString();
         const qrImporte = totalPriceSum.toFixed(2);
 
         const SEP = '$*';
         const reactCode = `${qrPedido}${SEP}${qrCliente}${SEP}${qrTrabajo}${SEP}${qrUrgencia}${SEP}${qrProducto}${SEP}${qrCantidad}${SEP}${qrImporte}`;
+
+        const qrData = {
+             qrPedido, qrCliente, qrTrabajo, qrUrgencia, qrProducto, qrCantidad, qrImporte, qrString: reactCode
+        };
+
+        // 5. Actualizar PedidosCobranza y PedidosCobranzaDetalle (siempre, independiente del destino)
+        try {
+            await this.updatePedidosCobranza(pool, noDocERP, first.Cli_CliIdCliente || null, totalPriceSum, targetCurrency, detallesCobranza, userNotes, qrData);
+            logger.info(`[ERPSync] ✅ PedidosCobranza actualizado para ${noDocERP}`);
+        } catch (ePed) {
+            logger.error(`[ERPSync] ❌ Error al guardar PedidosCobranza para ${noDocERP}:`, ePed.message);
+        }
 
         if (onlyCalculate) {
             // Reconstruct ERP Payload for preview
@@ -214,23 +397,19 @@ class ERPSyncService {
 
         logger.info(`\n======================================================\n[ERPSync] DESGLOSE DE PRECIOS CALCULADOS PARA ${noDocERP}\n${textBreakdown}\n======================================================\n`);
 
-        await pool.request()
-            .input('Break', sql.NVarChar(sql.MAX), textBreakdown)
-            .input('OID', sql.Int, siblings[0].OrdenID)
-            .query("UPDATE Etiquetas SET DetalleCostos = @Break WHERE OrdenID = @OID");
-
         logger.info(`[ERPSync] React Code ($*): ${reactCode}`);
 
         // 6. Escribir en OrdenesDeposito directamente (migrado de API React)
+        // IMPORTANTE: skipDeposito=true cuando se llama desde el ingreso de órdenes (no desde el depósito)
+        // OrdenesDeposito solo debe ser escrito durante el Check-In del WMS.
         let reactSuccess = false;
-        if (!syncTarget || syncTarget === 'REACT') {
+        if (skipDeposito) {
+            logger.info(`[ERPSync] SKIP OrdenesDeposito (skipDeposito=true — solo se escribe en PedidosCobranza).`);
+            reactSuccess = true;
+        } else if (!syncTarget || syncTarget === 'REACT') {
             if (options.isReactEnabledGlobal === false) {
                 logger.info(`[ERPSync] BYPASS REACT por configuración global (Desactivado).`);
                 reactSuccess = true;
-                await pool.request()
-                    .input('N', sql.VarChar, noDocERP.toString())
-                    .input('D', sql.NVarChar(sql.MAX), JSON.stringify({ bypassed: true }))
-                    .query("UPDATE PedidosCobranza SET EstadoSyncReact = 'Enviado_OK', ObsReact = @D WHERE NoDocERP = @N");
             } else {
                 // Resolver el string QR para parsear
                 let ordenString = forcedReactPayload;
@@ -245,7 +424,10 @@ class ERPSyncService {
                 try {
                     // Parsear el string QR: $CodigoOrden$*CodigoCliente$*NombreTrabajo$*IdModo$*IdProducto$*Cantidad$*CostoFinal
                     const parts = ordenString.split('$*');
-                    const CodigoOrden = parts[0] || '';
+                    let CodigoOrden = (parts[0] || '').trim();
+                    // IMPORTANTE: Remover el $ del inicio para guardar en OrdenesDeposito
+                    if(CodigoOrden.startsWith('$')) CodigoOrden = CodigoOrden.substring(1);
+
                     const CodigoCliente = parseInt(parts[1]) || 0;
                     const NombreTrabajo = parts[2] || '';
                     const IdModo = parseInt(parts[3]) || 1;
@@ -307,8 +489,14 @@ class ERPSyncService {
                         // Resolver MonIdMoneda del producto
                         const prodRes = await pool.request()
                             .input('PID', sql.Int, IdProducto)
-                            .query('SELECT MonIdMoneda FROM Productos WITH(NOLOCK) WHERE ProIdProducto = @PID');
+                            .query('SELECT ISNULL(MonIdMoneda, 1) as MonIdMoneda FROM Articulos WITH(NOLOCK) WHERE IDProdReact = @PID OR ProIdProducto = @PID');
                         const monedaId = prodRes.recordset[0]?.MonIdMoneda || 1;
+
+                        // Resolver LugarRetiro del cliente
+                        const cliRes = await pool.request()
+                            .input('CID', sql.Int, CodigoCliente)
+                            .query('SELECT FormaEnvioID FROM Clientes WITH(NOLOCK) WHERE CliIdCliente = @CID');
+                        const lugarRetiro = cliRes.recordset[0]?.FormaEnvioID ? parseInt(cliRes.recordset[0].FormaEnvioID) : null;
 
                         const insertResult = await pool.request()
                             .input('Cod', sql.VarChar(100), CodigoOrden)
@@ -320,16 +508,17 @@ class ERPSyncService {
                             .input('Mon', sql.Int, monedaId)
                             .input('Costo', sql.Float, costoFinalDecimal)
                             .input('Usr', sql.Int, userId)
+                            .input('Lugar', sql.Int, lugarRetiro)
                             .query(`
                                 INSERT INTO OrdenesDeposito (
                                     OrdCodigoOrden, OrdCantidad, CliIdCliente, OrdNombreTrabajo,
                                     MOrIdModoOrden, ProIdProducto, MonIdMoneda, OrdCostoFinal,
-                                    OrdFechaIngresoOrden, OrdUsuarioAlta, OrdEstadoActual, OrdFechaEstadoActual
+                                    OrdFechaIngresoOrden, OrdUsuarioAlta, OrdEstadoActual, OrdFechaEstadoActual, LReIdLugarRetiro
                                 )
                                 OUTPUT INSERTED.OrdIdOrden
                                 VALUES (
                                     @Cod, @Cant, @Cli, @Trab, @Modo, @Prod, @Mon, @Costo,
-                                    GETDATE(), @Usr, 1, GETDATE()
+                                    GETDATE(), @Usr, 1, GETDATE(), @Lugar
                                 )
                             `);
 
@@ -344,23 +533,12 @@ class ERPSyncService {
                     }
 
                     reactSuccess = true;
-                    await pool.request()
-                        .input('Doc', sql.NVarChar, noDocERP)
-                        .input('P', sql.NVarChar(sql.MAX), JSON.stringify({ ordenString, direct: true }))
-                        .query("UPDATE PedidosCobranza SET EstadoSyncReact = 'Enviado_OK', ObsReact = @P WHERE NoDocERP = @Doc");
-
                 } catch (eReact) {
                     logger.error(`[ERPSync] Error al insertar en OrdenesDeposito:`, eReact.message);
-                    await pool.request()
-                        .input('Doc', sql.NVarChar, noDocERP)
-                        .input('E', sql.NVarChar(sql.MAX), JSON.stringify({ error: eReact.message }))
-                        .query("UPDATE PedidosCobranza SET EstadoSyncReact = 'Error', ObsReact = @E WHERE NoDocERP = @Doc");
                 }
             }
         } else {
             logger.info(`[ERPSync] Omite REACT por filtro de target: ${syncTarget}`);
-            const current = await pool.request().input('Doc', sql.NVarChar, noDocERP).query("SELECT EstadoSyncReact FROM PedidosCobranza WHERE NoDocERP = @Doc");
-            if (current.recordset[0]?.EstadoSyncReact === 'Enviado_OK') reactSuccess = true;
         }
 
         // 7. Enviar a ERP (Dev Macrosoft)
@@ -371,11 +549,6 @@ class ERPSyncService {
             if (options.isErpEnabledGlobal === false) {
                 logger.info(`[ERPSync] BYPASS ERP por configuración global (Desactivado).`);
                 erpSuccess = true;
-                const pool = await getPool();
-                await pool.request()
-                    .input('N', sql.VarChar, noDocERP.toString())
-                    .input('D', sql.NVarChar(sql.MAX), JSON.stringify({ bypassed: true }))
-                    .query("UPDATE PedidosCobranza SET EstadoSyncERP = 'Enviado_OK', ObsERP = @D WHERE NoDocERP = @N");
             } else {
                 logger.info(`[ERPSync] Iniciando envío selectivo a ERP para ${noDocERP}${forcedErpPayload ? ' (USANDO PAYLOAD FORZADO)' : ''}`);
                 try {
@@ -405,27 +578,16 @@ class ERPSyncService {
                         if ((erpRes.status === 200 || erpRes.status === 201) && erpRes.data?.success !== false && !erpRes.data?.error) {
                             erpSuccess = true;
                             logger.info(`[ERPSync] OK ERP Macrosoft para ${noDocERP}`);
-                            await pool.request()
-                                .input('Doc', sql.NVarChar, noDocERP)
-                                .input('P', sql.NVarChar(sql.MAX), JSON.stringify(erpPayload))
-                                .query("UPDATE PedidosCobranza SET EstadoSyncERP = 'Enviado_OK', ObsERP = @P WHERE NoDocERP = @Doc");
                         } else {
                             throw new Error(erpRes.data?.error || erpRes.data?.message || JSON.stringify(erpRes.data));
                         }
                     }
                 } catch (eErp) {
-                    const errLog = eErp.response?.data || { error: eErp.message };
                     logger.error(`[ERPSync] Error al enviar a ERP Macrosoft:`, eErp.message);
-                    await pool.request()
-                        .input('Doc', sql.NVarChar, noDocERP)
-                        .input('E', sql.NVarChar(sql.MAX), JSON.stringify(errLog))
-                        .query("UPDATE PedidosCobranza SET EstadoSyncERP = 'Error', ObsERP = @E WHERE NoDocERP = @Doc");
                 }
             } // Fin if/else desactivado global
         } else {
             logger.info(`[ERPSync] Omite ERP por filtro de target: ${syncTarget}`);
-            const current = await pool.request().input('Doc', sql.NVarChar, noDocERP).query("SELECT EstadoSyncERP FROM PedidosCobranza WHERE NoDocERP = @Doc");
-            if (current.recordset[0]?.EstadoSyncERP === 'Enviado_OK') erpSuccess = true;
         }
 
         // 8. Marcar Órdenes como Sincronizadas
@@ -440,10 +602,12 @@ class ERPSyncService {
         };
     }
 
-    static async updatePedidosCobranza(pool, noDocERP, codCliente, totalGeneral, targetCurrency, detalles, userNotes = '') {
+    static async updatePedidosCobranza(pool, noDocERP, codCliente, totalGeneral, targetCurrency, detalles, userNotes = '', qrData = null) {
+        const textBreakdown = detalles.map(d => `- ${d.CodArticulo}: ${d.Cantidad} x ${d.PrecioUnitario} = ${d.Subtotal} (${d.LogPrecioAplicado})`).join('\n');
+        const perfilesUnicos = [...new Set(detalles.map(d => d.Perfiles).filter(p => p && p !== 'Precio Base'))].join(', ') || null;
+
         const chk = await pool.request().input('Doc', sql.NVarChar, noDocERP.trim()).query("SELECT ID FROM PedidosCobranza WHERE LTRIM(RTRIM(NoDocERP)) = @Doc");
         let id;
-        const obsFinal = userNotes ? `LOGISTICA: ${userNotes}` : 'GENERADO DESDE WMS';
 
         if (chk.recordset.length > 0) {
             id = chk.recordset[0].ID;
@@ -451,8 +615,22 @@ class ERPSyncService {
                 .input('ID', sql.Int, id)
                 .input('M', sql.Decimal(18, 2), totalGeneral)
                 .input('Mon', sql.VarChar, targetCurrency)
-                .input('Obs', sql.NVarChar, obsFinal)
-                .query("UPDATE PedidosCobranza SET MontoTotal = @M, Moneda = @Mon, FechaGeneracion = GETDATE(), ObsERP = @Obs WHERE ID = @ID");
+                .input('QRP', sql.NVarChar, qrData ? qrData.qrPedido : null)
+                .input('QRC', sql.NVarChar, qrData ? qrData.qrCliente : null)
+                .input('QRT', sql.NVarChar, qrData ? qrData.qrTrabajo : null)
+                .input('QRU', sql.NVarChar, qrData ? qrData.qrUrgencia : null)
+                .input('QRPr', sql.NVarChar, qrData ? qrData.qrProducto : null)
+                .input('QRCa', sql.NVarChar, qrData ? qrData.qrCantidad : null)
+                .input('QRI', sql.NVarChar, qrData ? qrData.qrImporte : null)
+                .input('QRS', sql.NVarChar(sql.MAX), qrData ? qrData.qrString : null)
+                .input('DC', sql.NVarChar(sql.MAX), textBreakdown)
+                .input('PP', sql.NVarChar(sql.MAX), perfilesUnicos)
+                .query(`UPDATE PedidosCobranza SET 
+                    MontoTotal = @M, Moneda = @Mon, FechaGeneracion = GETDATE(),
+                    QR_Pedido = @QRP, QR_Cliente = @QRC, QR_Trabajo = @QRT, 
+                    QR_Urgencia = @QRU, QR_Producto = @QRPr, QR_Cantidad = @QRCa, 
+                    QR_Importe = @QRI, QR_String = @QRS, DetalleCostos = @DC, PerfilesPrecio = @PP
+                    WHERE ID = @ID`);
             await pool.request().input('PID', sql.Int, id).query("DELETE FROM PedidosCobranzaDetalle WHERE PedidoCobranzaID = @PID");
         } else {
             const ins = await pool.request()
@@ -460,13 +638,39 @@ class ERPSyncService {
                 .input('Cli', sql.Int, codCliente || 0)
                 .input('M', sql.Decimal(18, 2), totalGeneral)
                 .input('Mon', sql.VarChar, targetCurrency)
-                .input('Obs', sql.NVarChar, obsFinal)
-                .query("INSERT INTO PedidosCobranza (NoDocERP, ClienteID, MontoTotal, Moneda, FechaGeneracion, ObsERP) OUTPUT INSERTED.ID VALUES (@Doc, @Cli, @M, @Mon, GETDATE(), @Obs)");
+                .input('QRP', sql.NVarChar, qrData ? qrData.qrPedido : null)
+                .input('QRC', sql.NVarChar, qrData ? qrData.qrCliente : null)
+                .input('QRT', sql.NVarChar, qrData ? qrData.qrTrabajo : null)
+                .input('QRU', sql.NVarChar, qrData ? qrData.qrUrgencia : null)
+                .input('QRPr', sql.NVarChar, qrData ? qrData.qrProducto : null)
+                .input('QRCa', sql.NVarChar, qrData ? qrData.qrCantidad : null)
+                .input('QRI', sql.NVarChar, qrData ? qrData.qrImporte : null)
+                .input('QRS', sql.NVarChar(sql.MAX), qrData ? qrData.qrString : null)
+                .input('DC', sql.NVarChar(sql.MAX), textBreakdown)
+                .input('PP', sql.NVarChar(sql.MAX), perfilesUnicos)
+                .query(`INSERT INTO PedidosCobranza 
+                    (NoDocERP, ClienteID, MontoTotal, Moneda, FechaGeneracion, QR_Pedido, QR_Cliente, QR_Trabajo, QR_Urgencia, QR_Producto, QR_Cantidad, QR_Importe, QR_String, DetalleCostos, PerfilesPrecio) 
+                    OUTPUT INSERTED.ID 
+                    VALUES (@Doc, @Cli, @M, @Mon, GETDATE(), @QRP, @QRC, @QRT, @QRU, @QRPr, @QRCa, @QRI, @QRS, @DC, @PP)`);
             id = ins.recordset[0].ID;
         }
 
         for (const d of detalles) {
-            await pool.request().input('Pid', sql.Int, id).input('OID', sql.Int, d.OrdenID).input('Cod', sql.NVarChar, d.CodArticulo).input('Cant', sql.Decimal(18, 2), d.Cantidad).input('PU', sql.Decimal(18, 2), d.PrecioUnitario).input('ST', sql.Decimal(18, 2), d.Subtotal).input('Log', sql.NVarChar, d.LogPrecioAplicado).query("INSERT INTO PedidosCobranzaDetalle (PedidoCobranzaID, OrdenID, CodArticulo, Cantidad, PrecioUnitario, Subtotal, LogPrecioAplicado) VALUES (@Pid, @OID, @Cod, @Cant, @PU, @ST, @Log)");
+            await pool.request()
+                .input('Pid', sql.Int, id)
+                .input('OID', sql.Int, d.OrdenID)
+                .input('ProdID', sql.Int, d.ProIdProducto)
+                .input('Cant', sql.Decimal(18, 2), d.Cantidad)
+                .input('PU', sql.Decimal(18, 2), d.PrecioUnitario)
+                .input('ST', sql.Decimal(18, 2), d.Subtotal)
+                .input('Log', sql.NVarChar, d.LogPrecioAplicado)
+                .input('Mon', sql.VarChar, targetCurrency)
+                .input('Perfil', sql.NVarChar(sql.MAX), d.Perfiles || null)
+                .input('Trace', sql.NVarChar(sql.MAX), d.LogPrecioAplicado || null)
+                .input('MonOrig', sql.VarChar(10), d.MonedaOriginal)
+                .input('PUOrig', sql.Decimal(18, 4), d.PrecioUnitarioOriginal)
+                .input('STOrig', sql.Decimal(18, 4), d.SubtotalOriginal)
+                .query("INSERT INTO PedidosCobranzaDetalle (PedidoCobranzaID, OrdenID, ProIdProducto, Cantidad, PrecioUnitario, Subtotal, LogPrecioAplicado, Moneda, PerfilAplicado, PricingTrace, MonedaOriginal, PrecioUnitarioOriginal, SubtotalOriginal) VALUES (@Pid, @OID, @ProdID, @Cant, @PU, @ST, @Log, @Mon, @Perfil, @Trace, @MonOrig, @PUOrig, @STOrig)");
         }
     }
 

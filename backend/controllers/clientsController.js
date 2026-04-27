@@ -521,7 +521,10 @@ exports.getAllClients = async (req, res) => {
                    OR c.CioRuc LIKE @q 
                    OR c.Email LIKE @q
                    OR c.TelefonoTrabajo LIKE @q
-                   OR CAST(c.CodCliente AS VARCHAR) LIKE @q)
+                   OR CAST(c.CodCliente AS VARCHAR) LIKE @q
+                   OR CAST(c.CliIdCliente AS VARCHAR) LIKE @q
+                   OR c.IDCliente LIKE @q
+                   OR CAST(c.IDReact AS VARCHAR) LIKE @q)
             `;
             request.input('q', sql.NVarChar, `%${q}%`);
         }
