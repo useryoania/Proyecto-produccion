@@ -2384,7 +2384,12 @@ exports.handyWebhook = async (req, res) => {
                         // Determinar nuevo estado de la orden de retiro
                         const retiroState = await pool.request()
                             .input('RID', sql.Int, ordenRetiroId)
-                            .query('SELECT OReEstadoActual FROM OrdenesRetiro WITH(NOLOCK) WHERE OReIdOrdenRetiro = @RID');
+                            .query('SELECT OReEstadoActual, PagIdPago FROM OrdenesRetiro WITH(NOLOCK) WHERE OReIdOrdenRetiro = @RID');
+
+                        if (retiroState.recordset.length > 0 && retiroState.recordset[0].PagIdPago) {
+                            logger.info(`[HANDY WEBHOOK] La orden de retiro ${ordenRetiroId} ya tiene un pago asignado (PagIdPago: ${retiroState.recordset[0].PagIdPago}). Ignorando webhook duplicado de pago exitoso.`);
+                            return; // IMPORTANTE: Idempotencia para evitar duplicar pagos y cambios de estado
+                        }
 
                         const estadoActual = retiroState.recordset[0]?.OReEstadoActual || 1;
                         const nuevoEstado = estadoActual === 1 ? 3 : 8; // 1→3 (Ingresado→Abonado), otro→8 (Abonado de antemano)
