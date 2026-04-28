@@ -10,15 +10,16 @@ const getBasePrices = async (req, res) => {
         // Usamos LEFT JOIN con Articulos para mostrar Descripción si existe
         // PRECIO MULTI-MONEDA: Si un artículo tiene 2 precios, aparecerá 2 veces (deseado)
         const result = await pool.request().query(`
-            SELECT A.CodArticulo, A.Descripcion, A.SupFlia, A.Grupo, 
+            SELECT LTRIM(RTRIM(A.CodArticulo)) as CodArticulo, A.Descripcion, A.SupFlia, A.Grupo, 
                    LTRIM(RTRIM(SA.Articulo)) as GrupoNombre, 
                    MAP.NombreReferencia as NombreReferenciaGrupo,
-                   PB.ID, PB.Precio, PB.Moneda
+                   PB.ID, PB.Precio, CASE WHEN PB.MonIdMoneda = 1 THEN 'UYU' ELSE 'USD' END AS Moneda, PB.MonIdMoneda,
+                   A.ProIdProducto
             FROM Articulos A
             LEFT JOIN StockArt SA ON A.CodStock = SA.CodStock
             LEFT JOIN ConfigMapeoERP MAP ON MAP.CodigoERP = A.Grupo COLLATE Database_Default
-            LEFT JOIN PreciosBase PB ON A.CodArticulo = PB.CodArticulo
-            ORDER BY A.SupFlia, A.Grupo, A.CodArticulo, PB.Moneda
+            LEFT JOIN PreciosBase PB ON A.ProIdProducto = PB.ProIdProducto
+            ORDER BY A.SupFlia, A.Grupo, A.CodArticulo, PB.MonIdMoneda
         `);
         logger.info(`getBasePrices: Found ${result.recordset.length} rows.`);
         res.json(result.recordset);
@@ -31,7 +32,7 @@ const getBasePrices = async (req, res) => {
 const saveBasePrice = async (req, res) => {
     const { codArticulo, precio, moneda } = req.body;
     try {
-        await PricingService.setBasePrice(codArticulo, precio, moneda);
+        await PricingService.setBasePrice(codArticulo, precio, moneda === 'USD' ? 2 : 1);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -56,26 +57,30 @@ const saveBasePricesBulk = async (req, res) => {
                     await request
                         .input('Id', sql.Int, item.id)
                         .input('Precio', sql.Decimal(18, 4), item.precio)
-                        .input('Moneda', sql.VarChar, item.moneda || 'UYU')
+                        .input('MonIdMoneda', sql.Int, (item.moneda === 'USD' || item.moneda === 2) ? 2 : 1)
                         .query(`
                             UPDATE PreciosBase 
-                            SET Precio = @Precio, Moneda = @Moneda, UltimaActualizacion = GETDATE()
+                            SET Precio = @Precio, MonIdMoneda = @MonIdMoneda, UltimaActualizacion = GETDATE()
                             WHERE ID = @Id
                         `);
                 } else {
+                    // PreciosBase ahora sólo utiliza ProIdProducto (INT)
                     await request
-                        .input('Cod', sql.NVarChar, item.codArticulo)
+                        .input('ProId', sql.Int, item.proIdProducto || null)
                         .input('Precio', sql.Decimal(18, 4), item.precio)
-                        .input('Moneda', sql.VarChar, item.moneda || 'UYU')
+                        .input('MonIdMoneda', sql.Int, (item.moneda === 'USD' || item.moneda === 2) ? 2 : 1)
                         .query(`
-                            MERGE PreciosBase AS target
-                            USING (SELECT @Cod AS CodArticulo, @Moneda AS Moneda) AS source
-                            ON (target.CodArticulo = source.CodArticulo AND target.Moneda = source.Moneda)
-                            WHEN MATCHED THEN
-                                UPDATE SET Precio = @Precio, UltimaActualizacion = GETDATE()
-                            WHEN NOT MATCHED THEN
-                                INSERT (CodArticulo, Precio, Moneda, UltimaActualizacion)
-                                VALUES (@Cod, @Precio, @Moneda, GETDATE());
+                            IF @ProId IS NOT NULL AND @ProId > 0
+                            BEGIN
+                                MERGE PreciosBase AS target
+                                USING (SELECT @MonIdMoneda AS MonIdMoneda, @ProId AS ProIdProducto) AS source
+                                ON (target.ProIdProducto = source.ProIdProducto AND target.MonIdMoneda = source.MonIdMoneda)
+                                WHEN MATCHED THEN
+                                    UPDATE SET Precio = @Precio, UltimaActualizacion = GETDATE()
+                                WHEN NOT MATCHED THEN
+                                    INSERT (ProIdProducto, Precio, MonIdMoneda, UltimaActualizacion)
+                                    VALUES (@ProId, @Precio, @MonIdMoneda, GETDATE());
+                            END
                         `);
                 }
             }
@@ -94,10 +99,10 @@ const saveBasePricesBulk = async (req, res) => {
 
 // Endpoint de prueba para CALCULAR precio (Simulador)
 const calculatePriceEndpoint = async (req, res) => {
-    const { codArticulo, cantidad, clienteId, variables, targetCurrency, extraProfileIds } = req.body;
+    const { codArticulo, cantidad, clienteId, variables, targetCurrency, extraProfileIds, areaId, datoTecnicoValue } = req.body;
     try {
-        const fallbackCurrency = targetCurrency || 'USD';
-        const result = await PricingService.calculatePrice(codArticulo, parseFloat(cantidad) || 1, clienteId, extraProfileIds || [], variables || {}, fallbackCurrency, null);
+        const fallbackCurrency = targetCurrency || 'AUTO';
+        const result = await PricingService.calculatePrice(codArticulo, parseFloat(cantidad) || 1, clienteId, extraProfileIds || [], variables || {}, fallbackCurrency, null, areaId, datoTecnicoValue);
         res.json(result);
     } catch (e) {
         res.status(500).json({ error: e.message });

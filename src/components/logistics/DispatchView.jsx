@@ -5,12 +5,18 @@ import { useQuery } from '@tanstack/react-query';
 import QRCode from "react-qr-code";
 import { toast } from 'sonner';
 
-const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originArea, onClose, onSuccess, mode: viewMode = 'create' }) => {
+const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originArea, onClose, onSuccess, mode: viewMode = 'create', onActionOverride }) => {
     const { user } = useAuth();
     const currentArea = areaFilter || originArea || user?.areaKey || user?.areaId;
 
     // Creation Steps: 0 = Select Stock, 1 = Quick Confirm/Sign, 2 = Success (Label)
-    const [step, setStep] = useState(initialOrders.length > 0 ? 0 : 0);
+    const [step, setStep] = useState(() => {
+        if (initialOrders.length > 0) {
+            const hasLogistica = initialOrders.some(o => o.destino === 'LOGISTICA' || !o.destino);
+            return hasLogistica ? 1 : 2; // Saltar directo a la firma si no hay destinos ambiguos
+        }
+        return 0;
+    });
 
     // History Selection (Only used if viewMode === 'history')
     const [selectedHistoryCode, setSelectedHistoryCode] = useState(null);
@@ -237,8 +243,14 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
                     observations: `Generado por ${authUser.username}`
                 };
 
-                const res = await logisticsService.createDispatch(payload);
-                createdParams.push({ ...res, destArea: finalDest, itemCount: bultosIds.length + newBultos.length });
+                let res;
+                if (onActionOverride) {
+                    res = await onActionOverride(payload);
+                } else {
+                    res = await logisticsService.createDispatch(payload);
+                }
+                
+                createdParams.push({ ...res, destArea: finalDest, itemCount: res.createdCount || bultosIds.length + newBultos.length });
             }
 
             setResults(createdParams);
@@ -262,9 +274,13 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
         const destinations = Object.keys(dispatchGroups);
         if (destinations.length === 0) return;
 
-        // Permite múltiples destinos: Redirige al Paso 1 (Revisión)
-        // El Paso 1 mostrará los grupos y el Paso 2 firmará todos en lote.
-        setStep(1);
+        // Si tenemos órdenes con destino 'LOGISTICA', pasamos al Paso 1 para obligar a elegir destino.
+        // Si ya están todas mapeadas (ej. DEPOSITO), saltamos la pantalla de Review directamente a Firmar (Paso 2).
+        if (destinations.includes('LOGISTICA')) {
+            setStep(1);
+        } else {
+            setStep(2);
+        }
     };
 
     // --- RENDERERS ---
@@ -511,7 +527,9 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
                     </div>
                     <div className="p-6 border-t border-slate-200 bg-white flex justify-end gap-3 sticky bottom-0">
                         <button onClick={() => setStep(0)} className="px-6 py-3 border rounded-xl font-bold text-slate-500 hover:bg-slate-50">Atrás</button>
-                        <button onClick={() => setStep(2)} className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-200">Firmar Entrega</button>
+                        <button onClick={handleCreateBatch} disabled={loading} className="px-8 py-3 bg-emerald-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-200 flex gap-2 items-center">
+                            {loading ? <i className="fa-solid fa-circle-notch fa-spin"></i> : <><i className="fa-solid fa-truck-fast"></i> Confirmar Salida</>}
+                        </button>
                     </div>
                 </div>
             )}
@@ -519,18 +537,19 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
             {step === 2 && (
                 <div className="flex flex-col h-full bg-slate-50 items-center justify-center p-6">
                     <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-                        <div className="p-8 pb-0 text-center">
-                            <h2 className="text-2xl font-black text-slate-800">Firma Digital</h2>
+                        <div className="p-8 pb-4 text-center">
+                            <h2 className="text-2xl font-black text-slate-800">Confirmar Envío</h2>
                             <p className="text-sm text-slate-500 mt-2">Autorizar salida de {totalBultos} bultos</p>
                         </div>
-                        <form onSubmit={handleCreateBatch} className="p-8 space-y-4">
-                            <input className="w-full p-3 bg-slate-50 border rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-100" placeholder="Usuario" value={credentials.username} onChange={e => setCredentials({ ...credentials, username: e.target.value })} />
-                            <input className="w-full p-3 bg-slate-50 border rounded-xl font-bold outline-none focus:ring-2 focus:ring-blue-100" type="password" placeholder="Contraseña" value={credentials.password} onChange={e => setCredentials({ ...credentials, password: e.target.value })} />
-                            {logs.length > 0 && <div className="p-3 bg-slate-900 text-emerald-400 text-xs rounded-lg font-mono">{logs[logs.length - 1]}</div>}
-                            <button type="submit" disabled={loading} className="w-full py-3 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition-colors">
-                                {loading ? <i className="fa-solid fa-circle-notch fa-spin"></i> : 'Confirmar Salida'}
+                        <div className="px-8 pb-8 space-y-4">
+                            {logs.length > 0 && <div className="p-3 bg-slate-900 text-emerald-400 text-xs rounded-lg font-mono text-center">{logs[logs.length - 1]}</div>}
+                            <button onClick={handleCreateBatch} disabled={loading} className="w-full py-4 bg-emerald-500 text-white rounded-xl font-bold hover:bg-emerald-600 transition-colors shadow-lg shadow-emerald-200 text-lg flex justify-center items-center gap-2">
+                                {loading ? <i className="fa-solid fa-circle-notch fa-spin"></i> : <><i className="fa-solid fa-truck-fast"></i> Confirmar Salida</>}
                             </button>
-                        </form>
+                            <button onClick={() => setStep(step === 2 && initialOrders.length > 0 ? 1 : 1)} disabled={loading} className="w-full py-3 bg-slate-100 text-slate-500 rounded-xl font-bold hover:bg-slate-200 transition-colors">
+                                Volver
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

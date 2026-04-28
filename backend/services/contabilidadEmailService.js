@@ -225,7 +225,7 @@ function generarHTMLEstadoCuenta(datos, empresa = {}) {
       const vencido = Number(d.DiasVencido) > 0;
       return `
         <tr style="background:${idx % 2 === 1 ? '#fafafa' : '#fff'};">
-          <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:12px;color:#555;">${d.OrdIdOrden ?? '-'}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:12px;color:#555;">${d.CodigoOrden || d.OrdIdOrden || '-'}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:12px;color:#555;">${d.DDeFechaEmision ? new Date(d.DDeFechaEmision).toLocaleDateString('es-UY') : '-'}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:12px;color:#555;">${d.DDeFechaVencimiento ? new Date(d.DDeFechaVencimiento).toLocaleDateString('es-UY') : '-'}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #eee;font-size:12px;">

@@ -193,19 +193,18 @@ async function imputarPago(params) {
 /**
  * crearDeudaDocumento
  * Registra una deuda pendiente asociada a una orden.
- * Calcula la fecha de vencimiento según CPaDiasVencimiento de la cuenta.
  *
  * @param {object} params
  *   @param {number}  CueIdCuenta
  *   @param {number}  OrdIdOrden
  *   @param {number}  Importe
+ *   @param {number}  ImportePendiente
  * @returns {Promise<number>} DDeIdDocumento
  */
 async function crearDeudaDocumento(params) {
   const pool = await getPool();
-  const { CueIdCuenta, OrdIdOrden, Importe } = params;
+  const { CueIdCuenta, OrdIdOrden, Importe, ImportePendiente = Importe } = params;
 
-  // Obtener días de vencimiento de la condición de pago de la cuenta
   const condRes = await pool.request()
     .input('CueIdCuenta', sql.Int, CueIdCuenta)
     .query(`
@@ -216,14 +215,16 @@ async function crearDeudaDocumento(params) {
     `);
 
   const diasVenc = condRes.recordset[0]?.DiasVencimiento ?? 0;
+  const estado = ImportePendiente <= 0.01 ? 'PAGADO' : 'PENDIENTE';
 
   const insertRes = await pool.request()
     .input('CueIdCuenta',         sql.Int,          CueIdCuenta)
     .input('OrdIdOrden',          sql.Int,          OrdIdOrden)
     .input('DDeImporteOriginal',  sql.Decimal(18,4), Importe)
-    .input('DDeImportePendiente', sql.Decimal(18,4), Importe)
+    .input('DDeImportePendiente', sql.Decimal(18,4), Math.max(0, ImportePendiente))
     .input('DDeFechaEmision',     sql.Date,         new Date())
     .input('DiasVencimiento',     sql.Int,          diasVenc)
+    .input('Estado',              sql.VarChar(20),  estado)
     .query(`
       INSERT INTO dbo.DeudaDocumento
         (CueIdCuenta, OrdIdOrden, DDeImporteOriginal, DDeImportePendiente,
@@ -233,7 +234,7 @@ async function crearDeudaDocumento(params) {
         (@CueIdCuenta, @OrdIdOrden, @DDeImporteOriginal, @DDeImportePendiente,
          @DDeFechaEmision,
          DATEADD(DAY, @DiasVencimiento, @DDeFechaEmision),
-         'PENDIENTE')
+         @Estado)
     `);
 
   return insertRes.recordset[0].DDeIdDocumento;
@@ -257,7 +258,8 @@ async function crearDeudaDocumento(params) {
  *   @param {number} UsuarioAlta
  */
 async function hookOrdenCreada(params) {
-  const { OrdIdOrden, CliIdCliente, Importe, MonIdMoneda, CodigoOrden, UsuarioAlta, ProIdProducto } = params;
+  const { OrdIdOrden, CliIdCliente, Importe, MonIdMoneda, CodigoOrden, NombreTrabajo, UsuarioAlta, ProIdProducto } = params;
+  const contabilidadCore = require('./contabilidadCore'); // Import CORE for Asientos
 
   try {
     // ── Si el cliente tiene plan de recursos para este artículo → no cobrar en dinero
@@ -295,11 +297,67 @@ async function hookOrdenCreada(params) {
     const { SaldoResultante } = await registrarMovimiento({
       CueIdCuenta,
       MovTipo:      'ORDEN',
-      MovConcepto:  `Orden ingresada: ${CodigoOrden}`,
+      MovConcepto:  `Orden ${CodigoOrden}${NombreTrabajo ? ' — ' + NombreTrabajo : ''}`,
+      MovObservaciones: NombreTrabajo || null,
       MovImporte:   -Math.abs(Importe),
       MovUsuarioAlta: UsuarioAlta,
       OrdIdOrden,
     });
+
+    let deudaAislada = Math.min(Math.abs(Importe), Math.max(0, -SaldoResultante));
+    let idOtraMoneda = MonIdMoneda === 2 ? 1 : 2; 
+    let poolDB = await getPool();
+
+    // Si todavía hay deuda (el saldo de esta cuenta bajó de 0, o estaba en 0)
+    if (deudaAislada > 0.01) {
+      // Intentar cruzar desde otra cuenta si tiene dinero (Ej: Debe USD, pero tiene UYU a favor)
+      const tipoOtra = MonIdMoneda === 2 ? 'DINERO_UYU' : 'DINERO_USD';
+      const ctaOtraRes = await poolDB.request()
+         .input('Cli', sql.Int, CliIdCliente)
+         .input('Tipo', sql.VarChar(20), tipoOtra)
+         .query(`SELECT CueIdCuenta, CueSaldoActual FROM CuentasCliente WHERE CliIdCliente=@Cli AND CueTipo=@Tipo AND CueActiva=1 AND CueSaldoActual > 0`);
+      
+      if (ctaOtraRes.recordset.length > 0) {
+        const ctaOtra = ctaOtraRes.recordset[0];
+        
+        let coti = 1;
+        const cotiRes = await poolDB.request().query('SELECT TOP 1 CotDolar FROM dbo.Cotizaciones WITH(NOLOCK) ORDER BY CotFecha DESC');
+        if (cotiRes.recordset.length > 0) coti = parseFloat(cotiRes.recordset[0].CotDolar) || 1;
+
+        // Si la orden es en USD(2) y la otra es UYU(1) -> La otra cuenta vale su saldo / coti en USD
+        // Si la orden es en UYU(1) y la otra es USD(2) -> La otra cuenta vale su saldo * coti en UYU
+        let tasaConvertirAOrden = MonIdMoneda === 2 ? (1 / coti) : coti;
+        let saldoOtraConvertido = ctaOtra.CueSaldoActual * tasaConvertirAOrden;
+
+        let aDescontarOrden = Math.min(deudaAislada, saldoOtraConvertido);
+        
+        if (aDescontarOrden > 0.01) {
+           let aDescontarCtaOtra = aDescontarOrden / tasaConvertirAOrden;
+           
+           // Extraer plata de la bolsa positiva (otra cuenta)
+           await registrarMovimiento({
+             CueIdCuenta: ctaOtra.CueIdCuenta,
+             MovTipo: 'PAGO_CRUZADO',
+             MovConcepto: `Cruce automático -> Orden ${CodigoOrden} (${MonIdMoneda===2?'USD':'UYU'})`,
+             MovImporte: -Math.abs(aDescontarCtaOtra),
+             MovUsuarioAlta: UsuarioAlta,
+             OrdIdOrden,
+           });
+
+           // Ingresar la plata convertida a la cuenta endeudada
+           await registrarMovimiento({
+             CueIdCuenta: CueIdCuenta,
+             MovTipo: 'PAGO_CRUZADO',
+             MovConcepto: `Cobertura desde ${tipoOtra} -> Orden ${CodigoOrden}`,
+             MovImporte: Math.abs(aDescontarOrden),
+             MovUsuarioAlta: UsuarioAlta,
+             OrdIdOrden,
+           });
+
+           deudaAislada -= aDescontarOrden;
+        }
+      }
+    }
 
     // 3. Si la cuenta tiene ciclo activo → acumular en él (cliente semanal)
     const cicloActivo = await obtenerCicloActivo(CueIdCuenta);
@@ -307,13 +365,95 @@ async function hookOrdenCreada(params) {
       await acumularEnCiclo(cicloActivo.CicIdCiclo, 'ORDEN', Math.abs(Importe));
       logger.info(`[CICLO] Orden ${CodigoOrden} acumulada en CicIdCiclo=${cicloActivo.CicIdCiclo}`);
     } else {
-      // Sin ciclo activo → crear deuda documento individual (cliente contado/corriente)
-      await crearDeudaDocumento({ CueIdCuenta, OrdIdOrden, Importe: Math.abs(Importe) });
+      // Sin ciclo activo → crear deuda documento individual con el remanente Real de deuda (0 si quedó pagada por fondos)
+      await crearDeudaDocumento({ 
+        CueIdCuenta, 
+        OrdIdOrden, 
+        Importe: Math.abs(Importe),
+        ImportePendiente: Math.max(0, deudaAislada)
+      });
     }
 
     logger.info(`[CONTABILIDAD] Orden ${CodigoOrden} registrada. Saldo cliente ${CliIdCliente}: ${SaldoResultante}`);
+
+    // 4. Registrar ASIENTO DIARIO EN LIBRO MAYOR (GLOBAL)
+    const importeAbsRounded = Math.round(Math.abs(Importe) * 100) / 100;
+    const { neto, ivaMonto } = contabilidadCore.desglosarIVA(importeAbsRounded, 22);
+    const cuentaCliente = MonIdMoneda === 2 ? contabilidadCore.CUENTAS.CLIENTE_USD : contabilidadCore.CUENTAS.CLIENTE_UYU; // Deudores USD / UYU
+
+    const pool = await getPool();
+    let cotizacion = 1;
+    if (MonIdMoneda === 2) {
+      const cotiRes = await pool.request().query('SELECT TOP 1 CotDolar FROM dbo.Cotizaciones WITH(NOLOCK) ORDER BY CotFecha DESC');
+      cotizacion = cotiRes.recordset.length > 0 ? parseFloat(cotiRes.recordset[0].CotDolar) || 1 : 1;
+    }
+
+    const tran = pool.transaction();
+    await tran.begin();
+    try {
+      await contabilidadCore.generarAsientoCompleto({
+        fecha: new Date(),
+        concepto: `Venta s/ Orden ${CodigoOrden}${NombreTrabajo ? ' - ' + NombreTrabajo : ''}`,
+        usuarioId: UsuarioAlta,
+        tcaIdTransaccion: null,
+        origen: 'VENTA_ACREDITO',
+        lineas: [
+          { codigoCuenta: cuentaCliente,                       debeBase: importeAbsRounded, haberBase: 0,        monedaId: MonIdMoneda, cotizacion },
+          { codigoCuenta: contabilidadCore.CUENTAS.VENTA_SERV, debeBase: 0,                 haberBase: neto,     monedaId: MonIdMoneda, cotizacion },
+          { codigoCuenta: contabilidadCore.CUENTAS.IVA_22,     debeBase: 0,                 haberBase: ivaMonto, monedaId: MonIdMoneda, cotizacion }
+        ]
+      }, tran);
+      await tran.commit();
+    } catch (errAsiento) {
+      await tran.rollback();
+      logger.warn(`[CONTABILIDAD] Fallo al crear asiento para orden ${CodigoOrden}: ${errAsiento.message}`);
+    }
   } catch (err) {
     logger.warn(`[CONTABILIDAD] hookOrdenCreada falló (no afecta la orden): ${err.message}`);
+  }
+}
+
+/**
+ * hookReposicion
+ * Llamar cuando la orden es una REPOSICIÓN (CodigoOrden empieza con 'R').
+ * NO afecta el saldo ni descuenta recursos.
+ * Solo deja trazabilidad en MovimientosCuenta con importe = 0
+ * para que quede en el historial del cliente.
+ *
+ * @param {object} params
+ *   @param {number} OrdIdOrden
+ *   @param {number} CliIdCliente
+ *   @param {number} MonIdMoneda   1=UYU, 2=USD
+ *   @param {string} CodigoOrden
+ *   @param {number} UsuarioAlta
+ */
+async function hookReposicion(params) {
+  const { OrdIdOrden, CliIdCliente, MonIdMoneda, CodigoOrden, NombreTrabajo, UsuarioAlta } = params;
+
+  try {
+    const CueTipo = MonIdMoneda === 2 ? 'DINERO_USD' : 'DINERO_UYU';
+
+    // Obtener o crear la cuenta del cliente (sin modificar saldo)
+    const CueIdCuenta = await obtenerOCrearCuenta(CliIdCliente, CueTipo, {
+      MonIdMoneda,
+      UsuarioAlta,
+    });
+
+    // Registrar movimiento con importe 0 — solo para el historial
+    await registrarMovimiento({
+      CueIdCuenta,
+      MovTipo:        'REPOSICION',
+      MovConcepto:    `Reposición ${CodigoOrden}${NombreTrabajo ? ' — ' + NombreTrabajo : ''}`,
+      MovObservaciones: NombreTrabajo ? `Reposición sin cargo — ${NombreTrabajo}` : 'Orden de reposición',
+      MovImporte:     0,
+      MovUsuarioAlta: UsuarioAlta,
+      OrdIdOrden,
+
+    });
+
+    logger.info(`[CONTABILIDAD] Reposición registrada en historial: ${CodigoOrden} (CliId=${CliIdCliente}, importe=$0)`);
+  } catch (err) {
+    logger.warn(`[CONTABILIDAD] hookReposicion falló (no afecta la orden): ${err.message}`);
   }
 }
 
@@ -366,7 +506,8 @@ async function hookPagoRegistrado(params) {
       UsuarioAlta,
     });
 
-    // 4. Si sobra → crédito a favor
+    // 4. Si sobra → El saldo ya quedó positivamente grabado en el paso 1 (PAGO). No se debe sumar de nuevo.
+    /*
     if (MontoExcedente > 0) {
       await registrarMovimiento({
         CueIdCuenta,
@@ -379,8 +520,9 @@ async function hookPagoRegistrado(params) {
       });
       logger.info(`[CONTABILIDAD] Pago ${PagIdPago} — excedente $${MontoExcedente} como crédito a favor.`);
     }
+    */
 
-    logger.info(`[CONTABILIDAD] Pago ${PagIdPago} imputado. Excedente: ${MontoExcedente}`);
+    logger.info(`[CONTABILIDAD] Pago ${PagIdPago} imputado. Excedente en cuenta (Saldo a favor): ${MontoExcedente}`);
   } catch (err) {
     logger.warn(`[CONTABILIDAD] hookPagoRegistrado falló (no afecta el pago): ${err.message}`);
   }
@@ -401,7 +543,7 @@ async function hookPagoRegistrado(params) {
  *   @param {number} UsuarioAlta
  */
 async function hookEntregaMetros(params) {
-  const { OrdIdOrden, CliIdCliente, ProIdProducto, Cantidad, CodigoOrden, UsuarioAlta } = params;
+  const { OrdIdOrden, CliIdCliente, ProIdProducto, Cantidad, CodigoOrden, UsuarioAlta, NombreTrabajo } = params;
 
   try {
     const pool = await getPool();
@@ -426,46 +568,126 @@ async function hookEntregaMetros(params) {
 
     const CueIdCuenta = cuentaRes.recordset[0].CueIdCuenta;
 
-    // 2. Descontar del plan activo
+    // 2. Descontar en cascada de los planes activos (FIFO)
     const planRes = await pool.request()
-      .input('CueIdCuenta',   sql.Int,          CueIdCuenta)
-      .input('ProIdProducto', sql.Int,          ProIdProducto)
-      .input('Cantidad',      sql.Decimal(18,4), Cantidad)
+      .input('CueIdCuenta',   sql.Int, CueIdCuenta)
+      .input('ProIdProducto', sql.Int, ProIdProducto)
       .query(`
-        UPDATE TOP (1) dbo.PlanesMetros
-        SET    PlaCantidadUsada = PlaCantidadUsada + @Cantidad
-        OUTPUT INSERTED.PlaIdPlan,
-               INSERTED.PlaCantidadTotal,
-               INSERTED.PlaCantidadUsada
+        SELECT PlaIdPlan, PlaCantidadTotal, PlaCantidadUsada, PlaPrecioUnitario, MonIdMoneda
+        FROM   dbo.PlanesMetros WITH (UPDLOCK, ROWLOCK)
         WHERE  CueIdCuenta   = @CueIdCuenta
           AND  ProIdProducto = @ProIdProducto
           AND  PlaActivo     = 1
           AND  (PlaFechaVencimiento IS NULL OR PlaFechaVencimiento >= CAST(GETDATE() AS DATE))
+        ORDER  BY PlaFechaAlta ASC
       `);
 
     if (planRes.recordset.length === 0) {
       logger.warn(`[CONTABILIDAD] hookEntregaMetros: sin plan activo para CliId=${CliIdCliente} ProId=${ProIdProducto}`);
+      // Llama a generar deuda por el 100%
+      if (params.Importe > 0) {
+        await hookOrdenCreada({
+          OrdIdOrden, CliIdCliente, Importe: params.Importe, MonIdMoneda: params.MonIdMoneda,
+          CodigoOrden, NombreTrabajo: params.NombreTrabajo, UsuarioAlta, ProIdProducto: null
+        });
+      }
       return;
     }
 
-    const plan = planRes.recordset[0];
+    let cantidadPendiente = Cantidad;
+    let valorCubiertoPorPlanes = 0;
 
-    // 3. Registrar en libro mayor
-    await registrarMovimiento({
-      CueIdCuenta,
-      MovTipo:     'ENTREGA',
-      MovConcepto: `Entrega ${Cantidad} uds orden ${CodigoOrden} (Plan ${plan.PlaIdPlan})`,
-      MovImporte:  -Math.abs(Cantidad),   // débito en unidades
-      MovUsuarioAlta: UsuarioAlta,
-      OrdIdOrden,
-    });
+    // Obtener cotización si hay cruce de monedas
+    const cotRes = await pool.request().query('SELECT TOP 1 CotDolar FROM dbo.Cotizaciones ORDER BY CotFecha DESC');
+    const TC = cotRes.recordset.length > 0 ? parseFloat(cotRes.recordset[0].CotDolar) || 40.0 : 40.0;
 
-    const restante = plan.PlaCantidadTotal - plan.PlaCantidadUsada;
-    logger.info(`[CONTABILIDAD] Metros descontados: ${Cantidad}. Plan ${plan.PlaIdPlan} → Restante: ${restante}`);
+    for (const plan of planRes.recordset) {
+      if (cantidadPendiente <= 0) break;
 
-    // 4. Alerta si el plan está por agotarse (< 10% restante)
-    if (restante > 0 && restante / plan.PlaCantidadTotal < 0.1) {
-      logger.warn(`[CONTABILIDAD] ⚠️ Plan ${plan.PlaIdPlan} de CliId=${CliIdCliente} tiene menos del 10% restante (${restante} uds)`);
+      const disponible = plan.PlaCantidadTotal - plan.PlaCantidadUsada;
+      if (disponible <= 0) {
+         await pool.request().query(`UPDATE dbo.PlanesMetros SET PlaActivo = 0 WHERE PlaIdPlan = ${plan.PlaIdPlan}`);
+         continue;
+      }
+
+      const consumir = Math.min(cantidadPendiente, disponible);
+      const nuevaUsada = plan.PlaCantidadUsada + consumir;
+      const activo = nuevaUsada >= plan.PlaCantidadTotal ? 0 : 1;
+
+      await pool.request()
+        .input('P', sql.Int, plan.PlaIdPlan)
+        .input('U', sql.Decimal(18,4), nuevaUsada)
+        .input('A', sql.Bit, activo)
+        .query(`UPDATE dbo.PlanesMetros SET PlaCantidadUsada = @U, PlaActivo = @A WHERE PlaIdPlan = @P`);
+
+      await registrarMovimiento({
+        CueIdCuenta,
+        MovTipo:     'ENTREGA', // El Motor puede sobreescribir esto en futuras versiones
+        MovConcepto: `${CodigoOrden} ${NombreTrabajo || ''}`.trim() || `Entrega Plan #${plan.PlaIdPlan}`,
+        MovImporte:  -Math.abs(consumir),
+        MovUsuarioAlta: UsuarioAlta,
+        OrdIdOrden,
+        MovObservaciones: `Plan #${plan.PlaIdPlan}`,
+      });
+
+      cantidadPendiente -= consumir;
+      const restante = plan.PlaCantidadTotal - nuevaUsada;
+
+      // Calcular el valor financiero de los metros consumidos para restarlo a la deuda final
+      const precioTotal = parseFloat(plan.PlaPrecioUnitario) || 0;
+      let precioUnitarioPlan = plan.PlaCantidadTotal > 0 ? (precioTotal / plan.PlaCantidadTotal) : 0;
+      
+      if (plan.MonIdMoneda && params.MonIdMoneda && plan.MonIdMoneda !== params.MonIdMoneda && precioUnitarioPlan > 0) {
+         if (plan.MonIdMoneda === 2 && params.MonIdMoneda === 1) { // Plan en USD, Orden en UYU -> multiplicar
+             precioUnitarioPlan = precioUnitarioPlan * TC;
+         } else if (plan.MonIdMoneda === 1 && params.MonIdMoneda === 2) { // Plan en UYU, Orden en USD -> dividir
+             precioUnitarioPlan = precioUnitarioPlan / TC;
+         }
+      }
+      valorCubiertoPorPlanes += (consumir * precioUnitarioPlan);
+
+      logger.info(`[CONTABILIDAD] Metros descontados: ${consumir}. Plan ${plan.PlaIdPlan} → Restante: ${restante}`);
+
+      if (restante > 0 && restante / plan.PlaCantidadTotal < 0.1) {
+        logger.warn(`[CONTABILIDAD] ⚠️ Plan ${plan.PlaIdPlan} de CliId=${CliIdCliente} tiene menos del 10% restante (${restante} uds)`);
+      }
+    }
+
+    // 3. Generar cargo monetario si no se cubrió todo con planes o si corresponde
+    // Dado que ordenesController ahora delega la orden SI hay plan activo, procesamos lo que falte
+    if (params.Importe > 0) {
+      let deudaACobrar = params.Importe;
+
+      if (cantidadPendiente > 0) {
+        if (valorCubiertoPorPlanes > 0) {
+           deudaACobrar = params.Importe - valorCubiertoPorPlanes;
+           if (deudaACobrar < 0) deudaACobrar = 0; 
+        } else {
+           // fallback si no había precio en el plan
+           const porcentajeFaltante = cantidadPendiente / Cantidad;
+           deudaACobrar = params.Importe * porcentajeFaltante;
+        }
+      } else {
+         // Si el plan cubrió TODO (cantidadPendiente == 0), no hay deuda!
+         deudaACobrar = 0;
+      }
+
+      const deudaRedondeada = Math.round(deudaACobrar * 100) / 100;
+
+      if (deudaRedondeada > 0) {
+        logger.info(`[CONTABILIDAD] Planes consumidos. Faltaban ${cantidadPendiente} uds. Deuda original: ${params.Importe}, Valor cubierto: ${valorCubiertoPorPlanes}. Generando deuda por ${deudaRedondeada}.`);
+
+        await hookOrdenCreada({
+          OrdIdOrden,
+          CliIdCliente,
+          Importe: deudaRedondeada,
+          MonIdMoneda: params.MonIdMoneda,
+          CodigoOrden,
+          NombreTrabajo: params.NombreTrabajo ? `${params.NombreTrabajo} (Saldo Faltante)` : 'Exceso de Plan (Saldo Faltante)',
+          UsuarioAlta,
+          ProIdProducto: null // evitamos loops
+        });
+      }
     }
 
   } catch (err) {
@@ -503,7 +725,9 @@ async function getSaldoCliente(CliIdCliente) {
         u.UniDescripcionUnidad          AS UniNombreCompleto,
         u.[UniNotación]                 AS UniSimbolo,
         ISNULL(u.UniDescripcionUnidad, cc.CueTipo) AS UnidadLabel,
-        mon.MonSimbolo,
+        CASE WHEN cc.ProIdProducto IS NOT NULL OR cc.CueTipo NOT IN ('USD','UYU','ARS','EUR','PYG','BRL','CORRIENTE','CREDITO','DEBITO','CAJA','DINERO_USD','DINERO_UYU')
+             THEN ISNULL(u.[UniNotación], 'mts') 
+             ELSE ISNULL(mon.MonSimbolo, '$') END AS MonSimbolo,
         cp.CPaNombre    AS CondicionPago,
         ISNULL((
           SELECT SUM(DDeImportePendiente)
@@ -605,6 +829,7 @@ async function getDeudas(CueIdCuenta, SoloEstado = null) {
     SELECT
       d.DDeIdDocumento,
       d.OrdIdOrden,
+      od.OrdCodigoOrden AS CodigoOrden,
       d.DDeImporteOriginal,
       d.DDeImportePendiente,
       d.DDeFechaEmision,
@@ -614,10 +839,54 @@ async function getDeudas(CueIdCuenta, SoloEstado = null) {
       d.DDeEstado,
       DATEDIFF(DAY, d.DDeFechaVencimiento, GETDATE()) AS DiasVencido
     FROM dbo.DeudaDocumento d
+    LEFT JOIN dbo.OrdenesDeposito od ON od.OrdIdOrden = d.OrdIdOrden
     WHERE d.CueIdCuenta = @CueIdCuenta
       ${filtroEstado}
     ORDER BY d.DDeFechaVencimiento ASC
   `);
+
+  return result.recordset;
+}
+
+/**
+ * getDeudasPorCliente
+ * Devuelve todos los documentos de deuda pendientes de un cliente.
+ */
+async function getDeudasPorCliente(CliIdCliente) {
+  const pool = await getPool();
+  const result = await pool.request()
+    .input('CliIdCliente', sql.Int, parseInt(CliIdCliente))
+    .query(`
+      SELECT
+        d.DDeIdDocumento,
+        d.OrdIdOrden,
+        d.DocIdDocumento,
+        COALESCE(od.OrdCodigoOrden, 'VTA-DIR') AS CodigoOrden,
+        COALESCE(
+          od.OrdNombreTrabajo, 
+          (SELECT TOP 1 TdeDescripcion 
+           FROM dbo.TransaccionDetalle td
+           JOIN dbo.DocumentosContables doc ON CAST(doc.DocNumero AS VARCHAR) = CAST(td.TcaIdTransaccion AS VARCHAR)
+           WHERE doc.DocIdDocumento = d.DocIdDocumento),
+          'Venta Directa'
+        ) AS NombreTrabajo,
+        d.DDeImporteOriginal,
+        d.DDeImportePendiente,
+        d.DDeFechaEmision,
+        d.DDeFechaVencimiento,
+        d.DDeEstado,
+        cc.CueTipo,
+        ISNULL(mon.MonSimbolo, '$U') AS MonSimbolo,
+        DATEDIFF(DAY, d.DDeFechaVencimiento, GETDATE()) AS DiasVencido
+      FROM dbo.DeudaDocumento d WITH(NOLOCK)
+      JOIN dbo.CuentasCliente cc WITH(NOLOCK) ON cc.CueIdCuenta = d.CueIdCuenta
+      LEFT JOIN dbo.Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = cc.MonIdMoneda
+      LEFT JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = d.OrdIdOrden
+      WHERE cc.CliIdCliente = @CliIdCliente
+        AND d.DDeEstado IN ('PENDIENTE', 'PARCIAL', 'VENCIDO')
+        AND d.DDeImportePendiente > 0.01
+      ORDER BY d.DDeFechaVencimiento ASC
+    `);
 
   return result.recordset;
 }
@@ -945,6 +1214,60 @@ async function cerrarCiclosVencidos() {
   return { procesados, errores };
 }
 
+
+// ============================================================
+// SECCIÓN X: HOOK — RETIRO AUTORIZADO SIN PAGO (FIADO)
+// ============================================================
+
+async function hookRetiroSinPago({ OReIdOrdenRetiro, CliIdCliente, OrdIds = [], Monto = 0, UsuarioAlta = 1, Observacion = '' }) {
+  try {
+    const pool = await getPool();
+
+    const cueRes = await pool.request()
+      .input('CliIdCliente', sql.Int, CliIdCliente)
+      .query(`
+        SELECT TOP 1 CueIdCuenta
+        FROM   dbo.CuentasCliente
+        WHERE  CliIdCliente = @CliIdCliente
+          AND  CueTipo IN ('DINERO_UYU', 'DINERO_USD')
+          AND  CueActiva = 1
+        ORDER BY CASE CueTipo WHEN 'DINERO_UYU' THEN 1 ELSE 2 END
+      `);
+
+    if (cueRes.recordset.length > 0) {
+      const { CueIdCuenta } = cueRes.recordset[0];
+      await registrarMovimiento({
+        CueIdCuenta,
+        MovTipo:          'FIADO',
+        MovConcepto:      `Retiro R-${OReIdOrdenRetiro} entregado sin cobro`,
+        MovImporte:       0,
+        MovUsuarioAlta:   UsuarioAlta,
+        OReIdOrdenRetiro: OReIdOrdenRetiro,
+        MovObservaciones: `Monto: ${Number(Monto).toFixed(2)}${Observacion ? ' | ' + Observacion : ''}`,
+      });
+    } else {
+      logger.warn(`[FIADO] Sin cuenta DINERO para CliId=${CliIdCliente}`);
+    }
+
+    if (OrdIds.length > 0) {
+      const placeholders = OrdIds.map((_, i) => `@ord${i}`).join(',');
+      const req2 = pool.request();
+      OrdIds.forEach((id, i) => req2.input(`ord${i}`, sql.Int, id));
+      const updated = await req2.query(`
+        UPDATE dbo.DeudaDocumento
+        SET    DDeEstado = 'EN_GESTION'
+        WHERE  OrdIdOrden IN (${placeholders})
+          AND  DDeEstado = 'PENDIENTE'
+      `);
+      logger.info(`[FIADO] R-${OReIdOrdenRetiro}: ${updated.rowsAffected[0]} deuda(s) -> EN_GESTION`);
+    }
+
+    logger.info(`[FIADO] OK: R-${OReIdOrdenRetiro}, Cli=${CliIdCliente}, Monto=${Monto}`);
+  } catch (err) {
+    logger.warn('[FIADO] hookRetiroSinPago fallo (no afecta la entrega):', err.message);
+  }
+}
+
 // ============================================================
 // EXPORTS
 // ============================================================
@@ -973,10 +1296,239 @@ module.exports = {
 
   // Hooks — llamar post-commit desde otros controladores
   hookOrdenCreada,
+  hookReposicion,
   hookPagoRegistrado,
   hookEntregaMetros,
+  hookRetiroSinPago,
 
   // Consultas
   getSaldoCliente,
   getAntiguedadDeuda,
+
+  // --- MOTOR UNIFICADO ---
+  procesarEventoContable,
+
+  // Consultas extra
+  getDeudasPorCliente,
 };
+
+/**
+ * procesarEventoContable (MOTOR UNIFICADO)
+ * ──────────────────────────────────────────────────────────────────────────
+ * Orquestador central que consulta el motor de reglas y aplica todas las
+ * tareas contables (Submayor, Deuda, Recursos, Asientos).
+ *
+ * @param {string} evtCodigo   Código del evento (ej: 'VTA_CAJA', 'PAGO')
+ * @param {object} data        Datos de la operación { CliIdCliente, Importe, ... }
+ */
+async function procesarEventoContable(evtCodigo, data) {
+  const motor = require('./motorContable');
+  const contabilidadCore = require('./contabilidadCore');
+  const evt = await motor.getEvento(evtCodigo);
+
+  if (!evt) {
+    logger.warn(`[MOTOR] Evento ${evtCodigo} omitido (no configurado en Cont_EventosContables).`);
+    return null;
+  }
+
+  const {
+    CliIdCliente, Importe = 0, MonIdMoneda = 1, UsuarioAlta = 70,
+    OrdIdOrden = null, CodigoOrden = '', NombreTrabajo = '', 
+    ProIdProducto = null, Cantidad = 0,
+    OReIdOrdenRetiro = null, PagIdPago = null
+  } = data;
+
+  try {
+    let resSubmayor = null;
+    const pool = await getPool();
+
+    // 1. LÓGICA DE SUBMAYOR (CUENTAS CORRIENTES / SALDO CLIENTE)
+    if (evt.EvtAfectaSaldo !== 0 && CliIdCliente) {
+      let saltarDinero = false;
+      
+      // Si el evento aplica recursos, verificamos si existe un plan activo para evitar doble cobro
+      if (evt.EvtAplicaRecurso && ProIdProducto) {
+         const pCheck = await pool.request()
+            .input('C', sql.Int, CliIdCliente)
+            .input('P', sql.Int, ProIdProducto)
+            .query(`
+              SELECT TOP 1 PlaIdPlan FROM PlanesMetros 
+              WHERE CliIdCliente=@C AND ProIdProducto=@P AND PlaActivo=1 
+              AND (PlaFechaVencimiento IS NULL OR PlaFechaVencimiento >= CAST(GETDATE() AS DATE))
+            `);
+         if (pCheck.recordset.length > 0) {
+            saltarDinero = true;
+            logger.info(`[MOTOR] ${evtCodigo}: Cliente ${CliIdCliente} tiene plan para Producto ${ProIdProducto}. Se omite cobro en dinero.`);
+         }
+      }
+
+      if (!saltarDinero) {
+        const cueTipo = MonIdMoneda === 2 ? 'DINERO_USD' : 'DINERO_UYU';
+        const cueId = await obtenerOCrearCuenta(CliIdCliente, cueTipo, { MonIdMoneda, UsuarioAlta });
+        
+        // Registrar en historial de movimientos
+        resSubmayor = await registrarMovimiento({
+          CueIdCuenta: cueId,
+          MovTipo: evtCodigo,
+          MovConcepto: `${CodigoOrden} ${NombreTrabajo}`.trim() || evtCodigo,
+          MovImporte: Math.abs(Importe) * (evt.EvtAfectaSaldo || 1), // Efecto natural directo: 1 = Suma/Haber a favor (+), -1 = Resta/Debe deuda (-)
+          MovUsuarioAlta: UsuarioAlta,
+          OrdIdOrden, OReIdOrdenRetiro, PagIdPago
+        });
+
+        // 2. GENERACIÓN DE DEUDA VIVA (DOCUMENTOS PENDIENTES) Y CRUCES DE MONEDA
+        // Si el saldo resultante bajó de 0 (hay deuda generada)
+        if (evt.EvtGeneraDeuda && resSubmayor.SaldoResultante < 0) {
+           let deudaReal = Math.min(Math.abs(Importe), Math.max(0, -resSubmayor.SaldoResultante));
+           
+           if (deudaReal > 0.01) {
+              // Intentar cruce de monedas (si tiene saldo a favor en la otra)
+              const tipoOtra = MonIdMoneda === 2 ? 'DINERO_UYU' : 'DINERO_USD';
+              const ctaOtraRes = await pool.request()
+                 .input('CliCruce', sql.Int, CliIdCliente)
+                 .input('TipoCruce', sql.VarChar(20), tipoOtra)
+                 .query(`SELECT CueIdCuenta, CueSaldoActual FROM CuentasCliente WHERE CliIdCliente=@CliCruce AND CueTipo=@TipoCruce AND CueActiva=1 AND CueSaldoActual > 0.01`);
+              
+              if (ctaOtraRes.recordset.length > 0) {
+                 const ctaOtra = ctaOtraRes.recordset[0];
+                 let coti = 1;
+                 const cotiRes = await pool.request().query('SELECT TOP 1 CotDolar FROM dbo.Cotizaciones WITH(NOLOCK) ORDER BY CotFecha DESC');
+                 if (cotiRes.recordset.length > 0) coti = parseFloat(cotiRes.recordset[0].CotDolar) || 1;
+
+                 // Tasa para convertir de la "otra" moneda a la "actual"
+                 let tasaConvertirAOrden = MonIdMoneda === 2 ? (1 / coti) : coti;
+                 let saldoOtraConvertido = ctaOtra.CueSaldoActual * tasaConvertirAOrden;
+
+                 let aDescontarOrden = Math.min(deudaReal, saldoOtraConvertido);
+                 
+                 if (aDescontarOrden > 0.01) {
+                    let aDescontarCtaOtra = aDescontarOrden / tasaConvertirAOrden;
+                    
+                    // Extraer de la bolsa positiva (otra cuenta)
+                    await registrarMovimiento({
+                      CueIdCuenta: ctaOtra.CueIdCuenta,
+                      MovTipo: 'PAGO_CRUZADO',
+                      MovConcepto: `Cruce automático -> Orden ${CodigoOrden}`,
+                      MovImporte: -Math.abs(aDescontarCtaOtra),
+                      MovUsuarioAlta: UsuarioAlta,
+                      OrdIdOrden, OReIdOrdenRetiro,
+                    });
+
+                    // Ingresar la plata convertida a la cuenta endeudada
+                    await registrarMovimiento({
+                      CueIdCuenta: cueId,
+                      MovTipo: 'PAGO_CRUZADO',
+                      MovConcepto: `Cobertura desde ${tipoOtra}`,
+                      MovImporte: Math.abs(aDescontarOrden),
+                      MovUsuarioAlta: UsuarioAlta,
+                      OrdIdOrden, OReIdOrdenRetiro,
+                    });
+
+                    deudaReal -= aDescontarOrden;
+                 }
+              }
+
+              // Si TODAVÍA hay deuda viva, se hace el documento pendiente
+              if (deudaReal > 0.01) {
+                 await crearDeudaDocumento({ 
+                    CueIdCuenta: cueId, OrdIdOrden, 
+                    Importe: Math.abs(Importe), 
+                    ImportePendiente: deudaReal 
+                 });
+              } else {
+                 // Deuda cubierta completamente por cruce
+                 resSubmayor.cubiertoPorSaldo = true;
+              }
+           }
+        } else if (evt.EvtGeneraDeuda) {
+           // Si el evento genera deuda pero SaldoResultante >= 0, significa que la cuenta TENÍA saldo a favor suficiente
+           resSubmayor.cubiertoPorSaldo = true;
+        }
+
+        // 2.5. AUTO-MARCAR ORDEN COMO PAGADA SI FUE CUBIERTA 100% POR SALDO
+        if (evt.EvtGeneraDeuda && resSubmayor?.cubiertoPorSaldo === true && OrdIdOrden) {
+           logger.info(`[MOTOR] Orden ${CodigoOrden} cubierta totalmente por Saldo a Favor. Auto-marcando como paga.`);
+           await pool.request().input('Id', sql.Int, OrdIdOrden).query(`
+             UPDATE dbo.OrdenesDeposito SET OrdEstadoActual = CASE WHEN OrdEstadoActual = 1 THEN 7 ELSE OrdEstadoActual END WHERE OrdIdOrden = @Id;
+           `);
+           // Chequear si la orden de retiro padre también debe pasar a abonada
+           await pool.request().input('Id', sql.Int, OrdIdOrden).query(`
+             UPDATE r SET OReEstadoActual = CASE WHEN OReEstadoActual = 1 THEN 3 WHEN OReEstadoActual = 5 THEN 8 ELSE OReEstadoActual END
+             FROM dbo.OrdenesRetiro r
+             INNER JOIN dbo.OrdenesDeposito d ON d.OReIdOrdenRetiro = r.OReIdOrdenRetiro
+             WHERE d.OrdIdOrden = @Id AND NOT EXISTS (
+                SELECT 1 FROM dbo.OrdenesDeposito od2 
+                LEFT JOIN dbo.DeudaDocumento dd ON dd.OrdIdOrden = od2.OrdIdOrden
+                WHERE od2.OReIdOrdenRetiro = r.OReIdOrdenRetiro AND od2.OrdIdOrden != @Id
+                  AND (od2.PagIdPago IS NULL AND (dd.DDeImportePendiente > 0.01 OR dd.DDeImportePendiente IS NULL))
+             )
+           `);
+        }
+      }
+    }
+
+    // 3. LÓGICA DE RECURSOS (PLANES METROS/KG)
+    if (evt.EvtAplicaRecurso && ProIdProducto && Cantidad > 0) {
+      await hookEntregaMetros({ 
+        OrdIdOrden, CliIdCliente, ProIdProducto, Cantidad, 
+        CodigoOrden, UsuarioAlta, Importe, MonIdMoneda, NombreTrabajo 
+      });
+    }
+
+    // 4. LÓGICA DE IMPUTACIÓN (SOLO PARA PAGOS)
+    if (PagIdPago && cueIdCta) {
+       await imputarPago({
+          PagIdPago,
+          MontoDisponible: Math.abs(Importe),
+          CueIdCuenta: cueIdCta,
+          UsuarioAlta
+       });
+       logger.info(`[MOTOR] Pago ${PagIdPago} imputado automáticamente.`);
+    }
+
+    // 5. LÓGICA DE ASIENTO CONTABLE (LIBRO MAYOR)
+    const reglas = await motor.getReglasAsiento(evtCodigo);
+    if (reglas && reglas.length >= 2) {
+      let cotiz = 1;
+      if (MonIdMoneda === 2) {
+        const cRes = await pool.request().query('SELECT TOP 1 CotDolar FROM Cotizaciones WITH(NOLOCK) ORDER BY CotFecha DESC');
+        cotiz = cRes.recordset.length > 0 ? parseFloat(cRes.recordset[0].CotDolar) || 1 : 1;
+      }
+
+      const importeAbsRounded = Math.round(Math.abs(Importe) * 100) / 100;
+      const { neto, ivaMonto } = contabilidadCore.desglosarIVA(importeAbsRounded, 22);
+      const lineas = await contabilidadCore.resolverLineasDesdeMotor(evtCodigo, {
+        moneda: MonIdMoneda === 2 ? 'USD' : 'UYU',
+        cotizacion: cotiz,
+        totalNeto: importeAbsRounded,
+        neto, ivaMonto,
+        clienteId: CliIdCliente,
+        monedaId: MonIdMoneda
+      });
+
+      if (lineas.length >= 2) {
+        const tran = pool.transaction();
+        await tran.begin();
+        try {
+          await contabilidadCore.generarAsientoCompleto({
+            fecha: new Date(),
+            concepto: `${CodigoOrden} ${NombreTrabajo}`.trim() || evtCodigo,
+            usuarioId: UsuarioAlta,
+            origen: 'MOTOR',
+            lineas
+          }, tran);
+          await tran.commit();
+        } catch (errAsi) {
+          await tran.rollback();
+          logger.error(`[MOTOR] Falló Asiento ${evtCodigo}: ${errAsi.message}`);
+        }
+      }
+    }
+
+    return { success: true, saldoActual: resSubmayor?.SaldoResultante };
+  } catch (err) {
+    logger.error(`[MOTOR] Error crítico en procesarEventoContable (${evtCodigo}): ${err.message}`);
+    // No lanzamos error para no romper el proceso de negocio principal (fire-and-forget logic)
+    return { success: false, error: err.message };
+  }
+}

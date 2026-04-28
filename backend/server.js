@@ -102,9 +102,11 @@ app.use('/api/insumos', require('./routes/insumosRoutes'));
 app.use('/api/reception', require('./routes/receptionRoutes'));
 app.use('/api/inventory', require('./routes/inventoryRoutes'));
 app.use('/api/configuraciones', require('./routes/configuracionesRoutes'));
+app.use('/api/quotation', require('./routes/quotationRoutes'));
 
 try {
     app.use('/api/contabilidad', require('./routes/contabilidadRoutes'));
+    app.use('/api/tesoreria', require('./routes/tesoreriaRoutes'));
     logger.info('✅ [MÓDULO] Contabilidad de Clientes activado en /api/contabilidad');
 } catch (e) { logger.error('❌ Error loading contabilidad routes:', e.message); }
 
@@ -160,6 +162,10 @@ try {
 try {
     app.use('/api/profiles', require('./routes/profilesRoutes'));
 } catch (e) { logger.error("❌ Error loading profiles routes:", e); }
+
+try {
+    app.use('/api/reports', require('./routes/reportsRoutes'));
+} catch (e) { logger.error("❌ Error loading reports routes:", e); }
 
 try {
     app.use('/api/clients', require('./routes/clientsRoutes'));

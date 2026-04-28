@@ -4,11 +4,17 @@ const fileProcessingService = require('../services/fileProcessingService');
 const axios = require('axios');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const logger = require('../utils/logger');
+const ERPSyncService = require('../services/erpSyncService');
 
 // --- CONSTANTES Y MAPEOS ---
 const SERVICE_TO_AREA_MAP = {
     'dtf': 'DF',
     'DF': 'DF',
+    'XDF': 'DF',
+    'RXDF': 'DF',
+    'UVDF': 'DF',
+    'RUVDF': 'DF',
+    'RDF': 'DF',
     'sublimacion': 'SB',
     'SB': 'SB',
     'SUB': 'SB',
@@ -18,6 +24,8 @@ const SERVICE_TO_AREA_MAP = {
     'bordado': 'EMB',
     'laser': 'TWC',
     'tpu': 'TPU',
+    'TPU': 'TPU',
+    'TPUT': 'TPU',
     'costura': 'TWT',
     'estampado': 'EST'
 };
@@ -64,49 +72,80 @@ exports.createPlanillaOrder = async (req, res) => {
     let codCliente = req.body.codCliente;
     let nombreCliente = req.body.nombreCliente;
     let idClienteReact = null;
+    let cliIdClienteDB = null;
 
-    // Lógica de Búsqueda por Nombre/ID String (ej: "LAY12")
-    if (!codCliente && clienteInfo && clienteInfo.id) {
-        logger.info(`🔍 Buscando cliente por ID/Nombre: '${clienteInfo.id}'...`);
+    // Lógica de Búsqueda por Nombre/ID String o IDReact numérico
+    if (!codCliente && clienteInfo) {
+        let searchedByReact = false;
+
         try {
-            const clientSearch = await pool.request()
-                .input('Val', sql.NVarChar, clienteInfo.id.trim())
-                .query(`
-                    SELECT TOP 1 CodCliente, Nombre, IDReact, IDCliente
-                    FROM Clientes 
-                    WHERE LTRIM(RTRIM(IDCliente)) = @Val 
-                       OR Nombre LIKE '%' + @Val + '%'
-                `);
+            // 1. Intentar por IDReact primero si viene explícito
+            if (clienteInfo.idReact) {
+                const parsedReact = parseInt(clienteInfo.idReact);
+                if (!isNaN(parsedReact)) {
+                    logger.info(`🔍 Buscando cliente por IDReact explícito: ${parsedReact}...`);
+                    const clientSearch = await pool.request()
+                        .input('Val', sql.Int, parsedReact)
+                        .query(`
+                            SELECT TOP 1 CodCliente, Nombre, IDReact, IDCliente, CliIdCliente
+                            FROM Clientes 
+                            WHERE IDReact = @Val
+                        `);
 
-            if (clientSearch.recordset.length > 0) {
-                const c = clientSearch.recordset[0];
-                codCliente = c.CodCliente;
-                // USAR IDCliente (RXDSUBLIMACION) como nombre principal SOLO SI TIENE CONTENIDO. Si es espacio, usar Nombre.
-                nombreCliente = (c.IDCliente && c.IDCliente.trim().length > 0) ? c.IDCliente : c.Nombre;
-                idClienteReact = c.IDReact;
-                logger.info(`✅ Cliente encontrado: ${nombreCliente} (Ref DB: ${c.Nombre})`);
-
-                if (!idClienteReact) {
-                    logger.warn(`⚠️ Cliente '${nombreCliente}' encontrado pero SIN IDReact.`);
-                    // NO invalidamos la orden. Permitimos que entre con CodCliente aunque falte IDReact.
-                    observacionesValidacion.push(`Cliente existe (Cod: ${codCliente}) pero sin IDReact.`);
+                    if (clientSearch.recordset.length > 0) {
+                        const c = clientSearch.recordset[0];
+                        codCliente = c.CodCliente;
+                        cliIdClienteDB = c.CliIdCliente;
+                        nombreCliente = (c.IDCliente && c.IDCliente.trim().length > 0) ? c.IDCliente : c.Nombre;
+                        idClienteReact = c.IDReact;
+                        logger.info(`✅ Cliente encontrado por IDReact: ${nombreCliente} (Ref DB: ${c.Nombre})`);
+                        searchedByReact = true;
+                    } else {
+                        logger.warn(`⚠️ Cliente con IDReact '${parsedReact}' no encontrado. Procediendo a fallback alfanumérico.`);
+                    }
                 }
-            } else {
-                logger.warn(`⚠️ Cliente '${clienteInfo.id}' no encontrado.`);
-                esValido = false;
-                observacionesValidacion.push(`Cliente '${clienteInfo.id}' no encontrado en BD.`);
+            }
 
-                // REQUERIDO: Usar el ID en nombre para no perderlo, pero anular idClienteReact para evitar varchar-to-numeric SQL Crash
-                if (!nombreCliente) nombreCliente = `Cliente ${clienteInfo.id}`;
-                idClienteReact = null;
+            // 2. Fallback: Buscar por ID Alfanumérico en IDCliente si no se halló por IDReact
+            if (!searchedByReact && clienteInfo.id) {
+                logger.info(`🔍 Buscando cliente por ID texto (IDCliente): '${clienteInfo.id}'...`);
+                const clientSearch = await pool.request()
+                    .input('Val', sql.NVarChar, clienteInfo.id.trim())
+                    .query(`
+                        SELECT TOP 1 CodCliente, Nombre, IDReact, IDCliente, CliIdCliente
+                        FROM Clientes 
+                        WHERE LTRIM(RTRIM(IDCliente)) = @Val
+                    `);
+
+                if (clientSearch.recordset.length > 0) {
+                    const c = clientSearch.recordset[0];
+                    codCliente = c.CodCliente;
+                    cliIdClienteDB = c.CliIdCliente;
+                    nombreCliente = (c.IDCliente && c.IDCliente.trim().length > 0) ? c.IDCliente : c.Nombre;
+                    idClienteReact = c.IDReact;
+                    logger.info(`✅ Cliente encontrado por ID string: ${nombreCliente} (Ref DB: ${c.Nombre})`);
+
+                    if (!idClienteReact) {
+                        logger.warn(`⚠️ Cliente '${nombreCliente}' encontrado pero SIN IDReact.`);
+                        observacionesValidacion.push(`Cliente existe (Cod: ${codCliente}) pero sin IDReact.`);
+                    }
+                } else {
+                    logger.warn(`⚠️ Cliente '${clienteInfo.id}' no encontrado.`);
+                    esValido = false;
+                    observacionesValidacion.push(`Cliente '${clienteInfo.id}' no encontrado en BD.`);
+                    if (!nombreCliente) nombreCliente = `Cliente ${clienteInfo.id}`;
+                    idClienteReact = null;
+                }
+            } else if (!searchedByReact && !clienteInfo.id) {
+                // No hay ni idReact ni id string
+                esValido = false;
+                observacionesValidacion.push("Falta información del cliente (id o idReact).");
             }
         } catch (errSearch) {
             logger.error("Error buscando cliente:", errSearch);
             esValido = false;
             observacionesValidacion.push("Error interno al buscar cliente.");
-
-            // Fallback (solo ponerlo en nombre, NO inyectar texto puro en IDReact para evitar crash SQL)
-            if (!nombreCliente) nombreCliente = `Cliente ${clienteInfo.id}`;
+            if (!nombreCliente) nombreCliente = `Cliente ${clienteInfo.idReact || clienteInfo.id || 'Desconocido'}`;
             idClienteReact = null;
         }
     }
@@ -186,8 +225,11 @@ exports.createPlanillaOrder = async (req, res) => {
         if (!idClienteReact && codCliente) {
             const parsedCod = parseInt(codCliente);
             if (!isNaN(parsedCod)) {
-                const clientRes = await pool.request().input('cod', sql.Int, parsedCod).query("SELECT IDReact FROM Clientes WHERE CodCliente = @cod");
-                if (clientRes.recordset.length > 0) idClienteReact = clientRes.recordset[0].IDReact;
+                const clientRes = await pool.request().input('cod', sql.Int, parsedCod).query("SELECT IDReact, CliIdCliente FROM Clientes WHERE CodCliente = @cod");
+                if (clientRes.recordset.length > 0) {
+                    idClienteReact = clientRes.recordset[0].IDReact;
+                    cliIdClienteDB = clientRes.recordset[0].CliIdCliente;
+                }
 
                 if (!idClienteReact) {
                     // NO invalidamos. Permitimos con CodCliente.
@@ -212,7 +254,8 @@ exports.createPlanillaOrder = async (req, res) => {
         const pendingOrderExecutions = [];
 
         if (req.body.servicios && Array.isArray(req.body.servicios) && req.body.servicios.length > 0) {
-            req.body.servicios.forEach(srv => {
+            for (let idxSrv = 0; idxSrv < req.body.servicios.length; idxSrv++) {
+                const srv = req.body.servicios[idxSrv];
                 const cabecera = srv.cabecera || {};
                 let srvArea = srv.areaId || mainAreaID;
                 if (SERVICE_TO_AREA_MAP[srvArea]) srvArea = SERVICE_TO_AREA_MAP[srvArea]; // Remapear alias
@@ -229,7 +272,8 @@ exports.createPlanillaOrder = async (req, res) => {
                     return {
                         fileName: fName,
                         originalUrl: it.fileName,
-                        copies: it.cantidad || 1,
+                        copies: it.copias !== undefined ? it.copias : (it.cantidad || 1),
+                        metrosReales: it.copias !== undefined ? (it.cantidad || 0) : 0,
                         note: it.nota,
                         width: it.width,
                         height: it.height,
@@ -237,10 +281,27 @@ exports.createPlanillaOrder = async (req, res) => {
                     };
                 });
 
+                // --- INYECCIÓN DE ARCHIVO FANTASMA PARA SINCRO (PLANILLA) ---
+                // Si la planilla NO envió archivos (común en Sincro donde no hay gráficos), creamos uno virtual
+                // para mantener el conteo logístico en ArchivosOrden / ArchivosReferencia
+                if (ordenItems.length === 0) {
+                    const fallbackQty = cabecera.cantidad || srv.cantidad || req.body.metrosReales || req.body.cantidad || 1;
+                    ordenItems.push({
+                        fileName: srv.esPrincipal ? 'SINCRO_SIN_ARCHIVO.pdf' : 'SINCRO_BOCETO_EXTRA.pdf',
+                        originalUrl: null,
+                        copies: fallbackQty, // Si es unitario, esto es N. Si es M2, puede ser el ancho/alto
+                        note: 'Generado desde Planilla Sincro sin archivo físico',
+                        width: 0,
+                        height: fallbackQty, // Metemos el valor en 'height' para que compute "Metros" si el área es ml/m2
+                        observaciones: 'Falta Archivo Digital'
+                    });
+                }
+
                 let localMaterial = cabecera.material || 'Estándar';
                 let localVariante = cabecera.variante || 'N/A';
                 let localCodArticulo = cabecera.codArticulo;
                 let localCodStock = cabecera.codStock;
+                let localProIdProductoDB = cabecera.proIdProducto || cabecera.ProIdProducto || null;
 
                 // --- HARCODEO DE EXTRAS (BORDADO, CORTE LASER, COSTURA) ---
                 if (localCodArticulo === 'SERV-CORTE') {
@@ -260,17 +321,46 @@ exports.createPlanillaOrder = async (req, res) => {
                     localVariante = 'Bordado';
                 }
 
+                // --- HEURÍSTICA DE RESCATE SI NO HAY CODIGO DE ARTICULO ---
+                if (!localCodArticulo) {
+                    const pNameClean = (localMaterial || rawJobName || '').trim();
+                    try {
+                        let preq = await pool.request()
+                            .input('nom', sql.NVarChar, pNameClean)
+                            .query(`
+                                SELECT TOP 1 A.CodArticulo, A.ProIdProducto, A.Descripcion
+                                FROM [SINCRO-ARTICULOS] S
+                                INNER JOIN Articulos A ON S.PROIDPRODUCTO = A.ProIdProducto
+                                WHERE LTRIM(RTRIM(S.DESCRIPCION)) = LTRIM(RTRIM(@nom))
+                            `);
+                            
+                        if (preq.recordset.length > 0) {
+                            const oficial = preq.recordset[0];
+                            localCodArticulo = oficial.CodArticulo;
+                            localProIdProductoDB = oficial.ProIdProducto;
+                            if (oficial.Descripcion) localMaterial = oficial.Descripcion;
+                        }
+                    } catch (e) {
+                         logger.error("Error consultando SINCRO-ARTICULOS en Integration: " + e.message);
+                    }
+                }
+
+                // Si el payload origen no define explícitamente "esPrincipal", asumimos que el índice 0 es la principal.
+                const isExtraSrv = srv.esPrincipal !== undefined ? !srv.esPrincipal : (idxSrv > 0);
+
                 pendingOrderExecutions.push({
                     areaID: areaID,
                     material: localMaterial,
                     variante: localVariante,
                     codArticulo: localCodArticulo,
+                    proIdProductoDB: localProIdProductoDB,
                     codStock: localCodStock,
                     items: ordenItems,
-                    isExtra: !srv.esPrincipal,
+                    isExtra: isExtraSrv,
+                    isCobranzaExtra: !!srv.isCobranzaExtra, // PASAR LA BANDERA AL MOTOR
                     notaAdicional: srv.notas || ''
                 });
-            });
+            }
 
         } else if (items && items.length > 0) {
             pendingOrderExecutions.push({
@@ -291,54 +381,66 @@ exports.createPlanillaOrder = async (req, res) => {
 
         // --- 5B. LOOKUP ID PRODUCTO REACT (NUEVO & ROBUSTO) ---
         // Buscamos IDProdReact en la tabla Articulos usando el CodArticulo (ej: 47)
-        const codesToLookup = [...new Set(pendingOrderExecutions.map(e => e.codArticulo).filter(c => c))];
-        const mapArt = {};
+        const codesToLookup = [...new Set(pendingOrderExecutions.map(e => e.codArticulo || e.proIdProductoDB).filter(c => c))];
+        const mapArtByProId = {};
+        const mapArtByCodArt = {};
+        const mapArtByIdReact = {};
 
         if (codesToLookup.length > 0) {
             logger.info(`🔍 [Integration] Buscando Artículos: ${JSON.stringify(codesToLookup)}`);
             try {
                 const request = pool.request();
-                // Usamos VarChar para máxima compatibilidad (SQL Server convierte automáticamente si la columna es INT)
-                const clauses = codesToLookup.map((_, i) => `CodArticulo = @cod${i}`).join(' OR ');
+                const clauses = codesToLookup.map((_, i) => `(CodArticulo = @cod${i} OR ProIdProducto = TRY_CAST(@cod${i} AS INT) OR IDProdReact = TRY_CAST(@cod${i} AS INT))`).join(' OR ');
                 codesToLookup.forEach((c, i) => request.input(`cod${i}`, sql.VarChar(50), String(c).trim()));
 
-                // Consulta explícita
-                const artRes = await request.query(`SELECT IDProdReact, CodArticulo FROM Articulos WHERE ${clauses}`);
+                const artRes = await request.query(`SELECT IDProdReact, CodArticulo, ProIdProducto FROM Articulos WHERE ${clauses}`);
 
                 logger.info(`🔍 [Integration] Resultados DB Articulos encontrados: ${artRes.recordset.length}`);
 
                 artRes.recordset.forEach(r => {
-                    // Guardamos en el mapa. Usamos String para asegurar match con keys
-                    mapArt[String(r.CodArticulo).trim()] = r.IDProdReact;
+                    const info = { idReact: r.IDProdReact, proId: r.ProIdProducto, codArt: r.CodArticulo };
+                    if (r.ProIdProducto !== null && r.ProIdProducto !== undefined) {
+                        mapArtByProId[String(r.ProIdProducto).trim()] = info;
+                    }
+                    if (r.CodArticulo) {
+                        mapArtByCodArt[String(r.CodArticulo).trim()] = info;
+                    }
+                    if (r.IDProdReact !== null && r.IDProdReact !== undefined) {
+                        mapArtByIdReact[String(r.IDProdReact).trim()] = info;
+                    }
                 });
 
             } catch (errLookup) {
                 logger.warn("⚠️ Error buscando IDProdReact:", errLookup.message);
                 observacionesValidacion.push("Error DB buscando producto: " + errLookup.message);
-                // No invalidamos toda la orden por esto, pero marcamos warning
             }
         }
 
         // Asignar y Validar Productos
         pendingOrderExecutions.forEach(exec => {
-            if (exec.codArticulo) {
-                const key = String(exec.codArticulo).trim();
-                const foundId = mapArt[key];
+              let info = null;
+              let key = "Desconocido";
 
-                // Chequeo estricto de null/undefined (por si el ID es 0)
-                if (foundId !== undefined && foundId !== null) {
-                    exec.idProductoReact = foundId;
-                    logger.info(`✅ IDProductoReact asignado: ${foundId} para Art: ${exec.codArticulo}`);
-                } else {
-                    logger.warn(`⚠️ IDProductoReact NO encontrado para CodArt ${exec.codArticulo}. (Buscado como: '${key}')`);
-                    // Solo invalidamos si es CRÍTICO. El usuario indica que DEBERÍA estar.
-                    // Si no está, lo dejamos pasar pero sin ID, o fallamos?
-                    // Según el reclamo del usuario ("COMO ME VAS A DECIR QUE NO..."), prefiere que funcione si está.
-                    // Si realmente no está en el mapa, es porque la query no lo trajo o IDProdReact es NULL.
-                    esValido = false;
-                    observacionesValidacion.push(`Producto Cod '${exec.codArticulo}' existe pero no tiene IDReact vinculado (o no se encontró).`);
-                }
-            }
+              if (exec.proIdProductoDB) {
+                  key = String(exec.proIdProductoDB).trim();
+                  info = mapArtByProId[key] || mapArtByCodArt[key] || mapArtByIdReact[key];
+              }
+              
+              if (!info && exec.codArticulo) {
+                  key = String(exec.codArticulo).trim();
+                  info = mapArtByCodArt[key] || mapArtByProId[key] || mapArtByIdReact[key];
+              }
+
+              if (info) {
+                  exec.idProductoReact = info.idReact;
+                  exec.proIdProductoDB = info.proId;
+                  exec.codArticulo = info.codArt;
+                  logger.info(`✅ IDProductoReact asignado: ${info.idReact} para identificador proporcionado: ${key} (Asignando CodArticulo real: ${info.codArt})`);
+              } else {
+                  logger.warn(`⚠️ Datos de artículo NO encontrados para identificador ${exec.codArticulo}. (Buscado como: '${key}')`);
+                  esValido = false;
+                  observacionesValidacion.push(`Producto Cod '${exec.codArticulo}' no se encontró o no tiene vinculaciones.`);
+              }
         });
 
         // --- 6. TRANSACCIÓN DB ---
@@ -350,6 +452,29 @@ exports.createPlanillaOrder = async (req, res) => {
             const generatedOrders = [];
             const generatedIDs = [];
 
+            // --- NUEVO: REEMPLAZO O PREVENCIÓN DE DUPLICADOS ---
+            if (erpDocNumber) {
+                const exRows = await new sql.Request(transaction).input('ERP', sql.VarChar(50), erpDocNumber).query("SELECT OrdenID FROM Ordenes WHERE NoDocERP = @ERP OR CodigoOrden = @ERP");
+                if (exRows.recordset.length > 0) {
+                    if (req.body.OVERWRITE_EXISTING) {
+                        const idsToDel = exRows.recordset.map(r => r.OrdenID);
+                        logger.info(`[IntegrationOrder] ⚠️ Reemplazando órdenes existentes (${idsToDel.join(',')}) para Doc: ${erpDocNumber}`);
+                        for (const oid of idsToDel) {
+                            if (typeof oid !== 'number') continue;
+                            await new sql.Request(transaction).query(`DELETE FROM ArchivosOrden WHERE OrdenID = ${oid}`);
+                            await new sql.Request(transaction).query(`DELETE FROM ArchivosReferencia WHERE OrdenID = ${oid}`);
+                            await new sql.Request(transaction).query(`DELETE FROM ServiciosExtraOrden WHERE OrdenID = ${oid}`);
+                            await new sql.Request(transaction).query(`DELETE FROM PedidosCobranzaDetalle WHERE OrdenID = ${oid}`);
+                            await new sql.Request(transaction).query(`DELETE FROM Ordenes WHERE OrdenID = ${oid}`);
+                        }
+                        await new sql.Request(transaction).input('ERP', sql.VarChar(50), erpDocNumber).query("DELETE FROM PedidosCobranza WHERE NoDocERP = @ERP");
+                    } else {
+                        // Impedir duplicados si no se solicita sobrescribir
+                        throw new Error(`La orden o documento ${erpDocNumber} ya existe. Operación rechazada para evitar duplicados.`);
+                    }
+                }
+            }
+
             // SOLO LA NOTA DEL CLIENTE (cleanedNote)
             let finalNote = cleanedNote || '';
 
@@ -360,14 +485,36 @@ exports.createPlanillaOrder = async (req, res) => {
 
             const sanitize = (str) => (str || '').replace(/[<>:"/\\|?*]/g, '_').trim();
 
+            const fisicasEjecuciones = pendingOrderExecutions.filter(e => !e.isCobranzaExtra);
+            let fisicaIndex = 0;
+
             for (let idx = 0; idx < pendingOrderExecutions.length; idx++) {
                 const exec = pendingOrderExecutions[idx];
 
-                const globalIndex = idx + 1;
+                if (exec.isCobranzaExtra) {
+                    // EVITAR QUE SEA UNA "ORDEN FÍSICA MÁS" - SE ENVÍA DIRECTO AL DETALLE DE COBRANZA
+                    const parentOID = generatedIDs.length > 0 ? generatedIDs[0] : null;
+                    if (parentOID) {
+                        await new sql.Request(transaction)
+                            .input('OID', sql.Int, parentOID)
+                            .input('CArt', sql.VarChar(50), exec.codArticulo || 'EMB-MATRIZ')
+                            .input('Nom', sql.NVarChar(200), exec.material || 'Cobranza Extra')
+                            .query(`
+                                INSERT INTO ServiciosExtraOrden (OrdenID, Descripcion, CodArt, Cantidad, PrecioUnitario, TotalLinea, FechaRegistro)
+                                VALUES (@OID, @Nom, @CArt, 1, 0, 0, GETDATE())
+                            `);
+                        logger.info(`✅ [IntegrationOrder] Anclado ítem de cobranza extra (Matriz/Otro) al Padre OID ${parentOID}: ${exec.codArticulo}`);
+                    } else {
+                        logger.warn(`⚠️ [IntegrationOrder] No se pudo anclar el ítem extra porque no hay Orden Padre creada.`);
+                    }
+                    continue; // Saltar la creación de Orden, Lote Kanban y Archivos
+                }
+
+                fisicaIndex++;
                 let codigoParaEstaOrden;
 
-                if (pendingOrderExecutions.length > 1) {
-                    codigoParaEstaOrden = `${codigoOrdenFinal} (${globalIndex}/${pendingOrderExecutions.length})`;
+                if (fisicasEjecuciones.length > 1) {
+                    codigoParaEstaOrden = `${codigoOrdenFinal} (${fisicaIndex}/${fisicasEjecuciones.length})`;
                 } else {
                     codigoParaEstaOrden = codigoOrdenFinal;
                 }
@@ -375,7 +522,12 @@ exports.createPlanillaOrder = async (req, res) => {
                 exec.codigoOrden = codigoParaEstaOrden;
 
                 let proximoServicio = 'DEPOSITO';
-                if (idx < pendingOrderExecutions.length - 1) proximoServicio = pendingOrderExecutions[idx + 1].areaID;
+                for (let j = idx + 1; j < pendingOrderExecutions.length; j++) {
+                    if (!pendingOrderExecutions[j].isCobranzaExtra) {
+                        proximoServicio = pendingOrderExecutions[j].areaID;
+                        break;
+                    }
+                }
 
                 const areaUM = mapaAreasUM[exec.areaID] || 'u';
 
@@ -398,30 +550,32 @@ exports.createPlanillaOrder = async (req, res) => {
                     .input('Prio', sql.VarChar(20), urgency)
                     .input('Mat', sql.VarChar(255), exec.material)
                     .input('Var', sql.VarChar(100), exec.variante)
-                    .input('Cod', sql.VarChar(50), exec.codigoOrden)
+                    .input('Cod', sql.VarChar(50), exec.codigoOrden ? String(exec.codigoOrden) : null)
                     .input('ERP', sql.VarChar(50), erpDocNumber)
                     .input('Nota', sql.NVarChar(sql.MAX), finalNote)
                     .input('Mag', sql.VarChar(50), '0')
                     .input('Prox', sql.VarChar(50), proximoServicio)
-                    .input('Estado', sql.VarChar(50), 'Pendiente')
+                    .input('Estado', sql.VarChar(50), 'PRONTO')
                     .input('UM', sql.VarChar(20), areaUM)
                     .input('CArt', sql.VarChar(50), exec.codArticulo ? String(exec.codArticulo) : null)
                     .input('IdProdReact', sql.Int, !isNaN(parseInt(exec.idProductoReact)) ? parseInt(exec.idProductoReact) : null)
                     .input('Val', sql.Bit, esValido)
                     .input('ValObs', sql.NVarChar(sql.MAX), validacionObsStr)
+                    .input('CliIdCliente', sql.Int, !isNaN(parseInt(cliIdClienteDB)) ? parseInt(cliIdClienteDB) : null)
+                    .input('ProIdProducto', sql.Int, !isNaN(parseInt(exec.proIdProductoDB)) ? parseInt(exec.proIdProductoDB) : null)
                     .query(`
                         INSERT INTO Ordenes (
                             AreaID, Cliente, CodCliente, IdClienteReact, DescripcionTrabajo, Prioridad, 
                             FechaIngreso, FechaEntradaSector, FechaEstimadaEntrega, Material, Variante, 
                             CodigoOrden, NoDocERP, Nota, Magnitud, ProximoServicio, UM, Estado, EstadoenArea,
-                            CodArticulo, IdProductoReact, Validacion, ValidacionOBS
+                            CodArticulo, IdProductoReact, Validacion, ValidacionOBS, CliIdCliente, ProIdProducto
                         )
                         OUTPUT INSERTED.OrdenID
                         VALUES (
                             @AreaID, @Cliente, @CodCliente, @IdClienteReact, @Desc, @Prio, 
                             GETDATE(), GETDATE(), DATEADD(day, 3, GETDATE()), @Mat, @Var, 
                             @Cod, @ERP, @Nota, @Mag, @Prox, @UM, @Estado, @Estado,
-                            @CArt, @IdProdReact, @Val, @ValObs
+                            @CArt, @IdProdReact, @Val, @ValObs, @CliIdCliente, @ProIdProducto
                         )
                     `);
 
@@ -432,27 +586,10 @@ exports.createPlanillaOrder = async (req, res) => {
                 let totalMagnitud = 0;
                 let fileCount = 0;
 
-                // --- NUEVO: CREAR LINEA DE SERVICIO EXTRA PARA FACTURACIÓN ---
-                if (exec.isExtra) {
-                    let qtyFact = 0;
-                    if (exec.items && exec.items.length > 0) {
-                        qtyFact = exec.items.reduce((sum, it) => sum + (parseInt(it.copies) || 1), 0);
-                    }
-                    if (qtyFact === 0) qtyFact = 1;
-
-                    await new sql.Request(transaction)
-                        .input('OID', sql.Int, newOID)
-                        .input('Cod', sql.VarChar(50), exec.codArticulo || exec.areaID)
-                        .input('Stk', sql.VarChar(50), exec.codStock || '')
-                        .input('Des', sql.NVarChar(255), `${exec.variante} - ${exec.material}`)
-                        .input('Cnt', sql.Decimal(18, 2), qtyFact)
-                        .input('Obs', sql.NVarChar(sql.MAX), exec.notaAdicional || 'Generado desde Planilla')
-                        .query(`
-                            INSERT INTO ServiciosExtraOrden 
-                            (OrdenID, CodArt, CodStock, Descripcion, Cantidad, PrecioUnitario, TotalLinea, Observacion, FechaRegistro) 
-                            VALUES (@OID, @Cod, @Stk, @Des, @Cnt, 0, 0, @Obs, GETDATE())
-                        `);
-                }
+                // --- NOTA HISTÓRICA: CREACIÓN DE LÍNEA DE SERVICIO EXTRA ELIMINADA ---
+                // Se removió el INSERT INTO ServiciosExtraOrden porque la cotización
+                // contable ahora gestiona los importes con PedidosCobranzaDetalle,
+                // evitando así un doble listado visual en la Confirmación de Cotización.
 
                 for (let i = 0; i < exec.items.length; i++) {
                     const item = exec.items[i];
@@ -461,9 +598,20 @@ exports.createPlanillaOrder = async (req, res) => {
                     const safeCopies = parseInt(item.copies) || 1; // Parse explicitly to avoid text values
 
                     let valMetros = 0;
-                    if (areaUM.toLowerCase() === 'm2') valMetros = (wM * hM);
-                    else if (areaUM.toLowerCase() === 'ml' || areaUM.toLowerCase() === 'm') valMetros = hM;
-                    else valMetros = 1;
+                    if (item.fileName === 'SINCRO_SIN_ARCHIVO.pdf' || item.fileName === 'SINCRO_BOCETO_EXTRA.pdf') {
+                        valMetros = hM;
+                    } else if (item.metrosReales > 0) {
+                        valMetros = item.metrosReales;
+                    } else {
+                        if (areaUM.toLowerCase() === 'm2') valMetros = (wM * hM);
+                        else if (areaUM.toLowerCase() === 'ml' || areaUM.toLowerCase() === 'm') valMetros = hM;
+                        else valMetros = 1;
+
+                        // Si la Planilla manda metrosReales absolutos y no tenemos medidas espaciales, lo heredamos.
+                        if (valMetros === 0 && req.body.metrosReales) {
+                            valMetros = parseFloat(String(req.body.metrosReales).replace(',', '.')) || 0;
+                        }
+                    }
 
                     let ext = '.dat';
                     if (item.fileName && item.fileName.includes('.')) {
@@ -544,9 +692,20 @@ exports.createPlanillaOrder = async (req, res) => {
             await transaction.commit();
 
             logger.info("✅ [IntegrationOrder] Pedido creado:", generatedOrders);
+
+            // 🎯 EARLY PRICING & SYNC: Disparar SOLO cotización y PedidosCobranza, NO OrdenesDeposito.
+            // OrdenesDeposito se escribe únicamente durante el Check-In del WMS (depósito).
+            try {
+                await ERPSyncService.syncFinalOrderIntegration(erpDocNumber, 1, 'Auto-Ingreso', null, { skipDeposito: true });
+                logger.info(`✅ [IntegrationOrder] Early-Pricing & Sync exitoso para: ${erpDocNumber}`);
+            } catch (errSync) {
+                logger.error(`⚠️ [IntegrationOrder] Early-Pricing & Sync falló para ${erpDocNumber}. Error: ${errSync.message}`);
+                // No abortamos el HTTP 201 ya que la orden se creó correctamente en BD.
+            }
+
             res.status(201).json({
                 success: true,
-                message: "Orden creada exitosamente (Integra V2)",
+                message: "Orden creada exitosamente (Integra V2 - Early Priced)",
                 orderId: generatedIDs[0],
                 uuid: generatedOrders[0],
                 subOrders: generatedOrders,

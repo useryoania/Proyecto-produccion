@@ -120,7 +120,8 @@ async function syncPriceList() {
             const producto = (row[1] || '').trim();
             const descripcion = (row[2] || '').trim();
             const moneda = (row[3] || '').trim().toUpperCase();
-            const precioStr = (row[4] || '0').replace(/[^0-9.,\-]/g, '').replace(',', '.');
+            // Corrección: Quitar los puntos de miles antes de cambiar la coma por punto
+            const precioStr = (row[4] || '0').replace(/\./g, '').replace(',', '.').replace(/[^0-9.\-]/g, '');
             const precio = parseFloat(precioStr) || 0;
             const proIdRaw = (row[5] || '').trim();
             const proIdProducto = proIdRaw ? parseInt(proIdRaw, 10) : null;
@@ -147,11 +148,11 @@ async function syncPriceList() {
             }
 
             const result = await req.query(`
-                    IF EXISTS (SELECT 1 FROM PreciosListaPublica WHERE Familia = @Familia AND Producto = @Producto AND Moneda = @Moneda)
+                    IF EXISTS (SELECT 1 FROM PreciosListaPublica WHERE Familia = @Familia AND Producto = @Producto AND Descripcion = @Descripcion AND Moneda = @Moneda)
                     BEGIN
                         UPDATE PreciosListaPublica 
-                        SET Descripcion = @Descripcion, Precio = @Precio, ProIdProducto = @ProIdProducto, Activo = 1, UltimaSync = GETDATE()
-                        WHERE Familia = @Familia AND Producto = @Producto AND Moneda = @Moneda;
+                        SET Precio = @Precio, ProIdProducto = @ProIdProducto, Activo = 1, UltimaSync = GETDATE()
+                        WHERE Familia = @Familia AND Producto = @Producto AND Descripcion = @Descripcion AND Moneda = @Moneda;
                         SELECT 'UPDATED' AS action;
                     END
                     ELSE

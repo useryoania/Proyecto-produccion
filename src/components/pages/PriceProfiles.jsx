@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../services/api';
 import { toast } from 'sonner';
 import PriceCalculatorTest from './PriceCalculatorTest';
+import PriceReports from './PriceReports';
+import BasePrices from './BasePrices';
 
 // --- COMPONENTES AUXILIARES ---
 
@@ -81,8 +84,25 @@ const BulkAddModal = ({ onAdd, onCancel, profileName }) => {
     useEffect(() => {
         api.get('/prices/base')
             .then(res => {
+                const uniqueGroups = [];
+                const seenGroups = new Set();
+                res.data.forEach(p => {
+                    const g = p.Grupo;
+                    if (g && !seenGroups.has(g)) {
+                        seenGroups.add(g);
+                        uniqueGroups.push({
+                            CodArticulo: `GRUPO: ${g}`,
+                            ProIdProducto: null,
+                            Descripcion: `📁 FAMILIA: ${p.GrupoNombre ? `${g} (${p.GrupoNombre})` : g}`,
+                            Precio: 0,
+                            Grupo: 'Familias / Grupos'
+                        });
+                    }
+                });
+
                 const prods = [
-                    { CodArticulo: 'TOTAL', Descripcion: 'Aplica a todo el resto', Precio: 0, Grupo: 'General' },
+                    { CodArticulo: 'TOTAL', ProIdProducto: 0, Descripcion: 'Aplica a todo el resto', Precio: 0, Grupo: 'General' },
+                    ...uniqueGroups,
                     ...res.data
                 ];
                 setProducts(prods);
@@ -144,9 +164,11 @@ const BulkAddModal = ({ onAdd, onCancel, profileName }) => {
         const newRules = [];
 
         selection.forEach(cod => {
+            const product = products.find(p => p.CodArticulo === cod);
             validScales.forEach(scale => {
                 newRules.push({
                     CodArticulo: cod,
+                    ProIdProducto: product ? product.ProIdProducto : undefined,
                     TipoRegla: scale.type || 'fixed_price',
                     Valor: scale.val,
                     CantidadMinima: scale.qty,
@@ -385,7 +407,7 @@ const TieredWizard = ({ existingScales, onSave, onCancel, productName }) => {
                                 <div className="w-1/2 relative">
                                     <input
                                         type="number" min="1"
-                                        className="w-full border rounded p-2 pl-3 focus:ring-2 focus:ring-indigo-200 outline-none font-mono text-sm"
+                                        className="w-full border rounded p-2 pl-3 bg-white text-slate-800 focus:ring-2 focus:ring-indigo-200 outline-none font-mono text-sm"
                                         value={s.qty}
                                         onChange={e => updateScale(idx, 'qty', e.target.value)}
                                         placeholder="Ej: 1"
@@ -401,7 +423,7 @@ const TieredWizard = ({ existingScales, onSave, onCancel, productName }) => {
 
                                     <input
                                         type="number" step={type === 'fixed' ? "0.01" : "1"}
-                                        className={`w-full border rounded p-2 text-right font-bold text-sm focus:ring-2 focus:ring-indigo-200 outline-none ${type === 'percentage' ? 'text-green-600 pl-10 pr-6' : 'text-slate-700 pl-6'}`}
+                                        className={`w-full border rounded p-2 text-right font-bold text-sm bg-white focus:ring-2 focus:ring-indigo-200 outline-none ${type === 'percentage' ? 'text-green-600 pl-10 pr-6' : 'text-slate-800 pl-6'}`}
                                         value={s.val}
                                         onChange={e => updateScale(idx, 'val', e.target.value)}
                                         placeholder="0"
@@ -631,6 +653,7 @@ const ExcelImportModal = ({ onImport, onCancel, catalog }) => {
                     if (!isNaN(val)) {
                         newRules.push({
                             CodArticulo: row.prod.CodArticulo,
+                            ProIdProducto: row.prod.ProIdProducto,
                             TipoRegla: 'fixed_price',
                             Valor: val,
                             CantidadMinima: qty,
@@ -836,7 +859,7 @@ const ProductAdderInput = ({ onAdd, catalog = [], placeholder = "Buscar producto
             </div>
 
             {showSuggestions && (
-                <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 shadow-xl rounded-lg z-[100] max-h-80 overflow-y-auto">
+                <div className="absolute bottom-full mb-1 left-0 w-full bg-white border border-slate-200 shadow-xl rounded-lg z-[100] max-h-80 overflow-y-auto">
                     {suggestions.length > 0 ? (
                         <table className="w-full text-left text-xs">
                             <thead className="bg-slate-50 text-slate-500 font-semibold sticky top-0">
@@ -916,10 +939,13 @@ const TieredPriceTable = ({ items, onUpdate, catalog }) => {
                 // If we are updating a value, ensure type consistency if needed, but usually we rely on handleTypeChange
             }
         } else {
-            // Crear nueva
+            // Crear nueva — buscar ProIdProducto y CodGrupo del catálogo
             if (val !== '' && val !== null) {
+                const catalogEntry = catalog ? catalog.find(p => p.CodArticulo === cod) : null;
                 newItems.push({
                     CodArticulo: cod,
+                    ProIdProducto: catalogEntry ? catalogEntry.ProIdProducto : undefined,
+                    CodGrupo: catalogEntry ? catalogEntry.CodGrupo : undefined,
                     TipoRegla: typeToUse,
                     Valor: val,
                     CantidadMinima: minQty,
@@ -1091,6 +1117,7 @@ const TieredPriceTable = ({ items, onUpdate, catalog }) => {
 const ProfileEditor = ({ profile, onSave, onBack }) => {
     const [name, setName] = useState(profile?.Nombre || '');
     const [desc, setDesc] = useState(profile?.Descripcion || '');
+    const [categoria, setCategoria] = useState(profile?.Categoria || 'Todos');
     const [esGlobal, setEsGlobal] = useState(profile?.EsGlobal || false);
     const [showBulk, setShowBulk] = useState(false);
 
@@ -1101,7 +1128,26 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
     useEffect(() => {
         api.get('/prices/base')
             .then(res => {
-                setCatalog([{ CodArticulo: 'TOTAL', Descripcion: 'Aplica a TODOS los productos' }, ...res.data]);
+                const uniqueGroups = [];
+                const seenGroups = new Set();
+                res.data.forEach(p => {
+                    const g = p.Grupo;
+                    if (g && !seenGroups.has(g)) {
+                        seenGroups.add(g);
+                        uniqueGroups.push({
+                            CodArticulo: `GRUPO: ${g}`,
+                            ProIdProducto: null,
+                            Descripcion: `📁 FAMILIA: ${p.GrupoNombre ? `${g} (${p.GrupoNombre})` : g}`,
+                            Grupo: 'Familias / Grupos'
+                        });
+                    }
+                });
+                
+                setCatalog([
+                    { CodArticulo: 'TOTAL', Descripcion: 'Aplica a TODOS los productos' },
+                    ...uniqueGroups,
+                    ...res.data
+                ]);
             })
             .catch(console.error);
     }, []);
@@ -1110,6 +1156,7 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
     useEffect(() => {
         setName(profile?.Nombre || '');
         setDesc(profile?.Descripcion || '');
+        setCategoria(profile?.Categoria || 'Todos');
         setEsGlobal(profile?.EsGlobal || false);
         setItems((profile?.items || []).map((i, idx) => ({ ...i, _tempId: idx })));
         setShowBulk(false);
@@ -1145,7 +1192,7 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
     );
 
     const handleAddItem = () => {
-        setItems([...items, { CodArticulo: 'TOTAL', TipoRegla: 'percentage', Valor: 0, _tempId: Date.now() }]);
+        setItems([...items, { CodArticulo: 'TOTAL', ProIdProducto: 0, TipoRegla: 'percentage', Valor: 0, _tempId: Date.now() }]);
     };
 
     const handleRemoveItem = (id) => {
@@ -1169,8 +1216,10 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
         const ruleType = type === 'percentage' ? 'percentage_discount' : 'fixed_price';
 
         // Create new items
+        const product = catalog.find(p => p.CodArticulo === cod);
         const newItems = scales.map(s => ({
             CodArticulo: cod,
+            ProIdProducto: product ? product.ProIdProducto : undefined,
             TipoRegla: ruleType,
             Valor: s.val,
             CantidadMinima: s.qty,
@@ -1232,7 +1281,7 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
                     <h2 className="text-xl font-bold text-slate-800">{profile?.ID ? 'Editar Perfil' : 'Nuevo Perfil'}</h2>
                 </div>
                 <button
-                    onClick={() => onSave({ id: profile?.ID, nombre: name, descripcion: desc, items, esGlobal })}
+                    onClick={() => onSave({ id: profile?.ID, nombre: name, descripcion: desc, items, esGlobal, categoria })}
                     className="btn-primary px-6 py-2 shadow-md hover:shadow-lg transition-all"
                 >
                     <i className="fa-solid fa-save mr-2"></i> Guardar Perfil
@@ -1261,7 +1310,16 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
                         />
                     </div>
                 </div>
-                <div className="flex items-center">
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Categoría(s)</label>
+                        <input
+                            className="w-full border border-slate-300 rounded p-2 focus:ring-2 focus:ring-indigo-100 outline-none text-slate-700"
+                            value={categoria}
+                            onChange={e => setCategoria(e.target.value)}
+                            placeholder="Ej: DTF, Sublimación o 'Todos'"
+                        />
+                    </div>
                     <label className="flex items-center gap-3 p-4 border rounded bg-white cursor-pointer hover:border-indigo-300 transition-colors shadow-sm w-full">
                         <input
                             type="checkbox"
@@ -1270,8 +1328,8 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
                             className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
                         />
                         <div>
-                            <span className="block font-bold text-slate-700 text-sm">Perfil Global (Por Defecto)</span>
-                            <span className="block text-xs text-slate-500">Aplica automáticamente a TODOS los clientes. No se puede desasignar individualmente.</span>
+                            <span className="block font-bold text-slate-700 text-sm">Perfil Global</span>
+                            <span className="block text-xs text-slate-500">Aplica por defecto a TODOS.</span>
                         </div>
                     </label>
                 </div>
@@ -1411,7 +1469,7 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
                                                         <td className="p-2 text-right">
                                                             <input
                                                                 type="number" step="0.01"
-                                                                className="w-full border rounded px-2 py-1 text-right font-bold text-slate-700 focus:border-indigo-400 outline-none"
+                                                                className="w-full border rounded px-2 py-1 text-right font-bold text-slate-800 bg-white focus:border-indigo-400 outline-none"
                                                                 value={baseRule.Valor}
                                                                 onChange={e => handleChangeItem(baseRule._tempId, 'Valor', e.target.value)}
                                                             />
@@ -1474,7 +1532,10 @@ const ProfileEditor = ({ profile, onSave, onBack }) => {
 // --- PANTALLA PRINCIPAL ---
 
 const PriceProfiles = () => {
-    const [activeTab, setActiveTab] = useState('profiles'); // profiles | assignments | simulator
+    const navigate = useNavigate();
+
+    // VIEW STATE
+    const [activeTab, setActiveTab] = useState('base'); // 'base', 'profiles', 'assignments', 'simulator', 'reports'
     const [profiles, setProfiles] = useState([]);
     const [loading, setLoading] = useState(false);
 
@@ -1582,8 +1643,8 @@ const PriceProfiles = () => {
     };
 
     const handleAssign = (clienteId, perfilId) => {
-        // Buscar cliente usando CodCliente (o IDReact si fuera el caso, pero backend usa CodCliente)
-        const cliente = customers.find(c => c.CodCliente === clienteId);
+        // Buscar cliente usando la llave principal (CliIdCliente)
+        const cliente = customers.find(c => c.CliIdCliente === clienteId);
         const pidVal = Array.isArray(perfilId) ? perfilId : (parseInt(perfilId) || null);
 
         api.post('/profiles/assign', {
@@ -1604,7 +1665,7 @@ const PriceProfiles = () => {
     // Filtrado Clientes
     // Filtrado Clientes (Solo Estado, texto ya fue por server)
     const filteredCustomers = customers.filter(c => {
-        const cId = c.CodCliente;
+        const cId = c.CliIdCliente;
         const data = assignments[cId] || {};
         const hasProfile = !!data.pid;
         const hasExceptions = (data.rules || 0) > 0;
@@ -1622,6 +1683,12 @@ const PriceProfiles = () => {
             {/* TABS HEADER */}
             <div className="bg-white border-b border-slate-200 px-6 pt-4 flex gap-6">
                 <button
+                    onClick={() => setActiveTab('base')}
+                    className={`pb-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'base' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                >
+                    <i className="fa-solid fa-tags mr-2"></i> Precios Estándar
+                </button>
+                <button
                     onClick={() => setActiveTab('profiles')}
                     className={`pb-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'profiles' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
@@ -1630,7 +1697,6 @@ const PriceProfiles = () => {
                 <button
                     onClick={() => {
                         setActiveTab('assignments');
-                        if (activeTab !== 'assignments') loadCustomersAndAssignments();
                     }}
                     className={`pb-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'assignments' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
@@ -1642,10 +1708,22 @@ const PriceProfiles = () => {
                 >
                     <i className="fa-solid fa-calculator mr-2"></i> Simulador de Precios
                 </button>
+                <button
+                    onClick={() => setActiveTab('reports')}
+                    className={`pb-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'reports' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                >
+                    <i className="fa-solid fa-microscope mr-2"></i> Inteligencia de Precios
+                </button>
             </div>
 
             {/* CONTENIDO */}
             <div className="flex-1 overflow-hidden p-6">
+                {activeTab === 'base' && (
+                    <div className="h-full overflow-y-auto">
+                        <BasePrices />
+                    </div>
+                )}
+                
                 {activeTab === 'profiles' && (
                     <div className="h-full flex gap-6">
                         {/* LISTA PERFILES */}
@@ -1660,31 +1738,77 @@ const PriceProfiles = () => {
                                 </button>
                             </div>
                             <div className="flex-1 overflow-y-auto p-2">
-                                {profiles.map(p => (
-                                    <div
-                                        key={p.ID}
-                                        onClick={() => handleSelectProfile(p)}
-                                        className={`p-3 border-b cursor-pointer group transition-colors rounded mb-1 flex justify-between items-center ${selectedProfile?.ID === p.ID ? 'bg-indigo-50 border-indigo-100' : 'hover:bg-slate-50 border-slate-100'}`}
-                                    >
-                                        <div>
-                                            <div className={`font-bold ${selectedProfile?.ID === p.ID ? 'text-indigo-700' : 'text-slate-800'}`}>{p.Nombre}</div>
-                                            <div className="text-xs text-slate-500 mb-1">{p.Descripcion}</div>
-                                            {p.EsGlobal && (
-                                                <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-[10px] font-bold border border-blue-200">
-                                                    <i className="fa-solid fa-earth-americas mr-1"></i> Global (Default)
-                                                </span>
-                                            )}
-                                        </div>
-                                        <button
-                                            onClick={(e) => handleDeleteProfile(p.ID, e)}
-                                            className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2"
-                                            title="Eliminar Perfil"
-                                        >
-                                            <i className="fa-solid fa-trash-can"></i>
-                                        </button>
-                                    </div>
-                                ))}
-                                {profiles.length === 0 && <div className="p-8 text-center text-slate-400 text-sm">No hay perfiles definidos.</div>}
+                                {(() => {
+                                    if (profiles.length === 0) return <div className="p-8 text-center text-slate-400 text-sm">No hay perfiles definidos.</div>;
+
+                                    // 1. Build grouped map
+                                    const groups = { "TODOS / GENERAL": [] };
+                                    profiles.forEach(p => {
+                                        const rawCats = p.Categoria ? p.Categoria.split(',').map(c => c.trim()).filter(c => c) : ['Todos'];
+                                        if (rawCats.length === 0 || rawCats.includes('Todos') || rawCats.includes('TODOS')) {
+                                            groups["TODOS / GENERAL"].push(p);
+                                        } else {
+                                            rawCats.forEach(cat => {
+                                                const cleanCat = cat.charAt(0).toUpperCase() + cat.slice(1);
+                                                if (!groups[cleanCat]) groups[cleanCat] = [];
+                                                groups[cleanCat].push(p);
+                                            });
+                                        }
+                                    });
+
+                                    // Sort group keys (TODOS first, then alphabetical)
+                                    const sortedKeys = Object.keys(groups).sort((a, b) => {
+                                        if (a === "TODOS / GENERAL") return -1;
+                                        if (b === "TODOS / GENERAL") return 1;
+                                        return a.localeCompare(b);
+                                    });
+
+                                    return sortedKeys.map(groupName => {
+                                        const items = groups[groupName];
+                                        if (items.length === 0) return null;
+                                        
+                                        // Is this folder active (does it contain the selected profile?)
+                                        const isFolderActive = selectedProfile && items.some(i => i.ID === selectedProfile.ID);
+
+                                        return (
+                                            <div key={groupName} className="mb-2 border border-slate-200 rounded overflow-hidden">
+                                                <div className={`p-2 bg-slate-100 flex items-center justify-between font-bold text-slate-700 text-xs uppercase tracking-wide cursor-pointer`}>
+                                                    <span className="flex items-center gap-2">
+                                                        <i className={`fa-solid ${groupName === 'TODOS / GENERAL' ? 'fa-globe text-blue-500' : 'fa-folder-open text-amber-400'}`}></i> 
+                                                        {groupName}
+                                                        <span className="bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full text-[9px]">{items.length}</span>
+                                                    </span>
+                                                </div>
+                                                <div className="flex flex-col bg-white">
+                                                    {items.map(p => (
+                                                        <div
+                                                            key={p.ID}
+                                                            onClick={e => { e.stopPropagation(); handleSelectProfile(p); }}
+                                                            className={`p-3 border-b last:border-b-0 cursor-pointer group transition-colors flex justify-between items-center ${selectedProfile?.ID === p.ID ? 'bg-indigo-50 border-l-4 border-indigo-600' : 'hover:bg-slate-50 border-l-4 border-transparent'}`}
+                                                        >
+                                                            <div>
+                                                                <div className={`font-bold text-sm ${selectedProfile?.ID === p.ID ? 'text-indigo-700' : 'text-slate-800'}`}>{p.Nombre}</div>
+                                                                <div className="text-xs text-slate-500 mb-1 line-clamp-1">{p.Descripcion}</div>
+                                                                {p.EsGlobal && (
+                                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-[10px] font-bold border border-blue-200">
+                                                                        <i className="fa-solid fa-earth-americas mr-1"></i> Global (Default)
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <button
+                                                                onClick={(e) => handleDeleteProfile(p.ID, e)}
+                                                                className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2"
+                                                                title="Eliminar Perfil"
+                                                            >
+                                                                <i className="fa-solid fa-trash-can"></i>
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    });
+                                })()}
                             </div>
                         </div>
 
@@ -1744,30 +1868,90 @@ const PriceProfiles = () => {
                                 ) : filteredCustomers.length === 0 ? (
                                     <div className="p-8 text-center text-slate-400 text-sm">No se encontraron clientes.</div>
                                 ) : (
-                                    <div className="divide-y divide-slate-100">
+                                    <div className="pb-4">
                                         {filteredCustomers.map(c => {
-                                            const cId = c.CodCliente;
+                                            const cId = c.CliIdCliente;
                                             const cName = c.Nombre || c.NombreFantasia || `Cliente ${cId}`;
                                             const data = assignments[cId] || {};
                                             const pid = data.pid;
                                             const hasProfiles = pid && (Array.isArray(pid) ? pid.length > 0 : true);
                                             const hasManual = (data.rules || 0) > 0;
+                                            
+                                            // Extract initials
+                                            const words = cName.split(' ').filter(Boolean);
+                                            let initials = '?';
+                                            if (words.length > 1) {
+                                                initials = (words[0][0] + words[1][0]).toUpperCase();
+                                            } else if (words.length === 1) {
+                                                initials = words[0].substring(0, 2).toUpperCase();
+                                            }
+                                            
+                                            // Avatar colors mimicking Nomenclador
+                                            const AVATAR_COLORS = ['#f43f5e', '#ec4899', '#d946ef', '#a855f7', '#8b5cf6', '#6366f1', '#3b82f6', '#0ea5e9', '#06b6d4', '#14b8a6', '#10b981', '#22c55e', '#84cc16'];
+                                            const charCode = cName.charCodeAt(0) || 0;
+                                            const avatarColor = AVATAR_COLORS[charCode % AVATAR_COLORS.length];
 
                                             return (
                                                 <div
                                                     key={cId}
                                                     onClick={() => setOpenDropdown(cId)}
-                                                    className={`p-3 cursor-pointer hover:bg-slate-50 transition-colors border-l-4 ${openDropdown === cId ? 'bg-indigo-50 border-indigo-600' : 'border-transparent'}`}
+                                                    className={`mx-3 my-2 rounded-xl p-4 cursor-pointer transition-all border ${openDropdown === cId ? 'bg-indigo-50/40 border-indigo-500 shadow-md transform scale-[1.02]' : 'bg-white border-slate-200 hover:shadow-md hover:border-indigo-300'}`}
                                                 >
-                                                    <div className="flex justify-between items-start">
+                                                    <div className="flex items-start gap-3">
+                                                        {/* AVATAR */}
+                                                        <div 
+                                                            className="w-12 h-12 rounded-[14px] flex items-center justify-center text-white font-bold text-lg flex-shrink-0 shadow-sm"
+                                                            style={{ backgroundColor: avatarColor }}
+                                                        >
+                                                            {initials}
+                                                        </div>
                                                         <div className="flex-1 min-w-0">
-                                                            <div className={`font-bold text-sm truncate ${openDropdown === cId ? 'text-indigo-900' : 'text-slate-700'}`}>{cName}</div>
-                                                            <div className="text-xs text-slate-400 font-mono mt-0.5">{cId}</div>
+                                                            <div className="font-bold text-[#1e1b4b] text-[15px] truncate pr-2">{cName}</div>
+                                                            <div className="text-xs text-slate-400 font-medium mb-2.5">
+                                                                {c.IDCliente || c.IDReact || `Cód: ${cId}`}
+                                                            </div>
+                                                            
+                                                            {/* INFO BODY */}
+                                                            <div className="flex flex-col gap-1.5 text-[13px]">
+                                                                {c.TelefonoTrabajo && (
+                                                                    <div className="flex items-center gap-2 text-slate-600">
+                                                                        <i className="fa-solid fa-phone text-pink-500 w-4 text-center text-xs"></i>
+                                                                        <span className="truncate">{c.TelefonoTrabajo}</span>
+                                                                    </div>
+                                                                )}
+                                                                {c.Email && (
+                                                                    <div className="flex items-center gap-2 text-slate-600">
+                                                                        <i className="fa-solid fa-envelope text-slate-400 w-4 text-center text-xs"></i>
+                                                                        <span className="truncate">{c.Email}</span>
+                                                                    </div>
+                                                                )}
+                                                                {c.TipoClienteNombre && (
+                                                                    <div className="flex items-center gap-2 text-slate-600">
+                                                                        <i className="fa-solid fa-tag text-slate-300 w-4 text-center text-xs"></i>
+                                                                        <span className="truncate">{c.TipoClienteNombre}</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                        <div className="flex gap-1">
-                                                            {hasManual && <i className="fa-solid fa-triangle-exclamation text-amber-500 text-xs" title="Reglas manuales"></i>}
-                                                            {hasProfiles && <span className="w-2 h-2 rounded-full bg-indigo-500 mt-1" title="Perfiles asignados"></span>}
+
+                                                        {/* ICONS MANUAL/PERFIL */}
+                                                        <div className="flex flex-col gap-2 items-end pt-1 pl-1">
+                                                            {hasManual && <i className="fa-solid fa-triangle-exclamation text-amber-500 text-sm" title="Reglas manuales"></i>}
+                                                            {hasProfiles && <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-sm" title="Perfiles asignados"></span>}
                                                         </div>
+                                                    </div>
+
+                                                    {/* FOOTER */}
+                                                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                                                        <div className="flex gap-2">
+                                                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${c.IDReact ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-50 text-slate-400 border-slate-200 border-dashed'}`}>
+                                                                <span className="opacity-70 mr-0.5">📊</span> Planilla
+                                                            </span>
+                                                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full border ${c.CodReferencia ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-slate-50 text-slate-400 border-slate-200 border-dashed'}`}>
+                                                                <span className="opacity-70 mr-0.5">🖥</span> Macrosoft
+                                                            </span>
+                                                        </div>
+                                                        <span className="text-xs text-slate-300 font-bold">#{cId}</span>
                                                     </div>
                                                 </div>
                                             );
@@ -1785,7 +1969,7 @@ const PriceProfiles = () => {
                             {openDropdown ? (
                                 (() => {
                                     const cId = openDropdown;
-                                    const customer = customers.find(c => c.CodCliente === cId);
+                                    const customer = customers.find(c => c.CliIdCliente === cId);
                                     if (!customer) return null;
 
                                     const cName = customer.Nombre || customer.NombreFantasia || `Cliente ${cId}`;
@@ -1910,6 +2094,12 @@ const PriceProfiles = () => {
                             assignments={assignments}
                             onSearch={searchCustomers}
                         />
+                    </div>
+                )}
+
+                {activeTab === 'reports' && (
+                    <div className="h-full overflow-hidden">
+                        <PriceReports customers={customers} onSearch={searchCustomers} />
                     </div>
                 )}
             </div>

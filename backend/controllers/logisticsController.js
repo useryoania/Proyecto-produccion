@@ -1,3 +1,4 @@
+const contabilidadService = require('../services/contabilidadService');
 const { getPool, sql } = require('../config/db');
 const logger = require('../utils/logger');
 
@@ -254,6 +255,63 @@ exports.createBulto = async (req, res) => {
     }
 };
 
+exports.resolveBultoQR = async (req, res) => {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Código faltante' });
+
+    // 1. If it's already a giant string, just return it
+    if (code.includes('$*')) {
+        return res.json({ qrString: code });
+    }
+
+    try {
+        const pool = await getPool();
+        // Buscar el Bulto o código directo
+        const bultoReq = await pool.request()
+            .input('Cod', sql.VarChar, code)
+            .query("SELECT OrdenID FROM Logistica_Bultos WHERE CodigoEtiqueta = @Cod");
+            
+        let ordenId = null;
+        if (bultoReq.recordset.length > 0) {
+            ordenId = bultoReq.recordset[0].OrdenID;
+        } else {
+            // Verificar si mandaron el CodigoOrden (ej. DF-90952)
+            const ordReq = await pool.request()
+                .input('Cod', sql.VarChar, code)
+                .query("SELECT OrdenID FROM Ordenes WHERE CodigoOrden = @Cod");
+            if (ordReq.recordset.length > 0) {
+                ordenId = ordReq.recordset[0].OrdenID;
+            } else {
+                // Chequear OrdenesDeposito por las dudas
+                const ordDepReq = await pool.request()
+                    .input('Cod', sql.VarChar, code)
+                    .query("SELECT OrdIdOrden as OrdenID FROM OrdenesDeposito WHERE OrdCodigoOrden = @Cod");
+                if (ordDepReq.recordset.length > 0) {
+                    ordenId = ordDepReq.recordset[0].OrdenID;
+                }
+            }
+        }
+
+        if (!ordenId) {
+            return res.status(404).json({ error: 'No se pudo resolver el código a una orden.' });
+        }
+
+        // Recuperar el CodigoQR gigante de Etiquetas
+        const qrReq = await pool.request()
+            .input('OID', sql.Int, ordenId)
+            .query("SELECT TOP 1 CodigoQR FROM Etiquetas WHERE OrdenID = @OID AND CodigoQR IS NOT NULL");
+            
+        if (qrReq.recordset.length > 0 && qrReq.recordset[0].CodigoQR) {
+            return res.json({ qrString: qrReq.recordset[0].CodigoQR, fromLabel: true, ordenId });
+        }
+
+        return res.status(404).json({ error: 'La orden no tiene un código QR crudo asignado (genere etiquetas).'});
+    } catch (err) {
+        logger.error("Error resolveBultoQR:", err);
+        return res.status(500).json({ error: err.message });
+    }
+};
+
 exports.getBultoByLabel = async (req, res) => {
     const { label } = req.params;
     try {
@@ -431,6 +489,66 @@ exports.createRemito = async (req, res) => {
         }
     } catch (err) {
         logger.error("Error createRemito:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.createRemitoFromOrders = async (req, res) => {
+    const { areaOrigen, areaDestino, usuarioId, orderIds = [], observations } = req.body;
+    
+    if (!orderIds || orderIds.length === 0) {
+        return res.status(400).json({ error: "No orders provided" });
+    }
+
+    try {
+        const pool = await getPool();
+        
+        // 1. Fetch existing bultos for these orders that are in the areaOrigen AND not dispatched
+        const bultosRes = await pool.request()
+            .input('Orig', sql.VarChar, areaOrigen)
+            .query(`
+                SELECT BultoID, OrdenID 
+                FROM Logistica_Bultos 
+                WHERE OrdenID IN (${orderIds.join(',')}) 
+                AND UbicacionActual = @Orig 
+                AND Estado = 'EN_STOCK'
+            `);
+            
+        const existingBultos = bultosRes.recordset;
+        const bultosIds = existingBultos.map(b => b.BultoID);
+        const ordersWithBultos = new Set(existingBultos.map(b => b.OrdenID));
+        
+        // 2. Identify orders that DO NOT have bultos yet
+        const newBultos = [];
+        for (const oid of orderIds) {
+            if (!ordersWithBultos.has(oid)) {
+                // Fetch basic order info to create the bulto
+                const ordReq = await pool.request().input('OID', sql.Int, oid).query("SELECT Cliente, CodigoOrden FROM Ordenes WHERE OrdenID = @OID");
+                let desc = "Auto-generado";
+                if(ordReq.recordset.length > 0) desc = `${ordReq.recordset[0].CodigoOrden} - ${ordReq.recordset[0].Cliente}`;
+                
+                newBultos.push({
+                    ordenId: oid,
+                    descripcion: desc,
+                    tipo: 'PROD_TERMINADO'
+                });
+            }
+        }
+        
+        // 3. Delegate to existing logic by overriding req.body
+        req.body = {
+            areaOrigen,
+            areaDestino,
+            usuarioId,
+            bultosIds,
+            newBultos,
+            observations
+        };
+        
+        return exports.createRemito(req, res);
+        
+    } catch (err) {
+        logger.error("Error createRemitoFromOrders:", err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -872,10 +990,239 @@ exports.receiveDispatch = async (req, res) => {
                 .input('EID', sql.Int, envioId)
                 .query(`UPDATE Logistica_Envios SET Estado = @Est, UsuarioReceptor = @UID, FechaLlegada = GETDATE() WHERE EnvioID = @EID`);
 
-            await transaction.commit();
+            // ==========================================
+            // LOGICA CONTABLE WMS (PUNTO DE CHECKING)
+            // ==========================================
+            if (areaReceptora === 'DEPOSITO') {
+                try {
+                    const poolLocal = await getPool(); // Fuera de la transaccion WMS
+                    for (const item of itemsRecibidos) {
+                        if (item.estado !== 'ESCANEADO') continue;
+
+                        // 1. Conseguir la orden
+                        const reqOrd = await poolLocal.request().input('BID', require('mssql').Int, item.bultoId)
+                            .query("SELECT OrdenID, CodigoEtiqueta FROM Logistica_Bultos WITH(NOLOCK) WHERE BultoID = @BID");
+                        
+                        if (reqOrd.recordset.length === 0 || !reqOrd.recordset[0].OrdenID) continue;
+                        const L_OrdenID = reqOrd.recordset[0].OrdenID;
+                        
+                        const oData = await poolLocal.request().input('OID', require('mssql').Int, L_OrdenID).query("SELECT Cliente, CodCliente, CliIdCliente, CodigoOrden, DescripcionTrabajo FROM Ordenes WITH(NOLOCK) WHERE OrdenID = @OID");
+                        if (oData.recordset.length === 0) continue;
+                        const oRow = oData.recordset[0];
+                        const logPrefix = `[CONTABILIDAD-WMS] [${oRow.CodigoOrden}] ${oRow.DescripcionTrabajo.substring(0,30)}`;
+
+                        // 2. Buscar en PedidosCobranza
+                        const pcReq = await poolLocal.request().input('OID', require('mssql').Int, L_OrdenID)
+                            .query("SELECT ID, MontoTotal, NoDocERP, MontoContabilizado, MetrosContabilizados FROM PedidosCobranza WITH(NOLOCK) WHERE NoDocERP = (SELECT TOP 1 CAST(NoDocERP AS VARCHAR) FROM Ordenes WITH(NOLOCK) WHERE OrdenID = @OID)");
+
+                        console.log(`${logPrefix} -> Encontrado PedidoCobranza =`, pcReq.recordset.length > 0);
+if (pcReq.recordset.length > 0) {
+                            const pc = pcReq.recordset[0];
+                            const currentMonto = parseFloat(pc.MontoTotal) || 0;
+                            const mContado = parseFloat(pc.MontoContabilizado) || 0;
+                            const metContado = parseFloat(pc.MetrosContabilizados) || 0;
+
+                            const detReq = await poolLocal.request().input('PID', require('mssql').Int, pc.ID)
+                                .query("SELECT SUM(CASE WHEN Cantidad IS NULL THEN 0 ELSE Cantidad END) as Metros FROM PedidosCobranzaDetalle WITH(NOLOCK) WHERE PedidoCobranzaID = @PID");
+                            const totalMetros = detReq.recordset.length > 0 ? (parseFloat(detReq.recordset[0].Metros) || 0) : 0;
+
+                            let triggerReversal = false;
+                            let triggerForward = false;
+
+                            if (mContado === 0) {
+                                // Nuevo
+                                if (currentMonto > 0 || totalMetros > 0) triggerForward = true;
+                            } else {
+                                if (mContado !== currentMonto || metContado !== totalMetros) {
+                                    triggerReversal = true;
+                                    triggerForward = true;
+                                }
+                            }
+
+                            console.log(`${logPrefix} -> Reversa=${triggerReversal}, Adelante=${triggerForward}, totalMetros=${totalMetros}, currentMonto=${currentMonto}, mContado=${mContado}, metContado=${metContado}`);
+if (triggerReversal || triggerForward) {
+                                // oData is fetched above
+                                    const finalMonId = 1; 
+
+                                    // Para la REVERSA vamos a simular el mismo cargo pero NEGATIVO
+                                    if (triggerReversal && mContado !== 0) {
+                                        console.log(`${logPrefix} -> Reversando orden por diferencia`); // por diferencia en Checking.`);
+                                        const cliPKRev = oRow.CliIdCliente || oRow.CodCliente;
+                                          let revEvento = 'ORDEN';
+                                          const prevPl = await poolLocal.request().input('Cli', require('mssql').Int, cliPKRev).query("SELECT TOP 1 PlaIdPlan FROM PlanesMetros WITH(NOLOCK) WHERE CliIdCliente = @Cli");
+                                          if(prevPl.recordset.length > 0) revEvento = 'ENTREGA';
+
+                                          await contabilidadService.procesarEventoContable(revEvento, {
+                                              OrdIdOrden: L_OrdenID,
+                                              CliIdCliente: cliPKRev,
+                                              Cantidad: -metContado,
+                                              Importe: -mContado,
+                                              CodigoOrden: oRow.CodigoOrden,
+                                              NombreTrabajo: `[REVERSA AUT.] ${oRow.DescripcionTrabajo}`,
+                                              UsuarioAlta: usuarioId || 1,
+                                              MonIdMoneda: finalMonId
+                                          });
+                                    }
+
+                                    // Adicion Nueva
+                                    if (triggerForward && (currentMonto !== 0 || totalMetros > 0)) {
+                                        console.log(`${logPrefix} -> Generando nuevo cargo`); // por ${currentMonto}`);
+                                        const details = await poolLocal.request().input('PID', require('mssql').Int, pc.ID).query("SELECT Cantidad, Subtotal as TotalLinea, ProIdProducto as IDProdReact FROM PedidosCobranzaDetalle WHERE PedidoCobranzaID = @PID");
+                                          
+                                          // --- EN ESTE PUNTO LA ORDEN YA LLAMÓ AL CHECKIN WMS, INSERTAMOS EN ORDENESDEPOSITO SI FALTA ---
+                                          const cliPKForDep = oRow.CliIdCliente || oRow.CodCliente;
+                                          const depCheck = await poolLocal.request().input('Cod', require('mssql').VarChar, oRow.CodigoOrden)
+                                              .query("SELECT OrdIdOrden FROM OrdenesDeposito WITH(NOLOCK) WHERE OrdCodigoOrden = @Cod");
+                                          
+                                          if (depCheck.recordset.length === 0 && details.recordset.length > 0) {
+                                              const dTop = details.recordset[0];
+                                              const lugarReq = await poolLocal.request().input('CID', require('mssql').Int, cliPKForDep).query("SELECT FormaEnvioID FROM Clientes WITH(NOLOCK) WHERE CliIdCliente = @CID");
+                                              const lugarRetiro = lugarReq.recordset[0]?.FormaEnvioID ? parseInt(lugarReq.recordset[0].FormaEnvioID) : null;
+                                              
+                                              const insertResult = await poolLocal.request()
+                                                  .input('Cod', require('mssql').VarChar, oRow.CodigoOrden)
+                                                  .input('Cant', require('mssql').Float, totalMetros)
+                                                  .input('Cli', require('mssql').Int, cliPKForDep)
+                                                  .input('Trab', require('mssql').VarChar, oRow.DescripcionTrabajo)
+                                                  .input('Prod', require('mssql').Int, dTop.IDProdReact || null)
+                                                  .input('Mon', require('mssql').Int, finalMonId)
+                                                  .input('Costo', require('mssql').Float, currentMonto)
+                                                  .input('Usr', require('mssql').Int, usuarioId || 1)
+                                                  .input('Lugar', require('mssql').Int, lugarRetiro)
+                                                  .query(`
+                                                      INSERT INTO OrdenesDeposito (
+                                                          OrdCodigoOrden, OrdCantidad, CliIdCliente, OrdNombreTrabajo,
+                                                          MOrIdModoOrden, ProIdProducto, MonIdMoneda, OrdCostoFinal,
+                                                          OrdFechaIngresoOrden, OrdUsuarioAlta, OrdEstadoActual, OrdFechaEstadoActual, LReIdLugarRetiro
+                                                      )
+                                                      OUTPUT INSERTED.OrdIdOrden
+                                                      VALUES (
+                                                          @Cod, @Cant, @Cli, @Trab, 1, @Prod, @Mon, @Costo,
+                                                          GETDATE(), @Usr, 1, GETDATE(), @Lugar
+                                                      )
+                                                  `);
+                                              if (insertResult.recordset[0]?.OrdIdOrden) {
+                                                  await poolLocal.request()
+                                                      .input('OID', require('mssql').Int, insertResult.recordset[0].OrdIdOrden)
+                                                      .input('Usr', require('mssql').Int, usuarioId || 1)
+                                                      .query("INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@OID, 1, GETDATE(), @Usr)");
+                                              }
+                                              console.log(`[WMS-INTERNAL] Creado OrdenesDeposito para ${oRow.CodigoOrden}`);
+                                          }
+                                          // ------------------------------------------------------------------------------------------------
+                                        
+                                          let importeTotalOrden = 0;
+                                          for (const d of details.recordset) {
+                                              const lineImp = parseFloat(d.TotalLinea) || 0;
+                                              const lineQty = parseFloat(d.Cantidad) || 0;
+
+                                              // Detectar si el cliente tiene un plan activo y cuántos metros disponibles
+                                              const cliPK = oRow.CliIdCliente || oRow.CodCliente;
+                                              let planMetrosDisp = 0;
+                                              let planIdCtb = null;
+                                              if (d.IDProdReact) {
+                                                  const planQueryCtb = await poolLocal.request()
+                                                      .input('Cli', require('mssql').Int, cliPK)
+                                                      .input('Pro', require('mssql').Int, d.IDProdReact)
+                                                      .query(`SELECT TOP 1 PlaIdPlan,
+                                                                  ISNULL(PlaCantidadTotal, 0) - ISNULL(PlaCantidadUsada, 0) AS MetrosDisponibles
+                                                              FROM PlanesMetros WITH(NOLOCK)
+                                                              WHERE CliIdCliente = @Cli AND ProIdProducto = @Pro
+                                                                AND PlaActivo = 1
+                                                                AND (PlaFechaVencimiento IS NULL OR PlaFechaVencimiento >= CAST(GETDATE() AS DATE))
+                                                              ORDER BY PlaFechaVencimiento ASC`);
+                                                  if (planQueryCtb.recordset.length > 0) {
+                                                      planMetrosDisp = parseFloat(planQueryCtb.recordset[0].MetrosDisponibles) || 0;
+                                                      planIdCtb = planQueryCtb.recordset[0].PlaIdPlan;
+                                                  }
+                                              }
+
+                                              const hayPlanCtb = planIdCtb !== null && planMetrosDisp > 0;
+
+                                              if (hayPlanCtb && lineQty <= planMetrosDisp) {
+                                                  // CASO A: Plan cubre todo — 1 evento ENTREGA a $0
+                                                  console.log(`${logPrefix} -> ENTREGA TOTAL por prepago (${lineQty}m, $0, Plan #${planIdCtb})`);
+                                                  await contabilidadService.procesarEventoContable('ENTREGA', {
+                                                      OrdIdOrden: L_OrdenID,
+                                                      CliIdCliente: cliPK,
+                                                      ProIdProducto: d.IDProdReact || null,
+                                                      Cantidad: lineQty,
+                                                      Importe: 0,
+                                                      CodigoOrden: oRow.CodigoOrden,
+                                                      NombreTrabajo: oRow.DescripcionTrabajo,
+                                                      UsuarioAlta: usuarioId || 1,
+                                                      MonIdMoneda: finalMonId
+                                                  });
+
+                                              } else if (hayPlanCtb && planMetrosDisp > 0 && lineQty > planMetrosDisp) {
+                                                  // CASO B: Plan cubre PARCIALMENTE — 2 eventos
+                                                  const metrosRestCtb = lineQty - planMetrosDisp;
+                                                  const proporcionCtb = lineQty > 0 ? metrosRestCtb / lineQty : 1;
+                                                  const importeExcedente = parseFloat((lineImp * proporcionCtb).toFixed(2));
+
+                                                  console.log(`${logPrefix} -> ENTREGA PARCIAL por prepago: ${planMetrosDisp}m a $0 + ${metrosRestCtb}m a $${importeExcedente} (Plan #${planIdCtb})`);
+
+                                                  // Evento 1: ENTREGA por los metros cubiertos
+                                                  await contabilidadService.procesarEventoContable('ENTREGA', {
+                                                      OrdIdOrden: L_OrdenID,
+                                                      CliIdCliente: cliPK,
+                                                      ProIdProducto: d.IDProdReact || null,
+                                                      Cantidad: planMetrosDisp,
+                                                      Importe: 0,
+                                                      CodigoOrden: oRow.CodigoOrden,
+                                                      NombreTrabajo: `[PREPAGO] ${oRow.DescripcionTrabajo}`,
+                                                      UsuarioAlta: usuarioId || 1,
+                                                      MonIdMoneda: finalMonId
+                                                  });
+
+                                                  // Evento 2: ORDEN por el excedente (Agrupado)
+                                                  if (importeExcedente > 0 || metrosRestCtb > 0) {
+                                                      importeTotalOrden += importeExcedente;
+                                                  }
+
+                                              } else if (lineImp > 0) {
+                                                  // CASO C: Sin plan — evento ORDEN normal (Agrupado)
+                                                  importeTotalOrden += lineImp;
+                                              }
+                                          }
+
+                                          // Llamada única al motor contable por el TOTAL agrupado de la orden
+                                          if (importeTotalOrden > 0) {
+                                              const cliPK = oRow.CliIdCliente || oRow.CodCliente;
+                                              console.log(`${logPrefix} -> ORDEN agrupada sin prepago ($${importeTotalOrden})`);
+                                              await contabilidadService.procesarEventoContable('ORDEN', {
+                                                  OrdIdOrden: L_OrdenID,
+                                                  CliIdCliente: cliPK,
+                                                  ProIdProducto: null,
+                                                  Cantidad: 1,
+                                                  CodigoOrden: oRow.CodigoOrden,
+                                                  NombreTrabajo: oRow.DescripcionTrabajo,
+                                                  UsuarioAlta: usuarioId || 1,
+                                                  Importe: importeTotalOrden,
+                                                  MonIdMoneda: finalMonId
+                                              });
+                                          }
+
+
+                                        // Update PedidosCobranza Marca
+                                        await poolLocal.request()
+                                            .input('M', require('mssql').Decimal(18,2), currentMonto)
+                                            .input('Met', require('mssql').Decimal(18,2), totalMetros)
+                                            .input('PID', require('mssql').Int, pc.ID)
+                                            .query("UPDATE PedidosCobranza SET MontoContabilizado = @M, MetrosContabilizados = @Met WHERE ID = @PID");
+                                    }
+                                     }  // fin if (triggerReversal || triggerForward)
+                                 }  // fin if (pcReq)
+                             }  // fin for items
+                } catch (eCont) {
+                    console.error("[CONTABILIDAD-WMS] Error al procesar evento en DEPOSITO:", eCont);
+                    throw eCont;
+                }
+            }
+            await transaction.commit();
             res.json({ success: true, status: newStatus });
 
-        } catch (inner) {
+        }         catch (inner) {
             await transaction.rollback();
             throw inner;
         }

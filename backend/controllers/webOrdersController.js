@@ -5,6 +5,7 @@ const { PDFDocument, StandardFonts, rgb } = require('pdf-lib')
 const logger = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
+const contabilidadService = require('../services/contabilidadService');
 
 
 // ──────────────────────────────────────────────────
@@ -1218,8 +1219,12 @@ exports.deleteOrderBundle = async (req, res) => {
                 await reqTx.query(`DELETE FROM ArchivosOrden WHERE OrdenID = ${oid}`);
                 await reqTx.query(`DELETE FROM ArchivosReferencia WHERE OrdenID = ${oid}`);
                 await reqTx.query(`DELETE FROM ServiciosExtraOrden WHERE OrdenID = ${oid}`);
+                await reqTx.query(`DELETE FROM PedidosCobranzaDetalle WHERE OrdenID = ${oid}`);
                 await reqTx.query(`DELETE FROM Ordenes WHERE OrdenID = ${oid}`);
             }
+
+            // Purgar cabecera contable atada a este proyecto
+            await reqTx.input('DocERP', sql.VarChar(50), docId).query(`DELETE FROM PedidosCobranza WHERE NoDocERP = @DocERP`);
 
             await transaction.commit();
             res.json({ success: true, message: `Proyecto ${docId} eliminado (${ids.length} órdenes canceladas).` });
@@ -2441,6 +2446,28 @@ exports.handyWebhook = async (req, res) => {
                         }
 
                         logger.info(`[HANDY WEBHOOK] ✅ Pago registrado en DB: PagoId=${pagoId}, OrdenRetiro=${ordenRetiroId}`);
+
+                        // --- INYECCIÓN CONTABLE HANDY (Motor Unificado) ---
+                        try {
+                            const cliRes = await pool.request()
+                                .input('CodCli', sql.Int, tx.CodCliente)
+                                .query('SELECT CliIdCliente FROM Clientes WITH(NOLOCK) WHERE CodCliente = @CodCli');
+                            if (cliRes.recordset.length > 0) {
+                                const CliIdCliente = cliRes.recordset[0].CliIdCliente;
+                                await contabilidadService.procesarEventoContable('COBRO_CTA', {
+                                    PagIdPago: pagoId,
+                                    CliIdCliente: CliIdCliente,
+                                    Importe: payloadPago.monto,
+                                    MonIdMoneda: payloadPago.monedaId,
+                                    UsuarioAlta: usuarioId,
+                                    ConceptoGlobal: `Cobro Online Handy (Tx: ${transactionId})`
+                                });
+                                logger.info(`[CONTABILIDAD] Cobro Handy procesado en Motor Unificado para Tx=${transactionId}`);
+                            }
+                        } catch (errContabil) {
+                            logger.error(`[CONTABILIDAD] Error al contabilizar pago de Handy: ${errContabil.message}`);
+                        }
+                        // --- FIN INYECCIÓN CONTABLE HANDY ---
 
                         // Generar comprobante PDF y guardarlo en disco
                         generateHandyReceipt({
