@@ -589,7 +589,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
         <div className="fixed inset-0 z-[2000] flex items-start justify-center p-4 overflow-y-auto">
 
             <div
-                className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity"
+                className="absolute inset-0 bg-slate-900/60 transition-opacity"
                 onClick={onClose}
             ></div>
 
@@ -1207,7 +1207,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
 
             {/* MODAL DE CANCELACIÓN */}
             {cancelModalOpen && (
-                <div className="fixed inset-0 z-[2100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[2100] bg-black/50 flex items-center justify-center p-4 animate-in fade-in duration-200">
                     <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200 border border-red-100">
                         <div className="flex items-center gap-3 text-red-500 mb-4">
                             <i className="fa-solid fa-triangle-exclamation text-2xl"></i>
