@@ -9,9 +9,9 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/api'; // Axios instance base
 
-// â”€â”€â”€ HELPER: Comprobante unificado de Orden de Retiro â”€â”€â”€
-// PatrÃ³n: mismo encabezado que LogisticsPage + ReceptionPage (MACROSOFT TEXTIL)
-// Campos: cÃ³digo retiro, cliente, tipo, estado, local, monto, órdenes, fecha, firma
+// ─── HELPER: Comprobante unificado de Orden de Retiro ───
+// Patrón: mismo encabezado que LogisticsPage + ReceptionPage (MACROSOFT TEXTIL)
+// Campos: código retiro, cliente, tipo, estado, local, monto, órdenes, fecha, firma
 const printRetiroTicket = (item) => {
   const now = new Date().toLocaleString('es-UY', {
     day: '2-digit', month: '2-digit', year: 'numeric',
@@ -21,7 +21,7 @@ const printRetiroTicket = (item) => {
   // Array de objetos completo para mostrar costo por orden
   const orderObjs = (item.orders || []);
   const orders = orderObjs.map(o => o.orderNumber || o.codigoOrden || '').filter(Boolean);
-  const tipoDesc = item.TClDescripcion || 'ComÃºn';
+  const tipoDesc = item.TClDescripcion || 'Común';
   const local = (item.lugarRetiro && item.lugarRetiro !== '-' && item.lugarRetiro !== 'Web')
     ? item.lugarRetiro : 'Retiro Web';
   const monto = item.totalCost && item.totalCost !== '-' ? item.totalCost : null;
@@ -43,7 +43,7 @@ const printRetiroTicket = (item) => {
       padding: 10mm 10mm 8mm;
     }
 
-    /* â”€â”€ ENCABEZADO â”€â”€ */
+    /* ── ENCABEZADO ── */
     .header {
       text-align: center;
       border-bottom: 2px solid #222;
@@ -68,7 +68,7 @@ const printRetiroTicket = (item) => {
       font-style: italic;
     }
 
-    /* â”€â”€ CÃ“DIGO PRINCIPAL â”€â”€ */
+    /* ── CÓDIGO PRINCIPAL ── */
     .codigo-principal {
       text-align: center;
       font-size: 32px;
@@ -80,7 +80,7 @@ const printRetiroTicket = (item) => {
       border-bottom: 1px dashed #ccc;
     }
 
-    /* â”€â”€ ESTADO BADGE â”€â”€ */
+    /* ── ESTADO BADGE ── */
     .estado-badge {
       display: inline-block;
       padding: 5px 14px;
@@ -93,7 +93,7 @@ const printRetiroTicket = (item) => {
       letter-spacing: 1px;
     }
 
-    /* â”€â”€ TABLA DE DATOS â”€â”€ */
+    /* ── TABLA DE DATOS ── */
     .info-table {
       width: 100%;
       border-collapse: collapse;
@@ -119,7 +119,7 @@ const printRetiroTicket = (item) => {
       font-size: 15px;
     }
 
-    /* â”€â”€ TABLA DE Ã“RDENES â”€â”€ */
+    /* ── TABLA DE ÓRDENES ── */
     .orders-table {
       width: 100%;
       border-collapse: collapse;
@@ -144,10 +144,10 @@ const printRetiroTicket = (item) => {
       font-weight: 600;
     }
 
-    /* â”€â”€ SEPARADOR â”€â”€ */
+    /* ── SEPARADOR ── */
     .sep { border-top: 1px dashed #bbb; margin: 12px 0; }
 
-    /* â”€â”€ FIRMA â”€â”€ */
+    /* ── FIRMA ── */
     .firma-row {
       display: flex;
       justify-content: space-between;
@@ -162,7 +162,7 @@ const printRetiroTicket = (item) => {
       color: #555;
     }
 
-    /* â”€â”€ PIE â”€â”€ */
+    /* ── PIE ── */
     .footer {
       margin-top: 14px;
       font-size: 12px;
@@ -182,16 +182,16 @@ const printRetiroTicket = (item) => {
   <!-- ENCABEZADO igual a todos los comprobantes Macrosoft -->
   <div class="header">
     <div class="empresa">USER</div>
-    <div class="modulo">LogÃ­stica â€” Comprobante de Retiro</div>
-    <div class="doc-tipo">${esWeb ? 'Pedido Web' : 'Retiro Local'} Â· Local: ${local}</div>
+    <div class="modulo">Logística — Comprobante de Retiro</div>
+    <div class="doc-tipo">${esWeb ? 'Pedido Web' : 'Retiro Local'} · Local: ${local}</div>
   </div>
 
-  <!-- CÃ“DIGO PRINCIPAL -->
+  <!-- CÓDIGO PRINCIPAL -->
   <div class="codigo-principal">${item.displayLabel || item.ordenDeRetiro}</div>
 
   <!-- ESTADO -->
   <div style="text-align:center; margin-bottom:18px;">
-    <span class="estado-badge">${pagado ? 'âœ“ PAGADO' : 'PENDIENTE DE PAGO'}</span>
+    <span class="estado-badge">${pagado ? '✓ PAGADO' : 'PENDIENTE DE PAGO'}</span>
   </div>
 
   <!-- DATOS DEL RETIRO -->
@@ -219,8 +219,8 @@ const printRetiroTicket = (item) => {
       <td>${item.fechaAlta ? new Date(item.fechaAlta).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</td>
     </tr>
     ${(item.direccionEnvio || item.departamentoEnvio || item.localidadEnvio || item.agenciaNombre) ? `
-    <tr><td colspan="2" style="padding-top:6px;padding-bottom:2px;font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Datos de EnvÃ­o</td></tr>
-    ${item.direccionEnvio ? `<tr><td>DirecciÃ³n</td><td>${item.direccionEnvio}</td></tr>` : ''}
+    <tr><td colspan="2" style="padding-top:6px;padding-bottom:2px;font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;font-weight:700;">Datos de Envío</td></tr>
+    ${item.direccionEnvio ? `<tr><td>Dirección</td><td>${item.direccionEnvio}</td></tr>` : ''}
     ${item.departamentoEnvio ? `<tr><td>Departamento</td><td>${item.departamentoEnvio}</td></tr>` : ''}
     ${item.localidadEnvio ? `<tr><td>Localidad</td><td>${item.localidadEnvio}</td></tr>` : ''}
     ${item.agenciaNombre ? `<tr><td>Agencia</td><td><strong>${item.agenciaNombre}</strong></td></tr>` : ''}
@@ -229,15 +229,15 @@ const printRetiroTicket = (item) => {
 
   <div class="sep"></div>
 
-  <!-- TABLA DE Ã“RDENES con importe -->
+  <!-- TABLA DE ÓRDENES con importe -->
   <div style="font-size:11px;color:#000;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;font-weight:800;">
-    Ã“rdenes incluidas (${orderObjs.length})
+    Órdenes incluidas (${orderObjs.length})
   </div>
   <table class="orders-table">
     <thead>
       <tr>
         <th>#</th>
-        <th>CÃ³digo de Orden</th>
+        <th>Código de Orden</th>
         <th style="text-align:right;">Importe</th>
       </tr>
     </thead>
@@ -266,7 +266,7 @@ const printRetiroTicket = (item) => {
 
   <div class="sep"></div>
 
-  <!-- PIE: impresiÃ³n + firmas (igual a LogisticsPage) -->
+  <!-- PIE: impresión + firmas (igual a LogisticsPage) -->
   <table style="width:100%;font-size:9px;color:#666;">
     <tr>
       <td>Impreso:</td>
@@ -274,7 +274,7 @@ const printRetiroTicket = (item) => {
     </tr>
   </table>
 
-  <!-- QR del retiro (igual patrÃ³n que labelPrinter.js) -->
+  <!-- QR del retiro (igual patrón que labelPrinter.js) -->
   <div style="text-align:center; margin:8px 0 14px;">
     <img
       src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(item.displayLabel || item.ordenDeRetiro)}&color=000000&bgcolor=ffffff&margin=2"
@@ -285,12 +285,12 @@ const printRetiroTicket = (item) => {
   </div>
 
   <div class="firma-row">
-    <div class="firma-box">Firma y AclaraciÃ³n Cliente</div>
-    <div class="firma-box">Firma Responsable LogÃ­stica</div>
+    <div class="firma-box">Firma y Aclaración Cliente</div>
+    <div class="firma-box">Firma Responsable Logística</div>
   </div>
 
   <div class="footer">
-    USER â€” Documento interno. Conserve este comprobante.
+    USER — Documento interno. Conserve este comprobante.
   </div>
 
 </body>
@@ -301,11 +301,11 @@ const printRetiroTicket = (item) => {
     win.document.write(html);
     win.document.close();
     win.focus();
-    // No auto-print: el usuario ve la vista previa y decide cuando imprimir (Ctrl+P o botÃ³n del browser)
+    // No auto-print: el usuario ve la vista previa y decide cuando imprimir (Ctrl+P o botón del browser)
   }
 };
 
-// â”€â”€â”€ HELPER: Etiqueta de despacho â”€â”€â”€
+// ─── HELPER: Etiqueta de despacho ───
 const printRetiroLabel = (items) => {
   const labelsArr = Array.isArray(items) ? items : [items];
   const labelsHtml = labelsArr.map(item => {
@@ -657,7 +657,7 @@ const ShelfSlot = ({
 const WebRetirosPage = () => {
 
   // ——— HELPER: Calcula el estante destino según los últimos 2 dígitos del retiro ———
-  // 00-24 â†’ A | 25-49 â†’ B | 50-74 â†’ C | 75-99 â†’ D
+  // 00-24 → A | 25-49 → B | 50-74 → C | 75-99 → D
   const getEstanteForRetiro = (ordenDeRetiro) => {
     const match = (ordenDeRetiro || '').match(/(\d+)$/);
     if (!match) return null;
@@ -692,7 +692,7 @@ const WebRetirosPage = () => {
   const [deliveryScannedBultos, setDeliveryScannedBultos] = React.useState({});
   const [deliveryBarcodeInput, setDeliveryBarcodeInput] = React.useState('');
   const [deliverySelectedOrders, setDeliverySelectedOrders] = React.useState({});
-  const [announcedOrders, setAnnouncedOrders] = React.useState(new Set()); // Ã“rdenes anunciadas desde el tÃ³tem
+  const [announcedOrders, setAnnouncedOrders] = React.useState(new Set()); // Órdenes anunciadas desde el tótem
   const [duplicateDeliveryWarn, setDuplicateDeliveryWarn] = React.useState(null);
   const [layoutLocked, setLayoutLocked] = React.useState(false); // lock de layout de columnas
   const [lockedWeights, setLockedWeights] = React.useState(null); // pesos congelados
@@ -999,7 +999,7 @@ const WebRetirosPage = () => {
       });
       socket.on("actualizado", () => { fetchPendingUpdate(); });
       socket.on("totem:cliente-anunciado", (data) => {
-        console.log('[WebRetiros] ðŸ“¢ Cliente anunciado desde tÃ³tem:', data);
+        console.log('[WebRetiros] 📢 Cliente anunciado desde tótem:', data);
         // Buscar todas las variantes posibles del ID del retiro (RT-123, RW-123, RL-123)
         const numId = data.ordenRetiro;
         setAnnouncedOrders(prev => {
@@ -1007,7 +1007,7 @@ const WebRetirosPage = () => {
           next.add(numId);
           return next;
         });
-        // NotificaciÃ³n visual al operario
+        // Notificación visual al operario
         Swal.fire({
           toast: true,
           position: 'top-end',
@@ -1018,7 +1018,7 @@ const WebRetirosPage = () => {
           background: '#fdf2f8',
           color: '#831843',
         });
-        // Auto-limpiar despuÃ©s de 30 minutos
+        // Auto-limpiar después de 30 minutos
         setTimeout(() => {
           setAnnouncedOrders(prev => {
             const next = new Set(prev);
@@ -1042,13 +1042,13 @@ const WebRetirosPage = () => {
   const handleAsignarUbicacion = async (estanteId, sec, pos) => {
     if (!selectedRetiro) return;
 
-    // === VALIDACIÃ“N DE ESTANTE: el retiro debe ir al estante que corresponde a sus Ãºltimos 2 dÃ­gitos ===
+    // === VALIDACIÓN DE ESTANTE: el retiro debe ir al estante que corresponde a sus últimos 2 dígitos ===
     const intendedEstante = getEstanteForRetiro(selectedRetiro.ordenDeRetiro);
     if (intendedEstante && estanteId.trim() !== intendedEstante) {
       Swal.fire({
         iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>`,
         title: 'Estante incorrecto',
-        html: `La orden <strong style="color: #00AEEF;">${selectedRetiro.ordenDeRetiro}</strong> debe ir al estante <strong style="color: #00AEEF;">${intendedEstante}</strong> (rango ${intendedEstante === 'A' ? '00â€“24' : intendedEstante === 'B' ? '25â€“49' : intendedEstante === 'C' ? '50â€“74' : '75â€“99'}).<br><br>No se puede asignar al estante <strong>${estanteId}</strong>.`,
+        html: `La orden <strong style="color: #00AEEF;">${selectedRetiro.ordenDeRetiro}</strong> debe ir al estante <strong style="color: #00AEEF;">${intendedEstante}</strong> (rango ${intendedEstante === 'A' ? '00–24' : intendedEstante === 'B' ? '25–49' : intendedEstante === 'C' ? '50–74' : '75–99'}).<br><br>No se puede asignar al estante <strong>${estanteId}</strong>.`,
         confirmButtonText: 'Entendido',
         confirmButtonColor: '#dc2626',
         background: '#212121',
@@ -1065,7 +1065,7 @@ const WebRetirosPage = () => {
     const ubicacionId = `${estanteId}-${sec}-${pos}`;
     const retiroParaAsignar = selectedRetiro; // Capturamos para optimismo
 
-    // === VALIDACIÃ“N DE CLIENTE ===
+    // === VALIDACIÓN DE CLIENTE ===
     const dataList = ocupacionEstantes[ubicacionId] || [];
     if (dataList.length > 0) {
       // Tomamos el primer ocupante para chequear
@@ -1172,7 +1172,7 @@ const WebRetirosPage = () => {
       };
     });
 
-    // Verificar autorizaciÃ³n: pagada o estado 9 (Autorizado) â€” tipo 2 siempre pasa
+    // Verificar autorización: pagada o estado 9 (Autorizado) — tipo 2 siempre pasa
     for (const item of listEnriquecida) {
       const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
       const retiroFull = freshRetiros.find(o => o.ordenDeRetiro === ordenStr) || apiOrders.find(o => o.ordenDeRetiro === ordenStr) || otrosRetiros.find(o => o.ordenDeRetiro === ordenStr);
@@ -1204,7 +1204,7 @@ const WebRetirosPage = () => {
   };
 
 
-  // handleExcepcionSubmit removido â€” reemplazado por estado 9 desde caja
+  // handleExcepcionSubmit removido — reemplazado por estado 9 desde caja
 
   const handleEntregar = async () => {
     if (!confirmDelivery) return;
@@ -1225,7 +1225,7 @@ const WebRetirosPage = () => {
     // === OPTIMISMO UI: Liberar el casillero visualmente de inmediato ===
     setOcupacionEstantes(prev => {
       const next = { ...prev };
-      // Si seleccionaron TODO, eliminamos la ubicaciÃ³n entera. Si no, sÃ³lo retiramos de la UI las seleccionadas
+      // Si seleccionaron TODO, eliminamos la ubicación entera. Si no, sólo retiramos de la UI las seleccionadas
       if (next[ubicacionId]) {
         const remaining = next[ubicacionId].filter(item => !ordenesSeleccionadas.includes(item.OrdenRetiro || item.ordenDeRetiro));
         if (remaining.length === 0) {
@@ -1247,7 +1247,7 @@ const WebRetirosPage = () => {
         ubicacionId,
         ordenesParaEntregar: ordenesSeleccionadas
       });
-      // El fetch vendrÃ¡ por socket 
+      // El fetch vendrá por socket 
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Error al liberar el estante');
       // Revertimos la UI si falla
@@ -1255,7 +1255,7 @@ const WebRetirosPage = () => {
     }
   };
 
-  // Entrega directa desde estante (doble clic) â€” sin abrir control de bultos
+  // Entrega directa desde estante (doble clic) — sin abrir control de bultos
   const directEntregar = async (ubicacionId, dataList) => {
     const list = Array.isArray(dataList) ? dataList : [dataList];
 
@@ -1266,7 +1266,7 @@ const WebRetirosPage = () => {
       freshRetiros = Array.isArray(data) ? data : [];
     } catch (e) { console.warn('No se pudo verificar estado actual de retiros:', e); }
 
-    // Verificar pago/autorizaciÃ³n â€” tipo 2 siempre pasa
+    // Verificar pago/autorización — tipo 2 siempre pasa
     for (const item of list) {
       const ordenStr = item.OrdenRetiro || item.ordenDeRetiro;
       const retiroFull = freshRetiros.find(o => o.ordenDeRetiro === ordenStr) || apiOrders.find(o => o.ordenDeRetiro === ordenStr);
@@ -1317,7 +1317,7 @@ const WebRetirosPage = () => {
   const handleDesasignar = async (ordenRetiro, ubicacionId) => {
     if (!ordenRetiro || !ubicacionId) return;
 
-    // âš ï¸ Confirmación: desasignar devuelve la orden a empaques sin entregarla
+    // ⚠️ Confirmación: desasignar devuelve la orden a empaques sin entregarla
     const { isConfirmed } = await Swal.fire({
       iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><path d="m7.5 4.27 9 5.15"/><polyline points="3.29 7 12 12 20.71 7"/><line x1="12" x2="12" y1="22" y2="12"/><path d="m17 13 5 5"/><path d="m17 18 5-5"/></svg>`,
       title: '¿Quitar del estante?',
@@ -1430,7 +1430,7 @@ const WebRetirosPage = () => {
 
     try {
       const parts = targetId.split('-');
-      // targetId format: "A-2-3" â†’ destEstanteId=A, destSeccion=2, destPosicion=3
+      // targetId format: "A-2-3" → destEstanteId=A, destSeccion=2, destPosicion=3
       const destEstanteId = parts[0];
       const destSeccion = parseInt(parts[1]);
       const destPosicion = parseInt(parts[2]);
@@ -1446,7 +1446,7 @@ const WebRetirosPage = () => {
     }
   };
 
-  // Scroll + focus visual al casillero cuando se busca (por retiro, cliente o depÃ³sito)
+  // Scroll + focus visual al casillero cuando se busca (por retiro, cliente o depósito)
   useEffect(() => {
     if (!searchTerm) return;
     const term = searchTerm.toLowerCase();
@@ -1520,12 +1520,12 @@ const WebRetirosPage = () => {
 
         if (tryAssignIn(estConfig)) return;
 
-        // Estante correcto lleno â€” no hacer overflow, solo informar y abortar
-        const rangoLabel = targetEstanteId === 'A' ? '00â€“24' : targetEstanteId === 'B' ? '25â€“49' : targetEstanteId === 'C' ? '50â€“74' : '75â€“99';
+        // Estante correcto lleno — no hacer overflow, solo informar y abortar
+        const rangoLabel = targetEstanteId === 'A' ? '00–24' : targetEstanteId === 'B' ? '25–49' : targetEstanteId === 'C' ? '50–74' : '75–99';
         Swal.fire({
           iconHtml: `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>`,
           title: `Estante ${targetEstanteId} lleno`,
-          html: `No hay casilleros disponibles en el estante <strong style="color: #00AEEF;">${targetEstanteId}</strong> (rango ${rangoLabel}).<br><br>DebÃ©s liberar espacio antes de poder asignar esta orden.`,
+          html: `No hay casilleros disponibles en el estante <strong style="color: #00AEEF;">${targetEstanteId}</strong> (rango ${rangoLabel}).<br><br>Debés liberar espacio antes de poder asignar esta orden.`,
           confirmButtonText: 'Entendido',
           confirmButtonColor: '#dc2626',
           background: '#212121',
@@ -1846,7 +1846,7 @@ const WebRetirosPage = () => {
           {/* Spacer */}
           <div className="flex-1" />
 
-          {/* Toggle de vista: un solo botÃ³n que lleva a la otra */}
+          {/* Toggle de vista: un solo botón que lleva a la otra */}
           <button
             onClick={() => setView(view === 'empaque' ? 'entrega' : 'empaque')}
             className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors shrink-0 uppercase"
@@ -1873,7 +1873,7 @@ const WebRetirosPage = () => {
         view === 'empaque' ? (
           <>
             <div className="animate-in fade-in duration-300">
-              {/* â”€â”€â”€ LISTA UNIFICADA DE RETIROS â”€â”€â”€ */}
+              {/* ——— LISTA UNIFICADA DE RETIROS ——— */}
               {(() => {
                 const PRIORITY_META = {
                   '-1': { label: 'Anunciadas', color: 'text-pink-600', dot: 'bg-pink-500', badge: 'bg-pink-50 border-pink-200 text-pink-700', icon: BellRing },
@@ -1885,7 +1885,7 @@ const WebRetirosPage = () => {
                 };
 
                 const getPriority = (item) => {
-                  // Anunciadas desde el tÃ³tem = prioridad mÃ¡xima (-1)
+                  // Anunciadas desde el tótem = prioridad máxima (-1)
                   const itemNum = (item.ordenDeRetiro || '').match(/(\d+)$/);
                   if (itemNum && announcedOrders.has(parseInt(itemNum[1], 10))) return -1;
                   if (item.pagorealizado === 1 || item.pagorealizado === true) return 0;
@@ -1930,7 +1930,7 @@ const WebRetirosPage = () => {
                   idcliente: o.CliCodigoCliente,
                   displayLabel: o.ordenDeRetiro,
                   pagorealizado: o.pagorealizado,
-                  estadoNumerico: o.OReEstadoActual,   // <-- estado numÃ©rico para detectar estado 9
+                  estadoNumerico: o.OReEstadoActual,   // <-- estado numérico para detectar estado 9
                   OReEstadoActual: o.OReEstadoActual,
                   TClDescripcion: o.TClDescripcion || '',
                   fechaAlta: o.fechaAlta || o.FechaAlta || null,
@@ -1972,7 +1972,7 @@ const WebRetirosPage = () => {
                   }
                   // Filtro lugar
                   if (filtroLugarRetiro !== 'ALL' && item.lugarRetiro !== filtroLugarRetiro) return false;
-                  // BÃºsqueda por retiro, cliente o nÃºmero de orden de depÃ³sito
+                  // Búsqueda por retiro, cliente o número de orden de depósito
                   if (searchTerm) {
                     const term = searchTerm.toLowerCase();
                     const matchRetiro = item.ordenDeRetiro && item.ordenDeRetiro.toLowerCase().includes(term);
@@ -2020,7 +2020,7 @@ const WebRetirosPage = () => {
                   return (raw === 'RW' || raw === 'RL') ? 'RWRL' : raw;
                 };
 
-                // Siempre mostrar las 3 columnas aunque estÃ©n vacÃ­as
+                // Siempre mostrar las 3 columnas aunque estén vacías
                 const activeCols = TYPE_COLS;
 
                 const renderCard = (item, meta) => {
@@ -2196,7 +2196,7 @@ const WebRetirosPage = () => {
             )}
           </>
         ) : (
-          /* VISTA MOSTRADOR - MATRIZ DE ESTANTERÃA */
+          /* VISTA MOSTRADOR - MATRIZ DE ESTANTERÍA */
           <div className="animate-in fade-in duration-300">
             <div className="mt-4">
 

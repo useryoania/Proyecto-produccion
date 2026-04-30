@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import TransportView from '../../logistics/TransportView';
 import { useAuth } from '../../../context/AuthContext';
 import api from '../../../services/api';
@@ -43,7 +43,7 @@ const printTicketEncomienda = (enc) => {
   </style></head><body>
   <div class="header">
     <div class="empresa">USER</div>
-    <div class="modulo">LogÃ­stica â€” Comprobante de Retiro</div>
+    <div class="modulo">Logística — Comprobante de Retiro</div>
     <div style="font-size:9px;color:#888;margin-top:1px;font-style:italic;">Local: ${local}</div>
   </div>
   <div class="codigo-principal">${enc.ordenDeRetiro}</div>
@@ -52,25 +52,25 @@ const printTicketEncomienda = (enc) => {
   </div>
   <table class="info-table">
     <tr><td>Cliente</td><td><strong>${enc.CliNombre || enc.CliCodigoCliente || '-'}</strong></td></tr>
-    ${enc.CliCodigoCliente ? `<tr><td>CÃ³d.Cliente</td><td>${enc.CliCodigoCliente}</td></tr>` : ''}
-    ${enc.CliTelefono ? `<tr><td>TelÃ©fono</td><td>${enc.CliTelefono}</td></tr>` : ''}
+    ${enc.CliCodigoCliente ? `<tr><td>Cód.Cliente</td><td>${enc.CliCodigoCliente}</td></tr>` : ''}
+    ${enc.CliTelefono ? `<tr><td>Teléfono</td><td>${enc.CliTelefono}</td></tr>` : ''}
     <tr><td>Tipo Cliente</td><td>${tipoDesc}</td></tr>
     ${monto ? `<tr><td>Monto</td><td>${monedaSimbolo} ${monto}</td></tr>` : ''}
     ${enc.metodoPago ? `<tr><td>Forma Pago</td><td>${enc.metodoPago}</td></tr>` : ''}
     <tr><td>Local Retiro</td><td>${local}</td></tr>
     <tr><td>Fecha Alta</td><td>${enc.fechaAlta ? new Date(enc.fechaAlta).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</td></tr>
     ${(enc.direccionEnvio || enc.departamentoEnvio || enc.localidadEnvio || enc.agenciaNombre) ? `
-    <tr><td colspan="2" style="padding-top:6px;font-size:9px;color:#666;text-transform:uppercase;font-weight:700;">Datos de EnvÃ­o</td></tr>
-    ${enc.direccionEnvio ? `<tr><td>DirecciÃ³n</td><td>${enc.direccionEnvio}</td></tr>` : ''}
+    <tr><td colspan="2" style="padding-top:6px;font-size:9px;color:#666;text-transform:uppercase;font-weight:700;">Datos de Envío</td></tr>
+    ${enc.direccionEnvio ? `<tr><td>Dirección</td><td>${enc.direccionEnvio}</td></tr>` : ''}
     ${enc.departamentoEnvio ? `<tr><td>Departamento</td><td>${enc.departamentoEnvio}</td></tr>` : ''}
     ${enc.localidadEnvio ? `<tr><td>Localidad</td><td>${enc.localidadEnvio}</td></tr>` : ''}
     ${enc.agenciaNombre ? `<tr><td>Agencia</td><td><strong>${enc.agenciaNombre}</strong></td></tr>` : ''}
     `: ''}
   </table>
   <div class="sep"></div>
-  <div style="font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">\u00d3rdenes incluidas (${orderObjs.length})</div>
+  <div style="font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">Órdenes incluidas (${orderObjs.length})</div>
   <table class="orders-table">
-    <thead><tr><th>#</th><th>CÃ³digo</th><th>Estado</th><th style="text-align:right;">Importe</th></tr></thead>
+    <thead><tr><th>#</th><th>Código</th><th>Estado</th><th style="text-align:right;">Importe</th></tr></thead>
     <tbody>
       ${orderObjs.map((o, i) => `<tr><td>${i + 1}</td><td><strong>${o.orderNumber || '-'}</strong></td><td>${o.orderEstado || '-'}</td><td style="text-align:right;">${o.orderCosto || '-'}</td></tr>`).join('')}
       ${orderObjs.length === 0 ? '<tr><td colspan="4" style="text-align:center;color:#aaa;">Sin \u00f3rdenes registradas</td></tr>' : ''}
@@ -83,8 +83,8 @@ const printTicketEncomienda = (enc) => {
     <div style="font-size:9px;color:#999;margin-top:2px;letter-spacing:1px;">${enc.ordenDeRetiro}</div>
   </div>
   <div class="firma-row">
-    <div class="firma-box">Firma y AclaraciÃ³n Cliente</div>
-    <div class="firma-box">Firma Responsable LogÃ­stica</div>
+    <div class="firma-box">Firma y Aclaración Cliente</div>
+    <div class="firma-box">Firma Responsable Logística</div>
   </div>
    <div class="footer">USER \u2014 Conserve este comprobante.</div>
   <div style="text-align:center;margin-top:16px;"><button onclick="window.print()" style="background:#0070bc;color:#fff;border:none;padding:8px 28px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.5px;">&#128438; Imprimir</button></div>
@@ -798,9 +798,9 @@ const EntregaPedidosView = () => {
                         <div className="w-10 h-10 rounded-xl bg-brand-cyan/10 flex items-center justify-center shrink-0">
                             <Package className="text-brand-cyan" size={22} />
                         </div>
-                        Entrega de Pedidos & LogÃ­stica
+                        Entrega de Pedidos & Logística
                     </h1>
-                    <p className="text-sm md:text-base text-slate-500 mt-2 font-medium">GestiÃ³n integral de despachos, retiros y cobranza remota.</p>
+                    <p className="text-sm md:text-base text-slate-500 mt-2 font-medium">Gestión integral de despachos, retiros y cobranza remota.</p>
                 </div>
             </div>
 
@@ -810,7 +810,7 @@ const EntregaPedidosView = () => {
                     onClick={() => setActiveTab('encomiendas')}
                     className={`px-4 py-3 xl:py-2.5 rounded-lg font-bold text-sm transition-all duration-200 flex items-center justify-center xl:justify-start gap-2 ${activeTab === 'encomiendas' ? 'bg-white text-brand-cyan shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                    <Package size={18} className="shrink-0" /> <span className="text-xs xl:text-sm">LogÃ­stica y Despachos</span>
+                    <Package size={18} className="shrink-0" /> <span className="text-xs xl:text-sm">Logística y Despachos</span>
                 </button>
                 <button
                     onClick={() => setActiveTab('mostrador')}
@@ -822,7 +822,7 @@ const EntregaPedidosView = () => {
                     onClick={() => setActiveTab('historial')}
                     className={`px-4 py-3 xl:py-2.5 rounded-lg font-bold text-sm transition-all duration-200 flex items-center justify-center xl:justify-start gap-2 ${activeTab === 'historial' ? 'bg-white text-brand-cyan shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                    <History size={18} className="shrink-0" /> <span className="text-xs xl:text-sm">Historial del dÃ­a</span>
+                    <History size={18} className="shrink-0" /> <span className="text-xs xl:text-sm">Historial del día</span>
                 </button>
                 <button
                     onClick={() => setActiveTab('transport')}
@@ -836,7 +836,7 @@ const EntregaPedidosView = () => {
             {activeTab === 'encomiendas' && (
                 <div className="bg-white p-4 md:p-6 rounded-none md:rounded-2xl shadow-sm border-b md:border border-slate-200">
                     <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
-                        <h2 className="text-xl font-black text-slate-800">Ã“rdenes a Despachar / Entregar</h2>
+                        <h2 className="text-xl font-black text-slate-800">Órdenes a Despachar / Entregar</h2>
 
                         {/* Filtros Especiales */}
                         <div className="flex flex-wrap gap-4 items-center w-full xl:w-auto">
@@ -847,7 +847,7 @@ const EntregaPedidosView = () => {
                                     value={filtroLugar}
                                     onChange={(e) => setFiltroLugar(e.target.value)}
                                 >
-                                    <option value="">â€” Todas â€”</option>
+                                    <option value="">— Todas —</option>
                                     {lugaresRetiro.map(lr => (
                                         <option key={lr.LReIdLugarRetiro} value={lr.LReIdLugarRetiro}>{lr.LReNombreLugar}</option>
                                     ))}
@@ -860,9 +860,9 @@ const EntregaPedidosView = () => {
                                 onChange={(e) => setFiltroPagoEncomiendas(e.target.value)}
                                 className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none cursor-pointer"
                             >
-                                <option value="todas">â­ Mostrar Todas</option>
-                                <option value="pagas">ðŸ’° SÃ³lo Pagas</option>
-                                <option value="nopagas">â—ï¸ No Pagas</option>
+                                <option value="todas">⭐ Mostrar Todas</option>
+                                <option value="pagas">💰 Sólo Pagas</option>
+                                <option value="nopagas">❗ No Pagas</option>
                             </select>
 
                             <button
@@ -884,7 +884,7 @@ const EntregaPedidosView = () => {
                                 onClick={generarRemitoLogistico}
                                 disabled={selectedEncomiendas.size === 0 || loading}
                                 className="bg-brand-cyan hover:bg-[#005080] disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-2 shadow-sm"
-                                title="Generar Remito LogÃ­stico"
+                                title="Generar Remito Logístico"
                             >
                                 <Package size={16} /> Generar Remito ({selectedEncomiendas.size})
                             </button>
@@ -899,7 +899,7 @@ const EntregaPedidosView = () => {
                             <button
                                 onClick={() => {
                                     const sel = encomiendas.filter(e => selectedEncomiendas.has(e.ordenDeRetiro));
-                                    if (sel.length === 0) return toast.warning('SeleccionÃ¡ al menos una orden.');
+                                    if (sel.length === 0) return toast.warning('Seleccioná al menos una orden.');
                                     printLabels(sel);
                                 }}
                                 disabled={selectedEncomiendas.size === 0}

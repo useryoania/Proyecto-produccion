@@ -69,7 +69,7 @@ const TransportView = () => {
             const newFile = { id: Math.random().toString(36).substr(2, 9), file };
             setModalFiles(prev => [...prev, newFile]);
             
-            // Asignar automÃ¡ticamente a bultos tildados sin archivo
+            // Asignar automáticamente a bultos tildados sin archivo
             setBultoMappings(prev => {
                 const next = { ...prev };
                 Object.keys(next).forEach(id => {
@@ -126,7 +126,7 @@ const TransportView = () => {
                 await logisticsService.confirmDeliveryWithProof(modalData.transport.CodigoRemito, formData);
             }
 
-            toast.success('Entregas procesadas con Ã©xito âœ…');
+            toast.success('Entregas procesadas con éxito ✅');
             setIsModalOpen(false);
             loadData();
         } catch (error) {
@@ -141,7 +141,7 @@ const TransportView = () => {
         try {
             const resApi = await api.get('/apiordenesRetiro/remito/' + transport.CodigoRemito);
             const sel = resApi.data;
-            if (!sel || sel.length === 0) return toast.warning('No se encontraron Ã³rdenes.');
+            if (!sel || sel.length === 0) return toast.warning('No se encontraron órdenes.');
             
             const remitoCode = transport.CodigoRemito;
             const fecha = new Date().toLocaleString('es-UY', { timeZone: 'America/Montevideo' });
@@ -165,12 +165,12 @@ const TransportView = () => {
                     ? `<table style="width:100%;border-collapse:collapse;margin-top:6px;">
                         <thead><tr style="background:#f8fafc;">
                             <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">#</th>
-                            <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">CÃ³d. Orden</th>
+                            <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">Cód. Orden</th>
                             <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">Estado</th>
                             <th style="padding:5px 8px;font-size:11px;text-align:right;color:#64748b;border-bottom:1px solid #e2e8f0;">Importe</th>
                         </tr></thead><tbody>${ordenesList}</tbody>
                     </table>`
-                    : '<span style="font-size:12px;color:#aaa;">Sin Ã³rdenes registradas</span>';
+                    : '<span style="font-size:12px;color:#aaa;">Sin órdenes registradas</span>';
 
                 return `<tr style="border-bottom:1px solid #e2e8f0;vertical-align:top;">
                     <td style="padding:10px 8px;font-size:13px;font-weight:900;color:#1e293b;white-space:nowrap;">${enc.ordenDeRetiro}</td>
@@ -202,7 +202,7 @@ const TransportView = () => {
                             <th style="padding:7px 8px;font-size:11px;text-align:left;">Retiro</th>
                             <th style="padding:7px 8px;font-size:11px;text-align:left;">Cliente</th>
                             <th style="padding:7px 8px;font-size:11px;text-align:left;">Destino</th>
-                            <th style="padding:7px 8px;font-size:11px;text-align:left;">Ã“rdenes</th>
+                            <th style="padding:7px 8px;font-size:11px;text-align:left;">Órdenes</th>
                             <th style="padding:7px 8px;font-size:11px;text-align:center;">Pago</th>
                         </tr></thead>
                         <tbody>${ordenes.map(renderFila).join('')}</tbody>
@@ -246,7 +246,7 @@ const TransportView = () => {
                     </div>
                     <div>
                         <h2 className="text-xl font-black text-slate-800">Transporte en Curso</h2>
-                        <p className="text-slate-500 text-sm">MercaderÃ­a en poder de terceros</p>
+                        <p className="text-slate-500 text-sm">Mercadería en poder de terceros</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -282,7 +282,7 @@ const TransportView = () => {
                 ) : filtered.length === 0 ? (
                     <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 rounded-3xl">
                         <Navigation size={40} className="mx-auto text-slate-200 mb-3" />
-                        <p className="text-slate-500 font-medium">Sin vehÃ­culos en ruta.</p>
+                        <p className="text-slate-500 font-medium">Sin vehículos en ruta.</p>
                     </div>
                 ) : (
                     filtered.map(t => (
