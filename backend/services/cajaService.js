@@ -406,7 +406,7 @@ async function getProductosVenta() {
              pl.Moneda as MonedaBase
       FROM dbo.Articulos p WITH(NOLOCK)
       LEFT JOIN dbo.ConfigMapeoERP c WITH(NOLOCK) ON LTRIM(RTRIM(p.Grupo)) = LTRIM(RTRIM(c.CodigoERP)) COLLATE Database_Default
-      LEFT JOIN dbo.PreciosListaPublica pl WITH(NOLOCK) ON p.ProIdProducto = pl.ProIdProducto AND pl.Activo = 1
+      LEFT JOIN dbo.PreciosListaPublica pl WITH(NOLOCK) ON p.ProIdProducto = pl.ProIdProducto AND (pl.Activo = 1 OR p.CodStock IN ('2.2.1.1', '2.2.1.2'))
       WHERE p.Mostrar = 1 AND (p.IDProdReact IS NOT NULL OR p.Grupo = '2.1')
       ORDER BY GrupoNombre, p.Descripcion
   `);
@@ -428,7 +428,6 @@ async function procesarTransaccion(payload) {
   if (!header?.clienteId)        throw new Error('clienteId es obligatorio.');
   if (!header?.tipoDocumento)    throw new Error('tipoDocumento es obligatorio.');
   if (!aplicaciones?.length)     throw new Error('Debe incluir al menos una orden o ítem.');
-  if (!pagos?.length)            throw new Error('Debe incluir al menos un método de pago.');
 
   // ── Calcular totales ──────────────────────────────────────────────────
   const totalBruto  = aplicaciones.reduce((s, a) => s + (a.montoOriginal || 0), 0);
@@ -814,7 +813,9 @@ async function procesarTransaccion(payload) {
         const resConfig = await transaction.request()
           .input('codDoc', sql.VarChar(10), header.tipoDocumento)
           .query(`
-            SELECT c.EvtCodigo, c.Detalle, s.SecSerie, s.SecUltimoNumero, s.SecIdSecuencia 
+            SELECT c.EvtCodigo, c.Detalle, c.AfectaCtaCte, 
+                   ISNULL(c.DiasVencimiento, 30) AS DiasVencimiento,
+                   s.SecSerie, s.SecUltimoNumero, s.SecIdSecuencia 
             FROM dbo.Config_TiposDocumento c WITH(NOLOCK)
             LEFT JOIN dbo.SecuenciaDocumentos s WITH(UPDLOCK) ON c.SecIdSecuencia = s.SecIdSecuencia
             WHERE c.CodDocumento = @codDoc
@@ -850,6 +851,7 @@ async function procesarTransaccion(payload) {
                .input('usuario',   sql.Int,         usuarioId || 1)
                .input('asientoId', sql.Int,         asiId || null)
                .input('tcaId',     sql.Int,         tcaIdTransaccion || null)
+               .input('docPagado', sql.Bit,         totalCobrado >= totalNeto ? 1 : 0)
                .query(`
                  INSERT INTO dbo.DocumentosContables 
                  (DocTipo, CueIdCuenta, MonIdMoneda, CliIdCliente, DocSubtotal, DocImpuestos, 
@@ -861,10 +863,48 @@ async function procesarTransaccion(payload) {
                  (@tipo, @cuenta, @moneda, @clienteId, @subtotal, @iva, 
                   0, 0, @total, 1, 
                   GETDATE(), @usuario, 'PENDIENTE', @serie, @numero,
-                  @asientoId, @tcaId, 1)
+                  @asientoId, @tcaId, @docPagado)
                `);
                
              const docIdDocumento = insertDocResult.recordset[0].DocIdDocumento;
+
+             // ── DeudaDocumento: solo si AfectaCtaCte y hay saldo sin cubrir ────
+             // La configuración del tipo de documento (Config_TiposDocumento.AfectaCtaCte)
+             // es el switch que determina si se genera deuda en cuenta corriente.
+             const importePendiente = totalNeto - totalCobrado;
+             if (importePendiente > 0.01 && config.AfectaCtaCte) {
+               const cuentaDeudaRes = await transaction.request()
+                 .input('cli', sql.Int, header.clienteId)
+                 .query(`
+                   SELECT TOP 1 CueIdCuenta 
+                   FROM dbo.CuentasCliente 
+                   WHERE CliIdCliente = @cli 
+                     AND CueTipo IN ('DINERO_UYU', 'DINERO_USD') 
+                     AND CueActiva = 1 
+                   ORDER BY CASE CueTipo WHEN 'DINERO_UYU' THEN 1 ELSE 2 END
+                 `);
+               if (cuentaDeudaRes.recordset.length > 0) {
+                 const cueDeudaId = cuentaDeudaRes.recordset[0].CueIdCuenta;
+                 const diasVenc = config.DiasVencimiento || 30;
+                 await transaction.request()
+                   .input('cue',  sql.Int,          cueDeudaId)
+                   .input('doc',  sql.Int,          docIdDocumento)
+                   .input('orig', sql.Decimal(18,4), totalNeto)
+                   .input('pend', sql.Decimal(18,4), importePendiente)
+                   .input('dias', sql.Int,          diasVenc)
+                   .query(`
+                     INSERT INTO dbo.DeudaDocumento
+                       (CueIdCuenta, DocIdDocumento, DDeImporteOriginal, DDeImportePendiente,
+                        DDeFechaEmision, DDeFechaVencimiento, DDeEstado)
+                     VALUES
+                       (@cue, @doc, @orig, @pend,
+                        GETDATE(), DATEADD(DAY, @dias, GETDATE()), 'PENDIENTE')
+                   `);
+                 logger.info(`[CAJA-CFE] DeudaDocumento creada: Cli=${header.clienteId} Monto=${importePendiente} TipoDoc=${header.tipoDocumento} Venc=${diasVenc}d`);
+               } else {
+                 logger.warn(`[CAJA-CFE] Sin cuenta DINERO para CliId=${header.clienteId} — DeudaDocumento no creada`);
+               }
+             }
              
              // Insertar las líneas de detalle fiscales clonadas de Producción
              await transaction.request()

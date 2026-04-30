@@ -13,7 +13,7 @@ const AREA_COLORS = {
 };
 
 // ─── Panel de búsqueda (FUERA de la tabla para evitar clip por overflow) ───
-function ProductSearchPanel({ onSelect, onCancel, isAdmin, userArea }) {
+function ProductSearchPanel({ onSelect, onCancel, isAdmin, userArea, forceArea }) {
     const [q, setQ] = useState('');
     const [allItems, setAllItems] = useState([]);
     const [loadingItems, setLoadingItems] = useState(true);
@@ -40,10 +40,16 @@ function ProductSearchPanel({ onSelect, onCancel, isAdmin, userArea }) {
             (p.AreaID || '').toLowerCase().includes(q.toLowerCase())
         );
 
-    // Filtrar por área si no es admin
-    const filtered = (!isAdmin && userArea)
-        ? searchFiltered.filter(p => p.AreaID && p.AreaID.toUpperCase() === userArea.toUpperCase())
-        : searchFiltered;
+    // Filtrar por área forzada (editando línea) o por permiso (si no es admin)
+    const filtered = searchFiltered.filter(p => {
+        if (forceArea) {
+            return p.AreaID && p.AreaID.toUpperCase() === forceArea.toUpperCase();
+        }
+        if (!isAdmin && userArea) {
+            return p.AreaID && p.AreaID.toUpperCase() === userArea.toUpperCase();
+        }
+        return true;
+    });
 
     const grouped = filtered.reduce((acc, p) => {
         const key = p.AreaID || 'Sin Área';
@@ -53,7 +59,7 @@ function ProductSearchPanel({ onSelect, onCancel, isAdmin, userArea }) {
     }, {});
 
     return (
-        <div className="mt-2 border-2 border-indigo-300 rounded-xl bg-white shadow-lg overflow-hidden">
+        <div className="flex flex-col bg-white overflow-hidden w-full h-full">
             {/* Barra de búsqueda */}
             <div className="flex items-center gap-2 px-4 py-2.5 border-b border-indigo-100">
                 {loadingItems
@@ -130,14 +136,16 @@ function ProductSearchPanel({ onSelect, onCancel, isAdmin, userArea }) {
 }
 
 // ─── Fila de datos existente ────────────────────────────────────────────────
-function LineRow({ line, userArea, isAdmin, areaFilter, cotizacion, monedaFinal, onChange, onDelete, onRecalculate }) {
+function LineRow({ line, userArea, isAdmin, areaFilter, cotizacion, monedaFinal, onChange, onDelete, onRecalculate, allProducts, onProductChange, showTechnicalData }) {
     const isFiltered = areaFilter && areaFilter !== 'TODOS';
     const areaTag = line.AreaIDInterna || line.AreaID || '';
+    const currentCod = line.CodArticulo ? String(line.CodArticulo).trim() : '';
     const isLineTargetArea = areaTag.toUpperCase() === areaFilter?.toUpperCase();
     
     // Permission base rule
     const hasPermission = isAdmin || !userArea || areaTag.toUpperCase() === userArea.toUpperCase();
     // Context rule (UX filter override)
+    // ONLY allow edit if it's the target area (or no filter) AND user has permission
     const puedoEditar = hasPermission && (!isFiltered || isLineTargetArea);
     const subtotal = (parseFloat(line.Cantidad) || 0) * (parseFloat(line.PrecioUnitario) || 0);
     const nombreVisible = line.NombreArticulo || line.DescripcionArticulo || line.CodArticulo;
@@ -151,6 +159,13 @@ function LineRow({ line, userArea, isAdmin, areaFilter, cotizacion, monedaFinal,
         }, 500);
     };
 
+    const areaProducts = useMemo(() => {
+        if (!allProducts) return [];
+        const filtered = allProducts.filter(p => p.AreaID && p.AreaID.trim().toUpperCase() === areaTag.trim().toUpperCase());
+        console.log(`Line ${line.CodigoOrden} - areaTag: '${areaTag}', allProducts: ${allProducts.length}, filtered: ${filtered.length}`);
+        return filtered;
+    }, [allProducts, areaTag, line.CodigoOrden]);
+
     return (
         <tr className={`border-b last:border-0 transition-colors group ${puedoEditar ? 'hover:bg-slate-50/80' : 'bg-slate-50/30 opacity-75'}`}>
             {/* Área */}
@@ -161,16 +176,45 @@ function LineRow({ line, userArea, isAdmin, areaFilter, cotizacion, monedaFinal,
                     </span>
                 ) : <span className="text-slate-300">—</span>}
             </td>
-            {/* Producto — muestra nombre, no código */}
-            <td className="px-3 py-2.5">
-                <div className="font-semibold text-slate-800 text-sm leading-tight truncate max-w-[220px]" title={nombreVisible}>
-                    {nombreVisible}
-                </div>
-                <div className="text-[11px] text-slate-400 font-mono mt-0.5">{line.CodArticulo}</div>
-            </td>
-            {/* Orden */}
-            <td className="px-3 py-2.5 text-[13px] text-black font-black font-mono whitespace-nowrap">
-                {line.CodigoOrden || (line.OrdenID ? `#${line.OrdenID}` : '—')}
+            {/* Producto — Select en línea */}
+            <td className="px-3 py-2.5 min-w-[250px]">
+                {puedoEditar ? (
+                    <div className="relative group/prod">
+                        <select
+                            value={currentCod}
+                            onChange={e => {
+                                const match = areaProducts.find(p => p.CodArticulo === e.target.value);
+                                if (match && match.CodArticulo !== currentCod) {
+                                    onProductChange(line._tempId, match);
+                                }
+                            }}
+                            className="w-full text-sm font-semibold text-slate-800 border border-transparent bg-transparent hover:bg-slate-50 hover:border-slate-200 focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 rounded-lg px-1 py-1 pr-6 outline-none transition-all truncate cursor-pointer appearance-none"
+                            title="Clic para cambiar producto"
+                        >
+                            {!areaProducts.find(p => p.CodArticulo === currentCod) && (
+                                <option value={currentCod} disabled hidden>
+                                    {nombreVisible || 'Seleccionar artículo...'}
+                                </option>
+                            )}
+                            {areaProducts.map(p => (
+                                <option key={p.CodArticulo} value={p.CodArticulo}>
+                                    {p.Descripcion}
+                                </option>
+                            ))}
+                        </select>
+                        <div className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none opacity-50 group-hover/prod:opacity-100 transition-opacity">
+                            <i className="fa-solid fa-caret-down text-xs"></i>
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-mono mt-0.5 px-2 pointer-events-none">{line.CodArticulo}</div>
+                    </div>
+                ) : (
+                    <div className="px-2 py-1">
+                        <div className="font-semibold text-slate-800 text-sm leading-tight truncate" title={nombreVisible}>
+                            {nombreVisible}
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-mono mt-0.5">{line.CodArticulo}</div>
+                    </div>
+                )}
             </td>
             {/* Cantidad */}
             <td className="px-3 py-2.5 w-24 text-right">
@@ -188,16 +232,18 @@ function LineRow({ line, userArea, isAdmin, areaFilter, cotizacion, monedaFinal,
                 />
             </td>
             {/* Dato Técnico (Puntadas/Bajadas) */}
-            <td className="px-2 py-2.5 w-24 text-right">
-                <input type="number" min="0" step="1"
-                    placeholder="Punt."
-                    disabled={!puedoEditar}
-                    value={line.DatoTecnico || ''}
-                    onChange={e => handleDebouncedCalc({ ...line, DatoTecnico: e.target.value, PricingTrace: 'Calculando precio...' })}
-                    className={`w-20 text-right text-sm font-mono border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-400
-                        ${puedoEditar ? 'border-slate-200 bg-white hover:border-indigo-300' : 'border-transparent bg-transparent cursor-not-allowed text-slate-400'}`}
-                />
-            </td>
+            {showTechnicalData && (
+                <td className="px-2 py-2.5 w-24 text-right">
+                    <input type="number" min="0" step="1"
+                        placeholder="Punt."
+                        disabled={!puedoEditar}
+                        value={line.DatoTecnico || ''}
+                        onChange={e => handleDebouncedCalc({ ...line, DatoTecnico: e.target.value, PricingTrace: 'Calculando precio...' })}
+                        className={`w-20 text-right text-sm font-mono border rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-400
+                            ${puedoEditar ? 'border-slate-200 bg-white hover:border-indigo-300' : 'border-transparent bg-transparent cursor-not-allowed text-slate-400'}`}
+                    />
+                </td>
+            )}
             {/* Moneda */}
             <td className="px-2 py-2.5 w-20 text-center">
                 <div className="w-full text-xs font-bold text-slate-500 py-1 border border-transparent select-none bg-slate-50 rounded">
@@ -262,21 +308,25 @@ function LineRow({ line, userArea, isAdmin, areaFilter, cotizacion, monedaFinal,
 }
 
 // ─── Modal Principal ────────────────────────────────────────────────────────
-export default function QuotationEditModal({ noDocERP, onClose, onSaved, currentUser, areaFilter }) {
+export default function QuotationEditModal({ noDocERP, onClose, onSaved, currentUser, areaFilter, embedded = false }) {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [cabecera, setCabecera] = useState(null);
     const [lineas, setLineas] = useState([]);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
-    const [showAddRow, setShowAddRow] = useState(false);
+    const [activeProductSearch, setActiveProductSearch] = useState(null); // null, 'add'
     const [cotizacion, setCotizacion] = useState(40); // Backup default
+    const [allProducts, setAllProducts] = useState([]);
 
     const userArea = currentUser?.AreaID || null;
     const isAdmin = !userArea || currentUser?.rol === 'ADMIN' || currentUser?.esAdmin;
 
+    const showTechnicalData = areaFilter === 'EMB' || areaFilter === 'EST' || areaFilter === 'TODOS' || !areaFilter;
+
     // Cargar datos
     useEffect(() => {
+        api.get('/quotation/search-products').then(r => setAllProducts(r.data || [])).catch(() => {});
         api.get('/contabilidad/cotizacion-hoy')
             .then(res => { if (res.data?.data?.promedio) setCotizacion(res.data.data.promedio); })
             .catch(err => console.warn('Error fetching cotizacion:', err));
@@ -309,7 +359,8 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
                 cantidad: line.Cantidad,
                 clienteId: cabecera?.CliIdCliente || cabecera?.ClienteID || cabecera?.CodCliente,
                 areaId: line.AreaIDInterna || line.AreaID,
-                datoTecnicoValue: line.DatoTecnico
+                datoTecnicoValue: line.DatoTecnico,
+                variables: { isUrgente: line.Prioridad?.toUpperCase() === 'URGENTE' }
             });
             
             const cotizacionData = res.data;
@@ -347,14 +398,17 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
     };
 
     const handlePickProduct = (product) => {
-        // Heredar la OrdenID y CodigoOrden de la primera línea disponible para vincular el servicio extra a la orden principal
-        const baseLine = lineas.find(l => l.OrdenID) || {};
+        // Intentar buscar una línea que pertenezca al área en la que estamos parados
+        let targetArea = areaFilter !== 'TODOS' ? areaFilter : (product.AreaID || userArea);
+        const baseLine = lineas.find(l => (l.AreaID === targetArea || l.AreaIDInterna === targetArea) && l.OrdenID) || lineas.find(l => l.OrdenID) || {};
         
         const newLine = {
             _tempId: Date.now(),
             OrdenID: baseLine.OrdenID || null,
             CodigoOrden: baseLine.CodigoOrden ? `${baseLine.CodigoOrden} (Extra)` : (cabecera?.NoDocERP ? `${cabecera.NoDocERP} (Extra)` : null),
+            Prioridad: baseLine.Prioridad || 'Normal',
             CodArticulo: product.CodArticulo,
+            ProIdProducto: product.ProIdProducto,
             NombreArticulo: product.Descripcion,
             DescripcionArticulo: product.Descripcion,
             Cantidad: 1,
@@ -371,8 +425,31 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
             DatoTecnico: 0
         };
         setLineas(prev => [...prev, newLine]);
-        setShowAddRow(false);
+        setActiveProductSearch(null);
         handleRecalculateLine(newLine);
+    };
+
+    const handlePickProductInline = (tempId, product) => {
+        const existingLine = lineas.find(l => l._tempId === tempId);
+        if (existingLine) {
+            const newLine = {
+                ...existingLine,
+                CodArticulo: product.CodArticulo,
+                ProIdProducto: product.ProIdProducto,
+                NombreArticulo: product.Descripcion,
+                DescripcionArticulo: product.Descripcion,
+                AreaID: product.AreaID,
+                AreaIDInterna: product.AreaID,
+                PrecioUnitario: product.PrecioBase || 0,
+                PrecioUnitarioOriginal: product.PrecioBase || 0,
+                Moneda: product.Moneda || existingLine.Moneda || 'UYU',
+                MonedaOriginal: product.MonedaOriginal || product.Moneda || 'UYU',
+                PerfilAplicado: 'Manual',
+                PricingTrace: 'Producto cambiado, calculando...'
+            };
+            handleChange(newLine);
+            handleRecalculateLine(newLine);
+        }
     };
 
     const [puntuacionAjustable, setPuntuacionAjustable] = useState({});
@@ -404,6 +481,7 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
             const payload = lineas.map(l => ({
                 OrdenID: l.OrdenID,
                 CodArticulo: l.CodArticulo,
+                ProIdProducto: l.ProIdProducto,
                 Cantidad: parseFloat(l.Cantidad) || 0,
                 PrecioUnitario: parseFloat(l.PrecioUnitario) || 0,
                 LogPrecioAplicado: l.LogPrecioAplicado || 'Manual',
@@ -427,6 +505,155 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
             setSaving(false);
         }
     };
+
+    if (embedded) {
+        return (
+            <div className="flex flex-col h-full w-full bg-white rounded-xl shadow-sm overflow-hidden border border-slate-200">
+                {/* Header embedded */}
+                <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-indigo-50 to-white shrink-0">
+                    <div>
+                        <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                            <i className="fa-solid fa-file-invoice-dollar text-indigo-600" />
+                            Tracking y Edición de Cotización
+                        </h2>
+                        <p className="text-sm text-slate-500 mt-0.5 font-mono font-bold">{noDocERP}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <button onClick={handleRecalculateAll} className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-indigo-600 bg-slate-50 border border-slate-200 hover:border-indigo-300 rounded shadow-sm flex items-center gap-1.5 transition-all mt-1" title="Recargas Precios según base de datos">
+                            <i className="fa-solid fa-cloud-arrow-down" />
+                            Recargar Precios
+                        </button>
+                        {cabecera && (
+                            <div className="text-right border-l pl-4 ml-2 border-slate-200">
+                                <div className="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Cotización USD</div>
+                                <div className="text-base font-black text-slate-700 font-mono"><span className="text-sm text-slate-400 font-normal mr-1">UYU</span>{cotizacion?.toFixed(2)}</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Body */}
+                <div className="flex-1 overflow-y-auto px-6 py-4 custom-scrollbar">
+
+                    {loading && (
+                        <div className="flex justify-center items-center py-20">
+                            <i className="fa-solid fa-spinner fa-spin text-4xl text-indigo-300" />
+                        </div>
+                    )}
+
+                    {!loading && error && (
+                        <div className="bg-red-50 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-lg mb-4 font-medium text-sm">
+                            ⚠️ {error}
+                        </div>
+                    )}
+
+                    {!loading && success && (
+                        <div className="bg-emerald-50 border-l-4 border-emerald-500 text-emerald-700 px-4 py-3 rounded-lg mb-4 font-medium text-sm">
+                            {success}
+                        </div>
+                    )}
+
+                    {/* Aviso de permisos */}
+                    {!loading && !isAdmin && userArea && (
+                        <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-xs text-amber-700 flex items-center gap-2">
+                            <i className="fa-solid fa-shield-halved" />
+                            Área <strong>{userArea}</strong> — solo podés modificar las líneas de tu área.
+                        </div>
+                    )}
+
+                    {!loading && (
+                        <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm">
+                            <table className="w-full text-sm text-left min-w-[800px]">
+                                <thead className="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        <th className="px-3 py-3 text-xs font-bold text-slate-400 uppercase text-center w-20">Área</th>
+                                        <th className="px-3 py-3 text-xs font-bold text-slate-400 uppercase">Producto</th>
+                                        <th className="px-3 py-3 text-xs font-bold text-slate-400 uppercase">Orden</th>
+                                        <th className="px-3 py-3 text-xs font-bold text-slate-400 uppercase text-right w-24">Cantidad</th>
+                                        <th className="px-2 py-3 text-xs font-bold text-slate-400 uppercase text-right w-24 line-clamp-1" title="Dato Técnico">Dato Téc.</th>
+                                        <th className="px-2 py-3 text-xs font-bold text-slate-400 uppercase text-center w-20">Moneda</th>
+                                        <th className="px-2 py-3 text-xs font-bold text-slate-400 uppercase text-right w-24">Precio U.</th>
+                                        <th className="px-3 py-3 text-xs font-bold text-slate-400 uppercase text-right w-24">Subtotal</th>
+                                        <th className="px-3 py-3 text-xs font-bold text-indigo-500 uppercase text-right w-28 bg-indigo-50/50">En {monedaFinal}</th>
+                                        <th className="px-3 py-3 text-xs font-bold text-slate-400 uppercase text-center">Perfil</th>
+                                        <th className="px-3 py-3 w-10"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {lineas.map(line => (
+                                        <LineRow
+                                            key={line._tempId}
+                                            line={line}
+                                            userArea={userArea}
+                                            isAdmin={isAdmin}
+                                            areaFilter={areaFilter}
+                                            cotizacion={cotizacion}
+                                            monedaFinal={monedaFinal}
+                                            onChange={handleChange}
+                                            onDelete={handleDelete}
+                                            onRecalculate={handleRecalculateLine}
+                                            allProducts={allProducts}
+                                            onProductChange={handlePickProductInline}
+                                        />
+                                    ))}
+
+                                    {/* Botón + Agregar Línea */}
+                                    {activeProductSearch === null && (
+                                        <tr>
+                                            <td colSpan={showTechnicalData ? 9 : 8} className="px-3 py-2 border-t border-dashed border-slate-200">
+                                                <button
+                                                    onClick={() => setActiveProductSearch('add')}
+                                                    className="flex items-center gap-2 text-sm font-semibold text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all"
+                                                >
+                                                    <i className="fa-solid fa-plus-circle" />
+                                                    Agregar línea
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
+                    {/* Modal buscador de producto para nueva línea */}
+                    {activeProductSearch === 'add' && (
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+                            <div className="bg-white w-full max-w-3xl rounded-xl shadow-2xl flex flex-col max-h-[80vh] overflow-hidden border border-slate-200">
+                                <ProductSearchPanel
+                                    onSelect={handlePickProduct}
+                                    onCancel={() => setActiveProductSearch(null)}
+                                    isAdmin={isAdmin}
+                                    userArea={userArea}
+                                    forceArea={areaFilter !== 'TODOS' ? areaFilter : null}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Total calculado */}
+                    {!loading && (
+                        <div className="flex justify-end mt-3">
+                            <div className={`px-5 py-2 rounded-xl border font-bold font-mono text-lg shadow-sm transition-colors text-emerald-800 bg-emerald-50 border-emerald-200`}>
+                                Nuevo Total: {monedaFinal} {totalCalculadoFinal.toFixed(2)}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 border-t bg-slate-50 flex items-center justify-end shrink-0 gap-3">
+                    <button onClick={handleSave} disabled={saving || loading}
+                        className={`px-8 py-2.5 rounded-lg font-bold text-white text-sm transition-all shadow-md flex items-center gap-2
+                            ${saving ? 'bg-indigo-400 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-200 hover:scale-105 active:scale-95'}`}>
+                        {saving
+                            ? <><i className="fa-solid fa-spinner fa-spin" /> Guardando...</>
+                            : <><i className="fa-solid fa-floppy-disk" /> Guardar Cotización</>}
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
@@ -494,9 +721,10 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
                                     <tr>
                                         <th className="px-3 py-3 text-xs font-bold text-slate-400 uppercase text-center w-20">Área</th>
                                         <th className="px-3 py-3 text-xs font-bold text-slate-400 uppercase">Producto</th>
-                                        <th className="px-3 py-3 text-xs font-bold text-slate-400 uppercase">Orden</th>
                                         <th className="px-3 py-3 text-xs font-bold text-slate-400 uppercase text-right w-24">Cantidad</th>
-                                        <th className="px-2 py-3 text-xs font-bold text-slate-400 uppercase text-right w-24 line-clamp-1" title="Dato Técnico">Dato Téc.</th>
+                                        {showTechnicalData && (
+                                            <th className="px-2 py-3 text-xs font-bold text-slate-400 uppercase text-right w-24 line-clamp-1" title="Dato Técnico">Dato Téc.</th>
+                                        )}
                                         <th className="px-2 py-3 text-xs font-bold text-slate-400 uppercase text-center w-20">Moneda</th>
                                         <th className="px-2 py-3 text-xs font-bold text-slate-400 uppercase text-right w-24">Precio U.</th>
                                         <th className="px-3 py-3 text-xs font-bold text-slate-400 uppercase text-right w-24">Subtotal</th>
@@ -518,15 +746,17 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
                                             onChange={handleChange}
                                             onDelete={handleDelete}
                                             onRecalculate={handleRecalculateLine}
+                                            allProducts={allProducts}
+                                            onProductChange={handlePickProductInline}
                                         />
                                     ))}
 
                                     {/* Botón + Agregar Línea */}
-                                    {!showAddRow && (
+                                    {activeProductSearch === null && (
                                         <tr>
-                                            <td colSpan={8} className="px-3 py-2 border-t border-dashed border-slate-200">
+                                            <td colSpan={showTechnicalData ? 9 : 8} className="px-3 py-2 border-t border-dashed border-slate-200">
                                                 <button
-                                                    onClick={() => setShowAddRow(true)}
+                                                    onClick={() => setActiveProductSearch('add')}
                                                     className="flex items-center gap-2 text-sm font-semibold text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all"
                                                 >
                                                     <i className="fa-solid fa-plus-circle" />
@@ -540,14 +770,19 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
                         </div>
                     )}
 
-                    {/* Panel de búsqueda FUERA de la tabla */}
-                    {showAddRow && (
-                        <ProductSearchPanel
-                            onSelect={handlePickProduct}
-                            onCancel={() => setShowAddRow(false)}
-                            isAdmin={isAdmin}
-                            userArea={userArea}
-                        />
+                    {/* Modal buscador de producto para nueva línea */}
+                    {activeProductSearch === 'add' && (
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+                            <div className="bg-white w-full max-w-3xl rounded-xl shadow-2xl flex flex-col max-h-[80vh] overflow-hidden border border-slate-200">
+                                <ProductSearchPanel
+                                    onSelect={handlePickProduct}
+                                    onCancel={() => setActiveProductSearch(null)}
+                                    isAdmin={isAdmin}
+                                    userArea={userArea}
+                                    forceArea={areaFilter !== 'TODOS' ? areaFilter : null}
+                                />
+                            </div>
+                        </div>
                     )}
 
                     {/* Total calculado */}

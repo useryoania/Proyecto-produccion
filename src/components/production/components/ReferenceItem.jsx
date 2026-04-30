@@ -16,13 +16,14 @@ const ReferenceItem = ({ file }) => {
         if (file.link && file.link !== '#') return file.link;
         if (file.url && file.url !== '#') return file.url;
         if (file.RutaAlmacenamiento && file.RutaAlmacenamiento !== '#') return file.RutaAlmacenamiento;
+        if (file.UbicacionStorage && file.UbicacionStorage !== '#') return file.UbicacionStorage;
         return null;
     };
 
     const fileUrl = getBaseFileUrl();
     const isImage = fileUrl && fileUrl.match(/\.(jpeg|jpg|gif|png|webp|bmp)$/i);
     const isPdf = fileUrl && fileUrl.match(/\.(pdf)$/i);
-    const fileName = file.nombre || file.NombreArchivo || 'Referencia';
+    const fileName = file.nombre || file.NombreArchivo || file.NombreOriginal || 'Referencia';
 
     // Helper de descarga
     const triggerDownload = (e) => {

@@ -1,5 +1,5 @@
-const LogisticsLayout = ({ children, activeTab, setActiveTab, globalArea, setGlobalArea, areasList = [], disabled = false }) => {
-    const tabs = [
+const LogisticsLayout = ({ children, activeTab, setActiveTab, globalArea, setGlobalArea, areasList = [], disabled = false, isAreaContext = false }) => {
+    let tabs = [
         { id: 'import', label: 'Cargar Órdenes', icon: 'fa-file-import' },
         { id: 'quotation', label: 'Cotización', icon: 'fa-file-invoice-dollar' },
         { id: 'labels', label: 'Etiquetas', icon: 'fa-tags' },
@@ -10,6 +10,10 @@ const LogisticsLayout = ({ children, activeTab, setActiveTab, globalArea, setGlo
         { id: 'stock', label: 'Stock', icon: 'fa-boxes-stacked' },
         { id: 'lost', label: 'Extraviados', icon: 'fa-triangle-exclamation' }
     ];
+
+    if (isAreaContext) {
+        tabs = tabs.filter(t => !['import', 'quotation', 'labels'].includes(t.id));
+    }
 
 
     // Note: AREAS are now passed via props (areasList)

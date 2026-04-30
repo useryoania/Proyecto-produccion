@@ -14,22 +14,24 @@ import {
 import CajaArqueoModal from './CajaArqueoModal';
 import CajaVentaDirectaTab from './CajaVentaDirectaTab';
 import CajaCobroLibreTab from './CajaCobroLibreTab';
+import CajaPagoDeudaTab from './CajaPagoDeudaTab';
+import CajaOtrosIngresosTab from './CajaOtrosIngresosTab';
 import CajaPanelPago from './CajaPanelPago';
 import TicketImpresion from '../common/TicketImpresion';
 import ClienteBilletera from '../common/ClienteBilletera';
 
 const TIPOS_DOC = [
-  { value: 'ETICKET', label: 'E-Ticket (Contado/Crédito) -> 101' },
-  { value: 'FACTURA', label: 'E-Factura (Contado/Crédito) -> 111' },
-  { value: 'CREDITO', label: 'Nota de Crédito -> 112' },
-  { value: 'NOTA_CONSUMO', label: 'Pedidos Caja / Consumo Interno' },
+  { value: '07', label: 'E-Ticket Contado -> 101' },
+  { value: '08', label: 'E-Ticket Crédito -> 101' },
+  { value: '01', label: 'E-Factura Contado -> 111' },
+  { value: '02', label: 'E-Factura Crédito -> 111' },
+  { value: '05', label: 'Recibo' },
   { value: 'NINGUNO', label: 'Sin documento' },
 ];
 
 const TIPOS_DOC_EGRESO = [
-  { value: 'RECIBO',       label: 'Recibo' },
-  { value: 'ORDEN_PAGO',   label: 'Orden de Pago' },
-  { value: 'NINGUNO',      label: 'Sin documento' },
+  { value: '05', label: 'Recibo' },
+  { value: 'NINGUNO', label: 'Sin documento' },
 ];
 
 const TIPOS_AJUSTE = [
@@ -569,6 +571,7 @@ export default function CajaTransaccionView() {
                    { id:'VENTA', label:'Venta de Recursos Adelantados', icon:Plus },
                    { id:'VENTA_DIRECTA', label:'Venta Libre', icon:Tag },
                    { id:'SALDO_FAVOR', label:'Ingreso de Saldo Anticipado', icon:Wallet },
+                   { id:'OTROS_INGRESOS', label:'Otros Ingresos', icon:ArrowDownCircle },
                    { id:'PAGO_DEUDAS', label:'Pago de Deudas', icon:FileMinus },
                    { id:'AUTORIZAR', label:'Autorizar Entrega', icon:ShieldCheck }
                 ].map(st => (
@@ -896,6 +899,7 @@ export default function CajaTransaccionView() {
                      sesion={sesion}
                      metodosPago={metodosPago}
                      cotizacion={cotizacion}
+                     tiposDocDisponibles={tiposDocumentos.length > 0 ? tiposDocumentos : TIPOS_DOC}
                      onCobroCompletado={(res) => {
                        const tick = {
                          title: 'RECIBO DE CAJA / POS',
@@ -912,20 +916,29 @@ export default function CajaTransaccionView() {
                        setTimeout(() => { if (ticketRef.current) window.print(); }, 300);
                      }}
                   />
+                 )}
+                {/* --- SUBTAB OTROS INGRESOS --- */}
+                {subTabIngreso === 'OTROS_INGRESOS' && (
+                  <CajaOtrosIngresosTab
+                    sesion={sesion}
+                    metodosPago={metodosPago}
+                    cotizacion={cotizacion}
+                    tiposDocDisponibles={tiposDocumentos.length > 0 ? tiposDocumentos : TIPOS_DOC}
+                    onCobroCompletado={() => {
+                       recargarData();
+                       cargarUltimosMovimientos();
+                    }}
+                  />
                 )}
                 {/* --- SUBTAB PAGO DE DEUDAS --- */}
                 {subTabIngreso === 'PAGO_DEUDAS' && (
-                  <div className="flex-1 flex items-center justify-center bg-slate-50 min-h-0 overflow-hidden p-10">
-                      <div className="text-center max-w-lg">
-                          <div className="bg-indigo-100 text-indigo-600 p-4 rounded-full inline-block mb-4 shadow-sm">
-                              <FileMinus size={48} />
-                          </div>
-                          <h3 className="text-2xl font-black text-slate-800 mb-2">Pago de Deudas</h3>
-                          <p className="text-slate-500 font-medium leading-relaxed">
-                              Esta funci�n se est� preparando para liquidar deudas desde caja.
-                          </p>
-                      </div>
-                  </div>
+                  <CajaPagoDeudaTab
+                    sesion={sesion}
+                    metodosPago={metodosPago}
+                    cotizacion={cotizacion}
+                    tiposDocDisponibles={tiposDocumentos.length > 0 ? tiposDocumentos : TIPOS_DOC}
+                    onPagoCompletado={() => { fetchRetiros(); }}
+                  />
                 )}
                 {/* --- SUBTAB MOTOR (Reglas Manuales) --- */}
                 {subTabIngreso === 'MOTOR' && (
@@ -1244,7 +1257,7 @@ export default function CajaTransaccionView() {
                        onConfirmar: handleRealizarCobro,
                        procesando: procesandoCobro,
                        disabledExtra: seleccionados.length === 0 || !cobroBalanceado
-                    } : subTabIngreso === 'VENTA' ? {
+                    } : (subTabIngreso === 'VENTA' || subTabIngreso === 'VENTA_DIRECTA') ? {
                        totalACubrir: ventaTotalACubrir,
                        moneda: ventaMoneda,
                        cotizacion: cotizacion,
@@ -1551,6 +1564,7 @@ export default function CajaTransaccionView() {
     </>
   );
 }
+
 
 
 

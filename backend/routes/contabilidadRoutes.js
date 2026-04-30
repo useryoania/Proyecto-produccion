@@ -14,6 +14,7 @@ router.get('/metodos-pago', ctrl.getMetodosPago);
 router.get('/condiciones-pago', ctrl.getCondicionesPago);
 router.get('/cotizacion-hoy', ctrl.getCotizacionHoy);
 router.get('/clientes-activos', ctrl.getClientesActivos);
+router.get('/deudas-vivas', ctrl.getTodasLasDeudasVivas);
 router.get('/clientes/:CliIdCliente/deudas-vivas', ctrl.getDeudasVivasCliente);
 router.get('/cuentas/:CliIdCliente', ctrl.getCuentasCliente);
 router.post('/cuentas', ctrl.crearCuenta);
@@ -68,11 +69,13 @@ router.get('/erp/libro-mayor',    erp.getLibroMayor);
 // Transacciones
 router.post('/caja/transaccion',              caja.procesarTransaccion);
 router.post('/caja/venta-directa',            caja.procesarVentaDirecta); // NUEVO
+router.post('/caja/pago-deuda',               caja.procesarPagoDeuda);    // Pago de deudas por cuenta corriente
 router.get('/caja/productos-venta',           caja.getProductosVenta); // NUEVO
 router.post('/caja/transaccion/:id/anular',   caja.anularTransaccion);
 router.get('/caja/transaccion/:id',           caja.getTransaccion);
 router.get('/caja/historial/:clienteId',      caja.getHistorialCliente);
 router.get('/caja/movimientos-turno',         caja.getMovimientosTurno);
+
 
 // Sesión de caja (apertura / cierre)
 router.get('/caja/sesion/actual',             caja.getSesionActual);
@@ -89,8 +92,9 @@ router.get('/caja/secuencias',                secCtrl.getSecuencias);
 router.post('/caja/secuencias',               secCtrl.createSecuencia);
 router.put('/caja/secuencias/:id',            secCtrl.updateSecuencia);
 
-// Egresos
+// Egresos e Ingresos
 router.post('/caja/egreso',                   caja.registrarEgreso);
+router.post('/caja/ingreso-generico',         caja.registrarIngresoGenerico);
 
 // Autorizaciones sin pago
 router.post('/caja/autorizar',                caja.autorizarSinPago);

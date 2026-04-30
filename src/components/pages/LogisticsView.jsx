@@ -27,19 +27,8 @@ const LogisticsView = ({ areaCode }) => {
     useEffect(() => {
         if (user) {
             const userArea = areaCode || user.areaKey || user.areaId;
-            if (userArea && AREAS.includes(userArea)) {
-                setGlobalArea(userArea);
-            } else if (userArea) {
-                // If user area not in list but exists, add it or strict filter? 
-                // Let's rely on 'TODOS' for Admins or unknown areas, but try to set it.
-                // If we want to force user to see only their area, we might disable the filter.
-                // Assuming Admin/Supervisor usage for now based on request.
-                // If user is basic user, they might not see the dropdown or it's locked.
-                if (user.rol === 'ADMIN' || user.rol === 'SUPERVISOR') {
-                    // Keep TODOS default or set specific?
-                } else {
-                    setGlobalArea(userArea);
-                }
+            if (userArea) {
+                setGlobalArea(userArea.toUpperCase());
             }
         }
     }, [user, areaCode]);
@@ -483,7 +472,7 @@ const LogisticsView = ({ areaCode }) => {
                 <div className="fixed inset-0 z-50 bg-white overflow-auto">
                     <ReceptionView
                         onClose={() => setViewMode('DASHBOARD')}
-                        areaContext={areaCode || user?.areaId}
+                        areaContext={globalArea}
                     />
                 </div>
             )}
@@ -507,7 +496,7 @@ const LogisticsView = ({ areaCode }) => {
             <DispatchHistoryModal
                 isOpen={isHistoryOpen}
                 onClose={() => setIsHistoryOpen(false)}
-                areaId={areaCode || user?.areaId}
+                areaId={globalArea}
             />
         </div>
     );

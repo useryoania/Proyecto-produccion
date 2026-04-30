@@ -14,14 +14,27 @@ const procesarTransaccion = async (req, res) => {
   const usuarioId = req.user?.id || 70;
   try {
     const { header, aplicaciones, pagos } = req.body;
-    if (!header || !aplicaciones?.length || !pagos?.length)
-      return res.status(400).json({ success:false, error:'Faltan header, aplicaciones o pagos.' });
+    if (!header || !aplicaciones?.length)
+      return res.status(400).json({ success:false, error:'Faltan header o aplicaciones.' });
+
+    const pool = await getPool();
+
+    // Validar tipo de documento
+    let esCredito = false;
     if (header.tipoDocumento && header.tipoDocumento !== 'NINGUNO') {
-      const pool = await getPool();
-      const rTipo = await pool.request().input('d', sql.VarChar(10), header.tipoDocumento).query('SELECT 1 FROM Config_TiposDocumento WHERE CodDocumento = @d');
-      if (!rTipo.recordset.length) return res.status(400).json({ success:false, error:'tipoDocumento inválido.' });
+      const rTipo = await pool.request()
+        .input('d', sql.VarChar(10), header.tipoDocumento)
+        .query('SELECT AfectaCtaCte FROM Config_TiposDocumento WHERE CodDocumento = @d');
+      if (!rTipo.recordset.length)
+        return res.status(400).json({ success:false, error:'tipoDocumento inválido.' });
+      esCredito = rTipo.recordset[0].AfectaCtaCte === true;
     }
-    const resultado = await cajaService.procesarTransaccion({ header, aplicaciones, pagos, usuarioId });
+
+    // Pagos son obligatorios SOLO si NO es un documento de crédito
+    if (!esCredito && (!pagos || pagos.length === 0))
+      return res.status(400).json({ success:false, error:'Debe incluir al menos un método de pago para documentos de contado.' });
+
+    const resultado = await cajaService.procesarTransaccion({ header, aplicaciones, pagos: pagos || [], usuarioId });
     const s = io(req); if (s) { s.emit('actualizado',{type:'actualizacion'}); s.emit('retiros:update',{type:'pago'}); }
     return res.status(201).json(resultado);
   } catch (err) {
@@ -401,6 +414,145 @@ const registrarEgreso = async (req, res) => {
   }
 };
 
+// ─── OTROS INGRESOS (GENÉRICO) ──────────────────────────────────────────────
+
+const registrarIngresoGenerico = async (req, res) => {
+  const usuarioId = req.user?.id || 70;
+  const { stuIdSesion, concepto, monto, moneda='UYU', monedaId=1,
+          cotizacion, metodoPagoId, tipoDocumento, serieDoc, numeroDoc, observaciones } = req.body;
+  if (!concepto || !monto || !metodoPagoId) return res.status(400).json({ success:false, error:'Concepto, monto y método son obligatorios.' });
+  
+  const montoNum  = parseFloat(monto);
+  const cotNum    = parseFloat(cotizacion) || null;
+  const convertido = (moneda === 'USD' && cotNum) ? montoNum * cotNum : montoNum;
+  
+  const pool = await getPool();
+  const transaction = pool.transaction();
+  
+  try {
+    await transaction.begin();
+
+    let numeroDocFinal = numeroDoc || null;
+    if (tipoDocumento && tipoDocumento !== 'NINGUNO' && !numeroDoc) {
+      try {
+        const seqR = await transaction.request()
+          .input('CodDoc', sql.VarChar(10), tipoDocumento)
+          .input('Serie',  sql.VarChar(5),  serieDoc || 'A')
+          .query(`
+            DECLARE @SecId INT;
+            SELECT @SecId = s.SecIdSecuencia
+            FROM Config_TiposDocumento c
+            JOIN SecuenciaDocumentos s ON c.SecIdSecuencia = s.SecIdSecuencia
+            WHERE c.CodDocumento = @CodDoc AND s.SecSerie = @Serie AND s.SecActivo = 1;
+
+            IF @SecId IS NOT NULL
+            BEGIN
+              UPDATE SecuenciaDocumentos
+              SET SecUltimoNumero = SecUltimoNumero + 1
+              OUTPUT 
+                ISNULL(INSERTED.SecPrefijo,'') + 
+                RIGHT(REPLICATE('0', INSERTED.SecDigitos) + CAST(INSERTED.SecUltimoNumero AS VARCHAR(10)), INSERTED.SecDigitos) AS NumeroFormato
+              WHERE SecIdSecuencia = @SecId;
+            END
+          `);
+        if (seqR.recordset && seqR.recordset.length) {
+            numeroDocFinal = seqR.recordset[0].NumeroFormato;
+        }
+      } catch (errSeq) { logger.error('Error seq ingreso generico:', errSeq.message); }
+    }
+
+    // Buscar cliente consumidor final o por defecto
+    const rCli = await transaction.request().query(`
+      SELECT TOP 1 CliIdCliente FROM dbo.Clientes 
+      WHERE Nombre LIKE '%Consumidor%' OR Nombre LIKE '%Final%' OR CodCliente = '0' OR CliIdCliente = 2089
+    `);
+    const clientePorDefecto = rCli.recordset.length > 0 ? rCli.recordset[0].CliIdCliente : 1;
+
+    // Insertar TransaccionesCaja
+    const tcaRes = await transaction.request()
+      .input('StuIdSesion',      sql.Int,           stuIdSesion   || null)
+      .input('TcaUsuarioId',     sql.Int,           usuarioId)
+      .input('TcaClienteId',     sql.Int,           clientePorDefecto)
+      .input('TcaTipoDoc',       sql.VarChar(20),   tipoDocumento || 'OTROS_INGRESOS')
+      .input('TcaSerieDoc',      sql.VarChar(5),    serieDoc      || 'A')
+      .input('TcaNumeroDoc',     sql.VarChar(20),   numeroDocFinal || 'S/N')
+      .input('TcaBruto',         sql.Decimal(18,4), montoNum)
+      .input('TcaNeto',          sql.Decimal(18,4), montoNum)
+      .input('TcaCobrado',       sql.Decimal(18,4), montoNum)
+      .input('TcaMonedaBase',    sql.VarChar(10),   moneda)
+      .input('TcaObservaciones', sql.NVarChar(300), observaciones || concepto)
+      .query(`
+        INSERT INTO dbo.TransaccionesCaja
+          (StuIdSesion, TcaFecha, TcaUsuarioId, TcaClienteId, TcaTipoDocumento, TcaSerieDoc, TcaNumeroDoc,
+           TcaTotalBruto, TcaTotalAjuste, TcaTotalNeto, TcaTotalCobrado, TcaMonedaBase, TcaEstado, TcaObservaciones)
+        OUTPUT INSERTED.TcaIdTransaccion
+        VALUES
+          (@StuIdSesion, GETDATE(), @TcaUsuarioId, @TcaClienteId, @TcaTipoDoc, @TcaSerieDoc, @TcaNumeroDoc,
+           @TcaBruto, 0, @TcaNeto, @TcaCobrado, @TcaMonedaBase, 'COBRADO', @TcaObservaciones)
+      `);
+    const tcaId = tcaRes.recordset[0].TcaIdTransaccion;
+
+    // Insertar en Pagos
+    await transaction.request()
+      .input('tcaId',   sql.Int,           tcaId)
+      .input('metodo',  sql.Int,           parseInt(metodoPagoId, 10))
+      .input('moneda',  sql.Int,           parseInt(monedaId, 10) || 1)
+      .input('monto',   sql.Decimal(18,4), montoNum)
+      .input('cot',     sql.Decimal(18,4), cotNum || 1)
+      .input('convert', sql.Decimal(18,4), convertido)
+      .input('usuario', sql.Int,           usuarioId)
+      .query(`
+        INSERT INTO dbo.Pagos
+          (PagTcaIdTransaccion, MPaIdMetodoPago, PagIdMonedaPago,
+           PagMontoPago, PagFechaPago, PagUsuarioAlta, PagCotizacion,
+           PagMontoConvertido, PagTipoMovimiento)
+        VALUES
+          (@tcaId, @metodo, @moneda,
+           @monto, GETDATE(), @usuario, @cot,
+           @convert, 'COBRO')
+      `);
+
+    // Asiento contable
+    const lineasContables = [];
+    // 1. Débito a Caja
+    lineasContables.push({
+      codigoCuenta: moneda === 'USD' ? contabilidadCore.CUENTAS.CAJA_USD : contabilidadCore.CUENTAS.CAJA_UYU,
+      debeBase: montoNum,
+      haberBase: 0,
+      monedaId: moneda === 'USD' ? 2 : 1,
+      cotizacion: cotNum || 1
+    });
+
+    // 2. Crédito a Ingresos Varios (usamos la default de ingresos)
+    lineasContables.push({
+      codigoCuenta: contabilidadCore.CUENTAS.VENTA_SERV,
+      debeBase: 0,
+      haberBase: montoNum,
+      monedaId: moneda === 'USD' ? 2 : 1,
+      cotizacion: cotNum || 1,
+      entidadTipo: 'NINGUNO'
+    });
+
+    await contabilidadCore.generarAsientoCompleto({
+      concepto: `Ingreso Genérico: ${concepto}`,
+      usuarioId,
+      tcaIdTransaccion: tcaId,
+      origen: 'CAJA_INGRESOS',
+      lineas: lineasContables
+    }, transaction);
+
+    await transaction.commit();
+
+    logger.info(`[CAJA-ERP] Ingreso Genérico Registrado ID=${tcaId} Monto=${montoNum} ${moneda}`);
+    const s = io(req); if (s) s.emit('actualizado', { type: 'caja-ingreso' });
+    return res.status(201).json({ success:true, tcaId, numeroDoc:numeroDocFinal });
+  } catch (err) {
+    try { await transaction.rollback(); } catch (_) {}
+    logger.error('[CAJA-ERP] registrarIngresoGenerico Error:', err.message);
+    return res.status(500).json({ success:false, error:err.message });
+  }
+};
+
 // ─── AUTORIZACIÓN SIN PAGO ───────────────────────────────────────────────────
 
 /** POST /api/contabilidad/caja/autorizar */
@@ -613,19 +765,176 @@ const registrarOperacionManual = async (req, res) => {
   }
 };
 
+
+// ─── PAGO DE DEUDAS DESDE CAJA ───────────────────────────────────────────────
+// POST /caja/pago-deuda
+// Recibe: { header, aplicaciones: [{ddeId, descripcion, montoOriginal}], pagos: [...] }
+// 1. Registra los pagos en la caja (MovimientosCaja)
+// 2. Imputa contra cada DeudaDocumento seleccionada (actualiza DDeImportePendiente / DDeEstado)
+// 3. Registra movimientos en libro mayor (MovimientosCuenta)
+const procesarPagoDeuda = async (req, res) => {
+  const usuarioId = req.user?.id || 70;
+  try {
+    const { header, aplicaciones, pagos } = req.body;
+    if (!header?.clienteId) return res.status(400).json({ error: 'clienteId es requerido.' });
+    if (!aplicaciones?.length) return res.status(400).json({ error: 'Debe seleccionar al menos una deuda.' });
+    if (!pagos?.length) return res.status(400).json({ error: 'Debe incluir al menos un método de pago.' });
+
+    const pool = await getPool();
+    const transaction = pool.transaction();
+    await transaction.begin();
+
+    let totalImputado = 0;
+
+    try {
+      // ── 1. Por cada deuda seleccionada, actualizar DeudaDocumento ──────────
+      for (const ap of aplicaciones) {
+        const { ddeId, montoOriginal } = ap;
+        if (!ddeId || !montoOriginal) continue;
+
+        // Leer estado actual de la deuda (con UPDLOCK para evitar doble imputación)
+        const ddeRes = await transaction.request()
+          .input('ddeId', sql.Int, ddeId)
+          .query(`
+            SELECT DDeImportePendiente, DDeEstado, CueIdCuenta
+            FROM dbo.DeudaDocumento WITH (UPDLOCK, ROWLOCK)
+            WHERE DDeIdDocumento = @ddeId
+          `);
+
+        if (!ddeRes.recordset.length) {
+          logger.warn(`[PAGO-DEUDA] DeudaDocumento #${ddeId} no encontrada — saltada.`);
+          continue;
+        }
+
+        const dde = ddeRes.recordset[0];
+        const pendienteActual = Number(dde.DDeImportePendiente);
+        const montoAplicar = Math.min(montoOriginal, pendienteActual);
+        const nuevoPendiente = Math.max(0, pendienteActual - montoAplicar);
+        const nuevoEstado = nuevoPendiente < 0.01 ? 'COBRADO' : 'PARCIAL';
+
+        await transaction.request()
+          .input('ddeId',    sql.Int,          ddeId)
+          .input('pend',     sql.Decimal(18,4), nuevoPendiente)
+          .input('estado',   sql.VarChar(20),  nuevoEstado)
+          .query(`
+            UPDATE dbo.DeudaDocumento
+            SET DDeImportePendiente = @pend,
+                DDeEstado           = @estado,
+                DDeFechaCobro       = CASE WHEN @estado = 'COBRADO' THEN GETDATE() ELSE DDeFechaCobro END
+            WHERE DDeIdDocumento = @ddeId
+          `);
+
+        // ── 2. Registrar movimiento en libro mayor ──────────────────────────
+        // Importe positivo = Haber (pago/abono reduce la deuda)
+        await contabilidadSvc.registrarMovimiento({
+          CueIdCuenta:    dde.CueIdCuenta,
+          MovTipo:        'PAGO',
+          MovConcepto:    `Pago deuda — ${ap.descripcion || 'Deuda #' + ddeId}`,
+          MovImporte:     montoAplicar,   // positivo = Haber
+          MovUsuarioAlta: usuarioId,
+          MovObservaciones: `DeudaDoc #${ddeId} — Pagado: ${montoAplicar} — Pendiente restante: ${nuevoPendiente}`,
+        });
+
+        totalImputado += montoAplicar;
+      }
+
+      // ── 3. Crear TransaccionesCaja + Pagos (registro de caja real) ──────
+      // Obtener sesión activa si no viene en el header
+      let sesionId = header.sesionId || null;
+      if (!sesionId) {
+        const sesRes = await transaction.request()
+          .input('uid', sql.Int, usuarioId)
+          .query(`SELECT TOP 1 StuIdSesion FROM dbo.SesionesTurno WHERE StuEstado='ABIERTA' ORDER BY StuFechaApertura DESC`);
+        if (sesRes.recordset.length) sesionId = sesRes.recordset[0].StuIdSesion;
+      }
+
+      // Número de documento correlativo para PAGO_DEUDA
+      const nDocRes = await transaction.request()
+        .query(`SELECT ISNULL(MAX(TcaNumeroDoc),0)+1 AS Siguiente FROM dbo.TransaccionesCaja WHERE TcaTipoDocumento='PAGO_DEUDA'`);
+      const proxNum = String(nDocRes.recordset[0].Siguiente);
+
+      const tcaRes = await transaction.request()
+        .input('sesId',    sql.Int,          sesionId)
+        .input('usuario',  sql.Int,          usuarioId)
+        .input('cliente',  sql.Int,          header.clienteId)
+        .input('tipo',     sql.VarChar(20),  'PAGO_DEUDA')
+        .input('serie',    sql.VarChar(10),  header.serieDoc || 'A')
+        .input('num',      sql.VarChar(20),  proxNum)
+        .input('neto',     sql.Decimal(18,4), totalImputado)
+        .input('obs',      sql.VarChar(500), header.observaciones || 'Pago de deuda cuenta corriente')
+        .query(`
+          INSERT INTO dbo.TransaccionesCaja
+            (StuIdSesion, TcaUsuarioId, TcaClienteId, TcaFecha,
+             TcaTipoDocumento, TcaSerieDoc, TcaNumeroDoc, TcaEstado,
+             TcaTotalBruto, TcaTotalAjuste, TcaTotalNeto, TcaTotalCobrado, TcaObservaciones)
+          OUTPUT INSERTED.TcaIdTransaccion
+          VALUES
+            (@sesId, @usuario, @cliente, GETDATE(),
+             @tipo, @serie, @num, 'COBRADO',
+             @neto, 0, @neto, @neto, @obs)
+        `);
+      const tcaIdPago = tcaRes.recordset[0].TcaIdTransaccion;
+
+      for (const p of pagos) {
+        if (!p.metodoPagoId || !p.montoOriginal) continue;
+        await transaction.request()
+          .input('tcaId',   sql.Int,          tcaIdPago)
+          .input('metodo',  sql.Int,          parseInt(p.metodoPagoId, 10))
+          .input('moneda',  sql.Int,          parseInt(p.monedaId, 10) || 1)
+          .input('monto',   sql.Decimal(18,4), Number(p.montoOriginal))
+          .input('cot',     sql.Decimal(18,4), Number(p.cotizacion) || 1)
+          .input('usuario', sql.Int,          usuarioId)
+          .query(`
+            INSERT INTO dbo.Pagos
+              (PagTcaIdTransaccion, MPaIdMetodoPago, PagIdMonedaPago,
+               PagMontoPago, PagFechaPago, PagUsuarioAlta, PagCotizacion,
+               PagMontoConvertido, PagTipoMovimiento)
+            VALUES
+              (@tcaId, @metodo, @moneda,
+               @monto, GETDATE(), @usuario, @cot,
+               @monto, 'COBRO')
+          `);
+      }
+
+
+      await transaction.commit();
+      logger.info(`[PAGO-DEUDA] Cli=${header.clienteId} — ${aplicaciones.length} deuda(s) — Total: ${totalImputado}`);
+
+      const s = io(req); if (s) s.emit('actualizado', { type: 'pago-deuda' });
+
+      return res.status(201).json({
+        success: true,
+        totalImputado,
+        deudasCanceladas: aplicaciones.length,
+        message: `Pago registrado: $ ${totalImputado.toFixed(2)} imputado en ${aplicaciones.length} deuda(s).`,
+      });
+
+    } catch (errTx) {
+      await transaction.rollback();
+      throw errTx;
+    }
+  } catch (err) {
+    logger.error('[PAGO-DEUDA]', err.message);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
 // ─── EXPORTS ─────────────────────────────────────────────────────────────────
 module.exports = {
   // Transacciones
-  procesarTransaccion, procesarVentaDirecta, getProductosVenta, anularTransaccion, getTransaccion, getHistorialCliente,
+  procesarTransaccion, procesarVentaDirecta, procesarPagoDeuda, getProductosVenta, anularTransaccion, getTransaccion, getHistorialCliente,
   // Sesión de caja
   getSesionActual, abrirSesion, cerrarSesion, getResumenSesion, getMovimientosTurno,
   // Numeración
   getSiguienteNumero, getSecuencias,
-  // Egresos
-  registrarEgreso,
+  // Egresos e Ingresos
+  registrarEgreso, registrarIngresoGenerico,
   // Autorizaciones
   autorizarSinPago,
   // Motor: Operación Manual
   registrarOperacionManual,
 };
+
+
+
 

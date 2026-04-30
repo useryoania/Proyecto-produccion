@@ -27,16 +27,17 @@ const DepositStockPage = React.lazy(() =>
     })
 );
 
-const LogisticsDashboard = () => {
+const LogisticsDashboard = ({ areaCode }) => {
     const { user } = useAuth();
     const isAdmin = user?.rol?.toLowerCase() === 'admin';
     const isDeposito = user?.areaKey?.trim().toUpperCase() === 'DEPOSITO';
     const hasFullAccess = isAdmin || isDeposito;
-    const [activeTab, setActiveTab] = useState('import');
+    const isAreaContext = !!areaCode;
+    const [activeTab, setActiveTab] = useState(isAreaContext ? 'dispatch' : 'import');
 
     // Global Area Filter
-    const [globalArea, setGlobalArea] = useState('TODOS');
-    const [areasList, setAreasList] = useState(['TODOS']);
+    const [globalArea, setGlobalArea] = useState(areaCode || 'TODOS');
+    const [areasList, setAreasList] = useState(areaCode ? [areaCode] : ['TODOS']);
 
     // 1. Fetch Dynamic Areas
     useEffect(() => {
@@ -50,7 +51,11 @@ const LogisticsDashboard = () => {
                     .sort();
 
                 // FILTER: Only ADMIN or DEPOSITO sees ALL/TODOS. Others see only their area.
-                if (!hasFullAccess && user) {
+                if (isAreaContext) {
+                    logisticsAreas = [areaCode];
+                    setAreasList([areaCode]);
+                    setGlobalArea(areaCode);
+                } else if (!hasFullAccess && user) {
                     const userArea = (user.areaKey || user.areaId || '').trim();
                     if (userArea) {
                         // Filter to match user area
@@ -146,7 +151,8 @@ const LogisticsDashboard = () => {
             globalArea={globalArea}
             setGlobalArea={setGlobalArea}
             areasList={areasList}
-            disabled={!hasFullAccess}
+            disabled={!hasFullAccess && !isAreaContext}
+            isAreaContext={isAreaContext}
         >
             {renderContent()}
         </LogisticsLayout>

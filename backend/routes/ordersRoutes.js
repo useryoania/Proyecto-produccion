@@ -18,6 +18,7 @@ router.post('/search/advanced', ordersController.advancedSearchOrders); // TODO:
 router.get('/details/:id', ordersController.getOrderFullDetails); // También liberamos detalles para prueba
 router.get('/search/integral/:ref', ordersController.getIntegralPedidoDetailsV2); // Nueva Ruta Integral (Version SQL SP)
 router.get('/priorities', ordersController.getPrioritiesConfig);
+router.get('/estados', ordersController.getEstadosConfig);
 
 // Ruta para el resumen de la ActiveOrdersCard.jsx (Protegida)
 router.get('/active', verifyToken, authorizeAdminOrArea, ordersController.getActiveOrdersSummary);

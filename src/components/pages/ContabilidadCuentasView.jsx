@@ -451,36 +451,61 @@ const MovimientosPanel = ({ CueIdCuenta, simbolo = '$', onClose }) => {
                 <th className="px-4 py-2">Tipo</th>
                 <th className="px-4 py-2">Concepto</th>
                 <th className="px-4 py-2 text-right">Saldo In.</th>
-                <th className="px-4 py-2 text-right">Importe</th>
+                <th className="px-4 py-2 text-right bg-red-50 text-red-600">Debe</th>
+                <th className="px-4 py-2 text-right bg-green-50 text-green-600">Haber</th>
                 <th className="px-4 py-2 text-right">Saldo Fn.</th>
                 <th className="px-4 py-2 text-center w-10"></th>
               </tr>
             </thead>
             <tbody>
-              {movs.map(m => (
-                <tr key={m.MovIdMovimiento} className="border-b border-slate-200 hover:bg-indigo-50/30 transition-colors">
-                  <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
-                  <td className="px-4 py-2"><span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{m.MovTipo}</span></td>
-                  <td className="px-4 py-2 text-slate-600 max-w-xs" title={m.MovConcepto}><span className="block truncate text-xs font-medium">{m.MovConcepto || '—'}</span></td>
-                  <td className="px-4 py-2 text-right text-slate-500 font-medium"><span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(Number(m.MovSaldoPosterior) - Number(m.MovImporte))}</td>
-                  <td className={`px-4 py-2 text-right font-semibold ${esCredito(m) ? 'text-green-600' : 'text-red-600'}`}>
-                    <span className="flex items-center justify-end gap-0.5">
-                      {esCredito(m) ? <ArrowUpCircle size={10} /> : <ArrowDownCircle size={10} />}
+              {movs.map(m => {
+                const importe = Number(m.MovImporte);
+                const esHaber = importe > 0;  // positivo = Haber (pago/abono)
+                const esDebe  = importe < 0;  // negativo = Debe (cargo/deuda)
+                return (
+                  <tr key={m.MovIdMovimiento} className="border-b border-slate-200 hover:bg-indigo-50/30 transition-colors">
+                    <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
+                    <td className="px-4 py-2"><span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{m.MovTipo}</span></td>
+                    <td className="px-4 py-2 text-slate-600 max-w-xs" title={m.MovConcepto}><span className="block truncate text-xs font-medium">{m.MovConcepto || '—'}</span></td>
+                    <td className="px-4 py-2 text-right text-slate-500 font-medium">
                       <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>
-                      {fmtNum(Math.abs(Number(m.MovImporte)))}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2 text-right text-slate-800 font-bold"><span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(Number(m.MovSaldoPosterior))}</td>
-                  <td className="px-4 py-2 text-center">
-                    {(m.MovTipo === 'PAGO' || m.MovTipo === 'ANTICIPO' || m.MovTipo === 'COBRO' || m.MovTipo === 'SALDO_INICIAL') && (
-                      <button onClick={(e) => handleDescargarRecibo(e, m)} title="Descargar Recibo" className="inline-flex p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                        <Download size={14} />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {movs.length === 0 && <tr><td colSpan={7} className="text-center py-6 text-slate-500">Sin movimientos</td></tr>}
+                      {fmtNum(Number(m.MovSaldoPosterior) - importe)}
+                    </td>
+                    {/* DEBE: cargos / deudas (importe negativo) */}
+                    <td className="px-4 py-2 text-right bg-red-50/40">
+                      {esDebe ? (
+                        <span className="flex items-center justify-end gap-0.5 font-semibold text-red-600">
+                          <ArrowDownCircle size={10} />
+                          <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>
+                          {fmtNum(Math.abs(importe))}
+                        </span>
+                      ) : <span className="text-slate-200">—</span>}
+                    </td>
+                    {/* HABER: abonos / pagos (importe positivo) */}
+                    <td className="px-4 py-2 text-right bg-green-50/40">
+                      {esHaber ? (
+                        <span className="flex items-center justify-end gap-0.5 font-semibold text-green-600">
+                          <ArrowUpCircle size={10} />
+                          <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>
+                          {fmtNum(importe)}
+                        </span>
+                      ) : <span className="text-slate-200">—</span>}
+                    </td>
+                    <td className="px-4 py-2 text-right text-slate-800 font-bold">
+                      <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>
+                      {fmtNum(Number(m.MovSaldoPosterior))}
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      {(m.MovTipo === 'PAGO' || m.MovTipo === 'ANTICIPO' || m.MovTipo === 'COBRO' || m.MovTipo === 'SALDO_INICIAL') && (
+                        <button onClick={(e) => handleDescargarRecibo(e, m)} title="Descargar Recibo" className="inline-flex p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                          <Download size={14} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {movs.length === 0 && <tr><td colSpan={8} className="text-center py-6 text-slate-500">Sin movimientos</td></tr>}
             </tbody>
           </table>
         </div>

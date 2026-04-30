@@ -400,6 +400,20 @@ exports.getDeudasVivasCliente = async (req, res) => {
   }
 };
 
+/**
+ * GET /api/contabilidad/deudas-vivas
+ * Devuelve todos los documentos con saldo pendiente de TODOS los clientes.
+ */
+exports.getTodasLasDeudasVivas = async (req, res) => {
+  try {
+    const deudas = await svc.getTodasLasDeudasVivas();
+    res.json({ success: true, data: deudas });
+  } catch (err) {
+    logger.error('[CONTABILIDAD] getTodasLasDeudasVivas:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
 // ============================================================
 // SECCIÓN 4: CONDICIONES DE PAGO
 // ============================================================

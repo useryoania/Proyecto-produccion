@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import ClienteBilletera from '../common/ClienteBilletera';
 import CajaPanelPago from './CajaPanelPago';
 
-export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPago, cotizacion }) {
+export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPago, cotizacion, tiposDocDisponibles = [] }) {
   const [qCliente, setQCliente] = useState('');
   const [buscandoCli, setBuscandoCli] = useState(false);
   const [clientesRes, setClientesRes] = useState([]);
@@ -17,9 +17,10 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
   
   const [pagos, setPagos] = useState([{ id: Date.now(), metodoPagoId: '', moneda: 'UYU', monedaId: 1, monto: '' }]);
   const [observaciones, setObservaciones] = useState('');
-  const [tipoDoc, setTipoDoc] = useState('ETICKET');
+  const [tipoDoc, setTipoDoc] = useState('');
   const [serieDoc, setSerieDoc] = useState('A');
   const [procesando, setProcesando] = useState(false);
+  const [numDocPredict, setNumDocPredict] = useState('');
 
   // Focus and search variables
   const searchTimeout = useRef(null);
@@ -35,6 +36,13 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
     }
   }, [metodosPago]);
 
+  // Auto-seleccionar el primer tipo de documento disponible
+  useEffect(() => {
+    if (tiposDocDisponibles.length > 0 && !tipoDoc) {
+      setTipoDoc(tiposDocDisponibles[0].value);
+    }
+  }, [tiposDocDisponibles]);
+
   useEffect(() => {
     if (!qCliente.trim()) { setClientesRes([]); return; }
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
@@ -47,8 +55,22 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
       finally { setBuscandoCli(false); }
     }, 400);
   }, [qCliente]);
+  
+  useEffect(() => {
+    if (tipoDoc && tipoDoc !== 'NINGUNO') {
+      setNumDocPredict('...');
+      api.get(`/contabilidad/caja/siguiente-numero?tipoDoc=${tipoDoc}&serie=${serieDoc}`)
+        .then(r => { if(r.data.success) setNumDocPredict(r.data.NumeroFormato); })
+        .catch(() => setNumDocPredict('?'));
+    } else {
+      setNumDocPredict('Sin Número');
+    }
+  }, [tipoDoc, serieDoc]);
 
   const importeTotal = parseFloat(importe) || 0;
+
+  // Detectar si el tipo de documento seleccionado es a crédito (AfectaCtaCte)
+  const esCredito = tiposDocDisponibles.find(t => t.value === tipoDoc)?.AfectaCtaCte === true;
 
   const handleProcesar = async () => {
     if (!clienteSel) return toast.warning('Debe seleccionar un cliente.');
@@ -56,18 +78,20 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
     if (importeTotal <= 0) return toast.warning('El importe debe ser mayor a 0.');
     
     const pagosValidos = pagos.filter(p => parseFloat(p.monto) > 0 && p.metodoPagoId);
-    if (pagosValidos.length === 0) return toast.warning('Debe ingresar al menos un método de pago.');
 
-    const totalIngresado = pagosValidos.reduce((acc, p) => {
-      const m = parseFloat(p.monto) || 0;
-      if (moneda === 'UYU') return acc + (p.moneda === 'USD' ? m * (cotizacion || 1) : m);
-      return acc + (p.moneda === 'UYU' ? m / (cotizacion || 1) : m);
-    }, 0);
-
-    const diferencia = importeTotal - totalIngresado;
-    const tolerancia = moneda === 'USD' ? 0.05 : 1.0;
-    if (diferencia > tolerancia) {
-      return toast.warning(`Falta cubrir el saldo total (${moneda === 'USD' ? 'U$' : '$'} ${diferencia.toFixed(2)}). Puede presionar 'Completar Saldo'.`);
+    // Si NO es crédito, se exige pago
+    if (!esCredito) {
+      if (pagosValidos.length === 0) return toast.warning('Debe ingresar al menos un método de pago.');
+      const totalIngresado = pagosValidos.reduce((acc, p) => {
+        const m = parseFloat(p.monto) || 0;
+        if (moneda === 'UYU') return acc + (p.moneda === 'USD' ? m * (cotizacion || 1) : m);
+        return acc + (p.moneda === 'UYU' ? m / (cotizacion || 1) : m);
+      }, 0);
+      const diferencia = importeTotal - totalIngresado;
+      const tolerancia = moneda === 'USD' ? 0.05 : 1.0;
+      if (diferencia > tolerancia) {
+        return toast.warning(`Falta cubrir el saldo total (${moneda === 'USD' ? 'U$' : '$'} ${diferencia.toFixed(2)}). Puede presionar 'Completar Saldo'.`);
+      }
     }
 
     setProcesando(true);
@@ -78,6 +102,7 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
           tipoDocumento: tipoDoc,
           serieDoc: serieDoc,
           observaciones: observaciones || concepto,
+          esCredito,
         },
         aplicaciones: [
           {
@@ -88,7 +113,8 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
             ajuste: 0
           }
         ],
-        pagos: pagosValidos.map(p => ({
+        // Si es crédito, mandamos pagos vacíos — la deuda queda en cuenta corriente
+        pagos: esCredito ? [] : pagosValidos.map(p => ({
           metodoPagoId: parseInt(p.metodoPagoId, 10),
           monedaId: parseInt(p.monedaId, 10),
           montoOriginal: parseFloat(p.monto),
@@ -97,16 +123,23 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
       };
 
       const res = await api.post('/contabilidad/caja/transaccion', payload);
-      toast.success('Cobro registrado exitosamente!');
+      const msg = esCredito
+        ? `Factura a crédito registrada. Deuda generada en cuenta corriente.`
+        : `Cobro registrado exitosamente.`;
+      toast.success(msg);
       
       setConcepto('');
       setImporte('');
       setObservaciones('');
-      setPagos([{ id: Date.now(), metodoPagoId: pagosValidos[0].metodoPagoId, moneda: 'UYU', monedaId: 1, monto: '' }]);
+      if (pagosValidos.length > 0) {
+        setPagos([{ id: Date.now(), metodoPagoId: pagosValidos[0].metodoPagoId, moneda: 'UYU', monedaId: 1, monto: '' }]);
+      } else {
+        setPagos([{ id: Date.now(), metodoPagoId: '', moneda: 'UYU', monedaId: 1, monto: '' }]);
+      }
       
       if (onCobroCompletado) onCobroCompletado(res.data);
     } catch (e) {
-      toast.error(e.response?.data?.error || 'Error al procesar cobro');
+      toast.error(e.response?.data?.error || 'Error al procesar');
     } finally {
       setProcesando(false);
     }
@@ -220,6 +253,19 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
               <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-400 to-indigo-500"></div>
               
               <h3 className="font-black text-slate-400 text-[11px] uppercase tracking-widest mb-6">3. Cobro y Documentación</h3>
+
+              {/* Banner de crédito */}
+              {esCredito && (
+                <div className="mb-4 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-start gap-3">
+                  <span className="text-amber-500 text-xl mt-0.5">⚠️</span>
+                  <div>
+                    <p className="text-amber-800 font-black text-sm">Documento a Crédito</p>
+                    <p className="text-amber-700 text-xs font-bold mt-1 leading-relaxed">
+                      No se requiere pago hoy. El monto quedará registrado como <strong>deuda pendiente</strong> en la cuenta corriente del cliente.
+                    </p>
+                  </div>
+                </div>
+              )}
               
               <div className="flex-1">
                 <CajaPanelPago 
@@ -238,6 +284,8 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
                     onTipoDoc={setTipoDoc}
                     serieDoc={serieDoc}
                     onSerieDoc={setSerieDoc}
+                    numDoc={numDocPredict}
+                    tiposDocDisponibles={tiposDocDisponibles}
                 />
               </div>
             </div>

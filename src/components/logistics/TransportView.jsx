@@ -390,7 +390,7 @@ const TransportView = () => {
                                                         </a>
                                                         <div className="mt-2 flex flex-wrap gap-1">
                                                             {bultosAsociados.map(b => (
-                                                                <span key={b.BultoID} className="bg-slate-100 border border-slate-200 text-slate-500 text-[10px] px-1.5 py-0.5 rounded font-bold">{b.CodigoEtiqueta}</span>
+                                                                <span key={b.BultoID} className="bg-slate-100 border border-slate-200 text-slate-500 text-[10px] px-1.5 py-0.5 rounded font-bold">{b.RetiroAsociado || b.CodigoEtiqueta}</span>
                                                             ))}
                                                         </div>
                                                     </div>
@@ -462,7 +462,7 @@ const TransportView = () => {
                                             return (
                                                 <div key={item.BultoID} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-lg border bg-slate-50 opacity-60">
                                                     <div>
-                                                        <p className="font-bold text-sm text-slate-500">{item.CodigoEtiqueta}</p>
+                                                        <p className="font-bold text-sm text-slate-500">{item.RetiroAsociado || item.CodigoEtiqueta}</p>
                                                         <p className="text-xs text-slate-400">{item.Descripcion || 'Sin desc'}</p>
                                                     </div>
                                                     <div className="flex flex-col items-end mt-2 sm:mt-0">
@@ -495,7 +495,7 @@ const TransportView = () => {
                                                         className="w-5 h-5 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500"
                                                     />
                                                     <div>
-                                                        <p className={`font-bold text-sm ${map.checked ? 'text-emerald-700' : 'text-slate-700'}`}>{item.CodigoEtiqueta}</p>
+                                                        <p className={`font-bold text-sm ${map.checked ? 'text-emerald-700' : 'text-slate-700'}`}>{item.RetiroAsociado || item.CodigoEtiqueta}</p>
                                                         <p className="text-xs text-slate-500">{item.Descripcion || 'Sin desc'}</p>
                                                     </div>
                                                 </label>

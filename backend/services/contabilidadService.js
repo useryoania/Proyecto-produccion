@@ -892,6 +892,52 @@ async function getDeudasPorCliente(CliIdCliente) {
 }
 
 /**
+ * getTodasLasDeudasVivas
+ * Devuelve todos los documentos de deuda pendientes de TODOS los clientes.
+ */
+async function getTodasLasDeudasVivas() {
+  const pool = await getPool();
+  const result = await pool.request()
+    .query(`
+      SELECT
+        d.DDeIdDocumento,
+        d.OrdIdOrden,
+        d.DocIdDocumento,
+        COALESCE(od.OrdCodigoOrden, 'VTA-DIR') AS CodigoOrden,
+        COALESCE(
+          od.OrdNombreTrabajo, 
+          (SELECT TOP 1 TdeDescripcion 
+           FROM dbo.TransaccionDetalle td
+           JOIN dbo.DocumentosContables doc ON CAST(doc.DocNumero AS VARCHAR) = CAST(td.TcaIdTransaccion AS VARCHAR)
+           WHERE doc.DocIdDocumento = d.DocIdDocumento),
+          'Venta Directa'
+        ) AS NombreTrabajo,
+        d.DDeImporteOriginal,
+        d.DDeImportePendiente,
+        d.DDeFechaEmision,
+        d.DDeFechaVencimiento,
+        d.DDeEstado,
+        cc.CueTipo,
+        ISNULL(mon.MonSimbolo, '$U') AS MonSimbolo,
+        DATEDIFF(DAY, d.DDeFechaVencimiento, GETDATE()) AS DiasVencido,
+        cli.CliIdCliente,
+        cli.Nombre AS ClienteNombre,
+        cli.CodCliente AS ClienteCodigo
+      FROM dbo.DeudaDocumento d WITH(NOLOCK)
+      JOIN dbo.CuentasCliente cc WITH(NOLOCK) ON cc.CueIdCuenta = d.CueIdCuenta
+      JOIN dbo.Clientes cli WITH(NOLOCK) ON cli.CliIdCliente = cc.CliIdCliente
+      LEFT JOIN dbo.Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = cc.MonIdMoneda
+      LEFT JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = d.OrdIdOrden
+      WHERE d.DDeEstado IN ('PENDIENTE', 'PARCIAL', 'VENCIDO')
+        AND d.DDeImportePendiente > 0.01
+      ORDER BY cli.Nombre ASC, d.DDeFechaVencimiento ASC
+    `);
+
+  return result.recordset;
+}
+
+
+/**
  * getAntiguedadDeuda
  * Tabla de antigüedad de deuda para todos los clientes activos.
  * Agrupa en tramos: Al día / 1-30 / 31-60 / 61-90 / +90 días.
@@ -1310,6 +1356,7 @@ module.exports = {
 
   // Consultas extra
   getDeudasPorCliente,
+  getTodasLasDeudasVivas,
 };
 
 /**

@@ -954,6 +954,7 @@ exports.getIntegralPedidoDetailsV2 = async (req, res) => {
         const orderIds = orders.map(o => o.OrdenID);
         let historialData = [];
         let bultosData = [];
+        let archivosData = [];
 
         if (orderIds.length > 0) {
             const safeIds = orderIds.join(',');
@@ -992,6 +993,19 @@ exports.getIntegralPedidoDetailsV2 = async (req, res) => {
             `;
             const bResult = await pool.request().query(bQuery);
             bultosData = bResult.recordset;
+
+            // C. Archivos de Impresión y Producción
+            const prodFilesQ = `SELECT *, 'produccion' as Categoria FROM ArchivosOrden WHERE OrdenID IN (${safeIds})`;
+            const refFilesQ = `SELECT *, 'referencia' as Categoria FROM ArchivosReferencia WHERE OrdenID IN (${safeIds})`;
+            const servQ = `SELECT *, 'servicio' as Categoria FROM ServiciosExtraOrden WHERE OrdenID IN (${safeIds})`;
+
+            const [pRes, rRes, sRes] = await Promise.all([
+                pool.request().query(prodFilesQ),
+                pool.request().query(refFilesQ),
+                pool.request().query(servQ)
+            ]);
+
+            archivosData = [...pRes.recordset, ...rRes.recordset, ...sRes.recordset];
         }
 
         // 3.5 Construir Ruta Visual (Step Tracker) - AGRUPADA POR ÁREA
@@ -1087,7 +1101,8 @@ exports.getIntegralPedidoDetailsV2 = async (req, res) => {
             ruta: ruta,
             logistica: { bultos: bultosData }, // Ahora con datos reales
             fallas: [], // Se podría expandir luego con lógica de fallas detectadas en bultos
-            historial: historialData
+            historial: historialData,
+            archivos: archivosData
         };
 
         res.json(responseData);
@@ -1102,6 +1117,24 @@ exports.getPrioritiesConfig = async (req, res) => {
     try {
         const pool = await getPool();
         const r = await pool.request().query("SELECT * FROM ConfigPrioridades");
+        res.json(r.recordset);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+};
+
+exports.getEstadosConfig = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const r = await pool.request().query(`
+            SELECT TOP (1000) [EstadoID]
+                  ,[AreaID]
+                  ,[Nombre]
+                  ,[ColorHex]
+                  ,[Orden]
+                  ,[EsFinal]
+                  ,[TipoEstado]
+              FROM [SecureAppDB].[dbo].[ConfigEstados]
+              ORDER BY [Orden] ASC
+        `);
         res.json(r.recordset);
     } catch (e) { res.status(500).json({ error: e.message }); }
 };
@@ -1520,7 +1553,7 @@ exports.getOrderReferences = async (req, res) => {
             // 2a. Traer referencias de todo el pedido
             result = await pool.request().input('NoDoc', sql.VarChar, noDocERP).query(`
                 SELECT r.RefID as id, r.NombreOriginal as nombre, r.UbicacionStorage as link, 
-                       ISNULL(r.TipoArchivo, 'Referencia') as tipo, r.NotasAdicionales as notas
+                       ISNULL(r.TipoArchivo, 'Referencia') as tipo, r.NotasAdicionales as notas, r.OrdenID
                 FROM dbo.ArchivosReferencia r
                 INNER JOIN dbo.Ordenes o ON r.OrdenID = o.OrdenID
                 WHERE o.NoDocERP = @NoDoc
@@ -1529,7 +1562,7 @@ exports.getOrderReferences = async (req, res) => {
             // 2b. Fallback por orden individual
             result = await pool.request().input('ID', sql.Int, id).query(`
                 SELECT RefID as id, NombreOriginal as nombre, UbicacionStorage as link, 
-                       ISNULL(TipoArchivo, 'Referencia') as tipo, NotasAdicionales as notas
+                       ISNULL(TipoArchivo, 'Referencia') as tipo, NotasAdicionales as notas, OrdenID
                 FROM dbo.ArchivosReferencia WHERE OrdenID = @ID
             `);
         }

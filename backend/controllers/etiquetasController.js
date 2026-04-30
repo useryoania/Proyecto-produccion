@@ -181,6 +181,20 @@ const getOrdersForLabels = async (req, res) => {
     }
 };
 
+const AREA_NAMES = {
+    'SB': 'Sublimación',
+    'TWC': 'Corte Laser',
+    'TWT': 'Costura',
+    'DF': 'DTF',
+    'ECOUV': 'Eco UV',
+    'DIRECTA': 'Impresión Directa',
+    'EMB': 'Bordado',
+    'TPU': 'TPU',
+    'EST': 'Estampado',
+    'DEPOSITO': 'Depósito',
+    'PROD': 'Producción'
+};
+
 const printEtiquetas = async (req, res) => {
     try {
         const { ordenId } = req.params;
@@ -208,9 +222,14 @@ const printEtiquetas = async (req, res) => {
                 O.FechaIngreso,
                 O.ProximoServicio,
                 O.AreaID AS AreaOrigen,
-                LB.Tipocontenido as TipoBulto
+                O.Material,
+                O.Prioridad,
+                LB.Tipocontenido as TipoBulto,
+                ISNULL(NULLIF(LTRIM(RTRIM(C.IDCliente)), ''), O.Cliente) AS IDClienteMacrosoft,
+                ISNULL(NULLIF(LTRIM(RTRIM(C.Nombre)), ''), O.Cliente) AS NombreClienteReal
             FROM Etiquetas E
             JOIN Ordenes O ON E.OrdenID = O.OrdenID
+            LEFT JOIN Clientes C ON O.CodCliente = C.CodCliente
             LEFT JOIN Logistica_Bultos LB ON E.CodigoEtiqueta = LB.CodigoEtiqueta
             WHERE E.OrdenID IN (${idsStr}) 
             ORDER BY E.OrdenID, E.NumeroBulto ASC
@@ -219,6 +238,24 @@ const printEtiquetas = async (req, res) => {
         if (result.recordset.length === 0) {
             return res.send('<h1>No hay etiquetas generadas para las órdenes seleccionadas</h1>');
         }
+
+        // Fetch all routing services for the selected orders based on NoDocERP
+        const routingResult = await request.query(`
+            SELECT o2.OrdenID as BaseOrdenID, o.AreaID as AreaDestino, o.Estado
+            FROM Ordenes o
+            JOIN Ordenes o2 ON o.NoDocERP = o2.NoDocERP AND o2.NoDocERP IS NOT NULL
+            WHERE o2.OrdenID IN (${idsStr})
+            ORDER BY o.OrdenID ASC
+        `);
+        const serviciosPorOrden = {};
+        routingResult.recordset.forEach(s => {
+            if (!serviciosPorOrden[s.BaseOrdenID]) serviciosPorOrden[s.BaseOrdenID] = [];
+            // Solo agregar si es de un area distinta al anterior para evitar duplicados en la lista (ej. 2 SB)
+            const arr = serviciosPorOrden[s.BaseOrdenID];
+            if (arr.length === 0 || arr[arr.length - 1].AreaDestino !== s.AreaDestino) {
+                arr.push(s);
+            }
+        });
 
         const labels = result.recordset;
 
@@ -267,11 +304,11 @@ const printEtiquetas = async (req, res) => {
                         padding-right: 15px;
                         gap: 15px;
                     }
-                    .qr-container { display: flex; flex-direction: column; align-items: center; }
+                    .qr-container { display: flex; flex-direction: column; align-items: center; margin-bottom: 20px; }
                     .qr-box { width: 150px; height: 150px; }
-                    .qr-caption { font-family: monospace; font-size: 14px; font-weight: 900; margin-top: 4px; text-align: center; }
+                    .qr-caption { font-family: monospace; font-size: 16px; font-weight: 900; margin-top: 8px; text-align: center; letter-spacing: 1px; }
                     
-                    .order-info-block { text-align: center; margin-top: 5px; }
+                    .order-info-block { text-align: center; margin-top: auto; }
                     .big-order-text { font-size: 20px; font-weight: 900; line-height: 1.1; margin-bottom: 5px; color: #000; }
                     .bulto-count-text { font-size: 18px; font-weight: 700; background: #000; color: #fff; padding: 2px 10px; border-radius: 4px; }
 
@@ -328,21 +365,39 @@ const printEtiquetas = async (req, res) => {
 
                 ${labels.map((label, index) => {
             const formattedDate = new Date(label.FechaIngreso).toLocaleDateString('es-ES');
-            const baseOrderCode = label.CodigoOrden ? label.CodigoOrden.split('(')[0].trim() : label.CodigoOrden;
-            const nextService = (label.ProximoServicio || 'DEPOSITO').trim().toUpperCase();
+            
+            let nextService = (label.ProximoServicio || 'DEPOSITO').trim().toUpperCase();
+            nextService = AREA_NAMES[nextService] || nextService;
+
+            let areaOrigenName = (label.AreaOrigen || 'PROD').trim().toUpperCase();
+            areaOrigenName = AREA_NAMES[areaOrigenName] || areaOrigenName;
+
+            let flippedCode = label.CodigoEtiqueta;
+            if (flippedCode && flippedCode.includes('-')) {
+                const parts = flippedCode.split('-');
+                if (parts.length >= 2 && parts[0].startsWith('B')) {
+                    const bultoPart = parts.shift();
+                    flippedCode = parts.join('-') + '/' + bultoPart;
+                }
+            }
+
+            const isUrgente = (label.Prioridad || '').toUpperCase() === 'URGENTE';
 
             return `
                 <div class="label-page">
                     <div class="header">
                         <div class="header-left">
                             <div class="label-bold">CLIENTE</div>
-                            <div class="value-text" style="font-size: 18px;">${label.Cliente}</div>
-                            <div class="label-bold" style="margin-top: 5px;">TRABAJO / MATERIAL</div>
-                            <div class="value-text" style="font-size: 12px; white-space: normal;">${label.DescripcionTrabajo || label.Material}</div>
+                            <div class="value-text" style="font-size: 18px;">${label.IDClienteMacrosoft}</div>
+                            <div class="value-text" style="font-size: 14px; white-space: normal;">${label.NombreClienteReal}</div>
+                            <div class="label-bold" style="margin-top: 5px;">TRABAJO</div>
+                            <div class="value-text" style="font-size: 14px; white-space: normal;">${label.DescripcionTrabajo || '-'}</div>
+                            <div class="value-text" style="font-size: 14px; white-space: normal; margin-top: 2px;">${label.Material || '-'}</div>
+                            <div class="value-text" style="font-size: 16px; font-weight: 900; color: ${isUrgente ? 'red' : 'black'}; margin-top: 2px;">${label.Prioridad || 'NORMAL'}</div>
                         </div>
                         <div class="header-right">
                             <div class="label-bold">ÁREA ORIGEN</div>
-                            <div class="value-text">${label.AreaOrigen || 'PROD'}</div>
+                            <div class="value-text">${areaOrigenName}</div>
                             <div class="date-text" style="margin-top: 8px;">${formattedDate}</div>
                         </div>
                     </div>
@@ -352,13 +407,7 @@ const printEtiquetas = async (req, res) => {
                             <!-- QR 1: Bulto (Tracking Interno) -->
                             <div class="qr-container">
                                 <div id="qr-bulto-${index}" class="qr-box"></div>
-                                <div class="qr-caption" style="font-size: 16px;">${label.CodigoEtiqueta}</div>
-                            </div>
-
-                            <!-- QR 2: Orden (Referencia) -->
-                            <div class="qr-container">
-                                <div id="qr-orden-${index}" class="qr-box"></div>
-                                <div class="qr-caption">ORDEN ${baseOrderCode}</div>
+                                <div class="qr-caption">${flippedCode}</div>
                             </div>
 
                             <div class="order-info-block">
@@ -370,14 +419,45 @@ const printEtiquetas = async (req, res) => {
                         <div class="right-col">
                             <div class="services-title">SERVICIOS</div>
                             <ul class="service-list">
-                                <li class="service-item">
-                                    <div class="check-box">✔</div>
-                                    <span>${label.AreaOrigen}</span>
-                                </li>
-                                <li class="service-item">
-                                    <div class="check-box"></div>
-                                    <span style="color: #666;">${nextService}</span>
-                                </li>
+                                ${(() => {
+                                    const srvs = serviciosPorOrden[label.OrdenID] || [];
+                                    let listHtml = '';
+                                    srvs.forEach(srv => {
+                                        // Solo marcar si el estado es PRONTO
+                                        const isCompleted = (srv.Estado || '').toUpperCase() === 'PRONTO';
+                                        const checkMark = isCompleted ? '✔' : '';
+                                        const colorStyle = isCompleted ? 'color: #000;' : 'color: #666;';
+                                        
+                                        let rawAreaName = srv.AreaDestino.trim().toUpperCase();
+                                        let areaName = AREA_NAMES[rawAreaName] || rawAreaName;
+                                        
+                                        // Si no está en el mapa, intentar limpiar sufijos/prefijos
+                                        if (areaName === rawAreaName) {
+                                            const areaNameMatch = srv.AreaDestino.match(/^([A-Z]{2,3})/);
+                                            const matchAcronym = areaNameMatch ? areaNameMatch[1].toUpperCase() : null;
+                                            if (matchAcronym && AREA_NAMES[matchAcronym]) {
+                                                areaName = AREA_NAMES[matchAcronym];
+                                            } else {
+                                                areaName = areaNameMatch ? areaNameMatch[1] : srv.AreaDestino.substring(0, 15);
+                                            }
+                                        }
+                                        
+                                        listHtml += `
+                                            <li class="service-item">
+                                                <div class="check-box">${checkMark}</div>
+                                                <span style="${colorStyle}">${areaName}</span>
+                                            </li>
+                                        `;
+                                    });
+                                    // Siempre agregar DEPOSITO al final
+                                    listHtml += `
+                                        <li class="service-item">
+                                            <div class="check-box"></div>
+                                            <span style="color: #666;">DEPOSITO</span>
+                                        </li>
+                                    `;
+                                    return listHtml;
+                                })()}
                             </ul>
 
                             <div class="destination-block">
@@ -390,10 +470,6 @@ const printEtiquetas = async (req, res) => {
                     <script>
                         new QRCode(document.getElementById("qr-bulto-${index}"), {
                             text: "${label.CodigoEtiqueta}",
-                            width: 150, height: 150, correctLevel: QRCode.CorrectLevel.M
-                        });
-                        new QRCode(document.getElementById("qr-orden-${index}"), {
-                            text: "${label.CodigoQR || baseOrderCode}",
                             width: 150, height: 150, correctLevel: QRCode.CorrectLevel.M
                         });
                     </script>
