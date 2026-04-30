@@ -1,13 +1,20 @@
 import React from 'react';
 import Swal from 'sweetalert2';
 
-export const printRetiroStation = (retiro) => {
+export const generateTicketHTML = (retiro) => {
     const fecha = new Date().toLocaleDateString('es-UY', {
         day: '2-digit', month: '2-digit', year: 'numeric',
         hour: '2-digit', minute: '2-digit', hour12: false
     });
     const ordenes = retiro.orders || [];
-    const simbolo = ordenes.length > 0 ? (ordenes[0].simbolo || '$') : '$';
+    
+    let simbolo = '$';
+    if (retiro.moneda === 'USD' || retiro.moneda === 2 || retiro.moneda === 840 || (typeof retiro.moneda === 'string' && retiro.moneda.includes('US'))) {
+        simbolo = 'U$S';
+    }
+    if (ordenes.length > 0 && ordenes[0].simbolo) {
+        simbolo = ordenes[0].simbolo;
+    }
 
     const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 38 60" height="36" style="display:block;overflow:visible;">
       <g>
@@ -22,19 +29,24 @@ export const printRetiroStation = (retiro) => {
             let finalCosto = '-';
             if (costo !== undefined && costo !== null && costo !== '' && costo !== '-') {
                 if (typeof costo === 'string' && costo.includes('$')) {
-                    finalCosto = costo; // ya tiene símbolo
+                    finalCosto = costo;
                 } else {
                     const simb = o.simbolo || o.currency || '$';
                     finalCosto = `${simb} ${Number(costo).toFixed(2)}`;
                 }
             }
             return `
-            <tr style="background:${i % 2 === 0 ? '#fff' : '#e8e8e8'}">
-                <td style="padding:5px 8px;font-size:12px;border:none;">${o.orderNumber || o.codigoOrden || o.id || '-'}</td>
-                <td style="padding:5px 8px;font-size:12px;border:none;text-align:right;font-weight:700;">${finalCosto}</td>
+            <tr style="background:#fff">
+                <td style="padding:5px 8px;font-size:12px;border:none;vertical-align:middle;">
+                    <div style="font-weight:700;">${o.orderNumber || o.codigoOrden || o.id || '-'}</div>
+                </td>
+                <td style="padding:5px 8px;font-size:11px;border:none;text-align:center;vertical-align:middle;font-weight:700;text-transform:uppercase;color:#111;">
+                    ${o.articuloDescripcion || ''}
+                </td>
+                <td style="padding:5px 8px;font-size:12px;border:none;text-align:right;font-weight:700;vertical-align:middle;">${finalCosto}</td>
             </tr>`;
         }).join('')
-        : `<tr><td colspan="2" style="padding:8px;font-size:12px;color:#888;text-align:center;border:none;">Sin detalle de órdenes</td></tr>`;
+        : `<tr><td colspan="3" style="padding:8px;font-size:12px;color:#888;text-align:center;border:none;">Sin detalle de órdenes</td></tr>`;
 
     let lugarRetiro = retiro.lugarRetiro || '';
     if (!lugarRetiro || lugarRetiro === '-' || lugarRetiro === 'Web' || lugarRetiro.toLowerCase() === 'desconocido') {
@@ -49,10 +61,16 @@ export const printRetiroStation = (retiro) => {
     const isEncomienda = lugarRetiro.toLowerCase().includes('encomienda')
         || retiro.formaEnvioId === 2
         || retiro.LReIdLugarRetiro === 2;
-    // Código estético: ENC-número para encomiendas
-    const _rawCodigo = retiro.displayLabel || retiro.ordenDeRetiro || 'N/A';
-    const _numPart = _rawCodigo.replace(/^[A-Za-z]+-?/, '');
-    const displayCodigo = isEncomienda ? `ENC-${_numPart}` : _rawCodigo;
+
+    // Para encomiendas, mostrar "ENCOMIENDA (NombreAgencia)" en lugar del valor crudo de la BD
+    if (isEncomienda) {
+        lugarRetiro = retiro.agenciaNombre
+            ? `ENCOMIENDA (${retiro.agenciaNombre})`
+            : 'ENCOMIENDA';
+    }
+
+    const numPart = (retiro.ordenDeRetiro || '').replace(/^[A-Za-z]+-?/, '');
+    const displayCodigo = isEncomienda ? `ENC-${numPart}` : (retiro.ordenDeRetiro || 'N/A');
 
     const copiaHTML = (label, showFirma = false, encomiendaData = null) => `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid #000;">
@@ -65,18 +83,17 @@ export const printRetiroStation = (retiro) => {
             <div style="font-size:10px;color:#555;margin-top:2px;">${fecha}</div>
         </div>
     </div>
-
     ${!encomiendaData ? `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
         <div style="border:2px solid #000;overflow:hidden;display:flex;flex-direction:column;">
-            <div style="background:#e8e8e8;color:#000;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;border-bottom:2px solid #000;">Cliente</div>
+            <div style="background:#fff;color:#000;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;">Cliente</div>
             <div style="flex:1;padding:8px 10px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
                 <div style="font-size:18px;font-weight:900;">${retiro.CliCodigoCliente || retiro.idcliente || '-'}</div>
                 <div style="font-size:14px;font-weight:700;color:#222;margin-top:2px;">${retiro.CliNombre || retiro._raw?.NombreCliente || ''}</div>
             </div>
         </div>
         <div style="border:2px solid #000;overflow:hidden;display:flex;flex-direction:column;">
-            <div style="background:#e8e8e8;color:#000;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;border-bottom:2px solid #000;">Forma de Envío</div>
+            <div style="background:#fff;color:#000;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;">Forma de Envío</div>
             <div style="flex:1;padding:8px 10px;display:flex;align-items:center;justify-content:center;text-align:center;">
                 <div style="font-size:13px;font-weight:800;text-transform:uppercase;">${lugarRetiro}</div>
             </div>
@@ -87,17 +104,35 @@ export const printRetiroStation = (retiro) => {
         <table style="width:100%;border-collapse:collapse;">
             <thead>
                 <tr>
-                    <th style="padding:6px 8px;font-size:10px;text-align:left;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#e8e8e8;border:none;">Pedido</th>
-                    <th style="padding:6px 8px;font-size:10px;text-align:right;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#e8e8e8;border:none;">Importe</th>
+                    <th style="padding:6px 8px;font-size:10px;text-align:left;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#fff;border:none;">Pedido</th>
+                    <th style="padding:6px 8px;font-size:10px;text-align:center;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#fff;border:none;"></th>
+                    <th style="padding:6px 8px;font-size:10px;text-align:right;font-weight:700;letter-spacing:1px;text-transform:uppercase;background:#fff;border:none;">Importe</th>
                 </tr>
             </thead>
             <tbody>${ordenesHTML}</tbody>
         </table>
     </div>
 
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#e8e8e8;color:#000;border:2px solid #000;margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#fff;color:#000;border:2px solid #000;margin-bottom:10px;">
         <span style="font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Total</span>
-        <span style="font-size:18px;font-weight:900;">${(() => { const t = retiro.totalCost && retiro.totalCost !== '-' ? String(retiro.totalCost) : '0.00'; return t.includes('$') ? t : `${simbolo} ${t}`; })()}</span>
+        <span style="font-size:18px;font-weight:900;">${(() => { 
+            let num = 0;
+            if (ordenes && ordenes.length > 0) {
+                ordenes.forEach(o => {
+                    let c = o.orderCosto || o.costoFinal || o.amount;
+                    if (c) {
+                        let val = typeof c === 'string' ? parseFloat(c.replace(/[^\d.-]/g, '')) : Number(c);
+                        if (!isNaN(val)) num += val;
+                    }
+                });
+            }
+            if (num === 0) {
+                const t = retiro.totalCost || retiro.monto || retiro.Monto || '0';
+                let val = typeof t === 'string' ? parseFloat(t.replace(/[^\d.-]/g, '')) : Number(t);
+                if (!isNaN(val)) num = val;
+            }
+            return `${simbolo} ${num.toFixed(2)}`; 
+        })()}</span>
     </div>
 
     ${showFirma ? `
@@ -123,11 +158,12 @@ export const printRetiroStation = (retiro) => {
             <div style="display:flex;flex-direction:column;gap:6px;">
                 <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#555;border-bottom:1px solid #000;padding-bottom:3px;margin-bottom:2px;">Destinatario</div>
                 <div style="font-size:26px;font-weight:900;text-transform:uppercase;line-height:1.15;">${encomiendaData.nombre}</div>
+                ${encomiendaData.idCliente ? `<div style="font-size:14px;font-weight:700;color:#444;margin-bottom:4px;">${encomiendaData.idCliente}</div>` : ''}
                 ${encomiendaData.telefono ? `<div style="font-size:20px;font-weight:700;color:#222;">&#9742; ${encomiendaData.telefono}</div>` : ''}
                 ${encomiendaData.depto ? `<div style="font-size:30px;font-weight:900;text-transform:uppercase;margin-top:4px;line-height:1;">${encomiendaData.depto}</div>` : ''}
                 ${encomiendaData.localidad ? `<div style="font-size:30px;font-weight:800;text-transform:uppercase;color:#111;line-height:1;">${encomiendaData.localidad}</div>` : ''}
                 ${encomiendaData.direccion ? `<div style="font-size:26px;font-weight:700;text-transform:uppercase;color:#222;line-height:1.1;">${encomiendaData.direccion}</div>` : ''}
-                ${encomiendaData.agencia ? `<div style="margin-top:8px;font-size:16px;font-weight:900;background:#e8e8e8;border:2px solid #000;padding:6px 12px;text-transform:uppercase;display:inline-block;align-self:flex-start;">AGENCIA &#8226; ${encomiendaData.agencia}</div>` : ''}
+                ${encomiendaData.agencia ? `<div style="margin-top:8px;font-size:16px;font-weight:900;background:#fff;border:2px solid #000;padding:6px 12px;text-transform:uppercase;display:inline-block;align-self:flex-start;">AGENCIA &#8226; ${encomiendaData.agencia}</div>` : ''}
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;padding-top:12px;border-top:2px dashed #000;margin-top:auto;">
                 <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#555;border-bottom:1px solid #000;padding-bottom:3px;margin-bottom:2px;">Remitente</div>
@@ -144,14 +180,16 @@ export const printRetiroStation = (retiro) => {
         <div style="display:flex;flex-direction:column;gap:6px;border-left:2px dashed #000;padding-left:16px;">
             <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#555;border-bottom:1px solid #000;padding-bottom:3px;margin-bottom:2px;">Órdenes</div>
             <div style="display:flex;flex-direction:column;gap:4px;">
-                ${ordenes.map(o => `<div style="font-size:13px;font-weight:800;background:#e8e8e8;padding:4px 8px;text-align:center;border:1px solid #000;">${o.orderNumber || o.codigoOrden || '-'}</div>`).join('') || '<div style="font-size:11px;color:#777;">S/D</div>'}
+                ${ordenes.map(o => `<div style="font-size:13px;font-weight:800;padding:2px 0;text-align:center;">${o.orderNumber || o.codigoOrden || o.id || '-'}</div>`).join('') || '<div style="font-size:11px;color:#777;">S/D</div>'}
             </div>
         </div>
     </div>` : ''}
     `;
 
-    const encomiendaDataObj = isEncomienda ? {
-        nombre: retiro.receptorNombre || retiro._raw?.ReceptorNombre || retiro.CliNombre || retiro.idcliente || '-',
+    const encomiendaData = isEncomienda ? {
+        // Unificado a ReceptorNombre (o fallbacks lógicos si viene nulo)
+        nombre: retiro.ReceptorNombre || retiro.receptorNombre || retiro._raw?.ReceptorNombre || retiro.CliNombre || retiro.idcliente || '-',
+        idCliente: retiro.CliCodigoCliente || retiro.CodCliente || retiro.idcliente || '',
         telefono: (retiro.CliTelefono || '').trim(),
         depto: retiro.departamentoEnvio || '',
         localidad: retiro.localidadEnvio || '',
@@ -160,10 +198,10 @@ export const printRetiroStation = (retiro) => {
     } : null;
 
     const topHalfHTML = copiaHTML('Copia Empresa', true);
-    const bottomHalfHTML = isEncomienda ? copiaHTML('Etiqueta de Envío', false, encomiendaDataObj) : copiaHTML('Copia Cliente', false);
+    const bottomHalfHTML = isEncomienda ? copiaHTML('Etiqueta de Envío', false, encomiendaData) : copiaHTML('Copia Cliente', false);
 
-    const fullHtml = `<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Impresión ${retiro.displayLabel}</title><style>
+    return `<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Impresión ${retiro.displayLabel || retiro.ordenDeRetiro}</title><style>
 @page { margin: 0; size: A4 portrait; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 210mm; font-family: 'Arial', 'Helvetica', sans-serif; print-color-adjust: exact; -webkit-print-color-adjust: exact; background: #fff; }
@@ -176,7 +214,10 @@ tr { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 <div class="copy">${topHalfHTML}</div>
 <div class="copy">${bottomHalfHTML}</div>
 </body></html>`;
+};
 
+export const printRetiroStation = (retiro) => {
+    const fullHtml = generateTicketHTML(retiro);
     const win = window.open('', '_blank', 'width=800,height=1000');
     if (win) {
         win.document.write(fullHtml);

@@ -185,6 +185,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [pedidoHovered, setPedidoHovered] = useState(false);
 
   const pathname = location?.pathname || (typeof window !== 'undefined' ? window.location.pathname : '');
   const isAuthPage = pathname === '/login' || pathname === '/register';
@@ -310,6 +311,43 @@ export default function LandingNavbar({ onOpenLoginModal }) {
                 navigate('/login?redirect=/portal/pickup');
               }
             }}>Retirá aquí</NavBtn>
+
+            <button
+              type="button"
+              className="nav-gradient-btn"
+              onMouseEnter={() => setPedidoHovered(true)}
+              onMouseLeave={() => setPedidoHovered(false)}
+              onClick={() => {
+                if (sessionType) {
+                  navigate('/portal');
+                } else if (onOpenLoginModal) {
+                  onOpenLoginModal('/portal');
+                } else {
+                  navigate('/login?redirect=/portal');
+                }
+              }}
+              style={{
+                borderRadius: 8,
+                padding: '7px 16px',
+                fontSize: 13, fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span style={{
+                background: 'linear-gradient(to right, #00AEEF 0%, #EC008C 16.5%, #FFF200 33%, #fff 50%, #fff 100%)',
+                backgroundSize: '200% 100%',
+                backgroundPosition: pedidoHovered ? '0% 0%' : '100% 0%',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                transition: 'background-position 0.4s ease-out',
+                whiteSpace: 'nowrap',
+              }}>
+                Hacé tu pedido
+              </span>
+            </button>
 
             {/* Desktop Dropdown Recursos */}
             <DropdownRecursosDesktop navigate={navigate} user={user} />

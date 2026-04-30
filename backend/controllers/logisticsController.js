@@ -583,10 +583,12 @@ exports.getRemitoByCode = async (req, res) => {
         // Items + Bulto Info + Orden Info
         const items = await pool.request().input('EID', sql.Int, envio.EnvioID)
             .query(`
-                SELECT i.*, b.Estado as BultoEstado, b.CodigoEtiqueta, b.Descripcion, b.OrdenID, b.ComprobantePath, o.Cliente, o.DescripcionTrabajo,
-                       CASE WHEN b.Tipocontenido = 'ENCOMIENDA' AND ret.OReIdOrdenRetiro IS NOT NULL 
-                            THEN ISNULL(ret.FormaRetiro, 'R') + '-' + CAST(ret.OReIdOrdenRetiro AS VARCHAR) 
-                            ELSE NULL 
+                SELECT i.*, b.Estado as BultoEstado, b.CodigoEtiqueta, b.Descripcion, b.OrdenID, b.ComprobantePath,
+                       b.Tipocontenido, o.Cliente, o.DescripcionTrabajo,
+                       CASE 
+                           WHEN b.Tipocontenido = 'ENCOMIENDA' AND ret.OReIdOrdenRetiro IS NOT NULL 
+                           THEN ISNULL(ret.FormaRetiro, 'R') + '-' + CAST(ret.OReIdOrdenRetiro AS VARCHAR)
+                           ELSE NULL 
                        END AS RetiroAsociado
                 FROM Logistica_EnvioItems i
                 INNER JOIN Logistica_Bultos b ON i.BultoID = b.BultoID
@@ -1517,7 +1519,7 @@ exports.confirmRemitoDelivery = async (req, res) => {
                 await new sql.Request(transaction).query("ALTER TABLE Logistica_Bultos ADD ComprobantePath NVARCHAR(MAX) NULL");
             } catch (e) { /* Ignore */ }
 
-            const comprobanteUrl = file ? `/comprobantesPagos/${file.filename}` : null;
+            const comprobanteUrl = file ? `/comprobantesEncomiendas/${file.filename}` : null;
             const idsList = idsArray.join(',');
 
             // 1. Update Bultos inside this Envio

@@ -50,3 +50,19 @@ body {
   background-size: 300% 300%;
   animation: gradient-spin 4s ease infinite;
 }
+
+/* Navbar CTA — borde blanco, interior transparente */
+.nav-gradient-btn {
+  border: 2px solid rgba(255,255,255,0.6);
+  border-radius: 8px;
+  background: transparent;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}

@@ -80,7 +80,7 @@ self.addEventListener('fetch', (event) => {
                     // Para otros assets (imágenes, fonts, etc.) devolver respuesta vacía
                     return new Response('', {
                         status: 408,
-                        statusText: 'Network timeout — recurso no disponible offline'
+                        statusText: 'Network timeout - recurso no disponible offline'
                     });
                 });
         })

@@ -2928,8 +2928,11 @@ exports.mpWebhook = async (req, res) => {
 
         const pool = await getPool();
 
-        // Actualizar estado en MercadoPagoTransactions
-        await pool.request()
+        // Actualizar estado en MercadoPagoTransactions.
+        // OUTPUT DELETED.PaidAt permite detectar atómicamente si este webhook es el PRIMERO
+        // en procesar este pago. Si DELETED.PaidAt ya tenía valor → otro webhook ya lo procesó → abort.
+        // Esto resuelve la race condition entre IPN y Webhook moderno de MP que llegan simultáneos.
+        const updateResult = await pool.request()
             .input('txId',   sql.VarChar(100), externalRef)
             .input('status', sql.VarChar(50),  mpStatus)
             .input('mpId',   sql.VarChar(100), String(paymentId))
@@ -2938,8 +2941,17 @@ exports.mpWebhook = async (req, res) => {
                 SET Status = @status, PaymentId = @mpId,
                     PaidAt = CASE WHEN @status = 'approved' THEN GETDATE() ELSE PaidAt END,
                     WebhookReceivedAt = GETDATE()
+                OUTPUT DELETED.PaidAt AS OldPaidAt
                 WHERE TransactionId = @txId
             `);
+
+        const oldPaidAt = updateResult.recordset[0]?.OldPaidAt ?? null;
+
+        // Si ya tenía PaidAt → este es un webhook duplicado (IPN + Webhook moderno del mismo pago)
+        if (mpStatus === 'approved' && oldPaidAt !== null) {
+            logger.warn(`[MP WEBHOOK] ⚠️ Pago ${externalRef} ya fue procesado anteriormente (PaidAt: ${oldPaidAt}). Webhook duplicado ignorado.`);
+            return;
+        }
 
         logger.info(`[MP WEBHOOK] Estado actualizado a "${mpStatus}" para TX ${externalRef}`);
 

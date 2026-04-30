@@ -26,8 +26,8 @@ router.get('/remitos/:code', logisticsController.getRemitoByCode);
 router.post('/receive', logisticsController.receiveDispatch);
 
 // Transport
-const upload = require('../middleware/multerConfig');
-router.post('/remitos/:code/confirm-delivery', upload.single('comprobante'), logisticsController.confirmRemitoDelivery);
+const uploadEncomiendas = require('../middleware/multerEncomiendasConfig');
+router.post('/remitos/:code/confirm-delivery', uploadEncomiendas.single('comprobante'), logisticsController.confirmRemitoDelivery);
 router.post('/transport/confirm', logisticsController.confirmTransport);
 router.get('/transport/active', logisticsController.getActiveTransports);
 router.get('/requirements', logisticsController.getOrderRequirements);

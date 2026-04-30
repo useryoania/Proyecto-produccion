@@ -686,7 +686,7 @@ const WebRetirosPage = () => {
   const [filtroLugarRetiro, setFiltroLugarRetiro] = React.useState('ALL');
   const [expandedCol, setExpandedCol] = React.useState(null); // null = both, 'RT' | 'RWRL' = solo esa
   const [confirmDelivery, setConfirmDelivery] = React.useState(null);
-  // excepcionDelivery removido â€” reemplazado por estado 9
+  // excepcionDelivery removido — reemplazado por estado 9
   const [adminPassword, setAdminPassword] = React.useState('');
   // excepcionExplicacion removido
   const [deliveryScannedBultos, setDeliveryScannedBultos] = React.useState({});
@@ -759,6 +759,10 @@ const WebRetirosPage = () => {
           .map(r => ({
             ordenDeRetiro: r.OrdIdRetiro,
             idcliente: r.NombreCliente || r.CodCliente || 'Ecommerce',
+            CliNombre: r.NombreCliente || null,
+            CliCodigoCliente: r.CodCliente || null,
+            ReceptorNombre: r.ReceptorNombre || null,
+            CliTelefono: r.ReceptorTelefono || r.CliTelefono || null,
             monto: r.Monto || 0,
             moneda: r.Moneda || 'UYU',
             pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
@@ -808,7 +812,7 @@ const WebRetirosPage = () => {
         if (item.Posicion > configMap[cleanEstanteId].posiciones) configMap[cleanEstanteId].posiciones = item.Posicion;
       });
 
-      // Garantizar que los 4 estantes siempre aparezcan (aunque D estÃ© vacÃ­o)
+      // Garantizar que los 4 estantes siempre aparezcan (aunque D esté vacío)
       const ESTANTES_DEFAULT = [
         { id: 'A', secciones: 4, posiciones: 20 },
         { id: 'B', secciones: 4, posiciones: 20 },
@@ -839,7 +843,7 @@ const WebRetirosPage = () => {
           }
         }));
         // Filter out retiros already in apiOrders (web/totem) to avoid duplicates
-        // apiOrders use format "RT-18", otrosRetiros use "RT-0018" â€” compare by numeric ID
+        // apiOrders use format "RT-18", otrosRetiros use "RT-0018" — compare by numeric ID
         const apiOrderIds = new Set(formattedRetiros.map(o => {
           const match = (o.ordenDeRetiro || '').match(/(\d+)$/);
           return match ? parseInt(match[1], 10) : null;
@@ -857,7 +861,7 @@ const WebRetirosPage = () => {
 
 
 
-      // 3. Lanzar sincronizaciÃ³n pesada en segundo plano si aplica (sin bloquear UI)
+      // 3. Lanzar sincronización pesada en segundo plano si aplica (sin bloquear UI)
       if (backgroundSync) {
         api.post('/web-retiros/sincronizar').then(() => {
           // Solo refrescamos la lista de retiros izquierda en background, no bloqueamos
@@ -1765,6 +1769,21 @@ const WebRetirosPage = () => {
     }, 500);
   };
 
+  // Fetch full retiro data from /apiordenesRetiro/estados before printing
+  // to ensure ReceptorNombre, CliTelefono, orders with costs/descriptions are present
+  const handlePrintWithFullData = async (item) => {
+    try {
+      const { data } = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5,6,7,8,9');
+      const numId = (item.ordenDeRetiro || '').match(/(\d+)$/)?.[1];
+      const full = numId && Array.isArray(data)
+        ? data.find(r => (r.ordenDeRetiro || '').match(/(\d+)$/)?.[1] === numId)
+        : null;
+      printRetiroStation(full || item);
+    } catch {
+      printRetiroStation(item);
+    }
+  };
+
   const determineColorByDescAndStatus = (retiro) => {
     const desc = (retiro.TClDescripcion || '').toLowerCase();
     const pagado = retiro.pagorealizado === 1;
@@ -2074,7 +2093,7 @@ const WebRetirosPage = () => {
                         <div className="flex-1" />
                         <div className="flex items-center gap-1 shrink-0 mr-3">
                           <div role="button" tabIndex={0}
-                            onClick={(e) => { e.stopPropagation(); printRetiroStation(item); }}
+                            onClick={(e) => { e.stopPropagation(); handlePrintWithFullData(item); }}
                             title="Imprimir Copia/Etiqueta"
                             className="w-8 h-8 rounded-lg flex items-center justify-center text-brand-cyan hover:bg-cyan-50 transition-colors cursor-pointer"
                           ><Printer size={18} /></div>
@@ -2585,7 +2604,7 @@ const WebRetirosPage = () => {
         )
       }
 
-      {/* Modal excepciÃ³n eliminado â€” las Ã³rdenes sin pago deben ser autorizadas desde Caja (estado 9) */}
+      {/* Modal excepción eliminado — las órdenes sin pago deben ser autorizadas desde Caja (estado 9) */}
     </div >
   );
 };

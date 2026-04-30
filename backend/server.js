@@ -60,6 +60,9 @@ app.use(requestLogger);
 
 // --- STATIC FILES ---
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Comprobantes de entrega de encomiendas (logística transporte)
+const encomiendasFolder = process.env.COMPROBANTES_ENCOMIENDAS_PATH || path.join(__dirname, 'comprobantesEncomiendas');
+app.use('/comprobantesEncomiendas', express.static(encomiendasFolder));
 
 // --- REGISTRO DE RUTAS ---
 app.use('/api/areas', require('./routes/areasRoutes'));
@@ -191,6 +194,22 @@ app.get('/api/precios-publicos', async (req, res) => {
             ORDER BY Familia, Producto
         `);
         res.json(result.recordset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- API: Stats públicas para landing page ---
+app.get('/api/stats/public', async (req, res) => {
+    try {
+        const { getPool } = require('./config/db');
+        const pool = await getPool();
+        const result = await pool.request().query(`
+            SELECT
+                (SELECT COUNT(*) FROM OrdenesDeposito WITH(NOLOCK)) AS totalOrdenes,
+                (SELECT COUNT(*) FROM Clientes WITH(NOLOCK)) AS totalClientes
+        `);
+        res.json(result.recordset[0]);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
