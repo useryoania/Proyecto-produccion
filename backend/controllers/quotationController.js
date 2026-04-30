@@ -96,6 +96,7 @@ exports.getQuotation = async (req, res) => {
                     O.CodigoOrden,
                     O.DescripcionTrabajo,
                     O.AreaID,
+                    O.Prioridad,
                     ISNULL(CME.AreaID_Interno, O.AreaID) as AreaIDInterna,
                     ISNULL(A.Descripcion, A.CodArticulo) as NombreArticulo
                 FROM PedidosCobranzaDetalle PCD
@@ -293,17 +294,17 @@ exports.searchProducts = async (req, res) => {
     try {
         const pool = await getPool();
         const request = pool.request();
-        let whereClause = '';
+        let whereClause = 'WHERE A.Mostrar = 1';
         if (q && q.length >= 2) {
             request.input('q', sql.NVarChar, `%${q}%`);
-            whereClause = `WHERE A.Descripcion LIKE @q OR A.CodArticulo LIKE @q`;
+            whereClause = `WHERE A.Mostrar = 1 AND (A.Descripcion LIKE @q OR A.CodArticulo LIKE @q)`;
         }
         const result = await request.query(`
-            SELECT TOP 200
-                A.CodArticulo,
-                A.Descripcion,
+            SELECT TOP 1000
+                LTRIM(RTRIM(A.CodArticulo)) as CodArticulo,
+                LTRIM(RTRIM(A.Descripcion)) as Descripcion,
                 A.ProIdProducto,
-                CME.AreaID_Interno as AreaID,
+                LTRIM(RTRIM(CME.AreaID_Interno)) as AreaID,
                 CME.NombreReferencia as AreaNombre,
                 PB.Precio as PrecioBase,
                 CASE 

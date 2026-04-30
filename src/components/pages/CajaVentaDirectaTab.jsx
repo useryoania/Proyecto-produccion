@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Plus, Trash2, Loader2, User, CheckCircle, ArrowRight, Wallet, History } from 'lucide-react';
 import api from '../../services/apiClient';
 import { toast } from 'sonner';
@@ -34,7 +34,7 @@ export default function CajaVentaDirectaTab({
 
   // Items
   const [items, setItems] = useState([
-    { id: Date.now(), tipo: defaultTipo, grupo: '', codigo: '', descripcion: '', cantidad: 1, precioTotal: '' }
+    { id: Date.now(), tipo: defaultTipo, grupo: '', codigo: '', descripcion: '', cantidad: 1, precioUnitario: '', precioTotal: '' }
   ]);
   const [productosBase, setProductosBase] = useState([]);
 
@@ -136,7 +136,7 @@ export default function CajaVentaDirectaTab({
       toast.success(`Venta procesada exitosamente. Total cobrado: ${fmt(res.data.totalCobrado)}`);
       if (onVentaExitosa) onVentaExitosa();
       setClienteSel(null); setQCliente(''); setPagos([]);
-      setItems([{ id: Date.now(), tipo: defaultTipo, grupo: '', codigo: '', descripcion: '', cantidad: 1, precioTotal: '' }]);
+      setItems([{ id: Date.now(), tipo: defaultTipo, grupo: '', codigo: '', descripcion: '', cantidad: 1, precioUnitario: '', precioTotal: '' }]);
       setObs('');
     } catch (e) {
       toast.error(e.response?.data?.error || 'Error al procesar la venta');
@@ -285,7 +285,7 @@ export default function CajaVentaDirectaTab({
                           {Object.keys(productosAgrupados).filter(g => {
                              if (it.tipo === 'VENTA_INSUMOS') return g === 'Insumos';
                              if (it.tipo === 'VENTA_PRODUCTOS') return g === 'Productos en el local';
-                             return /dtf|sublimaci|impresi|corte/i.test(g);
+                             return /dtf|sublimaci/i.test(g);
                           }).map(g => (<option key={g} value={g}>{g}</option>))}
                         </select>
                       </div>
@@ -306,6 +306,7 @@ export default function CajaVentaDirectaTab({
                                } else if (prod.MonedaBase !== 'DOLAR' && monedaExhibicion === 'USD') {
                                    precio = precio / (cotizacion || 40);
                                }
+                               newObj.precioUnitario = Number(precio).toFixed(2);
                                newObj.precioTotal = Number(precio * (x.cantidad || 1)).toFixed(2);
                             }
                             return newObj;
@@ -319,7 +320,7 @@ export default function CajaVentaDirectaTab({
                       )}
                     </div>
                   </div>
-                  <div className="grid grid-cols-4 gap-6">
+                  <div className="grid grid-cols-5 gap-6">
                     <div className="col-span-2 flex flex-col gap-2.5">
                       <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-2">Descripción Visible en Documento</label>
                       <input value={it.descripcion} onChange={e=>setItems(p=>p.map(x=>x.id===it.id?{...x, descripcion:e.target.value}:x))} placeholder="Aclaración opcional..." className="bg-white border-2 border-slate-200 rounded-2xl px-5 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 shadow-sm" />
@@ -331,25 +332,32 @@ export default function CajaVentaDirectaTab({
                           setItems(p=>p.map(x=>{
                             if (x.id !== it.id) return x;
                             let newObj = { ...x, cantidad: val };
-                            if ((x.tipo === 'VENTA_GENERICA' || x.tipo === 'VENTA_INSUMOS' || x.tipo === 'VENTA_PRODUCTOS') && x.codigo) {
-                               const prod = (productosAgrupados[x.grupo] || []).find(p => String(p.CodArticulo) === String(x.codigo));
-                               if (prod) {
-                                  let precio = prod.PrecioBase || 0;
-                                  if (prod.MonedaBase === 'DOLAR' && monedaExhibicion === 'UYU') {
-                                      precio = precio * (cotizacion || 40);
-                                  } else if (prod.MonedaBase !== 'DOLAR' && monedaExhibicion === 'USD') {
-                                      precio = precio / (cotizacion || 40);
-                                  }
-                                  newObj.precioTotal = Number(precio * (val || 0)).toFixed(2);
-                               }
-                            }
+                            const unit = Number(x.precioUnitario) || 0;
+                            newObj.precioTotal = Number(unit * (val || 0)).toFixed(2);
                             return newObj;
                           }));
                       }} className="bg-slate-100 border-2 border-slate-200 rounded-2xl px-4 py-3 text-lg font-black text-emerald-600 text-center outline-none focus:border-emerald-500 shadow-inner" />
                     </div>
                     <div className="flex flex-col gap-2.5">
+                      <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Precio U. {monedaExhibicion}</label>
+                      <input type="number" step="0.1" value={it.precioUnitario || ''} onChange={e=>{
+                          const val = e.target.value;
+                          setItems(p=>p.map(x=>{
+                            if(x.id===it.id) {
+                               return {...x, precioUnitario: val, precioTotal: Number((val || 0) * (x.cantidad || 1)).toFixed(2)};
+                            }
+                            return x;
+                          }));
+                      }} className="bg-slate-50 border-2 border-indigo-100 rounded-2xl px-5 py-3 text-lg font-black text-slate-900 outline-none focus:border-indigo-500 text-right shadow-inner" />
+                    </div>
+                    <div className="flex flex-col gap-2.5">
                       <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Total {monedaExhibicion}</label>
-                      <input type="number" step="0.1" value={it.precioTotal} onChange={e=>setItems(p=>p.map(x=>x.id===it.id?{...x, precioTotal:e.target.value}:x))} className="bg-slate-50 border-2 border-indigo-100 rounded-2xl px-5 py-3 text-lg font-black text-slate-900 outline-none focus:border-indigo-500 text-right placeholder-slate-300 shadow-inner" />
+                      <input type="number" step="0.1" value={it.precioTotal} onChange={e=>setItems(p=>p.map(x=>{
+                         if(x.id===it.id) {
+                             return {...x, precioTotal:e.target.value};
+                         }
+                         return x;
+                      }))} className="bg-slate-50 border-2 border-indigo-100 rounded-2xl px-5 py-3 text-lg font-black text-slate-900 outline-none focus:border-indigo-500 text-right placeholder-slate-300 shadow-inner" />
                     </div>
                   </div>
                 </div>
@@ -381,6 +389,7 @@ export default function CajaVentaDirectaTab({
     </div>
   );
 }
+
 
 
 

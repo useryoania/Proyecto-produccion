@@ -36,6 +36,10 @@ export const ordersService = {
         const response = await api.get(`/orders/priorities?area=${areaCode}`);
         return response.data;
     },
+    getEstados: async () => {
+        const response = await api.get(`/orders/estados`);
+        return response.data;
+    },
     assignRoll: async (orderIdsOrPayload, rollId) => {
         const payload = Array.isArray(orderIdsOrPayload)
             ? { orderIds: orderIdsOrPayload, rollId }

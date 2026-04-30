@@ -1,0 +1,371 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { toast } from 'sonner';
+import {
+  Search, CheckCircle, FileMinus, CreditCard, X, CheckSquare, Square,
+  ArrowDownCircle, User
+} from 'lucide-react';
+import api from '../../services/apiClient';
+import CajaPanelPago from './CajaPanelPago';
+
+const fmt  = (n) => Number(n || 0).toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtFecha = (f) => f ? new Date(f).toLocaleDateString('es-UY', { day:'2-digit', month:'2-digit', year:'numeric' }) : '—';
+
+const TIPOS_DOC_PAGO = [
+  { value: '05', label: 'Recibo' },
+  { value: 'NINGUNO', label: 'Sin documento' },
+];
+
+export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion = 1, tiposDocDisponibles = TIPOS_DOC_PAGO, onPagoCompletado }) {
+
+  // ─── Estado ─────────────────────────────────────────────────────────────
+  const [qCliente, setQCliente]         = useState('');
+  const [deudas, setDeudas]             = useState([]);
+  const [cargandoDeudas, setCargandoDeudas] = useState(true);
+  const [seleccionadas, setSeleccionadas]   = useState([]);
+
+  // ─── Pago ─────────────────────────────────────────────────────────────────
+  const [pagos, setPagos]         = useState([{ id: Date.now(), metodoPagoId: '', moneda: 'UYU', monedaId: 1, monto: '' }]);
+  const [tipoDoc, setTipoDoc]     = useState('05');
+  const [serieDoc, setSerieDoc]   = useState('A');
+  const [observaciones, setObservaciones] = useState('');
+  const [procesando, setProcesando] = useState(false);
+
+  // ─── Auto-seleccionar primer método de pago ──────────────────────────────
+  useEffect(() => {
+    if (metodosPago.length > 0 && !pagos[0].metodoPagoId) {
+      const contado = metodosPago.find(m => /contado|efectivo/i.test(m.MPaDescripcionMetodo));
+      const def = contado || metodosPago[0];
+      setPagos([{ id: Date.now(), metodoPagoId: def.MPaIdMetodoPago, moneda: 'UYU', monedaId: 1, monto: '' }]);
+    }
+  }, [metodosPago]);
+
+  // ─── Cargar TODAS las deudas inicialmente ──────────────────────────────────
+  const cargarDeudas = async () => {
+    setCargandoDeudas(true);
+    try {
+      const res = await api.get(`/contabilidad/deudas-vivas`);
+      setDeudas(res.data?.data || []);
+      // Solo deseleccionar aquellas que ya no existen
+      setSeleccionadas(prev => {
+        const vivas = (res.data?.data || []).map(d => d.DDeIdDocumento);
+        return prev.filter(id => vivas.includes(id));
+      });
+    } catch { 
+      toast.error('Error cargando deudas pendientes'); 
+    } finally { 
+      setCargandoDeudas(false); 
+    }
+  };
+
+  useEffect(() => {
+    cargarDeudas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ─── Filtrado local ───────────────────────────────────────────────────────
+  const deudasFiltradas = useMemo(() => {
+    if (!qCliente.trim()) return deudas;
+    const q = qCliente.toLowerCase();
+    return deudas.filter(d => 
+      (d.ClienteNombre || '').toLowerCase().includes(q) ||
+      (d.ClienteCodigo || '').toString().toLowerCase().includes(q) ||
+      (d.CodigoOrden || '').toLowerCase().includes(q)
+    );
+  }, [deudas, qCliente]);
+
+  // ─── Toggle selección ─────────────────────────────────────────────────────
+  const toggleDeuda = (id) =>
+    setSeleccionadas(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const toggleTodas = () => {
+    const validas = deudasFiltradas.map(d => d.DDeIdDocumento);
+    const todasEstanSel = validas.length > 0 && validas.every(id => seleccionadas.includes(id));
+    
+    if (todasEstanSel) {
+      // Desmarcar las de la vista actual
+      setSeleccionadas(prev => prev.filter(id => !validas.includes(id)));
+    } else {
+      // Marcar todas las de la vista actual sumado a lo que ya había
+      setSeleccionadas(prev => Array.from(new Set([...prev, ...validas])));
+    }
+  };
+
+  // ─── Totales ─────────────────────────────────────────────────────────────
+  const deudasSeleccionadas = deudas.filter(d => seleccionadas.includes(d.DDeIdDocumento));
+  const totalAPagar        = deudasSeleccionadas.reduce((s, d) => s + Number(d.DDeImportePendiente), 0);
+  
+  const validasFiltradas   = deudasFiltradas.map(d => d.DDeIdDocumento);
+  const todasSel           = validasFiltradas.length > 0 && validasFiltradas.every(id => seleccionadas.includes(id));
+
+  // Como podemos seleccionar de varios clientes, detectamos el cliente principal para la caja
+  const clientesInvolucrados = Array.from(new Set(deudasSeleccionadas.map(d => d.CliIdCliente)));
+  const clientePrincipalId = clientesInvolucrados[0] || null;
+
+  // ─── Badge de estado ─────────────────────────────────────────────────────
+  const badgeEstado = (d) => {
+    const dias = Number(d.DiasVencido || 0);
+    if (dias > 30) return { label: `${dias}d vencida`, cls: 'bg-red-100 text-red-700 border-red-200' };
+    if (dias > 0)  return { label: `${dias}d vencida`, cls: 'bg-amber-100 text-amber-700 border-amber-200' };
+    return { label: 'Al día', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+  };
+
+  // ─── Procesar pago ────────────────────────────────────────────────────────
+  const handleProcesar = async () => {
+    if (seleccionadas.length === 0) return toast.warning('Seleccione al menos una deuda.');
+    if (clientesInvolucrados.length > 1) {
+      return toast.warning('Solo se pueden pagar deudas de un mismo cliente a la vez.');
+    }
+    
+    const pagosValidos = pagos.filter(p => parseFloat(p.monto) > 0 && p.metodoPagoId);
+    if (!pagosValidos.length)   return toast.warning('Ingrese al menos un método de pago.');
+
+    const totalPagado = pagosValidos.reduce((a, p) => {
+      const m = parseFloat(p.monto) || 0;
+      return a + (p.moneda === 'USD' ? m * (cotizacion || 1) : m);
+    }, 0);
+    if (totalAPagar - totalPagado > 1.0)
+      return toast.warning(`Falta cubrir $ ${(totalAPagar - totalPagado).toFixed(2)}.`);
+
+    setProcesando(true);
+    try {
+      await api.post('/contabilidad/caja/pago-deuda', {
+        header: {
+          clienteId: clientePrincipalId,
+          tipoDocumento: tipoDoc,
+          serieDoc,
+          observaciones: observaciones || `Pago de deudas combinadas`,
+        },
+        aplicaciones: deudasSeleccionadas.map(d => ({
+          tipo: 'PAGO_DEUDA',
+          codigoRef: String(d.DDeIdDocumento),
+          descripcion: d.NombreTrabajo || d.CodigoOrden || `Deuda #${d.DDeIdDocumento}`,
+          montoOriginal: Number(d.DDeImportePendiente),
+          ddeId: d.DDeIdDocumento,
+        })),
+        pagos: pagosValidos.map(p => ({
+          metodoPagoId: parseInt(p.metodoPagoId, 10),
+          monedaId:     parseInt(p.monedaId, 10),
+          montoOriginal: parseFloat(p.monto),
+          cotizacion: p.monedaId === 2 ? cotizacion : 1,
+        })),
+      });
+
+      toast.success(`Pago registrado: ${seleccionadas.length} deuda(s) por $${fmt(totalAPagar)}`);
+      setSeleccionadas([]); setObservaciones('');
+      setPagos([{ id: Date.now(), metodoPagoId: metodosPago[0]?.MPaIdMetodoPago || '', moneda: 'UYU', monedaId: 1, monto: '' }]);
+      cargarDeudas();
+      if (onPagoCompletado) onPagoCompletado();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Error al procesar el pago.');
+    } finally { setProcesando(false); }
+  };
+
+  // ════════════════════════════════════════════════════════════════════════════
+  return (
+    <div className="flex flex-1 overflow-hidden min-w-0 h-full">
+
+      {/* ─── 1. COLUMNA IZQUIERDA: Buscador + Lista de todas las deudas ───────────── */}
+      <div className="w-[440px] border-r border-slate-200 flex flex-col bg-white shrink-0 shadow-lg z-10">
+
+        {/* Buscador */}
+        <div className="p-6 border-b border-slate-100 flex flex-col gap-5 bg-slate-50/50">
+          <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest flex items-center gap-2 px-1">
+            <Search size={12}/> Buscar Deudas por Cliente
+          </h3>
+
+          <div className="relative group">
+            <Search size={22} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
+            <input
+              type="text"
+              placeholder="Nombre de cliente o código..."
+              value={qCliente}
+              onChange={e => setQCliente(e.target.value)}
+              className="bg-white border-2 border-slate-200 rounded-[1.5rem] pl-14 pr-6 py-4 text-base text-slate-900 placeholder-slate-400 outline-none w-full focus:border-indigo-500 focus:ring-8 focus:ring-indigo-500/5 transition-all font-bold shadow-sm"
+            />
+          </div>
+        </div>
+
+        {/* Header Seleccionar/Desmarcar */}
+        <div className="px-5 py-3 bg-slate-50/50 border-b border-slate-200 flex items-center justify-between shadow-sm z-10">
+          <button onClick={toggleTodas}
+            className="flex items-center gap-2 text-[10px] font-black text-slate-500 hover:text-indigo-600 transition-colors uppercase tracking-widest">
+            {todasSel ? <CheckSquare size={14} className="text-indigo-600" /> : <Square size={14} />}
+            {todasSel ? 'Desmarcar a la vista' : 'Seleccionar a la vista'}
+          </button>
+          <span className="text-[10px] font-black text-slate-500 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
+            {deudasFiltradas.length} deuda{deudasFiltradas.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 bg-[#f8fafc]">
+          {cargandoDeudas ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3 opacity-50">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+              <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Cargando deudas...</p>
+            </div>
+          ) : deudasFiltradas.length === 0 ? (
+            <div className="m-auto text-center opacity-50 py-20">
+              <CheckCircle size={48} className="mx-auto mb-4 text-emerald-400" />
+              <p className="text-sm font-black text-emerald-600 uppercase tracking-widest">Sin deudas a la vista</p>
+              <p className="text-xs text-slate-400 font-medium mt-2">No hay deudas que coincidan con la búsqueda.</p>
+            </div>
+          ) : (
+            deudasFiltradas.map(d => {
+              const sel = seleccionadas.includes(d.DDeIdDocumento);
+              const badge = badgeEstado(d);
+              return (
+                <div key={d.DDeIdDocumento} onClick={() => toggleDeuda(d.DDeIdDocumento)}
+                  className={`cursor-pointer shrink-0 rounded-[1.2rem] p-4 border-2 transition-all flex flex-col gap-3 relative overflow-hidden group shadow-sm active:scale-[0.98]
+                    ${sel ? 'border-indigo-500 bg-indigo-50/50 ring-4 ring-indigo-500/10' : 'border-slate-200 bg-white hover:border-indigo-400 hover:shadow-md hover:-translate-y-0.5'}`}>
+
+                  <div className="flex items-center gap-2 mb-1">
+                    <User size={12} className={sel ? 'text-indigo-400' : 'text-slate-400'}/>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 truncate">
+                      {d.ClienteNombre}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-10 h-10 rounded-xl border-2 flex items-center justify-center shrink-0 transition-all
+                        ${sel ? 'border-indigo-500 bg-indigo-500 shadow-md shadow-indigo-500/20' : 'border-slate-200 bg-slate-50 group-hover:border-indigo-400 group-hover:bg-white'}`}>
+                        {sel && <CheckCircle size={20} className="text-white" />}
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className={`font-black text-base transition-colors leading-none tracking-tight truncate ${sel ? 'text-indigo-700' : 'text-slate-900 group-hover:text-indigo-600'}`}>
+                          {d.NombreTrabajo || d.CodigoOrden || `Deuda #${d.DDeIdDocumento}`}
+                        </span>
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1.5">
+                          Vence: {fmtFecha(d.DDeFechaVencimiento)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="font-black text-right flex flex-col items-end shrink-0 gap-1.5">
+                      <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border shadow-sm ${badge.cls}`}>{badge.label}</span>
+                      <span className={`text-base font-black ${sel ? 'text-indigo-700' : 'text-slate-800'}`}>
+                        {d.MonSimbolo || '$'} {fmt(d.DDeImportePendiente)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* ─── 2. ÁREA CENTRAL: Resumen ───────────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
+        {seleccionadas.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center opacity-40 gap-4">
+            <ArrowDownCircle size={80} className="text-slate-300" />
+            <p className="font-black text-slate-400 uppercase tracking-widest text-sm text-center">
+              Seleccioná las deudas a pagar<br/>desde la lista de la izquierda
+            </p>
+          </div>
+        ) : (
+          <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-4">
+            {/* Encabezado */}
+            <div className="flex justify-between items-center border-b border-slate-200 pb-4">
+              <h2 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-3">
+                <CreditCard size={26} className="text-indigo-600" />
+                Resumen de Selección
+              </h2>
+            </div>
+
+            {clientesInvolucrados.length > 1 && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-2">
+                <AlertTriangle size={18} />
+                Atención: Seleccionaste deudas de múltiples clientes. Solo podés cobrar a un cliente a la vez.
+              </div>
+            )}
+
+            {/* Deudas seleccionadas */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-4">
+              <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest">
+                Deudas a cancelar ({seleccionadas.length})
+              </h3>
+
+              <div className="flex flex-col gap-2">
+                {deudasSeleccionadas.map(d => {
+                  const badge = badgeEstado(d);
+                  return (
+                    <div key={d.DDeIdDocumento}
+                      className="flex justify-between items-center px-4 py-3 rounded-2xl border gap-4 bg-white border-slate-200">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FileMinus size={16} className="text-indigo-400 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="font-black text-slate-800 text-sm truncate">
+                            {d.NombreTrabajo || d.CodigoOrden || `Deuda #${d.DDeIdDocumento}`}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <User size={10} className="text-slate-400"/>
+                            <span className="text-[10px] text-slate-500 font-bold truncate max-w-[120px]">{d.ClienteNombre}</span>
+                            <span className="text-slate-300">•</span>
+                            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-md border ${badge.cls}`}>{badge.label}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="font-black text-slate-800 text-base min-w-[80px] text-right">
+                          {d.MonSimbolo || '$'} {fmt(d.DDeImportePendiente)}
+                        </span>
+                        <button onClick={e => { e.stopPropagation(); toggleDeuda(d.DDeIdDocumento); }}
+                          className="text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors p-1.5">
+                          <X size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Total */}
+              <div className="flex items-center justify-between px-5 py-4 bg-indigo-50 rounded-2xl border-2 border-indigo-200 mt-2">
+                <span className="font-black text-indigo-800 text-sm uppercase tracking-widest">Total a Cubrir</span>
+                <span className="font-black text-indigo-700 text-3xl tracking-tight">$ {fmt(totalAPagar)}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ─── 3. COLUMNA DERECHA: PANEL FIJO DE PAGO ───────────────────────────── */}
+      {seleccionadas.length > 0 && (
+        <div className="w-[420px] shrink-0 border-l border-slate-200 bg-white relative shadow-xl z-20 flex flex-col h-full animate-in slide-in-from-right-8 duration-300">
+          <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-400 to-indigo-500 z-30"></div>
+          
+          <div className="p-6 border-b border-slate-100 bg-slate-50/80">
+             <h3 className="font-black text-slate-800 flex items-center gap-2 text-sm uppercase tracking-widest">
+               <CreditCard size={16} className="text-indigo-600"/> Procesar Pago
+             </h3>
+             <p className="text-[10px] text-slate-400 mt-1 font-black">MÉTODOS Y COMPROBANTE</p>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+            <CajaPanelPago
+              mode="VENTA"
+              metodosPago={metodosPago}
+              pagos={pagos}
+              onPagosChange={setPagos}
+              totalACubrir={totalAPagar}
+              moneda="UYU"
+              cotizacion={cotizacion}
+              procesando={procesando}
+              onConfirmar={handleProcesar}
+              notas={observaciones}
+              onNotas={setObservaciones}
+              tipoDoc={tipoDoc}
+              onTipoDoc={setTipoDoc}
+              serieDoc={serieDoc}
+              onSerieDoc={setSerieDoc}
+              numDoc=""
+              tiposDocDisponibles={tiposDocDisponibles.length > 0 ? tiposDocDisponibles : TIPOS_DOC_PAGO}
+            />
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}

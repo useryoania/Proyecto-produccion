@@ -597,8 +597,13 @@ exports.createWebOrder = async (req, res) => {
 
             for (let idx = 0; idx < pendingOrderExecutions.length; idx++) {
                 const exec = pendingOrderExecutions[idx];
-                const globalIndex = idx + 1;
-                const docNumber = pendingOrderExecutions.length > 1 ? `${erpDocNumber} (${globalIndex}/${pendingOrderExecutions.length})` : erpDocNumber;
+                const fisicasSB = pendingOrderExecutions.filter(e => e.areaID === 'SB');
+                let docNumber = erpDocNumber;
+                
+                if (exec.areaID === 'SB' && fisicasSB.length > 1) {
+                    const indexSB = fisicasSB.findIndex(e => e === exec) + 1;
+                    docNumber = `${erpDocNumber} (${indexSB}/${fisicasSB.length})`;
+                }
                 exec.codigoOrden = `ORD-${docNumber}`;
 
                 // helper sanitize ya está en scope global si lo moví bien, si no lo redefino por seguridad

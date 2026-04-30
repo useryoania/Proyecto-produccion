@@ -6,15 +6,19 @@ import ReferenceItem from './ReferenceItem';
 import { toast } from 'sonner';
 import OrderRequirementsList from '../../logistics/OrderRequirementsList';
 import { printLabelsHelper } from "../../../utils/printHelper";
+import QuotationEditModal from '../../logistics/QuotationEditModal';
+import { useAuth } from '../../../context/AuthContext';
 
 
 const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
     // Estado Pestañas
     const [activeTab, setActiveTab] = useState('files');
+    const { user } = useAuth();
 
     // Estado local Base
     const [currentOrder, setCurrentOrder] = useState(null);
     const [files, setFiles] = useState([]);
+    const [configEstados, setConfigEstados] = useState([]);
     const [loadingFiles, setLoadingFiles] = useState(false);
     const [labels, setLabels] = useState([]);
     const [loadingLabels, setLoadingLabels] = useState(false);
@@ -164,19 +168,16 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
 
     // Listas filtradas con lógica robusta (Case Insensitive y Catch-All)
     const normalizeType = (t) => (t || '').toUpperCase();
-
-    // Tipos conocidos
-    const prodTypes = ['IMPRESION', 'REPOSICION', 'PRODUCCION'];
     const servTypes = ['SERVICIO', 'ACABADO'];
 
-    const productionFiles = files.filter(f => !f.tipo || prodTypes.includes(normalizeType(f.tipo)));
-    const serviceFiles = files.filter(f => servTypes.includes(normalizeType(f.tipo)));
+    // Archivos de Impresión = select * from ArchivosOrden (TODAS LAS ÁREAS, pero editable solo si es el dueño)
+    const productionFiles = files.filter(f => f.Categoria === 'produccion' || (!f.Categoria && !servTypes.includes(normalizeType(f.tipo))));
+    
+    // Archivos de Referencia = select * from ArchivosReferencia
+    const referenceFiles = files.filter(f => f.Categoria === 'referencia');
 
-    // Referencias: Todo lo que NO sea Producción NI Servicio (atrapa LOGO, BOCETO, CORTE, etc.)
-    const referenceFiles = files.filter(f => {
-        const t = normalizeType(f.tipo);
-        return t && !prodTypes.includes(t) && !servTypes.includes(t);
-    });
+    // Cotizar Productos = select * from ServiciosExtraOrden
+    const serviceFiles = files.filter(f => f.Categoria === 'servicio' || (f.tipo && servTypes.includes(normalizeType(f.tipo))));
 
     const handleAddLabel = () => {
         toast("¿Crear una etiqueta EXTRA para esta orden?", {
@@ -189,7 +190,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                         const data = await fileControlService.getEtiquetas(currentOrder.id);
                         setLabels(data);
                         toast.success("Etiqueta extra creada");
-                    } catch (e) { toast.error("Error: " + e.message); }
+                    } catch (e) { toast.error("Error: " + (e.response?.data?.error || e.response?.data?.message || e.message)); }
                     finally { setLoadingLabels(false); }
                 }
             },
@@ -229,7 +230,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                     });
                     return 'Etiquetas listas';
                 },
-                error: (e) => `Error: ${e.message}`
+                error: (e) => `Error: ${e.response?.data?.error || e.response?.data?.message || e.message}`
             }
         );
     };
@@ -254,30 +255,69 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
     const loadData = (orderId, area) => {
         setLoadingFiles(true);
 
-        Promise.all([
-            ordersService.getById(orderId, area),
-            ordersService.getReferences(orderId).catch(e => []),
-            ordersService.getServices(orderId).catch(e => [])
-        ])
-            .then(([data, refFiles, servFiles]) => {
+        ordersService.getById(orderId, area)
+            .then(data => {
                 if (data) {
                     setCurrentOrder(data);
 
-                    const prodFiles = data.filesData || data.files || [];
+                    const refCode = data.code || data.codigoOrden || data.NoDocERP;
+                    if (refCode) {
+                        ordersService.getIntegralDetails(refCode).then(integralData => {
+                            if (integralData && integralData.archivos) {
+                                // Add logic to mark files not from current order as readonly
+                                const allFiles = integralData.archivos.map(f => ({
+                                    ...f,
+                                    id: f.ArchivoID || f.RefID || f.ServicioID || f.id,
+                                    readonly: String(f.OrdenID) !== String(orderId)
+                                }));
+                                setFiles(allFiles);
 
-                    // Unificar todo en una sola lista para que los filtros de pestañas funcionen
-                    const allFiles = [...prodFiles, ...refFiles, ...servFiles];
-                    setFiles(allFiles);
+                                // logic tab
+                                const prodFiles = allFiles.filter(f => f.Categoria === 'produccion' || f.TipoArchivo === 'IMPRESION');
+                                const servFiles = allFiles.filter(f => f.Categoria === 'servicio' || f.TipoArchivo === 'SERVICIO');
+                                if (activeTab === 'files' && prodFiles.length === 0 && servFiles.length > 0) {
+                                    setActiveTab('services');
+                                }
+                            } else {
+                                setFiles([]);
+                            }
+                        }).catch(e => {
+                            console.error(e);
+                            setFiles([]);
+                        }).finally(() => setLoadingFiles(false));
+                    } else {
+                        Promise.all([
+                            ordersService.getReferences(orderId).catch(e => []),
+                            ordersService.getServices(orderId).catch(e => [])
+                        ])
+                            .then(([refFiles, servFiles]) => {
+                                const prodFilesRaw = data.filesData || data.files || [];
+                                
+                                const prodFiles = prodFilesRaw.map(f => ({ ...f, Categoria: 'produccion' }));
+                                const mappedRefFiles = refFiles.map(f => ({ ...f, Categoria: 'referencia' }));
+                                const mappedServFiles = servFiles.map(f => ({ ...f, Categoria: 'servicio' }));
+                                
+                                const mappedAllFiles = [...prodFiles, ...mappedRefFiles, ...mappedServFiles].map(f => ({
+                                    ...f,
+                                    id: f.ArchivoID || f.RefID || f.ServicioID || f.id,
+                                    readonly: String(f.OrdenID) !== String(orderId)
+                                }));
+                                setFiles(mappedAllFiles);
 
-                    // Lógica de Pestaña Inteligente: 
-                    // Si NO hay archivos de impresión pero SÍ hay productos/servicios, y estamos en el primer load
-                    if (activeTab === 'files' && prodFiles.length === 0 && servFiles.length > 0) {
-                        setActiveTab('services');
+                                if (activeTab === 'files' && prodFiles.length === 0 && servFiles.length > 0) {
+                                    setActiveTab('services');
+                                }
+                            })
+                            .finally(() => setLoadingFiles(false));
                     }
+                } else {
+                    setLoadingFiles(false);
                 }
             })
-            .catch(err => console.error("Error cargando orden", err))
-            .finally(() => setLoadingFiles(false));
+            .catch(err => {
+                console.error("Error cargando orden", err);
+                setLoadingFiles(false);
+            });
     };
 
     const reloadFiles = () => {
@@ -465,6 +505,14 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
         }
     }, [order]);
 
+    useEffect(() => {
+        ordersService.getEstados().then(data => {
+            if (data && data.length > 0) {
+                setConfigEstados(data);
+            }
+        }).catch(err => console.error("Error loading estados:", err));
+    }, []);
+
     if (!order || !currentOrder) return null;
 
     // Helper para acciones de archivo (Definido aquí para acceder al scope)
@@ -556,13 +604,13 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                     {rawStatus}
                 </div>
 
-                {isEditing ? (
+                {isEditing && !f.readonly ? (
                     <div className="flex gap-1 animate-in zoom-in-95 duration-200">
                         <ActionButton icon="fa-check" color="emerald" onClick={saveEditing} title="Guardar Cambios" />
                         <ActionButton icon="fa-xmark" color="slate" onClick={() => setEditingFileId(null)} title="Cancelar" />
                     </div>
                 ) : (
-                    !isCancelled && !isOrderCancelled && (
+                    !isCancelled && !isOrderCancelled && !f.readonly && (
                         <div className='flex gap-1'>
                             <ActionButton
                                 icon="fa-pen"
@@ -593,7 +641,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                 onClick={onClose}
             ></div>
 
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col animate-in zoom-in-95 duration-200 border border-slate-200 my-8">
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-6xl flex flex-col animate-in zoom-in-95 duration-200 border border-slate-200 my-8">
 
                 <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-start shrink-0">
                     <div>
@@ -636,40 +684,40 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                 value={currentOrder.status || 'Pendiente'}
                                 onChange={(e) => handleUpdateOrderStatus(e.target.value)}
                             >
-                                <option value="Pendiente">Pendiente</option>
-                                <option value="En Proceso">En Proceso</option>
-                                <option value="En Lote">En Lote</option>
-                                <option value="Sublimado">Sublimado</option>
-                                <option value="Planchado">Planchado</option>
-                                <option value="Costura">Costura</option>
-                                <option value="Armado">Armado</option>
-                                <option value="Terminado">Terminado</option>
-                                <option value="Despachado">Despachado</option>
-                                <option value="Entregado">Entregado</option>
-                                <option value="Cancelado">Cancelado</option>
-                                <option value="Falla Produccion">Falla de Producción</option>
+                                {configEstados.filter(s => s.TipoEstado === 'ESTADO').length > 0 ? (
+                                    configEstados.filter(s => s.TipoEstado === 'ESTADO').map(s => (
+                                        <option key={s.EstadoID} value={s.Nombre}>{s.Nombre}</option>
+                                    ))
+                                ) : (
+                                    <>
+                                        <option value="Pendiente">Pendiente</option>
+                                        <option value="En Proceso">En Proceso</option>
+                                        <option value="En Lote">En Lote</option>
+                                        <option value="Sublimado">Sublimado</option>
+                                        <option value="Planchado">Planchado</option>
+                                        <option value="Costura">Costura</option>
+                                        <option value="Armado">Armado</option>
+                                        <option value="Terminado">Terminado</option>
+                                        <option value="Despachado">Despachado</option>
+                                        <option value="Entregado">Entregado</option>
+                                        <option value="Cancelado">Cancelado</option>
+                                        <option value="Falla Produccion">Falla de Producción</option>
+                                    </>
+                                )}
                             </select>
                         </div>
                         <div className="lg:col-span-2">
                             <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1"><i className="fa-solid fa-layer-group text-indigo-400 mr-1"></i> Estado en su Área</label>
-                            <div className="flex bg-white rounded shadow-sm border border-slate-300 focus-within:border-blue-500 overflow-hidden pr-1">
-                                <input 
-                                    type="text"
-                                    className="w-full text-sm font-bold text-slate-700 px-2 py-1.5 outline-none bg-transparent"
-                                    value={currentOrder.areaStatus || ''}
-                                    placeholder="Ej. En Costura..."
-                                    onChange={(e) => setCurrentOrder({ ...currentOrder, areaStatus: e.target.value })}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.target.blur();
-                                        }
-                                    }}
-                                    onBlur={(e) => handleUpdateAreaStatus(e.target.value)}
-                                />
-                                <div className="text-[10px] text-slate-400 flex items-center shrink-0">
-                                    <i className="fa-solid fa-pen" title="Editar y click afuera para guardar"></i>
-                                </div>
-                            </div>
+                            <select 
+                                className="w-full text-sm font-bold text-slate-700 border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-blue-500 bg-white shadow-sm"
+                                value={currentOrder.areaStatus || currentOrder.EstadoenArea || ''}
+                                onChange={(e) => handleUpdateAreaStatus(e.target.value)}
+                            >
+                                <option value="">Seleccione Estado</option>
+                                {configEstados.filter(s => s.TipoEstado === 'ESTADOENAREA').map(s => (
+                                    <option key={s.EstadoID} value={s.Nombre}>{s.Nombre}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 
@@ -862,275 +910,16 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
 
                             {/* PESTAÑA: SERVICIOS / PRODUCTOS */}
                             {activeTab === 'services' && (
-                                <div className="space-y-3 p-1">
-                                    <div className="flex justify-between items-center bg-amber-50 rounded-lg p-3 border border-amber-200 shadow-sm">
-                                        <div className="text-amber-800 flex items-center gap-2">
-                                            <i className="fa-solid fa-box-open"></i>
-                                            <span className="font-bold text-sm">Productos a Cotizar / Extras</span>
-                                        </div>
-                                        <button
-                                            onClick={() => setIsAddingService(!isAddingService)}
-                                            className="px-3 py-1.5 bg-white text-amber-700 border border-amber-300 rounded text-xs font-bold shadow-sm hover:bg-amber-100 transition"
-                                        >
-                                            <i className={`fa-solid ${isAddingService ? 'fa-xmark' : 'fa-plus'} mr-1`}></i>
-                                            {isAddingService ? 'Cancelar' : 'Agregar Producto'}
-                                        </button>
-                                    </div>
-
-                                    {isAddingService && (
-                                        <div className="bg-white border-2 border-amber-200 rounded-lg p-3 shadow-sm flex flex-wrap gap-3 items-end animate-in fade-in zoom-in-95">
-                                            <div className="flex-1 min-w-[200px]">
-                                                <label className="text-[10px] font-bold text-amber-600 uppercase mb-1 block">Producto a Agregar</label>
-                                                <select
-                                                    value={newService.name}
-                                                    onChange={e => setNewService({ ...newService, name: e.target.value })}
-                                                    className="w-full text-sm border border-slate-300 px-3 py-2 rounded outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-200 bg-white"
-                                                    autoFocus
-                                                >
-                                                    <option value="">-- Seleccione un producto --</option>
-                                                    {articlesList.map(a => (
-                                                        <option key={a.CodArticulo} value={(a.Descripcion || '').trim()}>
-                                                            {(a.Descripcion || '').trim()}
-                                                        </option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            <div className="w-24">
-                                                <label className="text-[10px] font-bold text-amber-600 uppercase mb-1 block">Cantidad</label>
-                                                <input
-                                                    type="number"
-                                                    value={newService.quantity}
-                                                    onChange={e => setNewService({ ...newService, quantity: parseInt(e.target.value) || 1 })}
-                                                    min="1"
-                                                    step="1"
-                                                    className="w-full text-sm border border-slate-300 px-3 py-2 rounded outline-none focus:border-amber-500 text-center"
-                                                />
-                                            </div>
-
-                                            {/* CAMPOS TÉCNICOS ADICIONALES (EMB) */}
-                                            {currentOrder.area === 'EMB' && (
-                                                <div className="w-24">
-                                                    <label className="text-[10px] font-bold text-indigo-600 uppercase mb-1 block">Puntadas</label>
-                                                    <input
-                                                        type="number"
-                                                        value={newService.puntadas}
-                                                        onChange={e => setNewService({ ...newService, puntadas: parseInt(e.target.value) || 0 })}
-                                                        className="w-full text-sm border border-indigo-200 px-3 py-2 rounded outline-none focus:border-indigo-500 text-center"
-                                                    />
-                                                </div>
-                                            )}
-
-                                            {/* CAMPOS TÉCNICOS ADICIONALES (ESTAMPADO) */}
-                                            {currentOrder.area === 'EST' && (
-                                                <>
-                                                    <div className="w-24">
-                                                        <label className="text-[10px] font-bold text-orange-600 uppercase mb-1 block">Bajadas</label>
-                                                        <input
-                                                            type="number"
-                                                            value={newService.bajadas}
-                                                            onChange={e => setNewService({ ...newService, bajadas: parseInt(e.target.value) || 0 })}
-                                                            className="w-full text-sm border border-orange-200 px-3 py-2 rounded outline-none focus:border-orange-500 text-center"
-                                                        />
-                                                    </div>
-                                                    <div className="w-24">
-                                                        <label className="text-[10px] font-bold text-orange-600 uppercase mb-1 block">Baj. Adic.</label>
-                                                        <input
-                                                            type="number"
-                                                            value={newService.bajadasAdicionales}
-                                                            onChange={e => setNewService({ ...newService, bajadasAdicionales: parseInt(e.target.value) || 0 })}
-                                                            className="w-full text-sm border border-orange-200 px-3 py-2 rounded outline-none focus:border-orange-500 text-center"
-                                                        />
-                                                    </div>
-                                                </>
-                                            )}
-                                            <button
-                                                onClick={handleAddService}
-                                                className="px-4 py-2 bg-amber-500 text-white font-bold rounded shadow hover:bg-amber-600 transition h-[38px] flex items-center justify-center gap-2"
-                                            >
-                                                <i className="fa-solid fa-check"></i> Guardar
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    {serviceFiles.length === 0 ? (
-                                        <div className="py-8 text-center text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                                            <i className="fa-solid fa-box-open text-2xl mb-2 block opacity-50"></i>
-                                            No hay productos para cotizar en esta orden.
-                                        </div>
-                                    ) : (
-                                        serviceFiles.map((f, idx) => {
-                                            const fileId = f.id || f.ArchivoID || idx;
-                                            const isEditing = editingFileId === fileId;
-
-                                            return (
-                                                <div key={idx} className={`p-3 border rounded-lg flex justify-between items-center transition-all ${isEditing ? 'bg-indigo-50 border-indigo-200 ring-2 ring-indigo-100 shadow-md' : (f.Estado === 'OK' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-white border-slate-200 shadow-sm hover:shadow-md')}`}>
-                                                    <div className="flex-1">
-                                                        <div className={`flex items-center gap-3 ${isEditing ? 'hidden' : ''}`}>
-                                                            <div className="flex flex-col">
-                                                                <span className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                                                                    {f.nombre}
-                                                                    {f.Estado && f.Estado !== 'PENDIENTE' && (
-                                                                        <span className={`text-[9px] px-1.5 py-0.5 rounded border uppercase font-black ${f.Estado === 'OK' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-red-100 text-red-700 border-red-200'}`}>
-                                                                            {f.Estado}
-                                                                        </span>
-                                                                    )}
-                                                                </span>
-                                                                {f.UsuarioControl && (
-                                                                    <span className="text-[10px] text-slate-400 italic">
-                                                                        Control: {f.UsuarioControl} - {new Date(f.FechaControl).toLocaleDateString()}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                            <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full border border-slate-200 font-bold tracking-wide shadow-sm">
-                                                                Cant: <b className="text-blue-600 text-xs">{f.copias || f.Cantidad || 1}</b>
-                                                            </span>
-
-                                                            {f.Puntadas > 0 && (
-                                                                <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 font-bold shadow-sm">
-                                                                    <i className="fa-solid fa-braille mr-1"></i>
-                                                                    {f.Puntadas.toLocaleString()} puntadas
-                                                                </span>
-                                                            )}
-                                                            {(f.Bajadas > 0 || f.BajadasAdicionales > 0) && (
-                                                                <span className="text-[10px] text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded border border-orange-100 font-bold shadow-sm">
-                                                                    <i className="fa-solid fa-layer-group mr-1"></i>
-                                                                    {f.Bajadas || 0} baj. {f.BajadasAdicionales > 0 ? `+ ${f.BajadasAdicionales} adic.` : ''}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        {isEditing && (
-                                                            <div className="flex flex-col gap-2 animate-in fade-in zoom-in-95 duration-200 w-full bg-white p-2 rounded border border-indigo-100 shadow-inner">
-                                                                <div className="flex items-center gap-2">
-                                                                    <label className="text-[10px] font-bold uppercase text-slate-500 w-16">Producto:</label>
-                                                                    <select
-                                                                        value={editValues.nombre}
-                                                                        onChange={e => setEditValues({ ...editValues, nombre: e.target.value })}
-                                                                        className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs focus:border-indigo-500 outline-none"
-                                                                    >
-                                                                        {articlesList.some(a => (a.Descripcion || '').trim() === editValues.nombre) ? null : <option value={f.nombre}>{f.nombre}</option>}
-                                                                        {articlesList.map(a => (
-                                                                            <option key={a.CodArticulo} value={(a.Descripcion || '').trim()}>
-                                                                                {(a.Descripcion || '').trim()}
-                                                                            </option>
-                                                                        ))}
-                                                                    </select>
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <label className="text-[10px] font-bold uppercase text-slate-500 w-16">Cantidad:</label>
-                                                                    <input
-                                                                        type="number"
-                                                                        step="1"
-                                                                        min="1"
-                                                                        className="w-20 px-2 py-1 text-center font-bold border border-slate-300 rounded text-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-200 outline-none"
-                                                                        value={editValues.copias}
-                                                                        onChange={e => setEditValues({ ...editValues, copias: parseInt(e.target.value) || 1 })}
-                                                                    />
-                                                                </div>
-                                                                <div className="flex items-center gap-2">
-                                                                    <label className="text-[10px] font-bold uppercase text-slate-500 w-16">Obs:</label>
-                                                                    <input
-                                                                        type="text"
-                                                                        className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs focus:border-indigo-500 outline-none"
-                                                                        value={editValues.observaciones || ''}
-                                                                        onChange={e => setEditValues({ ...editValues, observaciones: e.target.value })}
-                                                                        placeholder="Observaciones adicionales..."
-                                                                    />
-                                                                </div>
-
-                                                                {/* CAMPOS TÉCNICOS CONDICIONALES */}
-                                                                {currentOrder.area === 'EMB' && (
-                                                                    <div className="flex items-center gap-2 pt-1 border-t border-slate-50">
-                                                                        <label className="text-[10px] font-bold uppercase text-indigo-600 w-16">Puntadas:</label>
-                                                                        <input
-                                                                            type="number"
-                                                                            className="w-24 px-2 py-1 border border-indigo-200 rounded text-xs focus:border-indigo-500 outline-none font-bold"
-                                                                            value={editValues.puntadas}
-                                                                            onChange={e => setEditValues({ ...editValues, puntadas: parseInt(e.target.value) || 0 })}
-                                                                        />
-                                                                    </div>
-                                                                )}
-
-                                                                {currentOrder.area === 'EST' && (
-                                                                    <div className="flex flex-col gap-2 pt-1 border-t border-slate-50">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <label className="text-[10px] font-bold uppercase text-orange-600 w-16">Bajadas:</label>
-                                                                            <input
-                                                                                type="number"
-                                                                                className="w-20 px-2 py-1 border border-orange-200 rounded text-xs focus:border-orange-500 outline-none font-bold"
-                                                                                value={editValues.bajadas}
-                                                                                onChange={e => setEditValues({ ...editValues, bajadas: parseInt(e.target.value) || 0 })}
-                                                                            />
-                                                                        </div>
-                                                                        <div className="flex items-center gap-2">
-                                                                            <label className="text-[10px] font-bold uppercase text-orange-600 w-16">Baj. Adic:</label>
-                                                                            <input
-                                                                                type="number"
-                                                                                className="w-20 px-2 py-1 border border-orange-200 rounded text-xs focus:border-orange-500 outline-none font-bold"
-                                                                                value={editValues.bajadasAdicionales}
-                                                                                onChange={e => setEditValues({ ...editValues, bajadasAdicionales: parseInt(e.target.value) || 0 })}
-                                                                            />
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-
-                                                    <div className="flex items-center gap-2 pl-4">
-                                                        {isEditing ? (
-                                                            <div className="flex gap-1">
-                                                                <ActionButton icon="fa-check" color="emerald" onClick={saveEditing} title="Confirmar" />
-                                                                <ActionButton icon="fa-xmark" color="slate" onClick={() => setEditingFileId(null)} title="Cancelar" />
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex gap-1 items-center">
-                                                                {/* CONTROLES DE PRODUCCIÓN PARA SERVICIO */}
-                                                                {f.Estado === 'PENDIENTE' && (
-                                                                    <div className="flex gap-1 mr-2 pr-2 border-r border-slate-200">
-                                                                        <ActionButton
-                                                                            icon="fa-circle-check"
-                                                                            color="emerald"
-                                                                            onClick={() => handleControlItem(f, 'OK', true)}
-                                                                            title="Marcar como Completo"
-                                                                        />
-                                                                        <ActionButton
-                                                                            icon="fa-circle-exclamation"
-                                                                            color="red"
-                                                                            onClick={() => handleControlItem(f, 'FALLA', true)}
-                                                                            title="Reportar Falla"
-                                                                        />
-                                                                    </div>
-                                                                )}
-
-                                                                <ActionButton
-                                                                    icon="fa-pen"
-                                                                    color="blue"
-                                                                    onClick={() => startEditing({
-                                                                        ...f,
-                                                                        id: fileId,
-                                                                        copias: f.copias || f.Cantidad,
-                                                                        observaciones: f.notas || f.Observacion || '',
-                                                                        puntadas: f.Puntadas || 0,
-                                                                        bajadas: f.Bajadas || 0,
-                                                                        bajadasAdicionales: f.BajadasAdicionales || 0,
-                                                                        metros: 0,
-                                                                        link: ''
-                                                                    })}
-                                                                    title="Editar Cantidad / Observaciones"
-                                                                />
-                                                                <ActionButton
-                                                                    icon="fa-trash-can"
-                                                                    color="red"
-                                                                    onClick={() => handleDeleteService(fileId)}
-                                                                    title="Eliminar de la Cotización"
-                                                                />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })
-                                    )}
+                                <div className="p-1 h-[600px] bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-2">
+                                    <QuotationEditModal
+                                        embedded={true}
+                                        noDocERP={currentOrder.code || currentOrder.id}
+                                        currentUser={user}
+                                        areaFilter={currentOrder.area || 'TODOS'}
+                                        onSaved={() => {
+                                            if (onOrderUpdated) onOrderUpdated();
+                                        }}
+                                    />
                                 </div>
                             )}
 

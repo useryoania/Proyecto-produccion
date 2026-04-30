@@ -24,17 +24,16 @@ class LabelGenerationService {
             }
             const o = orderRes.recordset[0];
 
-            // --- VALIDACIÓN DE MAGNITUD ---
-            const magnitudStr = o.Magnitud || '';
-            let magnitudValor = 0;
-            if (typeof magnitudStr === 'number') magnitudValor = magnitudStr;
-            else if (magnitudStr) {
-                const match = magnitudStr.toString().match(/[\d\.]+/);
-                if (match) magnitudValor = parseFloat(match[0]);
-            }
+            // --- VALIDACIÓN DE MAGNITUD DESDE PEDIDOSCOBRANZADETALLE ---
+            // A solicitud del usuario, la validación estricta debe basarse en la cotización guardada en el ERP Sync.
+            const pcdRes = await pool.request()
+                .input('OID', sql.Int, ordenId)
+                .query(`SELECT SUM(Cantidad) as TotalCantidad FROM PedidosCobranzaDetalle WHERE OrdenID = @OID`);
+            
+            const magnitudValor = parseFloat(pcdRes.recordset[0]?.TotalCantidad) || 0;
 
             if (magnitudValor <= 0) {
-                return { success: false, error: `No se pueden generar etiquetas: La magnitud es 0 o inválida (${magnitudStr}).` };
+                return { success: false, error: `No se pueden generar etiquetas: La magnitud cotizada es 0 o inválida. Revise la cotización de los items para esta área en 'Cotizar Productos'.` };
             }
 
             // --- CÁLCULO CANTIDAD BULTOS (Lógica Metros/Bulto) ---
@@ -164,20 +163,55 @@ class LabelGenerationService {
                     .input('Tipo', sql.VarChar(50), tipoBulto)
                     .input('DC', sql.NVarChar(sql.MAX), dbDetalleCostos)
                     .input('PP', sql.NVarChar(sql.MAX), dbPerfilesPrecio)
-                    .input('Doc', sql.VarChar(50), o.NoDocERP || o.CodigoOrden || String(ordenId))
+                    .input('Doc', sql.VarChar(50), (o.NoDocERP || o.CodigoOrden || String(ordenId)).trim())
                     .query(`
                         INSERT INTO Etiquetas(OrdenID, NumeroBulto, TotalBultos, CodigoQR, FechaGeneracion, Usuario, CreadoPor, DetalleCostos, PerfilesPrecio)
                         VALUES(@OID, @Num, @Tot, @QR, GETDATE(), @User, @User, @DC, @PP);
 
                         DECLARE @NewID INT = SCOPE_IDENTITY();
-                        -- Formato: B(IdBulto)-(NumeroDeOrden/ERP)
-                        DECLARE @Code NVARCHAR(50) = 'B' + CAST(@NewID AS NVARCHAR) + '-' + @Doc;
+                        -- Formato: (NumeroDeOrden/ERP)/B(IdBulto)
+                        DECLARE @Code NVARCHAR(50) = LTRIM(RTRIM(@Doc)) + '/B' + CAST(@NewID AS NVARCHAR);
                         
                         UPDATE Etiquetas SET CodigoEtiqueta = @Code WHERE EtiquetaID = @NewID;
 
                         INSERT INTO Logistica_Bultos (CodigoEtiqueta, Tipocontenido, OrdenID, Descripcion, UbicacionActual, Estado, UsuarioCreador)
                         VALUES (@Code, @Tipo, @OID, @Job, @Area, 'EN_STOCK', @UID);
                     `);
+            }
+
+            // --- AUTO-CONSUME BULTO PADRE ---
+            // Cuando un área genera su etiqueta (termina de procesar), se auto-consume el bulto de materia prima (ej. tela de SB)
+            // que llegó a esta área y que pertenece a la misma orden (mismo NoDocERP).
+            try {
+                const consumedRes = await new sql.Request(transaction)
+                    .input('Area', sql.VarChar(20), o.AreaID || 'GEN')
+                    .input('Doc', sql.VarChar(50), (o.NoDocERP || o.CodigoOrden || '').trim())
+                    .input('OID', sql.Int, ordenId)
+                    .query(`
+                        UPDATE Logistica_Bultos 
+                        SET Estado = 'CONSUMIDO'
+                        OUTPUT INSERTED.CodigoEtiqueta, INSERTED.UbicacionActual
+                        WHERE UbicacionActual = @Area 
+                          AND Estado = 'EN_STOCK'
+                          AND OrdenID != @OID
+                          AND OrdenID IN (SELECT OrdenID FROM Ordenes WHERE NoDocERP = @Doc OR CodigoOrden = @Doc)
+                    `);
+
+                // Insertar trazabilidad del consumo
+                for (const c of consumedRes.recordset) {
+                    await new sql.Request(transaction)
+                        .input('CodigoBulto', sql.NVarChar, c.CodigoEtiqueta)
+                        .input('TipoMovimiento', sql.NVarChar, 'CONSUMO')
+                        .input('UsuarioID', sql.Int, userId)
+                        .input('Ubicacion', sql.NVarChar, c.UbicacionActual)
+                        .input('Observaciones', sql.NVarChar(sql.MAX), `Consumo auto por generación de bulto en ${o.AreaID}`)
+                        .query(`
+                            INSERT INTO MovimientosLogistica (CodigoBulto, TipoMovimiento, UsuarioID, UbicacionDestino, Observaciones) 
+                            VALUES (@CodigoBulto, @TipoMovimiento, @UsuarioID, @Ubicacion, @Observaciones)
+                        `);
+                }
+            } catch (autoErr) {
+                logger.error(`[LabelService] Error auto-consumiendo bultos padres:`, autoErr);
             }
 
             await transaction.commit();

@@ -3,7 +3,7 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
-export default function ImportadorManualView() {
+export default function ImportadorManualView({ isModal = false, onClose = null, onImportSuccess = null }) {
     const [docsInput, setDocsInput] = useState('');
     const [loadingPreview, setLoadingPreview] = useState(false);
     const [loadingImport, setLoadingImport] = useState(false);
@@ -121,6 +121,8 @@ export default function ImportadorManualView() {
             setPreviewData(null); 
             setIsInputCollapsed(false);
             setDocsInput('');
+            if (onImportSuccess) onImportSuccess();
+            if (onClose) setTimeout(onClose, 1500);
         } catch (err) {
             setError(err.response?.data?.error || err.message || 'Ocurrió un error al oficializar la importación.');
         } finally {
@@ -164,7 +166,7 @@ export default function ImportadorManualView() {
     };
 
     return (
-        <div className="p-6 bg-slate-50 min-h-screen text-slate-800">
+        <div className={`bg-slate-50 text-slate-800 ${!isModal ? 'p-6 min-h-screen' : ''}`}>
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
                 <div>
                     <h1 className="text-3xl font-black text-slate-900 tracking-tight">Importación a Producción</h1>

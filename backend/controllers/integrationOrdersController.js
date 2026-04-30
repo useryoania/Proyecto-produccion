@@ -282,17 +282,17 @@ exports.createPlanillaOrder = async (req, res) => {
                 });
 
                 // --- INYECCIÓN DE ARCHIVO FANTASMA PARA SINCRO (PLANILLA) ---
-                // Si la planilla NO envió archivos (común en Sincro donde no hay gráficos), creamos uno virtual
-                // para mantener el conteo logístico en ArchivosOrden / ArchivosReferencia
-                if (ordenItems.length === 0) {
+                // Si la planilla NO envió archivos, creamos uno virtual SOLO para el principal
+                // para mantener el conteo logístico en ArchivosOrden
+                if (ordenItems.length === 0 && srv.esPrincipal) {
                     const fallbackQty = cabecera.cantidad || srv.cantidad || req.body.metrosReales || req.body.cantidad || 1;
                     ordenItems.push({
-                        fileName: srv.esPrincipal ? 'SINCRO_SIN_ARCHIVO.pdf' : 'SINCRO_BOCETO_EXTRA.pdf',
+                        fileName: 'SINCRO_SIN_ARCHIVO.pdf',
                         originalUrl: null,
-                        copies: fallbackQty, // Si es unitario, esto es N. Si es M2, puede ser el ancho/alto
+                        copies: fallbackQty, 
                         note: 'Generado desde Planilla Sincro sin archivo físico',
                         width: 0,
-                        height: fallbackQty, // Metemos el valor en 'height' para que compute "Metros" si el área es ml/m2
+                        height: fallbackQty, 
                         observaciones: 'Falta Archivo Digital'
                     });
                 }
@@ -331,7 +331,7 @@ exports.createPlanillaOrder = async (req, res) => {
                                 SELECT TOP 1 A.CodArticulo, A.ProIdProducto, A.Descripcion
                                 FROM [SINCRO-ARTICULOS] S
                                 INNER JOIN Articulos A ON S.PROIDPRODUCTO = A.ProIdProducto
-                                WHERE LTRIM(RTRIM(S.DESCRIPCION)) = LTRIM(RTRIM(@nom))
+                                WHERE LTRIM(RTRIM(S.PRODUCTO)) = LTRIM(RTRIM(@nom))
                             `);
                             
                         if (preq.recordset.length > 0) {
@@ -358,7 +358,8 @@ exports.createPlanillaOrder = async (req, res) => {
                     items: ordenItems,
                     isExtra: isExtraSrv,
                     isCobranzaExtra: !!srv.isCobranzaExtra, // PASAR LA BANDERA AL MOTOR
-                    notaAdicional: srv.notas || ''
+                    notaAdicional: srv.notas || '',
+                    archivosReferenciaLocales: srv.archivosReferenciaLocales || []
                 });
             }
 
@@ -513,11 +514,17 @@ exports.createPlanillaOrder = async (req, res) => {
                 fisicaIndex++;
                 let codigoParaEstaOrden;
 
-                if (fisicasEjecuciones.length > 1) {
-                    codigoParaEstaOrden = `${codigoOrdenFinal} (${fisicaIndex}/${fisicasEjecuciones.length})`;
+                // Filtrar solo las ejecuciones físicas del área SB para numerar correctamente
+                const fisicasSB = fisicasEjecuciones.filter(e => e.areaID === 'SB');
+
+                if (exec.areaID === 'SB' && fisicasSB.length > 1) {
+                    const indexSB = fisicasSB.findIndex(e => e === exec) + 1;
+                    codigoParaEstaOrden = `${codigoOrdenFinal} (${indexSB}/${fisicasSB.length})`;
                 } else {
                     codigoParaEstaOrden = codigoOrdenFinal;
                 }
+
+                const estadoInicial = (fisicaIndex === 1) ? 'PRONTO' : 'INGRESADO';
 
                 exec.codigoOrden = codigoParaEstaOrden;
 
@@ -555,7 +562,7 @@ exports.createPlanillaOrder = async (req, res) => {
                     .input('Nota', sql.NVarChar(sql.MAX), finalNote)
                     .input('Mag', sql.VarChar(50), '0')
                     .input('Prox', sql.VarChar(50), proximoServicio)
-                    .input('Estado', sql.VarChar(50), 'PRONTO')
+                    .input('Estado', sql.VarChar(50), estadoInicial)
                     .input('UM', sql.VarChar(20), areaUM)
                     .input('CArt', sql.VarChar(50), exec.codArticulo ? String(exec.codArticulo) : null)
                     .input('IdProdReact', sql.Int, !isNaN(parseInt(exec.idProductoReact)) ? parseInt(exec.idProductoReact) : null)
@@ -676,6 +683,28 @@ exports.createPlanillaOrder = async (req, res) => {
                         if (areaUM === 'u') totalMagnitud += safeCopies;
                         else totalMagnitud += (valMetros * safeCopies);
                         fileCount++;
+                    }
+                }
+
+                // --- INSERCIÓN DE ARCHIVOS DE REFERENCIA PROPIOS DEL SERVICIO ---
+                if (exec.archivosReferenciaLocales && exec.archivosReferenciaLocales.length > 0) {
+                    for (let i = 0; i < exec.archivosReferenciaLocales.length; i++) {
+                        const refItem = exec.archivosReferenciaLocales[i];
+                        const refName = `${exec.codigoOrden.replace(/\//g, '-')}_Boceto_Corte_${i+1}.url`;
+                        await new sql.Request(transaction)
+                            .input('OID', sql.Int, newOID)
+                            .input('Tipo', sql.VarChar(50), refItem.tipo || 'BOCETO_CORTE')
+                            .input('Nom', sql.VarChar(200), refName)
+                            .input('Not', sql.NVarChar(sql.MAX), refItem.nota || '')
+                            .input('Ubi', sql.NVarChar(sql.MAX), refItem.url)
+                            .query(`
+                                INSERT INTO ArchivosReferencia (
+                                    OrdenID, TipoArchivo, NombreOriginal, NotasAdicionales, FechaSubida, UbicacionStorage
+                                ) 
+                                VALUES (
+                                    @OID, @Tipo, @Nom, @Not, GETDATE(), @Ubi
+                                )
+                            `);
                     }
                 }
 

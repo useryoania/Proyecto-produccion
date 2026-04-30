@@ -343,9 +343,15 @@ const syncOrdersLogic = async (io) => {
                     const ordData = ordenesAInsertar[i];
                     const { areaID, areaObj, matGroup } = ordData;
 
-                    // 1. Numeración Global
-                    const globalIndex = i + 1;
-                    const codigoOrden = `${docData.nroDoc} (${globalIndex}/${totalDocOrdenes})`;
+                    // 1. Numeración Global (Solo para SB)
+                    const isSB = areaID === 'SB';
+                    const fisicasSB = ordenesAInsertar.filter(o => o.areaID === 'SB');
+                    let codigoOrden = `${docData.nroDoc}`;
+                    
+                    if (isSB && fisicasSB.length > 1) {
+                        const indexSB = fisicasSB.findIndex(o => o === ordData) + 1;
+                        codigoOrden = `${docData.nroDoc} (${indexSB}/${fisicasSB.length})`;
+                    }
                     generatedCodes.push(codigoOrden);
 
                     // 2. Próximo Servicio (Lookahead Avanzado - Bloques)

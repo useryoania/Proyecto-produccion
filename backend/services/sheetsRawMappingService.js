@@ -255,6 +255,33 @@ class SheetsRawMappingService {
 
         const textoServiciosExtra = (f.AJ || "").toString().toUpperCase();
 
+        // Extraer archivos especificos para CORTE (AL: Info Corte, BH: Boceto Corte)
+        let urlInfoCorte = "";
+        if (f.AL && typeof f.AL === 'string' && f.AL.includes('http')) {
+            urlInfoCorte = f.AL.toString().trim();
+        } else if (datosPorHoja && datosPorHoja["BASE INGRESO"] && datosPorHoja["BASE INGRESO"].AL) {
+            urlInfoCorte = datosPorHoja["BASE INGRESO"].AL.toString().trim();
+        }
+
+        let urlBocetoCorte = "";
+        if (f.BH && typeof f.BH === 'string' && f.BH.includes('http')) {
+            urlBocetoCorte = f.BH.toString().trim();
+        } else if (datosPorHoja && datosPorHoja["BASE INGRESO"] && datosPorHoja["BASE INGRESO"].BH) {
+            urlBocetoCorte = datosPorHoja["BASE INGRESO"].BH.toString().trim();
+        }
+        
+        let refFiles = [];
+        let localesCorte = [];
+        
+        if (urlInfoCorte) {
+            refFiles.push({ nombre: "Info Corte", url: urlInfoCorte });
+            localesCorte.push({ url: urlInfoCorte, nota: "Info Corte", tipo: "INFO_CORTE" });
+        }
+        if (urlBocetoCorte) {
+            refFiles.push({ nombre: "Boceto Corte", url: urlBocetoCorte });
+            localesCorte.push({ url: urlBocetoCorte, nota: "Boceto Corte", tipo: "BOCETO_CORTE" });
+        }
+
         if (textoServiciosExtra.includes("CORTE")) {
             serviciosArray.push({
                 areaId: 'TWC', // Taller Web Corte / Corte Láser
@@ -267,7 +294,8 @@ class SheetsRawMappingService {
                     proIdProducto: 90, 
                     codStock: "1.1.6.1" 
                 },
-                items: [{ fileName: url, cantidad: 0, copias: 1 }]
+                items: [],
+                archivosReferenciaLocales: localesCorte
             });
         }
         
@@ -283,7 +311,7 @@ class SheetsRawMappingService {
                     proIdProducto: 36,
                     codStock: "1.1.7.1" 
                 },
-                items: [{ fileName: url, cantidad: 0, copias: 1 }]
+                items: []
             });
         }
 
@@ -299,7 +327,7 @@ class SheetsRawMappingService {
                     proIdProducto: 434,
                     codStock: "1.1.9.1"
                 },
-                items: [{ fileName: url, cantidad: 0, copias: 1 }]
+                items: []
             });
         }
 
@@ -310,7 +338,7 @@ class SheetsRawMappingService {
             prioridad,
             metrosTotales: cR,
             clienteInfo: { id: clienteNom, idReact: 0 },
-            archivosReferencia: [],
+            archivosReferencia: refFiles,
             archivosTecnicos: [],
             servicios: serviciosArray
         };
@@ -377,6 +405,33 @@ class SheetsRawMappingService {
             (f.AM || "")
         ).toUpperCase();
 
+        // Extraer archivos especificos para CORTE (AL: Info Corte, BH: Boceto Corte)
+        let urlInfoCorte = "";
+        if (f.AL && typeof f.AL === 'string' && f.AL.includes('http')) {
+            urlInfoCorte = f.AL.toString().trim();
+        } else if (datosPorHoja && datosPorHoja["BASE INGRESO"] && datosPorHoja["BASE INGRESO"].AL) {
+            urlInfoCorte = datosPorHoja["BASE INGRESO"].AL.toString().trim();
+        }
+
+        let urlBocetoCorte = "";
+        if (f.BH && typeof f.BH === 'string' && f.BH.includes('http')) {
+            urlBocetoCorte = f.BH.toString().trim();
+        } else if (datosPorHoja && datosPorHoja["BASE INGRESO"] && datosPorHoja["BASE INGRESO"].BH) {
+            urlBocetoCorte = datosPorHoja["BASE INGRESO"].BH.toString().trim();
+        }
+        
+        let refFiles = [];
+        let localesCorte = [];
+        
+        if (urlInfoCorte) {
+            refFiles.push({ nombre: "Info Corte", url: urlInfoCorte });
+            localesCorte.push({ url: urlInfoCorte, nota: "Info Corte", tipo: "INFO_CORTE" });
+        }
+        if (urlBocetoCorte) {
+            refFiles.push({ nombre: "Boceto Corte", url: urlBocetoCorte });
+            localesCorte.push({ url: urlBocetoCorte, nota: "Boceto Corte", tipo: "BOCETO_CORTE" });
+        }
+
         if (textoServiciosExtra.includes("CORTE")) {
             serviciosArray.push({
                 areaId: 'TWC', // Taller Web Corte / Corte Láser
@@ -389,7 +444,8 @@ class SheetsRawMappingService {
                     proIdProducto: 90, 
                     codStock: "1.1.6.1" 
                 },
-                items: [{ fileName: url, cantidad: 0, copias: 1 }]
+                items: [],
+                archivosReferenciaLocales: localesCorte
             });
         }
         
@@ -405,7 +461,7 @@ class SheetsRawMappingService {
                     proIdProducto: 36,
                     codStock: "1.1.7.1" 
                 },
-                items: [{ fileName: url, cantidad: 0, copias: 1 }]
+                items: []
             });
         }
 
@@ -421,7 +477,7 @@ class SheetsRawMappingService {
                     proIdProducto: 434,
                     codStock: "1.1.9.1"
                 },
-                items: [{ fileName: url, cantidad: 0, copias: 1 }]
+                items: []
             });
         }
 
@@ -432,7 +488,7 @@ class SheetsRawMappingService {
             prioridad,
             metrosTotales: cR,
             clienteInfo: { id: clienteNom, idReact: 0 },
-            archivosReferencia: [],
+            archivosReferencia: refFiles,
             archivosTecnicos: [],
             servicios: serviciosArray
         };

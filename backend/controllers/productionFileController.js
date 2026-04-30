@@ -564,17 +564,12 @@ END
         // --- GENERACIÓN DE ETIQUETAS POST-COMMIT (SI CORRESPONDE) ---
         if (orderCompleted) {
             try {
-                // Verificar magnitud de nuevo fuera de transacción (seguridad)
-                const checkMag = await pool.request().input('OID', sql.Int, ordenId).query("SELECT Magnitud FROM Ordenes WHERE OrdenID = @OID");
-                const magStr = checkMag.recordset[0]?.Magnitud;
-
-                // Validación Rápida antes de llamar al servicio (aunque el servicio valida tambien)
-                let magVal = 0;
-                if (typeof magStr === 'number') magVal = magStr;
-                else if (magStr) {
-                    const match = magStr.toString().match(/[\d\.]+/);
-                    if (match) magVal = parseFloat(match[0]);
-                }
+                // Verificar magnitud desde PedidosCobranzaDetalle (cotización real del ERP Sync)
+                const checkMag = await pool.request()
+                    .input('OID', sql.Int, ordenId)
+                    .query("SELECT SUM(Cantidad) as TotalCantidad FROM PedidosCobranzaDetalle WHERE OrdenID = @OID");
+                
+                const magVal = parseFloat(checkMag.recordset[0]?.TotalCantidad) || 0;
 
                 if (magVal > 0) {
                     logger.info(`[postControlArchivo] Llamando LabelGenerationService para Orden ${ordenId}...`);
@@ -649,6 +644,7 @@ const regenerateEtiquetas = async (req, res) => {
         const result = await LabelGenerationService.regenerateLabelsForOrder(ordenId, userId, userName, cantidad);
 
         if (!result.success) {
+            logger.warn(`[regenerateEtiquetas] Falló validación para Orden ${ordenId}: ${result.error}`);
             return res.status(400).json({ error: result.error }); // Return specific validation error
         }
 

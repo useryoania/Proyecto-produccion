@@ -11,8 +11,9 @@ import RollsKanban from "../../pages/RollsKanban";
 import ProductionKanban from "../../pages/ProductionKanban";
 import MeasurementView from "../../pages/MeasurementView";
 import FilePrintControl from "../../pages/FilePrintControl";
-import LogisticsView from "../../pages/LogisticsView";
+import LogisticsDashboard from "../../logistics/LogisticsDashboard";
 import PlaneacionTrabajo from "../../pages/PlaneacionTrabajo";
+import ImportadorManualView from "../ImportadorManualView";
 
 // Modales y Sidebars
 import NewOrderModal from "../../modals/NewOrderModal";
@@ -120,6 +121,9 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
     const [isFailureOpen, setIsFailureOpen] = useState(false);
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [isRollModalOpen, setIsRollModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+    const hideImportar = ['corte', 'costura', 'bordado', 'estampado', 'twc', 'twt', 'emb'].includes((areaKey || '').toLowerCase());
 
     // 3. CARGA DE DATOS (React Query)
     const { data: dbOrders = [], isLoading: loadingOrders, refetch } = useQuery({
@@ -239,10 +243,30 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
     return (
         <div className="flex flex-col h-screen w-full bg-slate-50 overflow-hidden font-sans text-slate-800">
             <StockRequestModal isOpen={isStockOpen} onClose={() => setIsStockOpen(false)} areaName={areaConfig.name} areaCode={areaKey} />
-            <NewOrderModal isOpen={isNewOrderOpen} onClose={() => { setIsNewOrderOpen(false); fetchOrders(); }} areaName={areaConfig.name} areaCode={areaKey} />
+            <NewOrderModal isOpen={isNewOrderOpen} onClose={() => { setIsNewOrderOpen(false); refetch(); }} areaName={areaConfig.name} areaCode={areaKey} />
             <ReportFailureModal isOpen={isFailureOpen} onClose={() => setIsFailureOpen(false)} areaName={areaConfig.name} areaCode={areaKey} />
-            <LogisticsCartModal isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} areaName={areaConfig.name} areaCode={areaKey} onSuccess={() => fetchOrders()} />
-            <RollAssignmentModal isOpen={isRollModalOpen} onClose={() => setIsRollModalOpen(false)} selectedIds={selectedIds} areaCode={areaKey} onSuccess={() => { setSelectedIds([]); fetchOrders(); }} />
+            <LogisticsCartModal isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} areaName={areaConfig.name} areaCode={areaKey} onSuccess={() => refetch()} />
+            <RollAssignmentModal isOpen={isRollModalOpen} onClose={() => setIsRollModalOpen(false)} selectedIds={selectedIds} areaCode={areaKey} onSuccess={() => { setSelectedIds([]); refetch(); }} />
+            
+            {isImportModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white w-full max-w-7xl max-h-[95vh] rounded-xl overflow-hidden shadow-2xl flex flex-col relative">
+                        <button 
+                            className="absolute top-4 right-6 text-slate-500 hover:text-slate-800 z-10 bg-white hover:bg-slate-200 p-2 rounded-full transition"
+                            onClick={() => setIsImportModalOpen(false)}
+                        >
+                            <i className="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                        <div className="overflow-y-auto flex-1 p-0">
+                            <ImportadorManualView 
+                                isModal={true} 
+                                onClose={() => setIsImportModalOpen(false)} 
+                                onImportSuccess={() => refetch()} 
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <header className="bg-white border-b border-slate-200 flex flex-col shrink-0 z-20 w-full shadow-sm">
                 <div className="px-4 py-2 flex items-center justify-between gap-4 bg-white min-h-[56px]">
@@ -261,6 +285,14 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
 
                     {/* CENTER: Tabs de Navegación */}
                     <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                        {!hideImportar && (
+                            <button 
+                                className={`${btnBaseClass} px-3 h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold border border-transparent`}
+                                onClick={() => setIsImportModalOpen(true)}
+                            >
+                                <i className="fa-solid fa-file-import"></i> Importar Orden
+                            </button>
+                        )}
                         <button className={`${btnBaseClass} px-3 h-8 text-xs ${isActive('') ? btnPrimaryClass : btnSecondaryClass}`} onClick={() => goTo('')}><i className="fa-solid fa-table"></i> Planilla</button>
                         <button className={`${btnBaseClass} px-3 h-8 text-xs ${isActive('planeacion') ? btnPrimaryClass : btnSecondaryClass}`} onClick={() => goTo('planeacion')}><i className="fa-regular fa-calendar-check"></i> Planeación</button>
                         <button className={`${btnBaseClass} px-3 h-8 text-xs ${isActive('medicion') ? btnPrimaryClass : btnSecondaryClass}`} onClick={() => goTo('medicion')}><i className="fa-solid fa-ruler-combined"></i> Medición</button>
@@ -377,7 +409,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
                         <Route path="produccion" element={<ProductionKanban areaCode={areaKey} />} />
                         <Route path="control" element={<FilePrintControl areaCode={areaKey} />} />
                         <Route path="planeacion" element={<PlaneacionTrabajo AreaID={areaKey} />} />
-                        <Route path="logistica" element={<LogisticsView areaCode={areaKey} />} />
+                        <Route path="logistica" element={<LogisticsDashboard areaCode={areaKey} />} />
 
                         <Route path="*" element={<Navigate to="." replace />} />
                     </Routes>
@@ -388,3 +420,4 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
         </div>
     );
 }
+// Force Vite reload
