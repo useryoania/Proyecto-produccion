@@ -124,6 +124,8 @@ exports.getAllLocalRetiros = async (req, res) => {
                 r.OReFechaAlta AS fechaAlta,
                 r.FormaRetiro,
                 c.Nombre AS NombreCliente,
+                c.TelefonoTrabajo AS CliTelefono,
+                r.ReceptorNombre,
                 COALESCE(fe.Nombre, 
                     CASE WHEN LEN(ISNULL(r.DireccionEnvio, '')) > 0 
                            OR r.AgenciaEnvio IS NOT NULL 
@@ -147,11 +149,13 @@ exports.getAllLocalRetiros = async (req, res) => {
                     SELECT 
                         od.OrdCodigoOrden AS orderNumber,
                         od.OrdCodigoOrden AS orderId,
+                        art.Descripcion AS articuloDescripcion,
                         od.OrdCostoFinal AS costoFinal,
                         m.MonSimbolo AS simbolo
                     FROM RelOrdenesRetiroOrdenes rel2 WITH(NOLOCK)
                     JOIN OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = rel2.OrdIdOrden
                     LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = od.MonIdMoneda
+                    LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = od.ProIdProducto
                     WHERE rel2.OReIdOrdenRetiro = r.OReIdOrdenRetiro
                     FOR JSON PATH
                 ) AS BultosJSON
@@ -389,17 +393,21 @@ exports.obtenerMapaEstantes = async (req, res) => {
                 o.OrdenRetiro,
                 o.CodigoCliente,
                 cli.Nombre as ClientName,
+                cli.TelefonoTrabajo as CliTelefono,
                 tc.TClDescripcion,
+                orr.ReceptorNombre,
                 COALESCE((
                     SELECT 
                         od.OrdCodigoOrden AS orderNumber,
                         od.OrdCodigoOrden AS orderId,
+                        art.Descripcion AS articuloDescripcion,
                         od.OrdCostoFinal AS costoFinal,
                         m.MonSimbolo AS simbolo,
                         od.OrdCostoFinal as amount,
                         m.MonSimbolo as currency
                     FROM OrdenesDeposito od WITH(NOLOCK)
                     LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = od.MonIdMoneda
+                    LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = od.ProIdProducto
                     WHERE od.OReIdOrdenRetiro = orr.OReIdOrdenRetiro
                     FOR JSON PATH
                 ), o.BultosJSON) AS BultosJSON,
@@ -1607,7 +1615,8 @@ exports.getMyRetirosHistorial = async (req, res) => {
                 o.OrdCostoFinal,
                 o.OrdCantidad,
                 m.MonSimbolo,
-                LTRIM(RTRIM(art.Descripcion)) AS Producto
+                LTRIM(RTRIM(art.Descripcion)) AS Producto,
+                (SELECT TOP 1 b.ComprobantePath FROM Logistica_Bultos b WITH(NOLOCK) WHERE b.OrdenID = r.OReIdOrdenRetiro AND b.ComprobantePath IS NOT NULL ORDER BY b.BultoID DESC) AS comprobanteEntrega
             FROM OrdenesRetiro r WITH(NOLOCK)
             LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
             LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
@@ -1638,6 +1647,7 @@ exports.getMyRetirosHistorial = async (req, res) => {
                     LocalidadEnvio: row.LocalidadEnvio,
                     DepartamentoEnvio: row.DepartamentoEnvio,
                     ReceptorNombre: row.ReceptorNombre,
+                    comprobanteEntrega: row.comprobanteEntrega,
                     Ordenes: []
                 };
             }

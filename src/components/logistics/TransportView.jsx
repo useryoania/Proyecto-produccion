@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../services/api';
 import { logisticsService } from '../../services/modules/logisticsService';
@@ -74,11 +74,14 @@ const TransportView = () => {
                     formData.append('comprobante', map.file);
                 }
                 formData.append('bultosIds', JSON.stringify([parseInt(bultoId)]));
+                // Incluir la orden de retiro asociada para el nombre del archivo
+                const itemRef = modalData.items.find(i => i.BultoID === parseInt(bultoId));
+                formData.append('ordenDeRetiro', itemRef?.RetiroAsociado || itemRef?.CodigoEtiqueta || '');
 
                 await logisticsService.confirmDeliveryWithProof(modalData.transport.CodigoRemito, formData);
             }
 
-            toast.success('Entregas procesadas con Ã©xito âœ…');
+            toast.success('Entregas procesadas con éxito âœ…');
             setIsModalOpen(false);
             loadData();
         } catch (error) {
@@ -108,7 +111,7 @@ const TransportView = () => {
             const sel = resApi.data;
             
             if (!sel || sel.length === 0) {
-                return toast.warning('No se encontraron Ã³rdenes en este remito para imprimir.');
+                return toast.warning('No se encontraron órdenes en este remito para imprimir.');
             }
             
             const remitoCode = transport.CodigoRemito;
@@ -133,12 +136,12 @@ const TransportView = () => {
                     ? `<table style="width:100%;border-collapse:collapse;margin-top:6px;">
                         <thead><tr style="background:#f8fafc;">
                             <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">#</th>
-                            <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">CÃ³d. Orden</th>
+                            <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">Cód. Orden</th>
                             <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">Estado</th>
                             <th style="padding:5px 8px;font-size:11px;text-align:right;color:#64748b;border-bottom:1px solid #e2e8f0;">Importe</th>
                         </tr></thead><tbody>${ordenesList}</tbody>
                     </table>`
-                    : '<span style="font-size:12px;color:#aaa;">Sin Ã³rdenes registradas</span>';
+                    : '<span style="font-size:12px;color:#aaa;">Sin órdenes registradas</span>';
 
                 return `<tr style="border-bottom:1px solid #e2e8f0;vertical-align:top;">
                     <td style="padding:10px 8px;font-size:13px;font-weight:900;color:#1e293b;white-space:nowrap;">${enc.ordenDeRetiro}</td>
@@ -151,7 +154,7 @@ const TransportView = () => {
                         ${enc.departamentoEnvio ? `<div style="font-size:12px;"><strong>Dpto:</strong> ${enc.departamentoEnvio}</div>` : ''}
                         ${enc.localidadEnvio ? `<div style="font-size:12px;"><strong>Localidad:</strong> ${enc.localidadEnvio}</div>` : ''}
                         ${enc.direccionEnvio ? `<div style="font-size:12px;"><strong>Dir:</strong> ${enc.direccionEnvio}</div>` : ''}
-                        ${(!enc.departamentoEnvio && !enc.localidadEnvio && !enc.direccionEnvio) ? `<span style="color:#aaa;font-size:11px;">â€”</span>` : ''}
+                        ${(!enc.departamentoEnvio && !enc.localidadEnvio && !enc.direccionEnvio) ? `<span style="color:#aaa;font-size:11px;">—</span>` : ''}
                     </td>
                     <td style="padding:10px 8px;">${ordTable}</td>
                     <td style="padding:10px 8px;text-align:center;">
@@ -174,7 +177,7 @@ const TransportView = () => {
                             <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Retiro</th>
                             <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Cliente</th>
                             <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Destino</th>
-                            <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Ã“rdenes</th>
+                            <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Órdenes</th>
                             <th style="padding:7px 8px;font-size:11px;text-align:center;color:#334155;border-bottom:2px solid #e2e8f0;">Pago</th>
                         </tr></thead>
                         <tbody>${ordenes.map(renderFila).join('')}</tbody>
@@ -199,7 +202,7 @@ const TransportView = () => {
                         <div style="flex:1;text-align:center;">
                             <div style="border-top:1.5px solid #334155;padding-top:8px;margin-top:50px;">
                                 <div style="font-size:13px;font-weight:700;">Confirma Comprobante</div>
-                                <div style="font-size:11px;color:#64748b;margin-top:2px;">AclaraciÃ³n y sello</div>
+                                <div style="font-size:11px;color:#64748b;margin-top:2px;">Aclaración y sello</div>
                             </div>
                         </div>
                     </div>
@@ -216,7 +219,7 @@ const TransportView = () => {
                 <div style="display:flex;align-items:center;gap:20px;">
                     <div>
                         <div style="font-size:24px;font-weight:900;color:#0070bc;letter-spacing:1px;">USER</div>
-                        <div style="font-size:15px;font-weight:700;color:#475569;">LogÃ­stica &mdash; Hoja de Despacho</div>
+                        <div style="font-size:15px;font-weight:700;color:#475569;">Logística &mdash; Hoja de Despacho</div>
                     </div>
                     ${remitoCode ?
                     `<div style="text-align:center;border-left:2px solid #e2e8f0;padding-left:20px;margin-left:5px;">
@@ -232,7 +235,7 @@ const TransportView = () => {
             ${seccionesHtml}
             ${firmasHtml}
             <div style="margin-top:24px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center;">
-                USER &mdash; Sistema de GestiÃ³n LogÃ­stica &mdash; Documento interno
+                USER &mdash; Sistema de Gestión Logística &mdash; Documento interno
             </div>
             <div style="text-align:center;margin-top:16px;">
                 <button onclick="window.print()" style="background:#0070bc;color:#fff;border:none;padding:9px 30px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">&#128438; Imprimir Reporte</button>
@@ -278,7 +281,7 @@ const TransportView = () => {
                     </div>
                     <div>
                         <h2 className="text-xl font-black text-slate-800">Transporte en Curso</h2>
-                        <p className="text-slate-500 text-sm">MercaderÃ­a en poder de transportistas</p>
+                        <p className="text-slate-500 text-sm">Mercadería en poder de transportistas</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -322,7 +325,7 @@ const TransportView = () => {
                 ) : filtered.length === 0 ? (
                     <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-300">
                         <Navigation size={40} className="text-slate-300 mb-3 mx-auto" />
-                        <p className="text-slate-500 font-medium">No hay vehÃ­culos registrados con este filtro.</p>
+                        <p className="text-slate-500 font-medium">No hay vehículos registrados con este filtro.</p>
                     </div>
                 ) : (
                     filtered.map(t => (
@@ -331,7 +334,7 @@ const TransportView = () => {
                             className={`bg-white rounded-xl shadow-sm border p-4 hover:shadow-md transition-shadow
                                 ${t.Estado.includes('RECIBIDO') ? 'border-slate-200 opacity-75' : 'border-brand-cyan/20'}`}
                         >
-                            {/* Top row: cÃ³digo + badge */}
+                            {/* Top row: código + badge */}
                             <div className="flex items-start gap-3 mb-3">
                                 <Truck size={20} className="text-brand-cyan/30 mt-0.5 shrink-0" />
                                 <div className="flex-1 min-w-0">
@@ -353,7 +356,7 @@ const TransportView = () => {
                                     <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1">
                                         <Clock size={11} className="shrink-0" />
                                         {new Date(t.Fecha).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                                        &nbsp;Â·&nbsp;{t.TotalBultos} bulto{t.TotalBultos !== 1 ? 's' : ''}
+                                        &nbsp;·&nbsp;{t.TotalBultos} bulto{t.TotalBultos !== 1 ? 's' : ''}
                                     </div>
                                 </div>
                             </div>
@@ -384,7 +387,7 @@ const TransportView = () => {
             </div>
 
             {/* UPLOAD PROOF MODAL */}
-            {createPortal(
+            {typeof document !== 'undefined' && createPortal(
                 <AnimatePresence>
                 {isModalOpen && modalData && (
                     <motion.div
@@ -393,15 +396,15 @@ const TransportView = () => {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        transition={{ duration: 0.2 }}
+                        transition={{ duration: 0.3 }}
                     >
                         <div className="absolute inset-0 bg-slate-900/80" onClick={() => setIsModalOpen(false)} />
                         <motion.div
                             className="relative bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[90vh]"
-                            initial={{ y: '100%', opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            exit={{ y: '60%', opacity: 0 }}
-                            transition={{ type: 'spring', stiffness: 380, damping: 34 }}
+                            initial={{ y: '100%', opacity: 0, scale: 0.95 }}
+                            animate={{ y: 0, opacity: 1, scale: 1 }}
+                            exit={{ y: '100%', opacity: 0, scale: 0.95 }}
+                            transition={{ type: 'spring', stiffness: 350, damping: 30, mass: 0.8 }}
                         >
 
                         {/* Header */}
@@ -441,13 +444,13 @@ const TransportView = () => {
                                                 const bultosAsociados = modalData.items.filter(i => i.ComprobantePath === path);
                                                 return (
                                                     <div key={path} className="bg-white p-2.5 flex-1 min-w-[220px] rounded-lg border border-brand-cyan/20 shadow-sm">
-                                                        <a href={`http://localhost:5038${path}`} target="_blank" rel="noreferrer"
+                                                        <a href={import.meta.env.VITE_COMPROBANTES_ENCOMIENDAS_PATH ? `${import.meta.env.VITE_COMPROBANTES_ENCOMIENDAS_PATH}/${path.split('/').pop()}` : `${import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : ''}${path}`} target="_blank" rel="noreferrer"
                                                             className="text-xs font-bold text-brand-cyan hover:opacity-80 truncate flex items-center gap-1 bg-brand-cyan/5 p-1.5 rounded mb-2" title={fileName}>
                                                             <FileDown size={12} /> {fileName}
                                                         </a>
                                                         <div className="flex flex-wrap gap-1">
                                                             {bultosAsociados.map(b => (
-                                                                <span key={b.BultoID} className="bg-brand-cyan/10 border border-brand-cyan/20 text-brand-cyan text-[10px] px-1.5 py-0.5 rounded font-bold">{b.CodigoEtiqueta}</span>
+                                                                <span key={b.BultoID} className="bg-brand-cyan/10 border border-brand-cyan/20 text-brand-cyan text-[10px] px-1.5 py-0.5 rounded font-bold">{b.RetiroAsociado || b.CodigoEtiqueta}</span>
                                                             ))}
                                                         </div>
                                                     </div>
@@ -458,10 +461,10 @@ const TransportView = () => {
                                 )
                             })()}
 
-                            {/* InstrucciÃ³n */}
+                            {/* Instrucción */}
                             <div className="mb-4">
                                 <h4 className="font-black text-slate-800 text-base">Bultos de esta tanda</h4>
-                                <p className="text-sm text-slate-500 mt-0.5">SeleccionÃ¡ los bultos entregados. Doble click para adjuntar foto de comprobante.</p>
+                                <p className="text-sm text-slate-500 mt-0.5">Seleccioná los bultos entregados. Doble click para adjuntar foto de comprobante.</p>
                             </div>
 
                             {/* HIDDEN CAMERA INPUT */}
@@ -484,7 +487,7 @@ const TransportView = () => {
                                         return (
                                             <div key={item.BultoID} className="flex flex-col justify-between p-4 rounded-xl border border-slate-200 bg-slate-50 opacity-60">
                                                 <div>
-                                                    <p className="font-bold text-slate-500 text-sm">{item.CodigoEtiqueta}</p>
+                                                    <p className="font-bold text-slate-500 text-sm">{item.RetiroAsociado || item.CodigoEtiqueta}</p>
                                                     <p className="text-xs text-slate-400">{item.Descripcion || 'Sin desc'}</p>
                                                 </div>
                                                 <div className="flex flex-col items-start mt-2 gap-1">
@@ -523,7 +526,7 @@ const TransportView = () => {
                                                     className="w-5 h-5 rounded accent-brand-cyan border-slate-300"
                                                 />
                                                 <div>
-                                                    <p className={`font-black text-base leading-tight ${map.checked ? 'text-brand-cyan' : 'text-slate-700'}`}>{item.CodigoEtiqueta}</p>
+                                                    <p className={`font-black text-base leading-tight ${map.checked ? 'text-brand-cyan' : 'text-slate-700'}`}>{item.RetiroAsociado || item.CodigoEtiqueta}</p>
                                                     <p className="text-xs text-slate-500">{item.Descripcion || 'Sin desc'}</p>
                                                 </div>
                                             </label>

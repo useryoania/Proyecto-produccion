@@ -583,10 +583,17 @@ exports.getRemitoByCode = async (req, res) => {
         // Items + Bulto Info + Orden Info
         const items = await pool.request().input('EID', sql.Int, envio.EnvioID)
             .query(`
-                SELECT i.*, b.Estado as BultoEstado, b.CodigoEtiqueta, b.Descripcion, b.OrdenID, b.ComprobantePath, o.Cliente, o.DescripcionTrabajo
+                SELECT i.*, b.Estado as BultoEstado, b.CodigoEtiqueta, b.Descripcion, b.OrdenID, b.ComprobantePath,
+                       b.Tipocontenido, o.Cliente, o.DescripcionTrabajo,
+                       CASE 
+                           WHEN b.Tipocontenido = 'ENCOMIENDA' AND ret.OReIdOrdenRetiro IS NOT NULL 
+                           THEN ISNULL(ret.FormaRetiro, 'R') + '-' + CAST(ret.OReIdOrdenRetiro AS VARCHAR)
+                           ELSE NULL 
+                       END AS RetiroAsociado
                 FROM Logistica_EnvioItems i
                 INNER JOIN Logistica_Bultos b ON i.BultoID = b.BultoID
                 LEFT JOIN Ordenes o ON b.OrdenID = o.OrdenID
+                LEFT JOIN OrdenesRetiro ret ON b.OrdenID = ret.OReIdOrdenRetiro
                 WHERE i.EnvioID = @EID
             `);
 

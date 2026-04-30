@@ -240,7 +240,7 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
                     usuarioId: authUser.id,
                     transportista: authUser.username,
                     bultosIds, newBultos,
-                    observations: `Generado por ${authUser.username}`
+                    observations: `Generado por ${authUser.username || authUser.nombre || 'Sistema'}`
                 };
 
                 let res;

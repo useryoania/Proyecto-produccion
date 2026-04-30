@@ -1,10 +1,10 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import TransportView from '../../logistics/TransportView';
 import { useAuth } from '../../../context/AuthContext';
 import api from '../../../services/api';
 import { logisticsService } from '../../../services/modules/logisticsService';
 import { socket } from '../../../services/socketService';
-import { Package, Truck, Search, QrCode, FileText, CheckCircle, RefreshCcw, DollarSign, ChevronDown, ChevronRight, Printer, ClipboardList, Tag, History, ChevronUp } from 'lucide-react';
+import { Package, Truck, Search, QrCode, FileText, CheckCircle, RefreshCcw, DollarSign, ChevronDown, ChevronRight, Printer, ClipboardList, Tag, History, ChevronUp, FileImage } from 'lucide-react';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import AlertaAutorizacionModal from '../../modals/AlertaAutorizacionModal';
@@ -14,7 +14,7 @@ const printTicketEncomienda = (enc) => {
     const now = new Date().toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     const pagado = enc.pagorealizado === 1;
     const orderObjs = enc.orders || [];
-    const tipoDesc = enc.TClDescripcion || 'ComÃºn';
+    const tipoDesc = enc.TClDescripcion || 'Común';
     const local = enc.lugarRetiro && enc.lugarRetiro !== 'Desconocido' ? enc.lugarRetiro : 'Retiro';
     const monto = enc.totalCost && enc.totalCost !== '0.00' ? enc.totalCost : null;
     const monedaSimbolo = enc.orders?.[0]?.monedaId === 2 ? 'US$' : '$';
@@ -43,7 +43,7 @@ const printTicketEncomienda = (enc) => {
   </style></head><body>
   <div class="header">
     <div class="empresa">USER</div>
-    <div class="modulo">LogÃ­stica â€” Comprobante de Retiro</div>
+    <div class="modulo">Logística — Comprobante de Retiro</div>
     <div style="font-size:9px;color:#888;margin-top:1px;font-style:italic;">Local: ${local}</div>
   </div>
   <div class="codigo-principal">${enc.ordenDeRetiro}</div>
@@ -52,16 +52,16 @@ const printTicketEncomienda = (enc) => {
   </div>
   <table class="info-table">
     <tr><td>Cliente</td><td><strong>${enc.CliNombre || enc.CliCodigoCliente || '-'}</strong></td></tr>
-    ${enc.CliCodigoCliente ? `<tr><td>CÃ³d.Cliente</td><td>${enc.CliCodigoCliente}</td></tr>` : ''}
-    ${enc.CliTelefono ? `<tr><td>TelÃ©fono</td><td>${enc.CliTelefono}</td></tr>` : ''}
+    ${enc.CliCodigoCliente ? `<tr><td>Cód.Cliente</td><td>${enc.CliCodigoCliente}</td></tr>` : ''}
+    ${enc.CliTelefono ? `<tr><td>Teléfono</td><td>${enc.CliTelefono}</td></tr>` : ''}
     <tr><td>Tipo Cliente</td><td>${tipoDesc}</td></tr>
     ${monto ? `<tr><td>Monto</td><td>${monedaSimbolo} ${monto}</td></tr>` : ''}
     ${enc.metodoPago ? `<tr><td>Forma Pago</td><td>${enc.metodoPago}</td></tr>` : ''}
     <tr><td>Local Retiro</td><td>${local}</td></tr>
     <tr><td>Fecha Alta</td><td>${enc.fechaAlta ? new Date(enc.fechaAlta).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}</td></tr>
     ${(enc.direccionEnvio || enc.departamentoEnvio || enc.localidadEnvio || enc.agenciaNombre) ? `
-    <tr><td colspan="2" style="padding-top:6px;font-size:9px;color:#666;text-transform:uppercase;font-weight:700;">Datos de EnvÃ­o</td></tr>
-    ${enc.direccionEnvio ? `<tr><td>DirecciÃ³n</td><td>${enc.direccionEnvio}</td></tr>` : ''}
+    <tr><td colspan="2" style="padding-top:6px;font-size:9px;color:#666;text-transform:uppercase;font-weight:700;">Datos de Envío</td></tr>
+    ${enc.direccionEnvio ? `<tr><td>Dirección</td><td>${enc.direccionEnvio}</td></tr>` : ''}
     ${enc.departamentoEnvio ? `<tr><td>Departamento</td><td>${enc.departamentoEnvio}</td></tr>` : ''}
     ${enc.localidadEnvio ? `<tr><td>Localidad</td><td>${enc.localidadEnvio}</td></tr>` : ''}
     ${enc.agenciaNombre ? `<tr><td>Agencia</td><td><strong>${enc.agenciaNombre}</strong></td></tr>` : ''}
@@ -70,7 +70,7 @@ const printTicketEncomienda = (enc) => {
   <div class="sep"></div>
   <div style="font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">\u00d3rdenes incluidas (${orderObjs.length})</div>
   <table class="orders-table">
-    <thead><tr><th>#</th><th>CÃ³digo</th><th>Estado</th><th style="text-align:right;">Importe</th></tr></thead>
+    <thead><tr><th>#</th><th>Código</th><th>Estado</th><th style="text-align:right;">Importe</th></tr></thead>
     <tbody>
       ${orderObjs.map((o, i) => `<tr><td>${i + 1}</td><td><strong>${o.orderNumber || '-'}</strong></td><td>${o.orderEstado || '-'}</td><td style="text-align:right;">${o.orderCosto || '-'}</td></tr>`).join('')}
       ${orderObjs.length === 0 ? '<tr><td colspan="4" style="text-align:center;color:#aaa;">Sin \u00f3rdenes registradas</td></tr>' : ''}
@@ -83,8 +83,8 @@ const printTicketEncomienda = (enc) => {
     <div style="font-size:9px;color:#999;margin-top:2px;letter-spacing:1px;">${enc.ordenDeRetiro}</div>
   </div>
   <div class="firma-row">
-    <div class="firma-box">Firma y AclaraciÃ³n Cliente</div>
-    <div class="firma-box">Firma Responsable LogÃ­stica</div>
+    <div class="firma-box">Firma y Aclaración Cliente</div>
+    <div class="firma-box">Firma Responsable Logística</div>
   </div>
    <div class="footer">USER \u2014 Conserve este comprobante.</div>
   <div style="text-align:center;margin-top:16px;"><button onclick="window.print()" style="background:#0070bc;color:#fff;border:none;padding:8px 28px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:.5px;">&#128438; Imprimir</button></div>
@@ -138,13 +138,16 @@ const printLabels = (encomiendas) => {
 
 const EntregaPedidosView = () => {
     const { user } = useAuth();
-    const [activeTab, setActiveTab] = useState('encomiendas'); // Arrancamos en encomiendas por pedido del user 
+    const [activeTab, setActiveTab] = useState(() => {
+        // En mobile arrancamos en 'transport' por defecto (En viaje), en desktop en 'encomiendas'
+        return typeof window !== 'undefined' && window.innerWidth <= 768 ? 'transport' : 'encomiendas';
+    });
     const [loading, setLoading] = useState(false);
 
-    // --- TAB: MOSTRADOR (GestiÃ³n por Cliente / Pedido) ---
+    // --- TAB: MOSTRADOR (Gestión por Cliente / Pedido) ---
     const [searchTerm, setSearchTerm] = useState('');
     const [clientData, setClientData] = useState(null);
-    // Lista completa de Ã³rdenes sin retiro (auto-cargada al activar tab)
+    // Lista completa de órdenes sin retiro (auto-cargada al activar tab)
     const [mostradorAllSinRetiro, setMostradorAllSinRetiro] = useState([]);
     const [filtroLugarMostrador, setFiltroLugarMostrador] = useState(''); // '' = Todas
     const [loadingMostradorAll, setLoadingMostradorAll] = useState(false);
@@ -158,9 +161,9 @@ const EntregaPedidosView = () => {
     const [selectedEncomiendas, setSelectedEncomiendas] = useState(new Set());
     const [showAlertaAuth, setShowAlertaAuth] = useState(false);
     const [pendingDelivery, setPendingDelivery] = useState(null);
-    const [filtroLogistica, setFiltroLogistica] = useState(''); // buscador inline en tab LogÃ­stica
+    const [filtroLogistica, setFiltroLogistica] = useState(''); // buscador inline en tab Logística
 
-    // --- HISTORIAL DEL DÃA ---
+    // --- HISTORIAL DEL DÍA ---
     const [historialHoy, setHistorialHoy] = useState([]);
     const [showHistorial, setShowHistorial] = useState(false);
     const [loadingHistorial, setLoadingHistorial] = useState(false);
@@ -168,11 +171,11 @@ const EntregaPedidosView = () => {
     const [filtroFechaHistorial, setFiltroFechaHistorial] = useState(new Date().toISOString().split('T')[0]);
     const [filtroLugarHistorial, setFiltroLugarHistorial] = useState('2'); // Por defecto '2' (Encomiendas)
 
-    // Modal: Generar Retiro desde Ã“rdenes sin Retiro
+    // Modal: Generar Retiro desde Órdenes sin Retiro
     const [retiroModal, setRetiroModal] = useState(null); // { ordenes: [] } | null
     const [retiroLugar, setRetiroLugar] = useState('');
     const [retiroGenerando, setRetiroGenerando] = useState(false);
-    // Datos de envÃ­o para el modal de retiro
+    // Datos de envío para el modal de retiro
     const [retiroEnvio, setRetiroEnvio] = useState({ direccion: '', departamentoId: '', localidadId: '', agenciaId: '' });
     const [clienteEnvioDatos, setClienteEnvioDatos] = useState(null);
     const [retiroDirSeleccionada, setRetiroDirSeleccionada] = useState(null);
@@ -181,14 +184,14 @@ const EntregaPedidosView = () => {
     const [departamentosLista, setDepartamentosLista] = useState([]);
     const [localidadesLista, setLocalidadesLista] = useState([]);
 
-    // SelecciÃ³n mÃºltiple en tabla sinRetiro
+    // Selección múltiple en tabla sinRetiro
     const [selectedSinRetiro, setSelectedSinRetiro] = useState(new Set()); // Set de OrdIdOrden
 
     // UI State para expandir filas (ver las ordenes hijas)
     const [expandedRows, setExpandedRows] = useState(new Set());
 
-    // --- INICIALIZACIÃ“N ---
-    // Refs para que el socket handler siempre acceda a la versiÃ³n mÃ¡s reciente de las funciones
+    // --- INICIALIZACIÓN ---
+    // Refs para que el socket handler siempre acceda a la versión más reciente de las funciones
     const loadDespachoRef = useRef(null);
     const loadSinRetiroRef = useRef(null);
 
@@ -201,7 +204,7 @@ const EntregaPedidosView = () => {
         ]).then(([ags, deptos]) => {
             setAgenciasLista(ags.data?.data || ags.data || []);
             setDepartamentosLista(deptos.data?.data || deptos.data || []);
-        }).catch(err => console.warn('[Nomencladores envÃ­o]', err));
+        }).catch(err => console.warn('[Nomencladores envío]', err));
     }, []);
 
     // Socket listener: reacciona a cambios de retiros en tiempo real
@@ -209,11 +212,11 @@ const EntregaPedidosView = () => {
         const handleRetiroUpdate = (payload) => {
             const tipo = payload?.type || '';
             if (tipo === 'entregado' && Array.isArray(payload.ordenesRetiro)) {
-                // Eliminar instantÃ¡neamente los retiros entregados de la lista de encomiendas
+                // Eliminar instantáneamente los retiros entregados de la lista de encomiendas
                 const entregados = new Set(payload.ordenesRetiro.map(o => String(o).toUpperCase()));
                 setEncomiendas(prev => prev.filter(enc => !entregados.has(String(enc.ordenDeRetiro || '').toUpperCase())));
             } else if (tipo === 'nuevo_retiro') {
-                // Alguien creÃ³ un retiro â†’ refrescar sinRetiro
+                // Alguien creó un retiro â†’ refrescar sinRetiro
                 if (loadSinRetiroRef.current) loadSinRetiroRef.current();
             } else if (tipo === 'pago_web' || tipo === 'estado' || tipo === '') {
                 // Refrescar encomiendas si estamos en ese tab
@@ -254,7 +257,7 @@ const EntregaPedidosView = () => {
         }
     };
 
-    // Cargar lista completa de Ã³rdenes sin retiro (con filtro opcional por lugar)
+    // Cargar lista completa de órdenes sin retiro (con filtro opcional por lugar)
     const loadTodasSinRetiro = async (lugar = filtroLugarMostrador) => {
         setLoadingMostradorAll(true);
         try {
@@ -263,19 +266,19 @@ const EntregaPedidosView = () => {
             setMostradorAllSinRetiro(res.data?.sinRetiro || []);
         } catch (err) {
             console.error('[SinRetiro]', err);
-            toast.error('Error al cargar Ã³rdenes sin retiro');
+            toast.error('Error al cargar órdenes sin retiro');
         } finally {
             setLoadingMostradorAll(false);
         }
     };
     loadSinRetiroRef.current = loadTodasSinRetiro;
 
-    // Cargar CatÃ¡logo de Lugares
+    // Cargar Catálogo de Lugares
     const loadLugaresRetiro = async () => {
         try {
             const response = await api.get('/apilugaresRetiro/lugares-retiro');
             setLugaresRetiro(response.data);
-            // Si la data viene vacÃ­a, no pisamos el filtro por ahora
+            // Si la data viene vacía, no pisamos el filtro por ahora
         } catch (error) {
             console.error("Error cargando lugares:", error);
             toast.error("Error al cargar los Lugares de Retiro");
@@ -283,7 +286,7 @@ const EntregaPedidosView = () => {
     };
 
     // Cargar las "Encomiendas" desde el Endpoint de Backend
-    // Recibe los filtros como parÃ¡metros para evitar capturar valores desactualizados del closure
+    // Recibe los filtros como parámetros para evitar capturar valores desactualizados del closure
     const loadDespachos = async (lugar = filtroLugar, filtroPago = filtroPagoEncomiendas) => {
         setLoading(true);
         try {
@@ -302,7 +305,7 @@ const EntregaPedidosView = () => {
             setSelectedEncomiendas(new Set());
         } catch (error) {
             console.error("Error cargando despachos:", error);
-            toast.error("Error al cargar las Ã“rdenes de Retiro");
+            toast.error("Error al cargar las Órdenes de Retiro");
         } finally {
             setLoading(false);
         }
@@ -342,7 +345,7 @@ const EntregaPedidosView = () => {
 
     const generarRemitoLogistico = async () => {
         const sel = encomiendas.filter(e => selectedEncomiendas.has(e.ordenDeRetiro));
-        if (sel.length === 0) return toast.warning('SeleccionÃ¡ al menos una orden para remito.');
+        if (sel.length === 0) return toast.warning('Seleccioná al menos una orden para remito.');
 
         try {
             setLoading(true);
@@ -366,7 +369,7 @@ const EntregaPedidosView = () => {
             };
 
             const res = await logisticsService.createDispatch(payload);
-            toast.success(`Remito ${res.dispatchCode} generado con Ã©xito`);
+            toast.success(`Remito ${res.dispatchCode} generado con éxito`);
 
             // Opcional: imprimir resumen luego
             printResumenSeleccionados(res.dispatchCode);
@@ -383,7 +386,7 @@ const EntregaPedidosView = () => {
 
     const printResumenSeleccionados = (remitoCode = null) => {
         const sel = encomiendas.filter(e => selectedEncomiendas.has(e.ordenDeRetiro));
-        if (sel.length === 0) return toast.warning('SeleccionÃ¡ al menos una orden.');
+        if (sel.length === 0) return toast.warning('Seleccioná al menos una orden.');
         const fecha = new Date().toLocaleString('es-UY', { timeZone: 'America/Montevideo' });
         // Agrupar por agencia (agenciaNombre o 'Sin Agencia / Retiro Local')
         const grupos = {};
@@ -405,12 +408,12 @@ const EntregaPedidosView = () => {
                 ? `<table style="width:100%;border-collapse:collapse;margin-top:6px;">
                     <thead><tr style="background:#f8fafc;">
                         <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">#</th>
-                        <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">CÃ³d. Orden</th>
+                        <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">Cód. Orden</th>
                         <th style="padding:5px 8px;font-size:11px;text-align:left;color:#64748b;border-bottom:1px solid #e2e8f0;">Estado</th>
                         <th style="padding:5px 8px;font-size:11px;text-align:right;color:#64748b;border-bottom:1px solid #e2e8f0;">Importe</th>
                     </tr></thead><tbody>${ordenesList}</tbody>
                 </table>`
-                : '<span style="font-size:12px;color:#aaa;">Sin Ã³rdenes registradas</span>';
+                : '<span style="font-size:12px;color:#aaa;">Sin órdenes registradas</span>';
 
             return `<tr style="border-bottom:1px solid #e2e8f0;vertical-align:top;">
                 <td style="padding:10px 8px;font-size:13px;font-weight:900;color:#1e293b;white-space:nowrap;">${enc.ordenDeRetiro}</td>
@@ -423,7 +426,7 @@ const EntregaPedidosView = () => {
                     ${enc.departamentoEnvio ? `<div style="font-size:12px;"><strong>Dpto:</strong> ${enc.departamentoEnvio}</div>` : ''}
                     ${enc.localidadEnvio ? `<div style="font-size:12px;"><strong>Localidad:</strong> ${enc.localidadEnvio}</div>` : ''}
                     ${enc.direccionEnvio ? `<div style="font-size:12px;"><strong>Dir:</strong> ${enc.direccionEnvio}</div>` : ''}
-                    ${(!enc.departamentoEnvio && !enc.localidadEnvio && !enc.direccionEnvio) ? `<span style="color:#aaa;font-size:11px;">â€”</span>` : ''}
+                    ${(!enc.departamentoEnvio && !enc.localidadEnvio && !enc.direccionEnvio) ? `<span style="color:#aaa;font-size:11px;">—</span>` : ''}
                 </td>
                 <td style="padding:10px 8px;">${ordTable}</td>
                 <td style="padding:10px 8px;text-align:center;">
@@ -446,7 +449,7 @@ const EntregaPedidosView = () => {
                         <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Retiro</th>
                         <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Cliente</th>
                         <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Destino</th>
-                        <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Ã“rdenes</th>
+                        <th style="padding:7px 8px;font-size:11px;text-align:left;color:#334155;border-bottom:2px solid #e2e8f0;">Órdenes</th>
                         <th style="padding:7px 8px;font-size:11px;text-align:center;color:#334155;border-bottom:2px solid #e2e8f0;">Pago</th>
                     </tr></thead>
                     <tbody>${ordenes.map(renderFila).join('')}</tbody>
@@ -471,7 +474,7 @@ const EntregaPedidosView = () => {
                     <div style="flex:1;text-align:center;">
                         <div style="border-top:1.5px solid #334155;padding-top:8px;margin-top:50px;">
                             <div style="font-size:13px;font-weight:700;">Confirma Comprobante</div>
-                            <div style="font-size:11px;color:#64748b;margin-top:2px;">AclaraciÃ³n y sello</div>
+                            <div style="font-size:11px;color:#64748b;margin-top:2px;">Aclaración y sello</div>
                         </div>
                     </div>
                 </div>
@@ -488,7 +491,7 @@ const EntregaPedidosView = () => {
             <div style="display:flex;align-items:center;gap:20px;">
                 <div>
                     <div style="font-size:24px;font-weight:900;color:#0070bc;letter-spacing:1px;">USER</div>
-                    <div style="font-size:15px;font-weight:700;color:#475569;">LogÃ­stica &mdash; Hoja de Despacho</div>
+                    <div style="font-size:15px;font-weight:700;color:#475569;">Logística &mdash; Hoja de Despacho</div>
                 </div>
                 ${remitoCode ?
                 `<div style="text-align:center;border-left:2px solid #e2e8f0;padding-left:20px;margin-left:5px;">
@@ -504,7 +507,7 @@ const EntregaPedidosView = () => {
         ${seccionesHtml}
         ${firmasHtml}
         <div style="margin-top:24px;padding-top:10px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8;text-align:center;">
-            USER &mdash; Sistema de GestiÃ³n LogÃ­stica &mdash; Documento interno
+            USER &mdash; Sistema de Gestión Logística &mdash; Documento interno
         </div>
         <div style="text-align:center;margin-top:16px;">
             <button onclick="window.print()" style="background:#0070bc;color:#fff;border:none;padding:9px 30px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">&#128438; Imprimir Reporte</button>
@@ -519,23 +522,23 @@ const EntregaPedidosView = () => {
             return toast.warning('Selecciona al menos una orden para entregar.');
         }
 
-        // Verificar si alguna orden seleccionada estÃ¡ sin pago y sin autorizaciÃ³n (estado 9)
+        // Verificar si alguna orden seleccionada está sin pago y sin autorización (estado 9)
         const sinPagoSinAutorizar = Array.from(selectedEncomiendas).filter(ordenCodigo => {
             const orden = encomiendas.find(e => e.ordenDeRetiro === ordenCodigo);
             if (!orden) return false;
             const esSemanal = orden.TClIdTipoCliente === 2;
-            if (esSemanal) return false; // Semanal: entrega siempre sin importar pago/autorizaciÃ³n
+            if (esSemanal) return false; // Semanal: entrega siempre sin importar pago/autorización
             const noPaga = orden.pagorealizado === 0;
             const autorizada = orden.OReEstadoActual === 9 || orden.estado === 9;
             return noPaga && !autorizada;
         });
 
         if (sinPagoSinAutorizar.length > 0) {
-            // No se puede entregar â€” debe pasar por Caja (pagar o autorizar)
+            // No se puede entregar — debe pasar por Caja (pagar o autorizar)
             Swal.fire({
                 toast: true, position: 'top-end', icon: 'warning', title: sinPagoSinAutorizar.length > 1
-                    ? `${sinPagoSinAutorizar.length} Ã³rdenes no estÃ¡n pagas ni autorizadas. Debe pasar por Caja.`
-                    : `"${sinPagoSinAutorizar[0]}" no estÃ¡ paga ni autorizada. Debe pasar por Caja.`,
+                    ? `${sinPagoSinAutorizar.length} órdenes no están pagas ni autorizadas. Debe pasar por Caja.`
+                    : `"${sinPagoSinAutorizar[0]}" no está paga ni autorizada. Debe pasar por Caja.`,
                 showConfirmButton: false, timer: 4000,
                 showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
                 hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
@@ -554,7 +557,7 @@ const EntregaPedidosView = () => {
             const response = await api.post('/apiordenesRetiro/despachos/entregar-autorizado', payload);
             Swal.fire({
                 toast: true, position: 'top-end', icon: 'success',
-                title: response.data.message || 'Ã“rdenes entregadas correctamente.',
+                title: response.data.message || 'Órdenes entregadas correctamente.',
                 showConfirmButton: false, timer: 3000,
                 showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
                 hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
@@ -568,7 +571,7 @@ const EntregaPedidosView = () => {
         }
     };
 
-    // Entregar una sola orden (desde el botÃ³n por renglÃ³n) con la misma lÃ³gica de bloqueo
+    // Entregar una sola orden (desde el botón por renglón) con la misma lógica de bloqueo
     const ejecutarEntregarUna = (ordenCodigo, enc) => {
         const esSemanal = enc.TClIdTipoCliente === 2;
         if (!esSemanal) {
@@ -576,7 +579,7 @@ const EntregaPedidosView = () => {
             const autorizada = enc.OReEstadoActual === 9 || enc.estado === 9;
             if (noPaga && !autorizada) {
                 Swal.fire({
-                    toast: true, position: 'top-end', icon: 'warning', title: `"${ordenCodigo}" no estÃ¡ paga ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
+                    toast: true, position: 'top-end', icon: 'warning', title: `"${ordenCodigo}" no está paga ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
                     showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' },
                     hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
                 });
@@ -601,7 +604,7 @@ const EntregaPedidosView = () => {
     const [cotizacion, setCotizacion] = useState(null);
     const [fileComprobante, setFileComprobante] = useState(null);
 
-    // Carga mÃ©todos + cotizaciÃ³n al montar (igual que Caja)
+    // Carga métodos + cotización al montar (igual que Caja)
     useEffect(() => {
         const cargarDatosPago = async () => {
             try {
@@ -618,7 +621,7 @@ const EntregaPedidosView = () => {
         cargarDatosPago();
     }, []);
 
-    // ConversiÃ³n de moneda igual que Caja
+    // Conversión de moneda igual que Caja
     const handleCambioMoneda = (nuevaMoneda) => {
         let payment = parseFloat(montoPago);
         if (isNaN(payment) || payment <= 0) { setMonedaPago(nuevaMoneda); return; }
@@ -629,7 +632,7 @@ const EntregaPedidosView = () => {
     };
 
     const buscarMostrador = async () => {
-        if (!searchTerm.trim()) return toast.warning('IngresÃ¡ un criterio de bÃºsqueda.');
+        if (!searchTerm.trim()) return toast.warning('Ingresá un criterio de búsqueda.');
         setMostradorLoading(true);
         setMostradorData(null);
         try {
@@ -663,15 +666,15 @@ const EntregaPedidosView = () => {
             }
             setMostradorData({ retiros: Object.values(retiroMap), sinRetiro });
             if (Object.values(retiroMap).length === 0 && sinRetiro.length === 0)
-                toast.info('No se encontraron Ã³rdenes sin pagar para ese criterio.');
+                toast.info('No se encontraron órdenes sin pagar para ese criterio.');
         } catch (err) {
-            toast.error(err.response?.data?.error || 'Error en la bÃºsqueda.');
+            toast.error(err.response?.data?.error || 'Error en la búsqueda.');
         } finally {
             setMostradorLoading(false);
         }
     };
 
-    // Cargar datos de envÃ­o del cliente (direcciones guardadas + defaults)
+    // Cargar datos de envío del cliente (direcciones guardadas + defaults)
     const cargarEnvioCliente = async (cliIdFK) => {
         if (!cliIdFK) return;
         try {
@@ -708,7 +711,7 @@ const EntregaPedidosView = () => {
     };
 
     const abrirModalPago = (ordenes, retiroId, clienteInfo) => {
-        // Detectar si todas las Ã³rdenes estÃ¡n en la misma moneda
+        // Detectar si todas las órdenes están en la misma moneda
         const esUSD = (o) => {
             const sim = (o.simbolo || o.MonSimbolo || '').toUpperCase();
             return sim.includes('US') || o.monedaId === 2 || o.MonIdMoneda === 2;
@@ -741,9 +744,9 @@ const EntregaPedidosView = () => {
     };
 
     const confirmarPago = async () => {
-        if (!formaPago) return toast.warning('SeleccionÃ¡ un mÃ©todo de pago.');
+        if (!formaPago) return toast.warning('Seleccioná un método de pago.');
         const importe = parseFloat(montoPago);
-        if (isNaN(importe) || importe <= 0) return toast.warning('IngresÃ¡ un monto vÃ¡lido.');
+        if (isNaN(importe) || importe <= 0) return toast.warning('Ingresá un monto válido.');
         setPagandoLoading(true);
         try {
             const monedaId = monedaPago === 'USD' ? 2 : 1;
@@ -755,7 +758,7 @@ const EntregaPedidosView = () => {
                 try {
                     const up = await api.post('/apipagos/uploadComprobante', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
                     comprobanteUrl = up.data?.filename || up.data?.comprobanteUrl || null;
-                } catch (e) { console.warn('Comprobante no subiÃ³:', e); }
+                } catch (e) { console.warn('Comprobante no subió:', e); }
             }
 
             const orderIds = pagoModal.ordenes.map(o => o.OrdIdOrden);
@@ -771,13 +774,13 @@ const EntregaPedidosView = () => {
             console.log('[PAGO MOSTRADOR] Cliente:', pagoModal.clienteInfo?.CliNombre, '| Tipo:', pagoModal.clienteInfo?.TClDescripcion, '| Estado Retiro:', pagoModal.clienteInfo?.estadoRetiro, '| Retiro:', pagoModal.retiroId);
             const response = await api.post('/apipagos/realizarPago', payload);
             console.log('[PAGO MOSTRADOR] Respuesta:', JSON.stringify(response.data, null, 2));
-            toast.success('âœ… Pago registrado correctamente');
+            toast.success('✅ Pago registrado correctamente');
             setPagoModal(null);
-            // Refrescar la secciÃ³n correcta segÃºn el origen del pago
+            // Refrescar la sección correcta según el origen del pago
             if (searchTerm.trim()) {
-                buscarMostrador();           // venÃ­a del buscador â†’ actualizar resultados
+                buscarMostrador();           // venía del buscador â†’ actualizar resultados
             } else {
-                loadTodasSinRetiro(filtroLugarMostrador); // venÃ­a de "Sin Retiro" â†’ actualizar esa lista
+                loadTodasSinRetiro(filtroLugarMostrador); // venía de "Sin Retiro" â†’ actualizar esa lista
             }
 
         } catch (err) {
@@ -798,9 +801,9 @@ const EntregaPedidosView = () => {
                         <div className="w-10 h-10 rounded-xl bg-brand-cyan/10 flex items-center justify-center shrink-0">
                             <Package className="text-brand-cyan" size={22} />
                         </div>
-                        Entrega de Pedidos & LogÃ­stica
+                        Entrega de Pedidos & Logística
                     </h1>
-                    <p className="text-sm md:text-base text-slate-500 mt-2 font-medium">GestiÃ³n integral de despachos, retiros y cobranza remota.</p>
+                    <p className="text-sm md:text-base text-slate-500 mt-2 font-medium">Gestión integral de despachos, retiros y cobranza remota.</p>
                 </div>
             </div>
 
@@ -810,7 +813,7 @@ const EntregaPedidosView = () => {
                     onClick={() => setActiveTab('encomiendas')}
                     className={`px-4 py-3 xl:py-2.5 rounded-lg font-bold text-sm transition-all duration-200 flex items-center justify-center xl:justify-start gap-2 ${activeTab === 'encomiendas' ? 'bg-white text-brand-cyan shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                    <Package size={18} className="shrink-0" /> <span className="text-xs xl:text-sm">LogÃ­stica y Despachos</span>
+                    <Package size={18} className="shrink-0" /> <span className="text-xs xl:text-sm">Logística y Despachos</span>
                 </button>
                 <button
                     onClick={() => setActiveTab('mostrador')}
@@ -822,7 +825,7 @@ const EntregaPedidosView = () => {
                     onClick={() => setActiveTab('historial')}
                     className={`px-4 py-3 xl:py-2.5 rounded-lg font-bold text-sm transition-all duration-200 flex items-center justify-center xl:justify-start gap-2 ${activeTab === 'historial' ? 'bg-white text-brand-cyan shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                 >
-                    <History size={18} className="shrink-0" /> <span className="text-xs xl:text-sm">Historial del dÃ­a</span>
+                    <History size={18} className="shrink-0" /> <span className="text-xs xl:text-sm">Historial del día</span>
                 </button>
                 <button
                     onClick={() => setActiveTab('transport')}
@@ -836,7 +839,7 @@ const EntregaPedidosView = () => {
             {activeTab === 'encomiendas' && (
                 <div className="bg-white p-4 md:p-6 rounded-none md:rounded-2xl shadow-sm border-b md:border border-slate-200">
                     <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
-                        <h2 className="text-xl font-black text-slate-800">Ã“rdenes a Despachar / Entregar</h2>
+                        <h2 className="text-xl font-black text-slate-800">Órdenes a Despachar / Entregar</h2>
 
                         {/* Filtros Especiales */}
                         <div className="flex flex-wrap gap-4 items-center w-full xl:w-auto">
@@ -847,7 +850,7 @@ const EntregaPedidosView = () => {
                                     value={filtroLugar}
                                     onChange={(e) => setFiltroLugar(e.target.value)}
                                 >
-                                    <option value="">â€” Todas â€”</option>
+                                    <option value="">— Todas —</option>
                                     {lugaresRetiro.map(lr => (
                                         <option key={lr.LReIdLugarRetiro} value={lr.LReIdLugarRetiro}>{lr.LReNombreLugar}</option>
                                     ))}
@@ -860,9 +863,9 @@ const EntregaPedidosView = () => {
                                 onChange={(e) => setFiltroPagoEncomiendas(e.target.value)}
                                 className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none cursor-pointer"
                             >
-                                <option value="todas">â­ Mostrar Todas</option>
-                                <option value="pagas">ðŸ’° SÃ³lo Pagas</option>
-                                <option value="nopagas">â—ï¸ No Pagas</option>
+                                <option value="todas">✅ Mostrar Todas</option>
+                                <option value="pagas">💰 Sólo Pagas</option>
+                                <option value="nopagas">⏳ No Pagas</option>
                             </select>
 
                             <button
@@ -884,7 +887,7 @@ const EntregaPedidosView = () => {
                                 onClick={generarRemitoLogistico}
                                 disabled={selectedEncomiendas.size === 0 || loading}
                                 className="bg-brand-cyan hover:bg-[#005080] disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-2 shadow-sm"
-                                title="Generar Remito LogÃ­stico"
+                                title="Generar Remito Logístico"
                             >
                                 <Package size={16} /> Generar Remito ({selectedEncomiendas.size})
                             </button>
@@ -899,7 +902,7 @@ const EntregaPedidosView = () => {
                             <button
                                 onClick={() => {
                                     const sel = encomiendas.filter(e => selectedEncomiendas.has(e.ordenDeRetiro));
-                                    if (sel.length === 0) return toast.warning('SeleccionÃ¡ al menos una orden.');
+                                    if (sel.length === 0) return toast.warning('Seleccioná al menos una orden.');
                                     printLabels(sel);
                                 }}
                                 disabled={selectedEncomiendas.size === 0}
@@ -918,7 +921,7 @@ const EntregaPedidosView = () => {
                         </div>
                     </div>
 
-                    {/* Buscador rÃ¡pido dentro de LogÃ­stica */}
+                    {/* Buscador rápido dentro de Logística */}
                     <div className="mb-4 relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                         <input
@@ -977,7 +980,7 @@ const EntregaPedidosView = () => {
                                                 <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full uppercase">{enc.estado}</span>
                                             </div>
                                             <div className="flex items-center gap-2 mt-0.5">
-                                                <span className="text-xs font-bold text-slate-700 truncate">{enc.CliCodigoCliente} Â· {enc.TClDescripcion}</span>
+                                                <span className="text-xs font-bold text-slate-700 truncate">{enc.CliCodigoCliente} · {enc.TClDescripcion}</span>
                                             </div>
                                         </div>
                                         <div className="text-right shrink-0">
@@ -1022,7 +1025,7 @@ const EntregaPedidosView = () => {
                                             {enc.orders?.map(o => (
                                                 <div key={o.orderNumber} className="flex items-center justify-between px-4 py-2">
                                                     <span className="font-bold text-slate-700 text-xs">{o.orderNumber}</span>
-                                                    <span className="text-xs text-slate-400">{o.orderEstado || 'â€”'}</span>
+                                                    <span className="text-xs text-slate-400">{o.orderEstado || '—'}</span>
                                                     <span className="font-black text-brand-cyan text-xs">{o.orderCosto}</span>
                                                 </div>
                                             ))}
@@ -1035,7 +1038,7 @@ const EntregaPedidosView = () => {
                         {!loading && encomiendas.length === 0 && (
                             <div className="text-center py-12 bg-slate-50 rounded-xl border border-dashed border-slate-300">
                                 <Truck size={36} className="mx-auto mb-3 text-slate-300" />
-                                <p className="font-bold text-slate-500">No hay Ã³rdenes para despachar</p>
+                                <p className="font-bold text-slate-500">No hay órdenes para despachar</p>
                                 <p className="text-sm text-slate-400">bajo los filtros seleccionados.</p>
                             </div>
                         )}
@@ -1138,14 +1141,14 @@ const EntregaPedidosView = () => {
                                                         <div className="p-4 pl-14 pt-0">
                                                             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mt-2">
                                                                 <div className="bg-slate-100 px-4 py-2 border-b border-slate-200">
-                                                                    <span className="text-xs font-black text-slate-500 uppercase">ComposiciÃ³n de {enc.ordenDeRetiro}</span>
+                                                                    <span className="text-xs font-black text-slate-500 uppercase">Composición de {enc.ordenDeRetiro}</span>
                                                                 </div>
                                                                 <table className="w-full text-xs text-left">
                                                                     <tbody>
                                                                         {enc.orders?.map(o => (
                                                                             <tr key={o.orderNumber} className="border-b border-slate-50 hover:bg-slate-50">
                                                                                 <td className="p-3 pl-4 font-bold text-slate-700 w-32">{o.orderNumber}</td>
-                                                                                <td className="p-3 text-slate-500 font-medium">{o.orderEstado || 'â€”'}</td>
+                                                                                <td className="p-3 text-slate-500 font-medium">{o.orderEstado || '—'}</td>
                                                                                 <td className="p-3 font-bold text-brand-cyan text-right pr-4">{o.orderCosto}</td>
                                                                             </tr>
                                                                         ))}
@@ -1162,7 +1165,7 @@ const EntregaPedidosView = () => {
                                 {!loading && encomiendas.length === 0 && (
                                     <tr><td colSpan="7" className="p-10 text-center text-slate-500">
                                         <Truck size={40} className="mx-auto mb-3 text-slate-300" />
-                                        <p className="font-bold text-lg">No hay Ã³rdenes para despachar</p>
+                                        <p className="font-bold text-lg">No hay órdenes para despachar</p>
                                         <p className="text-sm font-medium">bajo los filtros seleccionados.</p>
                                     </td></tr>
                                 )}
@@ -1179,13 +1182,13 @@ const EntregaPedidosView = () => {
                 </div>
             )}
 
-            {/* TAB: HISTORIAL DEL DÃA */}
+            {/* TAB: HISTORIAL DEL DÍA */}
             {activeTab === 'historial' && (
                 <div className="bg-white p-4 md:p-6 rounded-none md:rounded-2xl shadow-sm border-b md:border border-slate-200">
                     <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
                         <div>
                             <h2 className="text-xl font-black text-slate-800">Historial de fecha</h2>
-                            <p className="text-sm text-slate-500 font-medium mt-1">Ã“rdenes con movimientos en el dÃ­a. Filtralas acÃ¡:</p>
+                            <p className="text-sm text-slate-500 font-medium mt-1">Órdenes con movimientos en el día. Filtralas acá:</p>
                         </div>
                         <div className="flex items-center gap-3">
                             <select
@@ -1193,7 +1196,7 @@ const EntregaPedidosView = () => {
                                 onChange={e => setFiltroLugarHistorial(e.target.value)}
                                 className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm font-bold text-slate-700 outline-none cursor-pointer"
                             >
-                                <option value="todas">â€” Seleccionar (Todas) â€”</option>
+                                <option value="todas">— Seleccionar (Todas) —</option>
                                 {lugaresRetiro.map(lr => (
                                     <option key={lr.LReIdLugarRetiro} value={lr.LReIdLugarRetiro}>{lr.LReNombreLugar}</option>
                                 ))}
@@ -1216,7 +1219,7 @@ const EntregaPedidosView = () => {
                             <button
                                 onClick={() => {
                                     const sel = historialHoy.filter(e => selectedHistorial.has(e.ordenDeRetiro));
-                                    if (sel.length === 0) return toast.warning('SeleccionÃ¡ al menos una encomienda.');
+                                    if (sel.length === 0) return toast.warning('Seleccioná al menos una encomienda.');
                                     printLabels(sel);
                                 }}
                                 disabled={selectedHistorial.size === 0}
@@ -1286,6 +1289,17 @@ const EntregaPedidosView = () => {
                                         </td>
                                         <td className="p-4 text-center">
                                             <div className="flex items-center gap-1.5 justify-center">
+                                                {enc.comprobanteEntrega && (
+                                                    <a
+                                                        href={import.meta.env.VITE_COMPROBANTES_ENCOMIENDAS_PATH ? `${import.meta.env.VITE_COMPROBANTES_ENCOMIENDAS_PATH}/${enc.comprobanteEntrega.split('/').pop()}` : `${import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : ''}${enc.comprobanteEntrega}`}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        title="Ver comprobante"
+                                                        className="p-1.5 bg-brand-cyan/10 hover:bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/20 rounded-lg transition-colors flex items-center justify-center"
+                                                    >
+                                                        <FileImage size={14} />
+                                                    </a>
+                                                )}
                                                 <button
                                                     title="Reimprimir etiqueta"
                                                     onClick={() => printLabels(enc)}
@@ -1310,7 +1324,7 @@ const EntregaPedidosView = () => {
                                         <td colSpan="8" className="p-10 text-center text-slate-500">
                                             <Package size={40} className="mx-auto mb-3 text-slate-300" />
                                             <p className="font-bold text-lg">Sin entregas hoy</p>
-                                            <p className="text-sm font-medium">Las encomiendas entregadas aparecer\u00e1n aqu\u00ed.</p>
+                                            <p className="text-sm font-medium">Las encomiendas entregadas aparecerán aquí.</p>
                                         </td>
                                     </tr>
                                 )}
@@ -1329,7 +1343,7 @@ const EntregaPedidosView = () => {
                 </div>
             )}
 
-            {/* TAB MOSTRADOR â€” Lista completa + filtro + bÃºsqueda puntual */}
+            {/* TAB MOSTRADOR — Lista completa + filtro + búsqueda puntual */}
             {
                 activeTab === 'mostrador' && (
                     <div className="flex flex-col gap-6">
@@ -1337,7 +1351,7 @@ const EntregaPedidosView = () => {
                         {/* â”€â”€ Buscador Puntual (arriba) â”€â”€ */}
                         <div className="bg-white p-4 md:p-6 rounded-none md:rounded-2xl shadow-sm border-b md:border border-slate-200 flex flex-wrap gap-4 items-end">
                             <div className="flex-1 min-w-[300px]">
-                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Buscar orden de retiro, depÃ³sito o cliente especÃ­fico</label>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Buscar orden de retiro, depósito o cliente específico</label>
                                 <div className="relative">
                                     <input
                                         type="text"
@@ -1352,8 +1366,8 @@ const EntregaPedidosView = () => {
                             </div>
                             <button
                                 onClick={() => {
-                                    // El filtro es en memoria, el botÃ³n solo refresca el foco
-                                    if (!searchTerm.trim()) toast.warning('IngresÃ¡ un criterio de bÃºsqueda.');
+                                    // El filtro es en memoria, el botón solo refresca el foco
+                                    if (!searchTerm.trim()) toast.warning('Ingresá un criterio de búsqueda.');
                                 }}
                                 disabled={false}
                                 className="bg-brand-cyan hover:bg-brand-cyan text-white font-bold py-3 px-8 rounded-xl shadow-md transition-all flex items-center gap-2"
@@ -1363,11 +1377,11 @@ const EntregaPedidosView = () => {
                             </button>
                         </div>
 
-                        {/* â”€â”€ Todas las Ã“rdenes Sin Retiro (debajo del buscador) â”€â”€ */}
+                        {/* â”€â”€ Todas las Órdenes Sin Retiro (debajo del buscador) â”€â”€ */}
                         <div className="bg-white rounded-none md:rounded-2xl shadow-sm border-y md:border border-slate-200 overflow-hidden">
                             <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 flex flex-wrap justify-between items-center gap-3">
                                 <div>
-                                    <div className="text-white font-black text-lg">Ã“rdenes sin Retiro Asignado</div>
+                                    <div className="text-white font-black text-lg">Órdenes sin Retiro Asignado</div>
                                     <div className="text-amber-100 text-sm">
                                         {loadingMostradorAll ? 'Cargando...' : (() => {
                                             if (searchTerm.trim()) {
@@ -1395,7 +1409,7 @@ const EntregaPedidosView = () => {
                                         }}
                                         className="bg-amber-600/60 text-white font-bold text-sm rounded-xl px-3 py-2 border border-amber-400/40 outline-none focus:ring-2 focus:ring-amber-300 min-w-[180px]"
                                     >
-                                        <option value="">â€” Todos los lugares â€”</option>
+                                        <option value="">— Todos los lugares —</option>
                                         {lugaresRetiro.map(l => (
                                             <option key={l.LReIdLugarRetiro} value={l.LReIdLugarRetiro}>{l.LReNombreLugar}</option>
                                         ))}
@@ -1411,7 +1425,7 @@ const EntregaPedidosView = () => {
                             </div>
 
                             {mostradorAllSinRetiro.length > 0 ? (() => {
-                                // Filtro en memoria por cÃ³digo de orden, nombre o ID de cliente
+                                // Filtro en memoria por código de orden, nombre o ID de cliente
                                 const q = searchTerm.trim().toLowerCase();
                                 const filteredSinRetiro = q
                                     ? mostradorAllSinRetiro.filter(o =>
@@ -1466,12 +1480,12 @@ const EntregaPedidosView = () => {
                                                                 className="w-4 h-4 accent-amber-500 cursor-pointer"
                                                             />
                                                         </th>
-                                                        <th className="p-3 text-left">CÃ³digo</th>
+                                                        <th className="p-3 text-left">Código</th>
                                                         <th className="p-3 text-left">Cliente</th>
                                                         <th className="p-3 text-left">Lugar Retiro</th>
                                                         <th className="p-3 text-left">Estado</th>
                                                         <th className="p-3 text-right">Importe</th>
-                                                        <th className="p-3 pr-4 text-center">AcciÃ³n</th>
+                                                        <th className="p-3 pr-4 text-center">Acción</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -1490,7 +1504,7 @@ const EntregaPedidosView = () => {
                                                                 </td>
                                                                 <td className="p-3 font-bold text-slate-800">
                                                                     {o.OrdCodigoOrden}
-                                                                    {o.Pagada ? <span className="ml-2 text-[10px] bg-green-100 text-green-700 font-black px-1.5 py-0.5 rounded-full">âœ“ Paga</span> : null}
+                                                                    {o.Pagada ? <span className="ml-2 text-[10px] bg-green-100 text-green-700 font-black px-1.5 py-0.5 rounded-full">✓ Paga</span> : null}
                                                                 </td>
                                                                 <td className="p-3 text-slate-600 font-medium">
                                                                     <div className="font-bold">{o.CliNombre || o.CliCodigo}</div>
@@ -1539,21 +1553,21 @@ const EntregaPedidosView = () => {
                                 <div className="p-10 text-center">
                                     {loadingMostradorAll
                                         ? <RefreshCcw className="animate-spin mx-auto mb-3 text-amber-400" size={28} />
-                                        : <><Package size={36} className="mx-auto mb-3 text-slate-300" /><p className="font-bold text-slate-500">No hay Ã³rdenes sin retiro{filtroLugarMostrador ? ' para este lugar' : ''}</p></>}
+                                        : <><Package size={36} className="mx-auto mb-3 text-slate-300" /><p className="font-bold text-slate-500">No hay órdenes sin retiro{filtroLugarMostrador ? ' para este lugar' : ''}</p></>}
                                 </div>
                             )}
                         </div>
 
-                        {/* Resultados de bÃºsqueda puntual */}
+                        {/* Resultados de búsqueda puntual */}
                         {mostradorData && (
                             <div className="flex flex-col gap-4">
-                                {/* Retiros con Ã³rdenes sin pagar */}
+                                {/* Retiros con órdenes sin pagar */}
                                 {mostradorData.retiros.map(ret => (
                                     <div key={ret.OReIdOrdenRetiro} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                                         <div className="bg-gradient-to-r from-brand-cyan to-[#005080] px-6 py-4 flex justify-between items-center">
                                             <div>
                                                 <div className="text-white font-black text-lg tracking-wide">{ret.etiqueta}</div>
-                                                <div className="text-brand-cyan/60 text-sm font-medium">{ret.estadoRetiro} Â· {ret.lugarRetiro}</div>
+                                                <div className="text-brand-cyan/60 text-sm font-medium">{ret.estadoRetiro} · {ret.lugarRetiro}</div>
                                             </div>
                                             <div className="text-right">
                                                 <div className="text-white font-bold text-sm">{ret.CliNombre || ret.CliCodigo}</div>
@@ -1564,10 +1578,10 @@ const EntregaPedidosView = () => {
                                             <table className="w-full text-sm">
                                                 <thead>
                                                     <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-100">
-                                                        <th className="p-3 pl-6 text-left">CÃ³digo Orden</th>
+                                                        <th className="p-3 pl-6 text-left">Código Orden</th>
                                                         <th className="p-3 text-left">Estado</th>
                                                         <th className="p-3 text-right">Importe</th>
-                                                        <th className="p-3 pr-6 text-center">AcciÃ³n</th>
+                                                        <th className="p-3 pr-6 text-center">Acción</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -1595,13 +1609,13 @@ const EntregaPedidosView = () => {
                                                 onClick={() => abrirModalPago(ret.ordenes, ret.etiqueta, ret)}
                                                 className="bg-brand-cyan hover:bg-brand-cyan text-white font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-2 shadow-sm"
                                             >
-                                                <DollarSign size={14} /> Pagar Todas las Ã“rdenes
+                                                <DollarSign size={14} /> Pagar Todas las Órdenes
                                             </button>
                                         </div>
                                     </div>
                                 ))}
 
-                                {/* Ã“rdenes sin retiro */}
+                                {/* Órdenes sin retiro */}
                                 {mostradorData.sinRetiro.length > 0 && (() => {
                                     const totalSR = mostradorData.sinRetiro.length;
                                     const selectedArr = mostradorData.sinRetiro.filter(o => selectedSinRetiro.has(o.OrdIdOrden));
@@ -1614,13 +1628,13 @@ const EntregaPedidosView = () => {
                                             {/* Header con acciones grupales */}
                                             <div className="bg-gradient-to-r from-amber-500 to-amber-600 px-6 py-4 flex justify-between items-center">
                                                 <div>
-                                                    <div className="text-white font-black text-lg">Ã“rdenes sin Retiro</div>
-                                                    <div className="text-amber-100 text-sm">Sin orden de retiro asignada Â· {totalSR} orden{totalSR !== 1 ? 'es' : ''}</div>
+                                                    <div className="text-white font-black text-lg">Órdenes sin Retiro</div>
+                                                    <div className="text-amber-100 text-sm">Sin orden de retiro asignada · {totalSR} orden{totalSR !== 1 ? 'es' : ''}</div>
                                                 </div>
                                                 {someChecked && (
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-white text-xs font-bold bg-amber-700/40 px-2 py-1 rounded-lg">
-                                                            {selectedArr.length} sel. Â· $ {totalSeleccionado.toFixed(2)}
+                                                            {selectedArr.length} sel. · $ {totalSeleccionado.toFixed(2)}
                                                         </span>
                                                         <button
                                                             onClick={() => {
@@ -1654,11 +1668,11 @@ const EntregaPedidosView = () => {
                                                                 className="w-4 h-4 accent-amber-500 cursor-pointer"
                                                             />
                                                         </th>
-                                                        <th className="p-3 text-left">CÃ³digo</th>
+                                                        <th className="p-3 text-left">Código</th>
                                                         <th className="p-3 text-left">Cliente</th>
                                                         <th className="p-3 text-left">Estado</th>
                                                         <th className="p-3 text-right">Importe</th>
-                                                        <th className="p-3 pr-6 text-center">AcciÃ³n Individual</th>
+                                                        <th className="p-3 pr-6 text-center">Acción Individual</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
@@ -1678,7 +1692,7 @@ const EntregaPedidosView = () => {
                                                                 </td>
                                                                 <td className="p-3 font-bold text-slate-800">
                                                                     {o.OrdCodigoOrden}
-                                                                    {o.Pagada ? <span className="ml-2 text-[10px] bg-green-100 text-green-700 font-black px-1.5 py-0.5 rounded-full">âœ“ Paga</span> : null}
+                                                                    {o.Pagada ? <span className="ml-2 text-[10px] bg-green-100 text-green-700 font-black px-1.5 py-0.5 rounded-full">✓ Paga</span> : null}
                                                                 </td>
                                                                 <td className="p-3 text-slate-600 font-medium">{o.CliNombre || o.CliCodigo}</td>
                                                                 <td className="p-3 text-slate-500">{o.estadoOrden}</td>
@@ -1725,7 +1739,7 @@ const EntregaPedidosView = () => {
                 )
             }
 
-            {/* MODAL: GENERAR RETIRO (soporta una o varias Ã³rdenes) */}
+            {/* MODAL: GENERAR RETIRO (soporta una o varias órdenes) */}
             {
                 retiroModal && (() => {
                     const ordenes = retiroModal.ordenes || [];
@@ -1742,14 +1756,14 @@ const EntregaPedidosView = () => {
                                         <div className="text-white font-black text-lg">Generar Orden de Retiro</div>
                                         <div className="text-brand-cyan/70 text-sm">
                                             {ordenes.length === 1
-                                                ? `${ordenes[0].OrdCodigoOrden} Â· ${clienteNombre}`
-                                                : `${ordenes.length} Ã³rdenes Â· ${clienteNombre}`}
+                                                ? `${ordenes[0].OrdCodigoOrden} · ${clienteNombre}`
+                                                : `${ordenes.length} órdenes · ${clienteNombre}`}
                                         </div>
                                     </div>
                                     <button onClick={() => setRetiroModal(null)} className="text-white hover:text-brand-cyan/70 text-2xl font-bold">&times;</button>
                                 </div>
                                 <div className="p-6 flex flex-col gap-4">
-                                    {/* Lista de Ã³rdenes seleccionadas */}
+                                    {/* Lista de órdenes seleccionadas */}
                                     <div className="bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
                                         <div className="px-4 py-2 bg-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wider">Incluye</div>
                                         <div className="divide-y divide-slate-100 max-h-36 overflow-y-auto">
@@ -1766,9 +1780,9 @@ const EntregaPedidosView = () => {
                                         </div>
                                     </div>
 
-                                    {/* Lugar / Forma de EnvÃ­o */}
+                                    {/* Lugar / Forma de Envío */}
                                     <div>
-                                        <label className="block text-sm font-bold text-slate-700 mb-1">Lugar / Forma de EnvÃ­o</label>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">Lugar / Forma de Envío</label>
                                         <select
                                             value={retiroLugar}
                                             onChange={e => {
@@ -1784,15 +1798,15 @@ const EntregaPedidosView = () => {
                                         </select>
                                     </div>
 
-                                    {/* â”€â”€ SecciÃ³n DirecciÃ³n: solo cuando NO es retiro local â”€â”€ */}
+                                    {/* â”€â”€ Sección Dirección: solo cuando NO es retiro local â”€â”€ */}
                                     {esEnvio && (
                                         <div className="flex flex-col gap-3 border border-brand-cyan/20 bg-brand-cyan/5/40 rounded-xl p-4">
-                                            <p className="text-xs font-bold text-brand-cyan uppercase tracking-wide">Datos de EnvÃ­o</p>
+                                            <p className="text-xs font-bold text-brand-cyan uppercase tracking-wide">Datos de Envío</p>
 
                                             {/* Selector de direcciones guardadas */}
                                             {clienteEnvioDatos?.direcciones?.length > 0 && (
                                                 <div>
-                                                    <label className="block text-xs font-bold text-slate-600 mb-1">DirecciÃ³n guardada</label>
+                                                    <label className="block text-xs font-bold text-slate-600 mb-1">Dirección guardada</label>
                                                     <select
                                                         value={retiroDirSeleccionada || ''}
                                                         onChange={e => {
@@ -1819,15 +1833,15 @@ const EntregaPedidosView = () => {
                                                         }}
                                                         className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-brand-cyan/40 bg-white"
                                                     >
-                                                        <option value="">â€” Ingresar manualmente â€”</option>
+                                                        <option value="">— Ingresar manualmente —</option>
                                                         {clienteEnvioDatos.direcciones.map(d => (
-                                                            <option key={d.ID} value={d.ID}>{d.Alias || d.Direccion} {d.Ciudad ? `Â· ${d.Ciudad}` : ''}</option>
+                                                            <option key={d.ID} value={d.ID}>{d.Alias || d.Direccion} {d.Ciudad ? `· ${d.Ciudad}` : ''}</option>
                                                         ))}
                                                     </select>
                                                 </div>
                                             )}
 
-                                            {/* Agencia â€” siempre visible si hay datos */}
+                                            {/* Agencia — siempre visible si hay datos */}
                                             {agenciasLista.length > 0 && (
                                                 <div>
                                                     <label className="block text-xs font-bold text-slate-600 mb-1">Agencia de transporte</label>
@@ -1836,7 +1850,7 @@ const EntregaPedidosView = () => {
                                                         onChange={e => setRetiroEnvio(prev => ({ ...prev, agenciaId: e.target.value }))}
                                                         className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-brand-cyan/40 bg-white"
                                                     >
-                                                        <option value="">â€” Sin agencia â€”</option>
+                                                        <option value="">— Sin agencia —</option>
                                                         {agenciasLista.map(a => (
                                                             <option key={a.ID} value={a.ID}>{a.Nombre}</option>
                                                         ))}
@@ -1844,9 +1858,9 @@ const EntregaPedidosView = () => {
                                                 </div>
                                             )}
 
-                                            {/* DirecciÃ³n */}
+                                            {/* Dirección */}
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1">DirecciÃ³n</label>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1">Dirección</label>
                                                 <input
                                                     type="text"
                                                     value={retiroEnvio.direccion}
@@ -1865,7 +1879,7 @@ const EntregaPedidosView = () => {
                                                         onChange={e => handleDepartamentoChange(e.target.value)}
                                                         className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-brand-cyan/40 bg-white"
                                                     >
-                                                        <option value="">â€” Seleccionar â€”</option>
+                                                        <option value="">— Seleccionar —</option>
                                                         {departamentosLista.map(d => (
                                                             <option key={d.ID} value={d.ID}>{d.Nombre}</option>
                                                         ))}
@@ -1880,7 +1894,7 @@ const EntregaPedidosView = () => {
                                                         disabled={!retiroEnvio.departamentoId}
                                                         className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none focus:ring-2 focus:ring-brand-cyan/40 bg-white disabled:opacity-50"
                                                     >
-                                                        <option value="">â€” Seleccionar â€”</option>
+                                                        <option value="">— Seleccionar —</option>
                                                         {localidadesLista.map(l => (
                                                             <option key={l.ID} value={l.ID}>{l.Nombre}</option>
                                                         ))}
@@ -1948,7 +1962,7 @@ const EntregaPedidosView = () => {
                 })()
             }
 
-            {/* ALERTA DE AUTORIZACIÃ“N â€” Modal custom reemplaza Swal */}
+            {/* ALERTA DE AUTORIZACIÓN — Modal custom reemplaza Swal */}
             <AlertaAutorizacionModal
                 visible={showAlertaAuth}
                 titulo="!ALERTA!"
@@ -1964,7 +1978,7 @@ const EntregaPedidosView = () => {
                 }}
             />
 
-            {/* MODAL DE PAGO â€” igual a Caja */}
+            {/* MODAL DE PAGO — igual a Caja */}
             {
                 pagoModal && (
                     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
@@ -1973,20 +1987,20 @@ const EntregaPedidosView = () => {
                             <div className="bg-gradient-to-r from-brand-cyan to-[#005080] px-6 py-4 rounded-t-2xl flex justify-between items-center">
                                 <div>
                                     <div className="text-white font-black text-lg">Registrar Pago</div>
-                                    <div className="text-brand-cyan/60 text-sm">{pagoModal.retiroId || 'Orden directa'} Â· {pagoModal.ordenes.length} orden(es)</div>
+                                    <div className="text-brand-cyan/60 text-sm">{pagoModal.retiroId || 'Orden directa'} · {pagoModal.ordenes.length} orden(es)</div>
                                 </div>
                                 <button onClick={() => setPagoModal(null)} className="text-white hover:text-brand-cyan/70 text-2xl font-bold leading-none">&times;</button>
                             </div>
 
                             <div className="p-6 flex flex-col gap-4">
-                                {/* CotizaciÃ³n */}
+                                {/* Cotización */}
                                 {cotizacion && (
                                     <div className="bg-brand-cyan/5 border border-brand-cyan/30 rounded-xl px-4 py-2 text-sm text-brand-cyan font-bold text-center">
-                                        CotizaciÃ³n: 1 USD = {Number(cotizacion).toFixed(2)} UYU
+                                        Cotización: 1 USD = {Number(cotizacion).toFixed(2)} UYU
                                     </div>
                                 )}
 
-                                {/* Resumen Ã³rdenes */}
+                                {/* Resumen órdenes */}
                                 <div className="bg-slate-50 rounded-xl p-3 border border-slate-200">
                                     {pagoModal.ordenes.map(o => (
                                         <div key={o.OrdIdOrden} className="flex justify-between text-sm font-bold py-1 border-b border-slate-100 last:border-0">
@@ -1996,7 +2010,7 @@ const EntregaPedidosView = () => {
                                     ))}
                                 </div>
 
-                                {/* Forma de pago â€” select igual a Caja */}
+                                {/* Forma de pago — select igual a Caja */}
                                 <div className="flex flex-col gap-1">
                                     <label className="text-sm font-bold text-zinc-800">Seleccionar forma de pago</label>
                                     <select
@@ -2004,14 +2018,14 @@ const EntregaPedidosView = () => {
                                         onChange={e => setFormaPago(e.target.value)}
                                         className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan/40 appearance-none"
                                     >
-                                        <option value="">Seleccione un mÃ©todo</option>
+                                        <option value="">Seleccione un método</option>
                                         {metodosPago.map(m => (
                                             <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>
                                         ))}
                                     </select>
                                 </div>
 
-                                {/* Moneda â€” igual a Caja */}
+                                {/* Moneda — igual a Caja */}
                                 <div className="flex flex-col gap-1">
                                     <label className="text-sm font-bold text-zinc-800">Seleccionar Moneda</label>
                                     <select
@@ -2019,8 +2033,8 @@ const EntregaPedidosView = () => {
                                         onChange={e => handleCambioMoneda(e.target.value)}
                                         className="w-full bg-white border border-zinc-300 rounded-lg px-4 py-2.5 text-zinc-700 outline-none focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan/40 appearance-none"
                                     >
-                                        <option value="UYU">UYU â€” Peso Uruguayo</option>
-                                        <option value="USD">USD â€” DÃ³lar</option>
+                                        <option value="UYU">UYU — Peso Uruguayo</option>
+                                        <option value="USD">USD — Dólar</option>
                                     </select>
                                 </div>
 

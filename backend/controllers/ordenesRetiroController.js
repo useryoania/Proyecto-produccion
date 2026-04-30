@@ -116,6 +116,7 @@ const getOrdenesRetiroQueryBase = `
     r.AgenciaOtra,
     r.ReceptorNombre,
     r.LReIdLugarRetiro,
+    (SELECT TOP 1 b.ComprobantePath FROM Logistica_Bultos b WITH(NOLOCK) WHERE b.OrdenID = r.OReIdOrdenRetiro AND b.ComprobantePath IS NOT NULL ORDER BY b.BultoID DESC) AS comprobanteEntrega,
     art.Descripcion AS articuloDescripcion
   FROM OrdenesRetiro r WITH(NOLOCK)
   LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
@@ -163,6 +164,7 @@ const processRetirosRows = (rows) => {
         agenciaNombre: row.AgenciaNombre || row.AgenciaOtra || null,
         receptorNombre: row.ReceptorNombre || null,
         formaEnvioId: row.LReIdLugarRetiro || null,
+        comprobanteEntrega: row.comprobanteEntrega || null,
         orders: []
       };
     }

@@ -251,6 +251,9 @@ export default function LandingPage() {
       {/* ══════════ PROCESS FLOW ══════════ */}
       <ProcessFlow isMobile={isMobile} isTablet={isTablet} />
 
+      {/* ══════════ STATS COUNTER ══════════ */}
+      {/* <StatsCounter isMobile={isMobile} /> */}
+
       {/* ══════════ SERVICES (INFINITE CAROUSEL) ══════════ */}
       <section style={{
         padding: isMobile ? '24px 0 64px' : '32px 0 80px',
@@ -332,6 +335,163 @@ export default function LandingPage() {
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function useCountUp(target, duration = 2000, started = false) {
+  const [count, setCount] = useState(0);
+  const raf = useRef(null);
+  useEffect(() => {
+    if (!started || target === 0) return;
+    const start = performance.now();
+    const animate = (now) => {
+      const progress = Math.min((now - start) / duration, 1);
+      // Easing: ease-out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.floor(eased * target));
+      if (progress < 1) raf.current = requestAnimationFrame(animate);
+      else setCount(target);
+    };
+    raf.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(raf.current);
+  }, [target, started, duration]);
+  return count;
+}
+
+function StatCard({ value, label, prefix = '', suffix = '', accent, started, isMobile }) {
+  const safeValue = typeof value === 'number' && isFinite(value) ? value : 0;
+  const count = useCountUp(safeValue, 2200, started);
+  const formatted = Number.isFinite(count) ? count.toLocaleString('es-UY') : '0';
+  return (
+    <div style={{
+      flex: 1,
+      minWidth: isMobile ? '100%' : 220,
+      background: 'transparent',
+      border: 'none',
+      borderRadius: 20,
+      padding: isMobile ? '28px 24px' : '36px 32px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: 8,
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      {/* Glow */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0, left: '50%', transform: 'translateX(-50%)',
+        width: 100, height: 100,
+        background: `radial-gradient(circle, ${accent}28 0%, transparent 70%)`,
+        pointerEvents: 'none',
+      }} />
+      <div style={{
+        fontSize: isMobile ? 48 : 64,
+        fontWeight: 900,
+        letterSpacing: '-0.03em',
+        lineHeight: 1,
+        background: `linear-gradient(135deg, #fff 30%, ${accent} 100%)`,
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {prefix}{formatted}{suffix}
+      </div>
+      <div style={{
+        fontSize: 13, fontWeight: 600,
+        color: 'rgba(255,255,255,0.45)',
+        textTransform: 'uppercase',
+        letterSpacing: '0.1em',
+        textAlign: 'center',
+      }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function StatsCounter({ isMobile }) {
+  const ref = useRef(null);
+  const [started, setStarted] = useState(false);
+  const [stats, setStats] = useState({ totalOrdenes: 0, totalClientes: 0 });
+
+  useEffect(() => {
+    fetch('/api/stats/public')
+      .then(r => r.json())
+      .then(data => {
+        setStats({
+          totalOrdenes: Number(data?.totalOrdenes) || 0,
+          totalClientes: Number(data?.totalClientes) || 0,
+        });
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setStarted(true); observer.disconnect(); } },
+      { threshold: 0.3 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <section ref={ref} style={{
+      padding: isMobile ? '48px 24px' : '72px 80px',
+      background: '#111',
+      position: 'relative',
+      overflow: 'hidden',
+      borderTop: '1px solid rgba(255,255,255,0.07)',
+      borderBottom: '1px solid rgba(255,255,255,0.07)',
+    }}>
+
+
+      <div style={{
+        maxWidth: 900,
+        margin: '0 auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 40,
+        alignItems: 'center',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{
+            fontSize: 12, fontWeight: 700, letterSpacing: '0.15em',
+            textTransform: 'uppercase', color: '#00AEEF',
+            margin: '0 0 10px',
+          }}>En números</p>
+          <h2 style={{
+            fontSize: isMobile ? 24 : 32, fontWeight: 900,
+            color: '#fff', margin: 0, letterSpacing: '-0.02em',
+          }}>Lo que hacemos, en tiempo real</h2>
+        </div>
+
+        <div style={{
+          display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
+          gap: 16,
+          width: '100%',
+        }}>
+          <StatCard
+            value={stats.totalOrdenes}
+            label="Órdenes procesadas"
+            accent="#00AEEF"
+            started={started}
+            isMobile={isMobile}
+          />
+          <StatCard
+            value={stats.totalClientes}
+            label="Clientes activos"
+            accent="#EC008C"
+            started={started}
+            isMobile={isMobile}
+          />
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -446,6 +606,7 @@ function InfiniteMarquee({ isMobile }) {
   const targetSpeedRef  = useRef(0);
   const rafRef = useRef(null);
   const dragRef = useRef({ isDragging: false, startX: 0, currentX: 0 });
+  const velocityRef = useRef(0);
 
   const [hoverCount, setHoverCount] = useState(0);
   const [activeIdx, setActiveIdx] = useState(null);
@@ -485,8 +646,16 @@ function InfiniteMarquee({ isMobile }) {
 
     const animate = () => {
       if (!dragRef.current.isDragging) {
-        currentSpeedRef.current += (targetSpeedRef.current - currentSpeedRef.current) * 0.04;
-        posRef.current -= currentSpeedRef.current;
+        if (Math.abs(velocityRef.current) > 0.5) {
+          // Fase de inercia: decaer la velocidad del drag con fricción
+          velocityRef.current *= 0.93;
+          posRef.current += velocityRef.current;
+        } else {
+          // Auto-scroll normal
+          velocityRef.current = 0;
+          currentSpeedRef.current += (targetSpeedRef.current - currentSpeedRef.current) * 0.04;
+          posRef.current -= currentSpeedRef.current;
+        }
       }
 
       const halfWidth = track.scrollWidth / 2;
@@ -531,21 +700,26 @@ function InfiniteMarquee({ isMobile }) {
         dragRef.current.isDragging = true;
         dragRef.current.startX = e.touches[0].clientX;
         dragRef.current.currentX = e.touches[0].clientX;
+        velocityRef.current = 0; // reset inercia al iniciar nuevo drag
       }}
       onTouchMove={(e) => {
         if (!isMobile || !dragRef.current.isDragging) return;
         const currentX = e.touches[0].clientX;
         const delta = currentX - dragRef.current.currentX;
+        // EMA para suavizar: evita que el último delta raro defina toda la inercia
+        velocityRef.current = velocityRef.current * 0.6 + delta * 0.4;
         posRef.current += delta;
         dragRef.current.currentX = currentX;
       }}
       onTouchEnd={() => {
         if (!isMobile) return;
         dragRef.current.isDragging = false;
+        // velocityRef mantiene la última velocidad suavizada → la inercia se aplica en animate()
       }}
       onTouchCancel={() => {
         if (!isMobile) return;
         dragRef.current.isDragging = false;
+        velocityRef.current = 0; // cancelar inercia si el touch fue cancelado
       }}
     >
       <div
@@ -578,21 +752,11 @@ function InfiniteMarquee({ isMobile }) {
 
 function ProcessFlow({ isMobile, isTablet }) {
   const [activeStep, setActiveStep] = useState(null);
-  const [displayStep, setDisplayStep] = useState(null);
   const [hoveredStep, setHoveredStep] = useState(null);
-  const timerRef = useRef(null);
 
   const handleStepClick = (idx) => {
-    if (activeStep === idx) {
-      // cerrando: animar primero, limpiar después
-      setActiveStep(null);
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setDisplayStep(null), 420);
-    } else {
-      clearTimeout(timerRef.current);
-      setDisplayStep(idx);
-      setActiveStep(idx);
-    }
+    setHoveredStep(null); // siempre limpiar hover al hacer click
+    setActiveStep(prev => prev === idx ? null : idx);
   };
 
   const steps = [
@@ -659,8 +823,8 @@ function ProcessFlow({ isMobile, isTablet }) {
                 {/* Step button (now acts as the direct flex item) */}
                 <div
                   onClick={() => handleStepClick(idx)}
-                  onMouseEnter={() => setHoveredStep(idx)}
-                  onMouseLeave={() => setHoveredStep(null)}
+                  onMouseEnter={isMobile ? undefined : () => setHoveredStep(idx)}
+                  onMouseLeave={isMobile ? undefined : () => setHoveredStep(null)}
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -671,7 +835,7 @@ function ProcessFlow({ isMobile, isTablet }) {
                     cursor: 'pointer',
                     padding: '16px 8px',
                     borderRadius: 12,
-                    transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                    transition: isMobile ? 'none' : 'background 0.15s ease, border-color 0.15s ease, transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                     background: isActive ? `${step.colorMain}1E` : isHovered ? `${step.colorMain}0D` : 'transparent',
                     border: isActive ? `1px solid ${step.colorCustom}40` : isHovered ? `1px solid ${step.colorCustom}20` : '1px solid transparent',
                     boxShadow: isHovered && !isActive ? `0 12px 30px -10px ${step.colorCustom}33` : 'none',
@@ -683,7 +847,7 @@ function ProcessFlow({ isMobile, isTablet }) {
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     opacity: 1,
                     transform: (isActive || isHovered) ? 'translateY(-3px) scale(1.03)' : 'none',
-                    transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                    transition: isMobile ? 'none' : 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                   }}>
                     {cloneElement(step.icon, { isActive })}
                   </div>
@@ -693,7 +857,7 @@ function ProcessFlow({ isMobile, isTablet }) {
                     color: isActive ? step.colorCustom : '#f4f4f5',
                     letterSpacing: '0.02em',
                     textTransform: 'uppercase',
-                    transition: 'color 0.2s',
+                    transition: isMobile ? 'none' : 'color 0.2s',
                   }}>
                     {step.title}
                   </span>
@@ -704,7 +868,7 @@ function ProcessFlow({ isMobile, isTablet }) {
                     marginTop: 10,
                     height: 4,
                     opacity: isActive ? 1 : 0,
-                    transition: 'all 0.2s',
+                    transition: isMobile ? 'none' : 'all 0.2s',
                   }} />
                   {/* inline mobile text */}
                   {isMobile && (
@@ -712,7 +876,7 @@ function ProcessFlow({ isMobile, isTablet }) {
                       overflow: 'hidden',
                       maxHeight: isActive ? 300 : 0,
                       opacity: isActive ? 1 : 0,
-                      transition: 'all 0.4s cubic-bezier(0.4,0,0.2,1)',
+                      transition: 'max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease',
                       width: '100%',
                     }}>
                       <div style={{
@@ -766,13 +930,13 @@ function ProcessFlow({ isMobile, isTablet }) {
             maxWidth: 820,
             margin: '0 auto',
           }}>
-            {displayStep !== null && (
+            {activeStep !== null && (
               <div style={{
                 marginTop: 24,
                 padding: '24px 32px',
-                background: `${steps[displayStep].colorMain}1E`,
+                background: `${steps[activeStep].colorMain}1E`,
                 borderRadius: 12,
-                border: `1px solid ${steps[displayStep].colorCustom}40`,
+                border: `1px solid ${steps[activeStep].colorCustom}40`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'flex-start',
@@ -781,7 +945,7 @@ function ProcessFlow({ isMobile, isTablet }) {
                 boxSizing: 'border-box',
               }}>
                 <div style={{ flexShrink: 0, opacity: 0.5, width: 72, display: 'flex', justifyContent: 'center' }}>
-                  {cloneElement(steps[displayStep].icon, { isActive: true })}
+                  {cloneElement(steps[activeStep].icon, { isActive: true })}
                 </div>
                 <div style={{ flex: 1 }}>
                   <h3 style={{
@@ -789,13 +953,13 @@ function ProcessFlow({ isMobile, isTablet }) {
                     margin: '0 0 8px', letterSpacing: '-0.3px',
                     textTransform: 'uppercase'
                   }}>
-                    {steps[displayStep].title}
+                    {steps[activeStep].title}
                   </h3>
                   <p style={{
                     color: 'rgba(255,255,255,0.55)', fontSize: 14,
                     lineHeight: 1.7, margin: 0, maxWidth: 700
                   }}>
-                    {steps[displayStep].description}
+                    {steps[activeStep].description}
                   </p>
                 </div>
               </div>

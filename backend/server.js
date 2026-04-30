@@ -196,6 +196,22 @@ app.get('/api/precios-publicos', async (req, res) => {
     }
 });
 
+// --- API: Stats públicas para landing page ---
+app.get('/api/stats/public', async (req, res) => {
+    try {
+        const { getPool } = require('./config/db');
+        const pool = await getPool();
+        const result = await pool.request().query(`
+            SELECT
+                (SELECT COUNT(*) FROM OrdenesDeposito WITH(NOLOCK)) AS totalOrdenes,
+                (SELECT COUNT(*) FROM Clientes WITH(NOLOCK)) AS totalClientes
+        `);
+        res.json(result.recordset[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- API: Sync manual de precios (admin) ---
 app.post('/api/admin/sync-precios', async (req, res) => {
     try {
