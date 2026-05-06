@@ -1,23 +1,24 @@
 import React from 'react';
 import { Zap, Trash2 } from 'lucide-react';
 import { FileUploadZone } from './FileUploadZone';
+import { CustomSelect } from '../../../pautas/CustomSelect';
 
 export const CorteTechnicalUI = ({ serviceId, moldType, setMoldType, fabricOrigin, setFabricOrigin, clientFabricName, setClientFabricName, selectedSubOrderId, setSelectedSubOrderId, activeSubOrders, tizadaFiles, setTizadaFiles, handleMultipleSpecializedFileUpload, compact = false }) => (
     <div className={`animate-in slide-in-from-top duration-500 ${compact ? 'mb-4' : 'mb-12'}`}>
-        <div className={`${compact ? 'bg-zinc-100/50 p-6' : 'bg-zinc-50/50 p-8'} rounded-[2rem] border border-zinc-200 relative overflow-hidden`}>
-            <div className="absolute top-0 right-0 p-8 opacity-5">
+        <div className={`${compact ? 'bg-zinc-900/40 p-6' : 'bg-zinc-900/60 p-8'} rounded-[2rem] border border-zinc-700/50 relative overflow-hidden`}>
+            <div className="absolute top-0 right-0 p-8 opacity-5 text-brand-gold">
                 <Zap size={compact ? 60 : 120} />
             </div>
 
             <div className="flex items-center gap-3 mb-6">
-                <span className="px-3 py-1 bg-zinc-900 text-white text-[10px] font-black rounded-lg">PASO 1</span>
-                <h3 className="text-sm font-black text-zinc-800 uppercase tracking-widest">Especificaciones de Corte</h3>
+                <span className="px-3 py-1 bg-brand-gold text-zinc-900 text-[10px] font-black rounded-lg">PASO 1</span>
+                <h3 className="text-sm font-black text-zinc-100 uppercase tracking-widest">Especificaciones de Corte</h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-[10px] uppercase font-black text-zinc-400 mb-2 tracking-widest">Tipo de Molde</label>
+                        <label className="block text-[10px] uppercase font-black text-zinc-500 mb-2 tracking-widest">Tipo de Molde</label>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                             {['SUBLIMACION', 'MOLDES CLIENTES'].map(m => (
                                 <button
@@ -28,7 +29,7 @@ export const CorteTechnicalUI = ({ serviceId, moldType, setMoldType, fabricOrigi
                                         if (m === 'MOLDES CLIENTES' && fabricOrigin === 'TELA SUBLIMADA EN USER') setFabricOrigin('TELA CLIENTE');
                                         if (m === 'SUBLIMACION') setFabricOrigin('TELA SUBLIMADA EN USER');
                                     }}
-                                    className={`p-3 rounded-xl text-[9px] font-black border-2 transition-all ${moldType === m ? 'bg-white text-black border-black shadow-md' : 'bg-transparent text-zinc-400 border-zinc-200'}`}
+                                    className={`p-3 rounded-xl text-[9px] font-black border-2 transition-all ${moldType === m ? 'bg-zinc-100 text-zinc-900 border-zinc-100 shadow-lg shadow-white/5' : 'bg-zinc-800/50 text-zinc-500 border-zinc-700/50 hover:border-zinc-600'}`}
                                 >
                                     {m}
                                 </button>
@@ -37,25 +38,27 @@ export const CorteTechnicalUI = ({ serviceId, moldType, setMoldType, fabricOrigi
                     </div>
 
                     <div>
-                        <label className="block text-[10px] uppercase font-black text-zinc-400 mb-2 tracking-widest">Origen de la Tela</label>
-                        <select
-                            className="w-full p-3 bg-white border border-zinc-200 rounded-xl font-bold text-zinc-800 outline-none focus:ring-1 focus:ring-black transition-all text-xs"
+                        <label className="block text-[10px] uppercase font-black text-zinc-500 mb-2 tracking-widest">Origen de la Tela</label>
+                        <CustomSelect
                             value={fabricOrigin}
-                            onChange={(e) => setFabricOrigin(e.target.value)}
+                            onChange={(val) => setFabricOrigin(val)}
+                            options={[
+                                ...(moldType !== 'MOLDES CLIENTES' ? [{ value: 'TELA SUBLIMADA EN USER', label: 'TELA SUBLIMADA EN USER' }] : []),
+                                { value: 'TELA CLIENTE', label: 'TELA CLIENTE' },
+                                { value: 'TELA STOCK USER', label: 'TELA STOCK USER' }
+                            ]}
                             disabled={moldType === 'SUBLIMACION'}
-                        >
-                            {moldType !== 'MOLDES CLIENTES' && <option value="TELA SUBLIMADA EN USER">TELA SUBLIMADA EN USER</option>}
-                            <option value="TELA CLIENTE">TELA CLIENTE</option>
-                            <option value="TELA STOCK USER">TELA STOCK USER</option>
-                        </select>
+                            variant="black"
+                            size="small"
+                        />
 
                         {fabricOrigin === 'TELA CLIENTE' && moldType !== 'SUBLIMACION' && (
-                            <div className="mt-3 animate-fade-in bg-white p-3 rounded-xl border border-zinc-200">
-                                <label className="block text-[10px] uppercase font-black text-zinc-400 mb-1 tracking-widest">Nombre de la Tela *</label>
+                            <div className="mt-3 animate-fade-in bg-zinc-800/30 p-4 rounded-xl border border-zinc-700/50">
+                                <label className="block text-[10px] uppercase font-black text-zinc-500 mb-2 tracking-widest">Nombre de la Tela *</label>
                                 <input
                                     type="text"
                                     placeholder="Ej: Tropical Mecánico..."
-                                    className="w-full p-2 border border-zinc-100 rounded-lg font-bold bg-zinc-50 outline-none text-xs"
+                                    className="w-full p-3 border border-zinc-700 rounded-lg font-bold bg-zinc-900/50 text-zinc-200 outline-none focus:border-brand-gold transition-all text-xs"
                                     value={clientFabricName}
                                     onChange={(e) => setClientFabricName(e.target.value)}
                                 />
@@ -66,8 +69,8 @@ export const CorteTechnicalUI = ({ serviceId, moldType, setMoldType, fabricOrigi
 
                 <div className="flex flex-col justify-center">
                     {moldType === 'SUBLIMACION' ? null : (
-                        <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
-                            <label className="block text-[10px] uppercase font-black text-amber-600 mb-2 tracking-widest text-center">Archivos de Tizada</label>
+                        <div className="bg-zinc-800/20 p-5 rounded-2xl border border-zinc-700/30">
+                            <label className="block text-[10px] uppercase font-black text-brand-gold mb-3 tracking-widest text-center">Archivos de Tizada</label>
                             <FileUploadZone
                                 id="tizada-upload-tree"
                                 label="Subir Tizadas"
@@ -77,11 +80,11 @@ export const CorteTechnicalUI = ({ serviceId, moldType, setMoldType, fabricOrigi
                                 color="amber"
                             />
                             {tizadaFiles.length > 0 && (
-                                <div className="mt-3 flex flex-wrap gap-1">
+                                <div className="mt-4 flex flex-wrap gap-2">
                                     {tizadaFiles.map((tf, i) => (
-                                        <div key={i} className="bg-white/80 border border-amber-200 rounded-md py-1 px-2 flex items-center gap-1">
-                                            <span className="text-[9px] font-black text-amber-900 truncate max-w-[60px]">{tf.name}</span>
-                                            <button type="button" onClick={() => setTizadaFiles(tizadaFiles.filter((_, idx) => idx !== i))} className="text-amber-400 hover:text-red-500"><Trash2 size={10} /></button>
+                                        <div key={i} className="bg-zinc-800 border border-zinc-700 rounded-lg py-1.5 px-3 flex items-center gap-2">
+                                            <span className="text-[10px] font-bold text-zinc-300 truncate max-w-[100px]">{tf.name}</span>
+                                            <button type="button" onClick={() => setTizadaFiles(tizadaFiles.filter((_, idx) => idx !== i))} className="text-zinc-500 hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
                                         </div>
                                     ))}
                                 </div>

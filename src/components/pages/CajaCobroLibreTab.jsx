@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ShoppingCart, CheckCircle, Search, Loader2, ArrowRight, User, Trash2, Wallet, Plus, AlertCircle } from 'lucide-react';
+import { ShoppingCart, CheckCircle, Search, Loader2, ArrowRight, User, Trash2, Wallet, Plus, AlertCircle, DollarSign } from 'lucide-react';
 import api from '../../services/apiClient';
 import { toast } from 'sonner';
 import ClienteBilletera from '../common/ClienteBilletera';
 import CajaPanelPago from './CajaPanelPago';
+import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
 
 export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPago, cotizacion, tiposDocDisponibles = [] }) {
   const [qCliente, setQCliente] = useState('');
@@ -146,47 +147,49 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
   };
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden bg-[#f1f5f9]">
+    <div className="flex flex-1 flex-col overflow-hidden bg-zinc-950">
       {clienteSel && (
-        <div className="px-5 py-1 border-b border-slate-200 bg-white/80 backdrop-blur-md sticky top-0 z-20 shrink-0 shadow-sm">
+        <div className="px-5 py-1 border-b border-zinc-800 bg-zinc-900 sticky top-0 z-20 shrink-0 shadow-sm">
           <ClienteBilletera clienteId={clienteSel.CliIdCliente} clienteNombre={clienteSel.Nombre} />
         </div>
       )}
 
       <div className="flex-1 p-6 overflow-y-auto w-full flex justify-center">
         <div className="flex flex-col gap-8 w-full max-w-4xl">
-          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3">
-            <Wallet size={28} className="text-indigo-600 fill-indigo-100" />
+          <h2 className="text-2xl font-black text-white flex items-center gap-3">
+            <div className="bg-brand-gold/10 p-2 rounded-xl border border-brand-gold/20">
+              <Wallet size={24} className="text-brand-gold" />
+            </div>
             Venta Libre / Saldo a Favor
           </h2>
 
           {/* CLiente */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm">
-            <h3 className="font-black text-slate-400 text-[11px] uppercase tracking-widest mb-6">1. Seleccionar Cliente</h3>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-sm">
+            <h3 className="font-black text-zinc-500 text-[11px] uppercase tracking-widest mb-6">1. Seleccionar Cliente</h3>
             
             {!clienteSel ? (
               <div className="relative">
-                <div className="flex items-center bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-2 focus-within:border-indigo-500 focus-within:bg-white focus-within:ring-8 focus-within:ring-indigo-500/5 transition-all">
-                  <Search size={22} className="text-slate-400" />
+                <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded-2xl px-5 py-2 focus-within:border-brand-gold/50 focus-within:ring-8 focus-within:ring-brand-gold/5 transition-all">
+                  <Search size={22} className="text-zinc-600" />
                   <input 
                       value={qCliente} 
                       onChange={e=>setQCliente(e.target.value)} 
                       placeholder="Buscar por Nombre, RUC o Código..." 
-                      className="w-full bg-transparent text-slate-800 px-4 py-3 outline-none text-base font-bold placeholder-slate-400" 
+                      className="w-full bg-transparent text-white px-4 py-3 outline-none text-base font-bold placeholder-zinc-700" 
                   />
-                  {buscandoCli && <Loader2 size={20} className="text-indigo-500 animate-spin" />}
+                  {buscandoCli && <Loader2 size={20} className="text-brand-gold animate-spin" />}
                 </div>
                 
                 {clientesRes.length > 0 && (
-                  <div className="absolute top-full mt-3 left-0 right-0 bg-white border border-slate-200 rounded-3xl shadow-xl z-50 max-h-96 overflow-y-auto">
+                  <div className="absolute top-full mt-3 left-0 right-0 bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl z-50 max-h-96 overflow-y-auto">
                     {clientesRes.map(c => (
-                      <div key={c.CliIdCliente} onClick={()=>{setClienteSel(c); setClientesRes([]); setQCliente('');}} className="w-full text-left px-6 py-5 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 flex items-center justify-between">
+                      <div key={c.CliIdCliente} onClick={()=>{setClienteSel(c); setClientesRes([]); setQCliente('');}} className="w-full text-left px-6 py-5 hover:bg-zinc-800 cursor-pointer border-b border-zinc-800 flex items-center justify-between">
                         <div className="flex items-center gap-5">
-                            <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-black">{c.Nombre?.[0] || 'C'}</div>
+                            <div className="w-12 h-12 rounded-2xl bg-zinc-800 text-brand-gold flex items-center justify-center font-black border border-zinc-700">{c.Nombre?.[0] || 'C'}</div>
                             <div className="flex flex-col gap-1">
-                                <span className="text-slate-900 font-black text-lg">{c.Nombre}</span>
+                                <span className="text-white font-black text-lg">{c.Nombre}</span>
                                 <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-1 rounded bg-slate-100 font-mono">ID: {c.CliIdCliente}</span>
+                                    <span className="text-[10px] bg-zinc-800 text-zinc-500 px-2 py-1 rounded font-mono border border-zinc-700">ID: {c.CliIdCliente}</span>
                                 </div>
                             </div>
                         </div>
@@ -196,52 +199,54 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
                 )}
               </div>
             ) : (
-              <div className="flex items-center justify-between bg-indigo-50/50 border-2 border-indigo-100 rounded-2xl p-5">
+              <div className="flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded-2xl p-5">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-indigo-600 shadow-sm border border-indigo-100"><User size={24} /></div>
+                  <div className="w-12 h-12 rounded-2xl bg-zinc-900 flex items-center justify-center text-brand-gold shadow-sm border border-zinc-800"><User size={24} /></div>
                   <div>
-                    <p className="text-slate-900 text-lg font-black leading-tight">{clienteSel.Nombre}</p>
-                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">ID: {clienteSel.CodCliente || clienteSel.CliIdCliente}</p>
+                    <p className="text-white text-lg font-black leading-tight">{clienteSel.Nombre}</p>
+                    <p className="text-[10px] text-zinc-500 font-black uppercase tracking-widest mt-1">ID: {clienteSel.CodCliente || clienteSel.CliIdCliente}</p>
                   </div>
                 </div>
-                <button onClick={()=>setClienteSel(null)} className="text-slate-400 hover:text-rose-600 p-3 hover:bg-rose-50 rounded-xl transition-colors"><Trash2 size={24}/></button>
+                <button onClick={()=>setClienteSel(null)} className="text-zinc-600 hover:text-rose-500 p-3 hover:bg-rose-500/10 rounded-xl transition-colors"><Trash2 size={24}/></button>
               </div>
             )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             {/* Concepto y Monto */}
-            <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-sm flex flex-col gap-6">
-              <h3 className="font-black text-slate-400 text-[11px] uppercase tracking-widest">2. Ingrese Concepto e Importe</h3>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-sm flex flex-col gap-6">
+              <h3 className="font-black text-zinc-500 text-[11px] uppercase tracking-widest">2. Ingrese Concepto e Importe</h3>
 
               <div>
-                <label className="text-[10px] font-black tracking-widest uppercase text-slate-400 ml-2 mb-2 block">Concepto / Servicio</label>
+                <label className="text-[10px] font-black tracking-widest uppercase text-zinc-500 ml-2 mb-2 block">Concepto / Servicio</label>
                 <input 
                   type="text" 
                   value={concepto}
                   onChange={e=>setConcepto(e.target.value)}
                   placeholder="Ej: Servicio de Mantenimiento..."
-                  className="w-full border-2 border-slate-200 bg-slate-50 rounded-2xl px-5 py-4 focus:border-indigo-600 focus:bg-white focus:ring-4 focus:ring-indigo-100 outline-none text-base font-bold text-slate-800 transition-all"
+                  className="w-full border border-zinc-800 bg-zinc-950 rounded-2xl px-5 py-4 focus:border-brand-gold focus:ring-4 focus:ring-brand-gold/5 outline-none text-base font-bold text-white transition-all placeholder-zinc-700"
                 />
               </div>
 
               <div>
-                <label className="text-[10px] font-black tracking-widest uppercase text-slate-400 ml-2 mb-2 block">Importe de la Operación</label>
-                <div className="flex rounded-2xl overflow-hidden border-2 border-slate-200 focus-within:border-indigo-600 transition-colors focus-within:ring-4 focus-within:ring-indigo-100">
-                  <select 
-                    value={moneda} 
-                    onChange={e=>setMoneda(e.target.value)}
-                    className="bg-slate-100 px-4 font-black outline-none border-r border-slate-200 cursor-pointer"
-                  >
-                    <option value="UYU">$ (UYU)</option>
-                    <option value="USD">U$S (USD)</option>
-                  </select>
+                <label className="text-[10px] font-black tracking-widest uppercase text-zinc-500 ml-2 mb-2 block">Importe de la Operación</label>
+                <div className="flex rounded-2xl overflow-hidden border border-zinc-800 focus-within:border-brand-gold transition-colors focus-within:ring-4 focus-within:ring-brand-gold/5">
+                  <div className="w-32 bg-zinc-950 border-r border-zinc-800">
+                    <CustomSelect
+                        value={moneda}
+                        onChange={setMoneda}
+                        options={[{ value: 'UYU', label: '$ (UYU)' }, { value: 'USD', label: 'U$S (USD)' }]}
+                        variant="black"
+                        size="normal"
+                        className="rounded-none border-none"
+                    />
+                  </div>
                   <input 
                     type="number"
                     value={importe}
                     onChange={e=>setImporte(e.target.value)}
                     placeholder="0.00"
-                    className="w-full px-5 py-4 bg-slate-50 flex-1 outline-none font-black text-2xl"
+                    className="w-full px-5 py-4 bg-zinc-950 flex-1 outline-none font-black text-2xl text-white"
                   />
                 </div>
               </div>
@@ -249,19 +254,19 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
             </div>
 
             {/* Metodo de Pago */}
-            <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-xl relative overflow-hidden flex flex-col justify-between">
-              <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-400 to-indigo-500"></div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 shadow-xl relative overflow-hidden flex flex-col justify-between">
+              <div className="absolute top-0 inset-x-0 h-1 bg-brand-gold"></div>
               
-              <h3 className="font-black text-slate-400 text-[11px] uppercase tracking-widest mb-6">3. Cobro y Documentación</h3>
+              <h3 className="font-black text-zinc-500 text-[11px] uppercase tracking-widest mb-6">3. Cobro y Documentación</h3>
 
               {/* Banner de crédito */}
               {esCredito && (
-                <div className="mb-4 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-start gap-3">
-                  <span className="text-amber-500 text-xl mt-0.5">⚠️</span>
+                <div className="mb-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl px-5 py-4 flex items-start gap-3">
+                  <AlertCircle className="text-amber-500 shrink-0" size={20} />
                   <div>
-                    <p className="text-amber-800 font-black text-sm">Documento a Crédito</p>
-                    <p className="text-amber-700 text-xs font-bold mt-1 leading-relaxed">
-                      No se requiere pago hoy. El monto quedará registrado como <strong>deuda pendiente</strong> en la cuenta corriente del cliente.
+                    <p className="text-amber-500 font-black text-xs uppercase tracking-widest">Documento a Crédito</p>
+                    <p className="text-amber-500/70 text-[10px] font-bold mt-1 leading-relaxed uppercase tracking-wider">
+                      No se requiere pago hoy. El monto quedará registrado como deuda pendiente.
                     </p>
                   </div>
                 </div>

@@ -237,7 +237,7 @@ const CustomerPriceCatalog = ({ customers = [], onSearch }) => {
 
                         <div className="overflow-y-auto flex-1">
                             <table className="w-full text-left border-collapse">
-                                <thead className="sticky top-0 bg-white/90 backdrop-blur-md shadow-sm z-10 text-[10px] font-black uppercase text-slate-400 tracking-widest border-b border-slate-200">
+                                <thead className="sticky top-0 bg-white/90  shadow-sm z-10 text-[10px] font-black uppercase text-slate-400 tracking-widest border-b border-slate-200">
                                     <tr>
                                         <th className="p-4 w-1/4">Artículo</th>
                                         <th className="p-4 w-1/4">Descripción</th>

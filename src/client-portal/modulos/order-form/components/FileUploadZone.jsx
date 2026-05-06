@@ -19,8 +19,8 @@ export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: 
 
     return (
         <div
-            className={`relative group transition-all duration-300 border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer
-                ${selectedFile ? 'border-emerald-500/50 bg-emerald-500/10' : (isOver ? 'border-cyan-400 bg-cyan-400/10' : 'border-zinc-600 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/60')}`}
+            className={`relative group transition-all duration-500 border-2 border-dashed rounded-[1.5rem] p-6 flex flex-col items-center justify-center gap-3 cursor-pointer
+                ${selectedFile ? 'border-emerald-500/50 bg-emerald-500/10 shadow-lg shadow-emerald-500/5' : (isOver ? 'border-cyan-400 bg-cyan-400/20 shadow-xl shadow-cyan-400/10 scale-[1.02]' : 'border-zinc-700 bg-zinc-800/40 hover:border-zinc-500 hover:bg-zinc-800/60 hover:scale-[1.01]')}`}
             onDragOver={(e) => { e.preventDefault(); setIsOver(true); }}
             onDragLeave={() => setIsOver(false)}
             onDrop={handleDrop}
@@ -41,23 +41,25 @@ export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: 
             />
 
             {selectedFile ? (
-                <div className="flex flex-col items-center text-center animate-in fade-in zoom-in duration-300">
-                    <CheckCircle size={28} className="text-emerald-400 mb-2" />
-                    <span className="text-[10px] font-bold text-emerald-300 truncate max-w-[150px]">
+                <div className="flex flex-col items-center text-center animate-in fade-in zoom-in duration-500">
+                    <div className="w-12 h-12 bg-emerald-500/20 rounded-2xl flex items-center justify-center text-emerald-400 mb-2 border border-emerald-500/30">
+                        <CheckCircle size={28} />
+                    </div>
+                    <span className="text-[10px] font-black text-emerald-100 truncate max-w-[180px] uppercase tracking-widest">
                         {multiple ? 'Archivos listos' : selectedFile.name}
                     </span>
-                    <p className="text-[10px] text-emerald-400/70 uppercase tracking-tighter">
-                        {multiple ? '+ Agregar más' : 'Listo para Drive'}
+                    <p className="text-[9px] text-emerald-400/60 uppercase font-black tracking-tighter mt-1">
+                        {multiple ? '+ Agregar más' : 'Listo para procesar'}
                     </p>
                 </div>
             ) : (
                 <>
-                    <div className={`p-2 rounded-full ${isOver ? 'bg-cyan-400/20' : 'bg-zinc-700 group-hover:bg-zinc-600'} transition-colors`}>
-                        <Icon size={24} className={isOver ? 'text-cyan-400' : 'text-zinc-400'} />
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-500 ${isOver ? 'bg-cyan-400 text-zinc-900 rotate-12' : 'bg-zinc-700/50 text-zinc-400 group-hover:bg-zinc-700 group-hover:text-zinc-200'}`}>
+                        <Icon size={28} />
                     </div>
                     <div className="text-center">
-                        <span className="text-[10px] font-bold text-zinc-400 block uppercase tracking-tight">{label}</span>
-                        <p className="text-[9px] text-zinc-500">Arrastra o haz click</p>
+                        <span className="text-[10px] font-black text-zinc-400 block uppercase tracking-widest group-hover:text-zinc-200 transition-colors">{label}</span>
+                        <p className="text-[9px] text-zinc-500 font-bold uppercase tracking-tighter mt-1">Arrastra o haz click</p>
                     </div>
                 </>
             )}

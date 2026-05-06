@@ -40,7 +40,7 @@ export const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, 
 
             {/* Overlay Oscuro con Blur */}
             <div
-                className="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm transition-opacity"
+                className="absolute inset-0 bg-zinc-900/60 transition-opacity"
                 onClick={onClose}
             ></div>
 

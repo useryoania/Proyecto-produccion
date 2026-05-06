@@ -25,7 +25,6 @@
   --glass-bg: #19181B;
   --glass-border: rgba(63, 63, 70, 0.7);
   --glass-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.15);
-  --glass-blur: blur(12px);
 }
 
 body {

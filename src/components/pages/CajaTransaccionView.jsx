@@ -9,7 +9,7 @@ import {
   CreditCard, CheckCircle, AlertCircle,
   FileText, User, Phone, Search, X,
   Zap, ArrowRight, ChevronRight, LayoutGrid, TrendingDown, Hash, History, Wallet, Tag, FileMinus,
-  ArrowDownCircle, ArrowUpCircle, ShieldCheck, DoorClosed, LockKeyhole, DollarSign, BookOpen, Power, Calendar
+  ArrowDownCircle, ArrowUpCircle, ShieldCheck, DoorClosed, LockKeyhole, DollarSign, BookOpen, Power, Calendar, ShoppingBag
 } from 'lucide-react';
 import CajaArqueoModal from './CajaArqueoModal';
 import CajaVentaDirectaTab from './CajaVentaDirectaTab';
@@ -19,6 +19,7 @@ import CajaOtrosIngresosTab from './CajaOtrosIngresosTab';
 import CajaPanelPago from './CajaPanelPago';
 import TicketImpresion from '../common/TicketImpresion';
 import ClienteBilletera from '../common/ClienteBilletera';
+import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
 
 const TIPOS_DOC = [
   { value: '07', label: 'E-Ticket Contado -> 101' },
@@ -455,24 +456,32 @@ export default function CajaTransaccionView() {
     );
   }, [retiros, searchTerm]);
 
-  if (loadingSesion) return <div className="p-10 text-white flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
+  if (loadingSesion) return <div className="p-10 text-zinc-800 flex items-center justify-center h-full"><Loader2 className="animate-spin" /></div>;
 
   if (modalApertura) {
     return (
-      <div className="min-h-full bg-[#0f1117] flex items-center justify-center p-4 text-slate-200 font-sans">
-        <div className="bg-slate-900 border border-indigo-500/50 rounded-2xl max-w-sm w-full p-6 shadow-2xl flex flex-col gap-6">
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-16 h-16 rounded-full bg-indigo-500/20 flex items-center justify-center mb-2"><LockKeyhole size={32} className="text-indigo-400" /></div>
-            <h2 className="text-2xl font-black text-white">Caja Cerrada</h2>
-            <p className="text-sm text-slate-400 text-center">Debes abrir una sesión de turno para registrar movimientos de dinero.</p>
+      <div className="min-h-full bg-zinc-50 flex items-center justify-center p-4 text-zinc-800 font-sans">
+        <div className="bg-white border border-zinc-200 rounded-2xl max-w-sm w-full p-8 shadow-2xl flex flex-col gap-8">
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-zinc-100 border border-zinc-300 flex items-center justify-center mb-2 shadow-inner">
+              <LockKeyhole size={32} className="text-brand-cyan" />
+            </div>
+            <h2 className="text-3xl font-black text-zinc-800 tracking-tight">Caja Cerrada</h2>
+            <p className="text-xs text-zinc-400 font-bold uppercase tracking-widest leading-relaxed">Debes abrir una sesión de turno para registrar movimientos de dinero.</p>
           </div>
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Monto Inicial en Efectivo ($)</label>
-            <input type="number" autoFocus placeholder="Ej: 5000.00" value={montoInicial} onChange={e=>setMontoInicial(e.target.value)}
-              className="bg-slate-800 border-2 border-slate-700 focus:border-indigo-500 rounded-xl px-4 py-3 text-2xl font-black text-center text-white outline-none" />
+          <div className="flex flex-col gap-3">
+            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest px-1">Monto Inicial en Efectivo ($)</label>
+            <input 
+              type="number" 
+              autoFocus 
+              placeholder="Ej: 5000.00" 
+              value={montoInicial} 
+              onChange={e=>setMontoInicial(e.target.value)}
+              className="bg-zinc-50 border-2 border-zinc-200 focus:border-brand-cyan rounded-2xl px-6 py-4 text-3xl font-black text-center text-zinc-800 outline-none transition-all shadow-inner placeholder-zinc-300" 
+            />
           </div>
-          <button onClick={handleAbrirCaja} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-indigo-500/20 flex justify-center items-center gap-2">
-            Abrir Caja <ArrowRight size={18} />
+          <button onClick={handleAbrirCaja} className="w-full bg-brand-cyan hover:bg-amber-500 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-brand-cyan/20 flex justify-center items-center gap-3 uppercase tracking-widest text-sm">
+            Abrir Caja <ArrowRight size={20} />
           </button>
         </div>
       </div>
@@ -485,14 +494,19 @@ export default function CajaTransaccionView() {
         <TicketImpresion ref={ticketRef} data={ticketData} />
       </div>
 
-    <div className="min-h-full bg-[#0f1117] text-slate-200 font-sans flex flex-col h-screen overflow-hidden">
-      <div className="border-b border-slate-800 bg-[#0f1117] shrink-0">
-        <div className="flex items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold">C</div>
+    <div className="min-h-full bg-zinc-50 text-zinc-800 font-sans flex flex-col h-screen overflow-hidden">
+      <div className="border-b border-zinc-200 bg-white shrink-0">
+        <div className="flex items-center justify-between px-6 py-4">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20 flex items-center justify-center text-brand-cyan shadow-lg shadow-brand-cyan/20">
+              <ShoppingBag size={22} />
+            </div>
             <div>
-              <h1 className="text-lg font-black text-white leading-none tracking-tight">Caja Central</h1>
-              <p className="text-xs text-emerald-400 font-bold mt-0.5">Estado: ABIERTA</p>
+              <h1 className="text-xl font-black text-zinc-800 leading-none tracking-tight">Caja Central</h1>
+              <div className="flex items-center gap-2 mt-1.5">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                <p className="text-[10px] text-emerald-500 font-black uppercase tracking-widest">Estado: Operativa</p>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-3 text-sm">
@@ -529,43 +543,47 @@ export default function CajaTransaccionView() {
                    toast.success(`Resultados para "${val}"`);
                  } catch { toast.error('Error en búsqueda global'); }
                }} className="relative group/topsearch flex items-center">
-                 <Search size={14} className="absolute left-3.5 text-slate-500 group-focus-within/topsearch:text-indigo-400 transition-colors" />
-                 <input 
-                   name="q" 
-                   type="text" 
-                   placeholder="BUSCAR PEDIDO..." 
-                   className="bg-slate-900/50 border border-slate-700/50 hover:border-slate-600 rounded-full pl-10 pr-4 py-1.5 text-[11px] font-black tracking-widest text-white placeholder-slate-600 outline-none w-64 focus:w-80 focus:border-indigo-500 focus:bg-slate-900 transition-all focus:ring-4 focus:ring-indigo-500/10 shadow-inner" 
-                 />
-                 <button type="submit" className="hidden">Buscar</button>
+                  <Search size={14} className="absolute left-3.5 text-zinc-400 group-focus-within/topsearch:text-brand-cyan transition-colors" />
+                  <input 
+                    name="q" 
+                    type="text" 
+                    placeholder="BUSCAR PEDIDO..." 
+                    className="bg-zinc-50 border border-zinc-200 hover:border-zinc-300 rounded-full pl-10 pr-4 py-1.5 text-[11px] font-black tracking-widest text-zinc-800 placeholder-zinc-300 outline-none w-64 focus:w-80 focus:border-brand-cyan focus:bg-white transition-all shadow-inner" 
+                  />
+                  <button type="submit" className="hidden">Buscar</button>
                </form>
-            <div className="bg-slate-800 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700 h-9">
-              <RefreshCw size={14} className={`text-indigo-400 cursor-pointer hover:text-indigo-300 ${loadingCot?'animate-spin':''}`} onClick={buscarCotizBCU} />
-              <span className="font-bold text-slate-300">1 US$ = <span className="text-indigo-400">${cotizacion ? fmt(cotizacion) : '---'}</span></span>
-            </div>
-            {/* Arqueo y Cierre movidos a la pestaña de Operaciones */}
-          </div>
+             <div className="bg-zinc-50 flex items-center gap-3 px-4 py-2 rounded-2xl border border-zinc-200 shadow-inner">
+               <RefreshCw size={14} className={`text-brand-cyan cursor-pointer hover:text-amber-400 transition-all ${loadingCot?'animate-spin':''}`} onClick={buscarCotizBCU} />
+               <div className="flex flex-col">
+                 <span className="text-[8px] font-black text-zinc-400 uppercase tracking-widest leading-none mb-1">Cotización BCU</span>
+                 <span className="font-mono text-xs font-black text-zinc-800 tracking-wider leading-none">1 US$ = <span className="text-brand-cyan">${cotizacion ? fmt(cotizacion) : '---'}</span></span>
+               </div>
+             </div>
+           </div>
         </div>
         <div className="flex gap-2 px-8 pt-4">
           {[
-            { id:'INGRESOS', label:'Ingresos a Caja', icon:ArrowDownCircle, color:'text-emerald-600' },
-            { id:'EGRESOS', label:'Salidas / Pagos', icon:ArrowUpCircle, color:'text-rose-600' },
-            { id:'OPERACIONES', label:'Operaciones Turno', icon:History, color:'text-amber-600' }
+            { id:'INGRESOS', label:'Ingresos a Caja', icon:ArrowDownCircle, color:'text-emerald-500' },
+            { id:'EGRESOS', label:'Salidas / Pagos', icon:ArrowUpCircle, color:'text-rose-500' },
+            { id:'OPERACIONES', label:'Operaciones Turno', icon:History, color:'text-amber-500' }
           ].map(t => (
             <button key={t.id} onClick={() => { setActiveTab(t.id); if(t.id==='INGRESOS') setSubTabIngreso('COBRO'); }}
-              className={`px-7 py-3.5 rounded-t-[1.5rem] text-sm font-black flex items-center gap-2.5 transition-all border-x border-t border-transparent ${activeTab===t.id ? 'bg-[#f1f5f9] border-slate-200 text-slate-800 shadow-[0_-10px_20px_rgba(0,0,0,0.03)]' : 'bg-transparent text-slate-400 hover:bg-white hover:text-slate-600'}`}>
-              <t.icon size={18} className={activeTab===t.id ? t.color : 'opacity-40'} /> {t.label}
+              className={`px-8 py-4 rounded-t-3xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 transition-all border-x border-t relative group overflow-hidden ${activeTab===t.id ? 'bg-zinc-50 border-zinc-200 text-zinc-800 shadow-[0_-10px_30px_rgba(0,0,0,0.3)]' : 'bg-transparent border-transparent text-zinc-400 hover:text-zinc-700'}`}>
+              <t.icon size={18} className={`transition-transform duration-300 ${activeTab===t.id ? t.color + ' scale-110' : 'opacity-40 group-hover:opacity-100 group-hover:scale-110'}`} /> 
+              {t.label}
+              {activeTab === t.id && <div className="absolute top-0 inset-x-0 h-1 bg-brand-cyan"></div>}
             </button>
           ))}
         </div>
       </div>
-      <div className="flex-1 bg-[#f1f5f9] flex overflow-hidden">
+      <div className="flex-1 bg-zinc-50 flex overflow-hidden">
 
         {/* ======== INGRESOS A CAJA ======== */}
         {activeTab === 'INGRESOS' && (
           <div className="flex-1 flex flex-col overflow-hidden">
              
              {/* SUBMENÚ HORIZONTAL DE INGRESOS */}
-             <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-3 shrink-0 shadow-sm z-10 overflow-x-auto">
+             <div className="bg-white border-b border-zinc-200 px-6 py-3 flex items-center gap-3 shrink-0 shadow-sm z-10 overflow-x-auto">
                 {[
                    { id:'COBRO', label:'Pago de Pedidos', icon:ShoppingCart },
                    { id:'VENTA', label:'Venta de Recursos Adelantados', icon:Plus },
@@ -576,33 +594,33 @@ export default function CajaTransaccionView() {
                    { id:'AUTORIZAR', label:'Autorizar Entrega', icon:ShieldCheck }
                 ].map(st => (
                    <button key={st.id} onClick={()=>setSubTabIngreso(st.id)}
-                     className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-black text-sm transition-all border whitespace-nowrap ${subTabIngreso === st.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-800 hover:bg-slate-50'}`}>
-                     <st.icon size={18}/> {st.label}
+                     className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border whitespace-nowrap ${subTabIngreso === st.id ? 'bg-zinc-100 border-brand-cyan/30 text-zinc-800 shadow-lg' : 'bg-transparent border-transparent text-zinc-400 hover:text-zinc-800'}`}>
+                     <st.icon size={16}/> {st.label}
                    </button>
                 ))}
              </div>
 
              {/* ÁREA DE TRABAJO (CENTRO + PANEL DERECHO) */}
              <div className="flex-1 flex overflow-hidden">
-                {/* 2) COLUMNA CENTRAL: CONTENIDO DINÁMICO */}
-                <div className="flex-1 overflow-hidden flex flex-col relative bg-[#f1f5f9]">
+{/* 2) COLUMNA CENTRAL: CONTENIDO DINÁMICO */}
+                <div className="flex-1 overflow-hidden flex flex-col relative bg-zinc-50">
                    {/* --- SUBTAB COBRO --- */}
                 {subTabIngreso === 'COBRO' && (
                   <div className="flex-1 flex overflow-hidden">
                      {/* Lista Buscador de Retiros (SIDEBAR) */}
-                     <div className="w-[440px] border-r border-slate-200 flex flex-col bg-white shrink-0 shadow-lg z-0">
-                        <div className="p-6 border-b border-slate-100 flex flex-col gap-5 bg-slate-50/50">
-                             <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest flex items-center gap-2 px-1">
+                     <div className="w-[440px] border-r border-zinc-200 flex flex-col bg-zinc-50 shrink-0 shadow-2xl z-0">
+                        <div className="p-6 border-b border-zinc-900 flex flex-col gap-5 bg-white/50">
+                             <h3 className="font-black text-zinc-400 text-[10px] uppercase tracking-widest flex items-center gap-2 px-1">
                                 <Search size={12}/> Buscar Pedidos Disponibles
                              </h3>
                              <div className="relative group">
-                               <Search size={22} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
+                               <Search size={22} className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-brand-cyan transition-colors" />
                                <input 
                                  type="text" 
                                  placeholder="Ingrese orden o cliente..." 
                                  value={searchTerm} 
                                  onChange={e=>setSearchTerm(e.target.value)} 
-                                 className="bg-white border-2 border-slate-200 rounded-[1.5rem] pl-14 pr-6 py-4 text-base text-slate-900 placeholder-slate-400 outline-none w-full focus:border-indigo-500 focus:ring-8 focus:ring-indigo-500/5 transition-all font-bold shadow-sm" 
+                                 className="bg-zinc-100 border-2 border-zinc-300 rounded-3xl pl-14 pr-6 py-4 text-base text-zinc-100 placeholder-zinc-600 outline-none w-full focus:border-brand-cyan transition-all font-black" 
                                />
                              </div>
                              <div className="flex gap-2 flex-wrap px-1">
@@ -610,7 +628,7 @@ export default function CajaTransaccionView() {
                                  <button 
                                    key={f.val} 
                                    onClick={()=>setFiltroTipo(f.val)} 
-                                   className={`px-4 py-2 text-[10px] font-black rounded-xl uppercase tracking-widest transition-all ${filtroTipo===f.val?'bg-indigo-600 text-white shadow-md shadow-indigo-200':'bg-white text-slate-500 border border-slate-200 hover:border-slate-400 hover:text-slate-800'}`}
+                                   className={`px-4 py-2 text-[10px] font-black rounded-xl uppercase tracking-widest transition-all ${filtroTipo===f.val?'bg-brand-cyan text-white shadow-md':'text-zinc-500 hover:bg-zinc-100'}`}
                                  >
                                    {f.l}
                                  </button>
@@ -619,61 +637,60 @@ export default function CajaTransaccionView() {
                                  {seleccionados.length > 0 && (
                                    <button 
                                      onClick={() => setSeleccionados([])}
-                                     className="text-[10px] font-black text-rose-600 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 hover:bg-rose-100 hover:text-rose-700 transition-colors uppercase tracking-widest shadow-sm flex items-center gap-1"
+                                     className="text-[10px] font-black text-rose-500 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-100 hover:bg-rose-500/20 transition-colors uppercase tracking-widest flex items-center gap-1"
                                    >
                                      <X size={12} /> Desmarcar Todos
                                    </button>
                                  )}
-                                 <span className="text-[10px] font-black text-slate-500 self-center bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">{retirosFiltrados.length} Registros</span>
+                                 <span className="text-[10px] font-black text-zinc-400 self-center bg-zinc-100 px-3 py-1.5 rounded-xl border border-zinc-300">{retirosFiltrados.length} Registros</span>
                                </div>
                              </div>
                         </div>
 
                        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
-                          {retirosFiltrados.length === 0 ? (
-                              <div className="m-auto text-center opacity-30 px-6">
-                                 <Search size={48} className="mx-auto mb-3 text-slate-700" />
-                                 <p className="text-sm font-black uppercase tracking-widest text-slate-500">Sin pedidos por cobrar</p>
-                              </div>
-                          ) : retirosFiltrados.map(r => {
-                              const sel = seleccionados.find(x=>x.retiroId===(r.OReIdOrdenRetiro||r.ordenDeRetiro));
-                              let sumUsd = 0, sumUyu = 0;
-                              getOrdenes(r).forEach(o => {
-                                if (o.orderIdMetodoPago !== null || o.orderPago !== null) return;
-                                const val = parseFloat((o.orderCosto||'').replace(/[^0-9.-]/g,''))||0;
-                                if (o.monedaId === 2) sumUsd += val; else sumUyu += val;
-                              });
-                              return (
-                                <div key={r.ordenDeRetiro} onClick={()=>toggleSeleccion(r)}
-                                  className={`cursor-pointer shrink-0 rounded-[1.2rem] p-4 border-2 transition-all flex flex-col gap-4 relative overflow-hidden group shadow-sm active:scale-[0.98] ${sel?'border-emerald-500 bg-emerald-50/50 ring-4 ring-emerald-500/10':'border-slate-200 bg-white hover:border-indigo-400 hover:shadow-md hover:-translate-y-0.5'}`}>
-                                  
-                                  <div className="flex items-center justify-between gap-4">
-                                    <div className="flex items-center gap-3 min-w-0">
-                                      <div className={`w-10 h-10 rounded-xl border-2 flex items-center justify-center shrink-0 transition-all ${sel?'border-emerald-500 bg-emerald-500 shadow-md shadow-emerald-500/20':'border-slate-200 bg-slate-50 group-hover:border-indigo-400 group-hover:bg-white'}`}>
-                                        {sel && <CheckCircle size={20} className="text-white" />}
-                                      </div>
-                                      <div className="flex flex-col min-w-0">
-                                        <span className={`font-black text-lg transition-colors leading-none tracking-tight ${sel?'text-emerald-700':'text-slate-900 group-hover:text-indigo-600'}`}>{r.ordenDeRetiro}</span>
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1.5">{r.lugarRetiro || 'Retiro Local'}</span>
-                                      </div>
-                                    </div>
-                                    <div className="font-black text-right flex flex-col items-end shrink-0 gap-1.5">
-                                      {sumUsd > 0 && <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg text-[11px] font-black border border-emerald-200 shadow-sm">US$ {fmt(sumUsd)}</span>}
-                                      {sumUyu > 0 && <span className="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg text-[11px] font-black border border-indigo-200 shadow-sm">${fmt(sumUyu)}</span>}
-                                      {(sumUsd === 0 && sumUyu === 0) && <span className="text-slate-300 text-xs font-black italic">$0.00</span>}
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="flex flex-col gap-2.5 border-t border-slate-100 pt-3">
-                                    <p className="text-sm font-black text-slate-700 group-hover:text-slate-900 transition-colors truncate tracking-wide">{r.CliNombre || 'Consumidor Final'}</p>
-                                    <div className="flex items-center justify-between gap-2">
-                                        <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100 uppercase tracking-widest">{r.CliCodigoCliente || 'S/C'}</span>
-                                        {r.estadoRetiro && <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight opacity-70 bg-slate-100 px-2 py-0.5 rounded-md">{r.estadoRetiro}</span>}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                          })}
+                           {retirosFiltrados.length === 0 ? (
+                               <div className="m-auto text-center opacity-30 px-6">
+                                  <Search size={48} className="mx-auto mb-3 text-zinc-300" />
+                                  <p className="text-sm font-black uppercase tracking-widest text-zinc-400">Sin pedidos por cobrar</p>
+                               </div>
+                           ) : retirosFiltrados.map(r => {
+                               const sel = seleccionados.find(x=>x.retiroId===(r.OReIdOrdenRetiro||r.ordenDeRetiro));
+                               let sumUsd = 0, sumUyu = 0;
+                               getOrdenes(r).forEach(o => {
+                                 if (o.orderIdMetodoPago !== null || o.orderPago !== null) return;
+                                 const val = parseFloat((o.orderCosto||'').replace(/[^0-9.-]/g,''))||0;
+                                 if (o.monedaId === 2) sumUsd += val; else sumUyu += val;
+                               });
+                               return (
+                                 <div key={r.ordenDeRetiro} onClick={()=>toggleSeleccion(r)}
+                                   className={`cursor-pointer shrink-0 rounded-2xl p-4 border-2 transition-all flex flex-col gap-4 relative overflow-hidden group active:scale-[0.98] ${sel?'border-brand-cyan bg-brand-cyan/10 shadow-lg shadow-brand-cyan/20':'border-zinc-200 bg-white/50 hover:border-zinc-300'}`}>
+                                   
+                                   <div className="flex items-center justify-between gap-4">
+                                     <div className="flex items-center gap-3 min-w-0">
+                                       <div className={`w-10 h-10 rounded-xl border-2 flex items-center justify-center shrink-0 transition-all ${sel?'border-brand-cyan bg-brand-cyan shadow-md shadow-brand-cyan/20':'border-zinc-200 bg-zinc-100 group-hover:border-zinc-300'}`}>
+                                         {sel && <CheckCircle size={20} className="text-white" />}
+                                       </div>
+                                       <div className="flex flex-col min-w-0">
+                                         <span className={`font-black text-lg transition-colors leading-none tracking-tight uppercase ${sel?'text-brand-cyan':'text-zinc-100'}`}>{r.ordenDeRetiro}</span>
+                                         <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mt-1.5">{r.lugarRetiro || 'Retiro Local'}</span>
+                                       </div>
+                                     </div>
+                                     <div className="font-black text-right flex flex-col items-end shrink-0 gap-1.5">
+                                       {sumUsd > 0 && <span className="bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-lg text-[10px] font-black border border-emerald-100">US$ {fmt(sumUsd)}</span>}
+                                       {sumUyu > 0 && <span className="bg-brand-cyan/10 text-brand-cyan px-2.5 py-1 rounded-lg text-[10px] font-black border border-brand-cyan/20">${fmt(sumUyu)}</span>}
+                                     </div>
+                                   </div>
+                                   
+                                   <div className="flex flex-col gap-2.5 border-t border-zinc-100 pt-3">
+                                     <p className="text-sm font-black text-zinc-500 group-hover:text-zinc-100 transition-colors truncate tracking-wide uppercase">{r.CliNombre || 'Consumidor Final'}</p>
+                                     <div className="flex items-center justify-between gap-2">
+                                         <span className="text-[9px] font-black text-brand-cyan bg-brand-cyan/10 px-2 py-0.5 rounded-md border border-brand-cyan/20 uppercase tracking-widest">{r.CliCodigoCliente || 'S/C'}</span>
+                                         {r.estadoRetiro && <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest opacity-70 bg-zinc-100 px-2 py-0.5 rounded-md">{r.estadoRetiro}</span>}
+                                     </div>
+                                   </div>
+                                 </div>
+                               );
+                           })}
                        </div>
                     </div>
 
@@ -681,7 +698,7 @@ export default function CajaTransaccionView() {
                     <div className="flex-1 flex flex-col min-h-0">
                       {/* Billetera Sticky */}
                       {globalClient.id && (
-                        <div className="px-6 py-2 border-b border-slate-200 bg-white/80 backdrop-blur-md z-50 shadow-sm shrink-0">
+                        <div className="px-6 py-2 border-b border-zinc-200 bg-white/80  z-50 shadow-sm shrink-0">
                           <ClienteBilletera 
                             clienteId={globalClient.id} 
                             clienteNombre={globalClient.nombre} 
@@ -692,81 +709,86 @@ export default function CajaTransaccionView() {
                       <div className="flex-1 p-5 overflow-y-auto flex flex-col gap-4">
                         {seleccionados.length === 0 ? (
                           <div className="m-auto text-center opacity-40">
-                            <ShoppingCart size={80} className="mx-auto mb-4 text-slate-300" />
-                            <p className="font-black uppercase tracking-widest text-slate-400">Selecciona órdenes para cobrar</p>
+                            <ShoppingCart size={80} className="mx-auto mb-4 text-zinc-300" />
+                            <p className="font-black uppercase tracking-widest text-zinc-400">Selecciona órdenes para cobrar</p>
                           </div>
                         ) : (
                           <div className="animate-in fade-in slide-in-from-bottom-5 duration-500 flex flex-col gap-8">
-                            <div className="flex justify-between items-center border-b border-slate-200 pb-4">
-                              <h2 className="text-2xl font-black text-slate-800 tracking-tight">Resumen de Cobro Seleccionado</h2>
-                              <div className="flex bg-white rounded-2xl p-1.5 border border-slate-200 shadow-sm">
+                            <div className="flex justify-between items-center border-b border-zinc-200 pb-6">
+                              <h2 className="text-2xl font-black text-zinc-800 tracking-tight">Resumen de Cobro</h2>
+                              <div className="flex bg-white rounded-2xl p-1.5 border border-zinc-200 shadow-inner">
                                 <button 
                                   onClick={() => setMonedaExhibicion('UYU')} 
-                                  className={`px-6 py-2 text-xs font-black rounded-xl transition-all flex items-center gap-2 ${monedaExhibicion === 'UYU' ? 'bg-indigo-600 text-white shadow-lg ring-1 ring-indigo-400' : 'text-slate-400 hover:text-slate-700'}`}
+                                  className={`px-6 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 ${monedaExhibicion === 'UYU' ? 'bg-zinc-100 text-zinc-800 shadow-lg ring-1 ring-zinc-700' : 'text-zinc-400 hover:text-zinc-700'}`}
                                 >
                                   Pesos ($)
                                 </button>
                                 <button 
                                   onClick={() => setMonedaExhibicion('USD')} 
-                                  className={`px-6 py-2 text-xs font-black rounded-xl transition-all flex items-center gap-2 ${monedaExhibicion === 'USD' ? 'bg-emerald-600 text-white shadow-lg ring-1 ring-emerald-400' : 'text-slate-400 hover:text-slate-700'}`}
+                                  className={`px-6 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 ${monedaExhibicion === 'USD' ? 'bg-zinc-100 text-zinc-800 shadow-lg ring-1 ring-zinc-700' : 'text-zinc-400 hover:text-zinc-700'}`}
                                 >
                                   Dólares (US$)
                                 </button>
-                              </div>
-                            </div>
-
-                            {seleccionados.map(s => (
-                              <div key={s.retiroId} className="bg-white border border-slate-200 rounded-3xl p-6 flex flex-col gap-4 shadow-sm hover:shadow-md transition-all">
+                               </div>
+                             </div>
+                                     {seleccionados.map(s => (
+                              <div key={s.retiroId} className="bg-white border border-zinc-200 rounded-3xl p-6 flex flex-col gap-4 shadow-xl hover:shadow-2xl hover:border-zinc-300 transition-all">
                                 <div className="flex justify-between items-start mb-1">
                                   <div className="flex-1 flex items-center gap-4 flex-wrap">
-                                    <span className="font-black text-xl text-emerald-600 tracking-tighter">{s.codigoRef}</span>
-                                    <span className="text-sm text-slate-500 font-bold tracking-tight bg-slate-50 px-3 py-1 rounded-xl border border-slate-100">
-                                      <span className="text-indigo-600 opacity-60">ID: {s.retiro?.CliCodigoCliente || '-'}</span> {s.descripcion}
+                                    <span className="font-black text-xl text-brand-cyan tracking-tight">{s.codigoRef}</span>
+                                    <span className="text-sm text-zinc-700 font-bold tracking-tight bg-zinc-50 px-3 py-1 rounded-xl border border-zinc-200">
+                                      <span className="text-zinc-400">ID: {s.retiro?.CliCodigoCliente || '-'}</span> {s.descripcion}
                                     </span>
-                                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest border border-slate-200 px-3 py-1 rounded-full shrink-0 shadow-sm">{s.retiro?.lugarRetiro || 'Retiro en el Local'}</span>
+                                    <span className="text-[9px] text-zinc-400 font-black uppercase tracking-widest border border-zinc-200 px-3 py-1 rounded-full shrink-0 shadow-inner">{s.retiro?.lugarRetiro || 'Retiro en el Local'}</span>
                                   </div>
                                   <div className="flex gap-4">
                                     <div className="text-right">
-                                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Saldo Base</p>
-                                      <p className="font-black text-slate-900 text-lg">{monedaExhibicion === 'USD' ? 'US$' : '$'}{fmt(calcularMontoPorMoneda(s.retiro, monedaExhibicion))}</p>
+                                      <p className="text-[9px] text-zinc-400 font-black uppercase tracking-widest">Saldo Base</p>
+                                      <p className="font-black text-zinc-800 text-lg">{monedaExhibicion === 'USD' ? 'US$' : '$'}{fmt(calcularMontoPorMoneda(s.retiro, monedaExhibicion))}</p>
                                     </div>
-                                    <div className="w-px h-10 bg-slate-100 self-center"></div>
+                                    <div className="w-px h-10 bg-zinc-100 self-center"></div>
                                     <div>
-                                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Ajuste Manual</p>
-                                      <input type="number" value={ajustes[s.retiroId]?.ajuste || ''} onChange={e => setAjustes(p => ({ ...p, [s.retiroId]: { ...p[s.retiroId], ajuste: e.target.value } }))} className="bg-slate-50 border-2 border-slate-100 rounded-xl px-3 py-2 w-24 text-amber-600 font-black text-sm outline-none focus:border-amber-500 focus:bg-white transition-all shadow-inner" placeholder="0.0" />
+                                      <p className="text-[9px] text-zinc-400 font-black uppercase tracking-widest">Ajuste Manual</p>
+                                      <input type="number" value={ajustes[s.retiroId]?.ajuste || ''} onChange={e => setAjustes(p => ({ ...p, [s.retiroId]: { ...p[s.retiroId], ajuste: e.target.value } }))} className="bg-zinc-50 border-2 border-zinc-200 rounded-xl px-3 py-2 w-24 text-brand-cyan font-black text-sm outline-none focus:border-brand-cyan/50 transition-all shadow-inner" placeholder="0.0" />
                                     </div>
                                     <div>
-                                      <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Motivo Ajuste</p>
-                                      <select value={ajustes[s.retiroId]?.tipoAjuste || ''} onChange={e => setAjustes(p => ({ ...p, [s.retiroId]: { ...p[s.retiroId], tipoAjuste: e.target.value } }))} className="bg-slate-50 border-2 border-slate-100 rounded-xl px-3 py-2 text-sm font-bold text-slate-600 outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-sm">
-                                        {TIPOS_AJUSTE.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                                      </select>
+                                      <p className="text-[9px] text-zinc-400 font-black uppercase tracking-widest">Motivo Ajuste</p>
+                                      <CustomSelect
+                                        value={ajustes[s.retiroId]?.tipoAjuste || ''}
+                                        onChange={val => setAjustes(p => ({ ...p, [s.retiroId]: { ...p[s.retiroId], tipoAjuste: val } }))}
+                                        options={TIPOS_AJUSTE.map(t => ({ value: t.value, label: t.label }))}
+                                        variant="default"
+                                        size="small"
+                                        placeholder="Sin ajuste"
+                                      />
                                     </div>
                                   </div>
                                 </div>
 
-                                <div className="flex flex-col gap-2 border-t border-slate-100 pt-5">
+
+                                <div className="flex flex-col gap-2 border-t border-zinc-100 pt-5">
                                   {getOrdenes(s.retiro).map(o => {
                                     const val = parseFloat((o.orderCosto || '').replace(/[^0-9.-]/g, '')) || 0;
                                     const currency = o.monedaId === 2 ? 'US$' : '$';
                                     const pagado = o.orderIdMetodoPago !== null || o.orderPago !== null;
                                     const cubierto = o.orderEstado === 'Abonado' || o.orderEstado === 'Autorizado';
                                     return (
-                                      <div key={o.orderId} className={`flex justify-between items-center px-4 py-3 mt-1 rounded-2xl border gap-4 ${(pagado || cubierto) ? 'bg-slate-50/50 border-slate-100 opacity-60' : 'bg-white border-slate-200'}`}>
-                                        <div className="flex items-center gap-4 w-full truncate text-sm">
-                                          <AlertCircle size={14} className={`shrink-0 ${(pagado || cubierto) ? 'text-slate-300' : 'text-indigo-400'}`} /> 
-                                          <span className="font-black text-slate-400 shrink-0 text-xs">#{o.orderNumber || o.orderId}</span>
-                                          <span className="font-bold text-slate-700 truncate">Trabajo: {o.orderNombreTrabajo || 'Impreso'}</span>
-                                          <span className="font-medium text-slate-400 truncate hidden md:block">Material: {o.orderMaterial || '-'}</span>
-                                          <span className="font-black text-slate-800 shrink-0 bg-slate-100/50 px-2 py-0.5 rounded-lg text-xs">Cant: {o.orderCantidad || '?'}</span>
+                                      <div key={o.orderId} className={`flex justify-between items-center px-4 py-3 mt-1 rounded-2xl border gap-4 ${(pagado || cubierto) ? 'bg-zinc-50 border-zinc-900 opacity-60' : 'bg-white border-zinc-200'}`}>
+                                        <div className="flex items-center gap-4 w-full truncate text-xs">
+                                          <AlertCircle size={14} className={`shrink-0 ${(pagado || cubierto) ? 'text-zinc-300' : 'text-brand-cyan/50'}`} /> 
+                                          <span className="font-black text-zinc-400 shrink-0 text-[10px]">#{o.orderNumber || o.orderId}</span>
+                                          <span className="font-bold text-zinc-800 truncate">Trabajo: {o.orderNombreTrabajo || 'Impreso'}</span>
+                                          <span className="font-medium text-zinc-400 truncate hidden md:block">Material: {o.orderMaterial || '-'}</span>
+                                          <span className="font-black text-zinc-700 shrink-0 bg-zinc-50 px-2 py-0.5 rounded-lg text-[9px] border border-zinc-900">Cant: {o.orderCantidad || '?'}</span>
                                         </div>
                                         <div className="flex items-center gap-4 shrink-0">
-                                          <span className={`font-black text-slate-800 min-w-[80px] text-right ${cubierto ? 'line-through text-slate-300' : ''}`}>{currency} {fmt(val)}</span>
+                                          <span className={`font-black text-zinc-800 min-w-[80px] text-right ${cubierto ? 'line-through text-zinc-400' : ''}`}>{currency} {fmt(val)}</span>
                                           {pagado ? (
-                                            <span className="w-20 text-center px-2 py-1 bg-emerald-100 text-emerald-600 text-[10px] font-black rounded-lg border border-emerald-200">Facturada</span>
+                                            <span className="w-20 text-center px-2 py-1 bg-emerald-50 text-emerald-500 text-[9px] font-black rounded-lg border border-emerald-100 uppercase tracking-widest">Facturada</span>
                                           ) : cubierto ? (
-                                            <span className="w-24 text-center px-2 py-1 bg-amber-100 text-amber-600 text-[10px] font-black rounded-lg border border-amber-200">{o.orderEstado === 'Autorizado' ? 'Autorizado' : 'Abonada'}</span>
+                                            <span className="w-24 text-center px-2 py-1 bg-brand-cyan/10 text-brand-cyan text-[9px] font-black rounded-lg border border-brand-cyan/20 uppercase tracking-widest">{o.orderEstado === 'Autorizado' ? 'Autorizado' : 'Abonada'}</span>
                                           ) : (
-                                            <span className="w-20 text-center px-2 py-1 bg-rose-50 text-rose-500 text-[10px] font-black rounded-lg border border-rose-100">Pendiente</span>
+                                            <span className="w-20 text-center px-2 py-1 bg-rose-50 text-rose-500 text-[9px] font-black rounded-lg border border-rose-100 uppercase tracking-widest">Pendiente</span>
                                           )}
                                         </div>
                                       </div>
@@ -942,43 +964,43 @@ export default function CajaTransaccionView() {
                 )}
                 {/* --- SUBTAB MOTOR (Reglas Manuales) --- */}
                 {subTabIngreso === 'MOTOR' && (
-                  <div className="flex-1 p-6 flex gap-6 bg-[#f1f5f9] overflow-hidden">
+                  <div className="flex-1 p-6 flex gap-6 bg-zinc-50 overflow-hidden">
                     
                     {/* 1. Lista de Operaciones */}
                     <div className="w-80 flex flex-col gap-4 shrink-0">
-                      <div className="bg-white border border-slate-200 rounded-[2rem] overflow-hidden flex flex-col flex-1 shadow-2xl">
-                        <div className="px-6 py-5 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                      <div className="bg-white border border-zinc-200 rounded-[2rem] overflow-hidden flex flex-col flex-1 shadow-2xl">
+                        <div className="px-6 py-5 border-b border-zinc-200 bg-zinc-50 flex items-center justify-between">
                           <div>
-                            <h3 className="font-black text-slate-800 flex items-center gap-2 text-sm uppercase tracking-widest">
-                              <Zap size={16} className="text-indigo-600 fill-indigo-600/10"/> Operaciones
+                            <h3 className="font-black text-zinc-800 flex items-center gap-2 text-xs uppercase tracking-widest">
+                              <Zap size={14} className="text-brand-cyan" /> Operaciones
                             </h3>
-                            <p className="text-[10px] text-slate-400 mt-1 font-black">REGLAS DEL MOTOR</p>
+                            <p className="text-[9px] text-zinc-400 mt-1 font-black uppercase tracking-widest">Reglas del Motor</p>
                           </div>
-                          <LayoutGrid size={18} className="text-slate-300" />
+                          <LayoutGrid size={18} className="text-zinc-300" />
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-white">
                           {operacionesCaja.length === 0 && (
-                            <div className="text-center text-slate-400 text-xs py-12 px-6">
+                            <div className="text-center text-zinc-400 text-[10px] uppercase font-black tracking-widest py-12 px-6">
                               <AlertCircle size={32} className="mx-auto mb-3 opacity-20"/>
-                              Sin operaciones configuradas
+                              Sin operaciones
                             </div>
                           )}
                           {operacionesCaja.map(op => {
                             const sel = opSeleccionada?.EvtCodigo === op.EvtCodigo;
-                            const colorEfecto = op.EvtGeneraDeuda ? 'text-amber-600' : op.EvtAfectaSaldo === 1 ? 'text-emerald-600' : op.EvtAfectaSaldo === -1 ? 'text-rose-600' : op.EvtAplicaRecurso ? 'text-indigo-600' : 'text-slate-500';
+                            const colorEfecto = op.EvtGeneraDeuda ? 'text-amber-500' : op.EvtAfectaSaldo === 1 ? 'text-emerald-500' : op.EvtAfectaSaldo === -1 ? 'text-rose-500' : op.EvtAplicaRecurso ? 'text-brand-cyan' : 'text-zinc-400';
                             return (
                               <button key={op.EvtCodigo} onClick={() => { setOpSeleccionada(op); setOpClienteId(''); setOpClienteNombre(''); setOpImporte(''); }}
-                                className={`text-left p-4 rounded-2xl border-2 transition-all group relative overflow-hidden active:scale-[0.98] ${sel ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'border-slate-100 hover:border-indigo-400 bg-slate-50/50 hover:bg-white text-slate-600'}`}>
-                                {sel && <div className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-xl bg-white/20 backdrop-blur-md animate-in slide-in-from-top-4 duration-200"><CheckCircle size={14} className="text-white font-black"/></div>}
+                                className={`text-left p-4 rounded-2xl border-2 transition-all group relative overflow-hidden active:scale-[0.98] ${sel ? 'border-brand-cyan bg-brand-cyan-white shadow-lg shadow-brand-cyan/20' : 'border-zinc-200 hover:border-zinc-300 bg-zinc-50 hover:bg-white text-zinc-500'}`}>
+                                {sel && <div className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center rounded-lg bg-brand-cyan  animate-in slide-in-from-top-4 duration-200"><CheckCircle size={12} className="text-white font-black"/></div>}
                                 <div className="flex justify-between items-start gap-2">
-                                  <span className={`font-black text-sm transition-colors ${sel ? 'text-white' : 'text-slate-700 group-hover:text-indigo-600'}`}>{op.EvtNombre}</span>
-                                  {!sel && <span className="text-[9px] font-black font-mono px-1.5 py-0.5 rounded-lg border border-slate-200 text-slate-400 uppercase transition-all group-hover:border-indigo-200">{op.EvtCodigo}</span>}
+                                  <span className={`font-black text-sm transition-colors ${sel ? 'text-zinc-800' : 'text-zinc-700 group-hover:text-brand-cyan'}`}>{op.EvtNombre}</span>
+                                  {!sel && <span className="text-[8px] font-black font-mono px-1.5 py-0.5 rounded-lg border border-zinc-200 text-zinc-400 uppercase transition-all group-hover:border-zinc-300">{op.EvtCodigo}</span>}
                                 </div>
-                                <div className={`text-[10px] mt-2 font-black uppercase tracking-widest ${sel ? 'text-indigo-100' : colorEfecto}`}>
+                                <div className={`text-[9px] mt-2 font-black uppercase tracking-widest ${sel ? 'text-brand-cyan' : colorEfecto}`}>
                                   {op.EvtGeneraDeuda ? '⚡ Genera deuda' : op.EvtAfectaSaldo === 1 ? '↑ Acredita saldo' : op.EvtAfectaSaldo === -1 ? '↓ Debita saldo' : '○ Neutro'}
                                   {op.EvtAplicaRecurso && ' · Recursos'}
                                 </div>
-                                {op.EvtDescripcion && <p className={`text-[10px] mt-2 line-clamp-1 italic font-bold leading-tight ${sel ? 'text-indigo-200' : 'text-slate-400'}`}>"{op.EvtDescripcion}"</p>}
+                                {op.EvtDescripcion && <p className={`text-[9px] mt-2 line-clamp-1 italic font-bold leading-tight ${sel ? 'text-zinc-700' : 'text-zinc-400'}`}>"{op.EvtDescripcion}"</p>}
                               </button>
                             );
                           })}
@@ -987,10 +1009,10 @@ export default function CajaTransaccionView() {
                     </div>
 
                     {/* 2. Formulario de Operación */}
-                    <div className="flex-1 flex flex-col min-h-0 bg-[#f1f5f9]">
+                    <div className="flex-1 flex flex-col min-h-0 bg-zinc-50">
                       {/* Billetera Sticky (Encima de todo) */}
                       {globalClient.id && (
-                        <div className="px-6 py-2 border-b border-slate-200 bg-white/80 backdrop-blur-md z-20 shrink-0 shadow-sm">
+                        <div className="px-6 py-2 border-b border-zinc-200 bg-white/80  z-20 shrink-0 shadow-sm">
                           <ClienteBilletera 
                             clienteId={globalClient.id} 
                             clienteNombre={globalClient.nombre} 
@@ -1001,43 +1023,43 @@ export default function CajaTransaccionView() {
                       <div className="flex-1 p-6 overflow-y-auto flex flex-col min-w-[500px]">
                         {!opSeleccionada ? (
                           <div className="m-auto text-center opacity-40 py-20 animate-pulse">
-                            <Zap size={80} className="mx-auto mb-6 text-indigo-400 fill-indigo-100" />
-                            <p className="text-slate-800 text-2xl font-black tracking-tight">Selecciona una Operación</p>
-                            <p className="text-slate-400 text-sm mt-2 max-w-sm mx-auto font-bold uppercase tracking-widest leading-relaxed">Elige un tipo de movimiento contable del menú izquierdo.</p>
+                            <Zap size={80} className="mx-auto mb-6 text-brand-cyan/30" />
+                            <p className="text-zinc-800 text-2xl font-black tracking-tight">Selecciona una Operación</p>
+                            <p className="text-zinc-400 text-[10px] mt-3 max-w-sm mx-auto font-black uppercase tracking-widest leading-relaxed">Elige un tipo de movimiento contable del menú izquierdo.</p>
                           </div>
                         ) : (
                           <div className="flex flex-col items-center gap-8 animate-in fade-in zoom-in-95 duration-500">
-                            <div className="bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-2xl max-w-3xl w-full flex flex-col gap-8 relative group/form overflow-hidden border-t-8 border-t-indigo-600">
+                            <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl max-w-3xl w-full flex flex-col gap-8 relative group/form overflow-hidden border-t-8 border-t-brand-cyan">
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-2">
-                                        <span className="text-[10px] font-black bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full uppercase tracking-widest border border-indigo-100 shadow-sm">Operación Configurada</span>
-                                        <History size={16} className="text-slate-300" />
+                                        <span className="text-[9px] font-black bg-brand-cyan/10 text-brand-cyan px-3 py-1 rounded-full uppercase tracking-widest border border-brand-cyan/20 shadow-sm">Operación Motor</span>
+                                        <History size={16} className="text-zinc-300" />
                                     </div>
-                                    <h2 className="text-3xl font-black text-slate-800 flex items-center gap-4 tracking-tight"><Zap size={28} className="text-indigo-600 fill-indigo-100"/> {opSeleccionada.EvtNombre}</h2>
-                                    {opSeleccionada.EvtDescripcion && <p className="text-base text-slate-400 mt-2 font-bold italic">"{opSeleccionada.EvtDescripcion}"</p>}
+                                    <h2 className="text-3xl font-black text-zinc-800 flex items-center gap-4 tracking-tight"><Zap size={28} className="text-brand-cyan"/> {opSeleccionada.EvtNombre}</h2>
+                                    {opSeleccionada.EvtDescripcion && <p className="text-sm text-zinc-400 mt-2 font-bold italic">"{opSeleccionada.EvtDescripcion}"</p>}
                                 </div>
                                 <div className="flex flex-col items-end gap-1">
-                                    <span className="text-xs font-black font-mono bg-slate-50 border-2 border-slate-100 px-4 py-1.5 rounded-xl text-slate-600 shadow-inner group-hover/form:border-indigo-100 transition-colors uppercase">{opSeleccionada.EvtCodigo}</span>
+                                    <span className="text-xs font-black font-mono bg-zinc-50 border-2 border-zinc-200 px-4 py-1.5 rounded-xl text-zinc-400 shadow-inner group-hover/form:border-brand-cyan/30 transition-colors uppercase">{opSeleccionada.EvtCodigo}</span>
                                 </div>
                               </div>
 
-                              <div className="flex gap-3 flex-wrap pb-6 border-b border-slate-100">
-                                {opSeleccionada.EvtGeneraDeuda && <span className="text-[10px] font-black bg-amber-50 border border-amber-100 text-amber-600 px-4 py-1.5 rounded-xl uppercase tracking-widest shadow-sm">⚡ Genera deuda</span>}
-                                {opSeleccionada.EvtAfectaSaldo === 1 && <span className="text-[10px] font-black bg-emerald-50 border border-emerald-100 text-emerald-600 px-4 py-1.5 rounded-xl uppercase tracking-widest shadow-sm">↑ Acredita Saldo</span>}
-                                {opSeleccionada.EvtAfectaSaldo === -1 && <span className="text-[10px] font-black bg-rose-50 border border-rose-100 text-rose-600 px-4 py-1.5 rounded-xl uppercase tracking-widest shadow-sm">↓ Debita Saldo</span>}
-                                {opSeleccionada.EvtAplicaRecurso && <span className="text-[10px] font-black bg-indigo-50 border border-indigo-100 text-indigo-600 px-4 py-1.5 rounded-xl uppercase tracking-widest shadow-sm">◎ Aplica Recursos</span>}
+                              <div className="flex gap-3 flex-wrap pb-6 border-b border-zinc-200">
+                                {opSeleccionada.EvtGeneraDeuda && <span className="text-[9px] font-black bg-amber-50 border border-amber-100 text-amber-500 px-4 py-1.5 rounded-xl uppercase tracking-widest shadow-sm">⚡ Genera deuda</span>}
+                                {opSeleccionada.EvtAfectaSaldo === 1 && <span className="text-[9px] font-black bg-emerald-50 border border-emerald-100 text-emerald-500 px-4 py-1.5 rounded-xl uppercase tracking-widest shadow-sm">↑ Acredita Saldo</span>}
+                                {opSeleccionada.EvtAfectaSaldo === -1 && <span className="text-[9px] font-black bg-rose-50 border border-rose-100 text-rose-500 px-4 py-1.5 rounded-xl uppercase tracking-widest shadow-sm">↓ Debita Saldo</span>}
+                                {opSeleccionada.EvtAplicaRecurso && <span className="text-[9px] font-black bg-brand-cyan/10 border border-brand-cyan/20 text-brand-cyan px-4 py-1.5 rounded-xl uppercase tracking-widest shadow-sm">◎ Aplica Recursos</span>}
                               </div>
 
                               <div className="flex flex-col gap-8">
                                 {(opSeleccionada.EvtUsaEntidad || opSeleccionada.EvtAfectaSaldo !== 0) && (
                                   <div className="relative">
-                                    <label className="flex items-center justify-between text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">
+                                    <label className="flex items-center justify-between text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 px-1">
                                       <span>Selección de Cliente {opSeleccionada.EvtUsaEntidad ? '(OBLIGATORIO)' : '(OPCIONAL)'}</span>
-                                      {opClienteId && <span className="text-emerald-600 flex items-center gap-1.5 font-black bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100">Cliente Verificado <CheckCircle size={12}/></span>}
+                                      {opClienteId && <span className="text-emerald-500 flex items-center gap-1.5 font-black bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100">Cliente Verificado <CheckCircle size={12}/></span>}
                                     </label>
-                                    <div className={`relative flex items-center group/search ${opClienteId ? 'ring-8 ring-emerald-500/5' : 'focus-within:ring-8 focus-within:ring-indigo-500/5'} rounded-[1.5rem] transition-all`}>
-                                        <div className="absolute left-5 text-slate-400 group-focus-within/search:text-indigo-600 transition-colors">
+                                    <div className={`relative flex items-center group/search rounded-[1.5rem] transition-all`}>
+                                        <div className="absolute left-5 text-zinc-300 group-focus-within/search:text-brand-cyan transition-colors">
                                             <Search size={22} />
                                         </div>
                                         <input 
@@ -1045,41 +1067,41 @@ export default function CajaTransaccionView() {
                                             placeholder="Buscar por Nombre, RUT o Código..." 
                                             value={opClienteNombre} 
                                             onChange={e => { setOpClienteNombre(e.target.value); setOpClienteId(''); buscarClientes(e.target.value); }} 
-                                            className={`w-full bg-slate-50/50 border-2 ${opClienteId ? 'border-emerald-500/50 bg-white' : 'border-slate-100 hover:border-slate-300 focus:border-indigo-600 focus:bg-white'} rounded-[1.5rem] pl-16 pr-6 py-5 text-lg font-bold text-slate-900 placeholder-slate-400 outline-none transition-all shadow-inner`} 
+                                            className={`w-full bg-zinc-50 border-2 ${opClienteId ? 'border-emerald-500/50 bg-white' : 'border-zinc-200 hover:border-zinc-300 focus:border-brand-cyan focus:bg-white'} rounded-[1.5rem] pl-16 pr-6 py-5 text-lg font-bold text-zinc-800 placeholder-zinc-300 outline-none transition-all shadow-inner`} 
                                         />
-                                        {buscandoCliente && <div className="absolute right-5"><Loader2 size={24} className="animate-spin text-indigo-500"/></div>}
+                                        {buscandoCliente && <div className="absolute right-5"><Loader2 size={24} className="animate-spin text-brand-cyan"/></div>}
                                         {opClienteId && (
-                                            <button onClick={() => { setOpClienteId(''); setOpClienteNombre(''); }} className="absolute right-5 p-2 bg-slate-100 hover:bg-rose-100 rounded-full transition-all text-slate-400 hover:text-rose-600">
+                                            <button onClick={() => { setOpClienteId(''); setOpClienteNombre(''); }} className="absolute right-5 p-2 bg-zinc-100 hover:bg-rose-500/20 rounded-full transition-all text-zinc-400 hover:text-rose-500">
                                                 <X size={18}/>
                                             </button>
                                         )}
                                     </div>
                                     
                                     {busquedaClientes.length > 0 && !opClienteId && (
-                                      <div className="absolute z-50 top-full mt-3 left-0 right-0 bg-white border border-slate-200 rounded-[2rem] shadow-[0_30px_90px_rgba(0,0,0,0.15)] overflow-hidden max-h-96 overflow-y-auto animate-in fade-in slide-in-from-top-4 duration-300 ring-8 ring-black/5">
-                                        <div className="px-6 py-4 bg-slate-50/80 text-[10px] font-black text-slate-400 uppercase border-b border-slate-100 flex items-center justify-between">
+                                      <div className="absolute z-50 top-full mt-3 left-0 right-0 bg-white border border-zinc-200 rounded-[2rem] shadow-[0_30px_90px_rgba(0,0,0,0.5)] overflow-hidden max-h-96 overflow-y-auto animate-in fade-in slide-in-from-top-4 duration-300">
+                                        <div className="px-6 py-4 bg-zinc-50 text-[9px] font-black text-zinc-400 uppercase border-b border-zinc-200 flex items-center justify-between">
                                             <span>Sugerencias Encontradas</span>
-                                            <span className="bg-white text-slate-500 px-3 py-1 rounded-lg text-[10px] font-black border border-slate-200 shadow-sm">{busquedaClientes.length} registros</span>
+                                            <span className="bg-white text-zinc-400 px-3 py-1 rounded-lg text-[9px] font-black border border-zinc-200 shadow-sm">{busquedaClientes.length} registros</span>
                                         </div>
                                         {busquedaClientes.map(c => (
                                           <button key={c.CliIdCliente} 
                                             onClick={() => { setOpClienteId(c.CliIdCliente); setOpClienteNombre(`${c.CodCliente || ''} - ${c.Nombre}`); setBusquedaClientes([]); }} 
-                                            className="w-full text-left px-6 py-5 hover:bg-indigo-50 text-sm border-b border-slate-50 last:border-0 group flex items-center justify-between transition-all active:bg-indigo-100">
+                                            className="w-full text-left px-6 py-5 hover:bg-white text-sm border-b border-zinc-100 last:border-0 group flex items-center justify-between transition-all">
                                             <div className="flex items-center gap-5">
-                                                <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center font-black text-slate-400 group-hover:bg-indigo-600 group-hover:text-white transition-all border-2 border-slate-100 group-hover:border-indigo-600 shadow-sm group-hover:shadow-indigo-200">
+                                                <div className="w-12 h-12 rounded-2xl bg-zinc-50 flex items-center justify-center font-black text-zinc-300 group-hover:bg-brand-cyan group-hover:text-white transition-all border-2 border-zinc-200 group-hover:border-brand-cyan shadow-sm">
                                                     {c.Nombre?.[0] || 'C'}
                                                 </div>
                                                 <div className="flex flex-col gap-1">
-                                                    <span className="font-black text-slate-800 group-hover:text-indigo-600 transition-colors text-lg">{c.Nombre}</span>
-                                                    {c.NombreFantasia && <span className="text-[12px] text-slate-400 font-bold uppercase tracking-tight opacity-70">"{c.NombreFantasia}"</span>}
+                                                    <span className="font-black text-zinc-800 group-hover:text-brand-cyan transition-colors text-lg">{c.Nombre}</span>
+                                                    {c.NombreFantasia && <span className="text-[11px] text-zinc-400 font-bold uppercase tracking-tight opacity-70">"{c.NombreFantasia}"</span>}
                                                     <div className="flex items-center gap-3 mt-1.5">
-                                                        <span className="text-[10px] bg-slate-100 text-slate-500 px-2.5 py-1 rounded-lg font-black uppercase border border-slate-200 group-hover:bg-white group-hover:border-indigo-100">ID: {c.CliIdCliente}</span>
-                                                        <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{c.CodCliente || 'SIN CÓDIGO'}</span>
+                                                        <span className="text-[9px] bg-zinc-50 text-zinc-400 px-2.5 py-1 rounded-lg font-black uppercase border border-zinc-200 group-hover:border-brand-cyan/30">ID: {c.CliIdCliente}</span>
+                                                        <span className="text-[9px] text-zinc-400 font-black uppercase tracking-widest">{c.CodCliente || 'SIN CÓDIGO'}</span>
                                                     </div>
                                                 </div>
                                             </div>
                                             <div className="opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                                                <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-200">
+                                                <div className="bg-brand-cyan p-2.5 rounded-xl shadow-lg shadow-brand-cyan/20">
                                                     <ArrowRight size={20} className="text-white" />
                                                 </div>
                                             </div>
@@ -1092,9 +1114,9 @@ export default function CajaTransaccionView() {
 
                                 <div className="grid grid-cols-2 gap-8">
                                   <div className="col-span-1">
-                                    <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Importe de Operación</label>
-                                    <div className="flex group/amount shadow-sm rounded-[1.5rem] overflow-hidden border-2 border-slate-100 focus-within:border-indigo-600 transition-all bg-slate-50/50 focus-within:bg-white focus-within:ring-8 focus-within:ring-indigo-600/5">
-                                      <select value={opMoneda} onChange={e => setOpMoneda(e.target.value)} className="bg-slate-100 border-r border-slate-200 px-5 font-black text-slate-700 outline-none text-lg cursor-pointer hover:bg-slate-200 transition-colors">
+                                    <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 px-1">Importe de Operación</label>
+                                    <div className="flex group/amount shadow-sm rounded-[1.5rem] overflow-hidden border-2 border-zinc-200 focus-within:border-brand-cyan transition-all bg-zinc-50 focus-within:bg-white">
+                                      <select value={opMoneda} onChange={e => setOpMoneda(e.target.value)} className="bg-white border-r border-zinc-200 px-5 font-black text-zinc-700 outline-none text-lg cursor-pointer hover:bg-zinc-100 transition-colors appearance-none">
                                         <option value="UYU">$</option>
                                         <option value="USD">U$</option>
                                       </select>
@@ -1103,42 +1125,42 @@ export default function CajaTransaccionView() {
                                         placeholder="0.00" 
                                         value={opImporte} 
                                         onChange={e => setOpImporte(e.target.value)} 
-                                        className="w-full bg-transparent px-6 py-5 text-3xl font-black text-slate-900 outline-none text-right placeholder-slate-300" 
+                                        className="w-full bg-transparent px-6 py-5 text-3xl font-black text-zinc-800 outline-none text-right placeholder-zinc-900" 
                                       />
                                     </div>
                                     {opMoneda === 'USD' && cotizacion && (
                                         <div className="flex items-center justify-between mt-3 px-2">
-                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Cotización: {fmt(cotizacion)}</span>
-                                            <p className="text-[12px] font-black text-emerald-600 tracking-tighter bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100 shadow-sm">≈ $ {fmt(parseFloat(opImporte||0) * cotizacion)} UYU</p>
+                                            <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Cotización: {fmt(cotizacion)}</span>
+                                            <p className="text-[11px] font-black text-emerald-500 tracking-tighter bg-emerald-50 px-3 py-1 rounded-lg border border-emerald-100 shadow-sm">≈ $ {fmt(parseFloat(opImporte||0) * cotizacion)} UYU</p>
                                         </div>
                                     )}
                                   </div>
 
                                   <div className="col-span-1">
-                                    <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Metodo de Pago (opcional)</label>
+                                    <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 px-1">Metodo de Pago (opcional)</label>
                                     <div className="relative group/pay shadow-sm">
-                                        <CreditCard className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within/pay:text-indigo-600 transition-colors" size={22} />
+                                        <CreditCard className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within/pay:text-brand-cyan transition-colors" size={22} />
                                         <select 
                                             value={opMetodoId} 
                                             onChange={e => setOpMetodoId(e.target.value)} 
-                                            className="w-full bg-slate-50/50 border-2 border-slate-100 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-[1.5rem] pl-16 pr-6 py-5 text-base font-bold text-slate-800 outline-none transition-all appearance-none shadow-inner cursor-pointer"
+                                            className="w-full bg-zinc-50 border-2 border-zinc-200 hover:border-zinc-300 focus:border-brand-cyan focus:bg-white rounded-[1.5rem] pl-16 pr-6 py-5 text-base font-bold text-zinc-700 outline-none transition-all appearance-none shadow-inner cursor-pointer"
                                         >
                                             <option value="">A elección en asiento...</option>
                                             {metodosPago.map(m => <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>)}
                                         </select>
-                                        <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-300">
+                                        <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-300">
                                             <ChevronRight size={20} className="rotate-90" />
                                         </div>
                                     </div>
                                   </div>
 
                                   <div className="col-span-2">
-                                    <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Notas / Concepto / Glosa</label>
+                                    <label className="block text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 px-1">Notas / Concepto / Glosa</label>
                                     <textarea 
                                         value={opObs} 
                                         onChange={e => setOpObs(e.target.value)} 
                                         placeholder="Detalla el motivo de este movimiento para auditoría..." 
-                                        className="w-full bg-slate-50/50 border-2 border-slate-100 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-[2rem] px-6 py-5 text-base text-slate-800 font-bold outline-none resize-none h-32 transition-all shadow-inner placeholder-slate-300" 
+                                        className="w-full bg-zinc-50 border-2 border-zinc-200 hover:border-zinc-300 focus:border-brand-cyan focus:bg-white rounded-[2rem] px-6 py-5 text-base text-zinc-700 font-bold outline-none resize-none h-32 transition-all shadow-inner placeholder-zinc-300" 
                                     />
                                   </div>
                                 </div>
@@ -1146,9 +1168,9 @@ export default function CajaTransaccionView() {
                                 <button
                                   onClick={handleOperacionManual}
                                   disabled={procesandoOp}
-                                  className={`w-full py-6 rounded-[1.5rem] font-black text-xl flex items-center justify-center gap-4 transition-all shadow-xl active:scale-[0.98] mt-4 ${procesandoOp ? 'bg-slate-200 cursor-not-allowed text-slate-400' : 'bg-indigo-600 hover:bg-black text-white shadow-indigo-200 hover:shadow-2xl hover:-translate-y-1'}`}
+                                  className={`w-full py-6 rounded-[1.5rem] font-black text-xl flex items-center justify-center gap-4 transition-all shadow-xl active:scale-[0.98] mt-4 ${procesandoOp ? 'bg-zinc-100 cursor-not-allowed text-zinc-400' : 'bg-brand-cyan hover:bg-white text-white hover:shadow-brand-cyan/20'}`}
                                 >
-                                  {procesandoOp ? <Loader2 size={28} className="animate-spin"/> : <><Zap size={28} className="fill-white/20"/> Confirmar y Registrar Movimiento</>}
+                                  {procesandoOp ? <Loader2 size={28} className="animate-spin"/> : <><Zap size={28} className="fill-zinc-950/20"/> Registrar Movimiento</>}
                                 </button>
                               </div>
                             </div>
@@ -1161,32 +1183,32 @@ export default function CajaTransaccionView() {
 
                 {/* --- SUBTAB AUTORIZAR --- */}
                 {subTabIngreso === 'AUTORIZAR' && (
-                  <div className="flex-1 flex p-6 gap-6 min-h-0 bg-[#f1f5f9]">
-                     <div className="w-[400px] bg-white border border-slate-200 rounded-[2rem] flex flex-col overflow-hidden shadow-xl">
-                       <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                         <h3 className="font-black text-slate-800 flex items-center gap-2 text-sm uppercase tracking-widest"><ShieldCheck className="text-indigo-600" size={18}/> Retiros Pendientes</h3>
-                         <div className="relative mt-4">
-                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <input type="text" placeholder="Filtrar por nombre o ID..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2.5 text-sm text-slate-700 font-bold outline-none focus:border-indigo-600 shadow-sm transition-all" />
+                  <div className="flex-1 flex p-6 gap-6 min-h-0 bg-zinc-50">
+                     <div className="w-[400px] bg-white border border-zinc-200 rounded-[2rem] flex flex-col overflow-hidden shadow-2xl">
+                       <div className="p-6 border-b border-zinc-200 bg-zinc-50">
+                         <h3 className="font-black text-zinc-800 flex items-center gap-2 text-[10px] uppercase tracking-widest"><ShieldCheck className="text-brand-cyan" size={16}/> Retiros Pendientes</h3>
+                         <div className="relative mt-4 group">
+                            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-brand-cyan transition-colors" />
+                            <input type="text" placeholder="Filtrar por nombre o ID..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} className="w-full bg-zinc-50 border border-zinc-200 rounded-xl pl-10 pr-4 py-2.5 text-xs text-zinc-800 font-bold outline-none focus:border-brand-cyan shadow-inner transition-all placeholder-zinc-300" />
                          </div>
                        </div>
                        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 bg-white">
                          {retirosFiltrados.length === 0 ? (
                            <div className="text-center py-12 opacity-30">
-                             <ShoppingCart size={40} className="mx-auto mb-2" />
-                             <p className="text-[10px] font-black uppercase">Sin retiros pendientes</p>
+                             <ShoppingCart size={40} className="mx-auto mb-2 text-zinc-300" />
+                             <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Sin retiros pendientes</p>
                            </div>
                          ) : retirosFiltrados.map(r => (
                            <div key={r.ordenDeRetiro} onClick={()=>setRetiroSelectAut({retiroId: r.ordenDeRetiro, raw:r, deudaEstimada:calcularMontoRetiro(r)})} 
-                             className={`p-4 rounded-2xl border-2 cursor-pointer transition-all active:scale-[0.98] ${retiroSelectAut?.retiroId===r.ordenDeRetiro ? 'border-indigo-600 bg-indigo-50 shadow-md':'border-slate-50 bg-slate-50/50 hover:border-slate-200 hover:bg-white'}`}>
+                             className={`p-4 rounded-2xl border-2 cursor-pointer transition-all active:scale-[0.98] ${retiroSelectAut?.retiroId===r.ordenDeRetiro ? 'border-brand-cyan bg-brand-cyan/10 shadow-lg shadow-brand-cyan/20':'border-zinc-200 bg-zinc-50 hover:border-zinc-300 hover:bg-white'}`}>
                              <div className="flex justify-between items-start mb-1">
-                                <span className={`font-black text-sm tracking-tight ${retiroSelectAut?.retiroId===r.ordenDeRetiro ? 'text-indigo-600':'text-slate-800'}`}>ORDEN #{r.ordenDeRetiro}</span>
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{r.OReFechaAlta ? new Date(r.OReFechaAlta).toLocaleDateString() : '-'}</span>
+                                <span className={`font-black text-sm tracking-tight uppercase ${retiroSelectAut?.retiroId===r.ordenDeRetiro ? 'text-brand-cyan':'text-zinc-700'}`}>ORDEN #{r.ordenDeRetiro}</span>
+                                <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{r.OReFechaAlta ? new Date(r.OReFechaAlta).toLocaleDateString() : '-'}</span>
                              </div>
-                             <div className="text-xs text-slate-500 font-bold mb-3">{r.CliNombre}</div>
-                             <div className="flex justify-between items-center bg-white/50 p-2 rounded-xl border border-slate-100">
-                                <span className="text-[10px] font-black text-slate-400 uppercase">Adeudado:</span>
-                                <span className="font-black text-rose-600 text-sm">${fmt(calcularMontoRetiro(r))}</span>
+                             <div className="text-[11px] text-zinc-400 font-bold mb-3 uppercase truncate">{r.CliNombre}</div>
+                             <div className="flex justify-between items-center bg-white/50 p-2 rounded-xl border border-zinc-100">
+                                <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Adeudado:</span>
+                                <span className="font-black text-rose-500 text-sm tracking-tighter">${fmt(calcularMontoRetiro(r))}</span>
                              </div>
                            </div>
                          ))}
@@ -1196,35 +1218,35 @@ export default function CajaTransaccionView() {
                      <div className="flex-1 flex items-center justify-center overflow-y-auto">
                        {!retiroSelectAut ? (
                          <div className="text-center opacity-30 py-20 animate-pulse">
-                           <ShieldCheck size={80} className="mx-auto mb-6 text-indigo-400 fill-indigo-100" />
-                           <p className="text-slate-800 text-2xl font-black tracking-tight">Autorización de Entrega</p>
-                           <p className="text-slate-400 text-sm mt-2 max-w-sm mx-auto font-bold uppercase tracking-widest leading-relaxed">Selecciona un retiro de la lista para proceder.</p>
+                           <ShieldCheck size={80} className="mx-auto mb-6 text-brand-cyan/30" />
+                           <p className="text-zinc-800 text-2xl font-black tracking-tight">Autorización de Entrega</p>
+                           <p className="text-zinc-400 text-[10px] mt-3 max-w-sm mx-auto font-black uppercase tracking-widest leading-relaxed">Selecciona un retiro de la lista para proceder.</p>
                          </div>
                        ) : (
-                         <div className="max-w-xl w-full bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-2xl flex flex-col gap-8 animate-in fade-in zoom-in-95 duration-500 border-t-8 border-t-amber-500">
+                         <div className="max-w-xl w-full bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl flex flex-col gap-8 animate-in fade-in zoom-in-95 duration-500 border-t-8 border-t-brand-cyan">
                            <div className="text-center">
-                             <div className="w-20 h-20 bg-amber-50 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-amber-100 shadow-sm">
-                                <ShieldCheck size={40} className="text-amber-600" />
+                             <div className="w-20 h-20 bg-brand-cyan/10 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-brand-cyan/20 shadow-sm">
+                                <ShieldCheck size={40} className="text-brand-cyan" />
                              </div>
-                             <h2 className="text-2xl font-black text-slate-800 tracking-tight">Autorizar Entrega Sin Cobro</h2>
-                             <p className="text-slate-400 font-bold mt-1 uppercase tracking-widest text-[10px]">Referencia de Retiro: <span className="text-indigo-600">{retiroSelectAut.retiroId}</span></p>
+                             <h2 className="text-2xl font-black text-zinc-800 tracking-tight">Autorizar Entrega Sin Cobro</h2>
+                             <p className="text-zinc-400 font-black mt-2 uppercase tracking-widest text-[9px]">Referencia de Retiro: <span className="text-brand-cyan">#{retiroSelectAut.retiroId}</span></p>
                            </div>
 
                            <div className="flex flex-col gap-6">
                             <div>
-                              <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-3 px-1">Motivo de la autorización <span className="text-rose-500">*</span></label>
-                              <textarea autoFocus value={autMotivo} onChange={e=>setAutMotivo(e.target.value)} placeholder="Ej: Autorizado por Gerencia, Cliente cuenta corriente, Paga mañana..." className="w-full bg-slate-50/50 border-2 border-slate-100 rounded-[1.5rem] p-5 text-slate-800 font-bold outline-none focus:border-amber-500 focus:bg-white h-32 resize-none transition-all shadow-inner placeholder-slate-300"></textarea>
+                              <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Motivo de la autorización <span className="text-rose-500">*</span></label>
+                              <textarea autoFocus value={autMotivo} onChange={e=>setAutMotivo(e.target.value)} placeholder="Ej: Autorizado por Gerencia, Cliente cuenta corriente, Paga mañana..." className="w-full bg-zinc-50 border-2 border-zinc-200 rounded-[1.5rem] p-5 text-zinc-700 font-bold outline-none focus:border-brand-cyan focus:bg-white h-32 resize-none transition-all shadow-inner placeholder-zinc-300"></textarea>
                             </div>
                             
                             <div>
-                              <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-3 px-1">Vencimiento del compromiso (Opcional)</label>
-                              <div className="relative">
-                                <Calendar size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" />
-                                <input type="date" value={autVencimiento} onChange={e=>setAutVencimiento(e.target.value)} className="w-full bg-slate-50/50 border-2 border-slate-100 rounded-[1.5rem] pl-16 pr-5 py-4 text-slate-800 font-bold outline-none focus:border-amber-500 focus:bg-white transition-all shadow-inner" />
+                              <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Vencimiento del compromiso (Opcional)</label>
+                              <div className="relative group">
+                                <Calendar size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-brand-cyan transition-colors" />
+                                <input type="date" value={autVencimiento} onChange={e=>setAutVencimiento(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-200 rounded-[1.5rem] pl-16 pr-5 py-4 text-zinc-700 font-bold outline-none focus:border-brand-cyan focus:bg-white transition-all shadow-inner" />
                               </div>
                             </div>
 
-                            <button onClick={handleAutorizar} disabled={procesandoAut} className="mt-4 w-full bg-amber-500 hover:bg-black disabled:bg-slate-200 text-white font-black py-6 rounded-[1.5rem] shadow-xl shadow-amber-100 hover:shadow-2xl transition-all active:scale-[0.98] text-lg flex items-center justify-center gap-3">
+                            <button onClick={handleAutorizar} disabled={procesandoAut} className="mt-4 w-full bg-brand-cyan hover:bg-white disabled:bg-zinc-100 text-white disabled:text-zinc-400 font-black py-6 rounded-[1.5rem] shadow-xl transition-all active:scale-[0.98] text-lg flex items-center justify-center gap-3 uppercase tracking-widest">
                               {procesandoAut ? <Loader2 className="animate-spin" size={24} /> : <><ShieldCheck size={24}/> CONFIRMAR Y AUTORIZAR</>}
                             </button>
                            </div>
@@ -1302,69 +1324,66 @@ export default function CajaTransaccionView() {
         {/* ======== EGRESOS (SALIDAS) ======== */}
 
         {activeTab === 'EGRESOS' && (
-          <div className="flex-1 flex overflow-hidden bg-[#f1f5f9]">
+          <div className="flex-1 flex overflow-hidden bg-zinc-50">
             <div className="flex-1 p-10 flex justify-center overflow-y-auto">
-              <div className="max-w-3xl w-full bg-white border border-slate-200 rounded-[2.5rem] p-10 shadow-2xl flex flex-col gap-8 h-fit animate-in fade-in slide-in-from-bottom-10 duration-700 border-t-8 border-t-rose-500">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-6">
+              <div className="max-w-3xl w-full bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl flex flex-col gap-8 h-fit animate-in fade-in slide-in-from-bottom-10 duration-700 border-t-8 border-t-rose-600">
+                <div className="flex items-center justify-between border-b border-zinc-200 pb-8">
                     <div>
-                        <h2 className="text-3xl font-black text-slate-800 flex items-center gap-4 tracking-tight"><ArrowUpCircle className="text-rose-600" size={32}/> Salida de Dinero</h2>
-                        <p className="text-slate-400 font-bold mt-1 uppercase tracking-widest text-[10px]">Registro de egresos y gastos de caja chica</p>
+                        <h2 className="text-3xl font-black text-zinc-800 flex items-center gap-4 tracking-tight"><ArrowUpCircle className="text-rose-500" size={32}/> Salida de Dinero</h2>
+                        <p className="text-zinc-400 font-black mt-2 uppercase tracking-widest text-[10px]">Registro de egresos y gastos de caja chica</p>
                     </div>
-                    <div className="bg-rose-50 p-4 rounded-3xl border border-rose-100 shadow-sm">
-                        <DollarSign size={24} className="text-rose-600" />
+                    <div className="bg-rose-50 p-4 rounded-3xl border border-rose-100 shadow-inner">
+                        <DollarSign size={24} className="text-rose-500" />
                     </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-8">
                   <div className="col-span-2">
-                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-3 px-1">Concepto de Gasto (Plan de Cuentas)</label>
-                    <div className="relative group/cuenta">
-                        <BookOpen className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within/cuenta:text-rose-600 transition-colors" size={20} />
-                        <select value={egresoCuentaCodigo} onChange={e=>setEgresoCuentaCodigo(e.target.value)} className="w-full bg-slate-50/50 border-2 border-slate-100 rounded-[1.5rem] pl-16 pr-6 py-5 font-black text-slate-700 focus:border-rose-500 focus:bg-white outline-none appearance-none transition-all cursor-pointer shadow-inner">
-                            <option value="">Seleccione cuenta contable...</option>
-                            {cuentasGastos.map(c => <option key={c.CueCodigo} value={c.CueCodigo}>[{c.CueCodigo}] {c.CueNombre}</option>)}
-                        </select>
-                        <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-300">
-                            <ChevronRight size={20} className="rotate-90" />
-                        </div>
-                    </div>
+                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Concepto de Gasto (Plan de Cuentas)</label>
+                    <CustomSelect
+                      value={egresoCuentaCodigo}
+                      onChange={setEgresoCuentaCodigo}
+                      options={cuentasGastos.map(c => ({ value: c.CueCodigo, label: `[${c.CueCodigo}] ${c.CueNombre}` }))}
+                      variant="default"
+                      placeholder="Seleccione cuenta contable..."
+                    />
                   </div>
 
                   <div className="col-span-2">
-                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-3 px-1">Proveedor / Beneficiario / Destinatario</label>
-                    <div className="relative group/prov">
-                        <User className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within/prov:text-rose-600 transition-colors" size={20} />
-                        <input type="text" value={egresoProveedor} onChange={e=>setEgresoProveedor(e.target.value)} placeholder="¿A quién se le entrega el dinero?" className="w-full bg-slate-50/50 border-2 border-slate-100 rounded-[1.5rem] pl-16 pr-6 py-5 text-slate-800 font-bold focus:border-rose-500 focus:bg-white outline-none transition-all shadow-inner placeholder-slate-300" />
+                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Proveedor / Beneficiario / Destinatario</label>
+                    <div className="relative group">
+                        <User className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-rose-500 transition-colors" size={20} />
+                        <input type="text" value={egresoProveedor} onChange={e=>setEgresoProveedor(e.target.value)} placeholder="¿A quién se le entrega el dinero?" className="w-full bg-zinc-50 border-2 border-zinc-200 rounded-[1.5rem] pl-16 pr-6 py-5 text-zinc-800 font-bold focus:border-rose-500 focus:bg-white outline-none transition-all shadow-inner placeholder-zinc-300" />
                     </div>
                   </div>
 
                   <div className="col-span-1">
-                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-3 px-1">Monto de Salida</label>
-                    <div className="flex group/amount shadow-sm rounded-[1.5rem] overflow-hidden border-2 border-slate-100 focus-within:border-rose-600 transition-all bg-slate-50/50 focus-within:bg-white">
-                      <select value={egresoMoneda} onChange={e=>setEgresoMoneda(e.target.value)} className="bg-slate-100 border-r border-slate-200 px-5 font-black text-slate-700 outline-none text-lg cursor-pointer hover:bg-slate-200 transition-colors">
+                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Monto de Salida</label>
+                    <div className="flex group shadow-sm rounded-[1.5rem] overflow-hidden border-2 border-zinc-200 focus-within:border-rose-500 transition-all bg-zinc-50 focus-within:bg-white">
+                      <select value={egresoMoneda} onChange={e=>setEgresoMoneda(e.target.value)} className="bg-white border-r border-zinc-200 px-5 font-black text-zinc-700 outline-none text-lg cursor-pointer hover:bg-zinc-100 transition-colors appearance-none">
                         <option value="UYU">$</option><option value="USD">U$</option>
                       </select>
-                      <input type="number" value={egresoMonto} onChange={e=>setEgresoMonto(e.target.value)} placeholder="0.00" className="w-full bg-transparent px-6 py-5 text-3xl font-black text-rose-600 outline-none text-right placeholder-rose-200" />
+                      <input type="number" value={egresoMonto} onChange={e=>setEgresoMonto(e.target.value)} placeholder="0.00" className="w-full bg-transparent px-6 py-5 text-3xl font-black text-rose-500 outline-none text-right placeholder-rose-900" />
                     </div>
                   </div>
 
                   <div className="col-span-1">
-                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-3 px-1">Método de Retiro</label>
-                    <div className="relative group/met">
-                        <CreditCard className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within/met:text-rose-600 transition-colors" size={20} />
-                        <select value={egresoMetodoId} onChange={e=>setEgresoMetodoId(e.target.value)} className="w-full bg-slate-50/50 border-2 border-slate-100 rounded-[1.5rem] pl-16 pr-6 py-5 text-slate-800 font-bold focus:border-rose-500 focus:bg-white outline-none transition-all shadow-inner appearance-none cursor-pointer">
+                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Método de Retiro</label>
+                    <div className="relative group">
+                        <CreditCard className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-rose-500 transition-colors" size={20} />
+                        <select value={egresoMetodoId} onChange={e=>setEgresoMetodoId(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-200 hover:border-zinc-300 focus:border-rose-500 focus:bg-white rounded-[1.5rem] pl-16 pr-6 py-5 text-zinc-700 font-bold outline-none transition-all shadow-inner appearance-none cursor-pointer">
                             <option value="">Seleccione forma...</option>
                             {metodosPago.filter(m=>m.MPaAfectaCaja).map(m=> <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>)}
                         </select>
-                        <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-300">
+                        <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-300">
                             <ChevronRight size={20} className="rotate-90" />
                         </div>
                     </div>
                   </div>
 
                   <div className="col-span-2">
-                    <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest block mb-3 px-1">Referencia / Observaciones de Salida</label>
-                    <textarea value={egresoObs} onChange={e=>setEgresoObs(e.target.value)} placeholder="Explique brevemente el destino del dinero..." className="w-full bg-slate-50/50 border-2 border-slate-100 rounded-[2rem] px-6 py-5 text-slate-800 font-bold focus:border-rose-500 focus:bg-white outline-none h-32 resize-none transition-all shadow-inner placeholder-slate-300" />
+                    <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Referencia / Observaciones de Salida</label>
+                    <textarea value={egresoObs} onChange={e=>setEgresoObs(e.target.value)} placeholder="Explique brevemente el destino del dinero..." className="w-full bg-zinc-50 border-2 border-zinc-200 hover:border-zinc-300 focus:border-rose-500 focus:bg-white rounded-[2rem] px-6 py-5 text-zinc-700 font-bold outline-none h-32 resize-none transition-all shadow-inner placeholder-zinc-300" />
                   </div>
                 </div>
               </div>
@@ -1400,82 +1419,82 @@ export default function CajaTransaccionView() {
 
         {/* ======== OPERACIONES DE TURNO ======== */}
         {activeTab === 'OPERACIONES' && (
-           <div className="flex-1 flex flex-col overflow-hidden">
+           <div className="flex-1 flex flex-col overflow-hidden bg-zinc-50">
              {/* SUBMENÚ HORIZONTAL DE OPERACIONES */}
-             <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-3 shrink-0 shadow-sm z-10 overflow-x-auto">
-                <button onClick={()=>setShowArqueo(true)} className="flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-black text-sm transition-all border whitespace-nowrap bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-800 hover:bg-slate-50">
+             <div className="bg-white border-b border-zinc-200 px-6 py-3 flex items-center gap-3 shrink-0 shadow-sm z-10 overflow-x-auto">
+                <button onClick={()=>setShowArqueo(true)} className="flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border whitespace-nowrap bg-zinc-100 border-zinc-300 text-zinc-700 hover:border-zinc-600 hover:text-zinc-800">
                   <FileText size={18}/> Arqueo de Turno
                 </button>
-                <button className="flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-black text-sm transition-all border whitespace-nowrap bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-200">
+                <button className="flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border whitespace-nowrap bg-brand-cyan border-brand-cyan text-white shadow-lg shadow-brand-cyan/20">
                   <DoorClosed size={18}/> Cierre de Turno
                 </button>
              </div>
 
-             <div className="flex-1 p-10 flex justify-center overflow-y-auto bg-[#f1f5f9]">
+             <div className="flex-1 p-10 flex justify-center overflow-y-auto bg-zinc-50">
                <div className="max-w-3xl w-full flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-10 duration-700">
-                 <div className="bg-white border border-slate-200 rounded-[3rem] p-12 shadow-2xl relative overflow-hidden border-t-8 border-t-indigo-600">
-                 <div className="flex items-center justify-between mb-10 border-b border-slate-100 pb-8">
+                 <div className="bg-white border border-zinc-200 rounded-[3rem] p-12 shadow-2xl relative overflow-hidden border-t-8 border-t-brand-cyan">
+                 <div className="flex items-center justify-between mb-10 border-b border-zinc-200 pb-10">
                     <div>
-                        <h2 className="text-4xl font-black text-slate-800 flex items-center gap-4 tracking-tighter"><DoorClosed className="text-indigo-600" size={48}/> Cierre de Caja</h2>
-                        <p className="text-slate-400 font-bold mt-2 uppercase tracking-[0.2em] text-xs">Arqueo y finalización de jornada</p>
+                        <h2 className="text-4xl font-black text-zinc-800 flex items-center gap-4 tracking-tighter"><DoorClosed className="text-brand-cyan" size={48}/> Cierre de Caja</h2>
+                        <p className="text-zinc-400 font-black mt-2 uppercase tracking-[0.2em] text-[10px]">Arqueo y finalización de jornada</p>
                     </div>
                     <div className="text-right">
-                        <span className="text-[10px] font-black bg-slate-100 text-slate-500 px-4 py-2 rounded-xl uppercase tracking-widest border border-slate-200 shadow-sm">Turno Actual</span>
+                        <span className="text-[9px] font-black bg-zinc-50 text-zinc-400 px-4 py-2 rounded-xl uppercase tracking-widest border border-zinc-200 shadow-inner">Turno Actual</span>
                     </div>
                  </div>
 
                  {!resumenCierre ? (
                     <div className="text-center py-20 flex flex-col items-center gap-4">
-                        <Loader2 className="animate-spin text-indigo-600" size={48} />
-                        <p className="font-black text-slate-400 uppercase tracking-widest text-sm animate-pulse">Consolidando transacciones...</p>
+                        <Loader2 className="animate-spin text-brand-cyan" size={48} />
+                        <p className="font-black text-zinc-400 uppercase tracking-widest text-sm animate-pulse">Consolidando transacciones...</p>
                     </div>
                  ) : (
                    <div className="flex flex-col gap-10">
-                     <div className="bg-slate-50/50 rounded-[2.5rem] p-10 grid grid-cols-2 gap-10 border border-slate-100 shadow-inner">
-                       <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                          <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">Monto Inicial Apertura</p>
-                          <p className="text-3xl font-black text-slate-800 tracking-tighter">${fmt(resumenCierre.sesion.StuMontoInicial)}</p>
+                     <div className="bg-zinc-50/50 rounded-[2.5rem] p-10 grid grid-cols-2 gap-10 border border-zinc-100 shadow-inner">
+                       <div className="bg-white p-6 rounded-3xl border border-zinc-100 shadow-sm">
+                          <p className="text-[10px] text-zinc-400 font-black uppercase tracking-widest mb-2">Monto Inicial Apertura</p>
+                          <p className="text-3xl font-black text-zinc-800 tracking-tighter">${fmt(resumenCierre.sesion.StuMontoInicial)}</p>
                        </div>
-                       <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                       <div className="bg-white p-6 rounded-3xl border border-zinc-100 shadow-sm">
                           <p className="text-[10px] text-emerald-600/60 font-black uppercase tracking-widest mb-2">Total Cobrado (+)</p>
                           <p className="text-3xl font-black text-emerald-600 tracking-tighter">${fmt(resumenCierre.cobros.TotalCobrado)}</p>
                        </div>
-                       <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                       <div className="bg-white p-6 rounded-3xl border border-zinc-100 shadow-sm">
                           <p className="text-[10px] text-rose-600/60 font-black uppercase tracking-widest mb-2">Gastos / Egresos (-)</p>
                           <p className="text-3xl font-black text-rose-600 tracking-tighter">${fmt(resumenCierre.egresos.TotalEgresos)}</p>
                        </div>
-                       <div className="col-span-1 bg-indigo-600 p-6 rounded-3xl shadow-xl shadow-indigo-100 flex flex-col justify-center">
-                         <p className="text-[10px] text-white/60 font-black uppercase tracking-widest mb-2">Saldo Esperado en Sistema</p>
-                         <p className="text-4xl font-black text-white tracking-tighter">${fmt(resumenCierre.sesion.StuMontoInicial + resumenCierre.cobros.TotalCobrado - resumenCierre.egresos.TotalEgresos)}</p>
+                       <div className="col-span-1 bg-brand-cyan p-6 rounded-3xl shadow-xl shadow-brand-cyan/20 flex flex-col justify-center">
+                         <p className="text-[10px] text-zinc-800/60 font-black uppercase tracking-widest mb-2">Saldo Esperado en Sistema</p>
+                         <p className="text-4xl font-black text-zinc-800 tracking-tighter">${fmt(resumenCierre.sesion.StuMontoInicial + resumenCierre.cobros.TotalCobrado - resumenCierre.egresos.TotalEgresos)}</p>
                        </div>
                      </div>
 
-                     <div className="bg-white border-2 border-indigo-100 rounded-[2.5rem] p-10 flex flex-col gap-8 shadow-xl relative">
-                       <div className="absolute -top-4 -right-4 bg-indigo-600 text-white p-3 rounded-2xl shadow-lg">
+                     <div className="bg-white border-2 border-brand-cyan/20 rounded-[2.5rem] p-10 flex flex-col gap-8 shadow-xl relative">
+                       <div className="absolute -top-4 -right-4 bg-brand-cyan-white p-3 rounded-2xl shadow-lg">
                           <CheckCircle size={24} />
                        </div>
-                       <h3 className="font-black text-slate-800 flex items-center gap-4 text-xl tracking-tight"><DollarSign size={24} className="text-indigo-600" /> Arqueo Físico de Valores</h3>
+                       <h3 className="font-black text-zinc-800 flex items-center gap-4 text-xl tracking-tight"><DollarSign size={24} className="text-brand-cyan" /> Arqueo Físico de Valores</h3>
                        
                        <div className="flex flex-col gap-4">
                          <div className="flex justify-between items-end px-1">
-                           <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Desglose de Efectivo Físico en Cajón</label>
-                           <span className="text-2xl font-black text-indigo-600 tracking-tighter bg-indigo-50 px-4 py-1 rounded-xl border border-indigo-100">Total Físico: $ {fmt(totalDenominaciones)}</span>
+                           <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">Desglose de Efectivo Físico en Cajón</label>
+                           <span className="text-2xl font-black text-brand-cyan tracking-tighter bg-brand-cyan/10 px-4 py-1 rounded-xl border border-brand-cyan/20">Total Físico: $ {fmt(totalDenominaciones)}</span>
                          </div>
-                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50/50 p-6 rounded-[2rem] border-2 border-slate-100 shadow-inner">
-                           <div className="col-span-2 md:col-span-4"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-200 pb-2">Billetes</p></div>
+                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-zinc-50/50 p-6 rounded-[2rem] border-2 border-zinc-100 shadow-inner">
+                           <div className="col-span-2 md:col-span-4"><p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 border-b border-zinc-200 pb-2">Billetes</p></div>
                            {[2000, 1000, 500, 200, 100, 50, 20].map(den => (
-                             <div key={den} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+                             <div key={den} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-zinc-200 shadow-sm focus-within:border-brand-cyan focus-within:ring-2 focus-within:ring-brand-cyan/20 transition-all">
                                <div className="w-16 text-right"><span className="text-sm font-black text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100">${den}</span></div>
-                               <span className="text-slate-300 font-bold">x</span>
-                               <input type="number" min="0" value={denominaciones[den]} onChange={e => setDenominaciones(p => ({ ...p, [den]: e.target.value }))} placeholder="0" className="w-full bg-transparent text-lg font-black text-slate-800 outline-none text-center" />
+                               <span className="text-zinc-300 font-bold">x</span>
+                               <input type="number" min="0" value={denominaciones[den]} onChange={e => setDenominaciones(p => ({ ...p, [den]: e.target.value }))} placeholder="0" className="w-full bg-transparent text-lg font-black text-zinc-800 outline-none text-center" />
                              </div>
                            ))}
-                           <div className="col-span-2 md:col-span-4 mt-2"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-200 pb-2">Monedas</p></div>
+                           <div className="col-span-2 md:col-span-4 mt-2"><p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 border-b border-zinc-200 pb-2">Monedas</p></div>
                            {[50, 10, 5, 2, 1].map(den => (
-                             <div key={den} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-sm focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 transition-all">
+                             <div key={den} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-zinc-200 shadow-sm focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 transition-all">
                                <div className="w-16 text-right"><span className="text-sm font-black text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-100">${den}</span></div>
-                               <span className="text-slate-300 font-bold">x</span>
-                               <input type="number" min="0" value={denominaciones[den]} onChange={e => setDenominaciones(p => ({ ...p, [den]: e.target.value }))} placeholder="0" className="w-full bg-transparent text-lg font-black text-slate-800 outline-none text-center" />
+                               <span className="text-zinc-300 font-bold">x</span>
+                               <input type="number" min="0" value={denominaciones[den]} onChange={e => setDenominaciones(p => ({ ...p, [den]: e.target.value }))} placeholder="0" className="w-full bg-transparent text-lg font-black text-zinc-800 outline-none text-center" />
                              </div>
                            ))}
                          </div>
@@ -1486,7 +1505,7 @@ export default function CajaTransaccionView() {
                           const real = parseFloat(cierreMontoFisico)||0;
                           const diff = real - sis;
                           return (
-                            <div className={`p-8 rounded-[1.5rem] font-black flex justify-between items-center animate-in zoom-in-95 duration-300 border-2 ${Math.abs(diff)<2 ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-emerald-50' : diff>0 ? 'bg-indigo-50 border-indigo-200 text-indigo-700 shadow-indigo-50' : 'bg-rose-50 border-rose-200 text-rose-700 shadow-rose-50'}`}>
+                            <div className={`p-8 rounded-[1.5rem] font-black flex justify-between items-center animate-in zoom-in-95 duration-300 border-2 ${Math.abs(diff)<2 ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-emerald-50' : diff>0 ? 'bg-brand-cyan/10 border-brand-cyan/30 text-brand-cyan shadow-brand-cyan/10' : 'bg-rose-50 border-rose-200 text-rose-700 shadow-rose-50'}`}>
                               <div className="flex items-center gap-4">
                                   {Math.abs(diff)<2 ? <CheckCircle size={32}/> : diff>0 ? <TrendingUp size={32}/> : <TrendingDown size={32}/>}
                                   <span className="text-xl tracking-tight uppercase">{Math.abs(diff)<2 ? 'BALANCE MANTENIDO CON ÉXITO' : diff>0 ? 'SOBRANTE DE CAJA DETECTADO' : 'FALTANTE DE CAJA DETECTADO'}</span>
@@ -1497,13 +1516,13 @@ export default function CajaTransaccionView() {
                        })()}
 
                        <div className="flex flex-col gap-2">
-                         <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Observaciones Finales / Justificación</label>
-                         <textarea value={cierreObs} onChange={e=>setCierreObs(e.target.value)} placeholder="Justifique diferencias de arqueo o anote comentarios sobre la jornada..." className="w-full bg-white border-2 border-slate-100 rounded-[1.5rem] p-6 text-slate-800 font-bold outline-none h-32 resize-none focus:border-indigo-600 transition-all shadow-sm" />
+                         <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest mb-2 px-1">Observaciones Finales / Justificación</label>
+                         <textarea value={cierreObs} onChange={e=>setCierreObs(e.target.value)} placeholder="Justifique diferencias de arqueo o anote comentarios sobre la jornada..." className="w-full bg-white border-2 border-zinc-100 rounded-[1.5rem] p-6 text-zinc-800 font-bold outline-none h-32 resize-none focus:border-brand-cyan transition-all shadow-sm" />
                        </div>
                      </div>
 
-                     <button onClick={handleCerrarCaja} className="w-full bg-rose-600 hover:bg-black text-white font-black py-8 rounded-[2rem] shadow-2xl shadow-rose-200 hover:shadow-black/20 hover:-translate-y-2 transition-all active:scale-[0.98] text-2xl tracking-tighter flex items-center justify-center gap-4 group">
-                       <Power size={32} className="group-hover:text-rose-400 transition-colors"/> FINALIZAR TURNO Y CERRAR SESIÓN
+                     <button onClick={handleCerrarCaja} className="w-full bg-rose-600-white font-black py-8 rounded-[2rem] shadow-2xl shadow-rose-200 hover:shadow-black/20 hover:-translate-y-2 transition-all active:scale-[0.98] text-2xl tracking-tighter flex items-center justify-center gap-4 group">
+                       <Power size={32} className="group-hover:text-rose-600 transition-colors"/> FINALIZAR TURNO Y CERRAR SESIÓN
                      </button>
                    </div>
                  )}
@@ -1518,42 +1537,42 @@ export default function CajaTransaccionView() {
     {showArqueo && <CajaArqueoModal onClose={() => setShowArqueo(false)} />}
       
       {busquedaGlobalRes && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-8 animate-in fade-in duration-300" onClick={(e) => e.target === e.currentTarget && setBusquedaGlobalRes(null)}>
-          <div className="bg-white border border-slate-200 rounded-[3rem] w-full max-w-5xl max-h-[85vh] flex flex-col shadow-[0_40px_100px_rgba(0,0,0,0.3)] overflow-hidden animate-in zoom-in-95 duration-500">
-            <div className="px-10 py-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-zinc-900/60  p-8 animate-in fade-in duration-300" onClick={(e) => e.target === e.currentTarget && setBusquedaGlobalRes(null)}>
+          <div className="bg-white border border-zinc-200 rounded-[3rem] w-full max-w-5xl max-h-[85vh] flex flex-col shadow-[0_40px_100px_rgba(0,0,0,0.3)] overflow-hidden animate-in zoom-in-95 duration-500">
+            <div className="px-10 py-8 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
               <div>
-                  <h2 className="text-2xl font-black text-slate-800 flex items-center gap-4 tracking-tight"><Search size={32} className="text-indigo-600"/> Resultados de Búsqueda Global</h2>
-                  <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-1">Se han encontrado {busquedaGlobalRes.length} coincidencias</p>
+                  <h2 className="text-2xl font-black text-zinc-800 flex items-center gap-4 tracking-tight"><Search size={32} className="text-brand-cyan"/> Resultados de Búsqueda Global</h2>
+                  <p className="text-zinc-400 font-bold text-[10px] uppercase tracking-widest mt-1">Se han encontrado {busquedaGlobalRes.length} coincidencias</p>
               </div>
-              <button onClick={() => setBusquedaGlobalRes(null)} className="text-slate-400 hover:text-rose-600 bg-white hover:bg-rose-50 p-4 rounded-2xl transition-all border border-slate-200 hover:border-rose-200 shadow-sm"><X size={24} /></button>
+              <button onClick={() => setBusquedaGlobalRes(null)} className="text-zinc-400 hover:text-rose-600 bg-white hover:bg-rose-50 p-4 rounded-2xl transition-all border border-zinc-200 hover:border-rose-200 shadow-sm"><X size={24} /></button>
             </div>
             <div className="flex-1 overflow-auto p-10 flex flex-col gap-6">
               {busquedaGlobalRes.map((r, i) => (
-                <div key={i} className="border border-slate-200 rounded-[2rem] p-8 bg-white flex flex-col gap-4 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all group">
+                <div key={i} className="border border-zinc-200 rounded-[2rem] p-8 bg-white flex flex-col gap-4 shadow-sm hover:shadow-xl hover:border-brand-cyan/30 transition-all group">
                   <div className="flex justify-between items-start">
                     <div className="flex items-center gap-6">
-                      <div className="w-16 h-16 bg-slate-100 rounded-3xl flex items-center justify-center font-black text-slate-400 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner">
+                      <div className="w-16 h-16 bg-zinc-100 rounded-3xl flex items-center justify-center font-black text-zinc-400 group-hover:bg-brand-cyan-white transition-all shadow-inner">
                           {r.CliNombre?.[0] || 'R'}
                       </div>
                       <div>
-                        <h3 className="text-xl font-black text-slate-800 tracking-tight group-hover:text-indigo-600 transition-colors">Retiro: <span className="underline decoration-indigo-600/30 decoration-4">{r.ordenDeRetiro || `R-${r.OReIdOrdenRetiro}`}</span></h3>
-                        <p className="text-sm font-bold text-slate-400 mt-1 uppercase tracking-widest flex items-center gap-2">
+                        <h3 className="text-xl font-black text-zinc-800 tracking-tight group-hover:text-brand-cyan transition-colors">Retiro: <span className="underline decoration-brand-cyan/30 decoration-4">{r.ordenDeRetiro || `R-${r.OReIdOrdenRetiro}`}</span></h3>
+                        <p className="text-sm font-bold text-zinc-400 mt-1 uppercase tracking-widest flex items-center gap-2">
                             {r.CliNombre} 
-                            <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg text-[10px] border border-slate-200 font-black">{r.CliCodigo||'S/C'}</span>
+                            <span className="bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded-lg text-[10px] border border-zinc-200 font-black">{r.CliCodigo||'S/C'}</span>
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-3xl font-black text-slate-900 tracking-tighter">${fmt(r.OReCostoTotalOrden || r.Costo || 0)}</p>
+                      <p className="text-3xl font-black text-zinc-900 tracking-tighter">${fmt(r.OReCostoTotalOrden || r.Costo || 0)}</p>
                       <span className={`text-[10px] font-black px-4 py-1.5 rounded-full mt-2 inline-block border-2 uppercase tracking-widest shadow-sm ${r.Pagada || r.Pago ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-rose-50 border-rose-200 text-rose-600'}`}>
                         {r.Pagada || r.Pago ? '✓ FINALIZADO' : '⚠ PENDIENTE'}
                       </span>
                     </div>
                   </div>
-                  <div className="border-t border-slate-50 pt-6 mt-2 grid grid-cols-3 gap-8">
-                     <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 shadow-inner"><span className="text-[10px] text-slate-400 font-black uppercase tracking-widest block mb-1">Estado de Entrega</span><p className="text-slate-700 font-bold text-sm">{r.estadoRetiro || r.estado || 'Procesando...'}</p></div>
-                     <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 shadow-inner"><span className="text-[10px] text-slate-400 font-black uppercase tracking-widest block mb-1">Fecha de Registro</span><p className="text-slate-700 font-bold text-sm">{r.OReFechaAlta ? new Date(r.OReFechaAlta).toLocaleString('es-UY') : '-'}</p></div>
-                     <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 shadow-inner"><span className="text-[10px] text-slate-400 font-black uppercase tracking-widest block mb-1">Lugar Establecido</span><p className="text-slate-700 font-bold text-sm">{r.lugarRetiro || 'Planta Principal'}</p></div>
+                  <div className="border-t border-zinc-50 pt-6 mt-2 grid grid-cols-3 gap-8">
+                     <div className="bg-zinc-50/50 p-4 rounded-2xl border border-zinc-100 shadow-inner"><span className="text-[10px] text-zinc-400 font-black uppercase tracking-widest block mb-1">Estado de Entrega</span><p className="text-zinc-700 font-bold text-sm">{r.estadoRetiro || r.estado || 'Procesando...'}</p></div>
+                     <div className="bg-zinc-50/50 p-4 rounded-2xl border border-zinc-100 shadow-inner"><span className="text-[10px] text-zinc-400 font-black uppercase tracking-widest block mb-1">Fecha de Registro</span><p className="text-zinc-700 font-bold text-sm">{r.OReFechaAlta ? new Date(r.OReFechaAlta).toLocaleString('es-UY') : '-'}</p></div>
+                     <div className="bg-zinc-50/50 p-4 rounded-2xl border border-zinc-100 shadow-inner"><span className="text-[10px] text-zinc-400 font-black uppercase tracking-widest block mb-1">Lugar Establecido</span><p className="text-zinc-700 font-bold text-sm">{r.lugarRetiro || 'Planta Principal'}</p></div>
                   </div>
                 </div>
               ))}

@@ -1061,7 +1061,6 @@ export const PickupView = () => {
                             .pay-modal-overlay {
                                 position: fixed; inset: 0; z-index: 9999;
                                 background: rgba(0,0,0,0.88);
-                                backdrop-filter: blur(6px);
                                 display: flex; align-items: stretch;
                                 height: 100dvh; height: 100vh;
                             }

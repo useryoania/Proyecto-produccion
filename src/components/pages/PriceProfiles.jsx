@@ -181,7 +181,7 @@ const BulkAddModal = ({ onAdd, onCancel, profileName }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4  animate-fade-in">
             <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col">
                 <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-lg">
                     <div>
@@ -371,7 +371,7 @@ const TieredWizard = ({ existingScales, onSave, onCancel, productName }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4  animate-fade-in">
             <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg flex flex-col">
                 <div className="p-4 border-b bg-slate-50 rounded-t-lg flex justify-between items-center">
                     <h3 className="font-bold text-slate-800"><i className="fa-solid fa-wand-magic-sparkles text-indigo-600 mr-2"></i> {productName}</h3>
@@ -677,7 +677,7 @@ const ExcelImportModal = ({ onImport, onCancel, catalog }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+        <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4  animate-fade-in">
             <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col">
                 <div className="p-4 border-b flex justify-between items-center bg-slate-50 rounded-t-lg">
                     <h3 className="font-bold text-lg text-slate-800"><i className="fa-solid fa-file-excel text-green-600 mr-2"></i> Importar desde Excel</h3>

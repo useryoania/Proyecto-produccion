@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 const fs = require('fs');
 const path = require('path');
 const contabilidadService = require('../services/contabilidadService');
+const ERPSyncService = require('../services/erpSyncService');
 
 
 // ──────────────────────────────────────────────────
@@ -995,6 +996,27 @@ exports.createWebOrder = async (req, res) => {
                 orderIds: generatedOrders,
                 requiresUpload: filesToUpload.length > 0,
                 uploadManifest: filesToUpload
+            });
+
+            // --- AUTO-COTIZACIÓN ASÍNCRONA ---
+            // Disparar el cálculo de precios en segundo plano para que la orden
+            // aparezca cotizada en Caja sin requerir un sync manual del ERP.
+            // skipDeposito=true → NO escribe en OrdenesDeposito, solo calcula y
+            // guarda en PedidosCobranza para que sea visible en el panel de Caja.
+            setImmediate(async () => {
+                try {
+                    logger.info(`[WebOrder] 🔢 Iniciando auto-cotización para NoDocERP=${erpDocNumber}...`);
+                    await ERPSyncService.syncFinalOrderIntegration(
+                        erpDocNumber,
+                        req.user?.id || 1,
+                        req.user?.name || nombreCliente,
+                        null,
+                        { skipDeposito: true }
+                    );
+                    logger.info(`[WebOrder] ✅ Auto-cotización completada para NoDocERP=${erpDocNumber}.`);
+                } catch (syncErr) {
+                    logger.warn(`[WebOrder] ⚠️ Auto-cotización falló para ${erpDocNumber} (no crítico): ${syncErr.message}`);
+                }
             });
 
         } catch (dbErr) {

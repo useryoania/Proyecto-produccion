@@ -239,7 +239,7 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 "
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="bg-[#f1f5f9] rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[90vh] overflow-y-auto">
         <div className={`px-6 py-4 flex items-center justify-between bg-gradient-to-r ${colorHeader} text-slate-800 sticky top-0`}>

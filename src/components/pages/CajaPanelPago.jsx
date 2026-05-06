@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, X, CheckCircle, Loader2, FileText, Landmark } from 'lucide-react';
+import { Plus, X, CheckCircle, Loader2, FileText, Landmark, CreditCard, DollarSign } from 'lucide-react';
 import ChequeRecibirModal from './tesoreria/ChequeRecibirModal';
+import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
 
 
 
@@ -115,26 +116,26 @@ export default function CajaPanelPago({
   }[mode] || 'CONFIRMAR';
 
   const colorBoton = {
-    COBRO:  'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/30',
-    VENTA:  'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/30',
-    MOTOR:  'bg-violet-600 hover:bg-violet-500 shadow-violet-900/30',
-    EGRESO: 'bg-rose-600   hover:bg-rose-500   shadow-rose-900/30',
-  }[mode] || 'bg-indigo-600 hover:bg-indigo-500';
+    COBRO:  'bg-brand-cyan hover:bg-brand-cyan shadow-brand-cyan/30',
+    VENTA:  'bg-brand-cyan hover:bg-brand-cyan shadow-brand-cyan/30',
+    MOTOR:  'bg-violet-600 hover:bg-violet-500 shadow-violet-200',
+    EGRESO: 'bg-rose-600   hover:bg-rose-500   shadow-rose-200',
+  }[mode] || 'bg-brand-cyan hover:bg-brand-cyan';
 
   const canConfirm = !procesando && !disabledExtra;
 
   return (
-    <div className="w-[400px] shrink-0 border-l border-slate-200 bg-slate-50 flex flex-col h-full overflow-y-auto shadow-[0_0_40px_rgba(0,0,0,0.02)]">
+    <div className="w-[400px] shrink-0 border-l border-zinc-200 bg-white flex flex-col h-full overflow-y-auto shadow-2xl">
 
       {/* ── Encabezado ── */}
-      <div className="px-6 py-5 border-b border-slate-200 bg-white sticky top-0 z-10">
-        <h3 className="font-black text-slate-800 text-base flex items-center gap-2.5">
-          <div className="bg-indigo-100 p-1.5 rounded-lg">
-             <FileText size={16} className="text-indigo-600" />
+      <div className="px-6 py-5 border-b border-zinc-200 bg-zinc-50 sticky top-0 z-10">
+        <h3 className="font-black text-zinc-800 text-base flex items-center gap-2.5">
+          <div className="bg-brand-cyan/10 p-1.5 rounded-lg border border-brand-cyan/20">
+             <FileText size={16} className="text-brand-cyan" />
           </div>
           Pago y Documento
         </h3>
-        <p className="text-[10px] text-slate-400 mt-1 uppercase font-black tracking-widest px-1">
+        <p className="text-[10px] text-zinc-400 mt-1 uppercase font-black tracking-widest px-1">
           {totalACubrir > 0
             ? `Total a cubrir: ${simbMoneda} ${fmt(totalACubrir)}`
             : 'Esperando cálculo de monto...'}
@@ -145,13 +146,13 @@ export default function CajaPanelPago({
 
         {/* ── LÍNEAS DE PAGO ────────────────────────────────────────── */}
         <div className="flex flex-col gap-3">
-          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-1">
+          <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-1">
             Formas de pago recibidas
           </label>
 
           {pagos.length === 0 && (
-            <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center">
-              <p className="text-xs text-slate-400 font-bold italic">
+            <div className="bg-zinc-50 border-2 border-dashed border-zinc-200 rounded-2xl p-6 text-center">
+              <p className="text-xs text-zinc-400 font-bold italic">
                 {mode === 'VENTA'
                   ? 'Sin pago hoy = Factura 100% a Crédito'
                   : 'Debe agregar al menos un medio de pago'}
@@ -163,35 +164,35 @@ export default function CajaPanelPago({
             {pagos.map((p) => (
               <div
                 key={p.id}
-                className="flex gap-2 items-center bg-white border border-slate-200 p-2 rounded-2xl shadow-sm animate-in slide-in-from-right-4 duration-200"
+                className="flex gap-2 items-center bg-zinc-50 border border-zinc-200 p-2 rounded-2xl shadow-sm animate-in slide-in-from-right-4 duration-200"
               >
                 {/* Método */}
-                <select
-                  value={p.metodoPagoId}
-                  onChange={(e) => {
-                     updatePago(p.id, 'metodoPagoId', e.target.value);
-                     const isCheque = metodosPago.find(m => m.MPaIdMetodoPago === parseInt(e.target.value))?.MPaDescripcionMetodo?.toLowerCase().includes('cheque');
-                     if (isCheque && !p.idCheque) setChequeIndexActivo(p.id);
-                  }}
-                  className="flex-1 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/10 transition-all"
-                >
-                  <option value="">Medio de pago...</option>
-                  {metodosPago.map((m) => (
-                    <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>
-                      {m.MPaDescripcionMetodo}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex-1 min-w-0">
+                  <CustomSelect
+                    value={p.metodoPagoId}
+                    onChange={(val) => {
+                       updatePago(p.id, 'metodoPagoId', val);
+                       const isCheque = metodosPago.find(m => m.MPaIdMetodoPago === parseInt(val))?.MPaDescripcionMetodo?.toLowerCase().includes('cheque');
+                       if (isCheque && !p.idCheque) setChequeIndexActivo(p.id);
+                    }}
+                    options={metodosPago.map(m => ({ value: m.MPaIdMetodoPago, label: m.MPaDescripcionMetodo }))}
+                    placeholder="Medio..."
+                    size="small"
+                    variant="default"
+                  />
+                </div>
 
                 {/* Moneda */}
-                <select
-                  value={p.moneda}
-                  onChange={(e) => updatePago(p.id, 'moneda', e.target.value)}
-                  className="w-16 bg-slate-50 border border-slate-100 rounded-xl px-2 py-2 text-xs font-black text-slate-600 outline-none text-center"
-                >
-                  <option value="UYU">$</option>
-                  <option value="USD">U$</option>
-                </select>
+                <div className="w-20">
+                  <CustomSelect
+                    value={p.moneda}
+                    onChange={(val) => updatePago(p.id, 'moneda', val)}
+                    options={[{ value: 'UYU', label: '$' }, { value: 'USD', label: 'U$' }]}
+                    size="small"
+                    variant="default"
+                    className="text-center"
+                  />
+                </div>
 
                 {/* Monto */}
                 <input
@@ -199,24 +200,24 @@ export default function CajaPanelPago({
                   placeholder="0.0"
                   value={p.monto}
                   onChange={(e) => updatePago(p.id, 'monto', e.target.value)}
-                  className="w-24 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-black text-slate-900 text-right outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/5 shadow-inner"
+                  className="w-24 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs font-black text-zinc-800 text-right outline-none focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 shadow-inner"
                 />
 
                 {/* Botón Cheque */}
                 {metodosPago.find(m => m.MPaIdMetodoPago === parseInt(p.metodoPagoId))?.MPaDescripcionMetodo?.toLowerCase().includes('cheque') && (
                   <button
                     onClick={() => setChequeIndexActivo(p.id)}
-                    className={`text-xs font-bold px-3 py-2 rounded-xl shrink-0 transition-colors flex items-center gap-1 ${p.idCheque ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700 hover:bg-amber-200'}`}
+                    className={`text-[10px] font-black px-2 py-2 rounded-xl shrink-0 transition-colors flex items-center gap-1 uppercase tracking-widest ${p.idCheque ? 'bg-emerald-500/20 text-emerald-600 border border-emerald-200' : 'bg-amber-500/20 text-amber-400 border border-amber-200 hover:bg-amber-500/30'}`}
                     title={p.idCheque ? 'Cheque vinculado' : 'Cargar datos del cheque'}
                   >
-                    <Landmark size={14} /> {p.idCheque ? 'Cargado' : 'Cheque'}
+                    <Landmark size={12} /> {p.idCheque ? 'OK' : 'INFO'}
                   </button>
                 )}
 
                 {/* Eliminar */}
                 <button
                   onClick={() => removePago(p.id)}
-                  className="text-slate-300 hover:text-rose-600 p-1.5 hover:bg-rose-50 rounded-lg transition-all shrink-0"
+                  className="text-zinc-400 hover:text-rose-500 p-1.5 hover:bg-rose-50 rounded-lg transition-all shrink-0"
                 >
                   <X size={16} />
                 </button>
@@ -227,14 +228,14 @@ export default function CajaPanelPago({
           <div className="flex gap-3 pt-1">
             <button
               onClick={addPago}
-              className="flex-1 bg-white text-indigo-600 text-xs font-black border-2 border-dashed border-indigo-100 rounded-2xl py-3 hover:border-indigo-400 hover:bg-indigo-50 transition-all flex items-center justify-center gap-2 shadow-sm"
+              className="flex-1 bg-zinc-50 text-zinc-500 text-[10px] font-black border-2 border-dashed border-zinc-200 rounded-2xl py-3 hover:border-zinc-600 hover:text-zinc-800 transition-all flex items-center justify-center gap-2 shadow-sm uppercase tracking-widest"
             >
-              <Plus size={16} /> Agregar Medio
+              <Plus size={14} /> Agregar Medio
             </button>
             {totalACubrir > 0 && diferencia > 0.01 && (
               <button
                 onClick={autoRellenar}
-                className="flex-1 bg-white text-slate-600 text-xs font-black border border-slate-200 rounded-2xl py-3 hover:border-slate-400 hover:bg-slate-50 shadow-sm transition-all"
+                className="flex-1 bg-white text-zinc-500 text-[10px] font-black border border-zinc-200 rounded-2xl py-3 hover:border-zinc-300 hover:text-zinc-800 shadow-sm transition-all uppercase tracking-widest"
               >
                 Completar Saldo
               </button>
@@ -260,23 +261,23 @@ export default function CajaPanelPago({
               const recibido = parseFloat(efectivoRecibido) || 0;
               const vuelto = recibido - montoEfectivo;
               return (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col gap-3 shadow-inner">
+                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex flex-col gap-3 shadow-inner">
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Calculadora de Vuelto</span>
-                    <span className="text-xs font-black text-emerald-800 bg-emerald-200/50 px-2 py-0.5 rounded-lg">Total Efvo: {simbMoneda} {fmt(montoEfectivo)}</span>
+                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-100">Total Efvo: {simbMoneda} {fmt(montoEfectivo)}</span>
                   </div>
                   <div className="flex gap-3 items-center">
                     <div className="flex-1">
-                      <label className="text-[10px] font-bold text-emerald-700/70 uppercase block mb-1">Entregado por cliente</label>
+                      <label className="text-[10px] font-black text-emerald-600/70 uppercase block mb-1 tracking-widest">Recibido</label>
                       <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600 font-black">{simbMoneda}</span>
-                        <input type="number" value={efectivoRecibido} onChange={e => setEfectivoRecibido(e.target.value)} placeholder="0.00" className="w-full bg-white border border-emerald-200 rounded-xl pl-9 pr-3 py-2 text-sm font-black text-emerald-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm" />
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 font-black">{simbMoneda}</span>
+                        <input type="number" value={efectivoRecibido} onChange={e => setEfectivoRecibido(e.target.value)} placeholder="0.00" className="w-full bg-zinc-50 border border-emerald-200 rounded-xl pl-9 pr-3 py-2 text-sm font-black text-zinc-800 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm" />
                       </div>
                     </div>
                     {recibido > 0 && (
                       <div className="flex-1 text-right">
-                        <label className="text-[10px] font-bold text-emerald-700/70 uppercase block mb-1">Cambio a devolver</label>
-                        <span className={`text-xl font-black ${vuelto >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{vuelto >= 0 ? '+' : ''}{fmt(vuelto)}</span>
+                        <label className="text-[10px] font-black text-emerald-600/70 uppercase block mb-1 tracking-widest">Cambio</label>
+                        <span className={`text-xl font-black ${vuelto >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{vuelto >= 0 ? '+' : ''}{fmt(vuelto)}</span>
                       </div>
                     )}
                   </div>
@@ -289,22 +290,22 @@ export default function CajaPanelPago({
 
         {/* ── RESUMEN BALANCE ───────────────────────────────────────── */}
         {totalACubrir > 0 && (
-          <div className="flex flex-col gap-3 bg-white border border-slate-200 rounded-3xl p-5 shadow-sm">
-            <div className="flex justify-between text-xs font-black px-1">
-              <span className="text-slate-400 uppercase tracking-widest">A Cobrar</span>
-              <span className="text-slate-800 font-mono italic">{simbMoneda} {fmt(totalACubrir)}</span>
+          <div className="flex flex-col gap-3 bg-zinc-50 border border-zinc-200 rounded-3xl p-5 shadow-sm">
+            <div className="flex justify-between text-[10px] font-black px-1">
+              <span className="text-zinc-400 uppercase tracking-widest">A Cobrar</span>
+              <span className="text-zinc-800 font-mono">{simbMoneda} {fmt(totalACubrir)}</span>
             </div>
-            <div className="flex justify-between text-xs font-black px-1">
-              <span className="text-slate-400 uppercase tracking-widest">Recibido</span>
-              <span className="text-emerald-600 font-mono italic">- {simbMoneda} {fmt(totalIngresado)}</span>
+            <div className="flex justify-between text-[10px] font-black px-1">
+              <span className="text-zinc-400 uppercase tracking-widest">Recibido</span>
+              <span className="text-emerald-600 font-mono">- {simbMoneda} {fmt(totalIngresado)}</span>
             </div>
             <div
-              className={`flex justify-between items-center px-4 py-3 rounded-2xl border text-xs font-black mt-1
+              className={`flex justify-between items-center px-4 py-3 rounded-2xl border text-[10px] font-black mt-1 uppercase tracking-widest
                 ${balanceOK && totalIngresado > 0
-                  ? 'bg-emerald-50 border-emerald-100 text-emerald-700'
+                  ? 'bg-emerald-50 border-emerald-100 text-emerald-600'
                   : diferencia > 0
-                    ? 'bg-rose-50 border-rose-100 text-rose-700'
-                    : 'bg-slate-50 border-slate-200 text-slate-500'
+                    ? 'bg-rose-50 border-rose-100 text-rose-600'
+                    : 'bg-white border-zinc-200 text-zinc-400'
                 }`}
             >
               <span className="flex items-center gap-2">
@@ -317,7 +318,7 @@ export default function CajaPanelPago({
                       : `⚡ Excede ${simbMoneda} ${fmt(Math.abs(diferencia))}`}
               </span>
               {!balanceOK && totalIngresado > 0 && cotizacion && moneda === 'USD' && (
-                <span className="text-slate-400 font-bold bg-white px-2 py-0.5 rounded-md text-[10px]">
+                <span className="text-zinc-400 font-black bg-zinc-50 px-2 py-0.5 rounded-md text-[9px] border border-zinc-200">
                   ($ {fmt(Math.abs(diferencia) * cotizacion)})
                 </span>
               )}
@@ -327,18 +328,16 @@ export default function CajaPanelPago({
 
         {/* ── DOCUMENTO A EMITIR ────────────────────────────────────── */}
         <div className="flex flex-col gap-3">
-          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-1">
+          <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-1">
             Tipo de Comprobante
           </label>
-          <select
+          <CustomSelect
             value={tipoDoc}
-            onChange={(e) => onTipoDoc(e.target.value)}
-            className="w-full bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-800 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all shadow-sm"
-          >
-            {tiposDoc.map((t) => (
-              <option key={t.value} value={t.value}>{t.label}</option>
-            ))}
-          </select>
+            onChange={onTipoDoc}
+            options={tiposDoc}
+            variant="default"
+            placeholder="Seleccionar documento..."
+          />
 
           {tipoDoc !== 'NINGUNO' && (
             <div className="flex gap-2.5">
@@ -347,10 +346,10 @@ export default function CajaPanelPago({
                 value={serieDoc}
                 onChange={(e) => onSerieDoc(e.target.value)}
                 placeholder="Serie"
-                className="w-20 text-center bg-white border-2 border-slate-200 rounded-2xl px-3 py-3 text-sm font-black text-slate-800 outline-none focus:border-indigo-500 transition-all shadow-sm"
+                className="w-20 text-center bg-zinc-50 border border-zinc-200 rounded-2xl px-3 py-3 text-sm font-black text-zinc-800 outline-none focus:border-brand-cyan transition-all shadow-sm"
               />
-              <div className="flex-1 bg-slate-100 border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-500 font-mono font-bold flex items-center justify-center italic">
-                {numDoc || 'Número Automático'}
+              <div className="flex-1 bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-[10px] text-zinc-400 font-black flex items-center justify-center italic uppercase tracking-widest">
+                {numDoc || 'Automático'}
               </div>
             </div>
           )}
@@ -358,7 +357,7 @@ export default function CajaPanelPago({
 
         {/* ── NOTAS INTERNAS ────────────────────────────────────────── */}
         <div className="flex flex-col gap-3">
-          <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-1">
+          <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-1">
             Observaciones Internas
           </label>
           <textarea
@@ -366,7 +365,7 @@ export default function CajaPanelPago({
             onChange={(e) => onNotas(e.target.value)}
             placeholder="Añada notas para el arqueo de caja..."
             rows={3}
-            className="bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 outline-none resize-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all shadow-sm"
+            className="bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm font-bold text-zinc-800 outline-none resize-none focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 transition-all shadow-sm placeholder-zinc-300"
           />
         </div>
 
@@ -374,7 +373,7 @@ export default function CajaPanelPago({
         <button
           onClick={onConfirmar}
           disabled={!canConfirm}
-          className={`w-full mt-auto ${colorBoton} disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none text-white font-black py-5 rounded-[2rem] flex justify-center gap-3 items-center text-base shadow-2xl transition-all active:scale-[0.98] ring-offset-4 ring-offset-slate-50`}
+          className={`w-full mt-auto ${colorBoton} disabled:bg-zinc-100 disabled:text-zinc-400 disabled:shadow-none text-zinc-800 font-black py-5 rounded-[2rem] flex justify-center gap-3 items-center text-base shadow-2xl transition-all active:scale-[0.98] uppercase tracking-widest`}
         >
           {procesando ? (
             <Loader2 className="animate-spin" size={24} />

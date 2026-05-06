@@ -254,7 +254,7 @@ const DuplicateClientsPage = () => {
                                             <tr key={client.CodCliente} className={`transition-colors hover:bg-slate-50 ${client._dirty ? 'bg-amber-50/20' : ''}`}>
 
                                                 {/* COLUMNAS FIJAS: Acciones y Código Local */}
-                                                <td className="p-3 text-center align-middle sticky left-0 bg-white/95 backdrop-blur-sm shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] z-10 border-r border-slate-200">
+                                                <td className="p-3 text-center align-middle sticky left-0 bg-white/95  shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] z-10 border-r border-slate-200">
                                                     <div className="flex items-center gap-2 justify-center">
                                                         <button
                                                             onClick={() => handleSave(client)}
@@ -277,7 +277,7 @@ const DuplicateClientsPage = () => {
                                                     </div>
                                                 </td>
 
-                                                <td className="p-3 align-middle sticky left-[100px] bg-slate-50/95 backdrop-blur-sm shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] z-10 border-r border-slate-200">
+                                                <td className="p-3 align-middle sticky left-[100px] bg-slate-50/95  shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] z-10 border-r border-slate-200">
                                                     <span className="font-mono font-bold text-slate-600 bg-slate-200 px-2.5 py-1 rounded text-sm select-all">
                                                         {client.CodCliente}
                                                     </span>

@@ -1569,7 +1569,7 @@ const WebRetirosPage = () => {
     };
 
     return (
-      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-sm px-4">
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50  px-4">
         <div className="bg-white rounded-3xl shadow-2xl p-6 w-full max-w-2xl animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4 text-sm">
@@ -1658,7 +1658,7 @@ const WebRetirosPage = () => {
   };
 
   const UbicationGrid = () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4 py-8" onClick={() => setUbicationMode(false)}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60  px-4 py-8" onClick={() => setUbicationMode(false)}>
       <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-5xl w-full max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -2418,7 +2418,7 @@ const WebRetirosPage = () => {
       {/* CONFIRMATION MODAL FOR DELIVERY */}
       {
         confirmDelivery && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={() => setConfirmDelivery(null)}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60  px-4" onClick={() => setConfirmDelivery(null)}>
             <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
               <h3 className="text-2xl font-black text-slate-800 mb-2 tracking-tight">Confirmar Entrega</h3>
               <p className="text-slate-500 mb-4 font-medium">

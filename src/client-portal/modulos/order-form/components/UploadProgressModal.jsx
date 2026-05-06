@@ -7,28 +7,28 @@ export const UploadProgressModal = ({ isOpen, progress, isError, onRetry }) => {
     const percentage = Math.round((progress.current / progress.total) * 100) || 0;
 
     return createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-            <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full mx-4 border border-zinc-100 relative overflow-hidden">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 animate-in fade-in duration-300">
+            <div className="bg-zinc-900/90 rounded-[3rem] shadow-2xl p-10 max-w-md w-full mx-4 border border-zinc-700/50 relative overflow-hidden">
                 {/* Background Decoration */}
-                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 animate-gradient-x" />
+                <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-500 animate-gradient-x" />
 
-                <div className="flex flex-col items-center text-center gap-6 relative z-10">
+                <div className="flex flex-col items-center text-center gap-8 relative z-10">
                     {isError ? (
-                        <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center text-red-500 mb-2 animate-bounce">
-                            <AlertTriangle size={40} />
+                        <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center text-red-500 mb-2 border border-red-500/20 shadow-lg shadow-red-500/10 animate-bounce">
+                            <AlertTriangle size={48} />
                         </div>
                     ) : (
-                        <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 mb-2 relative">
-                            <UploadCloud size={40} className="animate-pulse" />
-                            <div className="absolute inset-0 rounded-full border-4 border-blue-100 border-t-blue-500 animate-spin" />
+                        <div className="w-24 h-24 bg-cyan-500/10 rounded-full flex items-center justify-center text-cyan-400 mb-2 border border-cyan-500/20 shadow-lg shadow-cyan-500/10 relative">
+                            <UploadCloud size={48} className="animate-pulse" />
+                            <div className="absolute inset-0 rounded-full border-4 border-cyan-500/10 border-t-cyan-400 animate-spin" />
                         </div>
                     )}
 
                     <div>
-                        <h3 className="text-2xl font-black text-zinc-800 tracking-tight mb-2">
-                            {isError ? '¡Ups! Algo falló' : 'Subiendo tus archivos'}
+                        <h3 className="text-2xl font-black text-zinc-100 tracking-widest uppercase mb-3">
+                            {isError ? '¡Ups! Algo falló' : 'Subiendo Pedido'}
                         </h3>
-                        <p className="text-sm text-zinc-500 font-medium">
+                        <p className="text-sm text-zinc-400 font-bold leading-relaxed px-4">
                             {isError
                                 ? 'Hubo un problema al subir uno de los archivos. No te preocupes, puedes reintentar.'
                                 : `Por favor no cierres esta ventana. Estamos enviando ${progress.current} de ${progress.total} archivos a producción.`}
@@ -36,29 +36,31 @@ export const UploadProgressModal = ({ isOpen, progress, isError, onRetry }) => {
                     </div>
 
                     {!isError && (
-                        <div className="w-full space-y-2">
-                            <div className="flex justify-between text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                        <div className="w-full space-y-4">
+                            <div className="flex justify-between text-[10px] font-black text-zinc-500 uppercase tracking-widest">
                                 <span>Progreso Total</span>
-                                <span>{percentage}%</span>
+                                <span className="text-cyan-400">{percentage}%</span>
                             </div>
-                            <div className="h-3 bg-zinc-100 rounded-full overflow-hidden">
+                            <div className="h-4 bg-zinc-800/50 rounded-full overflow-hidden border border-zinc-700/30">
                                 <div
-                                    className="h-full bg-gradient-to-r from-blue-500 to-purple-600 transition-all duration-500 ease-out"
+                                    className="h-full bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 transition-all duration-700 ease-out shadow-[0_0_15px_rgba(6,182,212,0.5)]"
                                     style={{ width: `${percentage}%` }}
                                 />
                             </div>
-                            <p className="text-xs text-zinc-400 truncate mt-2 font-mono bg-zinc-50 py-1 px-2 rounded-lg border border-zinc-100">
-                                {progress.filename || 'Preparando...'}
-                            </p>
+                            <div className="bg-zinc-800/40 py-2 px-4 rounded-xl border border-zinc-700/30 overflow-hidden">
+                                <p className="text-[10px] text-zinc-500 truncate font-mono uppercase tracking-tighter">
+                                    {progress.filename || 'Preparando archivos...'}
+                                </p>
+                            </div>
                         </div>
                     )}
 
                     {isError && (
                         <button
                             onClick={onRetry}
-                            className="mt-2 w-full py-4 bg-zinc-900 hover:bg-black text-white font-black rounded-2xl transition-all shadow-lg hover:shadow-xl active:scale-95 flex items-center justify-center gap-2"
+                            className="mt-2 w-full py-5 bg-zinc-100 hover:bg-white text-zinc-900 font-black rounded-[2rem] transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 uppercase tracking-widest"
                         >
-                            <Zap size={20} />
+                            <Zap size={20} fill="currentColor" />
                             REINTENTAR AHORA
                         </button>
                     )}

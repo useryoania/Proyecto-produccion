@@ -618,7 +618,7 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
 
                     {/* Modal buscador de producto para nueva línea */}
                     {activeProductSearch === 'add' && (
-                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4 ">
                             <div className="bg-white w-full max-w-3xl rounded-xl shadow-2xl flex flex-col max-h-[80vh] overflow-hidden border border-slate-200">
                                 <ProductSearchPanel
                                     onSelect={handlePickProduct}
@@ -656,7 +656,7 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60  p-4">
             <div className="bg-white w-full max-w-7xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
 
                 {/* Header */}
@@ -772,7 +772,7 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
 
                     {/* Modal buscador de producto para nueva línea */}
                     {activeProductSearch === 'add' && (
-                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+                        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4 ">
                             <div className="bg-white w-full max-w-3xl rounded-xl shadow-2xl flex flex-col max-h-[80vh] overflow-hidden border border-slate-200">
                                 <ProductSearchPanel
                                     onSelect={handlePickProduct}

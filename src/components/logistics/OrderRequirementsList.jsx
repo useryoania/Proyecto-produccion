@@ -148,7 +148,7 @@ const OrderRequirementsList = ({ ordenId, areaId, readOnly = false }) => {
 
             {/* RESOURCE SELECTION MODAL */}
             {resourceModalOpen && (
-                <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-black/40  animate-in fade-in duration-200">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-200">
                         <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-100 flex justify-between items-center">
                             <h3 className="font-bold text-indigo-900 text-sm flex items-center gap-2">

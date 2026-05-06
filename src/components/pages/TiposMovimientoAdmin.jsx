@@ -323,7 +323,7 @@ const TiposMovimientoAdmin = () => {
       </div>
 
       {modalOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70  p-4">
             <div className="bg-[#0f1117] border border-slate-700 rounded-3xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden">
               <div className="flex justify-between items-center px-8 py-6 border-b border-slate-800/80 bg-slate-900/50">
                 <div>

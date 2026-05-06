@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FormInput } from './FormInput'; // Asumiendo que existe
 import { GlassCard } from './GlassCard'; // Asumiendo que existe
 import { AlertCircle, Maximize, Repeat, Image as ImageIcon } from 'lucide-react';
+import { CustomSelect } from './CustomSelect';
 
 // TABLA DE ESCALAS SEGÚN REQUERIMIENTO
 const SCALE_TABLE = [
@@ -235,18 +236,19 @@ export const PrintSettingsPanel = ({
 
                                 <div>
                                     <label className="block text-xs font-bold text-zinc-400 mb-1 uppercase">Escala del Diseño</label>
-                                    <select
+                                    <CustomSelect
                                         value={selectedScale}
-                                        onChange={(e) => handleInputChange('scale', e.target.value)}
-                                        className="w-full p-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-200 focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 outline-none font-mono"
-                                    >
-                                        <option value="">Seleccionar Escala...</option>
-                                        {SCALE_TABLE.map(s => (
-                                            <option key={s.scale} value={s.scale}>
-                                                Escala {s.label} ({s.scale}%)
-                                            </option>
-                                        ))}
-                                    </select>
+                                        onChange={(val) => handleInputChange('scale', val)}
+                                        options={[
+                                            ...SCALE_TABLE.map(s => ({
+                                                value: s.scale.toString(),
+                                                label: `Escala ${s.label} (${s.scale}%)`
+                                            }))
+                                        ]}
+                                        placeholder="Seleccionar Escala..."
+                                        variant="dark"
+                                        size="small"
+                                    />
                                 </div>
                                 {/* Reduced Final Width Display instead of Input */}
                                 {selectedScale && (

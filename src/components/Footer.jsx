@@ -79,7 +79,7 @@ export default function Footer() {
       background: isAuthPage ? 'rgba(17, 17, 17, 0.25)' : '#111', 
       borderTop: '1px solid rgba(255,255,255,0.07)', 
       fontFamily: "'Inter', sans-serif",
-      backdropFilter: isAuthPage && !isMobile ? 'blur(8px)' : 'none'
+      backdropFilter: 'none'
     }}>
 
       {/* ── MAIN FOOTER ── */}

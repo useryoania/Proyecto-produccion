@@ -150,7 +150,7 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
 
             {/* MODAL DECISION FINALIZAR */}
             {showFinishModal && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm px-4 animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60  px-4 animate-in fade-in duration-200">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border-t-4 border-blue-500">
                         <div className="p-4 border-b border-slate-100 bg-slate-50">
                             <h3 className="text-lg font-bold text-slate-800 text-center">Finalizar Producción</h3>

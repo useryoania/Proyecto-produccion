@@ -13,7 +13,7 @@ export const PushNotificationBanner = ({ show, onAccept, onDismiss }) => {
                     transition={{ type: 'spring', damping: 25, stiffness: 300 }}
                     className="fixed bottom-6 inset-x-0 mx-auto z-[80] w-[calc(100%-2rem)] max-w-md"
                 >
-                    <div className="bg-zinc-900/95 backdrop-blur-xl border border-zinc-700/60 rounded-2xl shadow-2xl shadow-black/40 p-5 relative overflow-hidden">
+                    <div className="bg-zinc-900/95  border border-zinc-700/60 rounded-2xl shadow-2xl shadow-black/40 p-5 relative overflow-hidden">
                         {/* Glow accent */}
                         <div className="absolute -top-10 -right-10 w-32 h-32 bg-brand-cyan/20 rounded-full blur-3xl pointer-events-none" />
                         <div className="absolute -bottom-8 -left-8 w-24 h-24 bg-brand-magenta/15 rounded-full blur-2xl pointer-events-none" />

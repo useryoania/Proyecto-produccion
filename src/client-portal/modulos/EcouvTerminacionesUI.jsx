@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 import { Plus, Trash2, Loader2 } from 'lucide-react';
 import { apiClient } from '../api/apiClient';
+import { CustomSelect } from '../pautas/CustomSelect';
 // import { toast } from 'react-hot-toast'; // Not used yet
 
 const EcouvTerminacionesUI = ({ serviceInfo, value, onChange }) => {
@@ -59,40 +60,39 @@ const EcouvTerminacionesUI = ({ serviceInfo, value, onChange }) => {
     };
 
     return (
-        <div className="mt-4 p-4 bg-white rounded-xl border border-zinc-200 shadow-sm animate-in slide-in-from-top-2">
-            <h4 className="font-bold text-zinc-800 mb-3 flex items-center gap-2">
-                <i className="fa-solid fa-list-check text-indigo-500"></i> Selección de Materiales Extra
+        <div className="mt-4 p-5 bg-zinc-900/40 rounded-2xl border border-zinc-700/50 animate-in slide-in-from-top-2">
+            <h4 className="text-[10px] uppercase font-black text-zinc-100 mb-4 tracking-widest flex items-center gap-2">
+                <Plus size={14} className="text-cyan-400" /> Selección de Materiales Extra
             </h4>
 
             {loading ? (
-                <div className="flex items-center gap-2 text-zinc-500 text-sm py-4">
-                    <Loader2 className="animate-spin w-4 h-4" /> Cargando materiales...
+                <div className="flex items-center gap-3 text-zinc-500 text-xs py-6 justify-center">
+                    <Loader2 className="animate-spin w-5 h-5 text-cyan-500" /> Cargando materiales...
                 </div>
             ) : availableMaterials.length === 0 ? (
-                <p className="text-zinc-400 text-sm italic">No se encontraron materiales extra disponibles.</p>
+                <p className="text-zinc-500 text-xs italic py-4 text-center">No se encontraron materiales extra disponibles.</p>
             ) : (
-                <div className="flex flex-col md:flex-row gap-3 items-end mb-4 bg-zinc-50 p-3 rounded-lg border border-zinc-100">
+                <div className="flex flex-col md:flex-row gap-3 items-end mb-6 bg-zinc-800/30 p-4 rounded-xl border border-zinc-700/30">
                     <div className="flex-1 w-full">
-                        <label className="block text-xs font-bold text-zinc-500 mb-1 uppercase">Material Extra</label>
-                        <select
-                            className="w-full p-2 border border-zinc-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
+                        <label className="block text-[10px] font-black text-zinc-500 mb-2 uppercase tracking-widest">Material Extra</label>
+                        <CustomSelect
                             value={selectedMaterial}
-                            onChange={(e) => setSelectedMaterial(e.target.value)}
-                        >
-                            <option value="">-- Seleccionar --</option>
-                            {availableMaterials.map(m => (
-                                <option key={m.CodArticulo || m.Material} value={m.Material}>
-                                    {m.Material}
-                                </option>
-                            ))}
-                        </select>
+                            onChange={(val) => setSelectedMaterial(val)}
+                            options={availableMaterials.map(m => ({
+                                value: m.Material,
+                                label: m.Material
+                            }))}
+                            placeholder="-- Seleccionar --"
+                            variant="black"
+                            size="small"
+                        />
                     </div>
-                    <div className="w-24">
-                        <label className="block text-xs font-bold text-zinc-500 mb-1 uppercase">Cant.</label>
+                    <div className="w-full md:w-24">
+                        <label className="block text-[10px] font-black text-zinc-500 mb-2 uppercase tracking-widest">Cant.</label>
                         <input
                             type="number"
                             min="1"
-                            className="w-full p-2 border border-zinc-300 rounded-lg text-sm bg-white text-center focus:ring-2 focus:ring-indigo-500"
+                            className="w-full p-3 border border-zinc-700 rounded-xl text-xs bg-zinc-900/50 text-zinc-200 text-center outline-none focus:border-cyan-500/50 transition-all"
                             value={quantity}
                             onChange={(e) => setQuantity(e.target.value)}
                         />
@@ -101,29 +101,29 @@ const EcouvTerminacionesUI = ({ serviceInfo, value, onChange }) => {
                         type="button"
                         onClick={handleAddItem}
                         disabled={!selectedMaterial}
-                        className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="h-[46px] w-full md:w-[46px] flex items-center justify-center bg-cyan-500 text-zinc-900 rounded-xl hover:bg-cyan-400 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-lg shadow-cyan-500/10"
                         title="Agregar Material"
                     >
-                        <Plus size={20} />
+                        <Plus size={20} strokeWidth={3} />
                     </button>
                 </div>
             )}
 
             {/* List of Added Items */}
             {items.length > 0 && (
-                <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-2 custom-scrollbar">
                     {items.map((item, idx) => (
-                        <div key={item.id || idx} className="flex items-center justify-between p-2 bg-zinc-50 border border-zinc-200 rounded-lg group hover:border-indigo-200 transition-colors">
-                            <div className="flex items-center gap-3">
-                                <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-1 rounded-md min-w-[30px] text-center">
+                        <div key={item.id || idx} className="flex items-center justify-between p-3 bg-zinc-800/40 border border-zinc-700/50 rounded-xl group hover:border-cyan-500/30 transition-all">
+                            <div className="flex items-center gap-4">
+                                <span className="bg-cyan-500/10 text-cyan-400 text-[10px] font-black px-3 py-1 rounded-lg min-w-[36px] text-center border border-cyan-500/20">
                                     {item.cantidad}
                                 </span>
-                                <span className="text-sm font-medium text-zinc-700">{item.material}</span>
+                                <span className="text-xs font-bold text-zinc-300">{item.material}</span>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => handleRemoveItem(item.id)}
-                                className="text-zinc-400 hover:text-red-500 p-1 rounded-md hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                                className="text-zinc-600 hover:text-red-400 p-2 rounded-lg hover:bg-red-400/10 transition-all opacity-100 md:opacity-0 group-hover:opacity-100"
                                 title="Eliminar"
                             >
                                 <Trash2 size={16} />
@@ -134,7 +134,7 @@ const EcouvTerminacionesUI = ({ serviceInfo, value, onChange }) => {
             )}
 
             {items.length === 0 && !loading && availableMaterials.length > 0 && (
-                <p className="text-center text-xs text-zinc-400 py-2">Agregue materiales a la lista si es necesario.</p>
+                <p className="text-center text-[10px] font-bold text-zinc-600 py-2 uppercase tracking-tighter">Agregue materiales a la lista si es necesario.</p>
             )}
         </div>
     );

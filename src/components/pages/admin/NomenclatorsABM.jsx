@@ -232,7 +232,7 @@ const NomenclatorsABM = () => {
 
             {/* Modal */}
             {isModalOpen && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 bg-slate-900/40  z-50 flex items-center justify-center p-4">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                         <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <h3 className="text-xl font-black text-slate-800">

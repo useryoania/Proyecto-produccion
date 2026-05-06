@@ -624,7 +624,7 @@ const FilePrintControl = ({ areaCode }) => {
 
       {/* 1. Action Modal (Falla/Cancel) */}
       {controlAction && (controlAction === 'FALLA' || controlAction === 'CANCELADO') && (
-        <div className="fixed inset-0 z-[1400] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[1400] bg-black/40  flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
             <div className={`px-6 py-4 border-b flex justify-between items-center ${controlAction === 'FALLA' ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-200'}`}>
               <h3 className={`font-black text-lg ${controlAction === 'FALLA' ? 'text-red-600' : 'text-slate-600'}`}>
@@ -693,7 +693,7 @@ const FilePrintControl = ({ areaCode }) => {
 
       {/* 2. Completed Order Modal (Pronto Sector) */}
       {completedOrderData && (
-        <div className="fixed inset-0 z-[1600] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[1600] bg-black/70  flex items-center justify-center p-6 animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border-4 border-emerald-400">
 
             <div className="bg-emerald-500 p-8 flex flex-col items-center justify-center text-white relative overflow-hidden">

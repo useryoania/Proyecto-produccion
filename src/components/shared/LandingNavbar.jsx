@@ -73,7 +73,6 @@ function DropdownRecursosDesktop({ navigate, user }) {
       >
         <div style={{
           background: 'rgba(17,17,17,0.95)',
-          backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255,255,255,0.08)',
           borderRadius: 16,
           padding: 8,
@@ -148,7 +147,6 @@ function DropdownPortalDesktop({ navigate, user, sessionLabel, handleSessionBtn,
       >
         <div style={{
           background: 'rgba(17,17,17,0.95)',
-          backdropFilter: 'blur(16px)',
           border: '1px solid rgba(255,255,255,0.08)',
           borderRadius: 16,
           padding: 8,

@@ -163,7 +163,7 @@ export default function ScannerComponent({ onScan, onClose, scannedCodes = [] })
           )}
           <button
             onClick={onClose}
-            className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm"
+            className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center "
           >
             <X size={20} className="text-white" />
           </button>
@@ -236,7 +236,7 @@ export default function ScannerComponent({ onScan, onClose, scannedCodes = [] })
             )}
 
             {flash === 'dup' && dupCode && (
-              <div className="flex items-center justify-center gap-2 mb-3 bg-orange-500/80 backdrop-blur-sm rounded-xl px-4 py-2">
+              <div className="flex items-center justify-center gap-2 mb-3 bg-orange-500/80  rounded-xl px-4 py-2">
                 <AlertCircle size={15} className="text-white" />
                 <span className="text-white text-sm font-bold">
                   Ya escaneado: <span className="font-mono">{dupCode}</span>

@@ -71,7 +71,7 @@ const PreviewModal = ({ item, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black/80 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/80 ">
       {/* Barra superior */}
       <div className="flex items-center justify-between px-6 py-4 bg-slate-900 border-b border-slate-800 text-white shrink-0 shadow-xl z-10">
         <div>
@@ -346,7 +346,7 @@ export default function ContabilidadColaEstadosView() {
 
         {/* Bulk action bar */}
         <div className={`transition-all duration-300 ease-in-out ${seleccionados.size > 0 ? 'opacity-100 max-h-20 scale-100' : 'opacity-0 max-h-0 scale-95 overflow-hidden'}`}>
-          <div className="bg-indigo-900/40 border border-indigo-500/30 rounded-2xl px-6 py-4 flex items-center justify-between shadow-lg backdrop-blur-sm">
+          <div className="bg-indigo-900/40 border border-indigo-500/30 rounded-2xl px-6 py-4 flex items-center justify-between shadow-lg ">
             <span className="text-sm text-indigo-200 font-bold flex items-center gap-3">
                 <span className="bg-indigo-600 text-white px-3 py-1 rounded-lg shadow-sm text-xs">{seleccionados.size}</span>
                 registros marcados para acción masiva
@@ -398,7 +398,7 @@ export default function ContabilidadColaEstadosView() {
           ) : (
             <div className="overflow-x-auto custom-scrollbar flex-1 bg-slate-900/50">
               <table className="w-full text-left whitespace-nowrap">
-                <thead className="bg-slate-800/80 sticky top-0 z-10 backdrop-blur-md shadow-sm">
+                <thead className="bg-slate-800/80 sticky top-0 z-10  shadow-sm">
                   <tr className="text-[10px] text-slate-400 uppercase tracking-widest font-black">
                     <th className="px-6 py-4 w-12 border-b border-slate-700">
                       <input type="checkbox"

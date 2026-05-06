@@ -695,7 +695,7 @@ const OrderSearchPage = () => {
 
             {/* Modal Detail Order */}
             {selectedOrderDetail && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40  animate-in fade-in duration-200">
                     <div
                         className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
                         onClick={(e) => e.stopPropagation()}
@@ -791,7 +791,7 @@ const OrderSearchPage = () => {
             )}
             {/* Modal de confirmación: órdenes ya exportadas */}
             {reexportConfirm && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50  animate-in fade-in duration-200">
                     <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-in zoom-in-95 duration-200 overflow-hidden">
                         {/* Header */}
                         <div className="flex items-center gap-3 p-5 bg-amber-50 border-b border-amber-200">

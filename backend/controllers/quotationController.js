@@ -63,10 +63,35 @@ exports.getQuotation = async (req, res) => {
     try {
         const pool = await getPool();
 
-        // Cabecera
-        const cabRes = await pool.request()
+        // Búsqueda directa por NoDocERP
+        let cabRes = await pool.request()
             .input('Doc', sql.NVarChar, noDocERP)
             .query(`SELECT * FROM PedidosCobranza WHERE LTRIM(RTRIM(NoDocERP)) = LTRIM(RTRIM(@Doc))`);
+
+        // Fallback 1: strip 'ORD-' prefix (portal orders saved as plain number e.g. '194')
+        if (cabRes.recordset.length === 0) {
+            const stripped = noDocERP.replace(/^ORD-/i, '').trim();
+            if (stripped !== noDocERP) {
+                cabRes = await pool.request()
+                    .input('Doc2', sql.NVarChar, stripped)
+                    .query(`SELECT * FROM PedidosCobranza WHERE LTRIM(RTRIM(NoDocERP)) = LTRIM(RTRIM(@Doc2))`);
+            }
+        }
+
+        // Fallback 2: look up via Ordenes.CodigoOrden → NoDocERP → PedidosCobranza
+        if (cabRes.recordset.length === 0) {
+            const ordRes = await pool.request()
+                .input('Cod', sql.NVarChar, noDocERP)
+                .query(`SELECT TOP 1 NoDocERP FROM Ordenes WITH(NOLOCK)
+                        WHERE LTRIM(RTRIM(CodigoOrden)) = LTRIM(RTRIM(@Cod))
+                           OR LTRIM(RTRIM(CodigoOrden)) LIKE LTRIM(RTRIM(@Cod)) + ' %'`);
+            if (ordRes.recordset.length > 0 && ordRes.recordset[0].NoDocERP) {
+                const realDoc = ordRes.recordset[0].NoDocERP.trim();
+                cabRes = await pool.request()
+                    .input('Doc3', sql.NVarChar, realDoc)
+                    .query(`SELECT * FROM PedidosCobranza WHERE LTRIM(RTRIM(NoDocERP)) = LTRIM(RTRIM(@Doc3))`);
+            }
+        }
 
         if (cabRes.recordset.length === 0) {
             return res.status(404).json({ error: `No se encontró cotización para ${noDocERP}` });

@@ -35,7 +35,7 @@ const CreateItemModal = ({ isOpen, onClose, initialName, onSuccess }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-[1500] flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-slate-900/40 -[2px] z-[1500] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
                 {/* Header */}
                 <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">

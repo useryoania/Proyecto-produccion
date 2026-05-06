@@ -93,7 +93,7 @@ const ConfigInsumosModal = ({ isOpen, onClose, areaCode, insumos }) => {
     const filteredCrud = allInsumos.filter(i => i.Nombre?.toLowerCase().includes(crudSearch.toLowerCase()));
 
     return (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 bg-slate-900/60  z-[1100] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className={`bg-white rounded-xl shadow-2xl w-full ${activeTab === 'manage' ? 'max-w-4xl' : 'max-w-md'} flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 max-h-[85vh] transition-all`}>
 
                 {/* Header */}

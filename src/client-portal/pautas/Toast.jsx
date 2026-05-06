@@ -35,7 +35,7 @@ export const ToastProvider = ({ children }) => {
                             animate={{ opacity: 1, x: 0 }}
                             exit={{ opacity: 0, x: 20 }}
                             className={`
-                flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg border backdrop-blur-md
+                flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg border
                 ${toast.type === 'success'
                                     ? 'bg-green-50/90 text-green-800 border-green-200'
                                     : 'bg-red-50/90 text-red-800 border-red-200'}

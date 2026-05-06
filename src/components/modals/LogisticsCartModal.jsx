@@ -70,7 +70,7 @@ const LogisticsCartModal = ({ isOpen, onClose, areaName, areaCode, onSuccess }) 
     const labelClass = "block mb-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide";
 
     return (
-        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-900/60  p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
 
                 {/* HEADER ÍNDIGO */}

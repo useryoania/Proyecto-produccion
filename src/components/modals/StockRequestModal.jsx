@@ -104,7 +104,7 @@ const StockRequestModal = ({ isOpen, onClose, areaName, areaCode }) => {
     const tabBtnClass = (active) => `px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${active ? 'text-orange-600 border-orange-600 bg-orange-50/50' : 'text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-50'}`;
 
     return (
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-900/60  p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
 
                 {/* HEADER AMARILLO/NARANJA */}

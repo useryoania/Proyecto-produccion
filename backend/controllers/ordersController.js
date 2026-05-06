@@ -46,6 +46,9 @@ exports.getOrdersByArea = async (req, res) => {
         if (area && area.toLowerCase().startsWith('planilla-')) {
             area = area.replace('planilla-', '').toUpperCase();
         }
+        // Normalizar a mayúsculas para que 'df' encuentre AreaID='DF' en la DB
+        if (area) area = area.toUpperCase();
+        
         if (area === 'SUBLIMACION') area = 'SUB';
         if (area === 'BORDADO') area = 'BORD';
 

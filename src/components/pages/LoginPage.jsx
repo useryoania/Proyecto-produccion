@@ -494,7 +494,6 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
                                 background: 'linear-gradient(90deg, rgba(0,174,239,0.1) 0%, rgba(0,174,239,0.2) 100%)',
                                 borderColor: 'rgba(0,174,239,0.4)',
                                 color: '#00AEEF',
-                                backdropFilter: 'blur(4px)',
                             }}
                             onMouseEnter={(e) => {
                                 e.currentTarget.style.background = 'linear-gradient(90deg, rgba(0,174,239,0.15) 0%, rgba(0,174,239,0.3) 100%)';

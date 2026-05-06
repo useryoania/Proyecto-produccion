@@ -82,7 +82,7 @@ const BobinaAssignmentModal = ({ isOpen, onClose, onSelect, currentMetros, areaC
     };
 
     return (
-        <div className="fixed inset-0 z-[1600] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[1600] flex items-center justify-center bg-black/50  p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[80vh]">
                 <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -191,7 +191,7 @@ const SwapConfigDialog = ({ isOpen, onClose, onConfirm, bobinaId }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-[1700] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[1700] flex items-center justify-center bg-black/60  p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95">
                 <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -692,7 +692,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
 
     return (
         <>
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1400] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
+            <div className="fixed inset-0 bg-slate-900/60  z-[1400] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
                 <div
                     ref={modalRef}
                     className="bg-white rounded-xl shadow-2xl w-full max-w-[95vw] h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
@@ -926,7 +926,8 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                             </button>
                         )}
 
-                        {selectedOrderIds.length > 0 && (
+                        {/* Botón de medición oculto temporalmente */}
+                        {false && selectedOrderIds.length > 0 && (
                             <button
                                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-md shadow-indigo-500/20 active:scale-95 animate-in fade-in"
                                 onClick={handleServerProcess}

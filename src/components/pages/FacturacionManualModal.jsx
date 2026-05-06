@@ -123,7 +123,7 @@ export default function FacturacionManualModal({ onClose, onSuccess }) {
   const formatMoney = (val) => new Intl.NumberFormat('es-UY', { minimumFractionDigits: 2 }).format(val);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50  animate-in fade-in">
       <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full overflow-hidden flex flex-col h-[85vh]">
         
         {/* Header */}

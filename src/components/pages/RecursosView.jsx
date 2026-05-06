@@ -128,7 +128,7 @@ const ModalNuevoPlan = ({ cuenta, CliIdCliente, onClose, onSuccess }) => {
   const unit = cuenta.CueTipo;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 "
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[92vh] overflow-y-auto">
 
@@ -285,7 +285,7 @@ const ModalRecarga = ({ plan, onClose, onSuccess }) => {
   const libre = (plan.PlaCantidadTotal - plan.PlaCantidadUsada) || 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 "
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         <div className="px-6 py-4 flex items-center justify-between bg-gradient-to-r from-blue-500 to-cyan-500 text-white">
@@ -489,7 +489,7 @@ const HistorialPanel = ({ plan, onClose }) => {
   }, [plan.CueIdCuenta]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 "
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden max-h-[85vh] flex flex-col">
         <div className="px-6 py-4 flex items-center justify-between bg-gradient-to-r from-slate-700 to-slate-800 text-white">
@@ -599,7 +599,7 @@ const ModalNuevaCuenta = ({ CliIdCliente, onClose, onSuccess }) => {
   const grupoObj = grupos.find(g => g.CodigoERP === grupSel);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 "
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
 

@@ -145,21 +145,34 @@ export default function ConfigPage({ onBack }) {
         setIsPedidoModalOpen(true);
     };
 
-    const ConfigCard = ({ title, subtitle, icon, colorClass, onClick, loading }) => (
+    const ConfigCard = ({ title, subtitle, icon, colorClass, brandCyan, onClick, loading }) => (
         <div
             onClick={onClick}
-            className="group relative bg-white rounded-2xl p-6 border border-slate-100 shadow-xl shadow-slate-200/50 hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 cursor-pointer overflow-hidden"
+            className={`group relative rounded-2xl p-6 border shadow-xl hover:-translate-y-1 hover:shadow-2xl transition-all duration-300 cursor-pointer overflow-hidden ${
+                brandCyan
+                    ? 'bg-brand-cyan border-brand-cyan/30 shadow-brand-cyan/20 hover:shadow-brand-cyan/30'
+                    : 'bg-white border-slate-100 shadow-slate-200/50'
+            }`}
         >
-            <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${colorClass} opacity-10 rounded-bl-full group-hover:scale-150 transition-transform duration-500`}></div>
+            {!brandCyan && <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${colorClass} opacity-10 rounded-bl-full group-hover:scale-150 transition-transform duration-500`}></div>}
+            {brandCyan && <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-bl-full group-hover:scale-150 transition-transform duration-500"></div>}
             <div className="relative z-10 flex items-start justify-between">
                 <div>
-                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${colorClass} text-white flex items-center justify-center text-xl mb-4 shadow-lg`}>
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl mb-4 shadow-lg ${
+                        brandCyan
+                            ? 'bg-zinc-900/20 text-zinc-900'
+                            : `bg-gradient-to-br ${colorClass} text-white`
+                    }`}>
                         {loading ? <i className="fa-solid fa-circle-notch fa-spin"></i> : <i className={`fa-solid ${icon}`}></i>}
                     </div>
-                    <h3 className="text-xl font-black text-slate-800 mb-1">{title}</h3>
-                    <p className="text-sm font-medium text-slate-400">{subtitle}</p>
+                    <h3 className={`text-xl font-black mb-1 ${brandCyan ? 'text-zinc-900' : 'text-slate-800'}`}>{title}</h3>
+                    <p className={`text-sm font-medium ${brandCyan ? 'text-zinc-800/70' : 'text-slate-400'}`}>{subtitle}</p>
                 </div>
-                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-slate-100 group-hover:text-slate-600 transition-colors">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${
+                    brandCyan
+                        ? 'bg-zinc-900/10 text-zinc-900/50 group-hover:bg-zinc-900/20 group-hover:text-zinc-900'
+                        : 'bg-slate-50 text-slate-300 group-hover:bg-slate-100 group-hover:text-slate-600'
+                }`}>
                     <i className="fa-solid fa-chevron-right"></i>
                 </div>
             </div>
@@ -238,7 +251,7 @@ export default function ConfigPage({ onBack }) {
                             title="Sincronizar ERP"
                             subtitle="Importar órdenes pendientes"
                             icon="fa-cloud-arrow-down"
-                            colorClass="from-cyan-500 to-blue-600"
+                            brandCyan
                             onClick={handleImportERP}
                             loading={importingERP}
                         />
@@ -329,7 +342,7 @@ const ImportLogModal = ({ isOpen, onClose, logs, isImporting, onViewPedido }) =>
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/70  p-4">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200">
                 <div className="bg-slate-50 px-8 py-6 border-b border-slate-100 flex justify-between items-center">
                     <div>

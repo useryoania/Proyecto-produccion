@@ -440,7 +440,7 @@ export const TotemDashboard = ({ onLogout }) => {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -20, scale: 0.97 }}
                         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-                        className="bg-white/[0.06] backdrop-blur-xl border border-white/10 rounded-3xl p-7 w-full max-w-[520px] shadow-2xl"
+                        className="bg-white/[0.06] border border-white/10 rounded-3xl p-7 w-full max-w-[520px] shadow-2xl"
                     >
                         <div className="text-center mb-6">
                             <Logo className="h-16 w-auto text-white mx-auto mb-3" />
@@ -498,7 +498,7 @@ export const TotemDashboard = ({ onLogout }) => {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -20, scale: 0.97 }}
                         transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-                        className="bg-white/[0.06] backdrop-blur-xl border border-white/10 rounded-3xl p-7 w-full max-w-[520px] shadow-2xl"
+                        className="bg-white/[0.06] border border-white/10 rounded-3xl p-7 w-full max-w-[520px] shadow-2xl"
                     >
                         <div className="text-center mb-6">
                             <h2 className="text-xl font-bold text-white uppercase">Ingresá tu número de orden</h2>

@@ -129,7 +129,7 @@ export default function OrderForm() {
                 </GlassCard>
 
                 {/* Footer Actions */}
-                <div className="fixed bottom-0 left-0 w-full bg-white/80 backdrop-blur-md border-t border-zinc-200 p-4 flex justify-end gap-4 z-50">
+                <div className="fixed bottom-0 left-0 w-full bg-white/80  border-t border-zinc-200 p-4 flex justify-end gap-4 z-50">
                     <button
                         type="submit"
                         disabled={isUploading}

@@ -700,7 +700,7 @@ const PlaneacionTrabajo = ({ AreaID }) => {
 
             {
                 isMachineModal && (
-                    <div className="fixed inset-0 z-[1400] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="fixed inset-0 z-[1400] flex items-center justify-center bg-slate-900/60  p-4 animate-in fade-in duration-200">
                         <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border-t-4 border-indigo-500">
                             <div className="px-6 py-4 bg-indigo-50 border-b border-indigo-100 flex justify-between items-center">
                                 <h3 className="text-lg font-bold text-indigo-800">
@@ -756,7 +756,7 @@ const PlaneacionTrabajo = ({ AreaID }) => {
 
             {/* MODAL CONFLICTO MAGIC SORT (Lotes Existentes) */}
             {magicSortConflict && (
-                <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-slate-900/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-slate-900/80  p-4 animate-in fade-in duration-200">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 border-t-4 border-amber-500">
                         <div className="px-6 py-4 bg-amber-50 border-b border-amber-100 flex justify-between items-center">
                             <h3 className="text-lg font-bold text-amber-800 flex items-center gap-2">

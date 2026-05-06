@@ -365,7 +365,7 @@ const DepositStockPage = () => {
     return (
         <div className="min-h-screen bg-[#f8fafc] p-0 font-sans">
             {/* NAVIGATION-FIRST HEADER */}
-            <div className="sticky top-0 z-[30] bg-white/95 backdrop-blur-2xl border-b border-slate-200 shadow-sm px-10 py-4">
+            <div className="sticky top-0 z-[30] bg-white/95  border-b border-slate-200 shadow-sm px-10 py-4">
                 <div className="max-w-[1800px] mx-auto flex items-center gap-10">
                     {/* FAR LEFT: BACK BUTTON */}
                     <div className="w-14 min-w-[56px]">
@@ -662,7 +662,7 @@ const DepositStockPage = () => {
 
             {/* MODAL AUDITORÍA JSON (JHONS) */}
             {showAuditModal && (
-                <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-300">
+                <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-900/40  animate-in fade-in duration-300">
                     <div className="bg-white rounded-[2.5rem] shadow-2xl max-w-2xl w-full overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className={`p-8 border-b border-slate-100 flex justify-between items-center ${auditData.type === 'success' ? 'bg-emerald-50/50' : (auditData.type === 'error' ? 'bg-rose-50/50' : 'bg-slate-50/50')}`}>
                             <div className="flex items-center gap-4">
@@ -705,7 +705,7 @@ const DepositStockPage = () => {
 
             {/* MODAL DETALLE TÉCNICO */}
             {showDetail && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-300">
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/80  animate-in fade-in duration-300">
                     <div className="bg-white rounded-[3rem] shadow-2xl max-w-3xl w-full overflow-hidden animate-in zoom-in-95 duration-500">
                         <div className="p-10 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <div className="flex items-center gap-6">

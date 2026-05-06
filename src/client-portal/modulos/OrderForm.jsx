@@ -21,7 +21,7 @@ import { CustomButton } from '../pautas/CustomButton';
 import { FormInput } from '../pautas/FormInput';
 import { PrintSettingsPanel } from '../pautas/PrintSettingsPanel';
 
-// Refactored Components
+import { CustomSelect } from '../pautas/CustomSelect';
 import ErrorModal from './order-form/components/ErrorModal';
 import UploadProgressModal from './order-form/components/UploadProgressModal';
 import FileUploadZone from './order-form/components/FileUploadZone';
@@ -780,12 +780,14 @@ const OrderForm = ({ serviceId: propServiceId }) => {
         <div className="animate-fade-in pb-20">
             {specificConfig && (specificConfig.description || specificConfig.image) && (
                 <div className="mb-8 animate-fade-in-down">
-                    <GlassCard className="border-l-4 border-l-amber-500 overflow-hidden !p-0">
+                    <GlassCard className="border-l-4 border-l-brand-gold overflow-hidden !p-0">
                         <div className="flex flex-col md:flex-row">
-                            {specificConfig.image && <div className="w-full md:w-1/3 min-h-[200px] md:min-h-0 bg-zinc-100 relative"><img src={specificConfig.image} alt="Info" className="absolute inset-0 w-full h-full object-cover" /></div>}
-                            <div className="flex-1 p-6">
-                                <h3 className="text-xl font-bold text-amber-600 mb-3"><i className="fa-solid fa-circle-info"></i> Información Importante</h3>
-                                {specificConfig.description && <div className="prose prose-sm text-zinc-600 whitespace-pre-wrap">{specificConfig.description}</div>}
+                            {specificConfig.image && <div className="w-full md:w-1/3 min-h-[200px] md:min-h-0 bg-zinc-800/40 relative"><img src={specificConfig.image} alt="Info" className="absolute inset-0 w-full h-full object-cover opacity-80" /></div>}
+                            <div className="flex-1 p-8">
+                                <h3 className="text-xl font-black text-brand-gold mb-3 uppercase tracking-widest flex items-center gap-2">
+                                    <AlertTriangle className="text-brand-gold" size={20} /> Información Importante
+                                </h3>
+                                {specificConfig.description && <div className="prose prose-invert prose-sm text-zinc-400 font-bold leading-relaxed whitespace-pre-wrap">{specificConfig.description}</div>}
                             </div>
                         </div>
                     </GlassCard>
@@ -795,8 +797,8 @@ const OrderForm = ({ serviceId: propServiceId }) => {
             <div className="flex items-center gap-4 mb-6">
                 <CustomButton variant="ghost" onClick={() => navigate('/portal')} icon={ArrowLeft} className="text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800">Volver</CustomButton>
                 <div>
-                    <h2 className="text-2xl font-bold text-zinc-100 flex items-center gap-2">Nuevo Pedido: <span className="text-cyan-400">{serviceInfo?.label}</span></h2>
-                    <p className="text-sm text-zinc-500">{serviceInfo?.desc}</p>
+                    <h2 className="text-2xl font-black text-zinc-100 flex items-center gap-2 uppercase tracking-widest">Nuevo Pedido: <span className="text-cyan-400">{serviceInfo?.label}</span></h2>
+                    <p className="text-sm text-zinc-500 font-bold tracking-tight">{serviceInfo?.desc}</p>
                 </div>
             </div>
 
@@ -853,14 +855,16 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                         <div className="space-y-8">
                             {/* Material Selectors for Main Service */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-custom-dark rounded-2xl border border-zinc-700/50">
-                                {/* Variant Selector - Hidden for Bordado as it has its own UI */}
                                 {config.variantMode === 'select' && serviceId !== 'bordado' && serviceId !== 'EMB' && (
                                     <div>
                                         <label className="block text-xs font-bold uppercase text-zinc-400 mb-2">Variante / Sub-Categoría *</label>
-                                        <select className="w-full p-3 border border-zinc-600 rounded-xl bg-brand-dark text-zinc-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 outline-none transition-all" value={serviceSubType} onChange={(e) => actions.handleSubTypeChange(e.target.value)}>
-                                            <option value="" disabled>Seleccionar...</option>
-                                            {(uniqueVariants.length > 0 ? uniqueVariants : (serviceInfo?.subtypes || [])).map(t => <option key={t} value={t}>{t}</option>)}
-                                        </select>
+                                        <CustomSelect
+                                            value={serviceSubType}
+                                            onChange={(val) => actions.handleSubTypeChange(val)}
+                                            options={(uniqueVariants.length > 0 ? uniqueVariants : (serviceInfo?.subtypes || [])).map(t => ({ value: t, label: t }))}
+                                            placeholder="Seleccionar..."
+                                            variant="black"
+                                        />
                                     </div>
                                 )}
 
@@ -868,23 +872,30 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                 {config.materialMode === 'single' && serviceId !== 'bordado' && serviceId !== 'EMB' && (
                                     <div>
                                         <label className="block text-xs font-bold uppercase text-zinc-400 mb-2">{serviceInfo?.config?.materialLabel || 'Material / Soporte'} *</label>
-                                        <select className="w-full p-3 border border-zinc-600 rounded-xl bg-brand-dark text-zinc-200 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 outline-none transition-all" value={globalMaterial} onChange={(e) => actions.setGlobalMaterial(e.target.value)}>
-                                            <option value="" disabled>Seleccionar Material...</option>
-                                            {(dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || [])).map(m => {
+                                        <CustomSelect
+                                            value={globalMaterial}
+                                            onChange={(val) => actions.setGlobalMaterial(val)}
+                                            options={(dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || [])).map(m => {
                                                 const val = m.Material || m.Descripcion || m;
-                                                return <option key={val} value={val}>{val}</option>;
+                                                return { value: val, label: val };
                                             })}
-                                        </select>
+                                            placeholder="Seleccionar Material..."
+                                            variant="black"
+                                        />
                                     </div>
                                 )}
 
                                 {isTpuEtiquetaOficial && (
                                     <div className="md:col-span-2 mt-2 animate-in slide-in-from-top-2 p-3 bg-amber-50 rounded-xl border border-amber-200">
                                         <label className="block text-xs font-bold uppercase text-amber-800 mb-2">Forma de Etiqueta *</label>
-                                        <select className="w-full p-2 border border-amber-200 rounded-lg bg-white text-sm font-bold text-amber-900" value={tpuForma || ''} onChange={(e) => actions.setTpuForma(e.target.value)}>
-                                            <option value="" disabled>Seleccionar Forma...</option>
-                                            {['Ovalado', 'Rectangular', 'Redondo', 'Cuadrado Redondeado', 'Triangulo Redondeado', 'Hexagonal'].map(f => <option key={f} value={f}>{f}</option>)}
-                                        </select>
+                                        <CustomSelect
+                                            value={tpuForma || ''}
+                                            onChange={(val) => actions.setTpuForma(val)}
+                                            options={['Ovalado', 'Rectangular', 'Redondo', 'Cuadrado Redondeado', 'Triangulo Redondeado', 'Hexagonal'].map(f => ({ value: f, label: f }))}
+                                            placeholder="Seleccionar Forma..."
+                                            variant="light"
+                                            size="small"
+                                        />
                                     </div>
                                 )}
                             </div>
@@ -960,10 +971,18 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                                 {config.materialMode === 'multiple' && (
                                                     <div className="mb-4 px-1">
                                                         <label className="block text-[9px] uppercase font-black text-zinc-400 mb-1">Material (Específico)</label>
-                                                        <select className="w-full text-xs p-2 border border-zinc-200 rounded-lg bg-zinc-50" value={item.material} onChange={(e) => actions.updateItem(item.id, 'material', e.target.value)} disabled={uniqueVariants.length > 0 && dynamicMaterials.length === 0}>
-                                                            <option value="" disabled>Heredar Global...</option>
-                                                            {(uniqueVariants.length > 0 ? dynamicMaterials : (serviceInfo?.materials || [])).map(m => <option key={m.Material || m} value={m.Material || m}>{m.Material || m}</option>)}
-                                                        </select>
+                                                        <CustomSelect
+                                                            value={item.material}
+                                                            onChange={(val) => actions.updateItem(item.id, 'material', val)}
+                                                            options={(uniqueVariants.length > 0 ? dynamicMaterials : (serviceInfo?.materials || [])).map(m => {
+                                                                const val = m.Material || m;
+                                                                return { value: val, label: val };
+                                                            })}
+                                                            placeholder="Heredar Global..."
+                                                            variant="black"
+                                                            size="small"
+                                                            disabled={uniqueVariants.length > 0 && dynamicMaterials.length === 0}
+                                                        />
                                                     </div>
                                                 )}
 
@@ -1076,11 +1095,14 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                             />
                             {/* Documentation Moved to Corte */}
                             {(config.templateButtons || pedidoExcelFile || bocetoFile) && (
-                                <div className="mt-6 pt-6 border-t border-zinc-100">
-                                    <h4 className="text-xs font-black uppercase text-zinc-400 mb-4">Documentación de Corte/Confección</h4>
+                                <div className="mt-6 pt-6 border-t border-zinc-700/50">
+                                    <h4 className="text-[10px] font-black uppercase text-zinc-500 mb-4 tracking-widest">Documentación de Corte/Confección</h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {config.templateButtons?.map(btn => (
-                                            <a key={btn.label} href={btn.url} download className="flex items-center justify-between bg-zinc-50 p-3 rounded-xl border border-zinc-100 hover:border-black transition-colors"><span className="text-[10px] font-black uppercase">{btn.label}</span><Download size={16} /></a>
+                                            <a key={btn.label} href={btn.url} download className="flex items-center justify-between bg-zinc-800/40 p-4 rounded-xl border border-zinc-700/50 hover:border-cyan-500/50 hover:bg-zinc-800/60 transition-all group">
+                                                <span className="text-[10px] font-black uppercase text-zinc-300 group-hover:text-cyan-400 transition-colors">{btn.label}</span>
+                                                <Download size={16} className="text-zinc-500 group-hover:text-cyan-400 transition-colors" />
+                                            </a>
                                         ))}
                                         <FileUploadZone id="pedido-upload-corte" label="EXCEL DETALLE" selectedFile={pedidoExcelFile} onFileSelected={(f) => handleSpecializedFileUpload(actions.setPedidoExcelFile, f)} color="emerald" compact={true} />
                                         <FileUploadZone id="boceto-upload-corte" label="MOCKUP / CROQUIS" selectedFile={bocetoFile} onFileSelected={(f) => handleSpecializedFileUpload(actions.setBocetoFile, f)} color="blue" compact={true} />
@@ -1136,10 +1158,10 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                             <div className="space-y-4">
                                 {opt.hasFile && opt.id !== 'EMB' && opt.id !== 'EST' && (
                                     <div>
-                                        <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Cargar Croquis / Archivo</label>
-                                        <div className="flex items-center gap-2 bg-white border border-zinc-200 rounded-lg p-2">
-                                            <UploadCloud size={16} />
-                                            <input type="file" className="text-xs w-full" onChange={(e) => handleSpecializedFileUpload((res) => actions.updateComplementaryFile(opt.id, res), e.target.files[0])} />
+                                        <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2 tracking-widest">Cargar Croquis / Archivo</label>
+                                        <div className="flex items-center gap-2 bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-3 text-zinc-300">
+                                            <UploadCloud size={16} className="text-zinc-500" />
+                                            <input type="file" className="text-xs w-full file:bg-zinc-700 file:text-zinc-300 file:border-none file:rounded-md file:px-2 file:py-1 file:mr-2 file:cursor-pointer" onChange={(e) => handleSpecializedFileUpload((res) => actions.updateComplementaryFile(opt.id, res), e.target.files[0])} />
                                         </div>
                                     </div>
                                 )}
@@ -1149,16 +1171,21 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                     <div className={`grid grid-cols-1 ${opt.fullWidth ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-2'} gap-4`}>
                                         {opt.fields.map((f) => (
                                             <div key={f.name} className={f.type === 'text' ? 'md:col-span-2' : ''}>
-                                                <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">{f.label}</label>
+                                                <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2 tracking-widest">{f.label}</label>
                                                 {f.type === 'select' ? (
-                                                    <select className="w-full p-2 text-xs border border-zinc-200 rounded-lg bg-white" value={selectedComplementary[opt.id]?.fields?.[f.name] || ''} onChange={(e) => actions.updateComplementaryField(opt.id, f.name, e.target.value)}>
-                                                        {f.options.map(o => <option key={o} value={o}>{o}</option>)}
-                                                    </select>
+                                                    <CustomSelect
+                                                        value={selectedComplementary[opt.id]?.fields?.[f.name] || ''}
+                                                        onChange={(val) => actions.updateComplementaryField(opt.id, f.name, val)}
+                                                        options={f.options.map(o => ({ value: o, label: o }))}
+                                                        placeholder="Seleccionar..."
+                                                        variant="black"
+                                                        size="small"
+                                                    />
                                                 ) : (
                                                     <input
                                                         type={f.type || 'text'}
                                                         placeholder={f.placeholder}
-                                                        className="w-full p-2 text-xs border border-zinc-200 rounded-lg bg-white"
+                                                        className="w-full p-3 text-xs border border-zinc-700/50 rounded-xl bg-zinc-800/50 text-zinc-200 outline-none focus:ring-1 focus:ring-cyan-500/50 transition-all placeholder:text-zinc-600"
                                                         value={selectedComplementary[opt.id]?.fields?.[f.name] || ''}
                                                         onChange={(e) => actions.updateComplementaryField(opt.id, f.name, e.target.value)}
                                                     />
@@ -1234,18 +1261,47 @@ const OrderForm = ({ serviceId: propServiceId }) => {
             <ErrorModal isOpen={errorModalOpen} onClose={() => actions.setErrorModalOpen(false)} message={errorModalMessage} />
 
             {showSuccessModal && createPortal(
-                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-white rounded-[40px] shadow-2xl max-w-md w-full p-10 text-center animate-in zoom-in slide-in-from-bottom-10">
-                        <div className="w-24 h-24 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-8"><CheckCircle className="w-14 h-14 text-emerald-500" /></div>
-                        <h2 className="text-4xl font-black text-zinc-900 mb-3">¡Genial!</h2>
-                        <p className="text-zinc-500 mb-10 font-medium">Pedido recibido y sincronizado.</p>
-                        <div className="bg-zinc-50 rounded-3xl p-6 mb-10 border border-zinc-100">
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-400 font-black mb-4">Órdenes Generadas</p>
-                            <div className="flex flex-wrap justify-center gap-2">{createdOrderIds.map(id => <span key={id} className="bg-white border border-zinc-200 rounded-2xl py-3 px-6 font-bold shadow-sm text-zinc-900">{id}</span>)}</div>
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-zinc-900 border border-zinc-700/60 rounded-3xl shadow-2xl shadow-black/60 max-w-md w-full p-10 text-center animate-in zoom-in-95 slide-in-from-bottom-4 duration-300">
+
+                        {/* Icono con halo cyan */}
+                        <div className="relative w-24 h-24 mx-auto mb-8">
+                            <div className="absolute inset-0 rounded-full bg-cyan-400/10 border border-cyan-500/30 animate-pulse" />
+                            <div className="absolute inset-2 rounded-full bg-cyan-400/5 flex items-center justify-center">
+                                <CheckCircle className="w-12 h-12 text-cyan-400 drop-shadow-[0_0_12px_rgba(34,211,238,0.5)]" />
+                            </div>
                         </div>
-                        <div className="flex flex-col gap-4">
-                            <CustomButton variant="primary" className="w-full py-5 rounded-2xl font-bold text-lg" onClick={() => navigate('/portal/factory')}>Ver mis pedidos</CustomButton>
-                            <button onClick={() => window.location.reload()} className="text-zinc-400 text-sm font-bold uppercase tracking-widest">+ Crear Otro</button>
+
+                        <h2 className="text-4xl font-black text-zinc-50 tracking-tighter mb-2">¡Genial!</h2>
+                        <p className="text-zinc-400 font-medium mb-8 text-sm uppercase tracking-widest">Pedido recibido y sincronizado</p>
+
+                        {/* Órdenes generadas */}
+                        <div className="bg-zinc-800/60 border border-zinc-700/50 rounded-2xl p-5 mb-8">
+                            <p className="text-[10px] uppercase tracking-[0.25em] text-zinc-500 font-black mb-4">Órdenes Generadas</p>
+                            <div className="flex flex-wrap justify-center gap-2">
+                                {createdOrderIds.map(id => (
+                                    <span key={id} className="bg-zinc-900 border border-cyan-500/30 text-cyan-300 rounded-xl py-2.5 px-5 font-mono font-bold text-sm shadow-inner shadow-cyan-500/5">
+                                        {id}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Acciones */}
+                        <div className="flex flex-col gap-3">
+                            <CustomButton
+                                variant="primary"
+                                className="w-full py-4 rounded-2xl font-black text-base !bg-cyan-400 !text-zinc-900 hover:!bg-cyan-300 shadow-lg shadow-cyan-500/20"
+                                onClick={() => navigate('/portal/factory')}
+                            >
+                                Ver mis pedidos
+                            </CustomButton>
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="text-zinc-500 hover:text-cyan-400 text-xs font-bold uppercase tracking-[0.2em] transition-colors py-2"
+                            >
+                                + Crear otro pedido
+                            </button>
                         </div>
                     </div>
                 </div>,

@@ -414,7 +414,7 @@ export default function ImportadorManualView({ isModal = false, onClose = null, 
 
             {/* MODAL DE DETALLE ANALÍTICO DE PRECIOS */}
             {isModalOpen && selectedRowContext && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40  animate-fade-in">
                     <div className="bg-white w-full max-w-lg rounded-xl overflow-hidden shadow-2xl transform transition-all">
                         <div className="px-6 py-4 flex justify-between items-center border-b bg-slate-50">
                             <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">

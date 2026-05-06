@@ -4,7 +4,7 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirm
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/50  p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border-t-4 border-slate-500">
                 <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
                     <h3 className="text-lg font-bold text-slate-800">

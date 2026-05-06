@@ -102,7 +102,7 @@ const FileControlCard = ({ file, refreshOrder, onAction }) => {
                         </div>
                     )}
                     {/* Badge Copies on Thumb */}
-                    <div className="absolute top-0 right-0 bg-slate-900/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl-lg backdrop-blur-[2px]">
+                    <div className="absolute top-0 right-0 bg-slate-900/80 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-bl-lg -[2px]">
                         x{totalCopies}
                     </div>
                 </a>

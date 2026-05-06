@@ -152,11 +152,11 @@ export default function CajaVentaDirectaTab({
   }, [clienteSel, items, tipoDocumento, obs, pagos, cotizacion, monedaExhibicion, onConfirmarExt]);
 
   return (
-    <div className="flex flex-1 overflow-hidden bg-[#f1f5f9]">
+    <div className="flex flex-1 overflow-hidden bg-zinc-50">
       <div className="flex-1 flex flex-col min-h-0 h-full">
         {/* BILLETERA DE CLIENTE STICKY */}
         {clienteSel && (
-          <div className="px-5 py-1 border-b border-slate-200 bg-white/80 backdrop-blur-md sticky top-0 z-20 shrink-0 shadow-sm">
+          <div className="px-5 py-1 border-b border-zinc-200 bg-white/80  sticky top-0 z-20 shrink-0 shadow-sm">
             <ClienteBilletera 
               clienteId={clienteSel.CliIdCliente} 
               clienteNombre={clienteSel.Nombre} 
@@ -165,60 +165,60 @@ export default function CajaVentaDirectaTab({
         )}
 
         <div className="flex-1 p-6 overflow-y-auto">
-          <h2 className="text-2xl font-black text-slate-800 mb-8 flex items-center gap-3">
+          <h2 className="text-2xl font-black text-zinc-800 mb-8 flex items-center gap-3">
             Nuevo Ingreso / Venta de Rollo por Adelantado
-            <span className="text-[10px] bg-indigo-100 text-indigo-600 px-3 py-1 rounded-full font-black uppercase tracking-widest border border-indigo-200">POS Express</span>
+            <span className="text-[10px] bg-brand-cyan/20 text-brand-cyan px-3 py-1 rounded-full font-black uppercase tracking-widest border border-brand-cyan/30">POS Express</span>
           </h2>
 
         <div className="flex flex-col gap-8 max-w-5xl">
 
           {/* BLOQUE CLIENTE */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-8 shadow-[0_10px_40px_rgba(0,0,0,0.04)] relative group/cli transition-all hover:shadow-[0_15px_50px_rgba(0,0,0,0.06)]">
-            <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500 rounded-l-3xl opacity-20 group-hover/cli:opacity-100 transition-opacity"></div>
-            <h3 className="font-black text-slate-400 text-[11px] uppercase tracking-widest mb-6 flex items-center justify-between">
+          <div className="bg-white border border-zinc-200 rounded-3xl p-8 shadow-[0_10px_40px_rgba(0,0,0,0.04)] relative group/cli transition-all hover:shadow-[0_15px_50px_rgba(0,0,0,0.06)]">
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-brand-cyan rounded-l-3xl opacity-20 group-hover/cli:opacity-100 transition-opacity"></div>
+            <h3 className="font-black text-zinc-400 text-[11px] uppercase tracking-widest mb-6 flex items-center justify-between">
               1. Seleccionar Cliente
               {clienteSel && <span className="text-emerald-600 flex items-center gap-1.5 font-bold bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Cliente Verificado <CheckCircle size={12}/></span>}
             </h3>
             
             {!clienteSel ? (
               <div className="relative">
-                <div className="flex items-center bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-2 focus-within:border-indigo-500 focus-within:bg-white focus-within:ring-8 focus-within:ring-indigo-500/5 transition-all">
-                  <Search size={22} className="text-slate-400" />
+                <div className="flex items-center bg-zinc-50 border-2 border-zinc-100 rounded-2xl px-5 py-2 focus-within:border-brand-cyan focus-within:bg-white focus-within:ring-8 focus-within:ring-brand-cyan/5 transition-all">
+                  <Search size={22} className="text-zinc-400" />
                   <input 
                       value={qCliente} 
                       onChange={e=>setQCliente(e.target.value)} 
                       placeholder="Buscar por Nombre, RUC o Código..." 
-                      className="w-full bg-transparent text-slate-800 px-4 py-3 outline-none text-base font-bold placeholder-slate-400" 
+                      className="w-full bg-transparent text-zinc-800 px-4 py-3 outline-none text-base font-bold placeholder-zinc-400" 
                   />
-                  {buscandoCli && <Loader2 size={20} className="text-indigo-500 animate-spin" />}
+                  {buscandoCli && <Loader2 size={20} className="text-brand-cyan animate-spin" />}
                 </div>
                 
                 {clientesRes.length > 0 && (
-                  <div className="absolute top-full mt-3 left-0 right-0 bg-white border border-slate-200 rounded-3xl shadow-[0_30px_90px_rgba(15,23,42,0.15)] z-50 max-h-96 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200 ring-1 ring-black/5">
-                    <div className="px-6 py-3.5 bg-slate-50/80 text-[10px] font-black text-slate-500 uppercase border-b border-slate-100 flex items-center justify-between">
+                  <div className="absolute top-full mt-3 left-0 right-0 bg-white border border-zinc-200 rounded-3xl shadow-[0_30px_90px_rgba(15,23,42,0.15)] z-50 max-h-96 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200 ring-1 ring-black/5">
+                    <div className="px-6 py-3.5 bg-zinc-50/80 text-[10px] font-black text-zinc-500 uppercase border-b border-zinc-100 flex items-center justify-between">
                         <span>Resultados de búsqueda</span>
-                        <span className="bg-white text-slate-600 px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">{clientesRes.length}</span>
+                        <span className="bg-white text-zinc-600 px-2.5 py-1 rounded-lg border border-zinc-200 shadow-sm">{clientesRes.length}</span>
                     </div>
                     {clientesRes.map(c => (
                       <div key={c.CliIdCliente} 
                         onClick={()=>{setClienteSel(c); setClientesRes([]); setQCliente('');}} 
-                        className="w-full text-left px-6 py-5 hover:bg-indigo-50 cursor-pointer border-b border-slate-50 last:border-0 group flex items-center justify-between transition-all active:scale-[0.99]">
+                        className="w-full text-left px-6 py-5 hover:bg-brand-cyan/10 cursor-pointer border-b border-zinc-50 last:border-0 group flex items-center justify-between transition-all active:scale-[0.99]">
                         <div className="flex items-center gap-5">
-                            <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center font-black text-slate-400 group-hover:bg-white group-hover:text-indigo-600 transition-all border border-slate-200 group-hover:border-indigo-200 shadow-sm group-hover:shadow-md">
+                            <div className="w-12 h-12 rounded-2xl bg-zinc-100 flex items-center justify-center font-black text-zinc-400 group-hover:bg-white group-hover:text-brand-cyan transition-all border border-zinc-200 group-hover:border-brand-cyan/30 shadow-sm group-hover:shadow-md">
                                 {c.Nombre?.[0] || 'C'}
                             </div>
                             <div className="flex flex-col gap-1">
-                                <span className="text-slate-900 font-black group-hover:text-indigo-700 transition-colors text-lg">{c.Nombre}</span>
-                                {c.NombreFantasia && <span className="text-xs text-slate-500 font-semibold tracking-tight">"{c.NombreFantasia}"</span>}
+                                <span className="text-zinc-900 font-black group-hover:text-brand-cyan transition-colors text-lg">{c.Nombre}</span>
+                                {c.NombreFantasia && <span className="text-xs text-zinc-500 font-semibold tracking-tight">"{c.NombreFantasia}"</span>}
                                 <div className="flex items-center gap-2.5 mt-1.5">
-                                    <span className="text-[10px] bg-slate-100 text-slate-500 px-2.5 py-1 rounded-md font-mono font-black uppercase border border-slate-200 tracking-tight">ID: {c.CliIdCliente}</span>
-                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{c.CodCliente || 'Sin Código'}</span>
+                                    <span className="text-[10px] bg-zinc-100 text-zinc-500 px-2.5 py-1 rounded-md font-mono font-black uppercase border border-zinc-200 tracking-tight">ID: {c.CliIdCliente}</span>
+                                    <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">{c.CodCliente || 'Sin Código'}</span>
                                 </div>
                             </div>
                         </div>
                         <div className="opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0">
-                            <div className="bg-indigo-600 p-2.5 rounded-xl shadow-lg shadow-indigo-200">
-                                <ArrowRight size={18} className="text-white" />
+                            <div className="bg-brand-cyan p-2.5 rounded-xl shadow-lg shadow-brand-cyan/30">
+                                <ArrowRight size={18} className="text-zinc-800" />
                             </div>
                         </div>
                       </div>
@@ -227,21 +227,21 @@ export default function CajaVentaDirectaTab({
                 )}
               </div>
             ) : (
-              <div className="flex items-center justify-between bg-indigo-50/50 border-2 border-indigo-100 rounded-3xl p-6 shadow-sm">
+              <div className="flex items-center justify-between bg-brand-cyan/5 border-2 border-brand-cyan/20 rounded-3xl p-6 shadow-sm">
                 <div className="flex items-center gap-5">
-                  <div className="w-16 h-16 rounded-3xl bg-white flex items-center justify-center text-indigo-600 shadow-xl border border-indigo-100 ring-4 ring-indigo-50/30">
+                  <div className="w-16 h-16 rounded-3xl bg-white flex items-center justify-center text-brand-cyan shadow-xl border border-brand-cyan/20 ring-4 ring-brand-cyan/10/30">
                     <User size={32} />
                   </div>
                   <div>
-                    <p className="text-slate-900 text-xl font-black leading-tight tracking-tight">{clienteSel.Nombre}</p>
-                    <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">
+                    <p className="text-zinc-900 text-xl font-black leading-tight tracking-tight">{clienteSel.Nombre}</p>
+                    <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mt-1">
                       ID: {clienteSel.CodCliente || clienteSel.CliIdCliente} {clienteSel.NombreFantasia && ` · ${clienteSel.NombreFantasia}`}
                     </p>
                   </div>
                 </div>
                 <button 
                   onClick={()=>setClienteSel(null)} 
-                  className="bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 p-4 rounded-2xl transition-all border border-slate-200 hover:border-rose-200 shadow-sm hover:shadow-md"
+                  className="bg-white hover:bg-rose-50 text-zinc-400 hover:text-rose-600 p-4 rounded-2xl transition-all border border-zinc-200 hover:border-rose-200 shadow-sm hover:shadow-md"
                   title="Quitar cliente"
                 >
                   <Trash2 size={24} />
@@ -251,36 +251,36 @@ export default function CajaVentaDirectaTab({
           </div>
 
           {/* BLOQUE ITEMS */}
-          <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-[0_20px_50px_rgba(0,0,0,0.03)] flex flex-col gap-8 relative overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-6">
-              <h3 className="font-black text-slate-400 text-[11px] uppercase tracking-widest">2. Conceptos a Cobrar</h3>
-              <div className="flex bg-slate-100 rounded-2xl p-1.5 border border-slate-200">
-                <button onClick={()=>setMonedaExhibicion('UYU')} className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${monedaExhibicion==='UYU'?'bg-white text-indigo-700 shadow-md border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>UYU ($)</button>
-                <button onClick={()=>setMonedaExhibicion('USD')} className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${monedaExhibicion==='USD'?'bg-white text-emerald-700 shadow-md border border-slate-200':'text-slate-500 hover:text-slate-800'}`}>USD (US$)</button>
+          <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-8 shadow-[0_20px_50px_rgba(0,0,0,0.03)] flex flex-col gap-8 relative overflow-hidden">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-6">
+              <h3 className="font-black text-zinc-400 text-[11px] uppercase tracking-widest">2. Conceptos a Cobrar</h3>
+              <div className="flex bg-zinc-100 rounded-2xl p-1.5 border border-zinc-200">
+                <button onClick={()=>setMonedaExhibicion('UYU')} className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${monedaExhibicion==='UYU'?'bg-white text-brand-cyan shadow-md border border-zinc-200':'text-zinc-500 hover:text-zinc-800'}`}>UYU ($)</button>
+                <button onClick={()=>setMonedaExhibicion('USD')} className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${monedaExhibicion==='USD'?'bg-white text-emerald-700 shadow-md border border-zinc-200':'text-zinc-500 hover:text-zinc-800'}`}>USD (US$)</button>
               </div>
             </div>
 
             <div className="flex flex-col gap-6">
               {items.map((it, idx) => (
-                <div key={it.id} className="flex flex-col gap-6 bg-slate-50/50 rounded-[2rem] p-6 border border-slate-100 relative group/item hover:bg-slate-50 transition-colors">
-                  {idx > 0 && <button onClick={()=>setItems(p=>p.filter(x=>x.id!==it.id))} className="absolute top-5 right-5 text-slate-300 hover:text-rose-600 p-1.5 transition-all hover:bg-rose-50 rounded-xl"><Trash2 size={18} /></button>}
+                <div key={it.id} className="flex flex-col gap-6 bg-zinc-50/50 rounded-[2rem] p-6 border border-zinc-100 relative group/item hover:bg-zinc-50 transition-colors">
+                  {idx > 0 && <button onClick={()=>setItems(p=>p.filter(x=>x.id!==it.id))} className="absolute top-5 right-5 text-zinc-300 hover:text-rose-600 p-1.5 transition-all hover:bg-rose-50 rounded-xl"><Trash2 size={18} /></button>}
                              <div className={`grid ${['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? 'grid-cols-3' : 'grid-cols-2'} gap-6`}>
                     <div className="flex flex-col gap-2.5">
-                      <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-2">Operación</label>
+                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-2">Operación</label>
                       <select value={it.tipo} onChange={e=>{
                         const t=e.target.value;
                         setItems(p=>p.map(x=>x.id===it.id ? {...x, tipo:t, grupo: t === 'VENTA_INSUMOS' ? 'Insumos' : t === 'VENTA_PRODUCTOS' ? 'Productos en el local' : '', codigo: '', descripcion: ''}:x));
-                      }} className="bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all shadow-sm">
+                      }} className="bg-white border-2 border-zinc-200 rounded-2xl px-4 py-3 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 transition-all shadow-sm">
                         {TIPOS_VENTA.filter(o => !allowedTipos || allowedTipos.includes(o.value)).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                     </div>
                     {['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) && (
                       <div className="flex flex-col gap-2.5">
-                        <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-2">Grupo</label>
+                        <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-2">Grupo</label>
                         <select value={it.grupo || ''} onChange={e => {
                           const val = e.target.value;
                           setItems(p=>p.map(x=>x.id===it.id ? {...x, grupo: val, codigo: '', descripcion: ''} : x));
-                        }} className="bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all shadow-sm" disabled={it.tipo === 'VENTA_INSUMOS' || it.tipo === 'VENTA_PRODUCTOS'}>
+                        }} className="bg-white border-2 border-zinc-200 rounded-2xl px-4 py-3 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 transition-all shadow-sm" disabled={it.tipo === 'VENTA_INSUMOS' || it.tipo === 'VENTA_PRODUCTOS'}>
                           <option value="">Seleccione grupo...</option>
                           {Object.keys(productosAgrupados).filter(g => {
                              if (it.tipo === 'VENTA_INSUMOS') return g === 'Insumos';
@@ -291,7 +291,7 @@ export default function CajaVentaDirectaTab({
                       </div>
                     )}
                     <div className="flex flex-col gap-2.5">
-                      <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-2">{['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? 'Producto' : 'Referencia'}</label>
+                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-2">{['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? 'Producto' : 'Referencia'}</label>
                       {['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? (
                         <select value={it.codigo} onChange={e => {
                           const val = e.target.value;
@@ -311,22 +311,22 @@ export default function CajaVentaDirectaTab({
                             }
                             return newObj;
                           }));
-                        }} className="bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/5 transition-all shadow-sm disabled:bg-slate-100 disabled:text-slate-400" disabled={!it.grupo}>
+                        }} className="bg-white border-2 border-zinc-200 rounded-2xl px-4 py-3 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 transition-all shadow-sm disabled:bg-zinc-100 disabled:text-zinc-400" disabled={!it.grupo}>
                           <option value="">{it.grupo ? 'Seleccione...' : 'Elegir grupo...'}</option>
                           {(productosAgrupados[it.grupo] || []).map(p => (<option key={p.CodArticulo} value={p.CodArticulo}>[{p.CodArticulo}] {p.Descripcion}</option>))}
                         </select>
                       ) : (
-                        <input value={it.codigo} onChange={e=>setItems(p=>p.map(x=>x.id===it.id?{...x, codigo:e.target.value}:x))} placeholder="Ej: XXX" className="bg-white border-2 border-slate-200 rounded-2xl px-5 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 placeholder-slate-300 shadow-sm" />
+                        <input value={it.codigo} onChange={e=>setItems(p=>p.map(x=>x.id===it.id?{...x, codigo:e.target.value}:x))} placeholder="Ej: XXX" className="bg-white border-2 border-zinc-200 rounded-2xl px-5 py-3 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan placeholder-zinc-300 shadow-sm" />
                       )}
                     </div>
                   </div>
                   <div className="grid grid-cols-5 gap-6">
                     <div className="col-span-2 flex flex-col gap-2.5">
-                      <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest px-2">Descripción Visible en Documento</label>
-                      <input value={it.descripcion} onChange={e=>setItems(p=>p.map(x=>x.id===it.id?{...x, descripcion:e.target.value}:x))} placeholder="Aclaración opcional..." className="bg-white border-2 border-slate-200 rounded-2xl px-5 py-3 text-sm font-bold text-slate-800 outline-none focus:border-indigo-500 shadow-sm" />
+                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-2">Descripción Visible en Documento</label>
+                      <input value={it.descripcion} onChange={e=>setItems(p=>p.map(x=>x.id===it.id?{...x, descripcion:e.target.value}:x))} placeholder="Aclaración opcional..." className="bg-white border-2 border-zinc-200 rounded-2xl px-5 py-3 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan shadow-sm" />
                     </div>
                     <div className="flex flex-col gap-2.5 text-center">
-                      <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Cantidad</label>
+                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest">Cantidad</label>
                       <input type="number" step="0.5" value={it.cantidad} onChange={e=>{
                           const val = e.target.value;
                           setItems(p=>p.map(x=>{
@@ -336,10 +336,10 @@ export default function CajaVentaDirectaTab({
                             newObj.precioTotal = Number(unit * (val || 0)).toFixed(2);
                             return newObj;
                           }));
-                      }} className="bg-slate-100 border-2 border-slate-200 rounded-2xl px-4 py-3 text-lg font-black text-emerald-600 text-center outline-none focus:border-emerald-500 shadow-inner" />
+                      }} className="bg-zinc-100 border-2 border-zinc-200 rounded-2xl px-4 py-3 text-lg font-black text-emerald-600 text-center outline-none focus:border-emerald-500 shadow-inner" />
                     </div>
                     <div className="flex flex-col gap-2.5">
-                      <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Precio U. {monedaExhibicion}</label>
+                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest">Precio U. {monedaExhibicion}</label>
                       <input type="number" step="0.1" value={it.precioUnitario || ''} onChange={e=>{
                           const val = e.target.value;
                           setItems(p=>p.map(x=>{
@@ -348,16 +348,16 @@ export default function CajaVentaDirectaTab({
                             }
                             return x;
                           }));
-                      }} className="bg-slate-50 border-2 border-indigo-100 rounded-2xl px-5 py-3 text-lg font-black text-slate-900 outline-none focus:border-indigo-500 text-right shadow-inner" />
+                      }} className="bg-zinc-50 border-2 border-brand-cyan/20 rounded-2xl px-5 py-3 text-lg font-black text-zinc-900 outline-none focus:border-brand-cyan text-right shadow-inner" />
                     </div>
                     <div className="flex flex-col gap-2.5">
-                      <label className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Total {monedaExhibicion}</label>
+                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest">Total {monedaExhibicion}</label>
                       <input type="number" step="0.1" value={it.precioTotal} onChange={e=>setItems(p=>p.map(x=>{
                          if(x.id===it.id) {
                              return {...x, precioTotal:e.target.value};
                          }
                          return x;
-                      }))} className="bg-slate-50 border-2 border-indigo-100 rounded-2xl px-5 py-3 text-lg font-black text-slate-900 outline-none focus:border-indigo-500 text-right placeholder-slate-300 shadow-inner" />
+                      }))} className="bg-zinc-50 border-2 border-brand-cyan/20 rounded-2xl px-5 py-3 text-lg font-black text-zinc-900 outline-none focus:border-brand-cyan text-right placeholder-zinc-300 shadow-inner" />
                     </div>
                   </div>
                 </div>
@@ -365,19 +365,19 @@ export default function CajaVentaDirectaTab({
             </div>
 
             <button onClick={()=>setItems(p=>[...p,{ id:Date.now(), tipo:'RECURSO', grupo:'', codigo:'', descripcion:'', cantidad:1, precioTotal:'' }])} 
-              className="mt-2 w-full py-5 border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-slate-50 rounded-[2rem] flex items-center justify-center gap-4 text-slate-400 hover:text-indigo-600 font-black transition-all group/add active:scale-[0.99]">
-              <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center group-hover/add:bg-indigo-600 group-hover/add:text-white transition-all shadow-sm"><Plus size={18} /></div>
+              className="mt-2 w-full py-5 border-2 border-dashed border-zinc-200 hover:border-indigo-400 hover:bg-zinc-50 rounded-[2rem] flex items-center justify-center gap-4 text-zinc-400 hover:text-brand-cyan font-black transition-all group/add active:scale-[0.99]">
+              <div className="w-8 h-8 rounded-xl bg-zinc-100 flex items-center justify-center group-hover/add:bg-brand-cyan-white transition-all shadow-sm"><Plus size={18} /></div>
               Agregar otro concepto a cobrar
             </button>
 
             {/* Total resumen compacto */}
-            <div className="flex justify-between items-center pt-8 border-t border-slate-100 mt-4 px-2">
+            <div className="flex justify-between items-center pt-8 border-t border-zinc-100 mt-4 px-2">
               <div className="flex flex-col">
-                <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Total Global a Facturar</span>
-                <span className="text-xs text-slate-500 font-bold bg-slate-100 px-3 py-1 rounded-full mt-1.5 border border-slate-200">Emitiendo documento en {monedaExhibicion}</span>
+                <span className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">Total Global a Facturar</span>
+                <span className="text-xs text-zinc-500 font-bold bg-zinc-100 px-3 py-1 rounded-full mt-1.5 border border-zinc-200">Emitiendo documento en {monedaExhibicion}</span>
               </div>
               <div className="flex items-end gap-3">
-                <span className={`text-5xl font-black ${monedaExhibicion==='USD'?'text-emerald-600':'text-indigo-600'} tracking-tighter drop-shadow-sm`}>
+                <span className={`text-5xl font-black ${monedaExhibicion==='USD'?'text-emerald-600':'text-brand-cyan'} tracking-tighter drop-shadow-sm`}>
                   {monedaExhibicion==='USD' ? 'US$' : '$'} {fmt(totalPagar)}
                 </span>
               </div>

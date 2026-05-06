@@ -427,7 +427,7 @@ const CustomerReplacementPage = () => {
 
             {/* Success Modal */}
             {successData && (
-                <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+                <div className="fixed inset-0 z-50 bg-black/60  flex items-center justify-center p-6">
                     <div className="bg-white rounded-3xl shadow-2xl max-w-sm w-full p-8 text-center animate-in zoom-in-95 duration-200">
                         <div className="w-20 h-20 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6">
                             <i className="fa-solid fa-check text-4xl"></i>

@@ -117,7 +117,7 @@ const CajaArqueoModal = ({ onClose }) => {
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center font-sans">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-900/40 " onClick={onClose} />
       
       <div className="relative bg-white border border-slate-200 rounded-3xl w-[95%] max-w-5xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95">
         

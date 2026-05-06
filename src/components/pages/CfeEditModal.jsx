@@ -62,7 +62,7 @@ export default function CfeEditModal({ doc, onClose, onSuccess }) {
     };
 
     return (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60  flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col">
                 
                 {/* Header */}

@@ -74,7 +74,7 @@ const ChatWidget = () => {
             {isOpen && (
                 <div className={`
                     pointer-events-auto
-                    bg-white/95 backdrop-blur-md border border-slate-200 shadow-2xl rounded-2xl
+                    bg-white/95  border border-slate-200 shadow-2xl rounded-2xl
                     w-[380px] h-[500px] mb-4 flex flex-col overflow-hidden
                     transition-all duration-300 origin-bottom-right
                     animate-in slide-in-from-bottom-10 fade-in

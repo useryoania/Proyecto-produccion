@@ -69,7 +69,7 @@ const ClienteBilletera = ({ clienteId, clienteNombre }) => {
           <span className="text-[11px] font-black uppercase tracking-tight">{deudas.length} DEUDAS VIVAS</span>
           
           {/* Tooltip con resumen rápido de deudas - TEMA CLARO */}
-          <div className="absolute top-full left-0 mt-3 p-4 bg-white border border-slate-200 rounded-3xl shadow-[0_30px_60px_rgba(15,23,42,0.25)] z-[9999] hidden group-hover:block min-w-[340px] backdrop-blur-md ring-8 ring-black/5 animate-in fade-in zoom-in-95 duration-200">
+          <div className="absolute top-full left-0 mt-3 p-4 bg-white border border-slate-200 rounded-3xl shadow-[0_30px_60px_rgba(15,23,42,0.25)] z-[9999] hidden group-hover:block min-w-[340px]  ring-8 ring-black/5 animate-in fade-in zoom-in-95 duration-200">
              <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
                 <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
                    <Activity size={12} className="text-rose-500" /> Detalle de Pendientes

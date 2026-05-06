@@ -529,7 +529,7 @@ const LabelGenerationPage = () => {
 
             {/* Configuration Modal */}
             {configOrder && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 ">
                     <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden animate-fade-in-up">
                         <div className="bg-indigo-600 p-4 flex justify-between items-center text-white">
                             <div className="flex items-center gap-2">

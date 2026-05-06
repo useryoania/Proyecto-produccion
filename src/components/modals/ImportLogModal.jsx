@@ -2,7 +2,7 @@ const ImportLogModal = ({ isOpen, onClose, logs, isImporting }) => {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/70 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/70  p-4">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200">
                 <div className="bg-slate-50 px-8 py-6 border-b border-slate-100 flex justify-between items-center">
                     <div>

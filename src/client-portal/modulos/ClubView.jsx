@@ -18,11 +18,11 @@ export const ClubView = () => {
                 </p>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                    <div className="bg-white/5 backdrop-blur-sm p-4 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
+                    <div className="bg-white/5 p-4 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
                         <h4 className="font-bold text-amber-400 mb-1 text-xl">15% OFF</h4>
                         <p className="text-sm text-zinc-300">En cortes de alto volumen (+100u)</p>
                     </div>
-                    <div className="bg-white/5 backdrop-blur-sm p-4 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
+                    <div className="bg-white/5 p-4 rounded-xl border border-white/10 hover:bg-white/10 transition-colors">
                         <h4 className="font-bold text-amber-400 mb-1 text-xl">Prioridad Alta</h4>
                         <p className="text-sm text-zinc-300">Tus pedidos pasan primero a fila</p>
                     </div>

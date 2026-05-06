@@ -229,7 +229,7 @@ export default function ContabilidadReconciliacionView() {
             ) : (
               <div className="overflow-x-auto custom-scrollbar">
                 <table className="w-full text-left whitespace-nowrap">
-                  <thead className="bg-slate-800/80 sticky top-0 z-10 backdrop-blur-md">
+                  <thead className="bg-slate-800/80 sticky top-0 z-10 ">
                     <tr className="text-[10px] text-slate-400 uppercase tracking-widest font-black">
                       <th className="px-5 py-4 border-b border-slate-700">Código Orden</th>
                       <th className="px-5 py-4 border-b border-slate-700">PC#</th>

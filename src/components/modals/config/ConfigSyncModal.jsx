@@ -53,7 +53,7 @@ export default function ConfigSyncModal({ isOpen, onClose }) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60  p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-3xl shadow-xl w-full max-w-3xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
 
                 {/* Header */}

@@ -281,7 +281,7 @@ export default function LibroMayorView() {
 
       {/* Modal OP */}
       {selectedOP && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in" onClick={e => e.target === e.currentTarget && setSelectedOP(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60  p-4 animate-in fade-in" onClick={e => e.target === e.currentTarget && setSelectedOP(null)}>
           <div className="bg-white border border-slate-200 rounded-[2.5rem] w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95">
             <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <h2 className="text-xl font-black text-slate-800 flex items-center gap-3 tracking-tight"><BookOpen size={24} className="text-indigo-600"/> Transacción de Caja <span className="text-indigo-600">#{selectedOP.TcaIdTransaccion}</span></h2>

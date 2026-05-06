@@ -136,6 +136,34 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
                 // Retry with Uppercase if empty (preserve original logic)
                 data = await ordersService.getByArea(areaKey.toUpperCase(), 'active');
             }
+
+            // --- CROSS-COMPATIBILITY PATCH ---
+            // El portal usa códigos diferentes ('DF', 'SB') que los de AreaView ('DTF', 'SUB').
+            // Buscamos ambos y combinamos los resultados para que no se pierdan pedidos.
+            let extraData = [];
+            const upperArea = areaKey.toUpperCase();
+            
+            if (upperArea === 'DTF') {
+                extraData = await ordersService.getByArea('DF', 'active');
+            } else if (upperArea === 'DF') {
+                extraData = await ordersService.getByArea('DTF', 'active');
+            } else if (upperArea === 'SUB') {
+                extraData = await ordersService.getByArea('SB', 'active');
+            } else if (upperArea === 'SB') {
+                extraData = await ordersService.getByArea('SUB', 'active');
+            }
+            
+            if (extraData && extraData.length > 0) {
+                // Merge and remove duplicates by id just in case
+                const combined = [...(data || []), ...extraData];
+                const uniqueIds = new Set();
+                data = combined.filter(o => {
+                    if (uniqueIds.has(o.id)) return false;
+                    uniqueIds.add(o.id);
+                    return true;
+                });
+            }
+
             return data || [];
         },
         enabled: !!areaKey && areaKey.toLowerCase() !== 'area',
@@ -235,8 +263,8 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
     if (!areaConfig) return <div className="p-10 text-center text-slate-400">Cargando configuración...</div>;
 
     const btnBaseClass = "h-9 px-4 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-sm";
-    const btnSecondaryClass = "bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:text-blue-500 hover:bg-slate-50";
-    const btnPrimaryClass = "bg-blue-50 border border-blue-200 text-blue-600";
+    const btnSecondaryClass = "bg-white border border-slate-200 text-slate-600 hover:border-brand-cyan/40 hover:text-brand-cyan hover:bg-brand-cyan/5";
+    const btnPrimaryClass = "bg-brand-cyan/10 border border-brand-cyan/30 text-brand-cyan";
 
     console.log("🔍 [AreaView] Render - Props:", { areaKey, areaConfigName: areaConfig?.name, isRollModalOpen });
 
@@ -249,7 +277,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
             <RollAssignmentModal isOpen={isRollModalOpen} onClose={() => setIsRollModalOpen(false)} selectedIds={selectedIds} areaCode={areaKey} onSuccess={() => { setSelectedIds([]); refetch(); }} />
             
             {isImportModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40  animate-fade-in">
                     <div className="bg-white w-full max-w-7xl max-h-[95vh] rounded-xl overflow-hidden shadow-2xl flex flex-col relative">
                         <button 
                             className="absolute top-4 right-6 text-slate-500 hover:text-slate-800 z-10 bg-white hover:bg-slate-200 p-2 rounded-full transition"
@@ -287,7 +315,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
                     <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
                         {!hideImportar && (
                             <button 
-                                className={`${btnBaseClass} px-3 h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold border border-transparent`}
+                                className={`${btnBaseClass} px-3 h-8 text-xs ${isActive('importar') ? btnPrimaryClass : btnSecondaryClass}`}
                                 onClick={() => setIsImportModalOpen(true)}
                             >
                                 <i className="fa-solid fa-file-import"></i> Importar Orden
@@ -295,7 +323,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
                         )}
                         <button className={`${btnBaseClass} px-3 h-8 text-xs ${isActive('') ? btnPrimaryClass : btnSecondaryClass}`} onClick={() => goTo('')}><i className="fa-solid fa-table"></i> Planilla</button>
                         <button className={`${btnBaseClass} px-3 h-8 text-xs ${isActive('planeacion') ? btnPrimaryClass : btnSecondaryClass}`} onClick={() => goTo('planeacion')}><i className="fa-regular fa-calendar-check"></i> Planeación</button>
-                        <button className={`${btnBaseClass} px-3 h-8 text-xs ${isActive('medicion') ? btnPrimaryClass : btnSecondaryClass}`} onClick={() => goTo('medicion')}><i className="fa-solid fa-ruler-combined"></i> Medición</button>
+                        {/* Botón Medición oculto */}
                         <button className={`${btnBaseClass} px-3 h-8 text-xs ${isActive('control') ? btnPrimaryClass : btnSecondaryClass}`} onClick={() => goTo('control')}><i className="fa-solid fa-check-double"></i> Control</button>
                         <button className={`${btnBaseClass} px-3 h-8 text-xs ${isActive('logistica') ? btnPrimaryClass : btnSecondaryClass}`} onClick={() => goTo('logistica')}><i className="fa-solid fa-truck-ramp-box"></i> Logística</button>
                     </div>

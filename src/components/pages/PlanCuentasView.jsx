@@ -129,7 +129,7 @@ export default function PlanCuentasView() {
 
         {/* MODAL MANTENIMIENTO CUENTAS */}
         {modalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60  p-4 animate-in fade-in duration-200">
             <div className="bg-white border border-slate-200 rounded-[2.5rem] w-full max-w-xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 duration-300">
               <div className="flex justify-between items-center p-8 border-b border-slate-100 bg-slate-50/50">
                 <h2 className="text-2xl font-black text-slate-800 tracking-tight">{editingId ? 'Editar Cuenta' : 'Nueva Cuenta Contable'}</h2>
