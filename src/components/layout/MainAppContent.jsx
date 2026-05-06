@@ -587,7 +587,7 @@ const MainAppContent = ({ menuItems = [] }) => {
             <div className="flex flex-1 overflow-hidden relative">
                 {/* Backdrop Móvil con Degradado animado */}
                 <div 
-                    className={`absolute inset-0 bg-gradient-to-r from-black/95 via-black/60 to-black/10 z-[90] md:hidden transition-opacity duration-300 ease-in-out
+                    className={`absolute inset-0 bg-gradient-to-r from-black/95 via-black/60 to-black/10 z-[4990] md:hidden transition-opacity duration-300 ease-in-out
                         ${isMobileMenuOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
                     onClick={() => setIsMobileMenuOpen(false)}
                 />
@@ -596,7 +596,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <div className="hidden md:block w-16 flex-shrink-0" />
                 <aside
                     className={`
-                        flex flex-col bg-custom-dark z-[100]
+                        flex flex-col bg-custom-dark z-[5000]
                         transition-all duration-300 ease-in-out h-full absolute left-0 top-0
                         w-[280px] md:w-[300px]
                         ${isMobileMenuOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full md:translate-x-0"}
