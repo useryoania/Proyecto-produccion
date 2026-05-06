@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import Swal from 'sweetalert2';
 import Lottie from 'lottie-react';
 import api from '../../services/apiClient';
-import loadingAnim from '../../assets/animations/loading-cmyk.json';
+import loadingAnim from '../../assets/animations/Loading-CMYK.json';
 
 // ─── Spinner Lottie reutilizable ──────────────────────────────────────────────
 function LottieSpinner({ size = 48 }) {
