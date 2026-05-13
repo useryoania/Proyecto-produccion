@@ -67,11 +67,7 @@ const DispatchHistoryModal = ({ isOpen, onClose, areaId }) => {
     // VIEW: DETAIL (RECEIPT)
     if (selectedDispatch) {
         return (
-<<<<<<< HEAD
-            <div className="fixed inset-0 bg-slate-900/80  flex items-center justify-center p-4 z-[1400] print:p-0 print:bg-white">
-=======
             <div className="fixed inset-0 bg-zinc-900/80 flex items-center justify-center p-4 z-[1400] print:p-0 print:bg-white">
->>>>>>> main
                 <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh] print:shadow-none print:w-full print:max-w-none print:h-full print:max-h-none print:rounded-none">
                     <div className="px-6 py-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50 print:hidden">
                         <h3 className="text-lg font-black text-zinc-800">Manifiesto Histórico</h3>
@@ -124,11 +120,7 @@ const DispatchHistoryModal = ({ isOpen, onClose, areaId }) => {
 
     // VIEW: LIST
     return (
-<<<<<<< HEAD
-        <div className="fixed inset-0 bg-slate-900/50  flex items-center justify-center p-4 z-[1400]">
-=======
         <div className="fixed inset-0 bg-zinc-900/50 flex items-center justify-center p-4 z-[1400]">
->>>>>>> main
             <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[80vh]">
                 <div className="px-6 py-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
                     <h3 className="text-lg font-black text-zinc-800"><i className="fa-solid fa-clock-rotate-left text-zinc-400 mr-2"></i> Historial de Despachos</h3>
