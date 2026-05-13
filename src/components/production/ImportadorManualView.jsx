@@ -166,11 +166,7 @@ export default function ImportadorManualView({ isModal = false, onClose = null, 
     };
 
     return (
-<<<<<<< HEAD
-        <div className={`bg-slate-50 text-slate-800 ${!isModal ? 'p-6 min-h-screen' : ''}`}>
-=======
         <div className="p-6 bg-zinc-50 min-h-screen text-zinc-800">
->>>>>>> main
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
                 <div>
                     <h1 className="text-3xl font-black text-zinc-900 tracking-tight">Importación a Producción</h1>
@@ -418,11 +414,7 @@ export default function ImportadorManualView({ isModal = false, onClose = null, 
 
             {/* MODAL DE DETALLE ANALÍTICO DE PRECIOS */}
             {isModalOpen && selectedRowContext && (
-<<<<<<< HEAD
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40  animate-fade-in">
-=======
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm animate-fade-in">
->>>>>>> main
                     <div className="bg-white w-full max-w-lg rounded-xl overflow-hidden shadow-2xl transform transition-all">
                         <div className="px-6 py-4 flex justify-between items-center border-b bg-zinc-50">
                             <h3 className="text-lg font-black text-zinc-800 flex items-center gap-2">

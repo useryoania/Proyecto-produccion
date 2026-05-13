@@ -5,19 +5,11 @@ const ConfirmationModal = ({ isOpen, onClose, onConfirm, title, message, confirm
     if (!isOpen) return null;
 
     return (
-<<<<<<< HEAD
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/50  p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border-t-4 border-slate-500">
-                <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                    <h3 className="text-lg font-bold text-slate-800">
-                        {isDestructive ? <i className="fa-solid fa-triangle-exclamation text-red-500 mr-2"></i> : <i className="fa-solid fa-circle-question text-blue-500 mr-2"></i>}
-=======
         <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-zinc-900/60 p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border border-zinc-100">
                 <div className="px-5 py-4 flex justify-between items-center border-b border-zinc-50">
                     <h3 className="text-[15px] font-bold text-zinc-800 flex items-center gap-2">
                         <HelpCircle size={18} className={isDestructive ? "text-brand-magenta" : "text-brand-cyan"} />
->>>>>>> main
                         {title}
                     </h3>
                     <button onClick={onClose} className="w-8 h-8 rounded-full hover:bg-zinc-100 flex items-center justify-center text-zinc-400 transition-colors">

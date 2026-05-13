@@ -133,11 +133,7 @@ const ReportFailureModal = ({ isOpen, onClose, areaName, areaCode }) => {
     const tabBtnClass = (active) => `px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${active ? 'text-red-600 border-red-600 bg-red-50/50' : 'text-zinc-500 border-transparent hover:text-zinc-700 hover:bg-zinc-50'}`;
 
     return (
-<<<<<<< HEAD
-        <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-slate-900/60  p-4 animate-in fade-in duration-200">
-=======
         <div className="fixed inset-0 z-[1100] flex items-center justify-center bg-zinc-900/60 p-4 animate-in fade-in duration-200">
->>>>>>> main
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border-t-4 border-red-500">
 
                 {/* HEADER ROJO */}

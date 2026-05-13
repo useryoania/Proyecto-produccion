@@ -303,12 +303,6 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
 
             {/* MODAL DECISION FINALIZAR */}
             {showFinishModal && (
-<<<<<<< HEAD
-                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/60  px-4 animate-in fade-in duration-200">
-                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border-t-4 border-blue-500">
-                        <div className="p-4 border-b border-slate-100 bg-slate-50">
-                            <h3 className="text-lg font-bold text-slate-800 text-center">Finalizar Producción</h3>
-=======
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-zinc-900/60 px-4 animate-in fade-in duration-200">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 ring-1 ring-zinc-200/50">
                         <div className="px-6 pt-8 pb-5 flex flex-col items-center gap-3">
@@ -321,7 +315,6 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
                                     ¿El lote ha terminado completamente o debe continuar en otro equipo?
                                 </p>
                             </div>
->>>>>>> main
                         </div>
                         <div className="px-6 pb-6 bg-white">
                             <div className="flex flex-col gap-2.5">

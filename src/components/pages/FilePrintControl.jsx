@@ -722,13 +722,8 @@ const FilePrintControl = ({ areaCode }) => {
 
       {/* 2. Completed Order Modal (Pronto Sector) */}
       {completedOrderData && (
-<<<<<<< HEAD
-        <div className="fixed inset-0 z-[1600] bg-black/70  flex items-center justify-center p-6 animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border-4 border-emerald-400">
-=======
         <div className="fixed inset-0 z-[1600] bg-black/70 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 border-4 border-brand-cyan">
->>>>>>> main
 
             <div className="bg-brand-cyan p-8 flex flex-col items-center justify-center text-white relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-20"></div>

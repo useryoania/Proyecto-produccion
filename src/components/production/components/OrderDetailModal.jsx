@@ -641,11 +641,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                 onClick={onClose}
             ></div>
 
-<<<<<<< HEAD
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-6xl flex flex-col animate-in zoom-in-95 duration-200 border border-slate-200 my-8">
-=======
             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col animate-in zoom-in-95 duration-200 border border-zinc-200 my-8">
->>>>>>> main
 
                 <div className="px-6 py-4 bg-zinc-50 border-b border-zinc-200 flex justify-between items-start shrink-0">
                     <div>
@@ -711,19 +707,6 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                             </select>
                         </div>
                         <div className="lg:col-span-2">
-<<<<<<< HEAD
-                            <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1"><i className="fa-solid fa-layer-group text-indigo-400 mr-1"></i> Estado en su Área</label>
-                            <select 
-                                className="w-full text-sm font-bold text-slate-700 border border-slate-300 rounded px-2 py-1.5 outline-none focus:border-blue-500 bg-white shadow-sm"
-                                value={currentOrder.areaStatus || currentOrder.EstadoenArea || ''}
-                                onChange={(e) => handleUpdateAreaStatus(e.target.value)}
-                            >
-                                <option value="">Seleccione Estado</option>
-                                {configEstados.filter(s => s.TipoEstado === 'ESTADOENAREA').map(s => (
-                                    <option key={s.EstadoID} value={s.Nombre}>{s.Nombre}</option>
-                                ))}
-                            </select>
-=======
                             <label className="text-[10px] uppercase font-bold text-zinc-500 block mb-1"><i className="fa-solid fa-layer-group text-indigo-400 mr-1"></i> Estado en su Área</label>
                             <div className="flex bg-white rounded shadow-sm border border-zinc-300 focus-within:border-blue-500 overflow-hidden pr-1">
                                 <input 
@@ -743,7 +726,6 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                     <i className="fa-solid fa-pen" title="Editar y click afuera para guardar"></i>
                                 </div>
                             </div>
->>>>>>> main
                         </div>
                     </div>
 
@@ -936,18 +918,6 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
 
                             {/* PESTAÑA: SERVICIOS / PRODUCTOS */}
                             {activeTab === 'services' && (
-<<<<<<< HEAD
-                                <div className="p-1 h-[600px] bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-2">
-                                    <QuotationEditModal
-                                        embedded={true}
-                                        noDocERP={currentOrder.code || currentOrder.id}
-                                        currentUser={user}
-                                        areaFilter={currentOrder.area || 'TODOS'}
-                                        onSaved={() => {
-                                            if (onOrderUpdated) onOrderUpdated();
-                                        }}
-                                    />
-=======
                                 <div className="space-y-3 p-1">
                                     <div className="flex justify-between items-center bg-amber-50 rounded-lg p-3 border border-amber-200 shadow-sm">
                                         <div className="text-amber-800 flex items-center gap-2">
@@ -1217,7 +1187,6 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                             );
                                         })
                                     )}
->>>>>>> main
                                 </div>
                             )}
 

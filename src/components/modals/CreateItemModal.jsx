@@ -35,13 +35,8 @@ const CreateItemModal = ({ isOpen, onClose, initialName, onSuccess }) => {
     };
 
     return (
-<<<<<<< HEAD
-        <div className="fixed inset-0 bg-slate-900/40 -[2px] z-[1500] flex items-center justify-center p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
-=======
         <div className="fixed inset-0 bg-zinc-900/40 backdrop-blur-[2px] z-[1500] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200 border border-zinc-200">
->>>>>>> main
                 {/* Header */}
                 <div className="px-5 py-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
                     <h3 className="text-base font-black text-zinc-800 flex items-center gap-2">
@@ -125,7 +120,3 @@ const CreateItemModal = ({ isOpen, onClose, initialName, onSuccess }) => {
 };
 
 export default CreateItemModal;
-<<<<<<< HEAD
-=======
-
->>>>>>> main

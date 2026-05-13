@@ -68,11 +68,7 @@ const RollDetailModal = ({ isOpen, onClose, roll }) => {
     const displayOrders = realFiles.length > 0 ? realFiles : (roll.orders || []);
 
     return (
-<<<<<<< HEAD
-        <div className="fixed inset-0 z-[1400] flex items-center justify-center bg-slate-900/60  p-4 animate-in fade-in duration-200" onClick={onClose}>
-=======
         <div className="fixed inset-0 z-[1400] flex items-center justify-center bg-zinc-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200" onClick={onClose}>
->>>>>>> main
             {/* Contenedor Principal */}
             <div
                 className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 duration-300"
