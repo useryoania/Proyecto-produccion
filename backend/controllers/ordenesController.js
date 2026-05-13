@@ -461,45 +461,49 @@ const createOrden = async (req, res) => {
     res.status(201).json({ message: 'Orden creada correctamente', idOrden: newOrderId });
 
     // ── MOTOR DE CONTABILIDAD UNIFICADO (EVENT SOURCING SEPARADO) ────────────
-    const deudaReal = importeTotal > 0 ? importeTotal : costoOriginalQR;
-    const finalMonId = importeTotal > 0 ? 1 : monIdMoneda;
+    try {
+      const deudaReal = importeTotal > 0 ? importeTotal : costoOriginalQR;
+      const finalMonId = importeTotal > 0 ? 1 : monIdMoneda;
 
-    let tienePlan = false;
-    if (cantidadDecimal > 0 && productoContabilidad.ProIdProducto) {
-      const pool = await require('../config/db.js').getPool();
-      const planCheck = await pool.request()
-        .input('c', sql.Int, reqClientId)
-        .input('p', sql.Int, productoContabilidad.ProIdProducto)
-        .query('SELECT TOP 1 PlaIdPlan FROM PlanesMetros WHERE CliIdCliente = @c AND ProIdProducto = @p AND PlaActivo = 1 AND (PlaFechaVencimiento IS NULL OR PlaFechaVencimiento >= CAST(GETDATE() AS DATE))');
-      
-      tienePlan = planCheck.recordset.length > 0;
-    }
+      let tienePlan = false;
+      if (cantidadDecimal > 0 && productoContabilidad.ProIdProducto) {
+        const pool = await require('../config/db.js').getPool();
+        const planCheck = await pool.request()
+          .input('c', sql.Int, reqClientId)
+          .input('p', sql.Int, productoContabilidad.ProIdProducto)
+          .query('SELECT TOP 1 PlaIdPlan FROM PlanesMetros WHERE CliIdCliente = @c AND ProIdProducto = @p AND PlaActivo = 1 AND (PlaFechaVencimiento IS NULL OR PlaFechaVencimiento >= CAST(GETDATE() AS DATE))');
+        
+        tienePlan = planCheck.recordset.length > 0;
+      }
 
-    if (tienePlan) {
-      // EVENTO ENTREGA: Lógica de recursos (Los Metros)
-      // Se le delega el DeudaReal para que hookEntregaMetros calcule y cobre la diferencia
-      contabilidadService.procesarEventoContable('ENTREGA', {
-        OrdIdOrden:    newOrderId,
-        CliIdCliente:  reqClientId,
-        ProIdProducto: productoContabilidad.ProIdProducto,
-        Cantidad:      cantidadDecimal,
-        CodigoOrden,
-        NombreTrabajo: trabajoFinal,
-        UsuarioAlta,
-        Importe:       deudaReal,
-        MonIdMoneda:   finalMonId
-      }).catch(e => logger.error(`[CONTABILIDAD] Error en ENTREGA para ${CodigoOrden}: ${e.message}`));
-    } else if (deudaReal > 0) {
-      // EVENTO ORDEN: Carga el 100% de la deuda (no hay plan)
-      contabilidadService.procesarEventoContable('ORDEN', {
-        OrdIdOrden:    newOrderId,
-        CliIdCliente:  reqClientId,
-        Importe:       deudaReal,
-        MonIdMoneda:   finalMonId,
-        CodigoOrden,
-        NombreTrabajo: trabajoFinal,
-        UsuarioAlta
-      }).catch(e => logger.error(`[CONTABILIDAD] Error en ORDEN para ${CodigoOrden}: ${e.message}`));
+      if (tienePlan) {
+        // EVENTO ENTREGA: Lógica de recursos (Los Metros)
+        // Se le delega el DeudaReal para que hookEntregaMetros calcule y cobre la diferencia
+        contabilidadService.procesarEventoContable('ENTREGA', {
+          OrdIdOrden:    newOrderId,
+          CliIdCliente:  reqClientId,
+          ProIdProducto: productoContabilidad.ProIdProducto,
+          Cantidad:      cantidadDecimal,
+          CodigoOrden,
+          NombreTrabajo: trabajoFinal,
+          UsuarioAlta,
+          Importe:       deudaReal,
+          MonIdMoneda:   finalMonId
+        }).catch(e => logger.error(`[CONTABILIDAD] Error en ENTREGA para ${CodigoOrden}: ${e.message}`));
+      } else if (deudaReal > 0) {
+        // EVENTO ORDEN: Carga el 100% de la deuda (no hay plan)
+        contabilidadService.procesarEventoContable('ORDEN', {
+          OrdIdOrden:    newOrderId,
+          CliIdCliente:  reqClientId,
+          Importe:       deudaReal,
+          MonIdMoneda:   finalMonId,
+          CodigoOrden,
+          NombreTrabajo: trabajoFinal,
+          UsuarioAlta
+        }).catch(e => logger.error(`[CONTABILIDAD] Error en ORDEN para ${CodigoOrden}: ${e.message}`));
+      }
+    } catch (contabilidadError) {
+      logger.error(`[CONTABILIDAD] Fallo al procesar orden ${CodigoOrden} post-creación:`, contabilidadError.message);
     }
     // ─────────────────────────────────────────────────────────────────────────
     // ─────────────────────────────────────────────────────────────────────────

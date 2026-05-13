@@ -51,7 +51,7 @@ const Navbar = ({ onSwitchTab, currentView, onToggleMobileMenu, isMobileMenuOpen
   };
 
   return (
-    <nav className="h-14 px-4 sm:px-6 bg-zinc-900 border-b border-zinc-700 flex items-center justify-between sticky top-0 z-50 shadow-md gap-4">
+    <nav className="h-14 px-4 sm:px-6 bg-zinc-900 border-b border-zinc-700 flex items-center justify-between sticky top-0 z-[5010] shadow-md gap-4">
       {/* Móvil: Logo Centrado Flotante */}
       <div 
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 cursor-pointer group md:hidden flex items-center justify-center z-0"
