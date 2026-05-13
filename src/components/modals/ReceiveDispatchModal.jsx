@@ -203,11 +203,7 @@ const ReceiveDispatchModal = ({ isOpen, onClose, onSuccess }) => {
     const isComplete = items.length > 0 && receivedCount === items.length;
 
     return (
-<<<<<<< HEAD
-        <div className="fixed inset-0 bg-slate-900/90  flex items-center justify-center p-4 z-[1500]">
-=======
         <div className="fixed inset-0 bg-zinc-900/90 backdrop-blur-md flex items-center justify-center p-4 z-[1500]">
->>>>>>> main
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col h-[600px] animate-in zoom-in-95 duration-200">
 
                 {/* HEADER */}
