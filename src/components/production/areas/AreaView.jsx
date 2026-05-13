@@ -310,7 +310,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
             <LogisticsCartModal isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} areaName={areaConfig.name} areaCode={areaKey} onSuccess={() => refetch()} />
             <RollAssignmentModal isOpen={isRollModalOpen} onClose={() => setIsRollModalOpen(false)} selectedIds={selectedIds} areaCode={areaKey} onSuccess={() => { setSelectedIds([]); refetch(); }} />
 
-            <header className="bg-white border-b border-zinc-200 flex flex-col shrink-0 z-20 w-full shadow-sm relative">
+            <header className="bg-white flex flex-col shrink-0 z-20 w-full relative">
                 <div className="px-4 py-2 flex items-center justify-between bg-white min-h-[56px] relative w-full overflow-hidden">
 
                     {/* CENTRO ABSOLUTO: Tabs de Navegación (Siempre en el centro exacto de la pantalla) */}
@@ -361,7 +361,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
             <div className="flex flex-1 overflow-hidden">
 
 
-                <main className={`flex-1 bg-zinc-50 overflow-hidden flex flex-col h-full items-stretch ${isActive('') || isActive('tabla') || isActive('planeacion') || isActive('control') ? 'p-0' : 'p-6'}`}>
+                <main className={`flex-1 bg-zinc-50 overflow-hidden flex flex-col h-full items-stretch ${isActive('') || isActive('tabla') || isActive('planeacion') || isActive('control') || isActive('logistica') ? 'p-0' : 'p-6'}`}>
                     <Routes>
                         <Route index element={<ProductionTable rowData={filteredOrders} onRowSelected={setSelectedIds} selectedRowIds={selectedIds} onRowClick={setSelectedOrder} columnDefs={areaConfig.defaultColDefs} toolbarContent={tableToolbar} />} />
                         <Route path="tabla" element={<ProductionTable rowData={filteredOrders} onRowSelected={setSelectedIds} selectedRowIds={selectedIds} onRowClick={setSelectedOrder} columnDefs={areaConfig.defaultColDefs} toolbarContent={tableToolbar} />} />

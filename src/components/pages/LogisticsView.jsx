@@ -193,13 +193,11 @@ const LogisticsView = ({ areaCode }) => {
 
     const handleSelectAll = () => {
         if (!selectedBasket) return;
-        // Si ya están todas seleccionadas (o hay selección), deseleccionar todo.
-        // Si no hay selección, seleccionar todo.
         const allIds = selectedBasket.ordenes.map(o => o.id);
-        const allSelected = allIds.every(id => selectedOrders.includes(id));
-
-        if (allSelected) setSelectedOrders([]);
-        else setSelectedOrders(allIds);
+        setSelectedOrders(prev => {
+            const allSelected = allIds.every(id => prev.includes(id));
+            return allSelected ? [] : allIds;
+        });
     };
 
     const handleGenerateRemito = async () => {
@@ -330,23 +328,27 @@ const LogisticsView = ({ areaCode }) => {
     const BasketCard = ({ basket, isSelected, onClick }) => (
         <div
             onClick={onClick}
-            className={`cursor-pointer p-4 rounded-xl border transition-all ${isSelected ? 'bg-white border-brand-cyan shadow-md ring-2 ring-brand-cyan/20' : 'bg-white border-slate-200 hover:border-brand-cyan/50 hover:shadow-sm'}`}
+            className={`cursor-pointer px-3 py-2 rounded-lg border transition-all flex items-center gap-2 ${
+                isSelected
+                    ? 'bg-brand-cyan/5 border-brand-cyan shadow-sm ring-1 ring-brand-cyan/20'
+                    : 'bg-white border-zinc-200 hover:border-brand-cyan/40 hover:shadow-sm'
+            }`}
         >
-            <div className="flex justify-between items-start mb-2">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center bg-slate-50 border border-slate-100`}>
-                    <i className={`fa-solid ${getBasketIcon(basket.tipo)}`}></i>
-                </div>
-                <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px] font-black uppercase">{basket.ordenes.length} Ops</span>
+            <div className="w-7 h-7 rounded-md flex items-center justify-center shrink-0 bg-zinc-100">
+                <i className={`fa-solid ${getBasketIcon(basket.tipo)} text-xs`}></i>
             </div>
-            <h3 className="font-bold text-slate-700 text-sm leading-tight mb-1">{basket.nombre}</h3>
-            <p className="text-[10px] text-slate-400 font-medium">{basket.ordenes.reduce((acc, o) => acc + (o.bultos?.length || 0), 0)} Bultos Totales</p>
+            <div className="flex-1 min-w-0">
+                <p className={`font-bold text-xs leading-tight truncate ${isSelected ? 'text-brand-cyan' : 'text-zinc-700'}`}>{basket.nombre}</p>
+                <p className="text-[10px] text-zinc-400">{basket.ordenes.reduce((acc, o) => acc + (o.bultos?.length || 0), 0)} bultos</p>
+            </div>
+            <span className="bg-zinc-100 text-zinc-500 px-1.5 py-0.5 rounded text-[10px] font-black shrink-0">{basket.ordenes.length} ops</span>
         </div>
     );
 
     return (
-        <div className="h-full flex flex-col font-sans text-slate-900 bg-slate-50 overflow-hidden">
+        <div className="h-full flex flex-col font-sans text-zinc-900 bg-white overflow-hidden">
             {/* Header */}
-            <div className="px-6 py-4 bg-white border-b border-slate-200 flex justify-between items-center shrink-0">
+            <div className="px-6 py-4 bg-white flex justify-between items-center shrink-0">
                 <div>
                     <h1 className="text-xl font-black text-slate-800 flex items-center gap-2">
                         <Warehouse size={22} className="text-brand-cyan" /> Centro de Control Logístico
@@ -387,8 +389,8 @@ const LogisticsView = ({ areaCode }) => {
 
             <div className="flex flex-1 overflow-hidden">
                 {/* Sidebar Canastos */}
-                <div className="w-[320px] bg-slate-50 border-r border-slate-200 flex flex-col p-4 gap-4 overflow-y-auto custom-scrollbar shrink-0">
-                    <div className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-1">MIS CANASTOS</div>
+                <div className="w-[220px] bg-white border-r border-zinc-100 flex flex-col gap-1.5 p-2 overflow-y-auto overflow-x-hidden custom-scrollbar shrink-0">
+                    <div className="text-[10px] font-black uppercase text-zinc-400 tracking-widest px-1 py-1">MIS CANASTOS</div>
 
                     {loading && <div className="text-center py-4 text-slate-400"><i className="fa-solid fa-circle-notch fa-spin"></i> Cargando...</div>}
 
@@ -411,7 +413,7 @@ const LogisticsView = ({ areaCode }) => {
                     {selectedBasket ? (
                         <>
                             {/* Toolbar Contextual */}
-                            <div className="px-6 py-3 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <div className="px-4 py-2.5 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
                                 <div className="flex items-center gap-3">
                                     <h2 className="text-lg font-bold text-slate-800">{selectedBasket.nombre}</h2>
                                     <span className="bg-brand-cyan/10 text-brand-cyan px-2 py-0.5 rounded-md text-xs font-bold border border-brand-cyan/20">
@@ -453,7 +455,7 @@ const LogisticsView = ({ areaCode }) => {
             </div>
 
             {/* Footer */}
-            <footer className="h-8 border-t border-slate-200 flex items-center justify-between px-6 bg-white shrink-0">
+            <footer className="h-8 flex items-center justify-between px-6 bg-white shrink-0">
                 <div className="flex gap-6 text-[10px] font-bold uppercase text-slate-400 tracking-wider">
                     <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-brand-magenta rounded-full"></div> Falla</div>
                     <div className="flex items-center gap-1.5"><div className="w-2 h-2 bg-brand-gold rounded-full"></div> Incompleto</div>
@@ -577,25 +579,28 @@ function BasketTable({ data, basketTipo, onToggle, onSelectAll, allSelected, som
         }),
         columnHelper.display({
             id: 'estado',
-            header: () => <span className="block text-right">Estado</span>,
+            header: () => <span className="block text-center">Estado</span>,
             size: 1,
             cell: ({ row }) => {
                 const lbl = row.original;
-                const cls = lbl.status === 'Retenido'
-                    ? 'bg-brand-magenta/10 text-brand-magenta border-brand-magenta/20'
-                    : basketTipo === 'logistica'
-                        ? 'bg-brand-cyan/10 text-brand-cyan border-brand-cyan/20'
-                        : 'bg-brand-gold/10 text-brand-gold border-brand-gold/20';
+                const status = (lbl.logStatus || lbl.status || '').toUpperCase();
+                let cls = 'bg-zinc-100 text-zinc-500 border-zinc-200'; // default
+                if (status === 'RETENIDO') cls = 'bg-brand-magenta/10 text-brand-magenta border-brand-magenta/20';
+                else if (status.includes('PENDIENTE')) cls = 'bg-amber-50 text-amber-600 border-amber-200';
+                else if (status.includes('PRONTO') || status.includes('FINALIZADO') || status.includes('ENTREGADO')) cls = 'bg-emerald-50 text-emerald-600 border-emerald-200';
+                else if (basketTipo === 'logistica') cls = 'bg-brand-cyan/10 text-brand-cyan border-brand-cyan/20';
+                else if (basketTipo === 'falla') cls = 'bg-brand-magenta/10 text-brand-magenta border-brand-magenta/20';
+                else if (basketTipo === 'incompleto') cls = 'bg-amber-50 text-amber-600 border-amber-200';
                 return (
-                    <div className="text-right">
-                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${cls}`}>
+                    <div className="flex justify-center">
+                        <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-md border ${cls}`}>
                             {lbl.logStatus || lbl.status}
                         </span>
                     </div>
                 );
             },
         }),
-    ], [basketTipo]);
+    ], [basketTipo, allSelected, someSelected, onSelectAll]);
 
     const table = useReactTable({
         data,
@@ -613,13 +618,14 @@ function BasketTable({ data, basketTipo, onToggle, onSelectAll, allSelected, som
     return (
         <div className="flex-1 overflow-auto">
             <table className="w-full table-fixed text-left border-collapse text-sm">
-                <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
+                <thead className="bg-zinc-50 sticky top-0 z-10 border-b border-zinc-200">
                     {table.getHeaderGroups().map(hg => (
                         <tr key={hg.id}>
                             {hg.headers.map(header => (
                                 <th
                                     key={header.id}
-                                    className="px-6 py-3 border-b border-slate-200 text-[10px] font-black uppercase text-slate-400 tracking-wider"
+                                    style={header.id === 'select' ? { width: '44px' } : undefined}
+                                    className={`py-2.5 text-center text-[10px] font-black uppercase text-zinc-400 tracking-wider ${header.id === 'select' ? 'px-3' : 'px-4'}`}
                                 >
                                     {flexRender(header.column.columnDef.header, header.getContext())}
                                 </th>
@@ -627,19 +633,27 @@ function BasketTable({ data, basketTipo, onToggle, onSelectAll, allSelected, som
                         </tr>
                     ))}
                 </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
+                <tbody className="bg-white divide-y divide-zinc-100">
                     {table.getRowModel().rows.map(row => {
                         const lbl = row.original;
                         return (
                             <tr
                                 key={row.id}
                                 onClick={() => onToggle(lbl.orderId)}
-                                className={`cursor-pointer transition-colors border-l-4 ${
-                                    lbl.isSelected ? 'bg-brand-cyan/5 border-brand-cyan' : 'hover:bg-slate-50 border-transparent'
+                                className={`cursor-pointer transition-colors ${
+                                    lbl.isSelected ? 'bg-brand-cyan/5' : 'hover:bg-zinc-50'
                                 }`}
                             >
                                 {row.getVisibleCells().map(cell => (
-                                    <td key={cell.id} className="px-6 py-3">
+                                    <td
+                                        key={cell.id}
+                                        style={cell.column.id === 'select' ? { width: '44px' } : undefined}
+                                        className={`py-2.5 text-center ${
+                                            cell.column.id === 'select'
+                                                ? `px-3 ${lbl.isSelected ? 'border-l-[3px] border-brand-cyan' : 'border-l-[3px] border-transparent'}`
+                                                : 'px-4'
+                                        }`}
+                                    >
                                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                                     </td>
                                 ))}

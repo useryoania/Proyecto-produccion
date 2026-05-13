@@ -267,7 +267,7 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
     });
 
     return (
-        <div className="flex flex-col h-full w-full bg-white overflow-hidden animate-in fade-in duration-300 relative border-t border-zinc-200">
+        <div className="flex flex-col h-full w-full bg-white overflow-hidden animate-in fade-in duration-300 relative">
             
             {/* Toolbar Superior */}
             {rowData.length > 0 && <div className="px-4 py-2 border-b-2 border-zinc-200 bg-zinc-50 flex justify-between items-center shrink-0 z-20">

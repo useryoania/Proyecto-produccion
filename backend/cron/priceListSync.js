@@ -57,10 +57,16 @@ async function ensureTable(pool) {
             CREATE INDEX IX_PLP_Familia ON PreciosListaPublica(Familia);
         END
 
-        -- Asegurar que la columna exista si la tabla ya fue creada antes
+        -- Asegurar que la columna de productos exista si la tabla ya fue creada antes
         IF COL_LENGTH('PreciosListaPublica', 'ProIdProducto') IS NULL
         BEGIN
             ALTER TABLE PreciosListaPublica ADD ProIdProducto INT NULL;
+        END
+
+        -- Agregar la columna FiltroLanding si no existe
+        IF COL_LENGTH('PreciosListaPublica', 'FiltroLanding') IS NULL
+        BEGIN
+            ALTER TABLE PreciosListaPublica ADD FiltroLanding NVARCHAR(500) NULL;
         END
     `);
 }
@@ -86,7 +92,7 @@ async function syncPriceList() {
 
         const res = await sheets.spreadsheets.values.get({
             spreadsheetId: PRICE_SPREADSHEET_ID,
-            range: `'${PRICE_SHEET_NAME}'!A:G`,
+            range: `'${PRICE_SHEET_NAME}'!A:H`,
         });
 
         const rows = res.data.values || [];
@@ -126,6 +132,7 @@ async function syncPriceList() {
             const proIdRaw = (row[5] || '').trim();
             const proIdProducto = proIdRaw ? parseInt(proIdRaw, 10) : null;
             const ocultar = (row[6] || '').trim();
+            const filtroLanding = (row[7] || '').trim();
 
             if (!producto) continue;
             
@@ -138,7 +145,8 @@ async function syncPriceList() {
                 .input('Producto', sql.NVarChar(255), producto)
                 .input('Descripcion', sql.NVarChar(500), descripcion)
                 .input('Moneda', sql.NVarChar(50), moneda || 'N/A')
-                .input('Precio', sql.Decimal(18, 2), precio);
+                .input('Precio', sql.Decimal(18, 2), precio)
+                .input('FiltroLanding', sql.NVarChar(500), filtroLanding || null);
 
             // ProIdProducto puede ser null si el producto no tiene artículo asociado
             if (proIdProducto != null && !isNaN(proIdProducto)) {
@@ -151,14 +159,14 @@ async function syncPriceList() {
                     IF EXISTS (SELECT 1 FROM PreciosListaPublica WHERE Familia = @Familia AND Producto = @Producto AND Descripcion = @Descripcion AND Moneda = @Moneda)
                     BEGIN
                         UPDATE PreciosListaPublica 
-                        SET Precio = @Precio, ProIdProducto = @ProIdProducto, Activo = 1, UltimaSync = GETDATE()
+                        SET Precio = @Precio, ProIdProducto = @ProIdProducto, Activo = 1, UltimaSync = GETDATE(), FiltroLanding = @FiltroLanding
                         WHERE Familia = @Familia AND Producto = @Producto AND Descripcion = @Descripcion AND Moneda = @Moneda;
                         SELECT 'UPDATED' AS action;
                     END
                     ELSE
                     BEGIN
-                        INSERT INTO PreciosListaPublica (Familia, Producto, Descripcion, Moneda, Precio, ProIdProducto, Activo, UltimaSync)
-                        VALUES (@Familia, @Producto, @Descripcion, @Moneda, @Precio, @ProIdProducto, 1, GETDATE());
+                        INSERT INTO PreciosListaPublica (Familia, Producto, Descripcion, Moneda, Precio, ProIdProducto, Activo, UltimaSync, FiltroLanding)
+                        VALUES (@Familia, @Producto, @Descripcion, @Moneda, @Precio, @ProIdProducto, 1, GETDATE(), @FiltroLanding);
                         SELECT 'INSERTED' AS action;
                     END
                 `);

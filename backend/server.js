@@ -177,6 +177,10 @@ try {
 app.use('/api/chat', require('./routes/chatRoutes'));
 // checkout routes deshabilitado por ahora
 
+try {
+    app.use('/api/analytics', require('./routes/analyticsRoutes'));
+} catch (e) { logger.error("❌ Error loading analytics routes:", e); }
+
 // --- CRON: Sincronización de lista de precios desde Google Sheets ---
 if (process.env.NODE_ENV !== 'test') {
     require('./cron/priceListSync');
@@ -188,7 +192,7 @@ app.get('/api/precios-publicos', async (req, res) => {
         const { getPool } = require('./config/db');
         const pool = await getPool();
         const result = await pool.request().query(`
-            SELECT Familia, Producto, Descripcion, Moneda, Precio 
+            SELECT Familia, Producto, Descripcion, Moneda, Precio, FiltroLanding 
             FROM PreciosListaPublica 
             WHERE Activo = 1 
             ORDER BY Familia, Producto

@@ -7,6 +7,8 @@ import logoMini from '../../assets/images/logo/logo-mini.svg';
 import { LogOut, MessageSquare, HelpCircle } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { motion, AnimatePresence } from 'framer-motion';
+import PreciosLeadModal from './PreciosLeadModal';
+import PreciosListModal from './PreciosListModal';
 
 
 
@@ -41,14 +43,14 @@ function NavBtn({ onClick, children, forceHover = false, style = {} }) {
   );
 }
 
-function DropdownRecursosDesktop({ navigate, user }) {
+function DropdownRecursosDesktop({ navigate, sessionType }) {
   const [open, setOpen] = useState(false);
 
   const ITEMS = [
     { label: 'Guías', path: '/guias' },
     { label: 'Plantillas', path: '/plantillas' },
-    { label: 'Tablas de Color', path: '/paletas' },
-    { label: 'Lista de Precios', path: '/portal/precios', requiresAuth: true },
+    { label: 'Paletas', path: '/paletas' },
+    { label: 'Precios', path: '/portal/precios', requiresAuth: true },
   ];
 
   return (
@@ -77,18 +79,18 @@ function DropdownRecursosDesktop({ navigate, user }) {
           border: '1px solid rgba(255,255,255,0.08)',
           borderRadius: 16,
           padding: 8,
-          minWidth: 180,
+          minWidth: 140,
           boxShadow: '0 12px 30px rgba(0,0,0,0.5)',
           display: 'flex', flexDirection: 'column', gap: 2,
         }}>
-          {ITEMS.map(item => (
+          {ITEMS.filter(item => !item.requiresAuth || sessionType).map(item => (
             <a
               key={item.label}
               href={item.path || '#'}
               onClick={e => {
                 e.preventDefault();
                 if (!item.path) return;
-                if (item.requiresAuth && !user) {
+                if (item.requiresAuth && !sessionType) {
                   setOpen(false);
                   navigate(`/login?redirect=${item.path}`);
                 } else {
@@ -101,6 +103,7 @@ function DropdownRecursosDesktop({ navigate, user }) {
                 fontSize: 13, fontWeight: 600, padding: '10px 16px', borderRadius: 10,
                 textDecoration: 'none', transition: 'all 0.2s', whiteSpace: 'nowrap',
                 cursor: item.path ? 'pointer' : 'default',
+                textTransform: 'uppercase', textAlign: 'center', letterSpacing: '0.05em'
               }}
               onMouseEnter={e => { if (item.path) { e.target.style.background = 'rgba(255,255,255,0.06)'; e.target.style.color = item.requiresAuth ? '#F5C842' : '#fff'; } }}
               onMouseLeave={e => { e.target.style.background = 'transparent'; e.target.style.color = item.path ? (item.requiresAuth ? '#F5C842' : 'rgba(255,255,255,0.85)') : 'rgba(255,255,255,0.4)'; }}
@@ -159,14 +162,14 @@ function DropdownPortalDesktop({ navigate, user, sessionLabel, handleSessionBtn,
           <button
             onClick={(e) => { e.stopPropagation(); setOpen(false); handleLogout(); }}
             style={{
-              color: '#ef4444',
+              color: '#EC008C',
               fontSize: 13, fontWeight: 600, padding: '10px 16px', borderRadius: 10,
               textDecoration: 'none', transition: 'all 0.2s', whiteSpace: 'nowrap',
               cursor: 'pointer',
               background: 'transparent', border: 'none',
               display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'flex-start'
             }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'; }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(236, 0, 140, 0.1)'; }}
             onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
           >
             <LogOut size={16} /> Cerrar Sesión
@@ -186,6 +189,9 @@ export default function LandingNavbar({ onOpenLoginModal }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [pedidoHovered, setPedidoHovered] = useState(false);
+  const [preciosHovered, setPreciosHovered] = useState(false);
+  const [showPreciosModal, setShowPreciosModal] = useState(false);
+  const [showPreciosListModal, setShowPreciosListModal] = useState(false);
 
   const pathname = location?.pathname || (typeof window !== 'undefined' ? window.location.pathname : '');
   const isAuthPage = pathname === '/login' || pathname === '/register';
@@ -268,7 +274,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
                     setShowLogoutModal(false);
                     logout();
                   }}
-                  className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-red-600 hover:bg-red-500 transition-colors"
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-brand-magenta hover:bg-custom-magenta transition-colors"
                 >
                   Salir
                 </button>
@@ -349,8 +355,35 @@ export default function LandingNavbar({ onOpenLoginModal }) {
               </span>
             </button>
 
+            {!sessionType && (
+            <button
+              onClick={() => setShowPreciosModal(true)}
+              onMouseEnter={() => setPreciosHovered(true)}
+              onMouseLeave={() => setPreciosHovered(false)}
+              style={{
+                position: 'relative', padding: '8px 4px',
+                border: 'none', background: 'transparent',
+                fontSize: 13, fontWeight: 700, letterSpacing: '0.08em',
+                textTransform: 'uppercase', cursor: 'pointer',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              <span style={{
+                background: 'linear-gradient(to right, #00AEEF 0%, #EC008C 16.5%, #FFF200 33%, #F5C842 50%, #F5C842 100%)',
+                backgroundSize: '200% 100%',
+                backgroundPosition: preciosHovered ? '0% 0%' : '100% 0%',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                transition: 'background-position 0.4s ease-out',
+                whiteSpace: 'nowrap',
+              }}>
+                Precios
+              </span>
+            </button>
+            )}
+
             {/* Desktop Dropdown Recursos */}
-            <DropdownRecursosDesktop navigate={navigate} user={user} />
+            <DropdownRecursosDesktop navigate={navigate} sessionType={sessionType} />
 
             {/* Autenticación o Mi Portal dependiendo del estado */}
             {sessionType ? (
@@ -475,24 +508,26 @@ export default function LandingNavbar({ onOpenLoginModal }) {
                 {[
                   { label: 'Guías', path: '/guias' },
                   { label: 'Plantillas', path: '/plantillas' },
-                  { label: 'Tablas de Color', path: '/paletas' },
-                  { label: 'Lista de Precios', path: '/portal/precios', requiresAuth: true },
+                  { label: 'Paletas', path: '/paletas' },
+                  { label: 'Precios', path: '/portal/precios', requiresAuth: true },
                 ].map(item => (
                   <a key={item.label} href={item.path || '#'} onClick={e => {
                     e.preventDefault();
                     if (!item.path) return;
                     setMenuOpen(false);
-                    if (item.requiresAuth && !user) {
+                    if (item.label === 'Precios' && !sessionType) {
+                      setShowPreciosModal(true);
+                    } else if (item.requiresAuth && !sessionType) {
                       navigate(`/login?redirect=${item.path}`);
                     } else {
                       navigate(item.path);
                     }
                   }} style={{
-                    color: '#a1a1aa',
+                    color: (item.label === 'Precios' && !sessionType) ? '#FFF200' : '#a1a1aa',
                     fontSize: 13, fontWeight: 600, textDecoration: 'none',
                     padding: '10px 8px', borderRadius: 8, textAlign: 'center',
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid rgba(255,255,255,0.05)',
+                    background: (item.label === 'Precios' && !sessionType) ? 'rgba(255, 242, 0, 0.05)' : 'rgba(255,255,255,0.03)',
+                    border: (item.label === 'Precios' && !sessionType) ? '1px solid rgba(255, 242, 0, 0.2)' : '1px solid rgba(255,255,255,0.05)',
                     cursor: item.path ? 'pointer' : 'default',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}>
@@ -539,6 +574,21 @@ export default function LandingNavbar({ onOpenLoginModal }) {
           </div>
         </div>
       )}
+      <PreciosLeadModal 
+        isOpen={showPreciosModal} 
+        onClose={() => setShowPreciosModal(false)} 
+        onConfirm={(formData) => {
+          console.log('Lead capture:', formData);
+          // Opcional: Llamada al endpoint para registrar lead, por ahora cerramos el modal
+          setShowPreciosModal(false);
+          setShowPreciosListModal(true);
+        }}
+      />
+
+      <PreciosListModal 
+        isOpen={showPreciosListModal}
+        onClose={() => setShowPreciosListModal(false)}
+      />
     </>
   );
 }

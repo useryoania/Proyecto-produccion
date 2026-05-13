@@ -65,6 +65,7 @@ const EntregaPedidosView = lazyWithRetry(() => import('../pages/customer-service
 const DepositoDashboard = lazyWithRetry(() => import('../logistics/DepositoDashboard'));
 const NomenclatorsABM = lazyWithRetry(() => import('../pages/admin/NomenclatorsABM')); // <-- ADDED
 const SysAdminPage = lazyWithRetry(() => import('../pages/admin/SysAdminPage'));
+const LeadsCRMView = lazyWithRetry(() => import('../pages/ventas/LeadsCRMView'));
 const AuditDepositoView = lazyWithRetry(() => import('../pages/AuditDepositoView'));
 const ContabilidadCuentasView    = lazyWithRetry(() => import('../pages/ContabilidadCuentasView'));
 const ContabilidadAntiguedadView  = lazyWithRetry(() => import('../pages/ContabilidadAntiguedadView'));
@@ -485,6 +486,8 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <Route path="/admin/price-catalog" element={<CustomerPriceCatalogPage />} />
                 <Route path="/admin/nomencladores" element={<NomenclatorsABM />} />
                 <Route path="/nomencladores" element={<NomenclatorsABM />} />
+                <Route path="/admin/leads" element={<LeadsCRMView />} />
+                <Route path="/leads" element={<LeadsCRMView />} />
                 <Route path="/produccion/etiquetas" element={<LabelGenerationPage />} />
                 <Route path="/caja/pagos" element={<CargaPagosView />} />
                 <Route path="/caja/pagos-online" element={<VerificarPagosOnlineView />} />
