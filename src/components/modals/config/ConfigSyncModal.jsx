@@ -53,13 +53,8 @@ export default function ConfigSyncModal({ isOpen, onClose }) {
     if (!isOpen) return null;
 
     return (
-<<<<<<< HEAD
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/60  p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-3xl shadow-xl w-full max-w-3xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
-=======
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-zinc-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl shadow-xl w-full max-w-3xl overflow-hidden border border-zinc-200 flex flex-col max-h-[90vh]">
->>>>>>> main
 
                 {/* Header */}
                 <div className="bg-zinc-50 px-8 py-6 border-b border-zinc-100 flex justify-between items-center shrink-0">
