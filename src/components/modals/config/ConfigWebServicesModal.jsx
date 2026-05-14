@@ -190,13 +190,8 @@ const ConfigWebServicesModal = ({ isOpen, onClose }) => {
     if (!isOpen) return null;
 
     return createPortal(
-<<<<<<< HEAD
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/50  p-4 animate-fade-in">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 transform transition-all scale-100 flex flex-col max-h-[90vh]">
-=======
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-zinc-900/50 backdrop-blur-sm p-4 animate-fade-in">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-zinc-200 transform transition-all scale-100 flex flex-col max-h-[90vh]">
->>>>>>> main
 
                 {/* Header */}
                 <div className="bg-zinc-900 px-6 pt-4 pb-0 flex flex-col gap-4 shrink-0">
