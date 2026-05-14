@@ -25,7 +25,7 @@ const logger  = require('../utils/logger');
 // ─── Configuración ───────────────────────────────────────────────────────────
 
 /** Prefijos que identifican órdenes externas (insensible a mayúsculas) */
-const PREFIJOS_EXTERNOS = ['XSB', 'XDF'];
+const PREFIJOS_EXTERNOS = ['XSB', 'XDF', 'XMD', 'XIMD', 'IMD'];
 
 /**
  * URL base del Apps Script.
@@ -37,6 +37,11 @@ const SCRIPT_URL =
 
 /** Timeout en ms para la llamada al script (default: 25 segundos) */
 const TIMEOUT_MS = parseInt(process.env.ORDENES_EXTERNAS_TIMEOUT_MS || '25000', 10);
+
+// ─── Caché en memoria (evita doble llamada HTTP por orden) ─────────────────
+/** { [codigoOrden]: { data, timestamp } } */
+const _sheetsCache = new Map();
+const CACHE_TTL_MS = 2 * 60 * 1000;   // 2 minutos
 
 // ─── Funciones públicas ───────────────────────────────────────────────────────
 
@@ -77,14 +82,19 @@ function esOrdenExterna(codigoOrden) {
  * @throws {Error} si la API no responde, falla o devuelve ok=false
  */
 async function getDatosDesdeSheets(codigoOrden) {
-  const apiKey = process.env.INTEGRATION_API_KEY || '';
+  // ── 1. Revisar caché ────────────────────────────────────────────────────────
+  const cached = _sheetsCache.get(codigoOrden);
+  if (cached && (Date.now() - cached.timestamp) < CACHE_TTL_MS) {
+    logger.info(`[EXTERNAS:CACHE] ${codigoOrden} → datos desde caché (sin llamada HTTP)`);
+    return cached.data;
+  }
 
+  const apiKey = process.env.INTEGRATION_API_KEY || '';
   const params = new URLSearchParams({
     action:       'getCantidadMaterial',
     codigoOrden:  codigoOrden.trim(),
     apiKey,
   });
-
   const url = `${SCRIPT_URL}?${params.toString()}`;
 
   logger.info(`[EXTERNAS] Consultando Sheets para orden ${codigoOrden}...`);
@@ -97,6 +107,8 @@ async function getDatosDesdeSheets(codigoOrden) {
   } catch {
     throw new Error(`[EXTERNAS] Respuesta no es JSON válido para orden ${codigoOrden}: ${raw.slice(0, 100)}`);
   }
+
+  logger.info(`[EXTERNAS:JSON] ${codigoOrden} → ${JSON.stringify(data)}`);
 
   if (!data.ok) {
     throw new Error(`[EXTERNAS] Sheets respondió error para ${codigoOrden}: ${data.error || 'sin detalle'}`);
@@ -112,17 +124,25 @@ async function getDatosDesdeSheets(codigoOrden) {
     throw new Error(`[EXTERNAS] IDProdReact inválido para ${codigoOrden}: idProdReact=${data.idProdReact} (material="${data.material}" sin mapeo)`);
   }
 
-
   logger.info(`[EXTERNAS] Sheets → ${codigoOrden}: cantidad=${cantidad}, idProdReact=${idProdReact}, material="${data.material}"`);
 
-  return {
+  // Costos individuales en UYU (corte, costura, bordado) + sublimación puede ser USD
+  const result = {
     cantidad,
     idProdReact,
-    material:      data.material      || '',
-    unidad:        data.unidad        || '',
-    importeTotal:  parseFloat(data.importeTotal) || 0,
-    detalleCostos: data.detalleCostos || '',
+    material:         data.material         || '',
+    unidad:           data.unidad           || '',
+    importeCorte:     parseFloat(data.importeCorte)    || 0,   // UYU
+    importeCostura:   parseFloat(data.importeCostura)  || 0,   // UYU
+    importeBordado:   parseFloat(data.importeBordado)  || 0,   // UYU
+    importeTotal:     parseFloat(data.importeTotal)    || 0,   // referencia (no usar para pricing)
+    detalleCostos:    data.detalleCostos    || '',
   };
+
+  // ── 2. Guardar en caché ─────────────────────────────────────────────────────
+  _sheetsCache.set(codigoOrden, { data: result, timestamp: Date.now() });
+
+  return result;
 }
 
 

@@ -68,20 +68,35 @@ const motorContable    = require('./motorContable');     // Motor de Eventos: fu
 async function procesarVentaDirecta(payload) {
   const { header, items, pagos, usuarioId } = payload;
 
+  if (header?.admin) header.esAdministrativa = true;
   if (!header?.clienteId) throw new Error('clienteId obligatorio');
   if (!items?.length) throw new Error('Debe incluir al menos un ítem');
 
   const pool = await getPool();
   const transaction = new sql.Transaction(pool);
   
+  // ── Pre-transacción: obtener/crear cuenta monetaria usando la función unificada ──
+  // Esto también abre el ciclo automáticamente si el cliente es Semanal y no tiene uno.
+  const tDeuda = (header.monedaBase === 'USD' || items[0]?.monedaId === 2) ? 'DINERO_USD' : 'DINERO_UYU';
+  const monIdDeuda = tDeuda === 'DINERO_USD' ? 2 : 1;
+  logger.info(`[CAJA:VTA] Resolviendo cuenta ${tDeuda} para CliId=${header.clienteId} antes de iniciar transacción`);
+  const ctaMonedaId = await contabilidadSvc.obtenerOCrearCuenta(header.clienteId, tDeuda, {
+    MonIdMoneda: monIdDeuda,
+    UsuarioAlta: usuarioId,
+  });
+  logger.info(`[CAJA:VTA] Cuenta resuelta: CueId=${ctaMonedaId} (ciclo verificado/abierto si correspondía)`);
+
   try {
     await transaction.begin();
     
     // 1. Validar Caja Abierta
-    const tSesion = new sql.Request(transaction);
-    const sRes = await tSesion.query("SELECT TOP 1 StuIdSesion FROM dbo.SesionesTurno WITH (UPDLOCK) WHERE StuEstado = 'ABIERTA'");
-    if (sRes.recordset.length === 0) throw new Error('No hay una sesión de caja abierta.');
-    const sesionId = sRes.recordset[0].StuIdSesion;
+    let sesionId = null;
+    if (!header?.esAdministrativa) {
+      const tSesion = new sql.Request(transaction);
+      const sRes = await tSesion.query("SELECT TOP 1 StuIdSesion FROM dbo.SesionesTurno WITH (UPDLOCK) WHERE StuEstado = 'ABIERTA'");
+      if (sRes.recordset.length === 0) throw new Error('No hay una sesión de caja abierta.');
+      sesionId = sRes.recordset[0].StuIdSesion;
+    }
 
     // 2. Cálculos Totales
     const totalBruto = items.reduce((s, i) => s + (parseFloat(i.precioTotal) || 0), 0);
@@ -115,17 +130,45 @@ async function procesarVentaDirecta(payload) {
     tHeader.input('Ajuste', sql.Decimal(18,2), totalAjuste);
     tHeader.input('Neto', sql.Decimal(18,2), totalNeto);
     tHeader.input('Cobrado', sql.Decimal(18,2), totalCobrado);
+    tHeader.input('TcaMonedaBase', sql.VarChar(10), header.moneda || header.monedaBase || 'UYU');
     tHeader.input('Obs', sql.NVarChar(500), header.obs || 'Venta desde mostrador');
     
     // Siguiente num doc
-    const nDocRes = await tHeader.query("SELECT MAX(TcaNumeroDoc) as Ultimo FROM dbo.TransaccionesCaja WITH (UPDLOCK) WHERE TcaTipoDocumento = @TipoD");
-    const proxDoc = (nDocRes.recordset[0].Ultimo || 0) + 1;
-    tHeader.input('Num', sql.VarChar(20), String(proxDoc));
+    let numeroDocString = null;
+    let serieDocStr = header.serieDoc || 'A'; // Defaults to 'A' for electronic billing
+    let docTipoStr = header.tipoDocumento || '01';
+    try {
+        const seqR = await tHeader.query(`
+            UPDATE s
+            SET s.SecUltimoNumero = s.SecUltimoNumero + 1
+            OUTPUT INSERTED.SecSerie AS Serie, INSERTED.SecUltimoNumero AS UltimoNumero, c.Detalle AS DocTipoStr
+            FROM dbo.SecuenciaDocumentos s
+            JOIN dbo.Config_TiposDocumento c ON c.SecIdSecuencia = s.SecIdSecuencia
+            WHERE c.CodDocumento = @TipoD AND s.SecSerie = @Serie
+        `);
+        if (seqR.recordset.length > 0) {
+            const r = seqR.recordset[0];
+            serieDocStr = r.Serie;
+            numeroDocString = String(r.UltimoNumero);
+            docTipoStr = String(r.DocTipoStr).trim();
+        } else {
+            throw new Error(`Secuencia no encontrada para Tipo ${docTipoStr} y Serie ${serieDocStr}`);
+        }
+    } catch (e) {
+        logger.warn(`[CajaService] Fallback de secuencia por: ${e.message}`);
+        // Fallback to MAX if missing mapping, though not ideal for concurrency
+        const nDocRes = await tHeader.query("SELECT ISNULL(MAX(CAST(TcaNumeroDoc AS INT)), 0) as Ultimo FROM dbo.TransaccionesCaja WITH (UPDLOCK) WHERE TcaTipoDocumento = @TipoD AND ISNUMERIC(TcaNumeroDoc) = 1");
+        numeroDocString = String((nDocRes.recordset[0].Ultimo || 0) + 1);
+    }
+
+    // Re-bind exact values for insert
+    tHeader.parameters.Serie.value = serieDocStr;
+    tHeader.input('Num', sql.VarChar(20), numeroDocString);
 
     const rHeader = await tHeader.query(`
-      INSERT INTO dbo.TransaccionesCaja (StuIdSesion, TcaUsuarioId, TcaClienteId, TcaFecha, TcaTipoDocumento, TcaSerieDoc, TcaNumeroDoc, TcaEstado, TcaTotalBruto, TcaTotalAjuste, TcaTotalNeto, TcaTotalCobrado, TcaObservaciones)
+      INSERT INTO dbo.TransaccionesCaja (StuIdSesion, TcaUsuarioId, TcaClienteId, TcaFecha, TcaTipoDocumento, TcaSerieDoc, TcaNumeroDoc, TcaEstado, TcaTotalBruto, TcaTotalAjuste, TcaTotalNeto, TcaTotalCobrado, TcaMonedaBase, TcaObservaciones)
       OUTPUT INSERTED.TcaIdTransaccion
-      VALUES (@Sesion, @TcaUsuarioId, @Cli, @Fecha, @TipoD, @Serie, @Num, @Estado, @Bruto, @Ajuste, @Neto, @Cobrado, @Obs)
+      VALUES (@Sesion, @TcaUsuarioId, @Cli, @Fecha, @TipoD, @Serie, @Num, @Estado, @Bruto, @Ajuste, @Neto, @Cobrado, @TcaMonedaBase, @Obs)
     `);
     const tcaId = rHeader.recordset[0].TcaIdTransaccion;
 
@@ -252,46 +295,60 @@ async function procesarVentaDirecta(payload) {
     }
 
     // 6. Submayor: Deuda documentada de la venta
-    const tDeuda = (header.monedaBase === 'USD' || items[0].monedaId === 2) ? 'USD' : 'UYU';
+    // tDeuda y ctaMonedaId ya fueron resueltos antes de la transacción via obtenerOCrearCuenta()
     
     // El cobrado convertido a la moneda de la deuda
     const totalAbonadoDeuda = pagosNorm.reduce((sum, p) => {
-        if (tDeuda === 'USD') return sum + (p.monedaId === 2 ? p.montoOriginal : (p.cotizacion ? p.montoOriginal / p.cotizacion : p.montoOriginal));
+        if (tDeuda === 'DINERO_USD') return sum + (p.monedaId === 2 ? p.montoOriginal : (p.cotizacion ? p.montoOriginal / p.cotizacion : p.montoOriginal));
         return sum + (p.monedaId === 1 ? p.montoOriginal : p.montoOriginal * (p.cotizacion || 1));
     }, 0);
 
-    const reqCta = new sql.Request(transaction);
-    const ctaRes = await reqCta.input('Cli', sql.Int, header.clienteId).input('T', sql.VarChar(20), tDeuda).query(`SELECT CueIdCuenta FROM dbo.CuentasCliente WHERE CliIdCliente = @Cli AND CueTipo = @T AND CueActiva = 1`);
-    let ctaMonedaId = ctaRes.recordset.length ? ctaRes.recordset[0].CueIdCuenta : null;
-    if (!ctaMonedaId) {
-        const monId = tDeuda === 'USD' ? 2 : 1;
-        const iCta = await reqCta.input('UsrAlta', sql.Int, usuarioId).input('MonId', sql.Int, monId).query(`
-            INSERT INTO dbo.CuentasCliente (CliIdCliente, CueTipo, ProIdProducto, MonIdMoneda, CPaIdCondicion, CueSaldoActual, CueLimiteCredito, CuePuedeNegativo, CueCicloActivo, CueActiva, CueFechaAlta, CueUsuarioAlta)
-            OUTPUT INSERTED.CueIdCuenta
-            VALUES (@Cli, @T, NULL, @MonId, 1, 0, 0, 0, 0, 1, GETDATE(), @UsrAlta)
-        `);
-        ctaMonedaId = iCta.recordset[0].CueIdCuenta;
-    }
+    // Build dynamic concept from items
+    const detallesVenta = items.map(it => `${it.cantidad || 1}x ${it.descripcion || it.codigo || 'Recurso'}`).join(', ');
+    const conceptoVenta = `Venta: ${detallesVenta}`.substring(0, 200);
+    const conceptoPago  = `Pago: ${detallesVenta}`.substring(0, 200);
 
     // Obtener tipo de mov para submayor desde Motor (evento VTA_CAJA o ORDEN)
     const evtVenta  = await motorContable.getEvento('VTA_CAJA').catch(() => null);
     const movVenta  = evtVenta?.EvtCodigo || 'CARGO';
 
+    // Desglose de IVA para CFE
+    const desgloseCFE = contabilidadCore.desglosarIVA(totalBruto, 22);
+
     const iDoc = await new sql.Request(transaction)
        .input('Cta', sql.Int, ctaMonedaId).input('Cli', sql.Int, header.clienteId)
-       .input('Tot', sql.Decimal(18,2), totalBruto).input('Usr', sql.Int, usuarioId).input('Tca', sql.Int, tcaId)
-       .input('MonId', sql.Int, tDeuda === 'USD' ? 2 : 1)
+       .input('Usr', sql.Int, usuarioId).input('Tca', sql.Int, tcaId)
+       .input('MonId', sql.Int, tDeuda === 'DINERO_USD' ? 2 : 1)
        .input('Estado', sql.VarChar(20), totalAbonadoDeuda >= totalBruto ? 'PAGADO' : (totalAbonadoDeuda > 0 ? 'PARCIAL' : 'PENDIENTE'))
-       .query(`INSERT INTO dbo.DocumentosContables (CueIdCuenta, CliIdCliente, MonIdMoneda, DocTipo, DocNumero, DocSerie, DocSubtotal, DocTotalDescuentos, DocTotalRecargos, DocTotal, DocEstado, DocFechaEmision, DocUsuarioAlta)
+       .input('DocTipoStr', sql.VarChar(50), docTipoStr)
+       .input('Serie', sql.VarChar(10), serieDocStr)
+       .input('Num', sql.VarChar(50), numeroDocString)
+       .input('SubTot', sql.Decimal(18,2), desgloseCFE.neto)
+       .input('Iva', sql.Decimal(18,2), desgloseCFE.ivaMonto)
+       .input('Tot', sql.Decimal(18,2), totalBruto)
+       .query(`INSERT INTO dbo.DocumentosContables (CueIdCuenta, CliIdCliente, MonIdMoneda, DocTipo, DocNumero, DocSerie, DocSubtotal, DocImpuestos, DocTotalDescuentos, DocTotalRecargos, DocTotal, DocEstado, DocFechaEmision, DocUsuarioAlta, TcaIdTransaccion, CfeEstado)
                OUTPUT INSERTED.DocIdDocumento
-               VALUES (@Cta, @Cli, @MonId, 'FACTURA', CAST(@Tca AS VARCHAR(50)), 'A', @Tot, 0, 0, @Tot, @Estado, GETDATE(), @Usr)`);
+               VALUES (@Cta, @Cli, @MonId, @DocTipoStr, @Num, @Serie, @SubTot, @Iva, 0, 0, @Tot, @Estado, GETDATE(), @Usr, @Tca, 'PENDIENTE')`);
     const dId = iDoc.recordset[0].DocIdDocumento;
 
+    // Leer el saldo previo para saber si hay Saldo a Favor que consuma la deuda automáticamente
+    const prevSaldoRes = await new sql.Request(transaction)
+      .input('Cue', sql.Int, ctaMonedaId)
+      .query('SELECT ISNULL(CueSaldoActual, 0) as Saldo FROM dbo.CuentasCliente WITH(UPDLOCK) WHERE CueIdCuenta = @Cue');
+    const saldoAFavor = Math.max(0, prevSaldoRes.recordset[0].Saldo);
+
     // --- NUEVO: Registrar también en DeudaDocumento para Visibilidad de Deuda Viva ---
+    // Consultar el Motor Contable para ver si el evento configurado genera deuda
+    const evtConfig = await motorContable.getEvento(header.tipoDocumento || 'VTA_CAJA');
+    const generaDeuda = evtConfig ? !!evtConfig.EvtGeneraDeuda : true;
+    const afectaSaldo = evtConfig ? (evtConfig.EvtAfectaSaldo || 0) : -1;
+
     if (totalAbonadoDeuda < totalBruto) {
-      const importePendiente = totalBruto - totalAbonadoDeuda;
-      if (importePendiente > 0.01) {
-        await new sql.Request(transaction)
+      let importePendiente = totalBruto - totalAbonadoDeuda;
+      
+      if (importePendiente > 0.01 && generaDeuda) {
+        // Nace en el importe real pendiente
+        const insertRes = await new sql.Request(transaction)
           .input('Cue', sql.Int, ctaMonedaId)
           .input('DocId', sql.Int, dId)
           .input('Orig', sql.Decimal(18,4), totalBruto)
@@ -300,33 +357,79 @@ async function procesarVentaDirecta(payload) {
             INSERT INTO dbo.DeudaDocumento
               (CueIdCuenta, DocIdDocumento, DDeImporteOriginal, DDeImportePendiente,
                DDeFechaEmision, DDeFechaVencimiento, DDeEstado)
+            OUTPUT INSERTED.DDeIdDocumento
             VALUES
               (@Cue, @DocId, @Orig, @Pend,
                GETDATE(), DATEADD(DAY, 7, GETDATE()), 'PENDIENTE')
           `);
+        
+        const newDDeId = insertRes.recordset[0].DDeIdDocumento;
+
+        // Auto-consumir saldo a favor existente EXPLÍCITAMENTE
+        if (saldoAFavor > 0) {
+            const montoAAplicar = Math.min(saldoAFavor, importePendiente);
+            
+            // Pago sintético de aplicación
+            const pagRes = await new sql.Request(transaction)
+              .input('Metodo', sql.Int, 1)
+              .input('Moneda', sql.Int, monedaId || 1)
+              .input('Monto', sql.Decimal(18,4), montoAAplicar)
+              .query(`
+                INSERT INTO dbo.Pagos
+                  (MPaIdMetodoPago, PagIdMonedaPago, PagMontoPago, PagFechaPago, 
+                   PagUsuarioAlta, PagCotizacion, PagMontoConvertido, PagTipoMovimiento)
+                OUTPUT INSERTED.PagIdPago
+                VALUES
+                  (@Metodo, @Moneda, @Monto, GETDATE(), 
+                   1, 1, @Monto, 'ANTICIPO_APLICADO')
+              `);
+            const pagId = pagRes.recordset[0].PagIdPago;
+
+            await new sql.Request(transaction)
+              .input('PagIdPago',       sql.Int,          pagId)
+              .input('MontoDisponible', sql.Decimal(18,4), montoAAplicar)
+              .input('CueIdCuenta',     sql.Int,          ctaMonedaId)
+              .input('UsuarioAlta',     sql.Int,          usuarioId)
+              .output('MontoExcedente', sql.Decimal(18,4))
+              .execute('dbo.SP_ImputarPagoPEPS');
+        }
       }
     }
 
-    const rUpdCta1 = await new sql.Request(transaction).input('C', sql.Int, ctaMonedaId).input('Dif', sql.Decimal(18,4), totalBruto).query(`
-        UPDATE dbo.CuentasCliente SET CueSaldoActual = CueSaldoActual - @Dif OUTPUT INSERTED.CueSaldoActual WHERE CueIdCuenta = @C`);
-    const saldoP1 = rUpdCta1.recordset[0].CueSaldoActual;
+    const cicloActivoObj = await contabilidadSvc.obtenerCicloActivo(ctaMonedaId);
+    const cicId = cicloActivoObj ? cicloActivoObj.CicIdCiclo : null;
+    logger.info(`[CAJA:VTA] CicIdCiclo para movimiento VTA_CAJA: ${cicId !== null ? cicId : 'NULL (sin ciclo — movimiento quedará FUERA del ciclo)'}. CliId=${header.clienteId} CueId=${ctaMonedaId}`);
 
-    await new sql.Request(transaction)
-        .input('Cue', sql.Int, ctaMonedaId).input('Imp', sql.Decimal(18,4), -totalBruto)
-        .input('Sal', sql.Decimal(18,4), saldoP1).input('Usr', sql.Int, usuarioId)
-        .input('R', sql.Int, dId).input('MT', sql.VarChar(30), movVenta)
-        .query(`INSERT INTO dbo.MovimientosCuenta (CueIdCuenta, MovTipo, MovConcepto, MovImporte, MovSaldoPosterior, DocIdDocumento, MovUsuarioAlta, MovFecha)
-                VALUES (@Cue, @MT, 'Venta Ingreso Manual', @Imp, @Sal, @R, @Usr, GETDATE())`);
+    if (afectaSaldo !== 0) {
+        // Por convención, una Venta afecta el saldo negativamente (ej. EvtAfectaSaldo = -1)
+        // El importeMov aplicará el signo configurado en el motor
+        const importeCargo = totalBruto * afectaSaldo; 
+        
+        const rUpdCta1 = await new sql.Request(transaction).input('C', sql.Int, ctaMonedaId).input('Dif', sql.Decimal(18,4), importeCargo).query(`
+            UPDATE dbo.CuentasCliente SET CueSaldoActual = CueSaldoActual + @Dif OUTPUT INSERTED.CueSaldoActual WHERE CueIdCuenta = @C`);
+        const saldoP1 = rUpdCta1.recordset[0].CueSaldoActual;
+
+        await new sql.Request(transaction)
+            .input('Cue', sql.Int, ctaMonedaId).input('Imp', sql.Decimal(18,4), importeCargo)
+            .input('Sal', sql.Decimal(18,4), saldoP1).input('Usr', sql.Int, usuarioId)
+            .input('R', sql.Int, dId).input('MT', sql.VarChar(30), 'VTA_CAJA')
+            .input('ConceptoVenta', sql.VarChar(200), conceptoVenta)
+            .input('CicId', sql.Int, cicId)
+            .query(`INSERT INTO dbo.MovimientosCuenta (CueIdCuenta, MovTipo, MovConcepto, MovImporte, MovSaldoPosterior, DocIdDocumento, MovUsuarioAlta, MovFecha, CicIdCiclo)
+                    VALUES (@Cue, @MT, @ConceptoVenta, @Imp, @Sal, @R, @Usr, GETDATE(), @CicId)`);
+    }
 
     if (totalAbonadoDeuda > 0) {
         const rUpdCta2 = await new sql.Request(transaction).input('C', sql.Int, ctaMonedaId).input('Dif', sql.Decimal(18,4), totalAbonadoDeuda).query(`
             UPDATE dbo.CuentasCliente SET CueSaldoActual = CueSaldoActual + @Dif OUTPUT INSERTED.CueSaldoActual WHERE CueIdCuenta = @C`);
         const saldoP2 = rUpdCta2.recordset[0].CueSaldoActual;
-        await new sql.Request(transaction)
-            .input('Cue', sql.Int, ctaMonedaId).input('Imp', sql.Decimal(18,4), totalAbonadoDeuda)
-            .input('Sal', sql.Decimal(18,4), saldoP2).input('Usr', sql.Int, usuarioId).input('Doc', sql.Int, dId)
-            .query(`INSERT INTO dbo.MovimientosCuenta (CueIdCuenta, MovTipo, MovConcepto, MovImporte, MovSaldoPosterior, DocIdDocumento, MovUsuarioAlta, MovFecha)
-                    VALUES (@Cue, 'PAGO', 'Pago Ticket Caja', @Imp, @Sal, @Doc, @Usr, GETDATE())`);
+            await new sql.Request(transaction)
+                .input('Cue', sql.Int, ctaMonedaId).input('Imp', sql.Decimal(18,4), totalAbonadoDeuda)
+                .input('Sal', sql.Decimal(18,4), saldoP2).input('Usr', sql.Int, usuarioId).input('Doc', sql.Int, dId)
+                .input('ConceptoPago', sql.VarChar(200), conceptoPago)
+                .input('CicId', sql.Int, cicId)
+                .query(`INSERT INTO dbo.MovimientosCuenta (CueIdCuenta, MovTipo, MovConcepto, MovImporte, MovSaldoPosterior, DocIdDocumento, MovUsuarioAlta, MovFecha, CicIdCiclo)
+                        VALUES (@Cue, 'PAGO', @ConceptoPago, @Imp, @Sal, @Doc, @Usr, GETDATE(), @CicId)`);
     }
 
     // 7. Asiento Libro Mayor desde Motor (VTA_CAJA)
@@ -336,18 +439,19 @@ async function procesarVentaDirecta(payload) {
       const cotizRef = pagosNorm.find(p => p.cotizacion > 1)?.cotizacion || 1;
       const desglosado = contabilidadCore.desglosarIVA(totalBruto, 22);
 
-      // Intentar desde Motor evento VTA_CAJA
+      // Intentar desde Motor evento configurado en UI (ej: '07' o 'VTA_CAJA')
+      const evtCodigoConfigurado = header.tipoDocumento || 'VTA_CAJA';
       const ctxVenta = {
         moneda: isUSD ? 'USD' : 'UYU', cotizacion: cotizRef,
         clienteId: header.clienteId,
         totalNeto: totalBruto, totalBruto,
         neto: desglosado.neto, iva: desglosado.ivaMonto, descuento: 0,
       };
-      let lineasContables = await contabilidadCore.resolverLineasDesdeMotor('VTA_CAJA', ctxVenta);
+      let lineasContables = await contabilidadCore.resolverLineasDesdeMotor(evtCodigoConfigurado, ctxVenta);
 
       if (lineasContables.length < 2) {
-        // Fallback manual si Motor no tiene reglas VTA_CAJA
-        logger.warn('[CAJA-MOTOR] Sin reglas VTA_CAJA → fallback hardcodeado Venta Directa');
+        // Fallback manual si Motor no tiene reglas
+        logger.warn(`[CAJA-MOTOR] Sin reglas para ${evtCodigoConfigurado} → fallback hardcodeado Venta Directa`);
         const cuentaCli = isUSD ? contabilidadCore.CUENTAS.CLIENTE_USD : contabilidadCore.CUENTAS.CLIENTE_UYU;
         lineasContables = [
           { codigoCuenta: cuentaCli, debeBase: totalBruto, haberBase: 0, monedaId: monId, cotizacion: cotizRef, entidadId: header.clienteId, entidadTipo: 'CLIENTE' },
@@ -362,7 +466,7 @@ async function procesarVentaDirecta(payload) {
       }
 
       await contabilidadCore.generarAsientoCompleto({
-        concepto: `Venta Directa s/ TICKET`, usuarioId,
+        concepto: conceptoVenta, usuarioId,
         tcaIdTransaccion: tcaId, origen: 'CAJA',
         lineas: lineasContables
       }, transaction);
@@ -373,19 +477,22 @@ async function procesarVentaDirecta(payload) {
 
     await transaction.commit();
     logger.info(`[CAJA] VENTA DIRECTA procesada TcaId=${tcaId} Monto=${totalBruto} Cobrado=${totalCobrado}`);
+    // NOTA: El submayor (MovimientosCuenta CARGO+PAGO) ya fue registrado dentro de la transacción.
+    // Marcamos skipHookPago=true para que _lanzarHooksContables NO duplique el movimiento PAGO.
+    if (!header._movimientosPagoRegistrados) header._movimientosPagoRegistrados = true;
     return {
       success: true,
       tcaIdTransaccion: tcaId,
       totalBruto,
       totalCobrado,
-      numeroDoc: proxDoc,
-      tipoDocumento: header.tipoDocumento || 'FACTURA',
-      serieDoc: header.serieDoc || 'C',
-      numeroDocFormato: `${header.serieDoc || 'C'}-${String(proxDoc).padStart(6,'0')}`
+      numeroDoc: numeroDocString,
+      tipoDocumento: docTipoStr,
+      serieDoc: serieDocStr,
+      numeroDocFormato: `${serieDocStr}-${numeroDocString.padStart(6,'0')}`
     };
 
   } catch (err) {
-    if (transaction) await transaction.rollback();
+    try { if (transaction) await transaction.rollback(); } catch (e) { logger.warn('Rollback error:', e.message); }
     throw err;
   }
 }
@@ -425,6 +532,7 @@ async function procesarTransaccion(payload) {
   const { header, aplicaciones, pagos, usuarioId } = payload;
 
   // ── Validaciones básicas ──────────────────────────────────────────────
+  if (header?.admin) header.esAdministrativa = true;
   if (!header?.clienteId)        throw new Error('clienteId es obligatorio.');
   if (!header?.tipoDocumento)    throw new Error('tipoDocumento es obligatorio.');
   if (!aplicaciones?.length)     throw new Error('Debe incluir al menos una orden o ítem.');
@@ -451,8 +559,11 @@ async function procesarTransaccion(payload) {
   const pool        = await getPool();
   
   // Obtener Sesión Activa
-  const sesRes = await pool.request().query("SELECT StuIdSesion FROM dbo.SesionesTurno WITH(NOLOCK) WHERE StuEstado = 'ABIERTA'");
-  const stuIdSesion = sesRes.recordset.length > 0 ? sesRes.recordset[0].StuIdSesion : null;
+  let stuIdSesion = null;
+  if (!header?.admin) {
+    const sesRes = await pool.request().query("SELECT TOP 1 StuIdSesion FROM dbo.SesionesTurno WITH(NOLOCK) WHERE StuEstado = 'ABIERTA'");
+    if (sesRes.recordset.length > 0) stuIdSesion = sesRes.recordset[0].StuIdSesion;
+  }
 
   const transaction = pool.transaction();
   await transaction.begin();
@@ -461,6 +572,32 @@ async function procesarTransaccion(payload) {
   const pagosCreados   = [];
 
   try {
+
+    // ── PASO 0: Generar correlativo si no viene el número ────────────────
+    if (header.tipoDocumento && header.tipoDocumento !== 'NINGUNO' && !header.numeroDoc) {
+      try {
+        const seqR = await transaction.request()
+          .input('CodDoc', sql.VarChar(20), header.tipoDocumento)
+          .input('Serie', sql.VarChar(5), header.serieDoc || 'A')
+          .query(`
+            UPDATE s
+            SET s.SecUltimoNumero = s.SecUltimoNumero + 1
+            OUTPUT INSERTED.SecSerie AS Serie, INSERTED.SecUltimoNumero AS UltimoNumero, INSERTED.SecPrefijo AS Prefijo, INSERTED.SecDigitos AS Digitos
+            FROM dbo.SecuenciaDocumentos s
+            JOIN dbo.Config_TiposDocumento c ON c.SecIdSecuencia = s.SecIdSecuencia
+            WHERE c.CodDocumento = @CodDoc AND s.SecSerie = @Serie
+          `);
+        if (seqR.recordset.length > 0) {
+          const r = seqR.recordset[0];
+          header.serieDoc  = r.Serie;
+          header.numeroDoc = String(r.UltimoNumero);
+          // Opcional: Si quieren guardar el prefijo y ceros (ej. REC-000123) en NumeroDoc en lugar de solo '123'
+          // header.numeroDoc = (r.Prefijo || '') + String(r.UltimoNumero).padStart(r.Digitos, '0');
+        }
+      } catch (eSeq) {
+        logger.warn(`[CAJA] No se pudo generar secuencia para ${header.tipoDocumento}:`, eSeq.message);
+      }
+    }
 
     // ── PASO 1: Crear encabezado en TransaccionesCaja ──────────────────
     const tcaRes = await transaction.request()
@@ -474,6 +611,7 @@ async function procesarTransaccion(payload) {
       .input('TcaTotalAjuste',   sql.Decimal(18,2), totalAjuste)
       .input('TcaTotalNeto',     sql.Decimal(18,2), totalNeto)
       .input('TcaTotalCobrado',  sql.Decimal(18,2), totalCobrado)
+      .input('TcaMonedaBase',    sql.VarChar(10),   header.moneda || header.monedaBase || 'UYU')
       .input('TcaObservaciones', sql.NVarChar(500), header.observaciones || null)
       .query(`
         INSERT INTO dbo.TransaccionesCaja
@@ -486,7 +624,7 @@ async function procesarTransaccion(payload) {
           (@StuIdSesion, GETDATE(), @TcaUsuarioId, @TcaClienteId, @TcaTipoDocumento,
            @TcaSerieDoc, @TcaNumeroDoc,
            @TcaTotalBruto, @TcaTotalAjuste, @TcaTotalNeto, @TcaTotalCobrado,
-           'UYU', 'COMPLETADO', @TcaObservaciones)
+           @TcaMonedaBase, 'COMPLETADO', @TcaObservaciones)
       `);
 
     tcaIdTransaccion = tcaRes.recordset[0].TcaIdTransaccion;
@@ -723,25 +861,29 @@ async function procesarTransaccion(payload) {
 
       // ─ Intentar construir asiento desde el Motor ─────────────────────
       // El evento 'PAGO' debe tener reglas: META_CAJA (DEBE) y META_CLIENTE (HABER)
-      const desglose = contabilidadCore.desglosarIVA(totalNeto, 0); // sin IVA por defecto en cobros
+      const totalNetoMoneda = isOrdenUSD ? (totalNeto / cotizRef) : totalNeto;
+      const totalBrutoMoneda = isOrdenUSD ? (totalBruto / cotizRef) : totalBruto;
+      const desglose = contabilidadCore.desglosarIVA(totalNetoMoneda, 0); // sin IVA por defecto en cobros
 
       // Construir contexto para resolverLineasDesdeMotor
       const ctxMotor = {
         moneda:     isOrdenUSD ? 'USD' : 'UYU',
         cotizacion: cotizRef,
         clienteId:  header.clienteId,
-        totalNeto,
-        totalBruto,
-        neto:      desglose.neto,
-        iva:       desglose.ivaMonto,
-        descuento: Math.abs(totalAjuste),
+        totalNeto:  totalNetoMoneda,
+        totalBruto: totalBrutoMoneda,
+        neto:       desglose.neto,
+        iva:        desglose.ivaMonto,
+        descuento:  isOrdenUSD ? (Math.abs(totalAjuste) / cotizRef) : Math.abs(totalAjuste),
       };
 
       // Para pagos multimoneda, resolvemos UNA línea por pago real
       let lineasContables = [];
 
       // Intentar con el Motor para el evento PAGO
-      const lineasMotor = await contabilidadCore.resolverLineasDesdeMotor('PAGO', ctxMotor);
+      // (WMS Checkout ya registró los ingresos en Check-In, por lo que aquí solo va el asiento de caja)
+      const evtCodigoConfigurado = 'PAGO';
+      const lineasMotor = await contabilidadCore.resolverLineasDesdeMotor(evtCodigoConfigurado, ctxMotor);
 
       if (lineasMotor.length >= 2) {
         // Motor tiene reglas → combinar con los pagos reales por moneda
@@ -750,7 +892,7 @@ async function procesarTransaccion(payload) {
 
         // Crédito de deuda del cliente (siempre en 1 línea)
         const lineaCliente = lineasMotor.find(l => l.haberBase > 0);
-        if (lineaCliente) lineasContables.push({ ...lineaCliente, haberBase: totalNeto });
+        if (lineaCliente) lineasContables.push({ ...lineaCliente, haberBase: isOrdenUSD ? (totalNeto / cotizRef) : totalNeto });
 
         // Débito por cada pago recibido (multimoneda)
         for (const pago of pagosNorm) {
@@ -758,9 +900,16 @@ async function procesarTransaccion(payload) {
           const cuentaCaja = isUSD ? contabilidadCore.CUENTAS.CAJA_USD : contabilidadCore.CUENTAS.CAJA_UYU;
           // Buscar si el Motor definió una cuenta explícita para CAJA
           const lineaCaja = lineasMotor.find(l => l.debeBase > 0);
+          let codigoCajaReal = lineaCaja?.codigoCuenta || cuentaCaja;
+          
+          // Si el motor resolvió a una caja por defecto, sobreescribimos con la caja específica de la moneda del pago
+          if (codigoCajaReal === contabilidadCore.CUENTAS.CAJA_UYU || codigoCajaReal === contabilidadCore.CUENTAS.CAJA_USD) {
+             codigoCajaReal = cuentaCaja;
+          }
+
           lineasContables.push({
-            codigoCuenta: lineaCaja?.codigoCuenta || cuentaCaja,
-            debeBase:     pago.montoConvertido,
+            codigoCuenta: codigoCajaReal,
+            debeBase:     pago.montoOriginal,
             haberBase:    0,
             monedaId:     pago.monedaId,
             cotizacion:   pago.cotizacion || 1,
@@ -771,12 +920,12 @@ async function procesarTransaccion(payload) {
         logger.info(`[CAJA-MOTOR] Asiento PAGO desde Motor. Reglas usadas: ${lineasMotor.length}`);
       } else {
         // Sin reglas en Motor → fallback hardcodeado (legacy)
-        logger.warn(`[CAJA-MOTOR] Evento PAGO sin reglas configuradas → fallback cuentas hardcodeadas`);
+        logger.warn(`[CAJA-MOTOR] Evento ${evtCodigoConfigurado} sin reglas configuradas → fallback cuentas hardcodeadas`);
         for (const pago of pagosNorm) {
           const isUSD = pago.moneda === 'USD';
           lineasContables.push({
             codigoCuenta: isUSD ? contabilidadCore.CUENTAS.CAJA_USD : contabilidadCore.CUENTAS.CAJA_UYU,
-            debeBase:  pago.montoConvertido,
+            debeBase:  pago.montoOriginal,
             haberBase: 0,
             monedaId:  pago.monedaId,
             cotizacion: pago.cotizacion,
@@ -787,7 +936,7 @@ async function procesarTransaccion(payload) {
         lineasContables.push({
           codigoCuenta: isOrdenUSD ? contabilidadCore.CUENTAS.CLIENTE_USD : contabilidadCore.CUENTAS.CLIENTE_UYU,
           debeBase:  0,
-          haberBase: totalNeto,
+          haberBase: isOrdenUSD ? (totalNeto / cotizRef) : totalNeto,
           monedaId,
           cotizacion: cotizRef,
           entidadId:  header.clienteId,
@@ -798,8 +947,11 @@ async function procesarTransaccion(payload) {
       const strDoc = (header.tipoDocumento && header.tipoDocumento !== 'NINGUNO')
         ? `${header.tipoDocumento} ${header.serieDoc || ''}-${header.numeroDoc || ''}`.trim() : 'Recibo Interno';
 
+      const strRef = aplicaciones.map(a => a.codigoRef || a.referenciaId).filter(Boolean).join(', ') || tcaIdTransaccion;
+      const conceptoAsiento = `Cobro s/ ${strRef} - ${strDoc}`;
+
       const asiId = await contabilidadCore.generarAsientoCompleto({
-        concepto: `Cobro Orden s/ ${strDoc}`,
+        concepto: conceptoAsiento,
         usuarioId,
         tcaIdTransaccion,
         origen: 'CAJA_COBROS',
@@ -814,7 +966,7 @@ async function procesarTransaccion(payload) {
           .input('codDoc', sql.VarChar(10), header.tipoDocumento)
           .query(`
             SELECT c.EvtCodigo, c.Detalle, c.AfectaCtaCte, 
-                   ISNULL(c.DiasVencimiento, 30) AS DiasVencimiento,
+                   30 AS DiasVencimiento,
                    s.SecSerie, s.SecUltimoNumero, s.SecIdSecuencia 
             FROM dbo.Config_TiposDocumento c WITH(NOLOCK)
             LEFT JOIN dbo.SecuenciaDocumentos s WITH(UPDLOCK) ON c.SecIdSecuencia = s.SecIdSecuencia
@@ -836,7 +988,7 @@ async function procesarTransaccion(payload) {
              const numeroCFE = resSeq.recordset[0].SecUltimoNumero;
              const serieCFE = config.SecSerie || 'A';
              
-             const desgloseCFE = contabilidadCore.desglosarIVA(totalNeto, 22); // 22% as default for VAT
+             const desgloseCFE = contabilidadCore.desglosarIVA(totalNetoMoneda, 22); // 22% as default for VAT
              
              const insertDocResult = await transaction.request()
                .input('tipo',      sql.VarChar(50), config.Detalle || header.tipoDocumento)
@@ -845,7 +997,7 @@ async function procesarTransaccion(payload) {
                .input('clienteId', sql.Int,         header.clienteId || 1)
                .input('subtotal',  sql.Decimal(18,2), desgloseCFE.neto)
                .input('iva',       sql.Decimal(18,2), desgloseCFE.ivaMonto)
-               .input('total',     sql.Decimal(18,2), totalNeto)
+               .input('total',     sql.Decimal(18,2), totalNetoMoneda)
                .input('serie',     sql.VarChar(10), serieCFE)
                .input('numero',    sql.Int,         numeroCFE)
                .input('usuario',   sql.Int,         usuarioId || 1)
@@ -868,16 +1020,19 @@ async function procesarTransaccion(payload) {
                
              const docIdDocumento = insertDocResult.recordset[0].DocIdDocumento;
 
-             // ── DeudaDocumento: solo si AfectaCtaCte y hay saldo sin cubrir ────
-             // La configuración del tipo de documento (Config_TiposDocumento.AfectaCtaCte)
-             // es el switch que determina si se genera deuda en cuenta corriente.
-             const importePendiente = totalNeto - totalCobrado;
-             if (importePendiente > 0.01 && config.AfectaCtaCte) {
+             // ── DeudaDocumento: consultamos al Motor Contable ────
+             const evtConfig = await motorContable.getEvento(header.tipoDocumento || 'F_ORDEN');
+             const generaDeuda = evtConfig ? !!evtConfig.EvtGeneraDeuda : !!config.AfectaCtaCte;
+
+             let importePendiente = totalNeto - totalCobrado;
+             let importePendienteMoneda = isOrdenUSD ? (importePendiente / cotizRef) : importePendiente;
+             
+             if (importePendienteMoneda > 0.01 && generaDeuda) {
                const cuentaDeudaRes = await transaction.request()
                  .input('cli', sql.Int, header.clienteId)
                  .query(`
-                   SELECT TOP 1 CueIdCuenta 
-                   FROM dbo.CuentasCliente 
+                   SELECT TOP 1 CueIdCuenta, ISNULL(CueSaldoActual, 0) as Saldo
+                   FROM dbo.CuentasCliente WITH(UPDLOCK)
                    WHERE CliIdCliente = @cli 
                      AND CueTipo IN ('DINERO_UYU', 'DINERO_USD') 
                      AND CueActiva = 1 
@@ -885,22 +1040,57 @@ async function procesarTransaccion(payload) {
                  `);
                if (cuentaDeudaRes.recordset.length > 0) {
                  const cueDeudaId = cuentaDeudaRes.recordset[0].CueIdCuenta;
+                 const saldoAFavor = Math.max(0, cuentaDeudaRes.recordset[0].Saldo);
+                 
+                 // Nace en el importe real pendiente
                  const diasVenc = config.DiasVencimiento || 30;
-                 await transaction.request()
+                 const insertRes = await transaction.request()
                    .input('cue',  sql.Int,          cueDeudaId)
                    .input('doc',  sql.Int,          docIdDocumento)
-                   .input('orig', sql.Decimal(18,4), totalNeto)
-                   .input('pend', sql.Decimal(18,4), importePendiente)
+                   .input('orig', sql.Decimal(18,4), isOrdenUSD ? (totalNeto / cotizRef) : totalNeto)
+                   .input('pend', sql.Decimal(18,4), importePendienteMoneda)
                    .input('dias', sql.Int,          diasVenc)
                    .query(`
                      INSERT INTO dbo.DeudaDocumento
                        (CueIdCuenta, DocIdDocumento, DDeImporteOriginal, DDeImportePendiente,
                         DDeFechaEmision, DDeFechaVencimiento, DDeEstado)
+                     OUTPUT INSERTED.DDeIdDocumento
                      VALUES
                        (@cue, @doc, @orig, @pend,
                         GETDATE(), DATEADD(DAY, @dias, GETDATE()), 'PENDIENTE')
                    `);
-                 logger.info(`[CAJA-CFE] DeudaDocumento creada: Cli=${header.clienteId} Monto=${importePendiente} TipoDoc=${header.tipoDocumento} Venc=${diasVenc}d`);
+                 logger.info(`[CAJA-CFE] DeudaDocumento creada: Cli=${header.clienteId} Monto=${importePendienteMoneda} TipoDoc=${header.tipoDocumento} Venc=${diasVenc}d`);
+
+                 const newDDeId = insertRes.recordset[0].DDeIdDocumento;
+
+                 // Auto-consumir saldo a favor existente EXPLÍCITAMENTE
+                 if (saldoAFavor > 0) {
+                     const montoAAplicar = Math.min(saldoAFavor, importePendienteMoneda);
+                     
+                     // Pago sintético de aplicación
+                     const pagRes = await transaction.request()
+                           .input('Metodo', sql.Int, 1)
+                           .input('Moneda', sql.Int, isOrdenUSD ? 2 : 1)
+                           .input('Monto', sql.Decimal(18,4), montoAAplicar)
+                           .query(`
+                             INSERT INTO dbo.Pagos
+                               (MPaIdMetodoPago, PagIdMonedaPago, PagMontoPago, PagFechaPago, 
+                                PagUsuarioAlta, PagCotizacion, PagMontoConvertido, PagTipoMovimiento)
+                             OUTPUT INSERTED.PagIdPago
+                             VALUES
+                               (@Metodo, @Moneda, @Monto, GETDATE(), 
+                                1, 1, @Monto, 'ANTICIPO_APLICADO')
+                           `);
+                         const pagId = pagRes.recordset[0].PagIdPago;
+
+                         await transaction.request()
+                           .input('PagIdPago',       sql.Int,          pagId)
+                           .input('MontoDisponible', sql.Decimal(18,4), montoAAplicar)
+                           .input('CueIdCuenta',     sql.Int,          cueDeudaId)
+                           .input('UsuarioAlta',     sql.Int,          usuarioId)
+                           .output('MontoExcedente', sql.Decimal(18,4))
+                           .execute('dbo.SP_ImputarPagoPEPS');
+                     }
                } else {
                  logger.warn(`[CAJA-CFE] Sin cuenta DINERO para CliId=${header.clienteId} — DeudaDocumento no creada`);
                }
@@ -1113,7 +1303,7 @@ async function getTransaccion(tcaIdTransaccion) {
       .query(`
         SELECT t.*, c.Nombre AS NombreCliente
         FROM dbo.TransaccionesCaja t WITH(NOLOCK)
-        JOIN dbo.Clientes c WITH(NOLOCK) ON c.CliIdCliente = t.TcaClienteId
+        LEFT JOIN dbo.Clientes c WITH(NOLOCK) ON c.CliIdCliente = t.TcaClienteId
         WHERE t.TcaIdTransaccion = @TcaId
       `),
     // Detalle
@@ -1221,7 +1411,14 @@ async function _lanzarHooksContables({ aplicaciones, pagosNorm, pagosCreados, he
   // Registrar UN SOLO pago consolidado hacia la Deuda del Cliente (Submayor)
   // Utilizamos la moneda original de la orden (header.moneda) y el monto total cobrado en ESA moneda
   // El PagIdPago lo asociamos al primer pago real como referencia.
-  if (pagosCreados.length > 0) {
+  //
+  // IMPORTANTE: Si la función que originó el cobro (ej. procesarVentaDirecta) ya registró
+  // los movimientos de CARGO y PAGO en MovimientosCuenta internamente dentro de la TX,
+  // NO se debe volver a llamar a hookPagoRegistrado — evita el doble movimiento que duplicaba el saldo.
+  if (header._movimientosPagoRegistrados) {
+    logger.info(`[CAJA-HOOK] Movimientos de submayor ya registrados internamente — hookPagoRegistrado OMITIDO para CliId=${header.clienteId}`);
+    // Sí seguimos procesando ajustes al final del bloque
+  } else if (pagosCreados.length > 0) {
     const pagId = pagosCreados[0].pagIdPago;
     
     // Si pasaron la deuda pura desde el Frontend (para cobros de órdenes exactas)
@@ -1245,12 +1442,16 @@ async function _lanzarHooksContables({ aplicaciones, pagosNorm, pagosCreados, he
         });
       }
     } else if (totalNeto > 0) {
-      // Fallback a lógica genérica (legacy o ingresos genéricos sin origen orden)
+      const isOrdenUSD = (header.moneda === 'USD' || header.monedaBase === 'USD');
+      const cotizRef = pagosNorm.find(p => p.cotizacion > 1)?.cotizacion || 1;
+      const totalNetoMoneda = isOrdenUSD ? (totalNeto / cotizRef) : totalNeto;
+
+      // Fallback a lógica genérica (procesarTransaccion — retiros, cobros WMS, etc.)
       await contabilidadSvc.hookPagoRegistrado({
         PagIdPago:   pagId,
         CliIdCliente: header.clienteId,
-        MontoPago:   totalNeto,
-        MonIdMoneda: header.moneda === 'USD' ? 2 : 1,
+        MontoPago:   totalNetoMoneda,
+        MonIdMoneda: isOrdenUSD ? 2 : 1,
         UsuarioAlta: usuarioId,
       });
     }

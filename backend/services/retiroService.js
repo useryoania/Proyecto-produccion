@@ -186,8 +186,8 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
         // (UI de gestión + carga de datos en producción), eliminar este bloque y
         // dejar que caigan al else de abajo para que pasen por la verificación real
         // de verificarRecursoCliente() y verificarCicloSemanal().
-        estadoOrdenRetiro = 4;
-        logger.info(`[RETIRO] Cliente tipo ${tipoCliente} → Estado 4 (Abonado de antemano) directo [bypass temporal].`);
+        estadoOrdenRetiro = 9;
+        logger.info(`[RETIRO] Cliente tipo ${tipoCliente} → Estado 9 (Autorizado) directo [bypass temporal].`);
 
     } else {
         // Verificar ciclo semanal del cliente (aplica a todas las órdenes si tipo 2)
@@ -223,7 +223,7 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
             break;
         }
 
-        estadoOrdenRetiro = todasCubiertas ? 4 : 1;
+        estadoOrdenRetiro = todasCubiertas ? 9 : 1;
     }
 
     // 1. Generar ID para OrdenesRetiro con UPDLOCK (previene race condition)
@@ -246,7 +246,7 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
         .input('Depto', sql.NVarChar(200), departamento || null)
         .input('Loc', sql.NVarChar(200), localidad || null)
         .input('AgenciaId', sql.Int, agenciaId ? parseInt(agenciaId, 10) : null)
-        .input('PagIdExistente', sql.Int, pagoExistenteId)
+        .input('PagIdExistente', sql.Int, (estadoOrdenRetiro === 4 || estadoOrdenRetiro === 9) ? (pagoExistenteId || 0) : pagoExistenteId)
         .query(`
             INSERT INTO OrdenesRetiro 
                 (OReIdOrdenRetiro, OReCostoTotalOrden, LReIdLugarRetiro, OReFechaAlta, OReUsuarioAlta, OReEstadoActual, OReFechaEstadoActual, FormaRetiro, CodCliente, MonIdMoneda, DireccionEnvio, DepartamentoEnvio, LocalidadEnvio, AgenciaEnvio, PagIdPago)
@@ -291,16 +291,18 @@ async function crearRetiro(transaction, { ordIds, totalCost, lugarRetiro, usuari
             .input('Lugar', sql.Int, lugarRetiro)
             .input('RetiroId', sql.Int, OReIdOrdenRetiro)
             .input('Usr', sql.Int, usuarioAlta)
+            .input('PagId', sql.Int, (estadoOrdenRetiro === 4 || estadoOrdenRetiro === 9) ? 0 : null)
             .query(`
                 UPDATE OrdenesDeposito SET 
                     LReIdLugarRetiro = @Lugar, 
                     OReIdOrdenRetiro = @RetiroId,
-                    OrdEstadoActual = 4, 
-                    OrdFechaEstadoActual = GETDATE()
+                    OrdEstadoActual = 9, 
+                    OrdFechaEstadoActual = GETDATE(),
+                    PagIdPago = ISNULL(PagIdPago, @PagId)
                 WHERE OrdIdOrden = @OrdId;
 
                 INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-                VALUES (@OrdId, 4, GETDATE(), @Usr);
+                VALUES (@OrdId, 9, GETDATE(), @Usr);
             `);
     }
 
@@ -332,8 +334,17 @@ async function marcarEntregado(transactionOrReq, OReIdOrdenRetiro, fecha, usuari
 
             UPDATE OrdenesDeposito SET OrdEstadoActual = 9, OrdFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
 
-            UPDATE OrdenesRetiro SET OReEstadoActual = 5, ORePasarPorCaja = 0, OReFechaEstadoActual = @Fec WHERE OReIdOrdenRetiro = @ID;
-            INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@ID, 5, @Fec, @Usr);
+            UPDATE OrdenesRetiro 
+            SET OReEstadoActual = CASE 
+                WHEN OReEstadoActual IN (3, 4, 8, 9) THEN 8 
+                ELSE 5 
+            END, 
+            ORePasarPorCaja = 0, 
+            OReFechaEstadoActual = @Fec 
+            WHERE OReIdOrdenRetiro = @ID;
+
+            INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) 
+            SELECT @ID, CASE WHEN OReEstadoActual IN (3, 4, 8, 9) THEN 8 ELSE 5 END, @Fec, @Usr FROM OrdenesRetiro WHERE OReIdOrdenRetiro = @ID;
 
             -- Liberar estante automáticamente al entregar
             DELETE FROM OcupacionEstantes

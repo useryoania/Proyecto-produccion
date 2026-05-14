@@ -104,6 +104,7 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
           serieDoc: serieDoc,
           observaciones: observaciones || concepto,
           esCredito,
+          moneda: moneda,
         },
         aplicaciones: [
           {
@@ -114,12 +115,12 @@ export default function CajaCobroLibreTab({ sesion, onCobroCompletado, metodosPa
             ajuste: 0
           }
         ],
-        // Si es crédito, mandamos pagos vacíos — la deuda queda en cuenta corriente
         pagos: esCredito ? [] : pagosValidos.map(p => ({
           metodoPagoId: parseInt(p.metodoPagoId, 10),
-          monedaId: parseInt(p.monedaId, 10),
+          moneda: p.moneda,
+          monedaId: p.moneda === 'USD' ? 2 : 1,
           montoOriginal: parseFloat(p.monto),
-          cotizacion: p.monedaId === 2 ? cotizacion : 1
+          cotizacion: p.moneda === 'USD' ? cotizacion : 1
         }))
       };
 

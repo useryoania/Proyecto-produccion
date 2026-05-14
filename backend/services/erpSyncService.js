@@ -2,6 +2,7 @@ const axios = require('axios');
 const { sql, getPool } = require('../config/db');
 const PricingService = require('./pricingService');
 const logger = require('../utils/logger');
+const contabilidadSvc = require('./contabilidadService');
 
 class ERPSyncService {
 
@@ -291,6 +292,45 @@ class ERPSyncService {
                     });
                 }
 
+                // --- NUEVO: INYECTAR SERVICIOS EXTERNOS (Corte, Costura) DE SHEETS ---
+                const { esOrdenExterna, getDatosDesdeSheets } = require('./ordenesExternasService');
+                if (esOrdenExterna(sib.NoDocERP)) {
+                    try {
+                        const extData = await getDatosDesdeSheets(sib.NoDocERP);
+                        if (extData && (extData.importeCorte || extData.importeCostura || extData.importeBordado)) {
+                            // Obtener cotización
+                            const cotRes = await pool.request().query(`SELECT TOP 1 CotDolar FROM dbo.Cotizaciones ORDER BY CotIdCotizacion DESC`);
+                            const cotizacion = cotRes.recordset[0]?.CotDolar || 40;
+                            
+                            const addServiceLine = (nombre, importeUYU) => {
+                                if (!importeUYU || importeUYU <= 0) return;
+                                const srvUSD = Math.round((importeUYU / cotizacion) * 100) / 100;
+                                totalPriceSum += srvUSD;
+                                detallesCobranza.push({
+                                    OrdenID: sib.OrdenID,
+                                    CodArticulo: `SRV-${nombre.toUpperCase()}`,
+                                    ProIdProducto: null,
+                                    Cantidad: 1,
+                                    PrecioUnitario: srvUSD,
+                                    Subtotal: srvUSD,
+                                    PrecioUnitarioOriginal: importeUYU,
+                                    SubtotalOriginal: importeUYU,
+                                    Moneda: 'USD',
+                                    MonedaOriginal: 'UYU',
+                                    LogPrecioAplicado: `Servicio de ${nombre} (Desde Sheets)`,
+                                    Perfiles: 'Servicio Adicional'
+                                });
+                            };
+
+                            addServiceLine('Corte', extData.importeCorte);
+                            addServiceLine('Costura', extData.importeCostura);
+                            addServiceLine('Bordado', extData.importeBordado);
+                        }
+                    } catch (errExt) {
+                        logger.warn(`[ERPSync] No se pudo obtener servicios externos para ${sib.NoDocERP} al generar detalle: ${errExt.message}`);
+                    }
+                }
+
                 // --- SERVICIOS EXTRA ---
                 const srvRes = await pool.request()
                     .input('OID', sql.Int, sib.OrdenID)
@@ -365,8 +405,20 @@ class ERPSyncService {
         try {
             await this.updatePedidosCobranza(pool, noDocERP, first.Cli_CliIdCliente || null, totalPriceSum, targetCurrency, detallesCobranza, userNotes, qrData);
             logger.info(`[ERPSync] ✅ PedidosCobranza actualizado para ${noDocERP}`);
+
+            // ASEGURAR APERTURA DE CICLO PARA CLIENTES SEMANALES AL CARGAR ORDEN
+            if (first.Cli_CliIdCliente) {
+                const tipoCuenta = targetCurrency === 'USD' ? 'DINERO_USD' : 'DINERO_UYU';
+                const monId = targetCurrency === 'USD' ? 2 : 1;
+                await contabilidadSvc.obtenerOCrearCuenta(first.Cli_CliIdCliente, tipoCuenta, {
+                    MonIdMoneda: monId,
+                    CPaIdCondicion: 1,
+                    UsuarioAlta: userId
+                });
+                logger.info(`[ERPSync] Verificación de Cuenta/Ciclo Contable ejecutada para Cliente ${first.Cli_CliIdCliente} en ${targetCurrency}.`);
+            }
         } catch (ePed) {
-            logger.error(`[ERPSync] ❌ Error al guardar PedidosCobranza para ${noDocERP}:`, ePed.message);
+            logger.error(`[ERPSync] ❌ Error al procesar PedidosCobranza o Ciclo Contable para ${noDocERP}:`, ePed.message);
         }
 
         if (onlyCalculate) {
@@ -620,8 +672,8 @@ class ERPSyncService {
                 .input('QRT', sql.NVarChar, qrData ? qrData.qrTrabajo : null)
                 .input('QRU', sql.NVarChar, qrData ? qrData.qrUrgencia : null)
                 .input('QRPr', sql.NVarChar, qrData ? qrData.qrProducto : null)
-                .input('QRCa', sql.NVarChar, qrData ? qrData.qrCantidad : null)
-                .input('QRI', sql.NVarChar, qrData ? qrData.qrImporte : null)
+                .input('QRCa', sql.NVarChar, qrData && qrData.qrCantidad != null ? String(qrData.qrCantidad) : null)
+                .input('QRI', sql.NVarChar, qrData && qrData.qrImporte != null ? String(qrData.qrImporte) : null)
                 .input('QRS', sql.NVarChar(sql.MAX), qrData ? qrData.qrString : null)
                 .input('DC', sql.NVarChar(sql.MAX), textBreakdown)
                 .input('PP', sql.NVarChar(sql.MAX), perfilesUnicos)
@@ -643,8 +695,8 @@ class ERPSyncService {
                 .input('QRT', sql.NVarChar, qrData ? qrData.qrTrabajo : null)
                 .input('QRU', sql.NVarChar, qrData ? qrData.qrUrgencia : null)
                 .input('QRPr', sql.NVarChar, qrData ? qrData.qrProducto : null)
-                .input('QRCa', sql.NVarChar, qrData ? qrData.qrCantidad : null)
-                .input('QRI', sql.NVarChar, qrData ? qrData.qrImporte : null)
+                .input('QRCa', sql.NVarChar, qrData && qrData.qrCantidad != null ? String(qrData.qrCantidad) : null)
+                .input('QRI', sql.NVarChar, qrData && qrData.qrImporte != null ? String(qrData.qrImporte) : null)
                 .input('QRS', sql.NVarChar(sql.MAX), qrData ? qrData.qrString : null)
                 .input('DC', sql.NVarChar(sql.MAX), textBreakdown)
                 .input('PP', sql.NVarChar(sql.MAX), perfilesUnicos)

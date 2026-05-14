@@ -505,6 +505,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <Route path="/contabilidad/reconciliacion"    element={<ContabilidadReconciliacionView />} />
                 <Route path="/contabilidad/bandeja-cfe"       element={<ContabilidadBandejaCFE />} />
                 <Route path="/contabilidad/tesoreria"         element={<ContabilidadTesoreriaView />} />
+                <Route path="/contabilidad/caja-admin"        element={<CajaTransaccionView isAdminCaja={true} />} />
                 <Route path="/admin/cron"                     element={<CronAdminView />} />
                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
             </Routes>
@@ -763,6 +764,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/contabilidad/reconciliacion')        return <ContabilidadReconciliacionView />;
     if (menuItem.Ruta === '/contabilidad/bandeja-cfe')           return <ContabilidadBandejaCFE />;
     if (menuItem.Ruta === '/contabilidad/tesoreria')             return <ContabilidadTesoreriaView />;
+    if (menuItem.Ruta === '/contabilidad/caja-admin')            return <CajaTransaccionView isAdminCaja={true} />;
     if (menuItem.Ruta === '/admin/cron')                         return <CronAdminView />;
 
     // NEW: Historial de Lotes

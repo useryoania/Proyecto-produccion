@@ -9,7 +9,7 @@ const TIPOS_DOC_PAGO = [
   { value: 'NINGUNO', label: 'Sin documento' },
 ];
 
-export default function CajaOtrosIngresosTab({ sesion, metodosPago = [], cotizacion = 1, tiposDocDisponibles = TIPOS_DOC_PAGO, onCobroCompletado }) {
+export default function CajaOtrosIngresosTab({ sesion, metodosPago = [], cotizacion = 1, tiposDocDisponibles = TIPOS_DOC_PAGO, onCobroCompletado, isAdminCaja }) {
   
   const [concepto, setConcepto] = useState('');
   const [montoIngreso, setMontoIngreso] = useState('');
@@ -63,8 +63,8 @@ export default function CajaOtrosIngresosTab({ sesion, metodosPago = [], cotizac
 
     setProcesando(true);
     try {
-      await api.post('/contabilidad/caja/ingreso-generico', {
-        stuIdSesion: sesion.StuIdSesion,
+      const res = await api.post('/contabilidad/caja/ingreso-generico', {
+        stuIdSesion: isAdminCaja ? null : sesion?.StuIdSesion,
         concepto: concepto.trim(),
         monto: m,
         moneda: moneda,
@@ -73,7 +73,8 @@ export default function CajaOtrosIngresosTab({ sesion, metodosPago = [], cotizac
         metodoPagoId: parseInt(pagosValidos[0].metodoPagoId, 10), // Asumimos 1 solo medio de pago para simplificar el asiento
         tipoDocumento: tipoDoc,
         serieDoc: serieDoc,
-        observaciones: observaciones
+        observaciones: observaciones,
+        admin: isAdminCaja
       });
 
       toast.success(`Ingreso registrado exitosamente.`);
@@ -82,7 +83,7 @@ export default function CajaOtrosIngresosTab({ sesion, metodosPago = [], cotizac
       setObservaciones('');
       setPagos([{ id: Date.now(), metodoPagoId: metodosPago[0]?.MPaIdMetodoPago || '', moneda: 'UYU', monedaId: 1, monto: '' }]);
       
-      if (onCobroCompletado) onCobroCompletado();
+      if (onCobroCompletado) onCobroCompletado(res.data);
     } catch (e) {
       toast.error(e.response?.data?.error || 'Error al registrar el ingreso.');
     } finally { setProcesando(false); }
@@ -175,7 +176,8 @@ export default function CajaOtrosIngresosTab({ sesion, metodosPago = [], cotizac
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
           <CajaPanelPago
-            mode="VENTA"
+            mode="MOTOR"
+            labelBoton="REGISTRAR INGRESO"
             metodosPago={metodosPago}
             pagos={pagos}
             onPagosChange={setPagos}

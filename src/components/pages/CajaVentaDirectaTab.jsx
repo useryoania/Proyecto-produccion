@@ -15,6 +15,8 @@ export default function CajaVentaDirectaTab({
   // Props externas para integración con CajaPanelPago
   pagos: pagosExt, onPagosChange,
   tipoDocumento: tipoDocExt, onTipoDocumento,
+  tiposDocDisponibles = [],
+  serieDoc: serieDocExt,
   obs: obsExt, onObs,
   onConfirmar: onConfirmarExt,
   procesando: procesandoExt,
@@ -41,7 +43,8 @@ export default function CajaVentaDirectaTab({
   // Estado interno para cuando NO se usan props externas
   const [pagosInternal, setPagosInternal] = useState([]);
   const [obsInternal, setObsInternal] = useState('');
-  const [tipoDocInternal, setTipoDocInternal] = useState('01');
+  const [tipoDocInternal, setTipoDocInternal] = useState('07');
+  const [serieDocInternal, setSerieDocInternal] = useState('A');
   const [procesandoInternal, setProcesandoInternal] = useState(false);
 
   // Resuelve qué usar: props externas o estado interno
@@ -51,6 +54,7 @@ export default function CajaVentaDirectaTab({
   const setObs = onObs || setObsInternal;
   const tipoDocumento = tipoDocExt !== undefined ? tipoDocExt : tipoDocInternal;
   const setTipoDocumento = onTipoDocumento || setTipoDocInternal;
+  const serieDoc = serieDocExt !== undefined ? serieDocExt : serieDocInternal;
   const procesando = procesandoExt !== undefined ? procesandoExt : procesandoInternal;
 
   const fmt = (n) => Number(n || 0).toLocaleString('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -102,10 +106,11 @@ export default function CajaVentaDirectaTab({
     header: {
       clienteId: clienteSel?.CliIdCliente,
       tipoDocumento,
-      serieDoc: 'C',
+      serieDoc,
       obs,
       cotizacion,
-      monedaBase: monedaExhibicion
+      monedaBase: monedaExhibicion,
+      admin: isAdminCaja
     },
     items: items.map(i => ({
       tipo: i.tipo,
@@ -129,7 +134,15 @@ export default function CajaVentaDirectaTab({
     if (!clienteSel) return toast.warning('Debe seleccionar un cliente.');
     if (items.some(i => !i.codigo || !i.precioTotal || !i.cantidad || !i.descripcion))
       return toast.warning('Complete todos los campos de los ítems.');
+      
     const payload = buildPayload();
+    
+    // Validar pagos
+    const esCredito = tipoDocumento === '02' || tipoDocumento === '08' || tipoDocumento === 'FACT_CREDITO';
+    if (!esCredito && payload.pagos.length === 0 && totalPagar > 0) {
+      return toast.warning('Debe seleccionar un método de pago para completar la transacción de contado.');
+    }
+
     setProcesandoInternal(true);
     try {
       const res = await api.post('/contabilidad/caja/venta-directa', payload);
@@ -296,14 +309,21 @@ export default function CajaVentaDirectaTab({
                         <select value={it.codigo} onChange={e => {
                           const val = e.target.value;
                           const prod = (productosAgrupados[it.grupo] || []).find(x => String(x.CodArticulo) === String(val));
+                          
+                          let currentMoneda = monedaExhibicion;
+                          if (prod && it.codigo === '' && items.length === 1) {
+                             currentMoneda = prod.MonedaBase === 'DOLAR' ? 'USD' : 'UYU';
+                             setMonedaExhibicion(currentMoneda);
+                          }
+
                           setItems(p => p.map(x => {
                             if (x.id !== it.id) return x;
                             let newObj = { ...x, codigo: val, descripcion: prod ? prod.Descripcion : x.descripcion };
-                            if ((x.tipo === 'VENTA_GENERICA' || x.tipo === 'VENTA_INSUMOS' || x.tipo === 'VENTA_PRODUCTOS') && prod) {
+                            if ((x.tipo === 'RECURSO' || x.tipo === 'VENTA_GENERICA' || x.tipo === 'VENTA_INSUMOS' || x.tipo === 'VENTA_PRODUCTOS') && prod) {
                                let precio = prod.PrecioBase || 0;
-                               if (prod.MonedaBase === 'DOLAR' && monedaExhibicion === 'UYU') {
+                               if (prod.MonedaBase === 'DOLAR' && currentMoneda === 'UYU') {
                                    precio = precio * (cotizacion || 40);
-                               } else if (prod.MonedaBase !== 'DOLAR' && monedaExhibicion === 'USD') {
+                               } else if (prod.MonedaBase !== 'DOLAR' && currentMoneda === 'USD') {
                                    precio = precio / (cotizacion || 40);
                                }
                                newObj.precioUnitario = Number(precio).toFixed(2);

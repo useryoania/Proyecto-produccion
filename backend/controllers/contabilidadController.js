@@ -90,6 +90,8 @@ exports.getMetodosPago = async (req, res) => {
     const pool = await getPool();
     const result = await pool.request().query(`
       SELECT
+        MPaIdMetodoPago,
+        MPaDescripcionMetodo,
         MPaIdMetodoPago       AS MetodoPagoId,
         MPaDescripcionMetodo  AS MetNombre
       FROM   dbo.MetodosPagos WITH(NOLOCK)
@@ -120,6 +122,42 @@ exports.getUnidades = async (req, res) => {
     res.json({ success: true, data: result.recordset });
   } catch (err) {
     logger.error('[CONTABILIDAD] getUnidades:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/**
+ * PATCH /api/contabilidad/clientes/:CliIdCliente/dgi
+ */
+exports.actualizarClienteDGI = async (req, res) => {
+  try {
+    const { CliIdCliente } = req.params;
+    const { Nombre, Documento, Direccion, Ciudad } = req.body;
+    
+    if (!Nombre || !Documento || !Direccion || !Ciudad) {
+      return res.status(400).json({ success: false, error: "Todos los campos (Nombre, Documento, Dirección, Ciudad) son obligatorios." });
+    }
+
+    const pool = await getPool();
+    await pool.request()
+      .input('CliIdCliente', sql.Int, CliIdCliente)
+      .input('CioRuc', sql.VarChar, Documento)
+      .input('Direccion', sql.VarChar, Direccion)
+      .input('Ciudad', sql.Int, Number(Ciudad))
+      .input('Nombre', sql.VarChar, Nombre)
+      .query(`
+        UPDATE dbo.Clientes
+        SET CioRuc = @CioRuc,
+            DireccionTrabajo = @Direccion,
+            DepartamentoID = @Ciudad,
+            Nombre = @Nombre,
+            NombreFantasia = @Nombre
+        WHERE CliIdCliente = @CliIdCliente
+      `);
+
+    res.json({ success: true, message: "Datos de cliente actualizados correctamente." });
+  } catch (err) {
+    logger.error('[CONTABILIDAD] actualizarClienteDGI:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 };
@@ -252,14 +290,14 @@ exports.getMovimientos = async (req, res) => {
     const { CueIdCuenta } = req.params;
     const { desde, hasta, top = 100 } = req.query;
 
-    const movimientos = await svc.getMovimientos(
+    const { data, saldoArrastre } = await svc.getMovimientos(
       parseInt(CueIdCuenta),
       desde ? new Date(desde) : null,
       hasta ? new Date(hasta) : null,
       parseInt(top),
     );
 
-    res.json({ success: true, data: movimientos });
+    res.json({ success: true, data, saldoArrastre });
   } catch (err) {
     logger.error('[CONTABILIDAD] getMovimientos:', err.message);
     res.status(500).json({ success: false, error: err.message });
@@ -392,7 +430,8 @@ exports.getDeudas = async (req, res) => {
 exports.getDeudasVivasCliente = async (req, res) => {
   try {
     const { CliIdCliente } = req.params;
-    const deudas = await svc.getDeudasPorCliente(parseInt(CliIdCliente));
+    const { modo } = req.query;
+    const deudas = await svc.getDeudasPorCliente(parseInt(CliIdCliente), modo);
     res.json({ success: true, data: deudas });
   } catch (err) {
     logger.error('[CONTABILIDAD] getDeudasVivasCliente:', err.message);
@@ -600,16 +639,16 @@ exports.crearPlan = async (req, res) => {
       const anio       = new Date().getFullYear();
       const seqRes     = await pool.request()
         .input('Tipo', sql.VarChar(30), secTipo)
-        .input('Anio', sql.Int, anio)
         .query(`
-          IF NOT EXISTS (SELECT 1 FROM dbo.SecuenciaDocumentos WHERE SecTipo = @Tipo)
-            INSERT INTO dbo.SecuenciaDocumentos (SecTipo, SecUltimoNum, SecAnio) VALUES (@Tipo, 0, @Anio);
+          IF NOT EXISTS (SELECT 1 FROM dbo.SecuenciaDocumentos WHERE SecTipoDoc = @Tipo AND SecSerie = 'C')
+            INSERT INTO dbo.SecuenciaDocumentos (SecTipoDoc, SecSerie, SecPrefijo, SecDigitos, SecUltimoNumero, SecActivo) 
+            VALUES (@Tipo, 'C', 'FC-', 5, 0, 1);
           UPDATE dbo.SecuenciaDocumentos
-          SET SecUltimoNum = SecUltimoNum + 1, SecAnio = @Anio
-          OUTPUT INSERTED.SecUltimoNum
-          WHERE SecTipo = @Tipo;
+          SET SecUltimoNumero = SecUltimoNumero + 1
+          OUTPUT INSERTED.SecUltimoNumero
+          WHERE SecTipoDoc = @Tipo AND SecSerie = 'C';
         `);
-      const numero  = seqRes.recordset[0].SecUltimoNum;
+      const numero  = seqRes.recordset[0].SecUltimoNumero;
       docNumero = `${prefijo}-${anio}-${String(numero).padStart(5, '0')}`;
       const importe = PlaImportePagado ? parseFloat(PlaImportePagado) : 0;
 
@@ -729,16 +768,37 @@ exports.recargarPlan = async (req, res) => {
       .input('CantidadAdicional', sql.Decimal(18,4), parseFloat(CantidadAdicional))
       .query(`UPDATE dbo.PlanesMetros SET PlaCantidadTotal = PlaCantidadTotal + @CantidadAdicional, PlaActivo = 1 WHERE PlaIdPlan = @PlaIdPlan`);
 
+    await svc.registrarMovimiento({
+      CueIdCuenta:     plan.CueIdCuenta,
+      MovTipo:         'RECARGA',
+      MovConcepto:     `Recarga plan #${PlaIdPlan} (+${CantidadAdicional} ${plan.PlaUnidad || ''})`,
+      MovImporte:      parseFloat(CantidadAdicional),
+      MovUsuarioAlta:  UsuarioAlta,
+      MovObservaciones: `Plan #${PlaIdPlan}`
+    });
+
     if (ImportePagado && parseFloat(ImportePagado) > 0) {
       const monRes = await pool.request()
         .input('CliIdCliente', sql.Int, plan.CliIdCliente)
         .query(`SELECT TOP 1 CueIdCuenta FROM dbo.CuentasCliente WHERE CliIdCliente = @CliIdCliente AND CueTipo LIKE 'DINERO%' AND CueActiva = 1 ORDER BY CueIdCuenta`);
       if (monRes.recordset.length > 0) {
+        const monCta = monRes.recordset[0].CueIdCuenta;
+        
+        // 1. Generar la deuda por la recarga
         await svc.registrarMovimiento({
-          CueIdCuenta:    monRes.recordset[0].CueIdCuenta,
-          MovTipo:        'ANTICIPO',
-          MovConcepto:    `Recarga plan #${PlaIdPlan} (+${CantidadAdicional} ${plan.PlaUnidad})`,
-          MovImporte:     parseFloat(ImportePagado),
+          CueIdCuenta:    monCta,
+          MovTipo:        'ORDEN',
+          MovConcepto:    `Cargo por recarga plan #${PlaIdPlan} (+${CantidadAdicional} ${plan.PlaUnidad || ''})`,
+          MovImporte:     -Math.abs(parseFloat(ImportePagado)),
+          MovUsuarioAlta: UsuarioAlta,
+        });
+
+        // 2. Registrar el pago de esa recarga
+        await svc.registrarMovimiento({
+          CueIdCuenta:    monCta,
+          MovTipo:        'PAGO',
+          MovConcepto:    `Pago recarga plan #${PlaIdPlan}`,
+          MovImporte:     Math.abs(parseFloat(ImportePagado)),
           MovUsuarioAlta: UsuarioAlta,
         });
       }
@@ -757,12 +817,39 @@ exports.recargarPlan = async (req, res) => {
  */
 exports.desactivarPlan = async (req, res) => {
   try {
+    const PlaIdPlan = parseInt(req.params.PlaIdPlan);
+    const UsuarioBaja = req.user?.id ?? 1;
     const pool = await getPool();
-    await pool.request()
-      .input('PlaIdPlan',    sql.Int, parseInt(req.params.PlaIdPlan))
-      .input('UsuarioBaja',  sql.Int, req.user?.id ?? 1)
-      .query(`UPDATE dbo.PlanesMetros SET PlaActivo = 0, PlaFechaBaja = GETDATE(), PlaUsuarioBaja = @UsuarioBaja WHERE PlaIdPlan = @PlaIdPlan`);
-    res.json({ success: true, message: 'Plan desactivado.' });
+    
+    // 1. Obtener datos del plan para ver si sobra algo
+    const planRes = await pool.request()
+      .input('P', sql.Int, PlaIdPlan)
+      .query(`SELECT CueIdCuenta, PlaCantidadTotal, PlaCantidadUsada FROM dbo.PlanesMetros WHERE PlaIdPlan = @P AND PlaActivo = 1`);
+      
+    if (planRes.recordset.length > 0) {
+      const p = planRes.recordset[0];
+      const restante = p.PlaCantidadTotal - p.PlaCantidadUsada;
+
+      // 2. Desactivar
+      await pool.request()
+        .input('PlaIdPlan',    sql.Int, PlaIdPlan)
+        .input('UsuarioBaja',  sql.Int, UsuarioBaja)
+        .query(`UPDATE dbo.PlanesMetros SET PlaActivo = 0, PlaFechaBaja = GETDATE(), PlaUsuarioBaja = @UsuarioBaja WHERE PlaIdPlan = @PlaIdPlan`);
+
+      // 3. Ajuste negativo por lo que se pierde al cerrar
+      if (restante > 0) {
+        await svc.registrarMovimiento({
+          CueIdCuenta: p.CueIdCuenta,
+          MovTipo: 'AJUSTE_NEG',
+          MovConcepto: `Cierre Plan #${PlaIdPlan} (Pérdida de saldo restante)`,
+          MovImporte: -restante,
+          MovUsuarioAlta: UsuarioBaja,
+          MovObservaciones: 'Cierre manual de plan'
+        });
+      }
+    }
+    
+    res.json({ success: true, message: 'Plan desactivado correctamente.' });
   } catch (err) {
     logger.error('[CONTABILIDAD] desactivarPlan:', err.message);
     res.status(500).json({ success: false, error: err.message });
@@ -837,9 +924,40 @@ exports.cerrarCiclo = async (req, res) => {
     const { CicIdCiclo } = req.params;
     const UsuarioAlta = req.user?.id ?? 1;
 
+    const { 
+      excluidos,
+      monedaFactura,
+      cotDolar,
+      descuentoTipo,
+      descuentoValorBase,
+      montoDescuentoCalculado,
+      detallesEditados,
+      detallesParaPDF,
+      tipoDocumento,
+      observaciones,
+      cliDgiNombre,
+      cliDgiDocumento,
+      cliDgiDireccion,
+      cliDgiCiudad
+    } = req.body || {};
+
     const result = await svc.cerrarCicloCompleto({
       CicIdCiclo: parseInt(CicIdCiclo),
       UsuarioAlta,
+      excluidos: Array.isArray(excluidos) ? excluidos : [],
+      monedaFactura,
+      cotDolar,
+      descuentoTipo,
+      descuentoValorBase,
+      montoDescuentoCalculado,
+      detallesEditados: Array.isArray(detallesEditados) ? detallesEditados : [],
+      detallesParaPDF: Array.isArray(detallesParaPDF) ? detallesParaPDF : [],
+      tipoDocumento,
+      observaciones,
+      cliDgiNombre,
+      cliDgiDocumento,
+      cliDgiDireccion,
+      cliDgiCiudad
     });
 
     res.json({
@@ -848,7 +966,22 @@ exports.cerrarCiclo = async (req, res) => {
       message: `Ciclo cerrado. Factura: ${result.docNumero}. Nuevo ciclo: ${result.nuevoCiclo.CicIdCiclo}.`,
     });
   } catch (err) {
-    logger.error('[CONTABILIDAD] cerrarCiclo:', err.message);
+    logger.error('[CONTABILIDAD] cerrarCiclo:', err);
+    res.status(500).json({ success: false, error: err.message || err.toString() });
+  }
+};
+
+/**
+ * GET /api/contabilidad/ciclos/:CicIdCiclo/movimientos
+ * Obtiene los movimientos asociados a un ciclo.
+ */
+exports.getCicloMovimientos = async (req, res) => {
+  try {
+    const { CicIdCiclo } = req.params;
+    const movimientos = await svc.getCicloMovimientos(parseInt(CicIdCiclo));
+    res.json({ success: true, data: movimientos });
+  } catch (err) {
+    logger.error('[CONTABILIDAD] getCicloMovimientos:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 };
@@ -977,7 +1110,8 @@ exports.crearPlanMetros = async (req, res) => {
  */
 exports.getAntiguedadDeuda = async (req, res) => {
   try {
-    const datos = await svc.getAntiguedadDeuda();
+    const { modo } = req.query;
+    const datos = await svc.getAntiguedadDeuda(modo);
     res.json({ success: true, data: datos });
   } catch (err) {
     logger.error('[CONTABILIDAD] getAntiguedadDeuda:', err.message);
@@ -1212,13 +1346,17 @@ exports.getClientesActivos = async (req, res) => {
           c.NombreFantasia,
           c.Email,
           c.CodCliente,
+          c.TClIdTipoCliente,
+          c.CioRuc,
+          c.DireccionTrabajo,
+          c.DepartamentoID,
           COUNT(DISTINCT cc.CueIdCuenta) AS TotalCuentas
         FROM      dbo.CuentasCliente cc WITH(NOLOCK)
         JOIN      dbo.Clientes        c  WITH(NOLOCK) ON c.CliIdCliente = cc.CliIdCliente
         WHERE cc.CueActiva = 1
           AND cc.CueTipo NOT IN ('USD','UYU','ARS','EUR','PYG','BRL')
           ${filtroNombre}
-        GROUP BY c.CliIdCliente, c.Nombre, c.NombreFantasia, c.Email, c.CodCliente
+        GROUP BY c.CliIdCliente, c.Nombre, c.NombreFantasia, c.Email, c.CodCliente, c.TClIdTipoCliente, c.CioRuc, c.DireccionTrabajo, c.DepartamentoID
         ORDER BY c.Nombre
       `);
       return res.json({ success: true, data: result.recordset });
@@ -1232,7 +1370,11 @@ exports.getClientesActivos = async (req, res) => {
           c.Nombre,
           c.NombreFantasia,
           c.Email,
-          c.CodCliente
+          c.CodCliente,
+          c.TClIdTipoCliente,
+          c.CioRuc,
+          c.DireccionTrabajo,
+          c.DepartamentoID
         FROM dbo.Clientes c WITH(NOLOCK)
         WHERE 1=1 ${filtroNombre}
         ORDER BY c.Nombre
@@ -1250,6 +1392,10 @@ exports.getClientesActivos = async (req, res) => {
         c.NombreFantasia,
         c.Email,
         c.CodCliente,
+        c.TClIdTipoCliente,
+        c.CioRuc,
+        c.DireccionTrabajo,
+        c.DepartamentoID,
         COUNT(DISTINCT cc.CueIdCuenta)                                                           AS TotalCuentas,
         ISNULL(SUM(CASE WHEN cc.MonIdMoneda = 2 THEN cc.CueSaldoActual * @TC ELSE cc.CueSaldoActual END), 0) AS SaldoTotal,
         ISNULL(SUM(CASE WHEN cc.MonIdMoneda = 2 THEN dd.DDeImportePendiente * @TC ELSE dd.DDeImportePendiente END), 0) AS DeudaTotal,
@@ -1271,7 +1417,7 @@ exports.getClientesActivos = async (req, res) => {
             ${(q.trim() || todos === 'true') ? "OR 1=1" : ""}
         )
         ${filtroNombre}
-      GROUP BY c.CliIdCliente, c.Nombre, c.NombreFantasia, c.Email, c.CodCliente
+      GROUP BY c.CliIdCliente, c.Nombre, c.NombreFantasia, c.Email, c.CodCliente, c.TClIdTipoCliente, c.CioRuc, c.DireccionTrabajo, c.DepartamentoID
       ORDER BY ABS(SUM(cc.CueSaldoActual)) DESC, c.Nombre
     `);
 
@@ -1324,26 +1470,52 @@ exports.getDeudaConsolidada = async (req, res) => {
         dd.DDeImporteOriginal,
         dd.DDeImportePendiente,
         DATEDIFF(DAY, dd.DDeFechaVencimiento, GETDATE())          AS DiasVencido,
-        od.OrdCodigo                                              AS NroOrden
+        COALESCE(
+          od.OrdCodigoOrden, 
+          ordERP.CodigoOrden,
+          (SELECT TOP 1 ISNULL(od2.OrdCodigoOrden, td.TdeCodigoReferencia)
+           FROM dbo.TransaccionDetalle td WITH(NOLOCK)
+           JOIN dbo.DocumentosContables doc WITH(NOLOCK) ON doc.TcaIdTransaccion = td.TcaIdTransaccion
+           LEFT JOIN dbo.OrdenesRetiro ordRet WITH(NOLOCK) ON ordRet.OReIdOrdenRetiro = td.TdeReferenciaId AND td.TdeTipoReferencia = 'ORDEN_RETIRO'
+           LEFT JOIN dbo.OrdenesDeposito od2 WITH(NOLOCK) ON od2.OReIdOrdenRetiro = ordRet.OReIdOrdenRetiro
+           WHERE doc.DocIdDocumento = dd.DocIdDocumento),
+          'VTA-DIR'
+        ) AS NroOrden,
+        COALESCE(
+          od.OrdNombreTrabajo, 
+          ordERP.DescripcionTrabajo,
+          (SELECT TOP 1 od2.OrdNombreTrabajo
+           FROM dbo.TransaccionDetalle td WITH(NOLOCK)
+           JOIN dbo.DocumentosContables doc WITH(NOLOCK) ON doc.TcaIdTransaccion = td.TcaIdTransaccion
+           LEFT JOIN dbo.OrdenesRetiro ordRet WITH(NOLOCK) ON ordRet.OReIdOrdenRetiro = td.TdeReferenciaId AND td.TdeTipoReferencia = 'ORDEN_RETIRO'
+           LEFT JOIN dbo.OrdenesDeposito od2 WITH(NOLOCK) ON od2.OReIdOrdenRetiro = ordRet.OReIdOrdenRetiro
+           WHERE doc.DocIdDocumento = dd.DocIdDocumento
+           AND od2.OrdNombreTrabajo IS NOT NULL AND od2.OrdNombreTrabajo != 'S/N'
+          ),
+          'Venta Directa'
+        ) AS NombreTrabajo
       FROM      dbo.DeudaDocumento   dd WITH(NOLOCK)
       JOIN      dbo.CuentasCliente   cc  WITH(NOLOCK) ON cc.CueIdCuenta  = dd.CueIdCuenta
       JOIN      dbo.Clientes         c   WITH(NOLOCK) ON c.CliIdCliente  = cc.CliIdCliente
       LEFT JOIN dbo.Monedas          mon WITH(NOLOCK) ON mon.MonIdMoneda = cc.MonIdMoneda
       LEFT JOIN dbo.OrdenesDeposito  od  WITH(NOLOCK) ON od.OrdIdOrden   = dd.OrdIdOrden
+      LEFT JOIN dbo.Ordenes          ordERP WITH(NOLOCK) ON ordERP.OrdenID = dd.OrdIdOrden
       WHERE dd.DDeEstado IN ('PENDIENTE','VENCIDO','PARCIAL')
         ${where}
       ORDER BY DATEDIFF(DAY, dd.DDeFechaVencimiento, GETDATE()) DESC, c.Nombre
     `);
 
-    // Agrupar por cliente para el resumen
+    // Agrupar por cliente y tipo de cuenta para no mezclar monedas
     const mapa = {};
     for (const row of result.recordset) {
-      if (!mapa[row.CliIdCliente]) {
-        mapa[row.CliIdCliente] = {
+      const key = `${row.CliIdCliente}-${row.CueTipo}`;
+      if (!mapa[key]) {
+        mapa[key] = {
           CliIdCliente:    row.CliIdCliente,
           NombreCliente:   row.NombreCliente,
           CodCliente:      row.CodCliente,
           MonSimbolo:      row.MonSimbolo,
+          CueTipo:         row.CueTipo,
           TotalPendiente:  0,
           DocsTotal:       0,
           DocsVencidos:    0,
@@ -1351,7 +1523,7 @@ exports.getDeudaConsolidada = async (req, res) => {
           docs:            [],
         };
       }
-      const cl = mapa[row.CliIdCliente];
+      const cl = mapa[key];
       cl.TotalPendiente  += Number(row.DDeImportePendiente);
       cl.DocsTotal++;
       if (row.DiasVencido > 0) cl.DocsVencidos++;
@@ -1492,7 +1664,7 @@ exports.registrarPagoCruzado = async (req, res) => {
     const { MovIdGenerado, SaldoResultante } = await svc.registrarMovimiento({
       CueIdCuenta:    parseInt(CueIdCuenta),
       MovTipo:        'PAGO',
-      MovConcepto:    `${MovConcepto} (${MonedaPago} → ${monedaCuenta}${tcUsado ? ` TC:${tcUsado}` : ''})`,
+      MovConcepto:    `${MovConcepto} (${MonedaPago} -> ${monedaCuenta}${tcUsado ? ` TC:${tcUsado}` : ''})`,
       MovImporte:     importeConvertido,
       MovUsuarioAlta: UsuarioAlta,
       MovRefExterna:  Referencia,
@@ -1615,13 +1787,15 @@ exports.generarReciboPdf = async (req, res) => {
 
     // Concepto
     drawText('EN CONCEPTO DE:', 40, height - 195, 10, fontBold);
-    const concepto = mov.MovConcepto || (mov.MovTipo === 'ANTICIPO' ? 'Pago a cuenta / Anticipo' : 'Cancelación de saldos');
+    let concepto = mov.MovConcepto || (mov.MovTipo === 'ANTICIPO' ? 'Pago a cuenta / Anticipo' : 'Cancelación de saldos');
+    concepto = concepto.replace(/→/g, '->').replace(/[\u2013\u2014]/g, '-');
     drawText(concepto, 40, height - 215, 11, font);
 
     if (mov.MovObservaciones) {
       drawText('OBSERVACIONES:', 40, height - 245, 9, fontBold, rgb(0.4, 0.4, 0.4));
       // Truncate observaciones if too long
-      const obs = mov.MovObservaciones.length > 80 ? mov.MovObservaciones.substring(0, 80) + '...' : mov.MovObservaciones;
+      let obs = mov.MovObservaciones.length > 80 ? mov.MovObservaciones.substring(0, 80) + '...' : mov.MovObservaciones;
+      obs = obs.replace(/→/g, '->').replace(/[\u2013\u2014]/g, '-');
       drawText(obs, 40, height - 260, 9, font, rgb(0.4, 0.4, 0.4));
     }
 

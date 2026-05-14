@@ -617,6 +617,22 @@ const CargaDepositoPage = () => {
                                                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><ShoppingBag size={10} /> Producto</span>
                                                         <span className="text-slate-800 font-semibold truncate">{code.parsed.ProductoNombre}</span>
                                                     </div>
+                                                    {/* Material desde Sheets — solo para XSB/XDF */}
+                                                    {code.parsed.EsOrdenExterna && code.parsed.MaterialSheets && (
+                                                        <div className="flex flex-col gap-0.5 col-span-2">
+                                                            <span className="text-[9px] font-bold text-violet-500 uppercase tracking-wide flex items-center gap-1">
+                                                                <Activity size={10} /> Tela (Planilla)
+                                                            </span>
+                                                            <span className="text-violet-700 font-black truncate flex items-center gap-1.5">
+                                                                {code.parsed.MaterialSheets}
+                                                                {code.parsed.CantidadSheets != null && (
+                                                                    <span className="bg-violet-100 text-violet-600 text-[9px] font-bold px-1.5 py-0.5 rounded-md border border-violet-200">
+                                                                        {code.parsed.CantidadSheets} mts
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                        </div>
+                                                    )}
                                                     <div className="flex flex-col gap-0.5 col-span-2">
                                                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide flex items-center gap-1"><Tag size={10} /> Trabajo</span>
                                                         <span className="text-slate-700 italic truncate">{code.parsed.NombreTrabajo || 'Sin Descripción'}</span>

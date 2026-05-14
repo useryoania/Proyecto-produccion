@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, CheckCircle, AlertCircle, Search, Send, FileOutput, Plus, Eye, Edit, XCircle } from 'lucide-react';
+import { FileText, CheckCircle, AlertCircle, Search, Send, FileOutput, Plus, Eye, Edit, XCircle, Printer } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'sonner';
 import api from '../../services/apiClient';
+import { generarPdfFacturaDGI } from '../../utils/pdfGenerator';
 import FacturacionManualModal from './FacturacionManualModal';
 import CfePreviewModal from './CfePreviewModal';
 import CfeEditModal from './CfeEditModal';
@@ -73,6 +74,22 @@ const ContabilidadBandejaCFE = () => {
     const handleFilterChange = (e) => {
         const { name, value } = e.target;
         setFiltros(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleDescargarFacturaPdf = async (doc) => {
+        try {
+            const toastId = toast.loading('Generando Factura PDF...');
+            const { data } = await api.get(`/contabilidad/cfe/documentos/${doc.DocIdDocumento}/detalle`);
+            toast.dismiss(toastId);
+            if (data && data.doc) {
+                generarPdfFacturaDGI(data.doc, data.detalles || []);
+                toast.success('Factura descargada');
+            } else {
+                toast.error('No se pudo obtener el documento.');
+            }
+        } catch (err) {
+            toast.error('Error al descargar la factura: ' + (err.response?.data?.error || err.message));
+        }
     };
 
     const handleEnviarDGI = async (doc) => {
@@ -274,9 +291,16 @@ const ContabilidadBandejaCFE = () => {
                                             {doc.CfeEstado === 'PENDIENTE' ? (
                                                 <div className="flex items-center justify-center space-x-2">
                                                     <button
+                                                        onClick={() => handleDescargarFacturaPdf(doc)}
+                                                        className="text-gray-500 hover:text-indigo-600 transition-colors"
+                                                        title="Descargar Factura PDF"
+                                                    >
+                                                        <Printer className="h-5 w-5" />
+                                                    </button>
+                                                    <button
                                                         onClick={() => setPreviewDoc(doc)}
                                                         className="text-gray-500 hover:text-blue-600 transition-colors"
-                                                        title="Visualizar Ticket"
+                                                        title="Vista Previa (Ticket interno)"
                                                     >
                                                         <Eye className="h-5 w-5" />
                                                     </button>

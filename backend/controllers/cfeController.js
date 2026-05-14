@@ -17,7 +17,7 @@ exports.getDocumentosCFE = async (req, res) => {
                 c.CioRuc AS CliDocumento,
                 c.IDCliente AS StringIDCliente
             FROM DocumentosContables d
-            LEFT JOIN Clientes c ON d.CliIdCliente = c.CodCliente
+            LEFT JOIN Clientes c ON d.CliIdCliente = c.CliIdCliente
             WHERE 1=1
         `;
 
@@ -185,7 +185,6 @@ exports.crearFacturaManual = async (req, res) => {
                 lineas: lineasContables
             }, transaction);
             
-            // Update DocumentosContables with the AsiIdAsiento
             if (asiId) {
                 await request
                     .input('docId', sql.Int, docId)
@@ -236,6 +235,8 @@ exports.getNomencladores = async (req, res) => {
     }
 };
 
+// ── Anular documento (solo si está PENDIENTE — no fue enviado a DGI aún) ─────────
+// Si ya fue ACEPTADO_DGI, debe emitirse una Nota de Crédito en su lugar.
 exports.anularFactura = async (req, res) => {
     try {
         const { id } = req.params;
@@ -253,9 +254,11 @@ exports.anularFactura = async (req, res) => {
         }
         
         const doc = docRes.recordset[0];
-        if (doc.CfeEstado !== 'PENDIENTE') {
+        if (doc.CfeEstado === 'ACEPTADO_DGI') {
             await transaction.rollback();
-            return res.status(400).json({ error: 'Solo se pueden anular documentos en estado PENDIENTE' });
+            return res.status(400).json({
+                error: 'Este documento ya fue aceptado por DGI. Para revertirlo debés emitir una Nota de Crédito (e-NC tipo 102 o 112).'
+            });
         }
         if (doc.DocPagado) {
             await transaction.rollback();
@@ -267,7 +270,7 @@ exports.anularFactura = async (req, res) => {
             .input('id', sql.Int, id)
             .query("UPDATE DocumentosContables SET CfeEstado = 'ANULADO', DocEstado = 0 WHERE DocIdDocumento = @id");
 
-        // Revertir Asiento Contable
+        // Revertir Asiento Contable si existe
         if (doc.AsiIdAsiento) {
             await transaction.request()
                 .input('asiId', sql.Int, doc.AsiIdAsiento)
@@ -275,13 +278,14 @@ exports.anularFactura = async (req, res) => {
         }
 
         await transaction.commit();
-        res.json({ success: true, message: 'Factura anulada correctamente' });
+        res.json({ success: true, message: 'Documento anulado correctamente' });
     } catch (err) {
-        logger.error('Error anulando factura:', err);
+        logger.error('Error anulando documento CFE:', err);
         res.status(500).json({ error: err.message });
     }
 };
 
+// ── Editar documento (solo si está PENDIENTE — no fue enviado a DGI aún) ─────────
 exports.editarFactura = async (req, res) => {
     try {
         const { id } = req.params;
@@ -303,14 +307,13 @@ exports.editarFactura = async (req, res) => {
         const doc = docRes.recordset[0];
         if (doc.CfeEstado !== 'PENDIENTE') {
             await transaction.rollback();
-            return res.status(400).json({ error: 'Solo se pueden editar documentos en estado PENDIENTE' });
+            return res.status(400).json({ error: 'Solo se pueden editar documentos en estado PENDIENTE. Si ya fue enviado a DGI, emití una Nota de Crédito.' });
         }
         if (doc.DocPagado) {
             await transaction.rollback();
             return res.status(400).json({ error: 'No se puede editar un documento pagado generado desde caja.' });
         }
 
-        // Update Document
         await transaction.request()
             .input('id', sql.Int, id)
             .input('clienteId', sql.Int, CliIdCliente || 1)
@@ -330,17 +333,13 @@ exports.editarFactura = async (req, res) => {
                 WHERE DocIdDocumento = @id
             `);
 
-        // If it has an Asiento, we should ideally reverse it and recreate it, or just update the totals if it's a simple 2-line asiento.
-        // For simplicity, we just delete the old lines and re-insert them, OR since it's just a manual invoice, we update the existing lines.
-        // Actually, to keep it simple, we can delete the old AsientoDetalle and re-insert 2 lines.
         if (doc.AsiIdAsiento) {
             await transaction.request()
                 .input('asiId', sql.Int, doc.AsiIdAsiento)
                 .query("DELETE FROM Cont_AsientosDetalle WHERE AsiIdAsiento = @asiId");
                 
-            // Insert new lines (Debito a Cliente, Credito a Ventas)
             const cuentaCliente = MonIdMoneda === 2 ? 119 : 118;
-            const cuentaVentas = 411; // Assuming 411 is Ventas
+            const cuentaVentas = 411;
             
             await transaction.request()
                 .input('asiId', sql.Int, doc.AsiIdAsiento)
@@ -356,9 +355,9 @@ exports.editarFactura = async (req, res) => {
         }
 
         await transaction.commit();
-        res.json({ success: true, message: 'Factura actualizada correctamente' });
+        res.json({ success: true, message: 'Documento actualizado correctamente' });
     } catch (err) {
-        logger.error('Error editando factura:', err);
+        logger.error('Error editando documento CFE:', err);
         res.status(500).json({ error: err.message });
     }
 };
@@ -380,12 +379,29 @@ exports.getDetalleFactura = async (req, res) => {
                     DcdPrecioUnitario,
                     DcdSubtotal,
                     DcdImpuestos,
-                    DcdTotal
+                    DcdTotal,
+                    DcdTotalDescuentos,
+                    DcdDescuentoStr
                 FROM DocumentosContablesDetalle
                 WHERE DocIdDocumento = @docId
             `);
             
-        res.json({ success: true, detalles: result.recordset });
+        const docResult = await pool.request()
+            .input('docId', sql.Int, id)
+            .query(`
+                SELECT 
+                    d.*,
+                    c.NombreFantasia AS CliNombreFantasia,
+                    c.Nombre AS CliRazonSocial,
+                    c.CioRuc AS CliRUT,
+                    c.CioRuc AS CliDocumento,
+                    c.IDCliente AS StringIDCliente
+                FROM DocumentosContables d
+                LEFT JOIN Clientes c ON d.CliIdCliente = c.CliIdCliente
+                WHERE d.DocIdDocumento = @docId
+            `);
+
+        res.json({ success: true, doc: docResult.recordset[0] || null, detalles: result.recordset });
     } catch (err) {
         logger.error('Error obteniendo detalle de factura:', err);
         res.status(500).json({ error: err.message });

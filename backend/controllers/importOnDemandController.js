@@ -66,6 +66,31 @@ exports.previewOnDemand = async (req, res) => {
              }
              return orden; 
         }).filter(o => o !== null);
+        // ── CORRECCIÓN DE METROS ─────────────────────────────────────────────────
+        // importarOrdenesManual puede devolver metrosTotales incorrecto (ej: número
+        // de archivos en vez de metros reales). Usamos getDatosDesdeSheets
+        // (acción getCantidadMaterial — la misma del scanner QR) para corregirlo.
+        const ordenesExternasSvc = require('../services/ordenesExternasService');
+        await Promise.all(ordenesEncontradas.map(async (pedido) => {
+            if (!pedido) return;
+            const codigo = pedido.idExterno || pedido.codigoOrdenReal;
+            if (!codigo) return;
+            try {
+                const datosReales = await ordenesExternasSvc.getDatosDesdeSheets(codigo);
+                if (datosReales && datosReales.cantidad > 0) {
+                    const cantAnterior = pedido.metrosTotales;
+                    pedido.metrosTotales = datosReales.cantidad;
+                    pedido.metrosReales  = datosReales.cantidad;
+                    if (pedido.servicios && pedido.servicios[0] && pedido.servicios[0].cabecera) {
+                        pedido.servicios[0].cabecera.metros = datosReales.cantidad;
+                    }
+                    logger.info('[PreviewOnDemand] metros corregidos ' + codigo + ': ' + cantAnterior + ' > ' + datosReales.cantidad + ' (' + datosReales.material + ')');
+                }
+            } catch(e) {
+                logger.warn('[PreviewOnDemand] No se pudo corregir metros de ' + codigo + ': ' + e.message + '. Usando ' + pedido.metrosTotales);
+            }
+        }));
+
 
         // Resolver perfil de Reposicion por nombre (aplica a ordenes con codigo que empiece con R)
         let idPerfilReposicion = null;
@@ -319,7 +344,7 @@ exports.previewOnDemand = async (req, res) => {
                         tecnicos: pedido.archivosTecnicos || [],
                         referencias: pedido.archivosReferencia || [],
                         diseno: items.length > 0 ? items[0].fileName : "Sin link",
-                        nota: pedido.notasGenerales || srv.nota || pedido.nota || '',
+                        nota: (() => { const n = pedido.notasGenerales || srv.nota || pedido.nota || ''; return (n.includes('http') || n.includes('drive.google')) ? '' : n; })(),
                         yaExiste: yaExisteEnBd
                     });
                 }
@@ -432,6 +457,31 @@ exports.importOnDemand = async (req, res) => {
              }
              return orden; 
         }).filter(o => o !== null);
+        // ── CORRECCIÓN DE METROS ─────────────────────────────────────────────────
+        // importarOrdenesManual puede devolver metrosTotales incorrecto (ej: número
+        // de archivos en vez de metros reales). Usamos getDatosDesdeSheets
+        // (acción getCantidadMaterial — la misma del scanner QR) para corregirlo.
+        const ordenesExternasSvc = require('../services/ordenesExternasService');
+        await Promise.all(ordenesEncontradas.map(async (pedido) => {
+            if (!pedido) return;
+            const codigo = pedido.idExterno || pedido.codigoOrdenReal;
+            if (!codigo) return;
+            try {
+                const datosReales = await ordenesExternasSvc.getDatosDesdeSheets(codigo);
+                if (datosReales && datosReales.cantidad > 0) {
+                    const cantAnterior = pedido.metrosTotales;
+                    pedido.metrosTotales = datosReales.cantidad;
+                    pedido.metrosReales  = datosReales.cantidad;
+                    if (pedido.servicios && pedido.servicios[0] && pedido.servicios[0].cabecera) {
+                        pedido.servicios[0].cabecera.metros = datosReales.cantidad;
+                    }
+                    logger.info('[PreviewOnDemand] metros corregidos ' + codigo + ': ' + cantAnterior + ' > ' + datosReales.cantidad + ' (' + datosReales.material + ')');
+                }
+            } catch(e) {
+                logger.warn('[PreviewOnDemand] No se pudo corregir metros de ' + codigo + ': ' + e.message + '. Usando ' + pedido.metrosTotales);
+            }
+        }));
+
 
         const resultadosNuevos = [];
         const port = process.env.PORT || 5000;

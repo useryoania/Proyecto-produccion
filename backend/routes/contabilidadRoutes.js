@@ -19,6 +19,7 @@ router.get('/clientes/:CliIdCliente/deudas-vivas', ctrl.getDeudasVivasCliente);
 router.get('/cuentas/:CliIdCliente', ctrl.getCuentasCliente);
 router.post('/cuentas', ctrl.crearCuenta);
 router.patch('/cuentas/:CueIdCuenta/configuracion', ctrl.actualizarConfigCuenta);
+router.patch('/clientes/:CliIdCliente/dgi', ctrl.actualizarClienteDGI);
 router.get('/cuentas/:CueIdCuenta/movimientos', ctrl.getMovimientos);
 router.post('/movimientos/ajuste', ctrl.registrarAjusteManual);
 router.post('/movimientos/pago-anticipado', ctrl.registrarPagoAnticipado);
@@ -26,6 +27,7 @@ router.post('/movimientos/pago-cruzado', ctrl.registrarPagoCruzado);
 router.get('/movimientos/:MovIdMovimiento/recibo/pdf', ctrl.generarReciboPdf);
 router.get('/cuentas/:CueIdCuenta/deudas', ctrl.getDeudas);
 router.get('/ciclos/:CliIdCliente', ctrl.getCiclosCliente);
+router.get('/ciclos/:CicIdCiclo/movimientos', ctrl.getCicloMovimientos);
 router.post('/ciclos', ctrl.abrirCiclo);
 router.post('/ciclos/cerrar-vencidos', ctrl.cerrarCiclosVencidos);
 router.post('/ciclos/:CicIdCiclo/cerrar', ctrl.cerrarCiclo);
@@ -82,6 +84,7 @@ router.get('/caja/sesion/actual',             caja.getSesionActual);
 router.post('/caja/sesion/abrir',             caja.abrirSesion);
 router.post('/caja/sesion/:id/cerrar',        caja.cerrarSesion);
 router.get('/caja/sesion/:id/resumen',        caja.getResumenSesion);
+router.get('/caja/resumen-diario',            caja.getResumenDiario);
 
 // Numeración automática de documentos
 router.get('/caja/siguiente-numero',          caja.getSiguienteNumero);
@@ -94,6 +97,8 @@ router.put('/caja/secuencias/:id',            secCtrl.updateSecuencia);
 
 // Egresos e Ingresos
 router.post('/caja/egreso',                   caja.registrarEgreso);
+router.get('/caja/tipos-egreso',              caja.getTiposEgreso);
+router.get('/caja/egreso/:id/voucher',        caja.getVoucherEgreso);
 router.post('/caja/ingreso-generico',         caja.registrarIngresoGenerico);
 
 // Autorizaciones sin pago
@@ -105,6 +110,12 @@ router.post('/caja/autorizar',                caja.autorizarSinPago);
 router.get('/caja/operaciones', motorCtrl.getOperacionesCaja);
 router.post('/caja/operacion-manual', caja.registrarOperacionManual);
 
+// ── OPERACIONES DESDE ESTADO DE CUENTA (Caja Administrativa) ──────────────────
+router.post('/caja/nota-credito',      caja.generarNotaCredito);      // Nota de crédito sobre doc existente
+router.post('/caja/reversar-doc',      caja.reversarDocumento);       // Reverso: contado→egreso/crédito→NC
+router.post('/caja/pago-anticipo',     caja.registrarPagoAnticipo);   // Anticipo directo a cuenta
+router.post('/caja/anular-factura',    caja.anularFactura);           // Anular factura no enviada a DGI → reabre ciclo
+
 // ── CFE (Facturación Electrónica) ──────────────────────────────────────────
 const cfeCtrl = require('../controllers/cfeController');
 router.get('/cfe/nomencladores', cfeCtrl.getNomencladores);
@@ -114,6 +125,27 @@ router.post('/cfe/manual', cfeCtrl.crearFacturaManual);
 router.get('/cfe/documentos/:id/detalle', cfeCtrl.getDetalleFactura);
 router.put('/cfe/documentos/:id/anular', cfeCtrl.anularFactura);
 router.put('/cfe/documentos/:id', cfeCtrl.editarFactura);
+
+// ── Búsqueda de documento por serie+numero ───────────────────────────────────
+router.get('/documentos/buscar', async (req, res) => {
+  try {
+    const { getPool, sql } = require('../config/db');
+    const { serie, numero } = req.query;
+    if (!serie || !numero) return res.status(400).json({ error: 'Parámetros serie y numero requeridos' });
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('Serie',  require('mssql').VarChar(10), serie)
+      .input('Numero', require('mssql').VarChar(50),  numero)
+      .query(`SELECT TOP 1 DocIdDocumento, DocTipo, DocSerie, DocNumero, DocTotal, DocEstado, CfeEstado, DocPagado
+              FROM dbo.DocumentosContables
+              WHERE DocSerie = @Serie AND DocNumero = @Numero
+              ORDER BY DocFechaEmision DESC`);
+    if (!r.recordset.length) return res.status(404).json({ error: 'Documento no encontrado' });
+    return res.json(r.recordset[0]);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
 
 // ── RECONCILIACIÓN CONTABLE MANUAL ───────────────────────────────────────────
 // GET  /contabilidad/reconciliacion/audit   → Solo muestra inconsistencias, no toca nada

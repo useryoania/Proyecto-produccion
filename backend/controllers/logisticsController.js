@@ -810,7 +810,7 @@ exports.receiveDispatch = async (req, res) => {
                                     .input('OID', sql.Int, OrdenID)
                                     .input('Type', sql.VarChar(50), `%${searchPattern}%`)
                                     .input('Area', sql.VarChar(50), areaReceptora)
-                                    .input('Doc', sql.VarChar, bultoInfo.NoDocERP || '')
+                                    .input('Doc', sql.VarChar, bultoInfo.NoDocERP || NoDocERP || '')
                                     .input('Obs', sql.NVarChar(200), obsAuto)
                                     .query(`
                                         MERGE OrdenCumplimientoRequisitos AS target
@@ -819,18 +819,23 @@ exports.receiveDispatch = async (req, res) => {
                                             FROM ConfigRequisitosProduccion req
                                             CROSS JOIN (
                                                 SELECT OrdenID FROM Ordenes 
-                                                WHERE (@Doc != '' AND NoDocERP = @Doc AND AreaID = @Area AND Estado != 'CANCELADO')
-                                                   OR (@Doc = '' AND OrdenID = @OID)
+                                                WHERE 
+                                                   (
+                                                       (@Doc != '' AND NoDocERP = @Doc)
+                                                       OR 
+                                                       (@Doc = '' AND NoDocERP = (SELECT TOP 1 NoDocERP FROM Ordenes WHERE OrdenID = @OID))
+                                                       OR
+                                                       (@Doc = '' AND OrdenID = @OID)
+                                                   )
+                                                   AND AreaID = @Area 
+                                                   AND Estado != 'CANCELADO'
                                             ) dest
                                             WHERE (
                                                 req.CodigoRequisito LIKE @Type
                                                 OR (@Type LIKE '%DISENO%' AND req.CodigoRequisito LIKE '%DTF%')
                                                 OR (@Type LIKE '%DTF%' AND req.CodigoRequisito LIKE '%DISENO%')
                                             )
-                                            AND (
-                                                (@Type LIKE '%TELA%' OR @Type LIKE '%DISENO%' OR @Type LIKE '%PRENDA%' OR @Type LIKE '%DTF%')
-                                                OR req.AreaID = @Area
-                                            )
+                                            AND req.AreaID = @Area
                                         ) AS source
                                         ON (target.OrdenID = source.OrdenID AND target.RequisitoID = source.RequisitoID)
                                         WHEN MATCHED THEN
@@ -1021,7 +1026,7 @@ exports.receiveDispatch = async (req, res) => {
 
                         // 2. Buscar en PedidosCobranza
                         const pcReq = await poolLocal.request().input('OID', require('mssql').Int, L_OrdenID)
-                            .query("SELECT ID, MontoTotal, NoDocERP, MontoContabilizado, MetrosContabilizados FROM PedidosCobranza WITH(NOLOCK) WHERE NoDocERP = (SELECT TOP 1 CAST(NoDocERP AS VARCHAR) FROM Ordenes WITH(NOLOCK) WHERE OrdenID = @OID)");
+                            .query("SELECT ID, MontoTotal, NoDocERP, MontoContabilizado, MetrosContabilizados, Moneda FROM PedidosCobranza WITH(NOLOCK) WHERE NoDocERP = (SELECT TOP 1 CAST(NoDocERP AS VARCHAR) FROM Ordenes WITH(NOLOCK) WHERE OrdenID = @OID)");
 
                         console.log(`${logPrefix} -> Encontrado PedidoCobranza =`, pcReq.recordset.length > 0);
 if (pcReq.recordset.length > 0) {
@@ -1050,7 +1055,7 @@ if (pcReq.recordset.length > 0) {
                             console.log(`${logPrefix} -> Reversa=${triggerReversal}, Adelante=${triggerForward}, totalMetros=${totalMetros}, currentMonto=${currentMonto}, mContado=${mContado}, metContado=${metContado}`);
 if (triggerReversal || triggerForward) {
                                 // oData is fetched above
-                                    const finalMonId = 1; 
+                                    const finalMonId = (pc.Moneda === 'USD') ? 2 : 1; 
 
                                     // Para la REVERSA vamos a simular el mismo cargo pero NEGATIVO
                                     if (triggerReversal && mContado !== 0) {
@@ -1656,7 +1661,29 @@ exports.toggleRequirement = async (req, res) => {
                     DECLARE @Area NVARCHAR(50) = (SELECT AreaID FROM ConfigRequisitosProduccion WHERE RequisitoID = @RID);
                     
                     MERGE OrdenCumplimientoRequisitos AS target
-                    USING (SELECT @OID as OrdenID, @RID as RequisitoID) AS source
+                                        USING (
+                                            SELECT DISTINCT req.RequisitoID, req.AreaID, dest.OrdenID
+                                            FROM ConfigRequisitosProduccion req
+                                            CROSS JOIN (
+                                                SELECT OrdenID FROM Ordenes 
+                                                WHERE 
+                                                   (
+                                                       (@Doc != '' AND NoDocERP = @Doc)
+                                                       OR 
+                                                       (@Doc = '' AND NoDocERP = (SELECT TOP 1 NoDocERP FROM Ordenes WHERE OrdenID = @OID))
+                                                       OR
+                                                       (@Doc = '' AND OrdenID = @OID)
+                                                   )
+                                                   AND AreaID = @Area 
+                                                   AND Estado != 'CANCELADO'
+                                            ) dest
+                                            WHERE (
+                                                req.CodigoRequisito LIKE @Type
+                                                OR (@Type LIKE '%DISENO%' AND req.CodigoRequisito LIKE '%DTF%')
+                                                OR (@Type LIKE '%DTF%' AND req.CodigoRequisito LIKE '%DISENO%')
+                                            )
+                                            AND req.AreaID = @Area
+                                        ) AS source
                     ON (target.OrdenID = source.OrdenID AND target.RequisitoID = source.RequisitoID)
                     WHEN MATCHED THEN
                         UPDATE SET Estado = 'CUMPLIDO', FechaCumplimiento = GETDATE()
@@ -1834,7 +1861,29 @@ exports.toggleRequirement = async (req, res) => {
                     DECLARE @Area NVARCHAR(50) = (SELECT AreaID FROM ConfigRequisitosProduccion WHERE RequisitoID = @RID);
                     
                     MERGE OrdenCumplimientoRequisitos AS target
-                    USING (SELECT @OID as OrdenID, @RID as RequisitoID) AS source
+                                        USING (
+                                            SELECT DISTINCT req.RequisitoID, req.AreaID, dest.OrdenID
+                                            FROM ConfigRequisitosProduccion req
+                                            CROSS JOIN (
+                                                SELECT OrdenID FROM Ordenes 
+                                                WHERE 
+                                                   (
+                                                       (@Doc != '' AND NoDocERP = @Doc)
+                                                       OR 
+                                                       (@Doc = '' AND NoDocERP = (SELECT TOP 1 NoDocERP FROM Ordenes WHERE OrdenID = @OID))
+                                                       OR
+                                                       (@Doc = '' AND OrdenID = @OID)
+                                                   )
+                                                   AND AreaID = @Area 
+                                                   AND Estado != 'CANCELADO'
+                                            ) dest
+                                            WHERE (
+                                                req.CodigoRequisito LIKE @Type
+                                                OR (@Type LIKE '%DISENO%' AND req.CodigoRequisito LIKE '%DTF%')
+                                                OR (@Type LIKE '%DTF%' AND req.CodigoRequisito LIKE '%DISENO%')
+                                            )
+                                            AND req.AreaID = @Area
+                                        ) AS source
                     ON (target.OrdenID = source.OrdenID AND target.RequisitoID = source.RequisitoID)
                     WHEN MATCHED THEN
                         UPDATE SET Estado = 'CUMPLIDO', FechaCumplimiento = GETDATE(), Observaciones = @Obs
@@ -1859,7 +1908,29 @@ exports.toggleRequirement = async (req, res) => {
                     .query(`
                     DECLARE @Area NVARCHAR(50) = (SELECT AreaID FROM ConfigRequisitosProduccion WHERE RequisitoID = @RID);
                     MERGE OrdenCumplimientoRequisitos AS target
-                    USING (SELECT @OID as OrdenID, @RID as RequisitoID) AS source
+                                        USING (
+                                            SELECT DISTINCT req.RequisitoID, req.AreaID, dest.OrdenID
+                                            FROM ConfigRequisitosProduccion req
+                                            CROSS JOIN (
+                                                SELECT OrdenID FROM Ordenes 
+                                                WHERE 
+                                                   (
+                                                       (@Doc != '' AND NoDocERP = @Doc)
+                                                       OR 
+                                                       (@Doc = '' AND NoDocERP = (SELECT TOP 1 NoDocERP FROM Ordenes WHERE OrdenID = @OID))
+                                                       OR
+                                                       (@Doc = '' AND OrdenID = @OID)
+                                                   )
+                                                   AND AreaID = @Area 
+                                                   AND Estado != 'CANCELADO'
+                                            ) dest
+                                            WHERE (
+                                                req.CodigoRequisito LIKE @Type
+                                                OR (@Type LIKE '%DISENO%' AND req.CodigoRequisito LIKE '%DTF%')
+                                                OR (@Type LIKE '%DTF%' AND req.CodigoRequisito LIKE '%DISENO%')
+                                            )
+                                            AND req.AreaID = @Area
+                                        ) AS source
                     ON (target.OrdenID = source.OrdenID AND target.RequisitoID = source.RequisitoID)
                     WHEN MATCHED THEN
                         UPDATE SET Estado = 'PENDIENTE', Observaciones = @Obs

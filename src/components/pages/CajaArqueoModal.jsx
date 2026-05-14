@@ -56,17 +56,37 @@ const CajaArqueoModal = ({ onClose }) => {
     const win = window.open('', '_blank');
     const d = new Date().toLocaleString('es-UY');
 
-    const rows = data.map(m => `
-      <tr>
-        <td style="padding:6px 8px;font-size:11px">${fmtDate(m.Fecha)}</td>
-        <td style="padding:6px 8px;font-weight:bold">${m.TipoOperacion}</td>
-        <td style="padding:6px 8px">${m.TipoComprobante || ''} ${m.Comprobante || ''}</td>
-        <td style="padding:6px 8px">${m.Concepto || ''}</td>
-        <td style="padding:6px 8px">${m.MedioDePago || ''}</td>
-        <td style="padding:6px 8px;font-weight:bold;color:#065f46">${m.Entrada > 0 ? `${m.Moneda} ${fmt(m.Entrada)}` : '-'}</td>
-        <td style="padding:6px 8px;font-weight:bold;color:#991b1b">${m.Salida > 0 ? `${m.Moneda} ${fmt(m.Salida)}` : '-'}</td>
-      </tr>
-    `).join('');
+    const groupedMovs = {};
+    data.forEach(m => {
+      const fp = (m.MedioDePago || 'INDEFINIDO') + ' | ' + m.Moneda;
+      if (!groupedMovs[fp]) groupedMovs[fp] = [];
+      groupedMovs[fp].push(m);
+    });
+
+    const detailedRowsHTML = Object.entries(groupedMovs).map(([fp, movs]) => {
+      const rowsHtml = movs.map(m => {
+        const inStr = m.Entrada > 0 ? `${m.Moneda} ${fmt(m.Entrada)}` : '-';
+        const outStr = m.Salida > 0 ? `${m.Moneda} ${fmt(m.Salida)}` : '-';
+        return `
+        <tr>
+          <td style="padding:6px 8px;font-size:11px">${fmtDate(m.Fecha)}</td>
+          <td style="padding:6px 8px;font-weight:bold">${m.TipoOperacion}</td>
+          <td style="padding:6px 8px">${m.TipoComprobante || ''} ${m.Comprobante || ''}</td>
+          <td style="padding:6px 8px">${m.Concepto || ''}</td>
+          <td style="padding:6px 8px;font-weight:bold;color:#065f46">${inStr}</td>
+          <td style="padding:6px 8px;font-weight:bold;color:#991b1b">${outStr}</td>
+        </tr>
+      `}).join('');
+
+      return `
+        <tr>
+          <td colspan="6" style="background:#e2e8f0; font-weight:bold; padding:8px 12px; font-size:13px; color:#1e293b;">
+            MEDIO DE PAGO: <span style="color:#4338ca">${fp}</span>
+          </td>
+        </tr>
+        ${rowsHtml}
+      `;
+    }).join('');
 
     const sumRows = Object.entries(agrupado.porForma).map(([k, v]) => `
       <tr>
@@ -104,10 +124,10 @@ const CajaArqueoModal = ({ onClose }) => {
         <strong>SALDO FINAL NETO DEL TURNO:</strong> &nbsp;&nbsp;&nbsp; UYU ${fmt(agrupado.saldoUYU)} &nbsp;&nbsp;|&nbsp;&nbsp; USD ${fmt(agrupado.saldoUSD)}
       </div>
 
-      <div class="s">DETALLE DE MOVIMIENTOS</div>
+      <div class="s">DETALLE DE MOVIMIENTOS POR FORMA DE PAGO</div>
       <table>
-        <tr><th>Fecha y Hora</th><th>Tipo</th><th>Comprobante</th><th>Rubro/Concepto</th><th>Medio de Pago</th><th>Entrada</th><th>Salida</th></tr>
-        ${rows}
+        <tr><th>Fecha y Hora</th><th>Tipo</th><th>Comprobante</th><th>Rubro/Concepto</th><th>Entrada</th><th>Salida</th></tr>
+        ${detailedRowsHTML}
       </table>
     </body></html>`);
     win.document.close();
@@ -222,28 +242,42 @@ const CajaArqueoModal = ({ onClose }) => {
                           <th className="p-4 text-center font-black">Tipo</th>
                           <th className="p-4 text-left font-black">Nº Comprobante / Doc</th>
                           <th className="p-4 text-left font-black">Rubro / Concepto</th>
-                          <th className="p-4 text-left font-black">Forma Pago</th>
                           <th className="p-4 text-right font-black">Entrada</th>
                           <th className="p-4 px-6 text-right font-black text-rose-500">Salida</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {data.map((m, i) => (
-                          <tr key={i} className="hover:bg-slate-50 text-slate-700 transition-colors">
-                             <td className="p-4 px-6 whitespace-nowrap text-xs text-slate-500 font-bold">{fmtDate(m.Fecha)}</td>
-                             <td className="p-4 text-center">
-                               {m.TipoOperacion === 'INGRESO' 
-                                  ? <span className="bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-md text-[10px] font-black border border-emerald-200 tracking-widest shadow-sm">INGRESO</span>
-                                  : <span className="bg-rose-50 text-rose-600 px-2.5 py-1 rounded-md text-[10px] font-black border border-rose-200 tracking-widest shadow-sm">EGRESO</span>
-                               }
-                             </td>
-                             <td className="p-4 font-mono text-xs font-bold text-slate-500">{m.TipoComprobante} {m.Comprobante && m.Comprobante !== '-' ? <span className="text-indigo-600">{m.Comprobante}</span> : ''}</td>
-                             <td className="p-4 font-bold text-slate-800">{m.Concepto}</td>
-                             <td className="p-4 text-indigo-700 text-xs font-black">{m.MedioDePago}</td>
-                             <td className="p-4 text-right font-black text-emerald-600 font-mono text-base">{m.Entrada > 0 ? `${m.Moneda} ${fmt(m.Entrada)}` : '-'}</td>
-                             <td className="p-4 px-6 text-right font-black text-rose-600 font-mono text-base">{m.Salida > 0  ? `${m.Moneda} ${fmt(m.Salida)}`  : '-'}</td>
-                          </tr>
-                        ))}
+                        {Object.entries(agrupado.porForma).flatMap(([fp, v], gIndex) => {
+                          return ['UYU', 'USD'].map((mon, mIndex) => {
+                            const movsForma = data.filter(m => (m.MedioDePago || 'INDEFINIDO') === fp && m.Moneda === mon);
+                            if (movsForma.length === 0) return null;
+                            const uniqueKey = `${gIndex}-${mIndex}`;
+                            return (
+                              <React.Fragment key={uniqueKey}>
+                                <tr>
+                                  <td colSpan="6" className="p-3 px-6 bg-slate-100 text-slate-800 font-black text-sm uppercase tracking-widest border-y border-slate-200">
+                                    Medio de Pago: <span className="text-indigo-600">{fp}</span> <span className="text-slate-400 mx-2">|</span> Moneda: <span className={mon === 'USD' ? 'text-emerald-600' : 'text-slate-700'}>{mon}</span>
+                                  </td>
+                                </tr>
+                              {movsForma.map((m, i) => (
+                                <tr key={i} className="hover:bg-slate-50 text-slate-700 transition-colors">
+                                   <td className="p-4 px-6 whitespace-nowrap text-xs text-slate-500 font-bold">{fmtDate(m.Fecha)}</td>
+                                   <td className="p-4 text-center">
+                                     {m.TipoOperacion === 'INGRESO' 
+                                        ? <span className="bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-md text-[10px] font-black border border-emerald-200 tracking-widest shadow-sm">INGRESO</span>
+                                        : <span className="bg-rose-50 text-rose-600 px-2.5 py-1 rounded-md text-[10px] font-black border border-rose-200 tracking-widest shadow-sm">EGRESO</span>
+                                     }
+                                   </td>
+                                   <td className="p-4 font-mono text-xs font-bold text-slate-500">{m.TipoComprobante} {m.Comprobante && m.Comprobante !== '-' ? <span className="text-indigo-600">{m.Comprobante}</span> : ''}</td>
+                                   <td className="p-4 font-bold text-slate-800">{m.Concepto}</td>
+                                   <td className="p-4 text-right font-black text-emerald-600 font-mono text-base">{m.Entrada > 0 ? `${m.Moneda} ${fmt(m.Entrada)}` : '-'}</td>
+                                   <td className="p-4 px-6 text-right font-black text-rose-600 font-mono text-base">{m.Salida > 0  ? `${m.Moneda} ${fmt(m.Salida)}`  : '-'}</td>
+                                </tr>
+                              ))}
+                              </React.Fragment>
+                            );
+                          });
+                        })}
                       </tbody>
                     </table>
                  </div>
@@ -257,3 +291,6 @@ const CajaArqueoModal = ({ onClose }) => {
 };
 
 export default CajaArqueoModal;
+
+
+

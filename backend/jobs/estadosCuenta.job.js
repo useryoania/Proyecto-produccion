@@ -30,8 +30,9 @@ const emailSvc         = require('../services/contabilidadEmailService');
 // SECCIÓN 1: CONFIGURACIÓN
 // ============================================================
 
-const HORA_EJECUCION   = process.env.CONT_ESTADOS_HORA    || '20';
-const MINUTO_EJECUCION = process.env.CONT_ESTADOS_MINUTO  || '0';
+const HORA_EJECUCION   = process.env.CONT_ESTADOS_HORA    || '23';
+const MINUTO_EJECUCION = process.env.CONT_ESTADOS_MINUTO  || '59';
+const DIA_SEMANA       = process.env.CONT_ESTADOS_DIA     || '4'; // 4 = Jueves
 const AUTOENVIO        = String(process.env.CONT_EMAIL_AUTOENVIO ?? 'false').toLowerCase() === 'true';
 const ENABLED_ENV      = String(process.env.CONT_ESTADOS_ENABLED ?? 'true').toLowerCase() === 'true';
 const USUARIO_SISTEMA  = 1; // ID de usuario para movimientos generados por el sistema
@@ -75,24 +76,23 @@ async function generarEstadoParaCliente(pool, cliente) {
       })
     );
 
-    // 3. Verificar si hay algo relevante (movimientos o deudas) para informar
-    const tieneMovimientos = cuentasDetalle.some(c => c.movimientos.length > 0);
-    const tieneDeudas      = cuentasDetalle.some(c => c.deudas.length > 0);
-    const tieneSaldoNoCero = cuentasDetalle.some(c => Number(c.CueSaldoActual) !== 0);
+    // 3. Filtrar cuentas que tienen saldo distinto de cero o tienen deudas pendientes
+    const cuentasActivas = cuentasDetalle.filter(c => Number(c.CueSaldoActual) !== 0 || c.deudas.length > 0);
 
-    if (!tieneMovimientos && !tieneDeudas && !tieneSaldoNoCero) {
-      logger.info(`[ESTADOS-CRON] CliId=${CliIdCliente} sin actividad → skip`);
+    // Si después de filtrar no queda ninguna cuenta con saldo/deuda, no enviamos nada
+    if (cuentasActivas.length === 0) {
+      logger.info(`[ESTADOS-CRON] CliId=${CliIdCliente} saldos en cero → skip`);
       return null;
     }
 
-    // 4. Armar el snapshot JSON completo
+    // 4. Armar el snapshot JSON completo solo con las cuentas activas
     const snapshot = {
       cliente: {
         CliIdCliente,
         Nombre,
         Email,
       },
-      cuentas: cuentasDetalle,
+      cuentas: cuentasActivas,
       periodoDesde: primeroDeMes.toISOString(),
       periodoHasta: hoy.toISOString(),
       generadoEn:   hoy.toISOString(),
@@ -171,7 +171,7 @@ async function marcarCiclosVencidos(pool) {
       UPDATE dbo.CiclosCredito
       SET    CicEstado = 'VENCIDO'
       WHERE  CicEstado = 'ABIERTO'
-        AND  CicFechaCierre < CAST(GETDATE() AS DATE)
+        AND  DATEADD(day, ISNULL(CicDiasAprobados, 7), CicFechaInicio) < CAST(GETDATE() AS DATE)
     `);
     if (result.rowsAffected[0] > 0) {
       logger.warn(`[ESTADOS-CRON] ⚠️ ${result.rowsAffected[0]} ciclo(s) marcados como VENCIDO`);
@@ -202,7 +202,42 @@ async function marcarDeudasVencidas(pool) {
 }
 
 // ============================================================
-// SECCIÓN 4: PROCESO BATCH PRINCIPAL
+// SECCIÓN 4: ASEGURAR CICLOS SEMANALES
+// ============================================================
+
+/**
+ * asegurarCiclosSemanalesAbiertos
+ * Detecta clientes que tienen TipoCliente = 2 (Semanal) pero no tienen
+ * un ciclo abierto, y se los abre automáticamente.
+ */
+async function asegurarCiclosSemanalesAbiertos(pool) {
+  try {
+    const result = await pool.request().query(`
+      SELECT c.CliIdCliente, cc.CueIdCuenta
+      FROM dbo.Clientes c WITH(NOLOCK)
+      JOIN dbo.CuentasCliente cc WITH(NOLOCK) ON cc.CliIdCliente = c.CliIdCliente
+      LEFT JOIN dbo.CiclosCredito cic WITH(NOLOCK) ON cic.CueIdCuenta = cc.CueIdCuenta AND cic.CicEstado = 'ABIERTO'
+      WHERE c.TClIdTipoCliente = 2
+        AND cc.CueActiva = 1
+        AND cic.CicIdCiclo IS NULL
+        AND cc.CueTipo IN ('UYU', 'USD', 'ARS')
+    `);
+
+    const clientes = result.recordset;
+    if (clientes.length === 0) return;
+
+    logger.info(`[ESTADOS-CRON] Detectados ${clientes.length} clientes Semanales sin ciclo abierto. Abriendo automáticamente...`);
+    
+    for (const c of clientes) {
+      await svc.abrirCicloPorCuenta({ CueIdCuenta: c.CueIdCuenta, CliIdCliente: c.CliIdCliente, UsuarioAlta: 1 });
+    }
+  } catch (err) {
+    logger.warn(`[ESTADOS-CRON] Error asegurando ciclos semanales: ${err.message}`);
+  }
+}
+
+// ============================================================
+// SECCIÓN 5: PROCESO BATCH PRINCIPAL
 // ============================================================
 
 /**
@@ -214,9 +249,10 @@ async function runEstadosCuentaBatch() {
   logger.info('[ESTADOS-CRON] ▶ Iniciando generación de estados de cuenta...');
   const pool = await getPool();
 
-  // 1. Mantenimiento previo: marcar vencidos
-  await marcarCiclosVencidos(pool);
+  // 1. Mantenimiento previo: forzar cierre de todos los ciclos ABIERTOS (Semanales) y auto-abrir
+  await svc.forzarCierreTodosCiclosAbiertos();
   await marcarDeudasVencidas(pool);
+  await asegurarCiclosSemanalesAbiertos(pool);
 
   // 2. Obtener clientes con cuentas activas y email configurado
   const clientesRes = await pool.request().query(`
@@ -229,6 +265,7 @@ async function runEstadosCuentaBatch() {
     WHERE cc.CueActiva = 1
       AND c.Email IS NOT NULL
       AND LEN(LTRIM(RTRIM(c.Email))) > 5
+      AND (c.TClIdTipoCliente = 2 OR cc.CueTipo NOT IN ('UYU', 'USD', 'ARS'))
     ORDER BY c.Nombre
   `);
 
@@ -327,7 +364,8 @@ function startEstadosCuentaJob() {
   const cron = require('node-cron');
 
   // Verificar si está habilitado en ConfiguracionGlobal (o fallback al .env)
-  const expresionCron = `${MINUTO_EJECUCION} ${HORA_EJECUCION} * * *`;
+  // Formato: minuto hora diaDelMes mes diaDeLaSemana
+  const expresionCron = `${MINUTO_EJECUCION} ${HORA_EJECUCION} * * ${DIA_SEMANA}`;
 
   cron.schedule(expresionCron, async () => {
     // Verificar switch en BD (puede desactivarse sin reiniciar)

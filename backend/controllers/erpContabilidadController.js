@@ -126,7 +126,21 @@ exports.actualizarCuenta = async (req, res) => {
   try {
     const { id } = req.params;
     const { codigo, nombre, nivel, tipoBase, moneda, imputable, activa } = req.body;
+    const isImputable = imputable ? 1 : 0;
+
     const pool = await getPool();
+
+    // Validar si intenta hacerla NO imputable, que no tenga asientos
+    if (isImputable === 0) {
+      const checkRes = await pool.request()
+        .input('id', id)
+        .query(`SELECT TOP 1 1 FROM dbo.Cont_AsientosDetalle WHERE CueId = @id`);
+      
+      if (checkRes.recordset.length > 0) {
+        return res.status(400).json({ success: false, error: 'No se puede desmarcar como Imputable porque esta cuenta ya tiene asientos contables registrados.' });
+      }
+    }
+
     await pool.request()
       .input('id', id)
       .input('codigo', `${codigo}`)
@@ -134,7 +148,7 @@ exports.actualizarCuenta = async (req, res) => {
       .input('nivel', nivel)
       .input('tipoBase', tipoBase)
       .input('moneda', moneda || 'AMBAS')
-      .input('imputable', imputable ? 1 : 0)
+      .input('imputable', isImputable)
       .input('activa', activa ? 1 : 0)
       .query(`
         UPDATE dbo.Cont_PlanCuentas

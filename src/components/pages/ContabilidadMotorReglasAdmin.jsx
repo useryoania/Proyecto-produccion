@@ -37,6 +37,7 @@ export default function ContabilidadMotorReglasAdmin() {
   const [modalVisible, setModalVisible] = useState(false);
   const [form, setForm] = useState(null);
   const [tab, setTab] = useState('comportamiento'); // 'comportamiento' | 'asiento'
+  const [mostrarInactivos, setMostrarInactivos] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -102,6 +103,7 @@ export default function ContabilidadMotorReglasAdmin() {
   const setField = (campo, valor) => setForm(f => ({ ...f, [campo]: valor }));
 
   const isExisting = form && eventos.some(x => x.EvtCodigo === form.EvtCodigo);
+  const eventosMostrados = eventos.filter(t => mostrarInactivos || t.EvtActivo);
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 text-slate-800">
@@ -117,9 +119,15 @@ export default function ContabilidadMotorReglasAdmin() {
             y qué asiento genera en el Libro Mayor. Reemplaza toda la lógica hardcodeada del sistema.
           </p>
         </div>
-        <button onClick={() => openForm(null)} className="bg-blue-600 hover:bg-blue-500 text-slate-800 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all">
-          <PlusCircle size={15} /> Nuevo Evento
-        </button>
+        <div className="flex gap-3 items-center">
+          <label className="flex items-center gap-2 text-sm text-slate-500 cursor-pointer hover:text-slate-700 transition-colors bg-white border border-slate-200 px-3 py-2 rounded-lg">
+            <input type="checkbox" checked={mostrarInactivos} onChange={(e) => setMostrarInactivos(e.target.checked)} className="rounded text-blue-500 w-4 h-4" />
+            Mostrar inactivos
+          </label>
+          <button onClick={() => openForm(null)} className="bg-blue-600 hover:bg-blue-500 text-slate-800 px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all shadow-sm">
+            <PlusCircle size={15} /> Nuevo Evento
+          </button>
+        </div>
       </div>
 
       {/* Table */}
@@ -143,12 +151,12 @@ export default function ContabilidadMotorReglasAdmin() {
                   <div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2" />
                   Cargando eventos...
                 </td></tr>
-              ) : eventos.length === 0 ? (
+              ) : eventosMostrados.length === 0 ? (
                 <tr><td colSpan={7} className="text-center py-10 text-slate-400">Sin eventos configurados</td></tr>
-              ) : eventos.map(t => {
+              ) : eventosMostrados.map(t => {
                 const ef = EFECTO_LABELS[String(t.EvtAfectaSaldo)] || EFECTO_LABELS['0'];
                 return (
-                  <tr key={t.EvtCodigo} className="hover:bg-white/60 transition-colors group">
+                  <tr key={t.EvtCodigo} className={`hover:bg-white/60 transition-colors group ${!t.EvtActivo ? 'opacity-50 grayscale' : ''}`}>
                     <td className="px-4 py-3">
                       <span className="font-mono text-xs bg-slate-50 py-1 px-2 rounded-md text-blue-300 border border-slate-200">{t.EvtCodigo}</span>
                     </td>

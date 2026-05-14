@@ -690,7 +690,7 @@ exports.createPlanillaOrder = async (req, res) => {
                 if (exec.archivosReferenciaLocales && exec.archivosReferenciaLocales.length > 0) {
                     for (let i = 0; i < exec.archivosReferenciaLocales.length; i++) {
                         const refItem = exec.archivosReferenciaLocales[i];
-                        const refName = `${exec.codigoOrden.replace(/\//g, '-')}_Boceto_Corte_${i+1}.url`;
+                        const refName = refItem.url || refItem.nota || refItem.tipo || `Boceto_Corte_${i+1}`;
                         await new sql.Request(transaction)
                             .input('OID', sql.Int, newOID)
                             .input('Tipo', sql.VarChar(50), refItem.tipo || 'BOCETO_CORTE')

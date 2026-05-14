@@ -24,19 +24,30 @@ class SheetsRawMappingService {
 
     static mapToOrderPayload(rawDataObj) {
         try {
-            const { idExterno, area, rawRow, matrizData, datosPorHoja } = rawDataObj;
+            const { idExterno, area, rawRow, matrizData, datosPorHoja,
+                    baseRow, baseIngresoRow } = rawDataObj;
+
+            // ── Construir datosPorHoja si no viene en ese formato ────────────────
+            // actionImportarOrdenesCompletas devuelve rawRow (BASE INGRESO) y baseRow (BASE)
+            // por separado. Lo unificamos aquí para que los mappers puedan leer ambas hojas.
+            let resolvedDatosPorHoja = datosPorHoja;
+            if (!resolvedDatosPorHoja && (baseRow || baseIngresoRow)) {
+                resolvedDatosPorHoja = {};
+                if (baseIngresoRow) resolvedDatosPorHoja["BASE INGRESO"] = baseIngresoRow;
+                if (baseRow)        resolvedDatosPorHoja["BASE"]          = baseRow;
+            }
 
             // Reconstruir un "normRow" principal para la lógica inferior
             let normRow = {};
             let dMatriz = [];
 
-            if (datosPorHoja) {
+            if (resolvedDatosPorHoja) {
                 // Nuevo formato unificado puro: Extraer hoja principal
-                let keys = Object.keys(datosPorHoja);
+                let keys = Object.keys(resolvedDatosPorHoja);
                 let selectedKey = keys.find(k => k.includes("INGRESO")) || keys.find(k => k.includes("BASE")) || keys.find(k => k.includes("PROD")) || keys[0];
-                if (selectedKey) normRow = datosPorHoja[selectedKey];
+                if (selectedKey) normRow = resolvedDatosPorHoja[selectedKey];
 
-                if (datosPorHoja["MATRIZ"]) dMatriz = [datosPorHoja["MATRIZ"]]; // Convertimos a arr para compatibilidad
+                if (resolvedDatosPorHoja["MATRIZ"]) dMatriz = [resolvedDatosPorHoja["MATRIZ"]]; // Convertimos a arr para compatibilidad
             } else if (rawRow) {
                 normRow = this._normalizeRow(rawRow);
                 dMatriz = matrizData || [];
@@ -54,16 +65,16 @@ class SheetsRawMappingService {
             const esFamiliaCenco = ["TWC", "TWT", "RTWC"].includes(areaUpper);
             const esFamiliaEMB = ["EMB", "XEMB", "REMB", "RXEMB"].includes(areaUpper);
 
-            if (esFamiliaDF) return this.mapDF(idExterno, "DF", normRow, datosPorHoja);
-            if (esFamiliaECOUV) return this.mapECOUV(idExterno, "ECOUV", normRow, datosPorHoja);
-            if (esFamiliaTPU) return this.mapTPU(idExterno, "TPUT", normRow, dMatriz);
-            if (esFamiliaSB) return this.mapSB(idExterno, "SB", normRow, datosPorHoja);
-            if (esFamiliaIMD) return this.mapIMD(idExterno, "IMD", normRow, datosPorHoja);
-            if (esFamiliaCenco) return this.mapGenerico(idExterno, "TWC", normRow);
-            if (esFamiliaEMB) return this.mapEMB(idExterno, "EMB", normRow, datosPorHoja);
+            if (esFamiliaDF) return this.mapDF(idExterno, "DF", normRow, resolvedDatosPorHoja);
+            if (esFamiliaECOUV) return this.mapECOUV(idExterno, "ECOUV", normRow, resolvedDatosPorHoja);
+            if (esFamiliaTPU) return this.mapTPU(idExterno, "TPUT", normRow, dMatriz, resolvedDatosPorHoja);
+            if (esFamiliaSB) return this.mapSB(idExterno, "SB", normRow, resolvedDatosPorHoja);
+            if (esFamiliaIMD) return this.mapIMD(idExterno, "IMD", normRow, resolvedDatosPorHoja);
+            if (esFamiliaCenco) return this.mapGenerico(idExterno, "TWC", normRow, resolvedDatosPorHoja);
+            if (esFamiliaEMB) return this.mapEMB(idExterno, "EMB", normRow, resolvedDatosPorHoja);
 
             // Fallback Generico
-            return this.mapGenerico(idExterno, areaUpper, normRow);
+            return this.mapGenerico(idExterno, areaUpper, normRow, resolvedDatosPorHoja);
         } catch (error) {
             logger.error(`[SheetsRawMappingService] Error al mapear orden ${rawDataObj?.idExterno}: ${error.message}`);
             return null;
@@ -76,47 +87,38 @@ class SheetsRawMappingService {
         const prioridadStr = f.E ? f.E.toString().toUpperCase() : (f.F ? f.F.toString().toUpperCase() : "");
         const prioridad = prioridadStr.includes("URGENT") ? "Urgente" : "Normal";
         
-        // Material en ECOUV viene típicamente en la J y la variante en la H.
         const material = (f.J || f.I || "").toString().trim();
         const variante = (f.H || "").toString().trim();
 
         let cantidadReal = parseFloat(f.F) || parseFloat(f.B) || 1;
-        
-        // Si datosPorHoja tiene "BASE", la cantidad real de m2 está típicamente en la col B
         if (datosPorHoja && datosPorHoja["BASE"] && datosPorHoja["BASE"].B) {
             const baseCant = parseFloat(datosPorHoja["BASE"].B);
-            if (!isNaN(baseCant) && baseCant > 0) {
-                cantidadReal = baseCant;
-            }
+            if (!isNaN(baseCant) && baseCant > 0) cantidadReal = baseCant;
         }
 
-        let disenoImpresion = "Link no definido";
+        const colFiles = ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'];
+        const colCopias = ['U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD'];
+        const colMetros = ['AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP'];
 
-        for (let l of ['K', 'L', 'M', 'N', 'O', 'H', 'I', 'J']) {
-            if (f[l] && typeof f[l] === 'string' && f[l].includes('http')) {
-                disenoImpresion = f[l].toString().trim();
-                break;
+        let itemsResult = [];
+        const hojaBase = (datosPorHoja && datosPorHoja["BASE"]) ? datosPorHoja["BASE"] : f;
+
+        for (let i = 0; i < 10; i++) {
+            const fileUrl = hojaBase[colFiles[i]] ? hojaBase[colFiles[i]].toString().trim() : null;
+            if (fileUrl && fileUrl.includes('http')) {
+                const copias = parseFloat(hojaBase[colCopias[i]]) || 1;
+                const metros = parseFloat(hojaBase[colMetros[i]]) || 0;
+                itemsResult.push({ fileName: fileUrl, cantidad: metros > 0 ? metros : cantidadReal, copias });
             }
         }
+        if (itemsResult.length === 0) itemsResult.push({ fileName: "Sin link", cantidad: cantidadReal, copias: 1 });
 
         cantidadReal = Math.round(cantidadReal * 100) / 100;
 
         return { 
-            idExterno, 
-            idServicioBase: areaId, 
-            nombreTrabajo, 
-            prioridad, 
-            metrosTotales: cantidadReal, 
-            clienteInfo: { id: clienteNom, idReact: 0 }, 
-            archivosReferencia: [], 
-            archivosTecnicos: [], 
-            servicios: [{ 
-                areaId, 
-                esPrincipal: true, 
-                cabecera: { material, variante, metros: cantidadReal }, 
-                items: [{ fileName: disenoImpresion, cantidad: cantidadReal, copias: 1 }], 
-                variablesEspeciales: {} 
-            }] 
+            idExterno, idServicioBase: areaId, nombreTrabajo, prioridad, metrosTotales: cantidadReal, 
+            clienteInfo: { id: clienteNom, idReact: 0 }, archivosReferencia: [], archivosTecnicos: [], 
+            servicios: [{ areaId, esPrincipal: true, cabecera: { material, variante, metros: cantidadReal }, items: itemsResult, variablesEspeciales: {} }] 
         };
     }
 
@@ -128,51 +130,61 @@ class SheetsRawMappingService {
         const material = f.H ? f.H.toString().trim() : "";
 
         let cantidadReal = parseFloat(f.J) || parseFloat(f.F) || 1;
-
-        // Si datosPorHoja tiene "BASE", la cantidad real de DTF o el trabajo está en la col B
         if (datosPorHoja && datosPorHoja["BASE"] && datosPorHoja["BASE"].B) {
             const baseCant = parseFloat(datosPorHoja["BASE"].B);
-            if (!isNaN(baseCant) && baseCant > 0) {
-                cantidadReal = baseCant;
-            }
+            if (!isNaN(baseCant) && baseCant > 0) cantidadReal = baseCant;
         }
 
-        let disenoImpresion = "Link no definido";
+        const colFiles = ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'];
+        const colCopias = ['U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD'];
+        const colMetros = ['AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP'];
 
-        for (let l of ['H', 'I', 'J', 'K', 'L', 'M', 'N', 'O']) {
-            if (f[l] && typeof f[l] === 'string' && f[l].includes('http')) {
-                disenoImpresion = f[l].toString().trim();
-                break;
+        let itemsResult = [];
+        const hojaBase = (datosPorHoja && datosPorHoja["BASE"]) ? datosPorHoja["BASE"] : f;
+
+        for (let i = 0; i < 10; i++) {
+            const fileUrl = hojaBase[colFiles[i]] ? hojaBase[colFiles[i]].toString().trim() : null;
+            if (fileUrl && fileUrl.includes('http')) {
+                const copias = parseFloat(hojaBase[colCopias[i]]) || 1;
+                const metros = parseFloat(hojaBase[colMetros[i]]) || 0;
+                itemsResult.push({ fileName: fileUrl, cantidad: metros > 0 ? metros : cantidadReal, copias });
             }
         }
+        if (itemsResult.length === 0) itemsResult.push({ fileName: "Sin link", cantidad: cantidadReal, copias: 1 });
 
         const notasGenerales = f.P ? f.P.toString().trim() : "";
         cantidadReal = Math.round(cantidadReal * 100) / 100;
 
-        return { idExterno, idServicioBase: areaId, nombreTrabajo, prioridad, notasGenerales, metrosTotales: cantidadReal, clienteInfo: { id: clienteNom, idReact: 0 }, archivosReferencia: [], archivosTecnicos: [], servicios: [{ areaId, esPrincipal: true, cabecera: { material, variante: "", metros: cantidadReal }, items: [{ fileName: disenoImpresion, cantidad: cantidadReal, copias: 1 }], variablesEspeciales: {} }] };
+        return { idExterno, idServicioBase: areaId, nombreTrabajo, prioridad, notasGenerales, metrosTotales: cantidadReal, clienteInfo: { id: clienteNom, idReact: 0 }, archivosReferencia: [], archivosTecnicos: [], servicios: [{ areaId, esPrincipal: true, cabecera: { material, variante: "", metros: cantidadReal }, items: itemsResult, variablesEspeciales: {} }] };
     }
 
-    static mapTPU(idExterno, areaId, f, matriz) {
+    static mapTPU(idExterno, areaId, f, matriz, datosPorHoja) {
         const clienteNom = f.C ? f.C.toString().trim() : "";
         const nombreTrabajo = f.D ? f.D.toString().trim() : "S/N";
         const material = f.E ? f.E.toString().trim() : "";
         const prioridadStr = f.F ? f.F.toString().toUpperCase() : "";
 
         let cantidadReal = parseFloat(f.F) || 1;
-        let disenoImpresion = f.G ? f.G.toString().trim() : "Link no definido";
-
-        if (!disenoImpresion.includes("http")) {
-            for (let l of ['E', 'F', 'G', 'H', 'I', 'J', 'K']) {
-                if (f[l] && typeof f[l] === 'string' && f[l].includes('http')) {
-                    disenoImpresion = f[l].toString().trim();
-                    break;
-                }
-            }
+        
+        const hojaBase = (datosPorHoja && datosPorHoja["BASE"]) ? datosPorHoja["BASE"] : f;
+        
+        let urls = [];
+        const linkUrl = hojaBase['G'] ? hojaBase['G'].toString().trim() : null;
+        if (linkUrl && linkUrl.includes('http')) {
+            const copias = parseFloat(hojaBase['F']) || 1;
+            urls.push({ fileName: linkUrl, cantidad: cantidadReal, copias: copias });
+        } else {
+            urls.push({ fileName: "Sin link", cantidad: cantidadReal, copias: 1 });
         }
 
         let linkSpot = "";
         let linkRefMatriz = "";
-        if (matriz && Array.isArray(matriz)) {
+        
+        const hojaMatriz = (datosPorHoja && datosPorHoja["MATRIZ"]) ? datosPorHoja["MATRIZ"] : null;
+        if (hojaMatriz) {
+            linkSpot = hojaMatriz.B ? hojaMatriz.B.toString().trim() : "";
+            linkRefMatriz = hojaMatriz.C ? hojaMatriz.C.toString().trim() : "";
+        } else if (matriz && Array.isArray(matriz)) {
             for (const m of matriz) {
                 const normM = this._normalizeRow(m);
                 if (normM.A && normM.A.toString().trim().toUpperCase() === idExterno.toUpperCase()) {
@@ -183,34 +195,38 @@ class SheetsRawMappingService {
             }
         }
 
-        const referencias = []; if (linkRefMatriz.includes("http")) referencias.push(linkRefMatriz);
-        const tecnicos = []; if (linkSpot.includes("http")) tecnicos.push(linkSpot);
+        let refFiles = [];
+        let localesRef = [];
+        if (linkSpot && linkSpot.includes("http")) {
+            refFiles.push({ nombre: linkSpot, url: linkSpot });
+            localesRef.push({ url: linkSpot, nota: linkSpot, tipo: "SPOT-TPU" });
+        }
+        if (linkRefMatriz && linkRefMatriz.includes("http")) {
+            refFiles.push({ nombre: linkRefMatriz, url: linkRefMatriz });
+            localesRef.push({ url: linkRefMatriz, nota: linkRefMatriz, tipo: "MATRIZ-TPU" });
+        }
+
         cantidadReal = Math.round(cantidadReal * 100) / 100;
 
         const serviciosArray = [{ 
             areaId, 
             esPrincipal: true, 
             cabecera: { material, variante: "TPU", metros: cantidadReal }, 
-            items: [{ fileName: disenoImpresion, cantidad: cantidadReal, copias: 1 }], 
+            items: urls,
+            archivosReferenciaLocales: localesRef,
             variablesEspeciales: {} 
         }];
 
-        // Matriz TPU como Extra Contable Addicional
         serviciosArray.push({
             areaId: areaId,
             esPrincipal: false,
             isCobranzaExtra: true,
-            cabecera: { 
-                material: "Matriz TPU", 
-                variante: "Matriz asignada automáticamente", 
-                metros: 1, 
-                codArticulo: "156", 
-                proIdProducto: 417,
-                codStock: "1.1.10.1" 
-            },
+            cabecera: { material: "Matriz TPU", variante: "Matriz asignada automáticamente", metros: 1, codArticulo: "156", proIdProducto: 417, codStock: "1.1.10.1" },
             items: [{ fileName: "Matriz automática.dat", cantidad: 1, copias: 1 }],
             variablesEspeciales: { isMatriz: true }
-        });return { idExterno, idServicioBase: areaId, nombreTrabajo, prioridad: "Normal", metrosTotales: cantidadReal, clienteInfo: { id: clienteNom, idReact: 0 }, archivosReferencia: referencias, archivosTecnicos: tecnicos, servicios: serviciosArray };
+        });
+        
+        return { idExterno, idServicioBase: areaId, nombreTrabajo, prioridad: "Normal", metrosTotales: cantidadReal, clienteInfo: { id: clienteNom, idReact: 0 }, archivosReferencia: refFiles, archivosTecnicos: [], servicios: serviciosArray };
     }
 
     // --- NUEVA FUNCIÓN ESPECÍFICA PARA IMD ---
@@ -219,43 +235,40 @@ class SheetsRawMappingService {
         const nombreTrabajo = f.D ? f.D.toString().trim() : idExterno;
         const prioridadStr = f.E ? f.E.toString().toUpperCase() : "";
         const prioridad = prioridadStr.includes("URGENT") ? "Urgente" : "Normal";
-
-        // Extrae el material leyendo la columna K o la I (donde guardas la tela)
         const material = (f.K || f.I || "").toString().trim();
 
         let cR = parseFloat(f.F) || parseFloat(f.B) || 1;
-        
-        // Si datosPorHoja tiene "BASE", la cantidad real está en la col B
         if (datosPorHoja && datosPorHoja["BASE"] && datosPorHoja["BASE"].B) {
             const baseCant = parseFloat(datosPorHoja["BASE"].B);
-            if (!isNaN(baseCant) && baseCant > 0) {
-                cR = baseCant;
-            }
+            if (!isNaN(baseCant) && baseCant > 0) cR = baseCant;
         }
         
-        let url = "Sin link";
+        const colFiles = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W'];
+        const colCopias = ['X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG'];
+        const colMetros = ['AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ'];
 
-        for (let key of Object.keys(f)) {
-            if (key === 'A') continue;
-            if (f[key] && typeof f[key] === 'string' && f[key].includes('http')) {
-                url = f[key].toString().trim();
-                break;
+        let itemsResult = [];
+        const hojaBase = (datosPorHoja && datosPorHoja["BASE"]) ? datosPorHoja["BASE"] : f;
+
+        for (let i = 0; i < 10; i++) {
+            const fileUrl = hojaBase[colFiles[i]] ? hojaBase[colFiles[i]].toString().trim() : null;
+            if (fileUrl && fileUrl.includes('http')) {
+                const copias = parseFloat(hojaBase[colCopias[i]]) || 1;
+                const metros = parseFloat(hojaBase[colMetros[i]]) || 0;
+                itemsResult.push({ fileName: fileUrl, cantidad: metros > 0 ? metros : (cR / 10), copias });
             }
         }
+        if (itemsResult.length === 0) itemsResult.push({ fileName: "Sin link", cantidad: cR, copias: 1 });
 
         cR = Math.round(cR * 100) / 100;
 
         const serviciosArray = [{
-            areaId,
-            esPrincipal: true,
-            cabecera: { material, variante: "", metros: cR },
-            items: [{ fileName: url, cantidad: cR, copias: 1 }],
-            variablesEspeciales: {}
+            areaId, esPrincipal: true, cabecera: { material, variante: "", metros: cR },
+            items: itemsResult, variablesEspeciales: {}
         }];
 
         const textoServiciosExtra = (f.AJ || "").toString().toUpperCase();
 
-        // Extraer archivos especificos para CORTE (AL: Info Corte, BH: Boceto Corte)
         let urlInfoCorte = "";
         if (f.AL && typeof f.AL === 'string' && f.AL.includes('http')) {
             urlInfoCorte = f.AL.toString().trim();
@@ -274,74 +287,31 @@ class SheetsRawMappingService {
         let localesCorte = [];
         
         if (urlInfoCorte) {
-            refFiles.push({ nombre: "Info Corte", url: urlInfoCorte });
-            localesCorte.push({ url: urlInfoCorte, nota: "Info Corte", tipo: "INFO_CORTE" });
+            refFiles.push({ nombre: urlInfoCorte, url: urlInfoCorte });
+            localesCorte.push({ url: urlInfoCorte, nota: urlInfoCorte, tipo: "ARCHIVO-PEDIDO" });
         }
         if (urlBocetoCorte) {
-            refFiles.push({ nombre: "Boceto Corte", url: urlBocetoCorte });
-            localesCorte.push({ url: urlBocetoCorte, nota: "Boceto Corte", tipo: "BOCETO_CORTE" });
+            refFiles.push({ nombre: urlBocetoCorte, url: urlBocetoCorte });
+            localesCorte.push({ url: urlBocetoCorte, nota: urlBocetoCorte, tipo: "BOCETO-CORTE" });
         }
 
         if (textoServiciosExtra.includes("CORTE")) {
             serviciosArray.push({
-                areaId: 'TWC', // Taller Web Corte / Corte Láser
-                esPrincipal: false,
-                cabecera: { 
-                    material: "Corte Laser por prenda", 
-                    variante: "Corte detectado Automáticamente", 
-                    metros: 0, 
-                    codArticulo: "1375",
-                    proIdProducto: 90, 
-                    codStock: "1.1.6.1" 
-                },
-                items: [],
-                archivosReferenciaLocales: localesCorte
+                areaId: 'TWC', esPrincipal: false,
+                cabecera: { material: "Corte Laser por prenda", variante: "Corte detectado Automáticamente", metros: 0, codArticulo: "1375", proIdProducto: 90, codStock: "1.1.6.1" },
+                items: [], archivosReferenciaLocales: localesCorte
             });
         }
         
         if (textoServiciosExtra.includes("COSTURA")) {
-            serviciosArray.push({
-                areaId: 'TWT', // Taller Web Costura
-                esPrincipal: false,
-                cabecera: { 
-                    material: "Costura", 
-                    variante: "Costura detectada Automáticamente", 
-                    metros: 0, 
-                    codArticulo: "115", 
-                    proIdProducto: 36,
-                    codStock: "1.1.7.1" 
-                },
-                items: []
-            });
+            serviciosArray.push({ areaId: 'TWT', esPrincipal: false, cabecera: { material: "Costura", variante: "Costura detectada Automáticamente", metros: 0, codArticulo: "115", proIdProducto: 36, codStock: "1.1.7.1" }, items: [] });
         }
 
         if (textoServiciosExtra.includes("BORDADO") || textoServiciosExtra.includes("EMB")) {
-            serviciosArray.push({
-                areaId: 'EMB', // Bordado
-                esPrincipal: false,
-                cabecera: { 
-                    material: "Bordado Estándar", 
-                    variante: "Bordado detectado Automáticamente", 
-                    metros: 0, 
-                    codArticulo: "1567",
-                    proIdProducto: 434,
-                    codStock: "1.1.9.1"
-                },
-                items: []
-            });
+            serviciosArray.push({ areaId: 'EMB', esPrincipal: false, cabecera: { material: "Bordado Estándar", variante: "Bordado detectado Automáticamente", metros: 0, codArticulo: "1567", proIdProducto: 434, codStock: "1.1.9.1" }, items: [] });
         }
 
-        return {
-            idExterno,
-            idServicioBase: areaId,
-            nombreTrabajo,
-            prioridad,
-            metrosTotales: cR,
-            clienteInfo: { id: clienteNom, idReact: 0 },
-            archivosReferencia: refFiles,
-            archivosTecnicos: [],
-            servicios: serviciosArray
-        };
+        return { idExterno, idServicioBase: areaId, nombreTrabajo, prioridad, metrosTotales: cR, clienteInfo: { id: clienteNom, idReact: 0 }, archivosReferencia: refFiles, archivosTecnicos: [], servicios: serviciosArray };
     }
 
     // --- NUEVA FUNCIÓN ESPECÍFICA PARA SB (Sublimación) ---
@@ -365,24 +335,38 @@ class SheetsRawMappingService {
             }
         }
         
-        let url = "Sin link";
+        const colFiles = ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W'];
+        const colCopias = ['X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG'];
+        const colMetros = ['AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ'];
 
-        for (let l of ['L', 'M', 'N', 'O', 'P', 'K', 'J', 'I']) {
-            if (f[l] && typeof f[l] === 'string' && f[l].includes('http')) {
-                url = f[l].toString().trim();
-                break;
+        let itemsResult = [];
+        
+        // Obtener la fila correspondiente a "BASE"
+        const hojaBase = (datosPorHoja && datosPorHoja["BASE"]) ? datosPorHoja["BASE"] : f;
+
+        for (let i = 0; i < 10; i++) {
+            const fileUrl = hojaBase[colFiles[i]] ? hojaBase[colFiles[i]].toString().trim() : null;
+            if (fileUrl && fileUrl.includes('http')) {
+                const copias = parseFloat(hojaBase[colCopias[i]]) || 1;
+                const metros = parseFloat(hojaBase[colMetros[i]]) || 0;
+
+                itemsResult.push({
+                    fileName: fileUrl,
+                    cantidad: metros > 0 ? metros : (cR / 10), // Fallback
+                    copias: copias
+                });
             }
         }
 
         // Fallback por si la URL está en otra columna impredecible
-        if (url === "Sin link") {
-            for (let key of Object.keys(f)) {
-                if (f[key] && typeof f[key] === 'string' && f[key].includes('http')) {
-                    url = f[key].toString().trim();
-                    break;
+        if (itemsResult.length === 0) {
+            for (let key of Object.keys(hojaBase)) {
+                if (hojaBase[key] && typeof hojaBase[key] === 'string' && hojaBase[key].includes('http')) {
+                    itemsResult.push({ fileName: hojaBase[key].toString().trim(), cantidad: cR, copias: 1 });
                 }
             }
         }
+        if (itemsResult.length === 0) itemsResult.push({ fileName: "Sin link", cantidad: cR, copias: 1 });
 
         cR = Math.round(cR * 100) / 100;
 
@@ -390,7 +374,7 @@ class SheetsRawMappingService {
             areaId,
             esPrincipal: true,
             cabecera: { material, variante, metros: cR },
-            items: [{ fileName: url, cantidad: cR, copias: 1 }],
+            items: itemsResult,
             variablesEspeciales: {}
         }];
 
@@ -424,12 +408,12 @@ class SheetsRawMappingService {
         let localesCorte = [];
         
         if (urlInfoCorte) {
-            refFiles.push({ nombre: "Info Corte", url: urlInfoCorte });
-            localesCorte.push({ url: urlInfoCorte, nota: "Info Corte", tipo: "INFO_CORTE" });
+            refFiles.push({ nombre: urlInfoCorte, url: urlInfoCorte });
+            localesCorte.push({ url: urlInfoCorte, nota: urlInfoCorte, tipo: "ARCHIVO-PEDIDO" });
         }
         if (urlBocetoCorte) {
-            refFiles.push({ nombre: "Boceto Corte", url: urlBocetoCorte });
-            localesCorte.push({ url: urlBocetoCorte, nota: "Boceto Corte", tipo: "BOCETO_CORTE" });
+            refFiles.push({ nombre: urlBocetoCorte, url: urlBocetoCorte });
+            localesCorte.push({ url: urlBocetoCorte, nota: urlBocetoCorte, tipo: "BOCETO-CORTE" });
         }
 
         if (textoServiciosExtra.includes("CORTE")) {
@@ -496,52 +480,53 @@ class SheetsRawMappingService {
 
     // --- NUEVA FUNCIÓN ESPECÍFICA PARA EMB (Bordados) ---
     static mapEMB(idExterno, areaId, f, datosPorHoja) {
-        // En EMB, el cliente está en la D
         const clienteNom = f.D ? f.D.toString().trim() : "";
-        // El trabajo (descripción) puede que esté en otro lado si C o D se movieron, ajustémoslo a idExterno u otra columna
-        // Asumiendo que el nombre de trabajo capaz está en alguna otra, le ponemos "S/N" o verificamos
         const nombreTrabajo = f.E ? f.E.toString().trim() : idExterno;
-        // La columna de urgencia, asumiremos F o E o ignoraremos si no la vemos
         const prioridadStr = f.F ? f.F.toString().toUpperCase() : "";
         const prioridad = prioridadStr.includes("URGENT") ? "Urgente" : "Normal";
 
-        // Material/Producto en EMB viene exacto en la W
         const materialRaw = (f.W || "").toString().trim();
         const variante = (f.I || f.H || "").toString().trim();
         
-        // El materialRaw viene como "Bordado de hasta 4000 puntadas". Extraemos el número para el tarifario:
         const matchPuntadas = materialRaw.match(/(\d+)\s*puntadas/i);
         const extractPuntadas = matchPuntadas ? parseInt(matchPuntadas[1], 10) : 0;
         
         const material = materialRaw || "Bordado Personalizado";
 
-        // Cantidad está típicamente en la J
         let cR = parseFloat(f.J) || parseFloat(f.B) || 1;
-        
-        // Si datosPorHoja tiene "BASE", intentamos buscar la cantidad en J
         if (datosPorHoja && datosPorHoja["BASE"] && datosPorHoja["BASE"].J) {
             const baseCant = parseFloat(datosPorHoja["BASE"].J);
-            if (!isNaN(baseCant) && baseCant > 0) {
-                cR = baseCant;
-            }
+            if (!isNaN(baseCant) && baseCant > 0) cR = baseCant;
         }
         
-        // Links en F, G o donde haya http
-        let url = "Sin link";
+        let refFiles = [];
+        let localesRef = [];
 
-        for (let l of ['F', 'G', 'H', 'I', 'J', 'K', 'L', 'M']) {
-            if (f[l] && typeof f[l] === 'string' && f[l].includes('http')) {
-                url = f[l].toString().trim();
-                break;
-            }
+        const hojaBase = (datosPorHoja && datosPorHoja["BASE"]) ? datosPorHoja["BASE"] : f;
+        
+        const logoBordado = hojaBase.F ? hojaBase.F.toString().trim() : "";
+        const bocetoBordado = hojaBase.G ? hojaBase.G.toString().trim() : "";
+        
+        if (logoBordado && logoBordado.includes("http")) {
+            refFiles.push({ nombre: logoBordado, url: logoBordado });
+            localesRef.push({ url: logoBordado, nota: logoBordado, tipo: "LOGO-BORDADO" });
+        }
+        if (bocetoBordado && bocetoBordado.includes("http")) {
+            refFiles.push({ nombre: bocetoBordado, url: bocetoBordado });
+            localesRef.push({ url: bocetoBordado, nota: bocetoBordado, tipo: "BOCETO-BORDADO" });
         }
 
-        if (url === "Sin link") {
-            for (let key of Object.keys(f)) {
-                if (f[key] && typeof f[key] === 'string' && f[key].includes('http')) {
-                    url = f[key].toString().trim();
-                    break;
-                }
+        const hojaMatriz = (datosPorHoja && datosPorHoja["MATRIZ"]) ? datosPorHoja["MATRIZ"] : null;
+        if (hojaMatriz) {
+            const archivoDst = hojaMatriz.B ? hojaMatriz.B.toString().trim() : "";
+            const archivoBordado = hojaMatriz.C ? hojaMatriz.C.toString().trim() : "";
+            if (archivoDst && archivoDst.includes("http")) {
+                refFiles.push({ nombre: archivoDst, url: archivoDst });
+                localesRef.push({ url: archivoDst, nota: archivoDst, tipo: "ARCHIVO-DST" });
+            }
+            if (archivoBordado && archivoBordado.includes("http")) {
+                refFiles.push({ nombre: archivoBordado, url: archivoBordado });
+                localesRef.push({ url: archivoBordado, nota: archivoBordado, tipo: "ARCHIVO-BORDADO" });
             }
         }
 
@@ -550,83 +535,75 @@ class SheetsRawMappingService {
         const serviciosArray = [{
             areaId,
             esPrincipal: true,
-            cabecera: { 
-                material, 
-                variante, 
-                metros: cR,
-                codArticulo: extractPuntadas > 0 ? `EMB-BORD-${extractPuntadas}` : "EMB-BORD" 
-            },
-            items: [{ fileName: url, cantidad: cR, copias: 1 }],
+            cabecera: { material, variante, metros: cR, codArticulo: extractPuntadas > 0 ? `EMB-BORD-${extractPuntadas}` : "EMB-BORD" },
+            items: [{ fileName: "Sin impresión requerida", cantidad: cR, copias: 1 }],
+            archivosReferenciaLocales: localesRef,
             variablesEspeciales: { puntadas: extractPuntadas }
         }];
 
-        // Matriz EMBLA como un Extra Contable Adicional
         serviciosArray.push({
             areaId: areaId,
             esPrincipal: false,
             isCobranzaExtra: true,
-            cabecera: { 
-                material: "Matriz Emblema", 
-                variante: "Matriz asignada automáticamente", 
-                metros: 1, 
-                codArticulo: "EMB-MATRIZ",
-                proIdProducto: null, // Que lo resuelva el Sync
-                codStock: "1.1.X" 
-            },
+            cabecera: { material: "Matriz Emblema", variante: "Matriz asignada automáticamente", metros: 1, codArticulo: "EMB-MATRIZ", proIdProducto: null, codStock: "1.1.X" },
             items: [{ fileName: "Matriz automática.dat", cantidad: 1, copias: 1 }],
             variablesEspeciales: { isMatriz: true }
         });
 
-        return {
-            idExterno,
-            idServicioBase: areaId,
-            nombreTrabajo,
-            prioridad,
-            metrosTotales: cR,
-            clienteInfo: { id: clienteNom, idReact: 0 },
-            archivosReferencia: [],
-            archivosTecnicos: [],
-            servicios: serviciosArray
-        };
+        return { idExterno, idServicioBase: areaId, nombreTrabajo, prioridad, metrosTotales: cR, clienteInfo: { id: clienteNom, idReact: 0 }, archivosReferencia: refFiles, archivosTecnicos: [], servicios: serviciosArray };
     }
 
-    static mapGenerico(idExterno, areaId, f) {
+    static mapGenerico(idExterno, areaId, f, datosPorHoja) {
         const clienteNom = f.C ? f.C.toString().trim() : "";
         const nombreTrabajo = f.D ? f.D.toString().trim() : idExterno;
-        let cR = 1; let url = "Sin link";
-        for (let key of Object.keys(f)) {
-            if (key === 'A') continue;
-            if (f[key] && typeof f[key] === 'string' && f[key].includes('http')) url = f[key].toString().trim();
-            if (typeof f[key] === 'number' && f[key] > 0 && cR === 1) cR = f[key];
+        let cR = 1; 
+
+        // Si datosPorHoja tiene "BASE", intentamos buscar la cantidad en B
+        if (datosPorHoja && datosPorHoja["BASE"] && datosPorHoja["BASE"].B) {
+            const baseCant = parseFloat(datosPorHoja["BASE"].B);
+            if (!isNaN(baseCant) && baseCant > 0) cR = baseCant;
         }
+
         let material = "";
         let codArticulo = undefined;
         let proIdProducto = undefined;
 
         const areaUp = (areaId || '').toUpperCase();
         if (areaUp === 'TWC' || areaUp === 'CORTE') {
-            material = 'Corte Laser por prenda';
-            codArticulo = '1375';
-            proIdProducto = 90;
+            material = 'Corte Laser por prenda'; codArticulo = '1375'; proIdProducto = 90;
         } else if (areaUp === 'TWT' || areaUp === 'COSTURA') {
-            material = 'Costura';
-            codArticulo = '115';
-            proIdProducto = 36;
+            material = 'Costura'; codArticulo = '115'; proIdProducto = 36;
         } else if (areaUp === 'EMB' || areaUp === 'BORDADO' || areaUp === 'BORD') {
-            material = 'Bordado';
-            codArticulo = '1567';
-            proIdProducto = 434;
+            material = 'Bordado'; codArticulo = '1567'; proIdProducto = 434;
+        }
+
+        const hojaBase = (datosPorHoja && datosPorHoja["BASE"]) ? datosPorHoja["BASE"] : f;
+        let refFiles = [];
+        let localesRef = [];
+
+        // Archivos de referencia CORTE Y COSTURA
+        const archivoPedido = hojaBase.V ? hojaBase.V.toString().trim() : "";
+        const bocetoCorte = hojaBase.ALAL ? hojaBase.ALAL.toString().trim() : (hojaBase.AL ? hojaBase.AL.toString().trim() : "");
+        
+        if (archivoPedido && archivoPedido.includes("http")) {
+            refFiles.push({ nombre: archivoPedido, url: archivoPedido });
+            localesRef.push({ url: archivoPedido, nota: archivoPedido, tipo: "ARCHIVO-PEDIDO" });
+        }
+        if (bocetoCorte && bocetoCorte.includes("http")) {
+            refFiles.push({ nombre: bocetoCorte, url: bocetoCorte });
+            localesRef.push({ url: bocetoCorte, nota: bocetoCorte, tipo: "BOCETO-CORTE" });
         }
 
         cR = Math.round(cR * 100) / 100;
 
         return { 
             idExterno, idServicioBase: areaId, nombreTrabajo, prioridad: "Normal", metrosTotales: cR, 
-            clienteInfo: { id: clienteNom, idReact: 0 }, archivosReferencia: [], archivosTecnicos: [], 
+            clienteInfo: { id: clienteNom, idReact: 0 }, archivosReferencia: refFiles, archivosTecnicos: [], 
             servicios: [{ 
                 areaId, esPrincipal: true, 
                 cabecera: { material, variante: "", metros: cR, codArticulo, proIdProducto }, 
-                items: [{ fileName: url, cantidad: cR, copias: 1 }], 
+                items: [{ fileName: "Sin impresión requerida", cantidad: cR, copias: 1 }], 
+                archivosReferenciaLocales: localesRef,
                 variablesEspeciales: {} 
             }] 
         };

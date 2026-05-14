@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -70,3 +71,94 @@ body {
 .animate-fade-in {
   animation: fadeIn 0.2s ease-out;
 }
+=======
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+body {
+  overflow: hidden;
+}
+
+/* SweetAlert2 toast slide animations */
+@keyframes slideInRight {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes slideInRight {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes slideOutRight {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(-100%); opacity: 0; }
+}
+
+/* Login modal — animated gradient border */
+@keyframes gradient-spin {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.login-gradient-border {
+  background: linear-gradient(270deg, #00AEEF, #EC008C, #FFF200, #EC008C, #00AEEF);
+  background-size: 300% 300%;
+  animation: gradient-spin 4s ease infinite;
+}
+
+/* Navbar CTA — borde blanco, interior transparente */
+.nav-gradient-btn {
+  border: 2px solid rgba(255,255,255,0.6);
+  border-radius: 8px;
+  background: transparent;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* Print Rules for Ticket */
+.print-area {
+  display: none;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area, .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+}
+>>>>>>> Stashed changes

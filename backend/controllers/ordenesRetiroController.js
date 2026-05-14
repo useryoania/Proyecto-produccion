@@ -453,12 +453,12 @@ const getOrdenesRetiroPorLugar = async (req, res) => {
 
     // FIX: filtro no_pagas usa NOT EXISTS para evitar falsos positivos con LEFT JOIN
     if (pagas === 'true') {
-      // Retiro con pago registrado a nivel de cabecera
-      query += ` AND EXISTS (SELECT 1 FROM Pagos px WHERE px.PagIdPago = r.PagIdPago)`;
+      // Retiro con pago registrado a nivel de cabecera o pagado por plan (PagIdPago = 0)
+      query += ` AND (r.PagIdPago = 0 OR EXISTS (SELECT 1 FROM Pagos px WHERE px.PagIdPago = r.PagIdPago))`;
     } else if (no_pagas === 'true') {
       // Retiro SIN ningún pago en cabecera ni en ninguna de sus hijas
       query += `
-        AND NOT EXISTS (SELECT 1 FROM Pagos px WHERE px.PagIdPago = r.PagIdPago)
+        AND (r.PagIdPago IS NULL OR (r.PagIdPago != 0 AND NOT EXISTS (SELECT 1 FROM Pagos px WHERE px.PagIdPago = r.PagIdPago)))
         AND NOT EXISTS (
           SELECT 1 FROM OrdenesDeposito od
           INNER JOIN Pagos px2 ON px2.PagIdPago = od.PagIdPago

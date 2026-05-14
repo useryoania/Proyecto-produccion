@@ -3,17 +3,20 @@
  * Cuentas de clientes — lista activos, búsqueda, ciclos de crédito y registro de pagos.
  */
 
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, Fragment, useRef } from 'react';
 import {
   Search, RefreshCw, TrendingDown, TrendingUp, AlertTriangle,
   CheckCircle2, Clock, CreditCard, BarChart3, FileText,
   Calendar, PlayCircle, StopCircle, X,
   ArrowUpCircle, ArrowDownCircle, Info, Users, Zap,
-  DollarSign, PlusCircle, Package, RotateCcw, Layers, Download, Printer
+  DollarSign, PlusCircle, Package, RotateCcw, Layers, Download, Printer, ChevronDown, FileMinus, Trash2,
+  Lock, Unlock
 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import api from '../../services/api';
+import { generarPdfEstadoCuenta, generarPdfPrefactura, generarPdfFacturaDGI } from '../../utils/pdfGenerator';
+import CierreCicloPreviewModal from './CierreCicloPreviewModal';
 
 const fetchAPI = async (url, opts = {}) => {
   try {
@@ -39,6 +42,7 @@ const fetchAPI = async (url, opts = {}) => {
 const fmt      = (n, sym) => `${sym || '$'} ${new Intl.NumberFormat('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n ?? 0))}`;
 const fmtNum   = (n) => new Intl.NumberFormat('es-UY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n ?? 0));
 const fmtFecha = (f) => f ? new Date(f).toLocaleDateString('es-UY') : '—';
+const fmtFechaHora = (f) => f ? new Date(f).toLocaleString('es-UY', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 const diasRestantes = (fc) => fc ? Math.ceil((new Date(fc) - new Date()) / 86400000) : null;
 
 // Extrae solo el código de orden de conceptos tipo "Entrega 0.93 uds orden XDF-76630 (Plan 1)"
@@ -50,17 +54,387 @@ const extraerOrden = (concepto) => {
 
 const handleDescargarRecibo = async (e, m) => {
   e.preventDefault();
-  try {
-    const toastId = toast.loading('Generando recibo...');
-    const res = await api.get(`/contabilidad/movimientos/${m.MovIdMovimiento}/recibo/pdf`, { responseType: 'blob' });
-    const blob = new Blob([res.data], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-    toast.dismiss(toastId);
-  } catch (err) {
-    toast.error('Error al descargar el recibo.');
+  
+  const isPayment = ['PAGO', 'ANTICIPO', 'COBRO', 'SALDO_INICIAL'].includes(m.MovTipo);
+
+  // ── Siempre intentar la Factura DGI primero si hay DocIdDocumento ──────────
+  // Aplica tanto a movimientos de deuda (ORDEN, CIERRE_CICLO) como a pagos
+  // que generaron un e-Ticket/e-Factura (PAGO contado desde caja).
+  let docId = m.DocIdDocumento;
+  if (!docId && m.DocSerie && m.DocNumero) {
+    try {
+      const lookup = await api.get(`/contabilidad/documentos/buscar?serie=${m.DocSerie}&numero=${m.DocNumero}`);
+      docId = lookup.data?.DocIdDocumento || lookup.data?.data?.DocIdDocumento;
+    } catch (_) {}
   }
+
+  if (docId) {
+    try {
+      const toastId = toast.loading('Generando Factura...');
+      const { data } = await api.get(`/contabilidad/cfe/documentos/${docId}/detalle`);
+      if (data && data.doc) {
+        generarPdfFacturaDGI(data.doc, data.detalles || []);
+        toast.dismiss(toastId);
+        toast.success('Factura descargada');
+        return;
+      }
+      toast.dismiss(toastId);
+      // Si no tiene doc CFE completo, caer al recibo interno para pagos
+    } catch (err) {
+      console.warn('[PDF] Error obteniendo factura DGI, intentando recibo...', err.message);
+    }
+  }
+
+  // ── Fallback: recibo interno (solo para pagos sin documento fiscal) ─────────
+  if (isPayment && m.MovIdMovimiento) {
+    try {
+      const toastId = toast.loading('Generando recibo...');
+      const res = await api.get(`/contabilidad/movimientos/${m.MovIdMovimiento}/recibo/pdf`, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      toast.dismiss(toastId);
+    } catch (err) {
+      toast.error('Error al descargar el recibo.');
+    }
+    return;
+  }
+
+  // ── Si no es pago y no tiene documento fiscal ─────────────────────────────
+  if (!isPayment) {
+    toast.error('Este movimiento no generó factura (saldo 0 o cubierto por plan).');
+  }
+};
+
+
+// ── Modales de operaciones de cuenta ─────────────────────────────────────────
+const ModalNotaCredito = ({ mov, cuenta, cliente, onClose, onSuccess }) => {
+  // Importe real: DocTotal del documento, o MovImporte absoluto como fallback
+  const importeBase = Math.abs(Number(mov.DocTotal || mov.visualImporte || mov.MovImporte || 0));
+  const [monto, setMonto]   = useState(importeBase.toFixed(2));
+  const [motivo, setMotivo] = useState('');
+  const [saving, setSaving] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (Number(monto) <= 0) return toast.error('Monto inválido');
+    setSaving(true);
+    try {
+      // Resolver DocIdDocumento si no viene directo
+      let docIdOrigen = mov.DocIdDocumento;
+      if (!docIdOrigen && mov.DocSerie && mov.DocNumero) {
+        try {
+          const lookup = await api.get(`/contabilidad/documentos/buscar?serie=${mov.DocSerie}&numero=${mov.DocNumero}`);
+          docIdOrigen = lookup.data?.DocIdDocumento;
+        } catch (_) {}
+      }
+      if (!docIdOrigen) { toast.error('No se pudo identificar el documento origen'); setSaving(false); return; }
+      const r = await fetchAPI('/api/contabilidad/caja/nota-credito', { method:'POST', body: JSON.stringify({
+        docIdOrigen, monto: Number(monto), motivo,
+        clienteId: cliente?.CliIdCliente || cuenta?.CliIdCliente, cuentaId: cuenta?.CueIdCuenta, monedaId: cuenta?.MonIdMoneda || 1,
+      })});
+      toast.success(r.message || 'NC generada'); onSuccess?.(); onClose();
+    } catch(err) { toast.error(err.message); } finally { setSaving(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+        <div className="px-6 py-4 bg-amber-50 border-b border-amber-200 flex items-center justify-between">
+          <div className="flex items-center gap-2"><FileMinus size={17} className="text-amber-600"/><h2 className="font-bold text-amber-800">Nota de Crédito</h2></div>
+          <button onClick={onClose}><X size={15} className="text-slate-400"/></button>
+        </div>
+        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+          <p className="text-xs bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-800">
+            Documento: <strong>{mov.DocTipo} {mov.DocSerie}-{mov.DocNumero}</strong>
+            {importeBase > 0 && <> — <strong>{fmtNum(importeBase)}</strong></>}
+          </p>
+          <div><label className="block text-xs font-semibold text-slate-600 mb-1">Monto NC</label>
+            <input type="number" min="0.01" step="0.01" required value={monto} onChange={e=>setMonto(e.target.value)}
+              className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30"/>
+          </div>
+          <div><label className="block text-xs font-semibold text-slate-600 mb-1">Motivo</label>
+            <input type="text" value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder="Ej: Devolución, error de facturación..."
+              className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm"/>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-600">Cancelar</button>
+            <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+              {saving?<RefreshCw size={13} className="animate-spin"/>:<FileMinus size={13}/>} Generar NC
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const ModalAnularFactura = ({ mov, cuenta, cliente, onClose, onSuccess }) => {
+  const importeBase = Math.abs(Number(mov.DocTotal || mov.visualImporte || mov.MovImporte || 0));
+  const [motivo, setMotivo] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!window.confirm('¿Confirmar anulación? El ciclo se reabrirá y las órdenes volverán a estar pendientes de facturar.')) return;
+    setSaving(true);
+    try {
+      // Resolver DocIdDocumento si no viene directo
+      let docId = mov.DocIdDocumento;
+      if (!docId && mov.DocSerie && mov.DocNumero) {
+        try {
+          const lookup = await api.get(`/contabilidad/documentos/buscar?serie=${mov.DocSerie}&numero=${mov.DocNumero}`);
+          docId = lookup.data?.DocIdDocumento;
+        } catch (_) {}
+      }
+      if (!docId) { toast.error('No se pudo identificar el documento'); setSaving(false); return; }
+      
+      const r = await fetchAPI('/api/contabilidad/caja/anular-factura', { method:'POST', body: JSON.stringify({
+        docId, clienteId: cliente?.CliIdCliente||cuenta?.CliIdCliente,
+        cuentaId: cuenta?.CueIdCuenta, motivo,
+      })});
+      
+      toast.success(r.message||'Factura anulada y ciclo reabierto'); 
+      onSuccess?.(); 
+      onClose();
+    } catch(err){toast.error(err.message);}finally{setSaving(false);}
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+        <div className="px-6 py-4 bg-rose-50 border-b border-rose-200 flex items-center justify-between">
+          <div className="flex items-center gap-2"><Trash2 size={17} className="text-rose-600"/><h2 className="font-bold text-rose-800">Anular Factura / Reabrir Ciclo</h2></div>
+          <button onClick={onClose}><X size={15} className="text-slate-400"/></button>
+        </div>
+        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+          <p className="text-xs bg-rose-50 border border-rose-200 rounded-xl p-3 text-rose-800">
+            ⚠️ Se anulará: <strong>{mov.DocTipo} {mov.DocSerie}-{mov.DocNumero}</strong>
+            {importeBase > 0 && <> — <strong>{fmtNum(importeBase)}</strong></>}
+            <br/>El ciclo de crédito asociado será <strong>reabierto</strong> y las órdenes correspondientes volverán a estado <strong>pendiente de facturar</strong>.
+          </p>
+          <div><label className="block text-xs font-semibold text-slate-600 mb-1">Motivo (opcional)</label>
+            <input type="text" value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder="Ej: Error al facturar, se debe incluir otra orden..." className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm"/>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-600">Cancelar</button>
+            <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+              {saving?<RefreshCw size={13} className="animate-spin"/>:<Trash2 size={13}/>} Confirmar Anulación
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const ModalReversarDoc = ({ mov, cuenta, cliente, onClose, onSuccess }) => {
+  const importeBase = Math.abs(Number(mov.DocTotal || mov.visualImporte || mov.MovImporte || 0));
+  const [metodos, setMetodos] = useState([]);
+  const [metodoId, setMetodoId] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [saving, setSaving] = useState(false);
+  const esContado = mov.DocPagado === 1 || mov.DocPagado === true;
+  useEffect(()=>{ api.get('/contabilidad/metodos-pago').then(r=>{const l=r.data?.data||r.data||[];setMetodos(l);if(l.length)setMetodoId(String(l[0].MPaIdMetodoPago));}).catch(()=>{}); },[]);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!window.confirm('¿Confirmar reversión? El documento quedará ANULADO.')) return;
+    setSaving(true);
+    try {
+      // Resolver DocIdDocumento si no viene directo
+      let docId = mov.DocIdDocumento;
+      if (!docId && mov.DocSerie && mov.DocNumero) {
+        try {
+          const lookup = await api.get(`/contabilidad/documentos/buscar?serie=${mov.DocSerie}&numero=${mov.DocNumero}`);
+          docId = lookup.data?.DocIdDocumento;
+        } catch (_) {}
+      }
+      if (!docId) { toast.error('No se pudo identificar el documento'); setSaving(false); return; }
+      const r = await fetchAPI('/api/contabilidad/caja/reversar-doc', { method:'POST', body: JSON.stringify({
+        docId, clienteId: cliente?.CliIdCliente||cuenta?.CliIdCliente,
+        cuentaId: cuenta?.CueIdCuenta, metodoPagoId: esContado?metodoId:null, motivo,
+      })});
+      toast.success(r.message||'Revertido'); onSuccess?.(); onClose();
+    } catch(err){toast.error(err.message);}finally{setSaving(false);}
+  };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+        <div className="px-6 py-4 bg-rose-50 border-b border-rose-200 flex items-center justify-between">
+          <div className="flex items-center gap-2"><RotateCcw size={17} className="text-rose-600"/><h2 className="font-bold text-rose-800">Reversar Documento</h2></div>
+          <button onClick={onClose}><X size={15} className="text-slate-400"/></button>
+        </div>
+        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+          <p className="text-xs bg-rose-50 border border-rose-200 rounded-xl p-3 text-rose-800">
+            ⚠️ Se anulará: <strong>{mov.DocTipo} {mov.DocSerie}-{mov.DocNumero}</strong>
+            {importeBase > 0 && <> — <strong>{fmtNum(importeBase)}</strong></>}
+            {esContado ? <><br/>Tipo: <strong>Contado</strong> — se registrará crédito en cuenta.</> : <><br/>Tipo: <strong>Crédito</strong> — se cancelará deuda asociada.</>}
+          </p>
+          {esContado && metodos.length>0 && (
+            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Forma de devolución</label>
+              <select value={metodoId} onChange={e=>setMetodoId(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm">
+                {metodos.map(m=><option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>)}
+              </select>
+            </div>
+          )}
+          <div><label className="block text-xs font-semibold text-slate-600 mb-1">Motivo (opcional)</label>
+            <input type="text" value={motivo} onChange={e=>setMotivo(e.target.value)} placeholder="Ej: Error, devolución..." className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm"/>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-600">Cancelar</button>
+            <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+              {saving?<RefreshCw size={13} className="animate-spin"/>:<RotateCcw size={13}/>} Confirmar Reverso
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const ModalAnticipo = ({ cuenta, cliente, onClose, onSuccess }) => {
+  const [importe, setImporte] = useState('');
+  const [metodos, setMetodos] = useState([]);
+  const [metodoId, setMetodoId] = useState('');
+  const [monedaId, setMonedaId] = useState(cuenta?.MonIdMoneda||1);
+  const [concepto, setConcepto] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(()=>{api.get('/contabilidad/metodos-pago').then(r=>{const l=r.data?.data||r.data||[];setMetodos(l);if(l.length)setMetodoId(String(l[0].MPaIdMetodoPago));}).catch(()=>{});},[]);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!importe||Number(importe)<=0) return toast.error('Importe inválido');
+    setSaving(true);
+    try {
+      const r = await fetchAPI('/api/contabilidad/caja/pago-anticipo',{method:'POST',body:JSON.stringify({
+        clienteId:cliente?.CliIdCliente, cuentaId:cuenta?.CueIdCuenta, importe:Number(importe), metodoPagoId:metodoId, monedaId, concepto,
+      })});
+      toast.success(r.message||'Anticipo registrado'); onSuccess?.(); onClose();
+    }catch(err){toast.error(err.message);}finally{setSaving(false);}
+  };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4">
+        <div className="px-6 py-4 bg-blue-50 border-b border-blue-200 flex items-center justify-between">
+          <div className="flex items-center gap-2"><PlusCircle size={17} className="text-blue-600"/><h2 className="font-bold text-blue-800">Pago Anticipado</h2></div>
+          <button onClick={onClose}><X size={15} className="text-slate-400"/></button>
+        </div>
+        <form onSubmit={submit} className="px-6 py-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Moneda</label>
+              <select value={monedaId} onChange={e=>setMonedaId(Number(e.target.value))} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm">
+                <option value={1}>UYU</option><option value={2}>USD</option>
+              </select>
+            </div>
+            <div><label className="block text-xs font-semibold text-slate-600 mb-1">Forma de pago</label>
+              <select value={metodoId} onChange={e=>setMetodoId(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm">
+                {metodos.map(m=><option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>)}
+              </select>
+            </div>
+          </div>
+          <div><label className="block text-xs font-semibold text-slate-600 mb-1">Importe</label>
+            <input type="number" min="0.01" step="0.01" required value={importe} onChange={e=>setImporte(e.target.value)}
+              className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/30"/>
+          </div>
+          <div><label className="block text-xs font-semibold text-slate-600 mb-1">Concepto (opcional)</label>
+            <input type="text" value={concepto} onChange={e=>setConcepto(e.target.value)} placeholder="Ej: Anticipo cuota marzo..." className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm"/>
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-600">Cancelar</button>
+            <button type="submit" disabled={saving} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold disabled:opacity-50 flex items-center justify-center gap-2">
+              {saving?<RefreshCw size={13} className="animate-spin"/>:<PlusCircle size={13}/>} Registrar Anticipo
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// ── Menú contextual de acciones por fila ─────────────────────────────────────
+const MenuAccionesDoc = ({ m, cuenta, cliente, onRefresh, onPrint, onCobrar }) => {
+  const [open, setOpen] = useState(false);
+  const [modal, setModal] = useState(null);
+  const ref = useRef(null);
+  useEffect(()=>{
+    const h = (e)=>{ if(ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown',h); return ()=>document.removeEventListener('mousedown',h);
+  },[]);
+  const esDoc     = !!(m.DocIdDocumento || (m.DocSerie && m.DocNumero));
+  const esContado = m.DocPagado===1||m.DocPagado===true;
+  const anulado   = !!m.MovAnulado || m.DocEstado==='ANULADO';
+  const acciones  = [];
+
+  // ── Cobrar deuda pendiente ──────────────────────────────────────────────
+  if (!anulado && m.EsPendientePago === 1 && onCobrar) {
+    acciones.push({id:'cobrar',label:'Cobrar deuda',icon:<DollarSign size={13}/>,cls:'text-emerald-700 hover:bg-emerald-50'});
+  }
+
+  // ── Registrar Pago / Anticipo (siempre disponible) ─────────────────────
+  if (!anulado) {
+    acciones.push({id:'pago',label:'Registrar Pago',icon:<DollarSign size={13}/>,cls:'text-green-700 hover:bg-green-50'});
+    acciones.push({id:'anticipo',label:'Pago anticipado',icon:<PlusCircle size={13}/>,cls:'text-blue-700 hover:bg-blue-50'});
+  }
+
+  // ── Acciones de documento ──────────────────────────────────────────────
+  if (esDoc && !anulado) {
+    if (m.MovTipo === 'CIERRE_CICLO') {
+      if (m.CfeEstado === 'ACEPTADO_DGI') {
+        acciones.push({id:'nc',label:'Nota de crédito',icon:<FileMinus size={13}/>,cls:'text-amber-700 hover:bg-amber-50'});
+      } else {
+        acciones.push({id:'anular-fac',label:'Anular factura',icon:<Trash2 size={13}/>,cls:'text-rose-700 hover:bg-rose-50'});
+      }
+    } else {
+      if (!esContado) acciones.push({id:'nc',label:'Nota de crédito',icon:<FileMinus size={13}/>,cls:'text-amber-700 hover:bg-amber-50'});
+      acciones.push({id:'reversar',label:'Reversar / Anular',icon:<RotateCcw size={13}/>,cls:'text-rose-700 hover:bg-rose-50'});
+    }
+  }
+
+  const handleAction = (id) => {
+    setOpen(false);
+    if (id === 'cobrar' && onCobrar) {
+      onCobrar(cuenta);
+    } else if (id === 'pago' && onCobrar) {
+      onCobrar(cuenta);
+    } else {
+      setModal(id);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center gap-1 opacity-50 group-hover:opacity-100 transition-opacity" ref={ref}>
+      <button onClick={(e)=>onPrint(e,m)} title="Imprimir / Descargar"
+        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all border border-transparent hover:border-indigo-100">
+        <Printer size={15}/>
+      </button>
+      {!anulado && m.EsPendientePago===1 && onCobrar && (
+        <button onClick={()=>onCobrar(cuenta)} title="Cobrar deuda"
+          className="flex items-center gap-1 px-2 py-1 text-[10px] font-black uppercase text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded border border-emerald-200 transition-all">
+          <DollarSign size={11}/> Cobrar
+        </button>
+      )}
+      {acciones.length>0 && (
+        <div className="relative">
+          <button onClick={()=>setOpen(o=>!o)} title="Más acciones"
+            className={`p-1.5 rounded-lg border transition-all ${open?'bg-slate-100 border-slate-300 text-slate-700':'text-slate-400 hover:text-slate-700 hover:bg-slate-50 border-transparent hover:border-slate-200'}`}>
+            <ChevronDown size={14} className={`transition-transform ${open?'rotate-180':''}`}/>
+          </button>
+          {open && (
+            <div className="absolute right-0 bottom-8 z-50 bg-white rounded-xl shadow-xl border border-slate-200 py-1 min-w-[190px]">
+              {acciones.map(a=>(
+                <button key={a.id} onClick={()=>handleAction(a.id)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-[11px] font-semibold ${a.cls} transition-colors`}>
+                  {a.icon}{a.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {modal==='nc'        && <ModalNotaCredito   mov={m} conta={cuenta} cuenta={cuenta} cliente={cliente} onClose={()=>setModal(null)} onSuccess={onRefresh}/>}
+      {modal==='reversar'  && <ModalReversarDoc   mov={m} conta={cuenta} cuenta={cuenta} cliente={cliente} onClose={()=>setModal(null)} onSuccess={onRefresh}/>}
+      {modal==='anticipo'  && <ModalAnticipo      conta={cuenta} cuenta={cuenta} cliente={cliente} onClose={()=>setModal(null)} onSuccess={onRefresh}/>}
+      {modal==='anular-fac'&& <ModalAnularFactura mov={m} conta={cuenta} cuenta={cuenta} cliente={cliente} onClose={()=>setModal(null)} onSuccess={onRefresh}/>}
+    </div>
+  );
 };
 
 // ── Badge ─────────────────────────────────────────────────────────────────────
@@ -78,31 +452,27 @@ const Badge = ({ children, color = 'slate' }) => {
 
 // ── Fila de cliente activo ────────────────────────────────────────────────────
 const FilaCliente = ({ c, seleccionado, onClick }) => {
-  const saldo    = Number(c.SaldoTotal);
-  const deuda    = Number(c.DeudaTotal);
-  const negativo = saldo < 0;
-
   return (
     <button onClick={onClick}
-      className={`w-full text-left px-3 py-3 hover:bg-indigo-50 transition-colors border-b border-slate-200
+      className={`w-full text-left px-3 py-2.5 hover:bg-indigo-50 transition-colors border-b border-slate-200
         ${seleccionado ? 'bg-indigo-50 border-l-4 border-l-indigo-400' : 'border-l-4 border-l-transparent'}`}>
-      <div className="flex items-center gap-2 mb-1">
-        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0
-          ${negativo ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+      <div className="flex items-center gap-3">
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 shadow-sm
+          ${seleccionado ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'}`}>
           {c.Nombre?.[0]?.toUpperCase()}
         </div>
-        <span className="text-sm font-semibold text-slate-800 truncate flex-1">{c.Nombre}</span>
-        <span className="text-[10px] font-mono text-slate-500 shrink-0">#{c.CodCliente || c.CliIdCliente}</span>
+        <div className="flex flex-col flex-1 min-w-0">
+          <span className="text-sm font-semibold text-slate-800 truncate">{c.Nombre}</span>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-[10px] font-mono text-slate-500 shrink-0">#{c.CodCliente || c.CliIdCliente}</span>
+            <div className="flex items-center gap-1">
+              {c.EsSemanal      == 1 && <Badge color="indigo"><Calendar size={9} /> Sem.</Badge>}
+              {c.TieneCicloAbierto == 1 && <Badge color="green"><span className="animate-pulse">●</span> Ciclo</Badge>}
+              {c.DocsVencidos    > 0 && <Badge color="red"><AlertTriangle size={9} /> {c.DocsVencidos} Venc.</Badge>}
+            </div>
+          </div>
+        </div>
       </div>
-      <div className="flex items-center gap-1 pl-9">
-        {c.EsSemanal      == 1 && <Badge color="indigo"><Calendar size={9} /> Sem.</Badge>}
-        {c.TieneCicloAbierto == 1 && <Badge color="green"><span className="animate-pulse">●</span> Ciclo</Badge>}
-        {c.DocsVencidos    > 0 && <Badge color="red"><AlertTriangle size={9} /> {c.DocsVencidos}</Badge>}
-        <span className="ml-auto text-xs font-bold shrink-0" style={{ color: negativo ? '#dc2626' : '#059669' }}>
-          {fmt(saldo)}
-        </span>
-      </div>
-      {deuda > 0 && <p className="text-[10px] text-amber-600 pl-9 mt-0.5">Deuda: {fmt(deuda)}</p>}
     </button>
   );
 };
@@ -406,106 +776,356 @@ const ModalPago = ({ cuenta, onClose, onSuccess }) => {
 };
 
 // ── Panel movimientos ─────────────────────────────────────────────────────────
-const MovimientosPanel = ({ CueIdCuenta, simbolo = '$', onClose }) => {
-  const [movs, setMovs]       = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [desde, setDesde]     = useState('');
-  const [hasta, setHasta]     = useState('');
+const MovimientosPanel = ({ CueIdCuenta, simbolo = '$', onClose, cuenta, onRegistrarPago, CliIdCliente, cliente, desde, hasta, trigger }) => {
+  const [movs, setMovs]           = useState([]);
+  const [ciclosInfo, setCiclosInfo] = useState({});
+  const [loading, setLoading]     = useState(false);
+  // Saldo acumulado de TODOS los movimientos anteriores al período filtrado.
+  // Si no hay filtro de fecha, vale 0 (historial completo desde el origen).
+  const [saldoArrastre, setSaldoArrastre] = useState(0);
 
   const cargar = useCallback(async () => {
     setLoading(true);
     try {
-      const p = new URLSearchParams({ top: 100 });
+      const p = new URLSearchParams({ top: 500 });
       if (desde) p.append('desde', desde);
       if (hasta) p.append('hasta', hasta);
-      const data = await fetchAPI(`/api/contabilidad/cuentas/${CueIdCuenta}/movimientos?${p}`);
-      setMovs(data.data || []);
+      const resp = await fetchAPI(`/api/contabilidad/cuentas/${CueIdCuenta}/movimientos?${p}`);
+      setMovs(resp.data || []);
+      // El backend calcula el arrastre de forma exacta en SQL — lo usamos directamente.
+      setSaldoArrastre(Number(resp.saldoArrastre ?? 0));
+
+      // Intentamos cargar la info de los ciclos del cliente de la cuenta
+      const clienteId = CliIdCliente || (cuenta && cuenta.CliIdCliente);
+      if (clienteId) {
+        const ciclosData = await fetchAPI(`/api/contabilidad/ciclos/${clienteId}`);
+        const cMap = {};
+        (ciclosData.data || []).forEach(c => cMap[c.CicIdCiclo] = c);
+        setCiclosInfo(cMap);
+      }
     } catch (e) { toast.error(e.message); }
     finally { setLoading(false); }
-  }, [CueIdCuenta, desde, hasta]);
+  }, [CueIdCuenta, desde, hasta, cuenta, CliIdCliente, trigger]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const esCredito = (mov) => Number(mov.MovImporte) > 0;
+  const [expandedCiclos, setExpandedCiclos] = useState({});
+  const [viewMode, setViewMode] = useState('HISTORIAL'); // 'HISTORIAL' | 'ESTADO_CUENTA'
+  const [soloDeudasVivas, setSoloDeudasVivas] = useState(false);
+  const toggleCiclo = (id) => setExpandedCiclos(p => ({...p, [id]: !p[id]}));
+
+  const movsAgrupados = useMemo(() => {
+    const grupos = {};
+    const sinCiclo = [];
+    movs.forEach(m => {
+      if (m.CicIdCiclo) {
+        if (!grupos[m.CicIdCiclo]) grupos[m.CicIdCiclo] = [];
+        grupos[m.CicIdCiclo].push(m);
+      } else {
+        sinCiclo.push(m);
+      }
+    });
+    
+    const sortedGroups = Object.keys(grupos).sort((a, b) => b - a).map(k => ({
+      ciclo: k,
+      movs: grupos[k],
+      // Tomamos la fecha del último movimiento como referencia del ciclo
+      fechaRef: grupos[k][0]?.MovFecha 
+    }));
+
+    return { grupos: sortedGroups, sinCiclo };
+  }, [movs]);
+
+  // El hook movsParaEstadoCuenta ya no es necesario porque la API devuelve 
+  // visualSaldoAntes, visualImporte, visualSaldoDespues y visualIsVisible.
+  const sortedMovs = useMemo(() => [...movs].reverse(), [movs]);
+  const movsParaEstadoCuenta = sortedMovs;
 
   return (
-    <div className="mt-3 rounded-xl border border-slate-200 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 bg-blue-600 text-white">
-        <div className="flex items-center gap-2"><BarChart3 size={14} /><span className="text-sm font-semibold">Libro Mayor</span></div>
-        <div className="flex items-center gap-2">
-          <input type="date" value={desde} onChange={e => setDesde(e.target.value)} className="text-xs bg-slate-50 border border-white/20 rounded px-2 py-1 text-slate-800" />
-          <span className="text-slate-800/50 text-xs">→</span>
-          <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} className="text-xs bg-slate-50 border border-white/20 rounded px-2 py-1 text-slate-800" />
-          <button onClick={cargar} className="text-xs px-3 py-1 bg-slate-50 hover:bg-slate-200 rounded-lg">Filtrar</button>
-          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg"><X size={14} /></button>
+    <div className="mt-4 rounded-2xl border border-slate-200 overflow-hidden shadow-lg bg-white">
+
+      {/* FILTROS Y CONTROLES */}
+      <div className="flex items-center justify-between px-5 py-3 bg-indigo-600 text-white">
+        <div className="flex items-center gap-3">
+            <BarChart3 size={16} />
+            <span className="text-sm font-black tracking-widest uppercase">Historial de Movimientos</span>
+        </div>
+        <div className="flex items-center gap-1 bg-indigo-800/40 p-1 rounded-lg border border-indigo-500/30">
+            <button 
+                onClick={() => setViewMode('HISTORIAL')} 
+                className={`px-4 py-1.5 text-[10px] uppercase tracking-widest font-black rounded-md transition-all ${viewMode === 'HISTORIAL' ? 'bg-white text-indigo-700 shadow-sm' : 'text-indigo-100 hover:bg-indigo-700/50'}`}
+            >
+                Histórico General
+            </button>
+            <button 
+                onClick={() => setViewMode('ESTADO_CUENTA')} 
+                className={`px-4 py-1.5 text-[10px] uppercase tracking-widest font-black rounded-md transition-all ${viewMode === 'ESTADO_CUENTA' ? 'bg-white text-indigo-700 shadow-sm' : 'text-indigo-100 hover:bg-indigo-700/50'}`}
+            >
+                Estado de Cuenta
+            </button>
+            {viewMode === 'ESTADO_CUENTA' && (
+                <button
+                    onClick={() => setSoloDeudasVivas(!soloDeudasVivas)}
+                    className={`ml-2 px-3 py-1.5 text-[10px] uppercase tracking-widest font-black rounded-md transition-all border ${soloDeudasVivas ? 'bg-amber-400 text-amber-900 border-amber-400 shadow-sm' : 'bg-transparent text-indigo-100 border-indigo-400 hover:bg-indigo-700/50'}`}
+                    title="Mostrar solo los documentos que aún tienen deuda pendiente por pagar"
+                >
+                    Solo Deudas Vivas
+                </button>
+            )}
         </div>
       </div>
       {loading ? (
-        <div className="flex justify-center py-6 bg-[#f1f5f9]"><div className="animate-spin h-5 w-5 border-2 border-blue-400 border-t-transparent rounded-full" /></div>
+        <div className="flex justify-center py-12 bg-white"><div className="animate-spin h-8 w-8 border-4 border-indigo-400 border-t-transparent rounded-full" /></div>
       ) : (
-        <div className="overflow-x-auto max-h-64 bg-[#f1f5f9]">
+        <div className="overflow-x-auto max-h-96 bg-white">
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-slate-50/50 border-b border-slate-200">
-              <tr className="text-left text-slate-500">
-                <th className="px-4 py-2">Fecha</th>
-                <th className="px-4 py-2">Tipo</th>
-                <th className="px-4 py-2">Concepto</th>
-                <th className="px-4 py-2 text-right">Saldo In.</th>
-                <th className="px-4 py-2 text-right bg-red-50 text-red-600">Debe</th>
-                <th className="px-4 py-2 text-right bg-green-50 text-green-600">Haber</th>
-                <th className="px-4 py-2 text-right">Saldo Fn.</th>
-                <th className="px-4 py-2 text-center w-10"></th>
+            <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 z-10 shadow-sm">
+              <tr className="text-left text-slate-400 uppercase tracking-widest font-black text-[10px]">
+                <th className="px-4 py-3">Fecha</th>
+                <th className="px-4 py-3">Tipo</th>
+                <th className="px-4 py-3">Documento</th>
+                <th className="px-4 py-3">Concepto</th>
+                <th className="px-4 py-3 text-right text-indigo-400">Valor Orden</th>
+                <th className="px-4 py-3 text-right">Saldo In.</th>
+                <th className="px-4 py-3 text-right">Debe</th>
+                <th className="px-4 py-3 text-right">Haber</th>
+                <th className="px-4 py-3 text-right">Saldo Fn.</th>
+                <th className="px-4 py-3 text-center">Acciones</th>
               </tr>
             </thead>
-            <tbody>
-              {movs.map(m => {
-                const importe = Number(m.MovImporte);
-                const esHaber = importe > 0;  // positivo = Haber (pago/abono)
-                const esDebe  = importe < 0;  // negativo = Debe (cargo/deuda)
-                return (
-                  <tr key={m.MovIdMovimiento} className="border-b border-slate-200 hover:bg-indigo-50/30 transition-colors">
-                    <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
-                    <td className="px-4 py-2"><span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[10px]">{m.MovTipo}</span></td>
-                    <td className="px-4 py-2 text-slate-600 max-w-xs" title={m.MovConcepto}><span className="block truncate text-xs font-medium">{m.MovConcepto || '—'}</span></td>
-                    <td className="px-4 py-2 text-right text-slate-500 font-medium">
-                      <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>
-                      {fmtNum(Number(m.MovSaldoPosterior) - importe)}
-                    </td>
-                    {/* DEBE: cargos / deudas (importe negativo) */}
-                    <td className="px-4 py-2 text-right bg-red-50/40">
-                      {esDebe ? (
-                        <span className="flex items-center justify-end gap-0.5 font-semibold text-red-600">
-                          <ArrowDownCircle size={10} />
-                          <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>
-                          {fmtNum(Math.abs(importe))}
+            <tbody className="divide-y divide-slate-100">
+              {viewMode === 'ESTADO_CUENTA' ? (
+                // --- RENDER ESTADO DE CUENTA (FLAT LIST) ---
+                movsParaEstadoCuenta.map(m => {
+                    if (!m.visualIsVisible) return null;
+                    if (soloDeudasVivas && !m.EsPendientePago) return null;
+
+                    const importe = m.visualImporte;
+                    const esHaber = importe > 0;
+                    const esDebe  = importe < 0;
+                    const info = ciclosInfo[m.CicIdCiclo];
+                    const isFacturado = m.CicIdCiclo && info && info.CicEstado !== 'ABIERTO';
+                    let docFull = m.DocTipo ? `${m.DocTipo} ${m.DocSerie}-${m.DocNumero}` : (m.CodigoOrdenStr ? m.CodigoOrdenStr : (m.OReIdOrdenRetiro ? `RET: ${m.OReIdOrdenRetiro}` : 'N/D'));
+                    if (['ORDEN','ENTREGA'].includes(m.MovTipo)) {
+                        if (m.CicIdCiclo) {
+                            docFull = isFacturado ? `Facturado (${info.CicNumeroFactura || 'En proc.'})` : 'Pendiente de facturar (Ciclo)';
+                        } else {
+                            docFull = 'Pendiente de cobro';
+                        }
+                    }
+                    
+                    let conceptoLimpio = m.MovConcepto || '—';
+                    if (m.MovTipo === 'CIERRE_CICLO') conceptoLimpio = 'Factura de Servicios Acumulados';
+                    else if (m.MovTipo === 'PAGO' && conceptoLimpio.toLowerCase().startsWith('pago: ')) conceptoLimpio = conceptoLimpio.substring(6).trim();
+                    else if ((m.MovTipo === 'VTA_CAJA' || m.MovTipo === 'ORDEN') && conceptoLimpio.toLowerCase().startsWith('venta: ')) conceptoLimpio = conceptoLimpio.substring(7).trim();
+
+                    const anulado = !!m.MovAnulado || m.DocEstado === 'ANULADO';
+
+                    let displayTipo = m.MovTipo;
+                    if (m.MovTipo === 'CIERRE_CICLO') {
+                        displayTipo = m.DocTipo ? m.DocTipo.split(' ')[0] : 'FACTURA'; // Toma E-FACTURA o E-TICKET
+                    } else if (m.MovTipo === 'AJUSTE' && m.MovConcepto?.toLowerCase().includes('anulación')) {
+                        displayTipo = 'ANULACIÓN';
+                    } else if (m.MovTipo === '01') {
+                        displayTipo = 'E-FACTURA';
+                    } else if (m.MovTipo === '07') {
+                        displayTipo = 'E-TICKET';
+                    }
+
+                    return (
+                        <tr key={`ec-${m.MovIdMovimiento}`} className={`hover:bg-slate-50/80 transition-colors group ${anulado ? 'bg-rose-50/40 text-slate-400' : ''}`}>
+                            <td className={`px-4 py-3 font-medium whitespace-nowrap ${anulado ? 'text-slate-400 line-through decoration-rose-300' : 'text-slate-500'}`}>{fmtFecha(m.MovFecha)}</td>
+                            <td className="px-4 py-3">
+                                <span className={`font-black px-2 py-1 rounded-md text-[9px] uppercase tracking-wider border ${m.MovAnulado ? 'bg-slate-100 text-slate-400 border-slate-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                                    {displayTipo} {m.MovAnulado ? '(ANULADO)' : ''}
+                                </span>
+                            </td>
+                            <td className="px-4 py-3">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {['ORDEN','ENTREGA'].includes(m.MovTipo) ? (
+                                        (m.CicIdCiclo && isFacturado) ? <Lock size={12} className="text-rose-500" title="Facturado" /> : <Unlock size={12} className="text-emerald-500" title="Pendiente" />
+                                    ) : (
+                                        m.DocTipo ? (m.EsPendientePago ? <Unlock size={12} className="text-emerald-500" title="Pendiente de pago" /> : <Lock size={12} className="text-rose-500" title="Pagado / Cerrado" />) : null
+                                    )}
+                                    <span className="font-bold text-slate-700 block">{docFull}</span>
+                                    {m.EsPendientePago === 1 && (
+                                        <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest border border-rose-200">Pendiente Pago</span>
+                                    )}
+                                </div>
+                                {m.CfeEstado && (
+                                    <span className={`text-[9px] font-black tracking-widest uppercase mt-0.5 block ${m.CfeEstado === 'ACEPTADO_DGI' ? 'text-emerald-500' : 'text-amber-500'}`}>DGI: {m.CfeEstado.replace('_DGI','')}</span>
+                                )}
+                            </td>
+                            <td className="px-4 py-3 text-slate-600 min-w-[250px] max-w-[350px]" title={m.MovConcepto}><span className="block text-xs font-medium leading-relaxed whitespace-normal break-words">{conceptoLimpio}</span></td>
+                            <td className="px-4 py-3 text-right bg-indigo-50/30 group-hover:bg-indigo-50/60 transition-colors">
+                                {['ORDEN', 'ENTREGA'].includes(m.MovTipo) ? (
+                                    <span className="flex items-center justify-end gap-1 font-bold text-indigo-600">
+                                        <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(Math.abs(Number(m.MovImporte)))}
+                                    </span>
+                                ) : <span className="text-slate-200">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-right text-slate-400 font-medium">
+                                {['ORDEN', 'ENTREGA'].includes(m.MovTipo) ? <span className="text-slate-200">—</span> : <><span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(m.visualSaldoAntes)}</>}
+                            </td>
+                            <td className="px-4 py-3 text-right bg-rose-50/30 group-hover:bg-rose-50/60 transition-colors">
+                                {esDebe && !['ORDEN', 'ENTREGA'].includes(m.MovTipo) ? (
+                                    <span className="flex items-center justify-end gap-1 font-bold text-rose-600">
+                                        <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(Math.abs(importe))}
+                                    </span>
+                                ) : <span className="text-slate-200">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-right bg-emerald-50/30 group-hover:bg-emerald-50/60 transition-colors">
+                                {esHaber && !['ORDEN', 'ENTREGA'].includes(m.MovTipo) ? (
+                                    <span className="flex items-center justify-end gap-1 font-bold text-emerald-600">
+                                        <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(importe)}
+                                    </span>
+                                ) : <span className="text-slate-200">—</span>}
+                            </td>
+                            <td className="px-4 py-3 text-right text-slate-800 font-black">
+                                {['ORDEN', 'ENTREGA'].includes(m.MovTipo) ? <span className="text-slate-200">—</span> : <><span className="mr-0.5 opacity-60 text-[9px] text-slate-400">{simbolo}</span>{fmtNum(m.visualSaldoDespues)}</>}
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                                <MenuAccionesDoc
+                                  m={m}
+                                  cuenta={cuenta}
+                                  cliente={cliente}
+                                  onRefresh={cargar}
+                                  onPrint={handleDescargarRecibo}
+                                  onCobrar={onRegistrarPago}
+                                />
+                            </td>
+                        </tr>
+                    );
+                })
+              ) : (
+                // --- RENDER HISTORIAL GENERAL (LISTA PLANA CRONOLÓGICA) ---
+                <>
+                {sortedMovs.map(m => {
+                  const cicloInfo = ciclosInfo[m.CicIdCiclo];
+                  const importe = m.visualImporte; // PRE-CALCULADO EN EL BACKEND
+                  const esHaber = importe > 0;
+                  const esDebe  = importe < 0;
+                  const isFacturado = m.CicIdCiclo && cicloInfo && cicloInfo.CicEstado !== 'ABIERTO';
+
+                  let docFull = m.DocTipo
+                    ? `${m.DocTipo} ${m.DocSerie}-${m.DocNumero}`
+                    : (m.CodigoOrdenStr
+                      ? m.CodigoOrdenStr
+                      : (m.OReIdOrdenRetiro ? `RET: ${m.OReIdOrdenRetiro}` : (m.MovTipo === 'ORDEN' ? 'Orden no facturada' : 'N/D')));
+                  if (['ORDEN','ENTREGA'].includes(m.MovTipo)) {
+                    docFull = isFacturado
+                      ? `Facturado (${cicloInfo.CicNumeroFactura || 'En proc.'})`
+                      : 'Pendiente de facturar';
+                  }
+
+                  let conceptoLimpio = m.MovConcepto || '—';
+                  if (m.MovTipo === 'CIERRE_CICLO') conceptoLimpio = 'Factura de Servicios Acumulados';
+                  else if (m.MovTipo === 'PAGO' && conceptoLimpio.toLowerCase().startsWith('pago: ')) conceptoLimpio = conceptoLimpio.substring(6).trim();
+                  else if ((m.MovTipo === 'VTA_CAJA' || m.MovTipo === 'ORDEN') && conceptoLimpio.toLowerCase().startsWith('venta: ')) conceptoLimpio = conceptoLimpio.substring(7).trim();
+
+                  const anulado = !!m.MovAnulado || m.DocEstado === 'ANULADO';
+
+                  let displayTipo = m.MovTipo;
+                  if (m.MovTipo === 'CIERRE_CICLO') {
+                    displayTipo = m.DocTipo ? m.DocTipo.split(' ')[0] : 'FACTURA';
+                  } else if (m.MovTipo === 'AJUSTE' && m.MovConcepto?.toLowerCase().includes('anulación')) {
+                    displayTipo = 'ANULACIÓN';
+                  }
+
+                  const lockIcon = ['ORDEN','ENTREGA'].includes(m.MovTipo) ? (
+                    isFacturado
+                      ? <Lock size={12} className="text-rose-500 flex-shrink-0" title="Facturado / Cerrado" />
+                      : <Unlock size={12} className="text-emerald-500 flex-shrink-0" title="Pendiente de facturar" />
+                  ) : (
+                    m.DocTipo
+                      ? (m.EsPendientePago
+                          ? <Unlock size={12} className="text-emerald-500 flex-shrink-0" title="Pendiente de pago" />
+                          : <Lock size={12} className="text-rose-500 flex-shrink-0" title="Pagado / Cerrado" />)
+                      : null
+                  );
+
+                  return (
+                    <tr key={m.MovIdMovimiento} className={`hover:bg-slate-50/80 transition-colors group ${anulado ? 'bg-rose-50/40' : ''}`}>
+                      <td className={`px-4 py-3 font-medium whitespace-nowrap ${anulado ? 'text-slate-400 line-through decoration-rose-300' : 'text-slate-500'}`}>{fmtFecha(m.MovFecha)}</td>
+                      <td className="px-4 py-3">
+                        <span className={`font-black px-2 py-1 rounded-md text-[9px] uppercase tracking-wider border ${m.MovAnulado ? 'bg-slate-100 text-slate-400 border-slate-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+                          {displayTipo} {m.MovAnulado ? '(ANULADO)' : ''}
                         </span>
-                      ) : <span className="text-slate-200">—</span>}
-                    </td>
-                    {/* HABER: abonos / pagos (importe positivo) */}
-                    <td className="px-4 py-2 text-right bg-green-50/40">
-                      {esHaber ? (
-                        <span className="flex items-center justify-end gap-0.5 font-semibold text-green-600">
-                          <ArrowUpCircle size={10} />
-                          <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>
-                          {fmtNum(importe)}
-                        </span>
-                      ) : <span className="text-slate-200">—</span>}
-                    </td>
-                    <td className="px-4 py-2 text-right text-slate-800 font-bold">
-                      <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>
-                      {fmtNum(Number(m.MovSaldoPosterior))}
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                      {(m.MovTipo === 'PAGO' || m.MovTipo === 'ANTICIPO' || m.MovTipo === 'COBRO' || m.MovTipo === 'SALDO_INICIAL') && (
-                        <button onClick={(e) => handleDescargarRecibo(e, m)} title="Descargar Recibo" className="inline-flex p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                          <Download size={14} />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {movs.length === 0 && <tr><td colSpan={8} className="text-center py-6 text-slate-500">Sin movimientos</td></tr>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {lockIcon}
+                          <span className="font-bold text-slate-700">{docFull}</span>
+                          {m.EsPendientePago === 1 && (
+                            <span className="bg-rose-100 text-rose-600 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest border border-rose-200">Pendiente Pago</span>
+                          )}
+                          {m.CicIdCiclo && (
+                            <span className="bg-indigo-50 text-indigo-500 text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-widest border border-indigo-200 flex-shrink-0">
+                              Ciclo #{m.CicIdCiclo}
+                            </span>
+                          )}
+                        </div>
+                        {m.CfeEstado && (
+                          <span className={`text-[9px] font-black tracking-widest uppercase mt-0.5 block ${m.CfeEstado === 'ACEPTADO_DGI' ? 'text-emerald-500' : 'text-amber-500'}`}>DGI: {m.CfeEstado.replace('_DGI','')}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 min-w-[250px] max-w-[350px]" title={m.MovConcepto}>
+                        <span className="block text-xs font-medium leading-relaxed whitespace-normal break-words">{conceptoLimpio}</span>
+                      </td>
+                      {/* VALOR ORDEN (informativo, no afecta saldo) */}
+                      <td className="px-4 py-3 text-right bg-indigo-50/30 group-hover:bg-indigo-50/60 transition-colors">
+                        {['ORDEN', 'ENTREGA'].includes(m.MovTipo) ? (
+                          <span className="flex items-center justify-end gap-1 font-bold text-indigo-600">
+                            <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(Math.abs(Number(m.MovImporte)))}
+                          </span>
+                        ) : <span className="text-slate-200">—</span>}
+                      </td>
+                      {/* SALDO INICIAL */}
+                      <td className="px-4 py-3 text-right text-slate-400 font-medium">
+                        {['ORDEN', 'ENTREGA'].includes(m.MovTipo)
+                          ? <span className="text-slate-200">—</span>
+                          : <><span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(m.visualSaldoAntes)}</>}
+                      </td>
+                      {/* DEBE */}
+                      <td className="px-4 py-3 text-right bg-rose-50/30 group-hover:bg-rose-50/60 transition-colors">
+                        {esDebe && !['ORDEN', 'ENTREGA'].includes(m.MovTipo) ? (
+                          <span className="flex items-center justify-end gap-1 font-bold text-rose-600">
+                            <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(Math.abs(importe))}
+                          </span>
+                        ) : <span className="text-slate-200">—</span>}
+                      </td>
+                      {/* HABER */}
+                      <td className="px-4 py-3 text-right bg-emerald-50/30 group-hover:bg-emerald-50/60 transition-colors">
+                        {esHaber && !['ORDEN', 'ENTREGA'].includes(m.MovTipo) ? (
+                          <span className="flex items-center justify-end gap-1 font-bold text-emerald-600">
+                            <span className="mr-0.5 opacity-60 text-[9px]">{simbolo}</span>{fmtNum(importe)}
+                          </span>
+                        ) : <span className="text-slate-200">—</span>}
+                      </td>
+                      {/* SALDO FINAL */}
+                      <td className="px-4 py-3 text-right text-slate-800 font-black">
+                        {['ORDEN', 'ENTREGA'].includes(m.MovTipo)
+                          ? <span className="text-slate-200">—</span>
+                          : <><span className="mr-0.5 opacity-60 text-[9px] text-slate-400">{simbolo}</span>{fmtNum(m.visualSaldoDespues)}</>}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <MenuAccionesDoc
+                          m={m}
+                          cuenta={cuenta}
+                          cliente={cliente}
+                          onRefresh={cargar}
+                          onPrint={handleDescargarRecibo}
+                          onCobrar={onRegistrarPago}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+                </>
+              )}
+
+
+              {movs.length === 0 && <tr><td colSpan={9} className="text-center py-12 text-slate-400 font-bold uppercase tracking-widest text-xs">No se encontraron movimientos en este período</td></tr>}
             </tbody>
           </table>
         </div>
@@ -572,24 +1192,30 @@ const DeudasPanel = ({ CueIdCuenta, simbolo, onClose }) => {
 };
 
 // ── Panel ciclos ──────────────────────────────────────────────────────────────
-const CiclosPanel = ({ cuenta, CliIdCliente, onClose, onCicloChanged }) => {
+const CiclosPanel = ({ cuenta, CliIdCliente, cliente, onClose, onCicloChanged }) => {
   const [ciclos, setCiclos]   = useState([]);
   const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
+  
+  // Estado para el modal de cierre
+  const [cerrandoCiclo, setCerrandoCiclo] = useState(null); // el objeto ciclo
+  const [movsCierre, setMovsCierre] = useState([]);
+  const [excluidos, setExcluidos] = useState(new Set());
+  const [loadingMovs, setLoadingMovs] = useState(false);
 
   const cargar = useCallback(async () => {
     setLoading(true);
     try {
       const data = await fetchAPI(`/api/contabilidad/ciclos/${CliIdCliente}`);
-      setCiclos(data.data || []);
+      setCiclos((data.data || []).filter(c => c.CueIdCuenta === cuenta.CueIdCuenta));
     } catch (e) { toast.error(e.message); }
     finally { setLoading(false); }
-  }, [CliIdCliente]);
+  }, [CliIdCliente, cuenta.CueIdCuenta]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const cicloAbierto = ciclos.find(c => c.CicEstado === 'ABIERTO');
-  const estadoColor  = e => ({ ABIERTO:'green', VENCIDO:'red', CERRADO:'slate', COBRADO:'indigo' }[e] || 'slate');
+  const ciclosAbiertos = ciclos.filter(c => c.CicEstado === 'ABIERTO');
+  const estadoColor  = e => ({ ABIERTO:'green', VENCIDO:'red', CERRADO:'slate', COBRADO:'indigo', ANULADO:'rose' }[e] || 'slate');
 
   const abrirCiclo = async () => {
     setWorking(true);
@@ -601,12 +1227,39 @@ const CiclosPanel = ({ cuenta, CliIdCliente, onClose, onCicloChanged }) => {
     finally { setWorking(false); }
   };
 
-  const cerrarCiclo = async (id) => {
-    if (!confirm('¿Cerrar este ciclo? Se generará la factura y se abrirá el siguiente.')) return;
+  const abrirModalCierre = async (ciclo) => {
+    setCerrandoCiclo(ciclo);
+    setExcluidos(new Set());
+    setLoadingMovs(true);
+    try {
+      const data = await fetchAPI(`/api/contabilidad/ciclos/${ciclo.CicIdCiclo}/movimientos`);
+      setMovsCierre(data.data || []);
+    } catch (e) {
+      toast.error('Error al cargar movimientos: ' + e.message);
+      setCerrandoCiclo(null);
+    } finally {
+      setLoadingMovs(false);
+    }
+  };
+
+  const toggleExcluido = (movId) => {
+    setExcluidos(prev => {
+      const next = new Set(prev);
+      if (next.has(movId)) next.delete(movId);
+      else next.add(movId);
+      return next;
+    });
+  };
+
+  const confirmarCierre = async (cicId, payload) => {
     setWorking(true);
     try {
-      const res = await fetchAPI(`/api/contabilidad/ciclos/${id}/cerrar`, { method: 'POST' });
+      const res = await fetchAPI(`/api/contabilidad/ciclos/${cicId}/cerrar`, { 
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
       toast.success(`✅ ${res.message}`);
+      setCerrandoCiclo(null);
       await cargar(); onCicloChanged?.();
     } catch (e) { toast.error(e.message); }
     finally { setWorking(false); }
@@ -617,10 +1270,10 @@ const CiclosPanel = ({ cuenta, CliIdCliente, onClose, onCicloChanged }) => {
       <div className="flex items-center justify-between px-4 py-3 bg-indigo-600 text-white">
         <div className="flex items-center gap-2">
           <Calendar size={14} /><span className="text-sm font-semibold">Ciclos de Crédito</span>
-          {cicloAbierto && <Badge color="green"><span className="animate-pulse">●</span> ACTIVO</Badge>}
+          {ciclosAbiertos.length > 0 && <Badge color="green"><span className="animate-pulse">●</span> {ciclosAbiertos.length} ACTIVO{ciclosAbiertos.length > 1 ? 'S' : ''}</Badge>}
         </div>
         <div className="flex gap-2">
-          {!cicloAbierto && (
+          {ciclosAbiertos.length === 0 && (
             <button onClick={abrirCiclo} disabled={working}
               className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-50 hover:bg-slate-200 rounded-lg transition-colors font-medium disabled:opacity-50">
               {working ? <RefreshCw size={11} className="animate-spin" /> : <PlayCircle size={11} />}Abrir ciclo
@@ -630,13 +1283,17 @@ const CiclosPanel = ({ cuenta, CliIdCliente, onClose, onCicloChanged }) => {
         </div>
       </div>
 
-      {cicloAbierto && (
-        <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-200">
+      {ciclosAbiertos.map(cicloAbierto => (
+        <div key={cicloAbierto.CicIdCiclo} className="px-4 py-3 bg-indigo-50 border-b border-indigo-200 last:border-b-0">
           <div className="flex items-start justify-between gap-4">
-            <div className="grid grid-cols-3 gap-4 flex-1">
+            <div className="grid grid-cols-4 gap-4 flex-1">
+              <div>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide">Ciclo</p>
+                <p className="text-xs font-bold text-slate-700">#{cicloAbierto.CicIdCiclo}</p>
+              </div>
               <div>
                 <p className="text-[10px] text-slate-400 uppercase tracking-wide">Período</p>
-                <p className="text-xs font-bold text-slate-700">{fmtFecha(cicloAbierto.CicFechaInicio)} → {fmtFecha(cicloAbierto.CicFechaCierre)}</p>
+                <p className="text-xs font-bold text-slate-700">Desde {fmtFechaHora(cicloAbierto.CicFechaInicio)}</p>
               </div>
               <div>
                 <p className="text-[10px] text-slate-400 uppercase tracking-wide">Órdenes</p>
@@ -647,41 +1304,38 @@ const CiclosPanel = ({ cuenta, CliIdCliente, onClose, onCicloChanged }) => {
                 <p className="text-sm font-bold text-green-600">{fmt(cicloAbierto.CicTotalPagos, cuenta.MonSimbolo)}</p>
               </div>
             </div>
-            <div className="text-right shrink-0">
+            <div className="text-right shrink-0 flex flex-col items-end">
               {(() => {
+                if (!cicloAbierto.CicFechaCierre) return null;
                 const d = diasRestantes(cicloAbierto.CicFechaCierre);
                 return <div className={`px-3 py-1.5 rounded-lg text-xs font-bold mb-2
                   ${d !== null && d <= 1 ? 'bg-red-100 text-red-700' : d !== null && d <= 3 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
                   {d !== null ? (d > 0 ? `${d}d restantes` : 'Vence hoy') : '—'}
                 </div>;
               })()}
-              <button onClick={() => cerrarCiclo(cicloAbierto.CicIdCiclo)} disabled={working}
+              <button onClick={() => abrirModalCierre(cicloAbierto)} disabled={working}
                 className="flex items-center gap-1 text-xs px-3 py-1.5 bg-rose-900/10 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 transition-colors font-medium disabled:opacity-50">
-                {working ? <RefreshCw size={11} className="animate-spin" /> : <StopCircle size={11} />}Cerrar ciclo
+                {working ? <RefreshCw size={11} className="animate-spin" /> : <StopCircle size={11} />}Revisar y Cerrar
               </button>
             </div>
           </div>
         </div>
+      ))}
+
+      {loading && (
+        <div className="flex justify-center py-2 bg-[#f1f5f9]"><div className="animate-spin h-4 w-4 border-2 border-indigo-400 border-t-transparent rounded-full" /></div>
       )}
 
-      {loading ? (
-        <div className="flex justify-center py-5 bg-[#f1f5f9]"><div className="animate-spin h-5 w-5 border-2 border-indigo-400 border-t-transparent rounded-full" /></div>
-      ) : (
-        <div className="divide-y divide-slate-100 max-h-44 overflow-y-auto bg-[#f1f5f9]">
-          {ciclos.filter(c => c.CicEstado !== 'ABIERTO').map(c => (
-            <div key={c.CicIdCiclo} className="px-4 py-2.5 flex items-center justify-between text-xs hover:bg-slate-50/50">
-              <div className="flex items-center gap-2">
-                <Badge color={estadoColor(c.CicEstado)}>{c.CicEstado}</Badge>
-                <span className="text-slate-400">{fmtFecha(c.CicFechaInicio)} → {fmtFecha(c.CicFechaCierre)}</span>
-                {c.CicNumeroFactura && <span className="font-mono bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded text-[10px]">{c.CicNumeroFactura}</span>}
-              </div>
-              <span className="font-semibold text-slate-700">{fmt(c.CicSaldoFacturar, cuenta.MonSimbolo)}</span>
-            </div>
-          ))}
-          {ciclos.length === 0 && (
-            <div className="text-center py-5 text-slate-500 text-xs"><Info size={18} className="mx-auto mb-1 opacity-40" />Sin ciclos</div>
-          )}
-        </div>
+      {/* Modal de Cierre */}
+      {cerrandoCiclo && (
+        <CierreCicloPreviewModal
+          ciclo={cerrandoCiclo}
+          movsOriginales={movsCierre}
+          cuenta={cuenta}
+          cliente={cliente}
+          onClose={() => setCerrandoCiclo(null)}
+          onConfirm={confirmarCierre}
+        />
       )}
     </div>
   );
@@ -807,11 +1461,11 @@ const PlanesPanel = ({ cuenta, CliIdCliente, onClose, onChanged }) => {
   };
 
   const desactivar = async (planId) => {
-    if (!confirm('¿Desactivar este plan?')) return;
+    if (!confirm('¿Desactivar este plan y anular el saldo restante?\n\n⚠️ NOTA: Si desea devolverle el dinero al cliente por este saldo, debe registrar la devolución manualmente por el módulo de Gastos o Salidas de Caja.')) return;
     setWorking(true);
     try {
       await fetchAPI(`/api/contabilidad/planes/${planId}/desactivar`, { method: 'PATCH' });
-      toast.success('Plan desactivado');
+      toast.success('Plan desactivado. Se ajustó el saldo a cero.');
       await cargar(); onChanged?.();
     } catch (e) { toast.error(e.message); }
     finally { setWorking(false); }
@@ -1095,12 +1749,12 @@ const ETIQUETA_TIPO = {
   REPOSICION:   'Reposición',
 };
 
-const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
+const ModalEstadoCuenta = ({ cliente, cuentas, onClose, globalDesde, globalHasta }) => {
   const [secciones, setSecciones] = useState({});  // { CueIdCuenta: { movs, loading } }
   const [planes, setPlanes]       = useState([]);
   const [expandidos, setExpandidos] = useState({});
-  const [desde, setDesde] = useState('');
-  const [hasta, setHasta] = useState('');
+  const [desde, setDesde] = useState(globalDesde || '');
+  const [hasta, setHasta] = useState(globalHasta || '');
   const [cargando, setCargando]   = useState(false);
 
   const cargar = useCallback(async () => {
@@ -1115,15 +1769,17 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
         fetchAPI(`/api/contabilidad/planes/${cliente.CliIdCliente}`).catch(() => ({ data: [] })),
         ...cuentas.map(c =>
           fetchAPI(`/api/contabilidad/cuentas/${c.CueIdCuenta}/movimientos?${p}`)
-            .then(d => ({ cue: c, movs: d.data || [] }))
-            .catch(() => ({ cue: c, movs: [] }))
+            .then(d => ({ cue: c, movs: d.data || [], saldoArrastre: d.saldoArrastre ?? 0 }))
+            .catch(() => ({ cue: c, movs: [], saldoArrastre: 0 }))
         ),
       ]);
 
       setPlanes(planesRes.data || []);
 
       const nuevas = {};
-      movsRes.forEach(({ cue, movs }) => { nuevas[cue.CueIdCuenta] = { cue, movs }; });
+      movsRes.forEach(({ cue, movs, saldoArrastre }) => {
+        nuevas[cue.CueIdCuenta] = { cue, movs, saldoArrastre: saldoArrastre ?? 0 };
+      });
       setSecciones(nuevas);
 
       // Expandir todas por defecto
@@ -1161,7 +1817,12 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
               <h2 className="text-xl font-black text-slate-800 mt-0.5">{cliente.Nombre}</h2>
               {cliente.NombreFantasia && <p className="text-xs text-slate-500">{cliente.NombreFantasia}</p>}
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-slate-700/50 rounded-lg text-slate-500"><X size={16} /></button>
+            <div className="flex gap-2">
+              <button onClick={() => generarPdfEstadoCuenta(cliente, cuentas, secciones, planes)} className="flex items-center gap-2 p-2 hover:bg-blue-50 hover:text-blue-600 rounded-lg text-slate-500 text-xs font-bold transition-colors">
+                <Printer size={16} /> Descargar PDF
+              </button>
+              <button onClick={onClose} className="p-2 hover:bg-slate-700/50 rounded-lg text-slate-500"><X size={16} /></button>
+            </div>
           </div>
           <div className="flex gap-2 mt-3 items-center">
             <input type="date" value={desde} onChange={e => setDesde(e.target.value)}
@@ -1221,6 +1882,10 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
 
                     {abierto && (
                       <div className="border-t border-slate-200">
+                        {/* Mostrar CiclosPanel solo si el cliente es Semanal (o si tiene ciclos de alguna manera, pero acá podemos mostrarlo siempre que aplique) */}
+                        <div className="p-4 bg-slate-50/50">
+                          <CiclosPanel cuenta={c} CliIdCliente={c.CliIdCliente} cliente={cliente} onClose={() => {}} onCicloChanged={cargar} />
+                        </div>
                         {movs.length === 0 ? (
                           <p className="text-xs text-slate-500 text-center py-5">Sin movimientos en el período</p>
                         ) : (
@@ -1260,11 +1925,14 @@ const ModalEstadoCuenta = ({ cliente, cuentas, onClose }) => {
                                       {fmtNum(Number(m.MovSaldoPosterior))} {c.MonSimbolo}
                                     </td>
                                     <td className="px-4 py-2.5 text-center">
-                                      {(m.MovTipo === 'PAGO' || m.MovTipo === 'ANTICIPO' || m.MovTipo === 'COBRO' || m.MovTipo === 'SALDO_INICIAL') && (
-                                        <button onClick={(e) => handleDescargarRecibo(e, m)} title="Imprimir Recibo" className="inline-flex p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100">
-                                          <Printer size={15} />
-                                        </button>
-                                      )}
+                                      <MenuAccionesDoc
+                                        m={m}
+                                        cuenta={c}
+                                        cliente={cliente}
+                                        onRefresh={V}
+                                        onPrint={handleDescargarRecibo}
+                                        onCobrar={onRegistrarPago}
+                                      />
                                     </td>
                                   </tr>
                                 );
@@ -1413,103 +2081,95 @@ const CuentaCard = ({ cuenta, CliIdCliente, panelActivo, onToggle, onCicloChange
   const deuda      = Number(cuenta.DeudaPendienteTotal ?? 0);
   const negativo   = saldo < 0;
   const esSemanal  = (cuenta.CueDiasCiclo ?? 0) > 0;
-  // Detectar cuenta de recursos: tiene UnidadLabel o su CueTipo no es monetario
   const TIPOS_MONETARIOS = ['USD','UYU','ARS','EUR','PYG','BRL','CORRIENTE','CREDITO','DEBITO','CAJA','DINERO_USD','DINERO_UYU'];
   const esRecursos = cuenta.ProIdProducto != null || !TIPOS_MONETARIOS.includes(cuenta.CueTipo?.toUpperCase());
   const unidadLabel = cuenta.UnidadLabel || cuenta.CueTipo;
 
   return (
-    <div className="bg-[#f1f5f9] rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className={`px-5 py-4 flex items-center justify-between
-        ${esRecursos
-          ? 'bg-gradient-to-r from-violet-500 to-purple-500'
-          : negativo
-            ? 'bg-gradient-to-r from-red-500 to-rose-500'
-            : 'bg-gradient-to-r from-emerald-500 to-teal-500'} text-slate-800`}>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold tracking-widest uppercase opacity-80">{unidadLabel}</span>
-            {cuenta.NombreArticulo && <span className="text-xs opacity-60">· {cuenta.NombreArticulo}</span>}
-            {esSemanal   && <Badge color="blue"><Calendar size={9} /> Semanal</Badge>}
-            {esRecursos  && <Badge color="indigo"><Layers size={9} /> Recursos</Badge>}
+    <div className={`bg-white rounded-xl border transition-colors shadow-sm mb-2 ${panelActivo ? 'border-indigo-300 ring-2 ring-indigo-50' : 'border-slate-200 hover:border-indigo-200'}`}>
+      <div className="px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        
+        {/* Lado Izquierdo: Moneda y Saldos */}
+        <div className="flex items-center gap-4">
+          <div className="flex flex-col">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black tracking-widest text-slate-500 uppercase">{unidadLabel}</span>
+              {esRecursos && <span className="text-[9px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">Recurso</span>}
+              {!esRecursos && negativo && <span className="text-[9px] bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">Saldo Deudor</span>}
+              {!esRecursos && !negativo && saldo > 0 && <span className="text-[9px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">Saldo a Favor</span>}
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className={`text-xl font-black ${esRecursos ? 'text-violet-600' : negativo ? 'text-rose-600' : 'text-emerald-600'}`}>
+                {esRecursos ? `${fmtNum(saldo)} ${cuenta.UniSimbolo || unidadLabel}` : fmt(saldo, cuenta.MonSimbolo)}
+              </span>
+            </div>
           </div>
-          <p className="text-2xl font-black mt-1">
-            {esRecursos ? `${fmtNum(saldo)} ${cuenta.UniSimbolo || unidadLabel}` : fmt(saldo, cuenta.MonSimbolo)}
-          </p>
-        </div>
-        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-          esRecursos ? 'bg-violet-400/30' : negativo ? 'bg-red-400/30' : 'bg-emerald-400/30'}`}>
-          {esRecursos ? <Layers size={22} /> : negativo ? <TrendingDown size={22} /> : <TrendingUp size={22} />}
-        </div>
-      </div>
 
-      {!esRecursos && (
-        <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-200">
-          <div className="px-4 py-2.5 text-center">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Deuda</p>
-            <p className={`text-sm font-bold ${deuda > 0 ? 'text-red-600' : 'text-slate-500'}`}>{fmt(deuda, cuenta.MonSimbolo)}</p>
-          </div>
-          <div className="px-4 py-2.5 text-center">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Cond. Pago</p>
-            <p className="text-sm font-semibold text-slate-700 truncate">{cuenta.CondicionPago || '—'}</p>
-          </div>
-          <div className="px-4 py-2.5 text-center">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wide">Docs Venc.</p>
-            <p className={`text-sm font-bold ${cuenta.DocumentosVencidos > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-              {cuenta.DocumentosVencidos > 0
-                ? <><AlertTriangle size={11} className="inline mr-0.5" />{cuenta.DocumentosVencidos}</>
-                : <><CheckCircle2 size={11} className="inline mr-0.5" />0</>}
-            </p>
-          </div>
+          {/* Info Extra Condensada (Solo si no es recurso y tiene deuda/docs) */}
+          {!esRecursos && (deuda > 0 || cuenta.DocumentosVencidos > 0) && (
+            <div className="flex items-center gap-3 pl-4 ml-2 border-l border-slate-200">
+              {deuda > 0 && (
+                <div className="flex flex-col">
+                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Deuda Pendiente</span>
+                  <span className="text-sm font-bold text-rose-600">{fmt(deuda, cuenta.MonSimbolo)}</span>
+                </div>
+              )}
+              {cuenta.DocumentosVencidos > 0 && (
+                <div className="flex items-center gap-1.5 bg-rose-50 text-rose-600 px-2.5 py-1 rounded-lg border border-rose-100">
+                  <AlertTriangle size={14} />
+                  <span className="text-xs font-bold">{cuenta.DocumentosVencidos} Venc.</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      )}
 
-      <div className="px-4 py-3 flex gap-2 flex-wrap items-center">
-        {!esRecursos && (
-          <>
-            <button onClick={() => onToggle('mov')}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors
-                ${panelActivo === 'mov' ? 'bg-blue-600 text-white border-blue-600' : 'bg-indigo-50 text-blue-700 hover:bg-blue-100 border-indigo-500/20'}`}>
-              <BarChart3 size={12} /> Movimientos
+        {/* Lado Derecho: Botones de Acción */}
+        <div className="flex items-center gap-2">
+          {!esRecursos && (
+            <>
+              <button onClick={() => onToggle('mov')}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-bold border transition-all
+                  ${panelActivo === 'mov' ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 border-slate-200'}`}>
+                <BarChart3 size={14} /> Historial
+              </button>
+              {deuda > 0 && (
+                <button onClick={() => onToggle('deuda')}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-bold border transition-all
+                    ${panelActivo === 'deuda' ? 'bg-rose-600 text-white border-rose-600 shadow-md' : 'bg-rose-50 text-rose-600 hover:bg-rose-100 border-rose-200'}`}>
+                  <FileText size={14} /> Ver Pendientes
+                </button>
+              )}
+            </>
+          )}
+          {esSemanal && (
+            <button onClick={() => onToggle('ciclo')}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-bold border transition-all
+                ${panelActivo === 'ciclo' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200'}`}>
+              <Calendar size={14} /> Ciclos
             </button>
-            <button onClick={() => onToggle('deuda')}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors
-                ${panelActivo === 'deuda' ? 'bg-amber-900/100 text-slate-800 border-amber-500' : 'bg-amber-900/10 text-amber-700 hover:bg-amber-100 border-amber-200'}`}>
-              <FileText size={12} /> Deudas
-              {deuda > 0 && <span className="bg-amber-200 text-amber-800 px-1 rounded-full text-[10px]">{cuenta.DocumentosVencidos}</span>}
+          )}
+          {esRecursos && (
+            <button onClick={() => onToggle('planes')}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-bold border transition-all
+                ${panelActivo === 'planes' ? 'bg-violet-600 text-white border-violet-600' : 'bg-violet-50 text-violet-700 hover:bg-violet-100 border-violet-200'}`}>
+              <Layers size={14} /> Planes
             </button>
-          </>
-        )}
-        {esSemanal && (
-          <button onClick={() => onToggle('ciclo')}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors
-              ${panelActivo === 'ciclo' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200'}`}>
-            <Calendar size={12} /> Ciclos
+          )}
+          <button onClick={() => onRegistrarPago(cuenta)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-black border transition-all bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200 shadow-sm ml-2">
+            <DollarSign size={14} /> Cobrar / Ajustar
           </button>
-        )}
-        {esRecursos && (
-          <button onClick={() => onToggle('planes')}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors
-              ${panelActivo === 'planes' ? 'bg-violet-600 text-slate-800 border-violet-600' : 'bg-violet-50 text-violet-700 hover:bg-violet-100 border-violet-200'}`}>
-            <Layers size={12} /> Planes
-          </button>
-        )}
-        <button onClick={() => onRegistrarPago(cuenta)}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium border transition-colors bg-emerald-900/10 text-green-700 hover:bg-green-100 border-emerald-500/20">
-          <DollarSign size={12} /> Pago / Ajuste
-        </button>
-        <span className="ml-auto text-[10px] text-slate-500 font-mono bg-slate-100 px-2 py-0.5 rounded">
-          #{cuenta.CueIdCuenta}{cuenta.CueDiasCiclo > 0 ? ` · ${cuenta.CueDiasCiclo}d` : ''}
-        </span>
+        </div>
+
       </div>
     </div>
   );
 };
 
-// ── VISTA PRINCIPAL ───────────────────────────────────────────────────────────
 export default function ContabilidadCuentasView() {
   const [busqueda, setBusqueda]               = useState('');
-  const [filtroTipo, setFiltroTipo]           = useState('TODOS');
+  const [filtroTipo, setFiltroTipo]           = useState('HISTORICOS');
   const [clientesActivos, setClientesActivos] = useState([]);
   const [clienteSel, setClienteSel]           = useState(null);
   const [cuentas, setCuentas]                 = useState([]);
@@ -1518,13 +2178,22 @@ export default function ContabilidadCuentasView() {
   const [paneles, setPaneles]                 = useState({});
   const [modalPago, setModalPago]             = useState(null);
   const [modalEstado, setModalEstado]         = useState(false);
+  const [tabCuentas, setTabCuentas]           = useState('SALDOS');
+
+  const [globalDesde, setGlobalDesde] = useState(() => { const d = new Date(); d.setMonth(d.getMonth() - 1); return d.toISOString().split('T')[0]; });
+  const [globalHasta, setGlobalHasta] = useState(() => new Date().toISOString().split('T')[0]);
+  const [globalFiltroTrigger, setGlobalFiltroTrigger] = useState(0);
 
   const cargarClientesActivos = useCallback(async (q = '') => {
     setLoadingLista(true);
     try {
       const qp = new URLSearchParams();
-      if (q.trim()) qp.append('q', q.trim());
-      if (filtroTipo === 'HISTORICOS') qp.append('todos', 'true');
+      if (q.trim()) {
+         qp.append('q', q.trim());
+         qp.append('todos', 'true'); // Siempre buscar en todos si hay texto
+      } else {
+         if (filtroTipo === 'HISTORICOS') qp.append('todos', 'true');
+      }
       const data = await fetchAPI(`/api/contabilidad/clientes-activos?${qp.toString()}`);
       setClientesActivos(data.data || []);
     } catch (e) { toast.error(e.message); }
@@ -1536,11 +2205,14 @@ export default function ContabilidadCuentasView() {
   const seleccionarCliente = async (cli) => {
     if (clienteSel?.CliIdCliente === cli.CliIdCliente) { setClienteSel(null); return; }
     setClienteSel(cli);
-    setPaneles({});
     setLoadingCuentas(true);
     try {
       const data = await fetchAPI(`/api/contabilidad/cuentas/${cli.CliIdCliente}`);
-      setCuentas(data.data || []);
+      const cuents = data.data || [];
+      setCuentas(cuents);
+      const nuevosPaneles = {};
+      cuents.forEach(c => nuevosPaneles[c.CueIdCuenta] = 'mov');
+      setPaneles(nuevosPaneles);
     } catch (e) { toast.error(e.message); }
     finally { setLoadingCuentas(false); }
   };
@@ -1573,6 +2245,20 @@ export default function ContabilidadCuentasView() {
     });
   }, [clientesActivos, filtroTipo]);
 
+  const cuentaActiva = useMemo(() => {
+    if (!cuentas || cuentas.length === 0) return null;
+    const TIPOS_MONETARIOS = ['USD','UYU','ARS','EUR','PYG','BRL','CORRIENTE','CREDITO','DEBITO','CAJA','DINERO_USD','DINERO_UYU'];
+    
+    if (tabCuentas === 'RECURSOS') return null; // Recursos shows all resource accounts, no single 'cuentaActiva'
+
+    return cuentas.find(c => {
+      const esRecurso = c.ProIdProducto != null || !TIPOS_MONETARIOS.includes(c.CueTipo?.toUpperCase());
+      if (esRecurso) return false;
+      if (tabCuentas === 'USD') return c.MonSimbolo === 'US$' || c.CueTipo === 'DINERO_USD';
+      return c.MonSimbolo !== 'US$' && c.CueTipo !== 'DINERO_USD'; // UYU default
+    });
+  }, [cuentas, tabCuentas]);
+
   return (
     <>
       {/* Modal pago */}
@@ -1590,13 +2276,15 @@ export default function ContabilidadCuentasView() {
           cliente={clienteSel}
           cuentas={cuentas}
           onClose={() => setModalEstado(false)}
+          globalDesde={globalDesde}
+          globalHasta={globalHasta}
         />
       )}
 
       <div className="h-full bg-[#f1f5f9] p-2 sm:p-4 overflow-y-auto text-slate-700 font-sans custom-scrollbar"><div className="flex gap-6 h-full min-h-0 max-w-[1500px] mx-auto w-full" style={{ maxHeight: 'calc(100vh - 50px)' }}>
 
         {/* ── Columna izquierda: lista ────────────────────────────────────── */}
-        <div className="w-96 shrink-0 flex flex-col bg-[#f1f5f9] rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="w-80 shrink-0 flex flex-col bg-[#f1f5f9] rounded-xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-4 py-4 border-b border-slate-200">
             <div className="flex items-center justify-between mb-3">
               <h1 className="text-base font-bold text-slate-800 flex items-center gap-2">
@@ -1624,10 +2312,10 @@ export default function ContabilidadCuentasView() {
             </div>
             <div className="mt-2">
               <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} className="w-full bg-[#f1f5f9] border border-slate-200 rounded-lg text-[11px] text-slate-600 py-1.5 px-2 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                <option value="TODOS">Todos (Con saldo o deuda)</option>
-                <option value="DEUDORES">Deudores (Deuda pendiente o saldo total negativo)</option>
-                <option value="ACREEDORES">Acreedores (Saldo a favor)</option>
-                <option value="HISTORICOS">Histórico completo (Incluye clientes sin saldo)</option>
+                <option value="HISTORICOS">Todos los Clientes (Histórico completo)</option>
+                <option value="TODOS">Sólo clientes activos (Con saldo o deuda)</option>
+                <option value="DEUDORES">Sólo deudores (Deuda pendiente o saldo negativo)</option>
+                <option value="ACREEDORES">Sólo acreedores (Saldo a favor)</option>
               </select>
             </div>
           </div>
@@ -1664,41 +2352,96 @@ export default function ContabilidadCuentasView() {
             </div>
           ) : (
             <>
-              <div className="bg-[#f1f5f9] rounded-xl border border-slate-200 shadow-sm px-5 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm mb-4">
+                <div className="px-5 py-3 flex items-center justify-between gap-4">
+                  
+                  {/* Avatar + Client Info */}
+                  <div className="flex items-center gap-3 min-w-[200px]">
+                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold shadow-sm shrink-0">
                       {clienteSel.Nombre?.[0]?.toUpperCase()}
                     </div>
-                    <div>
-                      <h2 className="text-base font-bold text-slate-800">{clienteSel.Nombre}</h2>
-                      {clienteSel.NombreFantasia && <p className="text-xs text-slate-500">{clienteSel.NombreFantasia}</p>}
+                    <div className="flex flex-col">
+                      <h2 className="text-base font-bold text-slate-800 leading-tight truncate">{clienteSel.Nombre}</h2>
+                      {clienteSel.NombreFantasia && <p className="text-xs text-slate-500 truncate">{clienteSel.NombreFantasia}</p>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-center">
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wide">Saldo</p>
-                      <p className={`text-base font-black ${saldoTotal < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(saldoTotal)}</p>
+
+                  {/* Active Account Balances */}
+                  {cuentaActiva && (
+                      <div className="flex items-center gap-6 px-6 py-2 bg-slate-50/80 rounded-xl border border-slate-100">
+                          <div className="flex flex-col">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                  {Number(cuentaActiva.CueSaldoActual) < 0 && <span className="text-[9px] bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">Saldo Deudor</span>}
+                                  {Number(cuentaActiva.CueSaldoActual) >= 0 && <span className="text-[9px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">Saldo a Favor</span>}
+                              </div>
+                              <span className={`text-xl font-black leading-none ${Number(cuentaActiva.CueSaldoActual) < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                  {fmt(Number(cuentaActiva.CueSaldoActual), cuentaActiva.MonSimbolo)}
+                              </span>
+                          </div>
+                          
+                          {(Number(cuentaActiva.DeudaPendienteTotal) > 0 || cuentaActiva.DocumentosVencidos > 0) && (
+                              <div className="flex items-center gap-4 pl-6 border-l border-slate-200">
+                                  {Number(cuentaActiva.DeudaPendienteTotal) > 0 && (
+                                      <div className="flex flex-col">
+                                          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">Deuda Pendiente</span>
+                                          <span className="text-base font-bold text-rose-600 leading-none mt-1">{fmt(Number(cuentaActiva.DeudaPendienteTotal), cuentaActiva.MonSimbolo)}</span>
+                                      </div>
+                                  )}
+                                  {cuentaActiva.DocumentosVencidos > 0 && (
+                                      <div className="flex items-center gap-1.5 bg-rose-50 text-rose-600 px-2.5 py-1 rounded-lg border border-rose-100">
+                                          <AlertTriangle size={14} />
+                                          <span className="text-xs font-bold">{cuentaActiva.DocumentosVencidos} Venc.</span>
+                                      </div>
+                                  )}
+                              </div>
+                          )}
+                      </div>
+                  )}
+
+                  {/* Controls: Tabs & Buttons */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex bg-[#f1f5f9] rounded-xl border border-slate-200 p-1 gap-1">
+                      <button onClick={() => setTabCuentas('UYU')} className={`relative px-4 py-2 text-xs font-black rounded-lg transition-colors uppercase tracking-widest ${tabCuentas === 'UYU' || tabCuentas === 'SALDOS' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}>
+                        UYU
+                        {cuentas.some(c => (c.CueTipo?.includes('UYU') || c.MonIdMoneda === 1) && (Number(c.CueSaldoActual) !== 0 || c.DocumentosVencidos > 0 || Number(c.DeudaPendienteTotal) > 0)) && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-500 shadow-sm border border-white animate-pulse"></span>}
+                      </button>
+                      <button onClick={() => setTabCuentas('USD')} className={`relative px-4 py-2 text-xs font-black rounded-lg transition-colors uppercase tracking-widest ${tabCuentas === 'USD' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}>
+                        USD
+                        {cuentas.some(c => (c.CueTipo?.includes('USD') || c.MonIdMoneda === 2) && (Number(c.CueSaldoActual) !== 0 || c.DocumentosVencidos > 0 || Number(c.DeudaPendienteTotal) > 0)) && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 shadow-sm border border-white animate-pulse"></span>}
+                      </button>
+                      <button onClick={() => setTabCuentas('RECURSOS')} className={`relative px-4 py-2 text-xs font-black rounded-lg transition-colors uppercase tracking-widest ${tabCuentas === 'RECURSOS' ? 'bg-white text-violet-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}>
+                        Recursos
+                        {cuentas.some(c => (c.ProIdProducto != null || !['USD','UYU','ARS','EUR','PYG','BRL','CORRIENTE','CREDITO','DEBITO','CAJA','DINERO_USD','DINERO_UYU'].includes(c.CueTipo?.toUpperCase())) && Number(c.CueSaldoActual) !== 0) && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-violet-500 shadow-sm border border-white animate-pulse"></span>}
+                      </button>
                     </div>
-                    <div className="text-center">
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wide">Deuda</p>
-                      <p className={`text-base font-black ${deudaTotal > 0 ? 'text-amber-600' : 'text-slate-500'}`}>{fmt(deudaTotal)}</p>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setModalEstado(true)}
+                        title="Imprimir Estado de Cuenta"
+                        disabled={cuentas.length === 0}
+                        className="p-2.5 bg-slate-50 hover:bg-slate-700 hover:text-white text-slate-600 rounded-lg transition-colors disabled:opacity-40 border border-slate-200">
+                        <Printer size={16} />
+                      </button>
+                      <button onClick={recargarCuentas} disabled={loadingCuentas} title="Actualizar"
+                        className="p-2.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-500 border border-transparent hover:border-slate-200">
+                        <RefreshCw size={16} className={loadingCuentas ? 'animate-spin' : ''} />
+                      </button>
                     </div>
-                    <div className="text-center">
-                      <p className="text-[10px] text-slate-500 uppercase tracking-wide">Vencidos</p>
-                      <p className={`text-base font-black ${docsVencidos > 0 ? 'text-red-600' : 'text-slate-500'}`}>{docsVencidos}</p>
-                    </div>
-                    <button
-                      onClick={() => setModalEstado(true)}
-                      disabled={cuentas.length === 0}
-                      className="flex items-center gap-1.5 text-xs px-3 py-2 bg-slate-50 hover:bg-slate-700 text-slate-800 rounded-lg font-semibold transition-colors disabled:opacity-40">
-                      <FileText size={13} /> Estado de Cuenta
-                    </button>
-                    <button onClick={recargarCuentas} disabled={loadingCuentas}
-                      className="p-2 hover:bg-slate-700/50 rounded-lg transition-colors text-slate-500">
-                      <RefreshCw size={15} className={loadingCuentas ? 'animate-spin' : ''} />
-                    </button>
                   </div>
+                </div>
+
+                {/* FILTRO GLOBAL DE FECHAS */}
+                <div className="px-5 py-2.5 bg-slate-50 border-t border-slate-100 flex flex-wrap items-center justify-between rounded-b-2xl gap-3">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-widest">
+                        <Calendar size={14} /> Filtro de período
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <input type="date" value={globalDesde} onChange={e => setGlobalDesde(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-medium text-slate-700 bg-white shadow-sm" />
+                        <span className="text-slate-400 text-xs font-black">→</span>
+                        <input type="date" value={globalHasta} onChange={e => setGlobalHasta(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500/30 font-medium text-slate-700 bg-white shadow-sm" />
+                        <button onClick={() => setGlobalFiltroTrigger(t => t + 1)} className="text-xs font-bold uppercase tracking-widest px-4 py-1.5 bg-indigo-600 text-white hover:bg-indigo-700 rounded-lg transition-colors shadow-sm">Aplicar</button>
+                    </div>
                 </div>
               </div>
 
@@ -1710,40 +2453,69 @@ export default function ContabilidadCuentasView() {
                   <p className="text-sm text-slate-400">Sin cuentas contables registradas</p>
                 </div>
               ) : (
-                cuentas.map(cuenta => (
-                  <div key={cuenta.CueIdCuenta}>
-                    <CuentaCard
-                      cuenta={cuenta}
-                      CliIdCliente={clienteSel.CliIdCliente}
-                      panelActivo={paneles[cuenta.CueIdCuenta]}
-                      onToggle={(tipo) => togglePanel(cuenta.CueIdCuenta, tipo)}
-                      onCicloChanged={recargarCuentas}
-                      onRegistrarPago={setModalPago}
-                    />
-                    {paneles[cuenta.CueIdCuenta] === 'mov' && (
-                      <MovimientosPanel CueIdCuenta={cuenta.CueIdCuenta} simbolo={cuenta.MonSimbolo || '$'} onClose={() => togglePanel(cuenta.CueIdCuenta, 'mov')} />
-                    )}
-                    {paneles[cuenta.CueIdCuenta] === 'deuda' && (
-                      <DeudasPanel CueIdCuenta={cuenta.CueIdCuenta} simbolo={cuenta.MonSimbolo} onClose={() => togglePanel(cuenta.CueIdCuenta, 'deuda')} />
-                    )}
-                    {paneles[cuenta.CueIdCuenta] === 'ciclo' && (
-                      <CiclosPanel
-                        cuenta={cuenta}
+                <>
+                  {tabCuentas !== 'RECURSOS' && cuentaActiva && (
+                    <div className="animate-in fade-in duration-300">
+                      {clienteSel.TClIdTipoCliente === 2 && (
+                        <div className="mb-4">
+                          <CiclosPanel 
+                            cuenta={cuentaActiva} 
+                            CliIdCliente={clienteSel.CliIdCliente} 
+                            cliente={clienteSel}
+                            onClose={() => {}} 
+                            onCicloChanged={recargarCuentas} 
+                          />
+                        </div>
+                      )}
+                      <MovimientosPanel 
+                        CueIdCuenta={cuentaActiva.CueIdCuenta} 
+                        simbolo={cuentaActiva.MonSimbolo || '$'} 
+                        onClose={() => setClienteSel(null)} 
+                        cuenta={cuentaActiva} 
                         CliIdCliente={clienteSel.CliIdCliente}
-                        onClose={() => togglePanel(cuenta.CueIdCuenta, 'ciclo')}
-                        onCicloChanged={recargarCuentas}
+                        cliente={clienteSel}
+                        onRegistrarPago={setModalPago}
+                        desde={globalDesde}
+                        hasta={globalHasta}
+                        trigger={globalFiltroTrigger}
                       />
-                    )}
-                    {paneles[cuenta.CueIdCuenta] === 'planes' && (
-                      <PlanesPanel
-                        cuenta={cuenta}
-                        CliIdCliente={clienteSel.CliIdCliente}
-                        onClose={() => togglePanel(cuenta.CueIdCuenta, 'planes')}
-                        onChanged={recargarCuentas}
+                    </div>
+                  )}
+
+                  {tabCuentas === 'RECURSOS' && cuentas.filter(c => {
+                    const TIPOS_MONETARIOS = ['USD','UYU','ARS','EUR','PYG','BRL','CORRIENTE','CREDITO','DEBITO','CAJA','DINERO_USD','DINERO_UYU'];
+                    return c.ProIdProducto != null || !TIPOS_MONETARIOS.includes(c.CueTipo?.toUpperCase());
+                  }).map(cuenta => (
+                    <div key={cuenta.CueIdCuenta} className="animate-in fade-in duration-300">
+                      <CuentaCard
+                          cuenta={cuenta}
+                          CliIdCliente={clienteSel.CliIdCliente}
+                          panelActivo={paneles[cuenta.CueIdCuenta]}
+                          onToggle={(tipo) => togglePanel(cuenta.CueIdCuenta, tipo)}
+                          onCicloChanged={recargarCuentas}
+                          onRegistrarPago={setModalPago}
                       />
-                    )}
-                  </div>
-                ))
+                      {paneles[cuenta.CueIdCuenta] === 'planes' && (
+                        <PlanesPanel
+                          cuenta={cuenta}
+                          CliIdCliente={clienteSel.CliIdCliente}
+                          onClose={() => togglePanel(cuenta.CueIdCuenta, 'planes')}
+                          onChanged={recargarCuentas}
+                        />
+                      )}
+                    </div>
+                  ))}
+
+                  {tabCuentas !== 'RECURSOS' && !cuentaActiva && (
+                    <p className="text-center text-slate-400 text-sm py-8 bg-[#f1f5f9] rounded-xl border border-slate-200 border-dashed">No hay cuenta activa en esta moneda.</p>
+                  )}
+                  {tabCuentas === 'RECURSOS' && cuentas.filter(c => {
+                    const TIPOS_MONETARIOS = ['USD','UYU','ARS','EUR','PYG','BRL','CORRIENTE','CREDITO','DEBITO','CAJA','DINERO_USD','DINERO_UYU'];
+                    return c.ProIdProducto != null || !TIPOS_MONETARIOS.includes(c.CueTipo?.toUpperCase());
+                  }).length === 0 && (
+                    <p className="text-center text-slate-400 text-sm py-8 bg-[#f1f5f9] rounded-xl border border-slate-200 border-dashed">No hay planes ni recursos para este cliente.</p>
+                  )}
+                </>
               )}
             </>
           )}

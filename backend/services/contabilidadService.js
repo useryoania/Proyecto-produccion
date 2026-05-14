@@ -47,11 +47,11 @@ async function obtenerOCrearCuenta(CliIdCliente, CueTipo, opciones = {}) {
     UsuarioAlta    = 1,
   } = opciones;
 
-  // Buscar cuenta existente
+  // ── 1. Buscar cuenta existente o crear una nueva ──────────────────────
   const existe = await pool.request()
-    .input('CliIdCliente',  sql.Int,       CliIdCliente)
+    .input('CliIdCliente',  sql.Int,         CliIdCliente)
     .input('CueTipo',       sql.VarChar(20), CueTipo)
-    .input('ProIdProducto', sql.Int,       ProIdProducto)
+    .input('ProIdProducto', sql.Int,         ProIdProducto)
     .query(`
       SELECT CueIdCuenta
       FROM   dbo.CuentasCliente
@@ -64,35 +64,58 @@ async function obtenerOCrearCuenta(CliIdCliente, CueTipo, opciones = {}) {
         AND  CueActiva = 1
     `);
 
+  let cueIdFinal;
+
   if (existe.recordset.length > 0) {
-    return existe.recordset[0].CueIdCuenta;
+    cueIdFinal = existe.recordset[0].CueIdCuenta;
+    logger.info(`[CUENTA] Cuenta existente: CliId=${CliIdCliente} Tipo=${CueTipo} CueId=${cueIdFinal}`);
+  } else {
+    const creada = await pool.request()
+      .input('CliIdCliente',  sql.Int,         CliIdCliente)
+      .input('CueTipo',       sql.VarChar(20), CueTipo)
+      .input('ProIdProducto', sql.Int,         ProIdProducto)
+      .input('MonIdMoneda',   sql.Int,         MonIdMoneda)
+      .input('CPaIdCondicion',sql.Int,         CPaIdCondicion)
+      .input('UsuarioAlta',   sql.Int,         UsuarioAlta)
+      .query(`
+        INSERT INTO dbo.CuentasCliente
+          (CliIdCliente, CueTipo, ProIdProducto, MonIdMoneda,
+           CPaIdCondicion, CueSaldoActual, CueLimiteCredito,
+           CuePuedeNegativo, CueCicloActivo, CueActiva,
+           CueFechaAlta, CueUsuarioAlta)
+        OUTPUT INSERTED.CueIdCuenta
+        VALUES
+          (@CliIdCliente, @CueTipo, @ProIdProducto, @MonIdMoneda,
+           @CPaIdCondicion, 0, 0,
+           0, 0, 1,
+           GETDATE(), @UsuarioAlta)
+      `);
+
+    cueIdFinal = creada.recordset[0].CueIdCuenta;
+    logger.info(`[CUENTA] Cuenta creada: CliId=${CliIdCliente} Tipo=${CueTipo} CueId=${cueIdFinal}`);
   }
 
-  // Crear cuenta nueva
-  const creada = await pool.request()
-    .input('CliIdCliente',  sql.Int,       CliIdCliente)
-    .input('CueTipo',       sql.VarChar(20), CueTipo)
-    .input('ProIdProducto', sql.Int,       ProIdProducto)
-    .input('MonIdMoneda',   sql.Int,       MonIdMoneda)
-    .input('CPaIdCondicion',sql.Int,       CPaIdCondicion)
-    .input('UsuarioAlta',   sql.Int,       UsuarioAlta)
-    .query(`
-      INSERT INTO dbo.CuentasCliente
-        (CliIdCliente, CueTipo, ProIdProducto, MonIdMoneda,
-         CPaIdCondicion, CueSaldoActual, CueLimiteCredito,
-         CuePuedeNegativo, CueCicloActivo, CueActiva,
-         CueFechaAlta, CueUsuarioAlta)
-      OUTPUT INSERTED.CueIdCuenta
-      VALUES
-        (@CliIdCliente, @CueTipo, @ProIdProducto, @MonIdMoneda,
-         @CPaIdCondicion, 0, 0,
-         0, 0, 1,
-         GETDATE(), @UsuarioAlta)
-    `);
+  // ── 2. Verificar ciclo activo — aplica a cuenta nueva Y existente ─────
+  // Solo aplica a cuentas monetarias (no MTS/KG que son de recursos)
+  if (CueTipo !== 'MTS' && CueTipo !== 'KG') {
+    const cliRes = await pool.request()
+      .input('CliIdCliente', sql.Int, CliIdCliente)
+      .query('SELECT TClIdTipoCliente FROM dbo.Clientes WITH(NOLOCK) WHERE CliIdCliente = @CliIdCliente');
 
-  const nuevaId = creada.recordset[0].CueIdCuenta;
-  logger.info(`[CONTABILIDAD] Cuenta creada: CliIdCliente=${CliIdCliente}, Tipo=${CueTipo}, CueIdCuenta=${nuevaId}`);
-  return nuevaId;
+    const tipoCliente = cliRes.recordset[0]?.TClIdTipoCliente;
+
+    if (tipoCliente === 2) { // 2 = Semanal
+      const cicloExistente = await obtenerCicloActivo(cueIdFinal);
+      if (!cicloExistente) {
+        logger.info(`[CICLO] Cliente ${CliIdCliente} es SEMANAL sin ciclo activo → abriendo ciclo para CueId=${cueIdFinal}`);
+        await abrirCicloPorCuenta({ CueIdCuenta: cueIdFinal, CliIdCliente, UsuarioAlta });
+      } else {
+        logger.info(`[CICLO] Cliente ${CliIdCliente} SEMANAL — ciclo activo encontrado: CicId=${cicloExistente.CicIdCiclo}`);
+      }
+    }
+  }
+
+  return cueIdFinal;
 }
 
 // ============================================================
@@ -128,7 +151,14 @@ async function registrarMovimiento(params) {
     DocIdDocumento   = null,
     MovRefExterna    = null,
     MovObservaciones = null,
+    CicIdCiclo       = null,
   } = params;
+
+  let resolvedCicloId = CicIdCiclo;
+  if (!resolvedCicloId) {
+    const activo = await obtenerCicloActivo(CueIdCuenta);
+    if (activo) resolvedCicloId = activo.CicIdCiclo;
+  }
 
   const result = await pool.request()
     .input('CueIdCuenta',       sql.Int,          CueIdCuenta)
@@ -142,6 +172,7 @@ async function registrarMovimiento(params) {
     .input('DocIdDocumento',    sql.Int,          DocIdDocumento)
     .input('MovRefExterna',     sql.VarChar(100), MovRefExterna)
     .input('MovObservaciones',  sql.NVarChar(500),MovObservaciones)
+    .input('CicIdCiclo',        sql.Int,          resolvedCicloId)
     .output('MovIdGenerado',    sql.Int)
     .output('SaldoResultante',  sql.Decimal(18,4))
     .execute('dbo.SP_RegistrarMovimiento');
@@ -203,41 +234,88 @@ async function imputarPago(params) {
  */
 async function crearDeudaDocumento(params) {
   const pool = await getPool();
-  const { CueIdCuenta, OrdIdOrden, Importe, ImportePendiente = Importe } = params;
+  let { CueIdCuenta, OrdIdOrden = null, DocIdDocumento = null, Importe, ImportePendiente = Importe } = params;
 
-  const condRes = await pool.request()
+  // Auto-consumir Saldo a Favor existente en la cuenta para no crear deuda irreal
+  const ctaRes = await pool.request()
     .input('CueIdCuenta', sql.Int, CueIdCuenta)
     .query(`
-      SELECT ISNULL(cp.CPaDiasVencimiento, 0) AS DiasVencimiento
-      FROM   dbo.CuentasCliente cc
+      SELECT 
+        ISNULL(cc.CueSaldoActual, 0) AS SaldoActual,
+        ISNULL(cp.CPaDiasVencimiento, 0) AS DiasVencimiento
+      FROM   dbo.CuentasCliente cc WITH(UPDLOCK)
       JOIN   dbo.CondicionesPago cp ON cp.CPaIdCondicion = cc.CPaIdCondicion
       WHERE  cc.CueIdCuenta = @CueIdCuenta
     `);
 
-  const diasVenc = condRes.recordset[0]?.DiasVencimiento ?? 0;
+  const diasVenc = ctaRes.recordset[0]?.DiasVencimiento ?? 0;
+  const saldoActual = ctaRes.recordset[0]?.SaldoActual ?? 0;
+  const monId = ctaRes.recordset[0]?.MonIdMoneda ?? 1;
+
+  // 1. La deuda SIEMPRE nace en su importe real, como lo solicitó el usuario.
   const estado = ImportePendiente <= 0.01 ? 'PAGADO' : 'PENDIENTE';
 
-  const insertRes = await pool.request()
-    .input('CueIdCuenta',         sql.Int,          CueIdCuenta)
-    .input('OrdIdOrden',          sql.Int,          OrdIdOrden)
-    .input('DDeImporteOriginal',  sql.Decimal(18,4), Importe)
-    .input('DDeImportePendiente', sql.Decimal(18,4), Math.max(0, ImportePendiente))
-    .input('DDeFechaEmision',     sql.Date,         new Date())
-    .input('DiasVencimiento',     sql.Int,          diasVenc)
-    .input('Estado',              sql.VarChar(20),  estado)
-    .query(`
-      INSERT INTO dbo.DeudaDocumento
-        (CueIdCuenta, OrdIdOrden, DDeImporteOriginal, DDeImportePendiente,
-         DDeFechaEmision, DDeFechaVencimiento, DDeEstado)
-      OUTPUT INSERTED.DDeIdDocumento
-      VALUES
-        (@CueIdCuenta, @OrdIdOrden, @DDeImporteOriginal, @DDeImportePendiente,
-         @DDeFechaEmision,
-         DATEADD(DAY, @DiasVencimiento, @DDeFechaEmision),
-         @Estado)
-    `);
+  if (ImportePendiente > 0.01 || Importe > 0) {
+      // Nace con ImportePendiente completo
+      const insertRes = await pool.request()
+        .input('CueIdCuenta',         sql.Int,          CueIdCuenta)
+        .input('OrdIdOrden',          sql.Int,          OrdIdOrden)
+        .input('DocIdDocumento',      sql.Int,          DocIdDocumento)
+        .input('DDeImporteOriginal',  sql.Decimal(18,4), Importe)
+        .input('DDeImportePendiente', sql.Decimal(18,4), Math.max(0, ImportePendiente))
+        .input('DDeFechaEmision',     sql.Date,         new Date())
+        .input('DiasVencimiento',     sql.Int,          diasVenc)
+        .input('Estado',              sql.VarChar(20),  estado)
+        .query(`
+          INSERT INTO dbo.DeudaDocumento
+            (CueIdCuenta, OrdIdOrden, DocIdDocumento, DDeImporteOriginal, DDeImportePendiente,
+             DDeFechaEmision, DDeFechaVencimiento, DDeEstado)
+          OUTPUT INSERTED.DDeIdDocumento
+          VALUES
+            (@CueIdCuenta, @OrdIdOrden, @DocIdDocumento, @DDeImporteOriginal, @DDeImportePendiente,
+             @DDeFechaEmision,
+             DATEADD(DAY, @DiasVencimiento, @DDeFechaEmision),
+             @Estado)
+        `);
+      
+      const newDDeId = insertRes.recordset[0].DDeIdDocumento;
 
-  return insertRes.recordset[0].DDeIdDocumento;
+      // 2. Si el cliente tiene un Pago Anticipado (Saldo a Favor) flotante en la cuenta, lo consumimos AHORA explícitamente
+      if (saldoActual > 0 && ImportePendiente > 0.01) {
+          const montoAAplicar = Math.min(saldoActual, ImportePendiente);
+          
+          // Crear un pago sintético (recibo interno) que represente la aplicación del anticipo
+          const pagRes = await pool.request()
+            .input('Metodo', sql.Int, 1) // Efectivo genérico
+            .input('Moneda', sql.Int, monId)
+            .input('Monto', sql.Decimal(18,4), montoAAplicar)
+            .query(`
+              INSERT INTO dbo.Pagos
+                (MPaIdMetodoPago, PagIdMonedaPago, PagMontoPago, PagFechaPago, 
+                 PagUsuarioAlta, PagCotizacion, PagMontoConvertido, PagTipoMovimiento)
+              OUTPUT INSERTED.PagIdPago
+              VALUES
+                (@Metodo, @Moneda, @Monto, GETDATE(), 
+                 1, 1, @Monto, 'ANTICIPO_APLICADO')
+            `);
+          
+          const pagId = pagRes.recordset[0].PagIdPago;
+
+          // Imputar el pago sintético a la deuda usando PEPS
+          await pool.request()
+            .input('PagIdPago',       sql.Int,          pagId)
+            .input('MontoDisponible', sql.Decimal(18,4), montoAAplicar)
+            .input('CueIdCuenta',     sql.Int,          CueIdCuenta)
+            .input('UsuarioAlta',     sql.Int,          1)
+            .output('MontoExcedente', sql.Decimal(18,4))
+            .execute('dbo.SP_ImputarPagoPEPS');
+          
+          logger.info(`[CONTABILIDAD] Anticipo de ${montoAAplicar} consumido explícitamente en DeudaDocumento #${newDDeId}`);
+      }
+
+      return newDDeId;
+  }
+  return null;
 }
 
 // ============================================================
@@ -261,6 +339,8 @@ async function hookOrdenCreada(params) {
   const { OrdIdOrden, CliIdCliente, Importe, MonIdMoneda, CodigoOrden, NombreTrabajo, UsuarioAlta, ProIdProducto } = params;
   const contabilidadCore = require('./contabilidadCore'); // Import CORE for Asientos
 
+  logger.info(`[HOOK:ORDEN] Iniciando hookOrdenCreada — Orden=${CodigoOrden} CliId=${CliIdCliente} ProIdProducto=${ProIdProducto} Importe=${Importe} MonIdMoneda=${MonIdMoneda}`);
+
   try {
     // ── Si el cliente tiene plan de recursos para este artículo → no cobrar en dinero
     if (ProIdProducto) {
@@ -269,7 +349,7 @@ async function hookOrdenCreada(params) {
         .input('CliIdCliente',  sql.Int, CliIdCliente)
         .input('ProIdProducto', sql.Int, ProIdProducto)
         .query(`
-          SELECT TOP 1 pm.PlaIdPlan
+          SELECT TOP 1 pm.PlaIdPlan, pm.PlaCantidadTotal, pm.PlaCantidadUsada, pm.PlaActivo
           FROM   dbo.PlanesMetros  pm WITH(NOLOCK)
           JOIN   dbo.CuentasCliente cc WITH(NOLOCK)
                  ON cc.CueIdCuenta = pm.CueIdCuenta
@@ -279,10 +359,13 @@ async function hookOrdenCreada(params) {
             AND  (pm.PlaFechaVencimiento IS NULL
                OR pm.PlaFechaVencimiento >= CAST(GETDATE() AS DATE))
         `);
+      logger.info(`[HOOK:ORDEN] Plan check para CliId=${CliIdCliente} ProId=${ProIdProducto}: encontrados=${planCheck.recordset.length} planes. Detalle=${JSON.stringify(planCheck.recordset[0] || null)}`);
       if (planCheck.recordset.length > 0) {
-        logger.info(`[CONTABILIDAD] Orden ${CodigoOrden} cubierta por plan de recursos #${planCheck.recordset[0].PlaIdPlan} — sin débito monetario.`);
+        logger.info(`[HOOK:ORDEN] Orden ${CodigoOrden} cubierta por plan #${planCheck.recordset[0].PlaIdPlan} — SALTANDO débito monetario (hookEntregaMetros descuenta los metros).`);
         return; // el hookEntregaMetros se encarga del descuento
       }
+    } else {
+      logger.info(`[HOOK:ORDEN] Orden ${CodigoOrden} sin ProIdProducto — NO se verifica plan. Se generará deuda monetaria directamente.`);
     }
 
     const CueTipo = MonIdMoneda === 2 ? 'DINERO_USD' : 'DINERO_UYU';
@@ -293,6 +376,9 @@ async function hookOrdenCreada(params) {
       UsuarioAlta,
     });
 
+    // Buscar si hay ciclo activo para asignarlo al movimiento
+    const cicloActivo = await obtenerCicloActivo(CueIdCuenta);
+
     // 2. Registrar débito en libro mayor
     const { SaldoResultante } = await registrarMovimiento({
       CueIdCuenta,
@@ -302,6 +388,7 @@ async function hookOrdenCreada(params) {
       MovImporte:   -Math.abs(Importe),
       MovUsuarioAlta: UsuarioAlta,
       OrdIdOrden,
+      CicIdCiclo: cicloActivo ? cicloActivo.CicIdCiclo : null,
     });
 
     let deudaAislada = Math.min(Math.abs(Importe), Math.max(0, -SaldoResultante));
@@ -360,7 +447,6 @@ async function hookOrdenCreada(params) {
     }
 
     // 3. Si la cuenta tiene ciclo activo → acumular en él (cliente semanal)
-    const cicloActivo = await obtenerCicloActivo(CueIdCuenta);
     if (cicloActivo) {
       await acumularEnCiclo(cicloActivo.CicIdCiclo, 'ORDEN', Math.abs(Importe));
       logger.info(`[CICLO] Orden ${CodigoOrden} acumulada en CicIdCiclo=${cicloActivo.CicIdCiclo}`);
@@ -481,24 +567,29 @@ async function hookPagoRegistrado(params) {
       UsuarioAlta,
     });
 
-    // 1. Acreditar el pago en libro mayor
-    await registrarMovimiento({
-      CueIdCuenta,
-      MovTipo:      'PAGO',
-      MovConcepto:  `Pago recibido (PagIdPago: ${PagIdPago})`,
-      MovImporte:   Math.abs(MontoPago),
-      MovUsuarioAlta: UsuarioAlta,
-      PagIdPago,
-    });
+    let conceptoText = `Pago recibido (PagIdPago: ${PagIdPago})`;
+    try {
+      const { getPool, sql } = require('../config/db');
+      const pool = await getPool();
+      const detRes = await pool.request()
+        .input('pid', sql.Int, PagIdPago)
+        .query(`SELECT OrdCodigoOrden, OrdNombreTrabajo FROM OrdenesDeposito WITH(NOLOCK) WHERE PagIdPago = @pid`);
+      if (detRes.recordset.length > 0) {
+        const parts = detRes.recordset.map(r => {
+          let str = r.OrdCodigoOrden;
+          if (r.OrdNombreTrabajo && r.OrdNombreTrabajo.trim() !== 'S/N' && r.OrdNombreTrabajo.trim() !== '') str += ` (${r.OrdNombreTrabajo})`;
+          return str;
+        });
+        conceptoText = `Pago: ${parts.join(', ')}`;
+        if (conceptoText.length > 250) conceptoText = conceptoText.substring(0, 247) + '...';
+      }
+    } catch (e) { /* ignore */ }
 
-    // 2. Si la cuenta tiene ciclo activo → acumular el pago en él
+    // Buscar ciclo activo
     const cicloActivo = await obtenerCicloActivo(CueIdCuenta);
-    if (cicloActivo) {
-      await acumularEnCiclo(cicloActivo.CicIdCiclo, 'PAGO', Math.abs(MontoPago));
-      logger.info(`[CICLO] Pago ${PagIdPago} acumulado en CicIdCiclo=${cicloActivo.CicIdCiclo}`);
-    }
 
-    // 3. Imputar el pago a deudas pendientes PEPS (aplica a deudas de ciclos cerrados)
+    // 1. Imputar PRIMERO a deudas pendientes (PEPS)
+    // Así sabemos cuánto cubre deudas previas vs. cuánto es excedente real del ciclo
     const { MontoExcedente } = await imputarPago({
       PagIdPago,
       MontoDisponible: Math.abs(MontoPago),
@@ -506,27 +597,38 @@ async function hookPagoRegistrado(params) {
       UsuarioAlta,
     });
 
-    // 4. Si sobra → El saldo ya quedó positivamente grabado en el paso 1 (PAGO). No se debe sumar de nuevo.
-    /*
-    if (MontoExcedente > 0) {
-      await registrarMovimiento({
-        CueIdCuenta,
-        MovTipo:      'NOTA_CREDITO',
-        MovConcepto:  `Crédito a favor por pago en exceso (PagIdPago: ${PagIdPago})`,
-        MovImporte:   MontoExcedente,
-        MovUsuarioAlta: UsuarioAlta,
-        PagIdPago,
-        MovObservaciones: `Excedente: ${MontoExcedente}`,
-      });
-      logger.info(`[CONTABILIDAD] Pago ${PagIdPago} — excedente $${MontoExcedente} como crédito a favor.`);
+    const montoCubreDeudaPrevias = Math.abs(MontoPago) - MontoExcedente;
+    const hayExcedente = MontoExcedente > 0.01;
+
+    // 2. Registrar en libro mayor
+    // CicIdCiclo: solo si hay excedente genuino para el ciclo actual.
+    // Si el pago íntegramente cancela deudas anteriores → no se asocia al ciclo
+    // (no contamina el modal de cierre ni los totales del ciclo activo)
+    await registrarMovimiento({
+      CueIdCuenta,
+      MovTipo:      'PAGO',
+      MovConcepto:  conceptoText,
+      MovImporte:   Math.abs(MontoPago),
+      MovUsuarioAlta: UsuarioAlta,
+      PagIdPago,
+      CicIdCiclo: (cicloActivo && hayExcedente) ? cicloActivo.CicIdCiclo : null,
+    });
+
+    // 3. Acumular en el ciclo activo SOLO el excedente real
+    if (cicloActivo && hayExcedente) {
+      await acumularEnCiclo(cicloActivo.CicIdCiclo, 'PAGO', MontoExcedente);
+      logger.info(`[CICLO] Pago ${PagIdPago}: $${Math.abs(MontoPago)} recibido. Cubre deudas previas: $${montoCubreDeudaPrevias.toFixed(2)}. Excedente acumulado en CicId=${cicloActivo.CicIdCiclo}: $${MontoExcedente}`);
+    } else if (cicloActivo) {
+      logger.info(`[CICLO] Pago ${PagIdPago}: $${Math.abs(MontoPago)} aplicado íntegramente a deudas de ciclos anteriores. El ciclo activo ${cicloActivo.CicIdCiclo} NO se ve afectado.`);
     }
-    */
 
     logger.info(`[CONTABILIDAD] Pago ${PagIdPago} imputado. Excedente en cuenta (Saldo a favor): ${MontoExcedente}`);
   } catch (err) {
     logger.warn(`[CONTABILIDAD] hookPagoRegistrado falló (no afecta el pago): ${err.message}`);
   }
 }
+
+
 
 /**
  * hookEntregaMetros
@@ -545,6 +647,8 @@ async function hookPagoRegistrado(params) {
 async function hookEntregaMetros(params) {
   const { OrdIdOrden, CliIdCliente, ProIdProducto, Cantidad, CodigoOrden, UsuarioAlta, NombreTrabajo } = params;
 
+  logger.info(`[HOOK:METROS] Iniciando hookEntregaMetros — Orden=${CodigoOrden} CliId=${CliIdCliente} ProId=${ProIdProducto} Cantidad=${Cantidad} Importe=${params.Importe}`);
+
   try {
     const pool = await getPool();
 
@@ -553,7 +657,7 @@ async function hookEntregaMetros(params) {
       .input('CliIdCliente',  sql.Int, CliIdCliente)
       .input('ProIdProducto', sql.Int, ProIdProducto)
       .query(`
-        SELECT CueIdCuenta
+        SELECT CueIdCuenta, CueTipo, CueSaldoActual
         FROM   dbo.CuentasCliente
         WHERE  CliIdCliente  = @CliIdCliente
           AND  ProIdProducto = @ProIdProducto
@@ -561,8 +665,10 @@ async function hookEntregaMetros(params) {
           AND  CueActiva = 1
       `);
 
+    logger.info(`[HOOK:METROS] Cuentas de recursos encontradas para CliId=${CliIdCliente} ProId=${ProIdProducto}: ${cuentaRes.recordset.length}. Detalle=${JSON.stringify(cuentaRes.recordset)}`);
+
     if (cuentaRes.recordset.length === 0) {
-      // No tiene cuenta de metros para este artículo — no es error
+      logger.warn(`[HOOK:METROS] ⚠️ Sin cuenta de recursos para CliId=${CliIdCliente} ProId=${ProIdProducto}. No se descuentan metros.`);
       return;
     }
 
@@ -573,7 +679,7 @@ async function hookEntregaMetros(params) {
       .input('CueIdCuenta',   sql.Int, CueIdCuenta)
       .input('ProIdProducto', sql.Int, ProIdProducto)
       .query(`
-        SELECT PlaIdPlan, PlaCantidadTotal, PlaCantidadUsada, PlaPrecioUnitario, MonIdMoneda
+        SELECT PlaIdPlan, PlaCantidadTotal, PlaCantidadUsada, PlaPrecioUnitario, MonIdMoneda, PlaActivo, PlaFechaVencimiento
         FROM   dbo.PlanesMetros WITH (UPDLOCK, ROWLOCK)
         WHERE  CueIdCuenta   = @CueIdCuenta
           AND  ProIdProducto = @ProIdProducto
@@ -582,8 +688,10 @@ async function hookEntregaMetros(params) {
         ORDER  BY PlaFechaAlta ASC
       `);
 
+    logger.info(`[HOOK:METROS] Planes activos para CueId=${CueIdCuenta} ProId=${ProIdProducto}: ${planRes.recordset.length}. Detalle=${JSON.stringify(planRes.recordset)}`);
+
     if (planRes.recordset.length === 0) {
-      logger.warn(`[CONTABILIDAD] hookEntregaMetros: sin plan activo para CliId=${CliIdCliente} ProId=${ProIdProducto}`);
+      logger.warn(`[HOOK:METROS] ⚠️ Sin plan activo para CliId=${CliIdCliente} ProId=${ProIdProducto} — Generando deuda monetaria por ${params.Importe}`);
       // Llama a generar deuda por el 100%
       if (params.Importe > 0) {
         await hookOrdenCreada({
@@ -762,7 +870,7 @@ async function getSaldoCliente(CliIdCliente) {
  * @param {Date?}   FechaDesde
  * @param {Date?}   FechaHasta
  * @param {number?} Top         Límite de registros (default: 100)
- * @returns {Promise<Array>}
+ * @returns {Promise<{recordset: Array, saldoArrastre: number}>}
  */
 async function getMovimientos(CueIdCuenta, FechaDesde = null, FechaHasta = null, Top = 100) {
   const pool = await getPool();
@@ -781,11 +889,65 @@ async function getMovimientos(CueIdCuenta, FechaDesde = null, FechaHasta = null,
     filtroFecha += ' AND CAST(m.MovFecha AS DATE) <= @FechaHasta';
   }
 
+  // ── Saldo de arrastre ────────────────────────────────────────────────────
+  // Si hay FechaDesde, calculamos el saldo acumulado de todos los movimientos
+  // anteriores a esa fecha (NO anulados). Este es el "Saldo Inicial del período".
+  // Si no hay filtro de fecha, el arrastre es 0 (historial completo desde el origen).
+  let saldoArrastre = 0;
+  if (FechaDesde) {
+    const arrastreReq = pool.request()
+      .input('CueIdCuentaA', sql.Int, CueIdCuenta)
+      .input('FechaDesdeA', sql.Date, FechaDesde);
+
+    const arrastreRes = await arrastreReq.query(`
+      SELECT ISNULL(SUM(MovImporte), 0) AS SaldoArrastre
+      FROM dbo.MovimientosCuenta WITH(NOLOCK)
+      WHERE CueIdCuenta = @CueIdCuentaA
+        AND CAST(MovFecha AS DATE) < @FechaDesdeA
+        AND MovAnulado = 0
+    `);
+    saldoArrastre = Number(arrastreRes.recordset[0]?.SaldoArrastre ?? 0);
+  }
+
   const result = await request.query(`
     SELECT TOP (@Top)
       m.MovIdMovimiento,
       m.MovTipo,
-      m.MovConcepto,
+      CASE 
+        WHEN m.MovTipo = 'PAGO' AND m.PagIdPago IS NOT NULL THEN
+          COALESCE(
+            (SELECT 'Pago (' + ISNULL(mp.MPaDescripcionMetodo, 'Varios') + '): ' + STRING_AGG(CAST(
+                 od.OrdCodigoOrden + 
+                 CASE WHEN od.OrdNombreTrabajo IS NOT NULL AND od.OrdNombreTrabajo != 'S/N' AND LEN(RTRIM(od.OrdNombreTrabajo)) > 0 
+                      THEN ' (' + RTRIM(od.OrdNombreTrabajo) + ')' 
+                      ELSE '' 
+                 END AS VARCHAR(MAX)), ', ')
+             FROM dbo.Pagos p WITH(NOLOCK)
+             LEFT JOIN dbo.MetodosPagos mp WITH(NOLOCK) ON p.MPaIdMetodoPago = mp.MPaIdMetodoPago
+             JOIN dbo.TransaccionDetalle td WITH(NOLOCK) ON td.TcaIdTransaccion = p.PagTcaIdTransaccion
+             JOIN dbo.OrdenesRetiro ordRet WITH(NOLOCK) ON ordRet.OReIdOrdenRetiro = td.TdeReferenciaId AND td.TdeTipoReferencia = 'ORDEN_RETIRO'
+             JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON od.OReIdOrdenRetiro = ordRet.OReIdOrdenRetiro
+             WHERE p.PagIdPago = m.PagIdPago
+             GROUP BY mp.MPaDescripcionMetodo),
+            (SELECT 'Pago (' + ISNULL(mp.MPaDescripcionMetodo, 'Varios') + '): ' + STRING_AGG(CAST(
+                 od.OrdCodigoOrden + 
+                 CASE WHEN od.OrdNombreTrabajo IS NOT NULL AND od.OrdNombreTrabajo != 'S/N' AND LEN(RTRIM(od.OrdNombreTrabajo)) > 0 
+                      THEN ' (' + RTRIM(od.OrdNombreTrabajo) + ')' 
+                      ELSE '' 
+                 END AS VARCHAR(MAX)), ', ')
+             FROM dbo.Pagos p WITH(NOLOCK)
+             LEFT JOIN dbo.MetodosPagos mp WITH(NOLOCK) ON p.MPaIdMetodoPago = mp.MPaIdMetodoPago
+             JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON od.PagIdPago = m.PagIdPago
+             WHERE p.PagIdPago = m.PagIdPago
+             GROUP BY mp.MPaDescripcionMetodo),
+            (SELECT 'Pago (' + ISNULL(mp.MPaDescripcionMetodo, 'Varios') + ')' 
+             FROM dbo.Pagos p WITH(NOLOCK)
+             LEFT JOIN dbo.MetodosPagos mp WITH(NOLOCK) ON p.MPaIdMetodoPago = mp.MPaIdMetodoPago
+             WHERE p.PagIdPago = m.PagIdPago),
+            m.MovConcepto
+          )
+        ELSE m.MovConcepto
+      END AS MovConcepto,
       m.MovImporte,
       m.MovSaldoPosterior,
       m.MovFecha,
@@ -794,14 +956,102 @@ async function getMovimientos(CueIdCuenta, FechaDesde = null, FechaHasta = null,
       m.OReIdOrdenRetiro,
       m.PagIdPago,
       m.MovRefExterna,
-      m.MovObservaciones
-    FROM dbo.MovimientosCuenta m
+      m.MovObservaciones,
+      m.CicIdCiclo,
+      COALESCE(dc.DocTipo, dcPago.DocTipo, tca.TcaTipoDocumento, '') AS DocTipo,
+      COALESCE(dc.DocSerie, dcPago.DocSerie, tca.TcaSerieDoc, '') AS DocSerie,
+      COALESCE(CAST(dc.DocNumero AS VARCHAR(50)), CAST(dcPago.DocNumero AS VARCHAR(50)), tca.TcaNumeroDoc, '') AS DocNumero,
+      COALESCE(dc.CfeEstado, dcPago.CfeEstado) AS CfeEstado,
+      COALESCE(dc.DocIdDocumento, dcPago.DocIdDocumento) AS DocIdDocumento,
+      COALESCE(dc.DocPagado, dcPago.DocPagado, 0) AS DocPagado,
+      COALESCE(dc.DocEstado, dcPago.DocEstado) AS DocEstado,
+      COALESCE(dc.DocTotal, dcPago.DocTotal) AS DocTotal,
+      COALESCE(dc.DocSubtotal, dcPago.DocSubtotal) AS DocSubtotal,
+      CAST(
+        CASE WHEN EXISTS (
+          SELECT 1 
+          FROM dbo.DeudaDocumento dd WITH(NOLOCK) 
+          WHERE (
+              (dd.OrdIdOrden = m.OrdIdOrden AND m.OrdIdOrden IS NOT NULL)
+              OR 
+              (dd.DocIdDocumento = m.DocIdDocumento AND m.DocIdDocumento IS NOT NULL)
+            )
+            AND dd.DDeImportePendiente > 0.01
+        ) THEN 1 ELSE 0 END AS BIT
+      ) AS EsPendientePago,
+      COALESCE(
+        (SELECT TOP 1 OrdCodigoOrden FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OrdIdOrden = m.OrdIdOrden),
+        (SELECT TOP 1 OrdCodigoOrden FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OReIdOrdenRetiro = m.OReIdOrdenRetiro),
+        m.MovRefExterna
+      ) AS CodigoOrdenStr
+    FROM dbo.MovimientosCuenta m WITH(NOLOCK)
+    LEFT JOIN dbo.Pagos p WITH(NOLOCK) ON p.PagIdPago = m.PagIdPago
+    LEFT JOIN dbo.TransaccionesCaja tca WITH(NOLOCK) ON tca.TcaIdTransaccion = p.PagTcaIdTransaccion
+    LEFT JOIN dbo.DocumentosContables dc WITH(NOLOCK) ON dc.DocIdDocumento = m.DocIdDocumento
+    LEFT JOIN dbo.DocumentosContables dcPago WITH(NOLOCK) ON dcPago.TcaIdTransaccion = p.PagTcaIdTransaccion
     WHERE m.CueIdCuenta = @CueIdCuenta
       ${filtroFecha}
     ORDER BY m.MovFecha DESC, m.MovIdMovimiento DESC
   `);
 
-  return result.recordset;
+  const records = result.recordset;
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ── INYECCIÓN DE LÓGICA CONTABLE VISUAL (ESTADO DE CUENTA) DESDE EL BACKEND ──
+  // ─────────────────────────────────────────────────────────────────────────────
+  // El frontend ya no necesita calcular saldos iniciales ni finales.
+  // Generamos una traza cronológica (ASC) desde el saldo de arrastre.
+  const reversed = [...records].reverse();
+  let runningSaldo = saldoArrastre;
+
+  for (const m of reversed) {
+    let isVisible = false;
+    let importeVirtual = 0;
+
+    if (m.MovTipo === 'CIERRE_CICLO') {
+      isVisible = true;
+      const realImporte = Number(m.MovImporte);
+      if (realImporte !== 0) {
+        importeVirtual = realImporte;
+      } else {
+        // En CIERRE_CICLO, la deuda real se generó en las ORDENes previas.
+        // Visualmente, agrupamos el total usando DocTotal (en negativo por ser cargo)
+        importeVirtual = -(Math.abs(Number(m.DocTotal || 0)));
+      }
+    } else if (['PAGO', 'VTA_CAJA', 'SALDO_INICIAL', 'SALDO_A_FAVOR', 'COBRO', 'ANTICIPO', 'AJUSTE', 'AJUSTE_POS', 'AJUSTE_NEG', 'PAGO_CRUZADO'].includes(m.MovTipo)) {
+      isVisible = true;
+      importeVirtual = Number(m.MovImporte);
+    } else if (['NOTA_CREDITO', 'REVERSO', 'DEVOLUCION'].includes(m.MovTipo)) {
+      isVisible = true;
+      importeVirtual = Math.abs(Number(m.MovImporte));
+    } else if (['ORDEN', 'ENTREGA'].includes(m.MovTipo)) {
+      isVisible = false;
+      importeVirtual = 0;
+    } else {
+      // Fallback genérico para tipos desconocidos que impacten el saldo
+      if (Number(m.MovImporte) !== 0) {
+          isVisible = true;
+          importeVirtual = Number(m.MovImporte);
+      }
+    }
+
+    if (isVisible) {
+      m.visualSaldoAntes = runningSaldo;
+      runningSaldo += importeVirtual;
+      m.visualSaldoDespues = runningSaldo;
+    } else {
+      m.visualSaldoAntes = runningSaldo;
+      m.visualSaldoDespues = runningSaldo;
+    }
+
+    m.visualIsVisible = isVisible;
+    m.visualImporte = importeVirtual;
+  }
+
+  // Restaurar el orden original DESC
+  const finalData = reversed.reverse();
+
+  return { data: finalData, saldoArrastre };
 }
 
 /**
@@ -829,7 +1079,32 @@ async function getDeudas(CueIdCuenta, SoloEstado = null) {
     SELECT
       d.DDeIdDocumento,
       d.OrdIdOrden,
-      od.OrdCodigoOrden AS CodigoOrden,
+      COALESCE(
+        od.OrdCodigoOrden, 
+        ordERP.CodigoOrden,
+        (SELECT TOP 1 ISNULL(od2.OrdCodigoOrden, td.TdeCodigoReferencia)
+         FROM dbo.TransaccionDetalle td WITH(NOLOCK)
+         JOIN dbo.DocumentosContables doc WITH(NOLOCK) ON doc.TcaIdTransaccion = td.TcaIdTransaccion
+         LEFT JOIN dbo.OrdenesRetiro ordRet WITH(NOLOCK) ON ordRet.OReIdOrdenRetiro = td.TdeReferenciaId AND td.TdeTipoReferencia = 'ORDEN_RETIRO'
+         LEFT JOIN dbo.OrdenesDeposito od2 WITH(NOLOCK) ON od2.OReIdOrdenRetiro = ordRet.OReIdOrdenRetiro
+         WHERE doc.DocIdDocumento = d.DocIdDocumento),
+        CASE WHEN docPrincipal.DocTipo IS NOT NULL THEN CONCAT(docPrincipal.DocTipo, ' ', docPrincipal.DocSerie, '-', docPrincipal.DocNumero) ELSE NULL END,
+        'VTA-DIR'
+      ) AS CodigoOrden,
+      COALESCE(
+        od.OrdNombreTrabajo, 
+        ordERP.DescripcionTrabajo,
+        (SELECT TOP 1 od2.OrdNombreTrabajo
+         FROM dbo.TransaccionDetalle td WITH(NOLOCK)
+         JOIN dbo.DocumentosContables doc WITH(NOLOCK) ON doc.TcaIdTransaccion = td.TcaIdTransaccion
+         LEFT JOIN dbo.OrdenesRetiro ordRet WITH(NOLOCK) ON ordRet.OReIdOrdenRetiro = td.TdeReferenciaId AND td.TdeTipoReferencia = 'ORDEN_RETIRO'
+         LEFT JOIN dbo.OrdenesDeposito od2 WITH(NOLOCK) ON od2.OReIdOrdenRetiro = ordRet.OReIdOrdenRetiro
+         WHERE doc.DocIdDocumento = d.DocIdDocumento
+         AND od2.OrdNombreTrabajo IS NOT NULL AND od2.OrdNombreTrabajo != 'S/N'
+        ),
+        docPrincipal.DocTipo,
+        'Venta Directa'
+      ) AS NombreTrabajo,
       d.DDeImporteOriginal,
       d.DDeImportePendiente,
       d.DDeFechaEmision,
@@ -838,8 +1113,10 @@ async function getDeudas(CueIdCuenta, SoloEstado = null) {
       d.DDeCuotaTotal,
       d.DDeEstado,
       DATEDIFF(DAY, d.DDeFechaVencimiento, GETDATE()) AS DiasVencido
-    FROM dbo.DeudaDocumento d
-    LEFT JOIN dbo.OrdenesDeposito od ON od.OrdIdOrden = d.OrdIdOrden
+    FROM dbo.DeudaDocumento d WITH(NOLOCK)
+    LEFT JOIN dbo.DocumentosContables docPrincipal WITH(NOLOCK) ON docPrincipal.DocIdDocumento = d.DocIdDocumento
+    LEFT JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = d.OrdIdOrden
+    LEFT JOIN dbo.Ordenes ordERP WITH(NOLOCK) ON ordERP.OrdenID = d.OrdIdOrden
     WHERE d.CueIdCuenta = @CueIdCuenta
       ${filtroEstado}
     ORDER BY d.DDeFechaVencimiento ASC
@@ -852,8 +1129,16 @@ async function getDeudas(CueIdCuenta, SoloEstado = null) {
  * getDeudasPorCliente
  * Devuelve todos los documentos de deuda pendientes de un cliente.
  */
-async function getDeudasPorCliente(CliIdCliente) {
+async function getDeudasPorCliente(CliIdCliente, modo = 'TODO') {
   const pool = await getPool();
+
+  let filtroCondicion = '';
+  if (modo === 'OFICIAL') {
+    filtroCondicion = 'AND d.DocIdDocumento IS NOT NULL';
+  } else if (modo === 'WIP') {
+    filtroCondicion = 'AND d.DocIdDocumento IS NULL AND d.OrdIdOrden IS NOT NULL';
+  }
+
   const result = await pool.request()
     .input('CliIdCliente', sql.Int, parseInt(CliIdCliente))
     .query(`
@@ -861,13 +1146,32 @@ async function getDeudasPorCliente(CliIdCliente) {
         d.DDeIdDocumento,
         d.OrdIdOrden,
         d.DocIdDocumento,
-        COALESCE(od.OrdCodigoOrden, 'VTA-DIR') AS CodigoOrden,
         COALESCE(
-          od.OrdNombreTrabajo, 
-          (SELECT TOP 1 TdeDescripcion 
-           FROM dbo.TransaccionDetalle td
-           JOIN dbo.DocumentosContables doc ON CAST(doc.DocNumero AS VARCHAR) = CAST(td.TcaIdTransaccion AS VARCHAR)
+          (SELECT doc.DocNumero FROM dbo.DocumentosContables doc WITH(NOLOCK) WHERE doc.DocIdDocumento = d.DocIdDocumento AND doc.DocTipo = 'FACTURA'),
+          od.OrdCodigoOrden, 
+          ordERP.CodigoOrden,
+          -- Buscar ordenes asociadas a la transacción del documento
+          (SELECT TOP 1 ISNULL(od2.OrdCodigoOrden, td.TdeCodigoReferencia)
+           FROM dbo.TransaccionDetalle td WITH(NOLOCK)
+           JOIN dbo.DocumentosContables doc WITH(NOLOCK) ON doc.TcaIdTransaccion = td.TcaIdTransaccion
+           LEFT JOIN dbo.OrdenesRetiro ordRet WITH(NOLOCK) ON ordRet.OReIdOrdenRetiro = td.TdeReferenciaId AND td.TdeTipoReferencia = 'ORDEN_RETIRO'
+           LEFT JOIN dbo.OrdenesDeposito od2 WITH(NOLOCK) ON od2.OReIdOrdenRetiro = ordRet.OReIdOrdenRetiro
            WHERE doc.DocIdDocumento = d.DocIdDocumento),
+          'VTA-DIR'
+        ) AS CodigoOrden,
+        COALESCE(
+          (SELECT 'Ciclo Semanal ' + FORMAT(doc.DocFechaDesde, 'dd/MM/yyyy HH:mm') + ' al ' + FORMAT(doc.DocFechaHasta, 'dd/MM/yyyy HH:mm') FROM dbo.DocumentosContables doc WITH(NOLOCK) WHERE doc.DocIdDocumento = d.DocIdDocumento AND doc.DocTipo = 'FACTURA'),
+          od.OrdNombreTrabajo, 
+          ordERP.DescripcionTrabajo,
+          -- Buscar nombre de trabajo asociado a la transacción del documento
+          (SELECT TOP 1 od2.OrdNombreTrabajo
+           FROM dbo.TransaccionDetalle td WITH(NOLOCK)
+           JOIN dbo.DocumentosContables doc WITH(NOLOCK) ON doc.TcaIdTransaccion = td.TcaIdTransaccion
+           LEFT JOIN dbo.OrdenesRetiro ordRet WITH(NOLOCK) ON ordRet.OReIdOrdenRetiro = td.TdeReferenciaId AND td.TdeTipoReferencia = 'ORDEN_RETIRO'
+           LEFT JOIN dbo.OrdenesDeposito od2 WITH(NOLOCK) ON od2.OReIdOrdenRetiro = ordRet.OReIdOrdenRetiro
+           WHERE doc.DocIdDocumento = d.DocIdDocumento
+           AND od2.OrdNombreTrabajo IS NOT NULL AND od2.OrdNombreTrabajo != 'S/N'
+          ),
           'Venta Directa'
         ) AS NombreTrabajo,
         d.DDeImporteOriginal,
@@ -877,18 +1181,36 @@ async function getDeudasPorCliente(CliIdCliente) {
         d.DDeEstado,
         cc.CueTipo,
         ISNULL(mon.MonSimbolo, '$U') AS MonSimbolo,
-        DATEDIFF(DAY, d.DDeFechaVencimiento, GETDATE()) AS DiasVencido
+        DATEDIFF(DAY, d.DDeFechaVencimiento, GETDATE()) AS DiasVencido,
+        (SELECT c.CicSaldoFacturar FROM dbo.DocumentosContables dc WITH(NOLOCK) JOIN dbo.CiclosCredito c WITH(NOLOCK) ON c.CicIdCiclo = dc.CicIdCiclo WHERE dc.DocIdDocumento = d.DocIdDocumento AND dc.DocTipo = 'FACTURA') AS CicSaldoFacturar,
+        (SELECT c.CicTotalOrdenes FROM dbo.DocumentosContables dc WITH(NOLOCK) JOIN dbo.CiclosCredito c WITH(NOLOCK) ON c.CicIdCiclo = dc.CicIdCiclo WHERE dc.DocIdDocumento = d.DocIdDocumento AND dc.DocTipo = 'FACTURA') AS CicTotalOrdenes,
+        (SELECT c.CicTotalPagos FROM dbo.DocumentosContables dc WITH(NOLOCK) JOIN dbo.CiclosCredito c WITH(NOLOCK) ON c.CicIdCiclo = dc.CicIdCiclo WHERE dc.DocIdDocumento = d.DocIdDocumento AND dc.DocTipo = 'FACTURA') AS CicTotalPagos,
+        (SELECT 
+            m.OrdIdOrden,
+            ISNULL(od.OrdCodigoOrden, erp.CodigoOrden) as CodigoOrden,
+            ABS(m.MovImporte) as Importe,
+            m.MovConcepto as Concepto
+         FROM dbo.MovimientosCuenta m WITH(NOLOCK)
+         LEFT JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = m.OrdIdOrden
+         LEFT JOIN dbo.Ordenes erp WITH(NOLOCK) ON erp.OrdenID = m.OrdIdOrden
+         WHERE m.CicIdCiclo = (SELECT CicIdCiclo FROM dbo.DocumentosContables dc WITH(NOLOCK) WHERE dc.DocIdDocumento = d.DocIdDocumento)
+           AND m.MovTipo = 'ORDEN' AND m.MovAnulado = 0
+         FOR JSON PATH) AS SubOrdenesJSON
       FROM dbo.DeudaDocumento d WITH(NOLOCK)
       JOIN dbo.CuentasCliente cc WITH(NOLOCK) ON cc.CueIdCuenta = d.CueIdCuenta
       LEFT JOIN dbo.Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = cc.MonIdMoneda
       LEFT JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = d.OrdIdOrden
+      LEFT JOIN dbo.Ordenes ordERP WITH(NOLOCK) ON ordERP.OrdenID = d.OrdIdOrden
       WHERE cc.CliIdCliente = @CliIdCliente
         AND d.DDeEstado IN ('PENDIENTE', 'PARCIAL', 'VENCIDO')
         AND d.DDeImportePendiente > 0.01
       ORDER BY d.DDeFechaVencimiento ASC
     `);
 
-  return result.recordset;
+  return result.recordset.map(r => ({
+    ...r,
+    SubOrdenes: r.SubOrdenesJSON ? JSON.parse(r.SubOrdenesJSON) : []
+  }));
 }
 
 /**
@@ -903,12 +1225,24 @@ async function getTodasLasDeudasVivas() {
         d.DDeIdDocumento,
         d.OrdIdOrden,
         d.DocIdDocumento,
-        COALESCE(od.OrdCodigoOrden, 'VTA-DIR') AS CodigoOrden,
         COALESCE(
-          od.OrdNombreTrabajo, 
-          (SELECT TOP 1 TdeDescripcion 
+          (SELECT CONCAT(doc.DocTipo, ' ', doc.DocSerie, '-', doc.DocNumero) FROM dbo.DocumentosContables doc WITH(NOLOCK) WHERE doc.DocIdDocumento = d.DocIdDocumento),
+          od.OrdCodigoOrden, ordERP.CodigoOrden, (SELECT TOP 1 ISNULL(od2.OrdCodigoOrden, td.TdeCodigoReferencia)
            FROM dbo.TransaccionDetalle td
-           JOIN dbo.DocumentosContables doc ON CAST(doc.DocNumero AS VARCHAR) = CAST(td.TcaIdTransaccion AS VARCHAR)
+           JOIN dbo.DocumentosContables doc ON doc.TcaIdTransaccion = td.TcaIdTransaccion
+           LEFT JOIN dbo.OrdenesRetiro ordRet ON ordRet.OReIdOrdenRetiro = td.TdeReferenciaId AND td.TdeTipoReferencia = 'ORDEN_RETIRO'
+           LEFT JOIN dbo.OrdenesDeposito od2 ON od2.OReIdOrdenRetiro = ordRet.OReIdOrdenRetiro
+           WHERE doc.DocIdDocumento = d.DocIdDocumento), 'VTA-DIR') AS CodigoOrden,
+        COALESCE(
+          (SELECT 'Ciclo Semanal ' + FORMAT(doc.DocFechaDesde, 'dd/MM/yyyy HH:mm') + ' al ' + FORMAT(doc.DocFechaHasta, 'dd/MM/yyyy HH:mm') FROM dbo.DocumentosContables doc WITH(NOLOCK) WHERE doc.DocIdDocumento = d.DocIdDocumento AND doc.DocTipo IN ('FACTURA', 'E-TICKET CREDITO', 'E-TICKET CONTADO')),
+          (SELECT doc.DocTipo FROM dbo.DocumentosContables doc WITH(NOLOCK) WHERE doc.DocIdDocumento = d.DocIdDocumento),
+          od.OrdNombreTrabajo, 
+          ordERP.DescripcionTrabajo,
+          (SELECT TOP 1 ISNULL(od2.OrdNombreTrabajo, td.TdeDescripcion)
+           FROM dbo.TransaccionDetalle td
+           JOIN dbo.DocumentosContables doc ON doc.TcaIdTransaccion = td.TcaIdTransaccion
+           LEFT JOIN dbo.OrdenesRetiro ordRet ON ordRet.OReIdOrdenRetiro = td.TdeReferenciaId AND td.TdeTipoReferencia = 'ORDEN_RETIRO'
+           LEFT JOIN dbo.OrdenesDeposito od2 ON od2.OReIdOrdenRetiro = ordRet.OReIdOrdenRetiro
            WHERE doc.DocIdDocumento = d.DocIdDocumento),
           'Venta Directa'
         ) AS NombreTrabajo,
@@ -928,6 +1262,7 @@ async function getTodasLasDeudasVivas() {
       JOIN dbo.Clientes cli WITH(NOLOCK) ON cli.CliIdCliente = cc.CliIdCliente
       LEFT JOIN dbo.Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = cc.MonIdMoneda
       LEFT JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON od.OrdIdOrden = d.OrdIdOrden
+      LEFT JOIN dbo.Ordenes ordERP WITH(NOLOCK) ON ordERP.OrdenID = d.OrdIdOrden
       WHERE d.DDeEstado IN ('PENDIENTE', 'PARCIAL', 'VENCIDO')
         AND d.DDeImportePendiente > 0.01
       ORDER BY cli.Nombre ASC, d.DDeFechaVencimiento ASC
@@ -944,8 +1279,15 @@ async function getTodasLasDeudasVivas() {
  *
  * @returns {Promise<Array>}
  */
-async function getAntiguedadDeuda() {
+async function getAntiguedadDeuda(modo = 'TODO') {
   const pool = await getPool();
+
+  let filtroCondicion = '';
+  if (modo === 'OFICIAL') {
+    filtroCondicion = 'AND d.DocIdDocumento IS NOT NULL';
+  } else if (modo === 'WIP') {
+    filtroCondicion = 'AND d.DocIdDocumento IS NULL AND d.OrdIdOrden IS NOT NULL';
+  }
 
   const result = await pool.request().query(`
     SELECT
@@ -976,6 +1318,7 @@ async function getAntiguedadDeuda() {
     LEFT JOIN dbo.Monedas        mon ON mon.MonIdMoneda  = c.MonIdMoneda
     JOIN      dbo.DeudaDocumento d   ON d.CueIdCuenta   = c.CueIdCuenta
                                     AND d.DDeEstado IN ('PENDIENTE', 'VENCIDO', 'PARCIAL')
+                                    ${filtroCondicion}
     WHERE c.CueActiva = 1
       AND c.CueTipo IN ('DINERO_UYU', 'DINERO_USD', 'CORRIENTE')
     GROUP BY c.CliIdCliente, cli.Nombre, c.CueTipo, mon.MonSimbolo
@@ -1015,6 +1358,47 @@ async function obtenerCicloActivo(CueIdCuenta) {
 }
 
 /**
+ * getCicloMovimientos
+ * Devuelve todos los movimientos de ordenes asociados a un ciclo.
+ */
+async function getCicloMovimientos(CicIdCiclo) {
+  const pool = await getPool();
+  const res = await pool.request()
+    .input('CicIdCiclo', sql.Int, CicIdCiclo)
+    .query(`
+      SELECT m.MovIdMovimiento, m.MovTipo, m.MovConcepto, m.MovImporte, m.MovFecha,
+             m.OrdIdOrden, m.OReIdOrdenRetiro, m.PagIdPago, m.MovObservaciones, m.DocIdDocumento,
+             COALESCE(od.OrdCodigoOrden, erp.CodigoOrden) AS OrdCodigoOrden,
+             COALESCE(od.OrdNombreTrabajo, erp.DescripcionTrabajo) AS OrdNombreTrabajo,
+             ISNULL(od.OrdCantidad, 1) AS OrdCantidad,
+             ISNULL(od.OrdDescuentoAplicado, 0) AS OrdDescuentoAplicado,
+             od.OrdMaterialPlanilla,
+             p.Descripcion AS ProNombre,
+             s.Articulo AS ProSubFamilia,
+             s.CodStock AS ProCodStock,
+              (
+                 SELECT d.ID AS DetalleID, a.CodArticulo, d.Cantidad, d.PrecioUnitario, d.Subtotal, d.LogPrecioAplicado, a.Descripcion, pc.Moneda
+                 FROM dbo.PedidosCobranza pc WITH(NOLOCK)
+                 JOIN dbo.PedidosCobranzaDetalle d WITH(NOLOCK) ON pc.ID = d.PedidoCobranzaID
+                 LEFT JOIN dbo.Articulos a WITH(NOLOCK) ON a.ProIdProducto = d.ProIdProducto
+                 WHERE LTRIM(RTRIM(pc.NoDocERP)) = COALESCE(od.OrdCodigoOrden, erp.CodigoOrden)
+                 FOR JSON PATH
+              ) AS DetallesJSON
+      FROM dbo.MovimientosCuenta m WITH(NOLOCK)
+      LEFT JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON m.OrdIdOrden = od.OrdIdOrden
+      LEFT JOIN dbo.Ordenes erp WITH(NOLOCK) ON erp.OrdenID = m.OrdIdOrden
+      LEFT JOIN dbo.Articulos p WITH(NOLOCK) ON od.ProIdProducto = p.ProIdProducto
+      LEFT JOIN dbo.StockArt s WITH(NOLOCK) ON p.CodStock = s.CodStock
+      WHERE m.CicIdCiclo = @CicIdCiclo
+        AND m.MovTipo IN ('ORDEN', 'PAGO', 'ANTICIPO')
+        AND m.DocIdDocumento IS NULL        -- excluir ya facturados individualmente (VTA_CAJA y su pago)
+        AND ABS(m.MovImporte) > 0           -- excluir órdenes cubiertas por plan ($0 sin deuda monetaria)
+      ORDER BY m.MovFecha DESC
+    `);
+  return res.recordset;
+}
+
+/**
  * abrirCicloPorCuenta
  * Abre un nuevo ciclo de crédito para una cuenta.
  * Calcula la fecha de cierre basándose en CueDiasCiclo.
@@ -1044,14 +1428,14 @@ async function abrirCicloPorCuenta({ CueIdCuenta, CliIdCliente, UsuarioAlta, Fec
 
   const dias = cuentaRes.recordset[0]?.Dias ?? 7;
   const fechaIni = FechaInicio ? new Date(FechaInicio) : new Date();
-  const fechaCierre = new Date(fechaIni);
-  fechaCierre.setDate(fechaCierre.getDate() + dias);
+  // fechaCierre ya no se guarda al abrir (se deja en NULL)
+  // pero el cron/jobs la puede usar para saber cuándo debería emitirse la deuda
 
   const insertRes = await pool.request()
     .input('CueIdCuenta',      sql.Int,  CueIdCuenta)
     .input('CliIdCliente',     sql.Int,  CliIdCliente)
-    .input('CicFechaInicio',   sql.Date, fechaIni)
-    .input('CicFechaCierre',   sql.Date, fechaCierre)
+    .input('CicFechaInicio',   sql.DateTime, fechaIni)
+    .input('CicFechaCierre',   sql.DateTime, null)
     .input('CicDiasAprobados', sql.Int,  dias)
     .input('UsuarioAlta',      sql.Int,  UsuarioAlta)
     .query(`
@@ -1067,7 +1451,33 @@ async function abrirCicloPorCuenta({ CueIdCuenta, CliIdCliente, UsuarioAlta, Fec
     `);
 
   const CicIdCiclo = insertRes.recordset[0].CicIdCiclo;
-  logger.info(`[CICLO] Ciclo ABIERTO: CicIdCiclo=${CicIdCiclo} CueIdCuenta=${CueIdCuenta} hasta ${fechaCierre.toISOString().split('T')[0]}`);
+
+  // Absolver movimientos anteriores que no tengan ciclo asignado y sean facturables (de la semana o recientes)
+  await pool.request()
+    .input('CicIdCiclo', sql.Int, CicIdCiclo)
+    .input('CueIdCuenta', sql.Int, CueIdCuenta)
+    .query(`
+      UPDATE dbo.MovimientosCuenta
+      SET CicIdCiclo = @CicIdCiclo
+      WHERE CueIdCuenta = @CueIdCuenta
+        AND CicIdCiclo IS NULL
+        AND MovTipo IN ('ORDEN', 'PAGO')
+        AND MovFecha >= DATEADD(month, -1, GETDATE())
+    `);
+    
+  // Recalcular CicTotalOrdenes y CicTotalPagos para el ciclo recién creado por si absorbió movimientos
+  await pool.request()
+    .input('CicIdCiclo', sql.Int, CicIdCiclo)
+    .query(`
+      UPDATE c
+      SET 
+        c.CicTotalOrdenes = ISNULL((SELECT SUM(ABS(MovImporte)) FROM dbo.MovimientosCuenta WHERE CicIdCiclo = c.CicIdCiclo AND MovTipo = 'ORDEN'), 0),
+        c.CicTotalPagos   = ISNULL((SELECT SUM(ABS(MovImporte)) FROM dbo.MovimientosCuenta WHERE CicIdCiclo = c.CicIdCiclo AND MovTipo = 'PAGO'), 0)
+      FROM dbo.CiclosCredito c
+      WHERE c.CicIdCiclo = @CicIdCiclo
+    `);
+
+  logger.info(`[CICLO] Ciclo ABIERTO: CicIdCiclo=${CicIdCiclo} CueIdCuenta=${CueIdCuenta} (Sin fecha de cierre fija)`);
   return { CicIdCiclo, esNuevo: true };
 }
 
@@ -1091,19 +1501,89 @@ async function acumularEnCiclo(CicIdCiclo, tipo, importe) {
 /**
  * cerrarCicloCompleto
  * Cierra un ciclo de crédito:
- *   1. Calcula CicSaldoFacturar = TotalOrdenes - TotalPagos
- *   2. Genera un DocumentoContable tipo FACTURA
- *   3. Crea un DeudaDocumento por el saldo a cobrar
- *   4. Registra movimiento de cierre en el libro mayor
- *   5. Abre automáticamente el ciclo siguiente
+ *   1. Extrae los movimientos excluidos (si los hay) y los mueve al próximo ciclo
+ *   2. Recalcula CicSaldoFacturar = TotalOrdenes - TotalPagos (restando excluidos)
+ *   3. Genera un DocumentoContable tipo FACTURA
+ *   4. Crea un DeudaDocumento por el saldo a cobrar
+ *   5. Registra movimiento de cierre en el libro mayor
+ *   6. Abre automáticamente el ciclo siguiente
  *
  * @param {object} params
  *   @param {number} CicIdCiclo
  *   @param {number} UsuarioAlta
+ *   @param {number[]} excluidos Array de MovIdMovimiento que no se van a facturar en este ciclo
  * @returns {Promise<{DocIdDocumento, SaldoFacturar, nuevoCiclo}>}
  */
-async function cerrarCicloCompleto({ CicIdCiclo, UsuarioAlta }) {
+async function cerrarCicloCompleto({ 
+  CicIdCiclo, 
+  UsuarioAlta, 
+  excluidos = [],
+  monedaFactura,
+  cotDolar = 40,
+  descuentoTipo,
+  descuentoValorBase = 0,
+  montoDescuentoCalculado = 0,
+  detallesEditados = [],
+  detallesParaPDF = [],
+  tipoDocumento = 'FACTURA',
+  observaciones = '',
+  cliDgiNombre = null,
+  cliDgiDocumento = null,
+  cliDgiDireccion = null,
+  cliDgiCiudad = null,
+  actualizarCliente = false
+}) {
   const pool = await getPool();
+
+  // 0. Procesar ediciones manuales de detalles
+  if (detallesEditados && detallesEditados.length > 0) {
+    for (const d of detallesEditados) {
+      // 1. Obtener el PedidoCobranzaID y los valores actuales
+      const detRes = await pool.request().input('ID', sql.Int, d.DetalleID).query(`
+        SELECT PedidoCobranzaID, PrecioUnitarioOriginal, SubtotalOriginal, LogPrecioAplicado
+        FROM dbo.PedidosCobranzaDetalle WHERE ID = @ID
+      `);
+      if (detRes.recordset.length > 0) {
+        const { PedidoCobranzaID, LogPrecioAplicado } = detRes.recordset[0];
+        
+        // Agregar etiqueta al log
+        const logTag = '[Ajuste manual Cierre Ciclo]';
+        let nuevoLog = LogPrecioAplicado ? LogPrecioAplicado : '';
+        if (!nuevoLog.includes(logTag)) {
+          nuevoLog += ` ${logTag}`;
+        }
+        
+        // 2. Actualizar detalle
+        await pool.request()
+          .input('ID', sql.Int, d.DetalleID)
+          .input('Precio', sql.Decimal(18,4), d.PrecioUnitario)
+          .input('Subtotal', sql.Decimal(18,4), d.Subtotal)
+          .input('Log', sql.NVarChar(sql.MAX), nuevoLog)
+          .query(`
+            UPDATE dbo.PedidosCobranzaDetalle
+            SET PrecioUnitario = @Precio, Subtotal = @Subtotal, LogPrecioAplicado = @Log
+            WHERE ID = @ID
+          `);
+          
+        // 3. Recalcular MontoTotal de PedidosCobranza
+        await pool.request().input('PID', sql.Int, PedidoCobranzaID).query(`
+          UPDATE dbo.PedidosCobranza
+          SET MontoTotal = (SELECT ISNULL(SUM(Subtotal),0) FROM dbo.PedidosCobranzaDetalle WHERE PedidoCobranzaID = @PID)
+          WHERE ID = @PID
+        `);
+        
+        // 4. Actualizar el MovImporte en MovimientosCuenta asociado a esta Orden
+        await pool.request().input('PID', sql.Int, PedidoCobranzaID).input('CicIdCiclo', sql.Int, CicIdCiclo).query(`
+          UPDATE m
+          SET m.MovImporte = - (SELECT MontoTotal FROM dbo.PedidosCobranza WHERE ID = @PID)
+          FROM dbo.MovimientosCuenta m
+          JOIN dbo.Ordenes erp ON erp.OrdenID = m.OrdIdOrden
+          JOIN dbo.PedidosCobranza pc ON LTRIM(RTRIM(pc.NoDocERP)) = erp.CodigoOrden
+          WHERE pc.ID = @PID AND m.MovTipo = 'ORDEN' AND m.CicIdCiclo = @CicIdCiclo
+        `);
+      }
+    }
+  }
 
   // 1. Leer el ciclo
   const cicloRes = await pool.request()
@@ -1122,79 +1602,319 @@ async function cerrarCicloCompleto({ CicIdCiclo, UsuarioAlta }) {
   if (ciclo.CicEstado !== 'ABIERTO' && ciclo.CicEstado !== 'VENCIDO')
     throw new Error(`Ciclo ${CicIdCiclo} está en estado ${ciclo.CicEstado}, no se puede cerrar.`);
 
-  const saldoFacturar = Number(ciclo.CicTotalOrdenes) - Number(ciclo.CicTotalPagos);
+  if (actualizarCliente) {
+    await pool.request()
+      .input('CliIdCliente', sql.Int, ciclo.CliIdCliente)
+      .input('CioRuc', sql.VarChar, cliDgiDocumento || '')
+      .input('Direccion', sql.VarChar, cliDgiDireccion || '')
+      .input('Ciudad', sql.Int, Number(cliDgiCiudad) || 10)
+      .input('Nombre', sql.VarChar, cliDgiNombre || '')
+      .query(`
+        UPDATE dbo.Clientes
+        SET CioRuc = @CioRuc,
+            DireccionTrabajo = @Direccion,
+            DepartamentoID = @Ciudad,
+            Nombre = @Nombre,
+            NombreFantasia = @Nombre
+        WHERE CliIdCliente = @CliIdCliente
+      `);
+  }
 
-  // 2. Generar número de factura correlativo
-  const anio = new Date().getFullYear();
+  // Procesar Excluidos ANTES de cerrar y calcular totales en vivo
+  let sumExcluidosOrdenes = 0;
+  let sumExcluidosPagos = 0;
+  let totalOrdenesCiclo = 0;
+  let totalPagosCiclo = 0;
+
+  const resMovs = await pool.request().input('CicIdCiclo', sql.Int, CicIdCiclo).query(`
+    SELECT MovIdMovimiento, MovImporte, MovTipo, DocIdDocumento
+    FROM   dbo.MovimientosCuenta
+    WHERE  CicIdCiclo = @CicIdCiclo
+      AND  MovAnulado = 0
+      AND  MovTipo    != 'CIERRE_CICLO'
+      AND  MovImporte  < 0              -- SOLO órdenes/débitos. Los pagos son operaciones separadas.
+      AND  DocIdDocumento IS NULL       -- excluir órdenes ya facturadas individualmente
+  `);
+  
+  const excluidosSet = new Set(excluidos || []);
+  for (const m of resMovs.recordset) {
+    totalOrdenesCiclo += Math.abs(m.MovImporte);
+    if (excluidosSet.has(m.MovIdMovimiento)) sumExcluidosOrdenes += Math.abs(m.MovImporte);
+  }
+
+  // El total a facturar es siempre el bruto de órdenes.
+  // Los pagos recibidos (anticipos, pagos de ciclos anteriores) son operaciones independientes
+  // que afectan DeudaDocumento.ImportePendiente via imputarPago, no la factura.
+  const totalOrdenesFacturadas = totalOrdenesCiclo - sumExcluidosOrdenes;
+  const saldoFacturar          = Math.max(0, totalOrdenesFacturadas - montoDescuentoCalculado); // la factura neta
+
+
+  // Consultar saldo actual de la cuenta.
+  // El saldo YA incorpora todos los movimientos del ciclo: órdenes (débitos negativos) y pagos (créditos positivos).
+  // Si saldo < 0: el cliente aún debe → ImportePendiente = |saldo| (capeado por la factura bruta)
+  // Si saldo >= 0: el cliente tiene a favor → ImportePendiente = 0 (o la diferencia si el saldo a favor no alcanza)
+  const saldoCuentaRes = await pool.request()
+    .input('CueIdCuenta', sql.Int, ciclo.CueIdCuenta)
+    .query(`SELECT CueSaldoActual FROM dbo.CuentasCliente WHERE CueIdCuenta = @CueIdCuenta`);
+  const saldoCuentaActual = saldoCuentaRes.recordset[0]?.CueSaldoActual || 0;
+
+  // El ImportePendiente es lo que realmente queda por cobrar de la factura que se genera.
+  // REGLA:
+  //   saldoCuentaActual >= 0 → el cliente pagó todo (o de más) → pendiente = 0
+  //   saldoCuentaActual < 0  → el cliente aún debe → pendiente = |saldo| (capeado por la factura)
+  //
+  // Ejemplo A: factura 50.98, pago parcial 15 → saldo -35.98 → pendiente = 35.98
+  // Ejemplo B: factura 9.53,  pago 15         → saldo +5.47  → pendiente = 0 (ya cubierta)
+  const importePendiente = saldoCuentaActual >= 0
+    ? 0
+    : Math.min(Math.abs(saldoCuentaActual), saldoFacturar);
+
+  // Para log legacy
+  const saldoAFavorPrevio = Math.max(0, saldoCuentaActual);
+
+  // 2. Generar número de factura correlativo (usando la secuencia oficial)
   const seqRes = await pool.request()
-    .input('Tipo', sql.VarChar(20), 'FACTURA_CICLO')
-    .input('Anio', sql.Int,         anio)
+    .input('Tipo', sql.VarChar(50), tipoDocumento)
     .query(`
-      IF NOT EXISTS (SELECT 1 FROM dbo.SecuenciaDocumentos WHERE SecTipo = @Tipo)
-        INSERT INTO dbo.SecuenciaDocumentos (SecTipo, SecUltimoNum, SecAnio) VALUES (@Tipo, 0, @Anio);
+      IF NOT EXISTS (SELECT 1 FROM dbo.SecuenciaDocumentos WHERE SecTipoDoc = @Tipo AND SecSerie = 'A')
+        INSERT INTO dbo.SecuenciaDocumentos (SecTipoDoc, SecSerie, SecPrefijo, SecDigitos, SecUltimoNumero, SecActivo) 
+        VALUES (@Tipo, 'A', 'A-', 5, 0, 1);
+        
       UPDATE dbo.SecuenciaDocumentos
-      SET    SecUltimoNum = SecUltimoNum + 1, SecAnio = @Anio
-      OUTPUT INSERTED.SecUltimoNum
-      WHERE  SecTipo = @Tipo;
+      SET    SecUltimoNumero = SecUltimoNumero + 1
+      OUTPUT INSERTED.SecUltimoNumero, INSERTED.SecPrefijo
+      WHERE  SecTipoDoc = @Tipo AND SecSerie = 'A';
     `);
-  const numero  = seqRes.recordset[0].SecUltimoNum;
-  const docNumero = `FC-${anio}-${String(numero).padStart(5,'0')}`;
+  const numero    = seqRes.recordset[0].SecUltimoNumero;
+  const prefijo   = seqRes.recordset[0].SecPrefijo || 'A-';
+  const docNumero = String(numero);
+  const docLabel  = `${prefijo}${numero}`;
 
   // 3. Insertar DocumentoContable
   let DocIdDocumento = null;
-  if (saldoFacturar > 0) {
-    const docRes = await pool.request()
-      .input('CueIdCuenta',   sql.Int,          ciclo.CueIdCuenta)
-      .input('CliIdCliente',  sql.Int,          ciclo.CliIdCliente)
-      .input('DocNumero',     sql.VarChar(50),  docNumero)
-      .input('DocTotal',      sql.Decimal(18,4), saldoFacturar)
-      .input('DocSubtotal',   sql.Decimal(18,4), saldoFacturar)
-      .input('MonIdMoneda',   sql.Int,          ciclo.MonIdMoneda || 1)
-      .input('CicIdCiclo',    sql.Int,          CicIdCiclo)
-      .input('FechaDesde',    sql.Date,         new Date(ciclo.CicFechaInicio))
-      .input('FechaHasta',    sql.Date,         new Date(ciclo.CicFechaCierre))
-      .input('UsuarioAlta',   sql.Int,          UsuarioAlta)
-      .query(`
-        INSERT INTO dbo.DocumentosContables
-          (CueIdCuenta, CliIdCliente, DocTipo, DocNumero, DocSerie,
-           DocFechaDesde, DocFechaHasta, DocSubtotal, DocTotal,
-           MonIdMoneda, CicIdCiclo, DocEstado,
-           DocFechaEmision, DocUsuarioAlta)
-        OUTPUT INSERTED.DocIdDocumento
-        VALUES
-          (@CueIdCuenta, @CliIdCliente, 'FACTURA', @DocNumero, 'A',
-           @FechaDesde, @FechaHasta, @DocSubtotal, @DocTotal,
-           @MonIdMoneda, @CicIdCiclo, 'EMITIDO',
-           GETDATE(), @UsuarioAlta)
-      `);
+      
+      const fInicio = new Date(ciclo.CicFechaInicio).toLocaleDateString('es-UY');
+      const fechaCierreReal = ciclo.CicFechaCierre ? new Date(ciclo.CicFechaCierre) : new Date();
+      const fCierre = fechaCierreReal.toLocaleDateString('es-UY');
+      let docObservaciones = `Cierre de ciclo de facturación desde ${fInicio} hasta ${fCierre}.`;
+      
+      if (montoDescuentoCalculado > 0) {
+        docObservaciones += ` Descuento global aplicado: ${descuentoTipo === '%' ? descuentoValorBase + '%' : '$' + descuentoValorBase} (Equivalente a ${montoDescuentoCalculado}).`;
+      }
+      
+      if (observaciones && observaciones.trim().length > 0) {
+        docObservaciones += ` Observaciones adicionales: ${observaciones.trim()}`;
+      }
+
+      const accountMonId = ciclo.MonIdMoneda || 1;
+      const targetMonId = monedaFactura === 'USD' ? 2 : (monedaFactura === 'UYU' ? 1 : accountMonId);
+      const esCrossMoneda = targetMonId !== accountMonId;
+      
+      // Si la moneda de factura difiere de la cuenta, buscar/crear la cuenta en la moneda destino
+      let cueIdFactura = ciclo.CueIdCuenta;  // por defecto la misma cuenta
+      if (esCrossMoneda) {
+        const targetTipo = targetMonId === 2 ? 'USD' : 'UYU';
+        cueIdFactura = await obtenerOCrearCuenta(ciclo.CliIdCliente, targetTipo, {
+          MonIdMoneda: targetMonId,
+          CPaIdCondicion: 1,
+          UsuarioAlta: UsuarioAlta,
+        });
+        logger.info(`[CICLO] Factura cruzada: ciclo en cuenta ${ciclo.CueIdCuenta} (Mon=${accountMonId}) → factura en cuenta ${cueIdFactura} (Mon=${targetMonId})`);
+      }
+
+      let docTotal = saldoFacturar; // Precio final neto con IVA incluido
+      let docSubtotal = docTotal / 1.22;
+      let docDescuentos = montoDescuentoCalculado / 1.22;
+      let docImpuestos = docTotal - docSubtotal;
+
+      if (targetMonId === 1 && accountMonId === 2) {
+        docSubtotal *= cotDolar;
+        docDescuentos *= cotDolar;
+        docTotal *= cotDolar;
+        docImpuestos *= cotDolar;
+      } else if (targetMonId === 2 && accountMonId === 1) {
+        docSubtotal /= cotDolar;
+        docDescuentos /= cotDolar;
+        docTotal /= cotDolar;
+        docImpuestos /= cotDolar;
+      }
+
+      const docRes = await pool.request()
+        .input('CueIdCuenta',   sql.Int,          cueIdFactura)
+        .input('CliIdCliente',  sql.Int,          ciclo.CliIdCliente)
+        .input('DocTipo',       sql.VarChar(50),  tipoDocumento)
+        .input('DocNumero',     sql.VarChar(50),  docNumero)
+        .input('DocSubtotal',   sql.Decimal(18,4), docSubtotal)
+        .input('DocImpuestos',  sql.Decimal(18,4), docImpuestos)
+        .input('DocTotalDescuentos', sql.Decimal(18,4), docDescuentos)
+        .input('DocTotal',      sql.Decimal(18,4), docTotal) 
+        .input('MonIdMoneda',   sql.Int,          targetMonId)
+        .input('CicIdCiclo',    sql.Int,          CicIdCiclo)
+        .input('FechaDesde',    sql.DateTime,     new Date(ciclo.CicFechaInicio))
+        .input('FechaHasta',    sql.DateTime,     fechaCierreReal)
+        .input('UsuarioAlta',   sql.Int,          UsuarioAlta)
+        .input('DocObservaciones', sql.NVarChar(sql.MAX), docObservaciones)
+        .input('DocCliNombre', sql.NVarChar(255), cliDgiNombre)
+        .input('DocCliDocumento', sql.NVarChar(50), cliDgiDocumento)
+        .input('DocCliDireccion', sql.NVarChar(255), cliDgiDireccion)
+        .input('DocCliCiudad', sql.NVarChar(100), cliDgiCiudad)
+        .query(`
+          INSERT INTO dbo.DocumentosContables
+            (CueIdCuenta, CliIdCliente, DocTipo, DocNumero, DocSerie,
+             DocFechaDesde, DocFechaHasta, DocSubtotal, DocImpuestos, DocTotal,
+             MonIdMoneda, CicIdCiclo, DocEstado,
+             DocFechaEmision, DocUsuarioAlta, DocTotalDescuentos, DocTotalRecargos, DocObservaciones,
+             DocCliNombre, DocCliDocumento, DocCliDireccion, DocCliCiudad)
+          OUTPUT INSERTED.DocIdDocumento
+          VALUES
+            (@CueIdCuenta, @CliIdCliente, @DocTipo, @DocNumero, 'A',
+             @FechaDesde, @FechaHasta, @DocSubtotal, @DocImpuestos, @DocTotal,
+             @MonIdMoneda, @CicIdCiclo, 'EMITIDO',
+             GETDATE(), @UsuarioAlta, @DocTotalDescuentos, 0, @DocObservaciones,
+             @DocCliNombre, @DocCliDocumento, @DocCliDireccion, @DocCliCiudad)
+        `);
     DocIdDocumento = docRes.recordset[0].DocIdDocumento;
 
-    // 4. Crear DeudaDocumento por el saldo a facturar
-    await crearDeudaDocumento({
-      CueIdCuenta: ciclo.CueIdCuenta,
-      OrdIdOrden: null,
-      Importe: saldoFacturar,
-    });
 
-    // 5. Registrar movimiento de cierre en libro mayor
-    await registrarMovimiento({
-      CueIdCuenta:   ciclo.CueIdCuenta,
-      MovTipo:       'CIERRE_CICLO',
-      MovConcepto:   `Cierre ciclo ${ciclo.CicFechaInicio ? new Date(ciclo.CicFechaInicio).toLocaleDateString('es-UY') : ''} → ${ciclo.CicFechaCierre ? new Date(ciclo.CicFechaCierre).toLocaleDateString('es-UY') : ''} | ${docNumero}`,
-      MovImporte:    0,   // neutro, es solo el marcador de cierre
-      MovUsuarioAlta: UsuarioAlta,
-      DocIdDocumento,
-      MovObservaciones: `Ordenes: ${ciclo.CicTotalOrdenes} | Pagos: ${ciclo.CicTotalPagos} | Saldo: ${saldoFacturar}`,
-    });
+  // 4. Insertar detalles para el PDF
+  if (detallesParaPDF && detallesParaPDF.length > 0) {
+    for (const [index, d] of detallesParaPDF.entries()) {
+      let dcdSubtotal = d.DcdSubtotal != null ? Number(d.DcdSubtotal) : 0;
+      let dcdTotal = d.DcdSubtotal != null ? Number(d.DcdSubtotal) : 0;
+      let dcdImpuestos = d.DcdSubtotal != null ? 0 : 0; // Se calcula globalmente o asumimos IVA en subtotal
+      
+      let nomItem = d.DcdNomItem || '';
+      let dscItem = d.DcdDscItem || '';
+      let cant = d.DcdCantidad != null ? Number(d.DcdCantidad) : 1;  // DEFAULT 1 — columna NOT NULL
+      let punit = d.DcdPrecioUnitario != null ? Number(d.DcdPrecioUnitario) : dcdSubtotal;
+      let totDesc = d.DcdTotalDescuentos || 0;
+      let descStr = d.DcdDescuentoStr || null;
+
+      await pool.request()
+        .input('DocId', sql.Int, DocIdDocumento)
+        .input('NomItem', sql.VarChar(255), nomItem.substring(0, 255))
+        .input('DscItem', sql.VarChar(1000), dscItem.substring(0, 1000))
+        .input('Cantidad', sql.Decimal(18,4), cant)
+        .input('PrecioUnitario', sql.Decimal(18,4), punit)
+        .input('TotalDescuentos', sql.Decimal(18,4), totDesc)
+        .input('DescuentoStr', sql.VarChar(100), descStr)
+        .input('Subtotal', sql.Decimal(18,4), dcdSubtotal)
+        .input('Impuestos', sql.Decimal(18,4), dcdImpuestos)
+        .input('Total', sql.Decimal(18,4), dcdTotal)
+        .query(`
+          INSERT INTO dbo.DocumentosContablesDetalle
+          (DocIdDocumento, DcdNomItem, DcdDscItem, DcdCantidad, DcdPrecioUnitario, DcdSubtotal, DcdImpuestos, DcdTotal, DcdTotalDescuentos, DcdDescuentoStr)
+          VALUES
+          (@DocId, @NomItem, @DscItem, @Cantidad, @PrecioUnitario, @Subtotal, @Impuestos, @Total, @TotalDescuentos, @DescuentoStr)
+        `);
+    }
   }
 
-  // 6. Cerrar el ciclo actual
+  // 5. Crear DeudaDocumento — va en la cuenta de la moneda de la factura
+  if (saldoFacturar > 0 && DocIdDocumento) {
+    // Si es cross-moneda, la deuda va en la cuenta destino con el monto convertido
+    const deudaCuentaId = esCrossMoneda ? cueIdFactura : ciclo.CueIdCuenta;
+    const deudaImporte = esCrossMoneda ? docTotal : saldoFacturar;
+    const deudaPendiente = esCrossMoneda ? docTotal : importePendiente;
+
+    await crearDeudaDocumento({
+      CueIdCuenta: deudaCuentaId,
+      OrdIdOrden: null,
+      DocIdDocumento,
+      Importe: deudaImporte,
+      ImportePendiente: deudaPendiente,
+    });
+
+    if (esCrossMoneda) {
+      // Registrar movimiento en la cuenta destino para reflejar la deuda
+      const monedaDestLabel = targetMonId === 2 ? 'USD' : 'UYU';
+      await registrarMovimiento({
+        CueIdCuenta:   deudaCuentaId,
+        MovTipo:       'CIERRE_CICLO',
+        MovConcepto:   `Factura ${docLabel} (ciclo #${CicIdCiclo} → ${monedaDestLabel})`,
+        MovImporte:    -docTotal,  // débito en la cuenta destino
+        MovUsuarioAlta: UsuarioAlta,
+        DocIdDocumento,
+        CicIdCiclo,
+        MovObservaciones: `Conversión desde ciclo ${accountMonId === 2 ? 'USD' : 'UYU'} a ${monedaDestLabel} @ ${cotDolar}`,
+      });
+      logger.info(`[CICLO] Deuda cruzada: ${deudaImporte.toFixed(2)} ${monedaDestLabel} en cuenta ${deudaCuentaId}`);
+    } else {
+      if (importePendiente !== saldoFacturar) {
+        logger.info(`[CICLO] Ciclo ${CicIdCiclo}: Factura ${saldoFacturar}. Saldo cuenta (${saldoCuentaActual}) → Pendiente real: ${importePendiente}`);
+      }
+    }
+  }
+
+  // 4b. Absorber DeudaDocumentos individuales de órdenes dentro del ciclo
+  // Las órdenes del ciclo ya están consolidadas en la factura A-X.
+  // Cualquier DeudaDocumento individual que haya quedado de esas órdenes
+  // se marca como PAGADO para evitar doble contabilización en Antigüedad.
+  await pool.request()
+    .input('CicIdCiclo',    sql.Int, CicIdCiclo)
+    .input('CueIdCuenta',   sql.Int, ciclo.CueIdCuenta)
+    .query(`
+      UPDATE dd
+      SET    dd.DDeEstado          = 'PAGADO',
+             dd.DDeImportePendiente = 0
+      FROM   dbo.DeudaDocumento dd
+      WHERE  dd.CueIdCuenta = @CueIdCuenta
+        AND  dd.DDeEstado IN ('PENDIENTE', 'PARCIAL', 'VENCIDO')
+        AND  dd.OrdIdOrden IS NOT NULL          -- solo deudas individuales de órdenes
+        AND  dd.DocIdDocumento IS NULL          -- sin documento propio (son las generadas por hookOrdenCreada)
+        AND  dd.OrdIdOrden IN (
+               SELECT DISTINCT m.OrdIdOrden
+               FROM   dbo.MovimientosCuenta m
+               WHERE  m.CicIdCiclo = @CicIdCiclo
+                 AND  m.OrdIdOrden IS NOT NULL
+                 AND  m.MovAnulado = 0
+             )
+    `);
+
+  const absorbidas = await pool.request()
+    .input('CicIdCiclo', sql.Int, CicIdCiclo)
+    .input('CueIdCuenta', sql.Int, ciclo.CueIdCuenta)
+    .query(`
+      SELECT COUNT(*) AS total FROM dbo.DeudaDocumento dd
+      WHERE  dd.CueIdCuenta = @CueIdCuenta AND dd.DDeEstado = 'PAGADO'
+        AND  dd.OrdIdOrden IN (
+               SELECT DISTINCT m.OrdIdOrden FROM dbo.MovimientosCuenta m
+               WHERE m.CicIdCiclo = @CicIdCiclo AND m.OrdIdOrden IS NOT NULL AND m.MovAnulado = 0
+             )
+    `);
+  logger.info(`[CICLO] ${absorbidas.recordset[0].total} DeudaDocumento(s) individuales absorbidas por el cierre del ciclo ${CicIdCiclo}`);
+
+
+  // 5. Registrar movimiento de cierre en libro mayor (cuenta de ORIGEN del ciclo)
+  // Si es cross-moneda: el movimiento COMPENSA las órdenes en la cuenta original
+  //   → las órdenes debitaron -22 en USD, el cierre acredita +22 para dejar la cuenta en 0
+  //   → la deuda real queda en la cuenta UYU (registrada en paso anterior)
+  // Si es misma moneda: el movimiento es neutro (0), la deuda queda en DeudaDocumento
+  const cierreImporteOrigen = esCrossMoneda ? saldoFacturar : 0;
+  const cierreConcepto = esCrossMoneda
+    ? `Cierre ciclo → Factura ${docLabel} traspasada a ${targetMonId === 2 ? 'USD' : 'UYU'} (${docTotal.toFixed(2)} @ cot. ${cotDolar})`
+    : `Cierre ciclo ${ciclo.CicFechaInicio ? new Date(ciclo.CicFechaInicio).toLocaleDateString('es-UY') : ''} → ${fCierre} | ${docLabel}`;
+
+  await registrarMovimiento({
+    CueIdCuenta:   ciclo.CueIdCuenta,
+    MovTipo:       'CIERRE_CICLO',
+    MovConcepto:   cierreConcepto,
+    MovImporte:    cierreImporteOrigen,
+    MovUsuarioAlta: UsuarioAlta,
+    DocIdDocumento,
+    CicIdCiclo,
+    MovObservaciones: esCrossMoneda
+      ? `Cross-moneda: Ordenes ${totalOrdenesFacturadas} ${accountMonId === 2 ? 'USD' : 'UYU'} → Factura ${docTotal.toFixed(2)} ${targetMonId === 2 ? 'USD' : 'UYU'} @ ${cotDolar}`
+      : `Ordenes: ${totalOrdenesFacturadas} | Pagos: 0 (gestionados via DeudaDocumento) | Saldo: ${importePendiente}`,
+  });
+
+  // 6. Cerrar el ciclo actual (actualizando con los montos ajustados)
   await pool.request()
     .input('CicIdCiclo',     sql.Int,          CicIdCiclo)
     .input('SaldoFacturar',  sql.Decimal(18,4), saldoFacturar)
-    .input('TotalOrdenes',   sql.Decimal(18,4), Number(ciclo.CicTotalOrdenes))
-    .input('TotalPagos',     sql.Decimal(18,4), Number(ciclo.CicTotalPagos))
-    .input('NumeroFactura',  sql.VarChar(100),  docNumero)
+    .input('TotalOrdenes',   sql.Decimal(18,4), totalOrdenesFacturadas)
+    .input('TotalPagos',     sql.Decimal(18,4), 0)
+    .input('NumeroFactura',  sql.VarChar(100),  docLabel)
     .input('UsuarioCierre',  sql.Int,          UsuarioAlta)
     .query(`
       UPDATE dbo.CiclosCredito
@@ -1204,11 +1924,12 @@ async function cerrarCicloCompleto({ CicIdCiclo, UsuarioAlta }) {
           CicTotalPagos     = @TotalPagos,
           CicNumeroFactura  = @NumeroFactura,
           CicFechaFactura   = GETDATE(),
+          CicFechaCierre    = GETDATE(),
           CicUsuarioCierre  = @UsuarioCierre
       WHERE CicIdCiclo = @CicIdCiclo
     `);
 
-  logger.info(`[CICLO] Ciclo ${CicIdCiclo} → CERRADO. Saldo ${saldoFacturar}, Factura ${docNumero}`);
+  logger.info(`[CICLO] Ciclo ${CicIdCiclo} → CERRADO. Saldo ${saldoFacturar}, Factura ${docLabel}`);
 
   // 7. Abrir ciclo siguiente automáticamente
   const nuevoCicloFechaInicio = ciclo.CicFechaCierre ? new Date(ciclo.CicFechaCierre) : new Date();
@@ -1219,7 +1940,36 @@ async function cerrarCicloCompleto({ CicIdCiclo, UsuarioAlta }) {
     FechaInicio:  nuevoCicloFechaInicio,
   });
 
-  return { DocIdDocumento, SaldoFacturar: saldoFacturar, docNumero, nuevoCiclo };
+  // 8. Mover excluidos al nuevo ciclo
+  if (excluidos && excluidos.length > 0) {
+    const updReq = pool.request();
+    const inClause = excluidos.map((id, i) => { updReq.input(`m${i}`, sql.Int, id); return `@m${i}`; }).join(',');
+    await updReq.query(`UPDATE dbo.MovimientosCuenta SET CicIdCiclo = ${nuevoCiclo.CicIdCiclo} WHERE MovIdMovimiento IN (${inClause})`);
+    
+    // Acumular los excluidos en el nuevo ciclo
+    if (sumExcluidosOrdenes > 0) await acumularEnCiclo(nuevoCiclo.CicIdCiclo, 'ORDEN', sumExcluidosOrdenes);
+    if (sumExcluidosPagos > 0)   await acumularEnCiclo(nuevoCiclo.CicIdCiclo, 'PAGO', sumExcluidosPagos);
+  }
+
+  // 9. TRASPASO DE SALDO A FAVOR (Si pagó de más, le pasamos el vuelto al ciclo nuevo)
+  if (saldoFacturar < 0) {
+    const saldoAFavor = Math.abs(saldoFacturar);
+    await pool.request()
+      .input('CueIdCuenta', sql.Int, ciclo.CueIdCuenta)
+      .input('CicIdCiclo', sql.Int, nuevoCiclo.CicIdCiclo)
+      .input('MovTipo', sql.VarChar(20), 'SALDO_A_FAVOR')
+      .input('MovConcepto', sql.VarChar(255), `Saldo a favor arrastrado del ciclo anterior (#${CicIdCiclo})`)
+      .input('MovImporte', sql.Decimal(18,4), saldoAFavor)
+      .input('MovUsuarioAlta', sql.Int, UsuarioAlta)
+      .query(`
+        INSERT INTO dbo.MovimientosCuenta (CueIdCuenta, CicIdCiclo, MovTipo, MovConcepto, MovImporte, MovFecha, MovUsuarioAlta, MovAnulado)
+        VALUES (@CueIdCuenta, @CicIdCiclo, @MovTipo, @MovConcepto, @MovImporte, GETDATE(), @MovUsuarioAlta, 0)
+      `);
+      
+    await acumularEnCiclo(nuevoCiclo.CicIdCiclo, 'PAGO', saldoAFavor); 
+  }
+
+  return { DocIdDocumento, SaldoFacturar: saldoFacturar, docNumero: docLabel, nuevoCiclo };
 }
 
 /**
@@ -1257,6 +2007,34 @@ async function cerrarCiclosVencidos() {
   }
 
   logger.info(`[CICLO] cerrarCiclosVencidos → procesados: ${procesados}, errores: ${errores}`);
+  return { procesados, errores };
+}
+
+/**
+ * forzarCierreTodosCiclosAbiertos
+ * Busca TODOS los ciclos ABIERTOS (sin importar si vencieron) y los cierra.
+ * Utilizado por el CRON de estados de cuenta.
+ */
+async function forzarCierreTodosCiclosAbiertos() {
+  const pool = await getPool();
+  let procesados = 0, errores = 0;
+
+  // Seleccionar todos los ABIERTOS
+  const abiertos = await pool.request().query(`
+    SELECT CicIdCiclo FROM dbo.CiclosCredito WHERE CicEstado = 'ABIERTO'
+  `);
+
+  for (const c of abiertos.recordset) {
+    try {
+      await cerrarCicloCompleto({ CicIdCiclo: c.CicIdCiclo, UsuarioAlta: 1 });
+      procesados++;
+    } catch (e) {
+      logger.error(`[CICLO] Error forzando cierre CicIdCiclo=${c.CicIdCiclo}: ${e.message}`);
+      errores++;
+    }
+  }
+
+  logger.info(`[CICLO] forzarCierreTodosCiclosAbiertos → procesados: ${procesados}, errores: ${errores}`);
   return { procesados, errores };
 }
 
@@ -1339,6 +2117,8 @@ module.exports = {
   acumularEnCiclo,
   cerrarCicloCompleto,
   cerrarCiclosVencidos,
+  forzarCierreTodosCiclosAbiertos,
+  getCicloMovimientos,
 
   // Hooks — llamar post-commit desde otros controladores
   hookOrdenCreada,
@@ -1414,13 +2194,20 @@ async function procesarEventoContable(evtCodigo, data) {
         const cueId = await obtenerOCrearCuenta(CliIdCliente, cueTipo, { MonIdMoneda, UsuarioAlta });
         
         // Registrar en historial de movimientos
+        // Buscar ciclo activo ANTES de registrar el movimiento
+        const cicloActivoEvt = await obtenerCicloActivo(cueId);
+        if (cicloActivoEvt) {
+          logger.info(`[MOTOR] ${evtCodigo}: Cliente ${CliIdCliente} tiene ciclo activo CicId=${cicloActivoEvt.CicIdCiclo}. Movimiento se asocia al ciclo.`);
+        }
+
         resSubmayor = await registrarMovimiento({
           CueIdCuenta: cueId,
           MovTipo: evtCodigo,
           MovConcepto: `${CodigoOrden} ${NombreTrabajo}`.trim() || evtCodigo,
           MovImporte: Math.abs(Importe) * (evt.EvtAfectaSaldo || 1), // Efecto natural directo: 1 = Suma/Haber a favor (+), -1 = Resta/Debe deuda (-)
           MovUsuarioAlta: UsuarioAlta,
-          OrdIdOrden, OReIdOrdenRetiro, PagIdPago
+          OrdIdOrden, OReIdOrdenRetiro, PagIdPago,
+          CicIdCiclo: cicloActivoEvt ? cicloActivoEvt.CicIdCiclo : null,
         });
 
         // 2. GENERACIÓN DE DEUDA VIVA (DOCUMENTOS PENDIENTES) Y CRUCES DE MONEDA
@@ -1475,20 +2262,28 @@ async function procesarEventoContable(evtCodigo, data) {
                  }
               }
 
-              // Si TODAVÍA hay deuda viva, se hace el documento pendiente
-              if (deudaReal > 0.01) {
-                 await crearDeudaDocumento({ 
-                    CueIdCuenta: cueId, OrdIdOrden, 
-                    Importe: Math.abs(Importe), 
-                    ImportePendiente: deudaReal 
-                 });
+              // Si hay ciclo activo → acumular en ciclo (cliente SEMANAL), NO crear DeudaDocumento
+              if (cicloActivoEvt) {
+                await acumularEnCiclo(cicloActivoEvt.CicIdCiclo, 'ORDEN', Math.abs(Importe));
+                logger.info(`[CICLO] ${evtCodigo}: Orden ${CodigoOrden} acumulada en ciclo CicId=${cicloActivoEvt.CicIdCiclo}. NO se crea DeudaDocumento.`);
+              } else if (deudaReal > 0.01) {
+                // Sin ciclo activo → crear deuda documento individual
+                await crearDeudaDocumento({ 
+                   CueIdCuenta: cueId, OrdIdOrden, 
+                   Importe: Math.abs(Importe), 
+                   ImportePendiente: deudaReal 
+                });
               } else {
                  // Deuda cubierta completamente por cruce
                  resSubmayor.cubiertoPorSaldo = true;
               }
            }
+        } else if (cicloActivoEvt && evt.EvtGeneraDeuda) {
+          // El saldo no bajó de 0 (tenía fondos), pero tiene ciclo → acumular igual
+          await acumularEnCiclo(cicloActivoEvt.CicIdCiclo, 'ORDEN', Math.abs(Importe));
+          logger.info(`[CICLO] ${evtCodigo}: Orden ${CodigoOrden} con saldo suficiente acumulada en ciclo CicId=${cicloActivoEvt.CicIdCiclo}.`);
         } else if (evt.EvtGeneraDeuda) {
-           // Si el evento genera deuda pero SaldoResultante >= 0, significa que la cuenta TENÍA saldo a favor suficiente
+           // Si el evento genera deuda pero SaldoResultante >= 0 y sin ciclo: cubierto por saldo
            resSubmayor.cubiertoPorSaldo = true;
         }
 

@@ -32,6 +32,7 @@ async function run() {
                 od.OrdCodigoOrden      AS CodigoOrden,
                 pc.ID                  AS PCId,
                 pc.MontoTotal,
+                pc.Moneda,
                 o.OrdenID,
                 o.CliIdCliente,
                 o.DescripcionTrabajo
@@ -74,6 +75,7 @@ async function run() {
 
                 const totalMetros = detalles.reduce((acc, d) => acc + (parseFloat(d.Cantidad) || 0), 0);
                 const currentMonto = parseFloat(row.MontoTotal) || 0;
+                const finalMonId = row.Moneda === 'USD' ? 2 : 1;
 
                 for (const d of detalles) {
                     const lineImp = parseFloat(d.TotalLinea) || 0;
@@ -106,7 +108,7 @@ async function run() {
                             OrdIdOrden: row.OrdenID, CliIdCliente: row.CliIdCliente,
                             Cantidad: lineQty, Importe: 0,
                             CodigoOrden: row.CodigoOrden, NombreTrabajo: `[AUTO-REPAIR] ${row.DescripcionTrabajo}`,
-                            UsuarioAlta: 1, MonIdMoneda: 1
+                            UsuarioAlta: 1, MonIdMoneda: finalMonId
                         });
                     } else if (hayPlan && planMetrosDisp > 0 && lineQty > planMetrosDisp) {
                         const metrosRest = lineQty - planMetrosDisp;
@@ -115,14 +117,14 @@ async function run() {
                             OrdIdOrden: row.OrdenID, CliIdCliente: row.CliIdCliente,
                             Cantidad: planMetrosDisp, Importe: 0,
                             CodigoOrden: row.CodigoOrden, NombreTrabajo: `[AUTO-REPAIR-PREPAGO] ${row.DescripcionTrabajo}`,
-                            UsuarioAlta: 1, MonIdMoneda: 1
+                            UsuarioAlta: 1, MonIdMoneda: finalMonId
                         });
                         if (importeExc > 0 || metrosRest > 0) {
                             await contabilidadService.procesarEventoContable('ORDEN', {
                                 OrdIdOrden: row.OrdenID, CliIdCliente: row.CliIdCliente,
                                 Cantidad: metrosRest, Importe: importeExc,
                                 CodigoOrden: row.CodigoOrden, NombreTrabajo: `[AUTO-REPAIR-EXC] ${row.DescripcionTrabajo}`,
-                                UsuarioAlta: 1, MonIdMoneda: 1
+                                UsuarioAlta: 1, MonIdMoneda: finalMonId
                             });
                         }
                     } else if (lineImp > 0) {
@@ -130,7 +132,7 @@ async function run() {
                             OrdIdOrden: row.OrdenID, CliIdCliente: row.CliIdCliente,
                             Cantidad: lineQty, Importe: lineImp,
                             CodigoOrden: row.CodigoOrden, NombreTrabajo: `[AUTO-REPAIR] ${row.DescripcionTrabajo}`,
-                            UsuarioAlta: 1, MonIdMoneda: 1
+                            UsuarioAlta: 1, MonIdMoneda: finalMonId
                         });
                     }
                 }

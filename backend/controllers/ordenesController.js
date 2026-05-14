@@ -1,7 +1,7 @@
-const { getPool, sql }           = require('../config/db');
-const logger                      = require('../utils/logger');
-const contabilidadService         = require('../services/contabilidadService');
-const ordenesExternasSvc          = require('../services/ordenesExternasService');
+const { getPool, sql } = require('../config/db');
+const logger = require('../utils/logger');
+const contabilidadService = require('../services/contabilidadService');
+const ordenesExternasSvc = require('../services/ordenesExternasService');
 
 // Controlador para obtener las órdenes
 const getOrdenesByFilter = async (req, res) => {
@@ -232,15 +232,52 @@ const getProductoPorIDReact = async (pool, idProdReactQR) => {
  */
 async function parsearDatosOrden(ordenString, codigoOrden) {
 
-  // ── Orden externa (XSB / XDF / ...) → fuente: Google Sheets ─────────────
+  // 1. Verificar si ya existe en PedidosCobranza (Escenarios 2 y 3: Checking o Pedido Web)
+  try {
+    const pool = await getPool();
+    const pCob = await pool.request()
+      .input('Codigo', sql.NVarChar, codigoOrden)
+      .query('SELECT TOP 1 ID, MontoTotal, Moneda, QR_Cantidad, QR_Producto FROM PedidosCobranza WITH(NOLOCK) WHERE LTRIM(RTRIM(NoDocERP)) = @Codigo');
+
+    if (pCob.recordset.length > 0) {
+      const pCobData = pCob.recordset[0];
+      const rawCantidad = ordenString.trim().split('$*')[5] ?? '0';
+      const fallbackCant = parseFloat(rawCantidad.toString().replace(',', '.'));
+      const cantidadCob = parseFloat(pCobData.QR_Cantidad) || fallbackCant;
+
+      return {
+        cantidad: isNaN(cantidadCob) ? 0 : cantidadCob,
+        idProdReactExt: pCobData.QR_Producto ? parseInt(pCobData.QR_Producto, 10) : null,
+        importeCorteUYU: 0,
+        importeCosturaUYU: 0,
+        importeBordadoUYU: 0,
+        importeTotal: pCobData.MontoTotal,
+        detalleCostos: 'Desde PedidosCobranza',
+        material: null,
+        yaCobrado: true,
+        montoCobrado: pCobData.MontoTotal,
+        monedaCobrada: pCobData.Moneda
+      };
+    }
+  } catch (e) {
+    logger.warn(`[PARSE-QR] Error consultando PedidosCobranza para ${codigoOrden}: ${e.message}`);
+  }
+
+  // ── Orden externa (XSB / XDF / ...) → fuente: Google Sheets ──────────
   if (ordenesExternasSvc.esOrdenExterna(codigoOrden)) {
     try {
       const datos = await ordenesExternasSvc.getDatosDesdeSheets(codigoOrden);
       return {
-        cantidad:        datos.cantidad,
-        idProdReactExt:  datos.idProdReact,
-        importeTotal:    datos.importeTotal,
-        detalleCostos:   datos.detalleCostos
+        cantidad: datos.cantidad,
+        idProdReactExt: datos.idProdReact,
+        // Costos individuales en UYU desde Sheets (NO usar como precio directo)
+        importeCorteUYU: datos.importeCorte || 0,
+        importeCosturaUYU: datos.importeCostura || 0,
+        importeBordadoUYU: datos.importeBordado || 0,
+        importeTotal: datos.importeTotal,   // solo referencia/log
+        detalleCostos: datos.detalleCostos,
+        material: datos.material || null,
+        yaCobrado: false
       };
     } catch (err) {
       // Si Sheets falla, loguear y caer al valor del QR (degradación elegante)
@@ -249,15 +286,20 @@ async function parsearDatosOrden(ordenString, codigoOrden) {
   }
 
   // ── Orden normal (o fallback) → fuente: string QR posición [5] ──────────
-  const parts      = ordenString.trim().split('$*');
+  const parts = ordenString.trim().split('$*');
   const rawCantidad = parts[5] ?? '0';
-  const cantidad   = parseFloat(rawCantidad.toString().replace(',', '.'));
+  const cantidad = parseFloat(rawCantidad.toString().replace(',', '.'));
 
   return {
-    cantidad:       isNaN(cantidad) ? 0 : cantidad,
-    idProdReactExt: null,   // usa el producto que viene en el QR
-    importeTotal:   0,
-    detalleCostos:  ''
+    cantidad: isNaN(cantidad) ? 0 : cantidad,
+    idProdReactExt: null,
+    importeCorteUYU: 0,
+    importeCosturaUYU: 0,
+    importeBordadoUYU: 0,
+    importeTotal: 0,
+    detalleCostos: '',
+    material: null,
+    yaCobrado: false
   };
 }
 
@@ -277,8 +319,13 @@ const createOrden = async (req, res) => {
     const [CodigoOrden, CodigoClienteQR, NombreTrabajo, IdModo, IdProductoQR, , CostoFinal] = parts;
 
     // Parsear cantidad y producto (puede consultar Sheets si es XSB/XDF)
-    const { cantidad: cantidadDecimal, idProdReactExt, importeTotal, detalleCostos } = await parsearDatosOrden(ordenString, CodigoOrden);
-    const costoOriginalQR = parseFloat(CostoFinal.toString().replace(',', '.'));
+    const { cantidad: cantidadDecimal, idProdReactExt,
+      importeCorteUYU, importeCosturaUYU, importeBordadoUYU,
+      importeTotal, detalleCostos, material: materialPlanilla,
+      yaCobrado, montoCobrado, monedaCobrada } = await parsearDatosOrden(ordenString, CodigoOrden);
+
+    // Si la orden ya estaba guardada en PedidosCobranza, el costo es ese MontoTotal.
+    const costoOriginalQR = yaCobrado ? montoCobrado : parseFloat(CostoFinal.toString().replace(',', '.'));
 
     let trabajoFinal = NombreTrabajo;
     // Eliminado: no alteraremos el NombreTrabajo escaneado con textos extras.
@@ -301,16 +348,24 @@ const createOrden = async (req, res) => {
         const productoMapeado = await getProductoPorIDReact(pool, IdProductoQR);
         if (!productoMapeado) return res.status(405).json({ error: 'Producto no mapeado o inexistente vía IDProdReact.' });
 
-        // NO TIENE ORDEN DE RETIRO, SE ACTUALIZA 
+        // Para XSB/XDF: guardar el producto de Sheets (tela real), no el del QR
+        let productoParaDBUpdate = productoMapeado;
+        if (idProdReactExt !== null) {
+          const productoSheets = await getProductoPorIDReact(pool, idProdReactExt);
+          if (productoSheets) productoParaDBUpdate = productoSheets;
+        }
+
+        // NO TIENE ORDEN DE RETIRO, SE ACTUALIZA
         await pool.request()
           .input('CodigoOrden', sql.VarChar(100), CodigoOrden)
           .input('CodigoCliente', sql.Int, clienteMapeado.CliIdCliente)
           .input('NombreTrabajo', sql.VarChar(255), trabajoFinal)
           .input('IdModo', sql.Int, parseInt(IdModo, 10) || null)
-          .input('IdProducto', sql.Int, productoMapeado.ProIdProducto)
+          .input('IdProducto', sql.Int, productoParaDBUpdate.ProIdProducto)  // ← Sheets para XSB
           .input('Cantidad', sql.Float, cantidadDecimal)
           .input('CostoFinal', sql.Float, costoOriginalQR)
           .input('UsuarioAlta', sql.Int, UsuarioAlta)
+          .input('MaterialPlanilla', sql.NVarChar(255), materialPlanilla || null)
           .query(`
             UPDATE OrdenesDeposito
             SET 
@@ -321,7 +376,8 @@ const createOrden = async (req, res) => {
               OrdCantidad = @Cantidad,
               OrdCostoFinal = @CostoFinal,
               OrdFechaEstadoActual = GETDATE(),
-              OrdUsuarioAlta = @UsuarioAlta
+              OrdUsuarioAlta = @UsuarioAlta,
+              OrdMaterialPlanilla = COALESCE(@MaterialPlanilla, OrdMaterialPlanilla)
             WHERE OrdCodigoOrden = @CodigoOrden
           `);
 
@@ -377,13 +433,11 @@ const createOrden = async (req, res) => {
       return res.status(405).json({ error: 'Producto no encontrado asociando IDProdReact.' });
     }
 
-    // ── Producto para la DB: SIEMPRE el de la etiqueta QR ─────────────────────
-    // La orden queda como documento fiel a lo que generó la etiqueta.
-    const monIdMoneda      = productoMapeado.MonIdMoneda || 1;
-    const cantidadQR       = parseFloat((ordenString.trim().split('$*')[5] ?? '0').replace(',', '.')) || cantidadDecimal;
+    // ── Producto para la DB: Sheets si es XSB/XDF, QR si es orden normal ──────
+    const monIdMoneda = productoMapeado.MonIdMoneda || 1;
+    const cantidadQR = parseFloat((ordenString.trim().split('$*')[5] ?? '0').replace(',', '.')) || cantidadDecimal;
 
-    // ── Producto para hooks de contabilidad: usa Sheets si es XSB/XDF ─────────
-    // Solo se aplica para el descuento de recursos y el débito; la DB no se toca.
+    // ── Producto para hooks de contabilidad Y para la DB en órdenes externas ───
     let productoContabilidad = productoMapeado;
     if (idProdReactExt !== null && idProdReactExt !== productoMapeado.ProIdProducto) {
       const productoSheets = await getProductoPorIDReact(pool, idProdReactExt);
@@ -395,13 +449,19 @@ const createOrden = async (req, res) => {
       }
     }
 
+    // Para XSB/XDF: la DB guarda el producto real de la tela (Sheets), no el del QR
+    const productoParaDB = idProdReactExt !== null ? productoContabilidad : productoMapeado;
+    if (idProdReactExt !== null && productoParaDB.ProIdProducto !== productoMapeado.ProIdProducto) {
+      logger.info(`[EXTERNAS] ${CodigoOrden}: DB guardará producto Sheets (ProId=${productoParaDB.ProIdProducto} "${productoParaDB.ProductoNombre}") en lugar del QR (ProId=${productoMapeado.ProIdProducto}).`);
+    }
+
     const result = await pool.request()
       .input('CodigoOrden', sql.VarChar(100), CodigoOrden)
-      .input('Cantidad',    sql.Float,        cantidadQR)                    // ← cantidad original del QR
-      .input('CodigoCliente', sql.Int,        reqClientId)
+      .input('Cantidad', sql.Float, cantidadDecimal)               // ← cantidad de Sheets (real)
+      .input('CodigoCliente', sql.Int, reqClientId)
       .input('NombreTrabajo', sql.VarChar(255), trabajoFinal)
-      .input('IdModo',      sql.Int,          parseInt(IdModo, 10) || null)
-      .input('IdProducto',  sql.Int,          productoMapeado.ProIdProducto) // ← producto original del QR
+      .input('IdModo', sql.Int, parseInt(IdModo, 10) || null)
+      .input('IdProducto', sql.Int, productoParaDB.ProIdProducto)  // ← Sheets para XSB, QR para normal
 
       .input('CostoFinal', sql.Float, costoOriginalQR)
       .input('FechaIngresoOrden', sql.DateTime, new Date())
@@ -410,6 +470,7 @@ const createOrden = async (req, res) => {
       .input('OrdFechaEstadoActual', sql.DateTime, new Date())
       .input('MonIdMoneda', sql.Int, monIdMoneda)
       .input('LugarRetiro', sql.Int, clienteMapeado.FormaEnvioID ? parseInt(clienteMapeado.FormaEnvioID, 10) : null)
+      .input('MaterialPlanilla', sql.NVarChar(255), materialPlanilla || null)
       .query(`
         DECLARE @newOrdIdOrden TABLE (Codigo INT);
 
@@ -426,7 +487,8 @@ const createOrden = async (req, res) => {
           OrdUsuarioAlta,
           OrdEstadoActual,
           OrdFechaEstadoActual,
-          LReIdLugarRetiro
+          LReIdLugarRetiro,
+          OrdMaterialPlanilla
         )
         OUTPUT INSERTED.OrdIdOrden INTO @newOrdIdOrden
         VALUES (
@@ -434,7 +496,8 @@ const createOrden = async (req, res) => {
           @NombreTrabajo, @IdModo, @IdProducto,
           @MonIdMoneda,
           @CostoFinal, @FechaIngresoOrden,
-          @UsuarioAlta, @OrdEstadoActual, @OrdFechaEstadoActual, @LugarRetiro
+          @UsuarioAlta, @OrdEstadoActual, @OrdFechaEstadoActual, @LugarRetiro,
+          @MaterialPlanilla
         );
 
         SELECT Codigo AS NewOrderId FROM @newOrdIdOrden;
@@ -460,50 +523,190 @@ const createOrden = async (req, res) => {
 
     res.status(201).json({ message: 'Orden creada correctamente', idOrden: newOrderId });
 
-    // ── MOTOR DE CONTABILIDAD UNIFICADO (EVENT SOURCING SEPARADO) ────────────
-    try {
-      const deudaReal = importeTotal > 0 ? importeTotal : costoOriginalQR;
-      const finalMonId = importeTotal > 0 ? 1 : monIdMoneda;
+    // ── REGLA DE PRICING ───────────────────────────────────────────────────────────────
+    // Para XSB/XDF: el precio del QR (costoOriginalQR) es SIEMPRE la deuda base (USD).
+    // Los costos de Sheets (corte/costura/bordado) están en UYU y solo se usan cuando
+    // hay plan activo: se convierten a USD y se registran como deuda de servicios.
+    // NUNCA usar importeTotal de Sheets directamente como precio en USD.
+    const deudaReal = yaCobrado ? montoCobrado : costoOriginalQR;
+    const finalMonId = yaCobrado ? (monedaCobrada === 'USD' ? 2 : 1) : monIdMoneda;
 
-      let tienePlan = false;
-      if (cantidadDecimal > 0 && productoContabilidad.ProIdProducto) {
-        const pool = await require('../config/db.js').getPool();
-        const planCheck = await pool.request()
-          .input('c', sql.Int, reqClientId)
-          .input('p', sql.Int, productoContabilidad.ProIdProducto)
-          .query('SELECT TOP 1 PlaIdPlan FROM PlanesMetros WHERE CliIdCliente = @c AND ProIdProducto = @p AND PlaActivo = 1 AND (PlaFechaVencimiento IS NULL OR PlaFechaVencimiento >= CAST(GETDATE() AS DATE))');
-        
-        tienePlan = planCheck.recordset.length > 0;
+    logger.info(`[CTRL:ORDEN] Post-commit Contabilidad — Orden=${CodigoOrden} CliId=${reqClientId} ProIdProducto_contabilidad=${productoContabilidad.ProIdProducto} cantidadDecimal=${cantidadDecimal} costoQR=${costoOriginalQR} deudaReal=${deudaReal} MonId=${finalMonId} yaCobrado=${yaCobrado}`);
+
+
+    let tienePlan = false;
+    if (cantidadDecimal > 0 && productoContabilidad.ProIdProducto) {
+      const pool = await require('../config/db.js').getPool();
+      const planCheck = await pool.request()
+        .input('c', sql.Int, reqClientId)
+        .input('p', sql.Int, productoContabilidad.ProIdProducto)
+        .query('SELECT TOP 1 PlaIdPlan, PlaCantidadTotal, PlaCantidadUsada FROM PlanesMetros WHERE CliIdCliente = @c AND ProIdProducto = @p AND PlaActivo = 1 AND (PlaFechaVencimiento IS NULL OR PlaFechaVencimiento >= CAST(GETDATE() AS DATE))');
+
+      tienePlan = planCheck.recordset.length > 0;
+      logger.info(`[CTRL:ORDEN] Plan check en controller: CliId=${reqClientId} ProId=${productoContabilidad.ProIdProducto} tienePlan=${tienePlan} Detalle=${JSON.stringify(planCheck.recordset[0] || null)}`);
+    } else {
+      logger.info(`[CTRL:ORDEN] No se verifica plan: cantidadDecimal=${cantidadDecimal} ProIdProducto=${productoContabilidad.ProIdProducto}`);
+    }
+
+    // 1. Calcular serviciosUSD si aplica (viene de Sheets en UYU)
+    let serviciosUSD = 0;
+    if (!yaCobrado) {
+      const serviciosUYU = (importeCorteUYU || 0) + (importeCosturaUYU || 0) + (importeBordadoUYU || 0);
+      if (serviciosUYU > 0.01) {
+        try {
+          const poolC = await require('../config/db.js').getPool();
+          const cotRes = await poolC.request().query(`SELECT TOP 1 CotDolar FROM dbo.Cotizaciones ORDER BY CotIdCotizacion DESC`);
+          const cotizacion = cotRes.recordset[0]?.CotDolar || 40;
+          serviciosUSD = Math.round((serviciosUYU / cotizacion) * 100) / 100;
+          logger.info(`[CTRL:ORDEN] ${CodigoOrden}: servicios UYU=${serviciosUYU} ÷ cotiz=${cotizacion} = USD=${serviciosUSD}`);
+        } catch (e) {
+          logger.error(`[CTRL:ORDEN] Error convirtiendo servicios UYU a USD para ${CodigoOrden}: ${e.message}`);
+        }
+      }
+    }
+
+    // 2. Procesar eventos contables
+    if (tienePlan) {
+      // EVENTO ENTREGA: descuenta metros del plan
+      logger.info(`[CTRL:ORDEN] Disparando evento ENTREGA para ${CodigoOrden} (tiene plan activo)`);
+      contabilidadService.procesarEventoContable('ENTREGA', {
+        OrdIdOrden: newOrderId,
+        CliIdCliente: reqClientId,
+        ProIdProducto: productoContabilidad.ProIdProducto,
+        Cantidad: cantidadDecimal,
+        CodigoOrden,
+        NombreTrabajo: trabajoFinal,
+        UsuarioAlta,
+        Importe: deudaReal, // se usa como ref, pero el asiento toma el costo del plan
+        MonIdMoneda: finalMonId
+      }).catch(e => logger.error(`[CONTABILIDAD] Error en ENTREGA para ${CodigoOrden}: ${e.message}`));
+
+      if (yaCobrado) {
+        if (deudaReal > 0) {
+          logger.info(`[CTRL:ORDEN] Disparando evento ORDEN para ${CodigoOrden} (servicios pre-calculados)`);
+          contabilidadService.procesarEventoContable('ORDEN', {
+            OrdIdOrden: newOrderId,
+            CliIdCliente: reqClientId,
+            Importe: deudaReal,
+            MonIdMoneda: finalMonId,
+            CodigoOrden,
+            NombreTrabajo: `${trabajoFinal} [Servicios]`,
+            UsuarioAlta
+          }).catch(e => logger.error(`[CONTABILIDAD] Error en ORDEN-SERVICIOS (ya cobrado) para ${CodigoOrden}: ${e.message}`));
+        }
+      } else {
+        if (serviciosUSD > 0) {
+          logger.info(`[CTRL:ORDEN] Disparando evento ORDEN para ${CodigoOrden} (solo servicios USD=${serviciosUSD})`);
+          contabilidadService.procesarEventoContable('ORDEN', {
+            OrdIdOrden: newOrderId,
+            CliIdCliente: reqClientId,
+            Importe: serviciosUSD,
+            MonIdMoneda: 2,   // USD
+            CodigoOrden,
+            NombreTrabajo: `${trabajoFinal} [Servicios]`,
+            UsuarioAlta
+          }).catch(e => logger.error(`[CONTABILIDAD] Error en ORDEN-SERVICIOS para ${CodigoOrden}: ${e.message}`));
+        }
       }
 
-      if (tienePlan) {
-        // EVENTO ENTREGA: Lógica de recursos (Los Metros)
-        // Se le delega el DeudaReal para que hookEntregaMetros calcule y cobre la diferencia
-        contabilidadService.procesarEventoContable('ENTREGA', {
-          OrdIdOrden:    newOrderId,
-          CliIdCliente:  reqClientId,
-          ProIdProducto: productoContabilidad.ProIdProducto,
-          Cantidad:      cantidadDecimal,
-          CodigoOrden,
-          NombreTrabajo: trabajoFinal,
-          UsuarioAlta,
-          Importe:       deudaReal,
-          MonIdMoneda:   finalMonId
-        }).catch(e => logger.error(`[CONTABILIDAD] Error en ENTREGA para ${CodigoOrden}: ${e.message}`));
-      } else if (deudaReal > 0) {
-        // EVENTO ORDEN: Carga el 100% de la deuda (no hay plan)
+    } else {
+      // Sin plan → el cliente paga el costo del QR (producto).
+      // ATENCIÓN: El costo del QR (deudaReal) YA INCLUYE el total de servicios extra cobrados en la orden (XSB).
+      const importeTotal = deudaReal;
+      if (importeTotal > 0) {
+        logger.info(`[CTRL:ORDEN] Disparando evento ORDEN para ${CodigoOrden} (sin plan, importeTotal=${importeTotal})`);
         contabilidadService.procesarEventoContable('ORDEN', {
-          OrdIdOrden:    newOrderId,
-          CliIdCliente:  reqClientId,
-          Importe:       deudaReal,
-          MonIdMoneda:   finalMonId,
+          OrdIdOrden: newOrderId,
+          CliIdCliente: reqClientId,
+          Importe: importeTotal,
+          MonIdMoneda: finalMonId, // Si es pistoleo nuevo sin cobrar, finalMonId es la moneda del QR. Ojo si el QR es en pesos! Asumimos USD para simplificar.
           CodigoOrden,
           NombreTrabajo: trabajoFinal,
           UsuarioAlta
         }).catch(e => logger.error(`[CONTABILIDAD] Error en ORDEN para ${CodigoOrden}: ${e.message}`));
       }
-    } catch (contabilidadError) {
-      logger.error(`[CONTABILIDAD] Fallo al procesar orden ${CodigoOrden} post-creación:`, contabilidadError.message);
+    }
+
+    // --- NUEVO: BACKUP EN TABLAS DE COBRANZA ---
+    if (!yaCobrado) {
+      try {
+        const ERPSyncService = require('../services/erpSyncService');
+        const poolSync = await getPool();
+        const targetCurrency = finalMonId === 2 ? 'USD' : 'UYU';
+
+        // Si no está cubierto por un plan, el subtotal base es el Total del QR MENOS los servicios extra
+        const baseSubtotal = tienePlan ? deudaReal : Math.max(0, deudaReal - serviciosUSD);
+        const baseSubtotalOriginal = tienePlan ? costoOriginalQR : Math.max(0, costoOriginalQR - serviciosUSD);
+
+        const detallesCobranza = [{
+          OrdenID: newOrderId,
+          CodArticulo: productoContabilidad.CodArticulo || '',
+          ProIdProducto: productoContabilidad.ProIdProducto,
+          Cantidad: cantidadDecimal,
+          PrecioUnitario: cantidadDecimal > 0 ? (baseSubtotal / cantidadDecimal) : 0,
+          Subtotal: baseSubtotal,
+          PrecioUnitarioOriginal: cantidadDecimal > 0 ? (baseSubtotalOriginal / cantidadDecimal) : 0,
+          SubtotalOriginal: baseSubtotalOriginal,
+          Moneda: targetCurrency,
+          MonedaOriginal: targetCurrency,
+          LogPrecioAplicado: tienePlan ? 'Cubierto por Plan' : 'Ingreso Depósito',
+          Perfiles: tienePlan ? 'Prepago' : 'Precio Base'
+        }];
+
+        // --- NUEVO: Inyectar líneas de servicios externos (Corte, Costura, Bordado) al detalle visual ---
+        if (!yaCobrado && (importeCorteUYU > 0 || importeCosturaUYU > 0 || importeBordadoUYU > 0)) {
+          try {
+            const poolC = await require('../config/db.js').getPool();
+            const cotRes = await poolC.request().query(`SELECT TOP 1 CotDolar FROM dbo.Cotizaciones ORDER BY CotIdCotizacion DESC`);
+            const cotizacion = cotRes.recordset[0]?.CotDolar || 40;
+
+            const agregarServicio = (importeUYU, nombre, codArticulo, proIdProducto) => {
+              if (importeUYU && importeUYU > 0.01) {
+                const importeUSD = Math.round((importeUYU / cotizacion) * 100) / 100;
+                // Insertamos en el detalle en la moneda destino de la orden principal o forzado a USD
+                const monedaServicio = targetCurrency === 'USD' ? 'USD' : 'USD';
+
+                detallesCobranza.push({
+                  OrdenID: newOrderId,
+                  CodArticulo: codArticulo,
+                  ProIdProducto: proIdProducto,
+                  Cantidad: 1,
+                  PrecioUnitario: importeUSD,
+                  Subtotal: importeUSD,
+                  PrecioUnitarioOriginal: importeUYU,
+                  SubtotalOriginal: importeUYU,
+                  Moneda: monedaServicio,
+                  MonedaOriginal: 'UYU',
+                  LogPrecioAplicado: `Servicio de ${nombre} (Planilla)`,
+                  Perfiles: 'Servicio Adicional'
+                });
+              }
+            };
+
+            agregarServicio(importeCorteUYU, 'Corte', '1375', 90);
+            agregarServicio(importeCosturaUYU, 'Costura', '115', 36);
+            agregarServicio(importeBordadoUYU, 'Bordado', '1567', 434);
+          } catch (eServicios) {
+            logger.error(`[ERPSync] Error al agregar detalles de servicios a cobranza: ${eServicios.message}`);
+          }
+        }
+        // -----------------------------------------------------------------------------------------------
+
+        const qrData = {
+          qrPedido: CodigoOrden, qrCliente: CodigoClienteQR, qrTrabajo: trabajoFinal,
+          qrUrgencia: '1', qrProducto: IdProductoQR, qrCantidad: cantidadQR,
+          qrImporte: costoOriginalQR, qrString: ordenString
+        };
+
+        // Fire and forget - Se guarda como Snapshot paralelo
+        ERPSyncService.updatePedidosCobranza(
+          poolSync, CodigoOrden, reqClientId, deudaReal, targetCurrency, detallesCobranza, '', qrData
+        ).catch(e => logger.error(`[ERPSync] Error respaldando PedidosCobranza desde Ingreso: ${e.message}`));
+      } catch (ePed) {
+        logger.error(`[ERPSync] Error preparando backup de cobranza: ${ePed.message}`);
+      }
+    } else {
+      logger.info(`[ERPSync] Omitiendo backup a PedidosCobranza porque ya existía registro previo (yaCobrado) para ${CodigoOrden}`);
     }
     // ─────────────────────────────────────────────────────────────────────────
     // ─────────────────────────────────────────────────────────────────────────
@@ -620,41 +823,41 @@ VALUES(@orderId, @estadoId, @fecha, @usuario);
 
     // --- PUSH NOTIFICATION WEB INTEGRATION (BULK) ---
     try {
-        const pushService = require('../services/pushNotificationService');
-        const estadoStr = String(nuevoEstado).trim().toLowerCase();
-        let pushMsg = null;
+      const pushService = require('../services/pushNotificationService');
+      const estadoStr = String(nuevoEstado).trim().toLowerCase();
+      let pushMsg = null;
 
-        if (estadoStr.includes('finalizado') || estadoStr.includes('pronto') || estadoStr.includes('terminado') || estadoStr === '4' || estadoStr === '7') {
-            pushMsg = { title: '¡Tu pedido está listo!', body: `El pedido {code} está pronto. Ya podés crear una orden de retiro.`, url: '/portal/pickup' };
-        } else if (estadoStr.includes('en camino') || estadoStr === '8') {
-            pushMsg = { title: 'Pedido en camino', body: `Tu pedido {code} fue despachado y está en camino.`, url: '/portal/pickup' };
-        } else if (estadoStr.includes('cancelado') || estadoStr === '10') {
-            pushMsg = { title: 'Pedido cancelado', body: `Tu pedido {code} fue cancelado.`, url: '/portal/pickup' };
-        }
+      if (estadoStr.includes('finalizado') || estadoStr.includes('pronto') || estadoStr.includes('terminado') || estadoStr === '4' || estadoStr === '7') {
+        pushMsg = { title: '¡Tu pedido está listo!', body: `El pedido {code} está pronto. Ya podés crear una orden de retiro.`, url: '/portal/pickup' };
+      } else if (estadoStr.includes('en camino') || estadoStr === '8') {
+        pushMsg = { title: 'Pedido en camino', body: `Tu pedido {code} fue despachado y está en camino.`, url: '/portal/pickup' };
+      } else if (estadoStr.includes('cancelado') || estadoStr === '10') {
+        pushMsg = { title: 'Pedido cancelado', body: `Tu pedido {code} fue cancelado.`, url: '/portal/pickup' };
+      }
 
-        if (pushMsg) {
-            const pool2 = await getPool();
-            const orderIdsList = orderIds.map(id => `'${id}'`).join(',');
-            const resPush = await pool2.request().query(`
+      if (pushMsg) {
+        const pool2 = await getPool();
+        const orderIdsList = orderIds.map(id => `'${id}'`).join(',');
+        const resPush = await pool2.request().query(`
                 SELECT c.CodCliente, o.OrdCodigoOrden AS CodigoOrden
                 FROM OrdenesDeposito o 
                 INNER JOIN Clientes c ON o.CliIdCliente = c.CliIdCliente
                 WHERE o.OrdIdOrden IN (${orderIdsList})
             `);
-            
-            for (const row of resPush.recordset) {
-                if (row.CodCliente) {
-                    const code = row.CodigoOrden || '';
-                    const finalTitle = pushMsg.title.replace(/\{code\}/g, code);
-                    const finalBody = pushMsg.body.replace(/\{code\}/g, code);
-                    pushService.sendToClient(row.CodCliente, { 
-                        title: finalTitle, body: finalBody, url: pushMsg.url 
-                    }).catch(e => logger.error('[WebPush] Error envío push:', e.message));
-                }
-            }
+
+        for (const row of resPush.recordset) {
+          if (row.CodCliente) {
+            const code = row.CodigoOrden || '';
+            const finalTitle = pushMsg.title.replace(/\{code\}/g, code);
+            const finalBody = pushMsg.body.replace(/\{code\}/g, code);
+            pushService.sendToClient(row.CodCliente, {
+              title: finalTitle, body: finalBody, url: pushMsg.url
+            }).catch(e => logger.error('[WebPush] Error envío push:', e.message));
+          }
         }
+      }
     } catch (pushErr) {
-        logger.error('[WebPush] Hubo un error procesando notificaciones masivas:', pushErr.message);
+      logger.error('[WebPush] Hubo un error procesando notificaciones masivas:', pushErr.message);
     }
     // ------------------------------------------
 
@@ -858,6 +1061,22 @@ const parseQROrden = async (req, res) => {
       return res.status(404).json({ valid: false, error: 'Producto Web (IDProdReact) no encontrado en base local.' });
     }
 
+    // Para órdenes externas (XSB/XDF): consultar Sheets para obtener el material real
+    let materialSheets = null;
+    let cantidadSheets = null;
+    const esOrdenExterna = /^(XSB|XDF)-/i.test(CodigoOrden);
+    if (esOrdenExterna) {
+      try {
+        const datosSheets = await ordenesExternasSvc.getDatosDesdeSheets(CodigoOrden);
+        if (datosSheets) {
+          materialSheets = datosSheets.material || null;   // ej: "Jacquard Elite 1,83"
+          cantidadSheets = datosSheets.cantidad || null;   // cantidad real desde Sheets
+        }
+      } catch (errSheets) {
+        logger.warn(`[PARSE-QR] No se pudo obtener material de Sheets para ${CodigoOrden}: ${errSheets.message}`);
+      }
+    }
+
     return res.json({
       valid: true,
       data: {
@@ -871,7 +1090,11 @@ const parseQROrden = async (req, res) => {
         ProductoNombre: productoData.ProductoNombre || 'Sin nombre',
         Cantidad: parseFloat(Cantidad?.toString()?.replace(',', '.') || 0),
         CostoFinal: parseFloat(CostoFinal?.toString()?.replace(',', '.') || 0),
-        Moneda: productoData.MonSimbolo || '$U'
+        Moneda: productoData.MonSimbolo || '$U',
+        // Datos de Sheets (solo para XSB/XDF)
+        MaterialSheets: materialSheets,    // nombre de la tela desde la planilla
+        CantidadSheets: cantidadSheets,    // metros reales desde la planilla
+        EsOrdenExterna: esOrdenExterna,
       }
     });
 
@@ -880,6 +1103,7 @@ const parseQROrden = async (req, res) => {
     return res.status(500).json({ valid: false, error: 'Error interno validando: ' + err.message });
   }
 };
+
 
 const updatePhoneAndResendWsp = async (req, res) => {
   const { ordId, nuevoTelefono } = req.body;

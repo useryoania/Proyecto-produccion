@@ -7,8 +7,19 @@ const contabilidadCore = require('../services/contabilidadCore');
 const obtenerMetodosPago = async (req, res) => {
   try {
     const pool = await getPool();
-    const result = await pool.request().query('SELECT MPaIdMetodoPago, MPaDescripcionMetodo FROM MetodosPagos WITH(NOLOCK)');
+    const result = await pool.request().query(`
+      SELECT 
+        MPaIdMetodoPago, 
+        MPaDescripcionMetodo,
+        ISNULL(MPaAfectaCaja, 1)  AS MPaAfectaCaja,
+        ISNULL(MPaTipo, 'ENTRADA') AS MPaTipo,
+        ISNULL(MPaActivo, 1)       AS MPaActivo
+      FROM MetodosPagos WITH(NOLOCK)
+      WHERE ISNULL(MPaActivo, 1) = 1
+      ORDER BY MPaDescripcionMetodo
+    `);
     res.json(result.recordset);
+
   } catch (error) {
     logger.error('Error al obtener métodos de pago:', error);
     res.status(500).json({ error: 'Error al obtener métodos de pago' });

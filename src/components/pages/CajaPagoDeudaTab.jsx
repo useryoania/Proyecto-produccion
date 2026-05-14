@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   Search, CheckCircle, FileMinus, CreditCard, X, CheckSquare, Square,
-  ArrowDownCircle, User
+  ArrowDownCircle, User, AlertTriangle
 } from 'lucide-react';
 import api from '../../services/apiClient';
 import CajaPanelPago from './CajaPanelPago';
@@ -15,7 +15,7 @@ const TIPOS_DOC_PAGO = [
   { value: 'NINGUNO', label: 'Sin documento' },
 ];
 
-export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion = 1, tiposDocDisponibles = TIPOS_DOC_PAGO, onPagoCompletado }) {
+export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion = 1, tiposDocDisponibles = TIPOS_DOC_PAGO, onPagoCompletado, isAdminCaja }) {
 
   // ─── Estado ─────────────────────────────────────────────────────────────
   const [qCliente, setQCliente]         = useState('');
@@ -29,15 +29,33 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
   const [serieDoc, setSerieDoc]   = useState('A');
   const [observaciones, setObservaciones] = useState('');
   const [procesando, setProcesando] = useState(false);
+  const [pendienteParcial, setPendienteParcial] = useState(null); // { diferencia } cuando pago < deuda
+
+  // ─── Derivados que los useEffects necesitan (deben declararse antes) ─────────────
+  // NOTA: deudasSeleccionadas se recalcula debajo con más contexto,
+  // pero necesitamos monedaDeuda aqui para los efectos de pago.
+  const monedaDeuda = useMemo(() => {
+    const sel = deudas.filter(d => seleccionadas.includes(d.DDeIdDocumento));
+    return sel.some(d => (d.MonSimbolo || '').includes('US') || d.CueTipo === 'DINERO_USD') ? 'USD' : 'UYU';
+  }, [deudas, seleccionadas]);
+  const simboloDeuda = monedaDeuda === 'USD' ? 'US$' : '$U';
 
   // ─── Auto-seleccionar primer método de pago ──────────────────────────────
   useEffect(() => {
     if (metodosPago.length > 0 && !pagos[0].metodoPagoId) {
       const contado = metodosPago.find(m => /contado|efectivo/i.test(m.MPaDescripcionMetodo));
       const def = contado || metodosPago[0];
-      setPagos([{ id: Date.now(), metodoPagoId: def.MPaIdMetodoPago, moneda: 'UYU', monedaId: 1, monto: '' }]);
+      setPagos([{ id: Date.now(), metodoPagoId: def.MPaIdMetodoPago, moneda: monedaDeuda, monedaId: monedaDeuda === 'USD' ? 2 : 1, monto: '' }]);
     }
   }, [metodosPago]);
+
+  // ─── Sincronizar moneda del pago cuando cambia la moneda de las deudas ────
+  useEffect(() => {
+    // Solo sincronizar si el monto está vacío (el usuario no tocó nada aún)
+    setPagos(prev => prev.map(p =>
+      p.monto === '' ? { ...p, moneda: monedaDeuda, monedaId: monedaDeuda === 'USD' ? 2 : 1 } : p
+    ));
+  }, [monedaDeuda]);
 
   // ─── Cargar TODAS las deudas inicialmente ──────────────────────────────────
   const cargarDeudas = async () => {
@@ -101,6 +119,8 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
   const clientesInvolucrados = Array.from(new Set(deudasSeleccionadas.map(d => d.CliIdCliente)));
   const clientePrincipalId = clientesInvolucrados[0] || null;
 
+
+
   // ─── Badge de estado ─────────────────────────────────────────────────────
   const badgeEstado = (d) => {
     const dias = Number(d.DiasVencido || 0);
@@ -110,7 +130,7 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
   };
 
   // ─── Procesar pago ────────────────────────────────────────────────────────
-  const handleProcesar = async () => {
+  const handleProcesar = async (forzarParcial = false) => {
     if (seleccionadas.length === 0) return toast.warning('Seleccione al menos una deuda.');
     if (clientesInvolucrados.length > 1) {
       return toast.warning('Solo se pueden pagar deudas de un mismo cliente a la vez.');
@@ -121,23 +141,42 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
 
     const totalPagado = pagosValidos.reduce((a, p) => {
       const m = parseFloat(p.monto) || 0;
-      return a + (p.moneda === 'USD' ? m * (cotizacion || 1) : m);
+      if (monedaDeuda === 'USD') {
+        // Deuda en USD → normalizar pago a USD (si pago es UYU, dividir por cotización)
+        return a + (p.moneda === 'USD' ? m : m / (cotizacion || 1));
+      } else {
+        // Deuda en UYU → normalizar pago a UYU (si pago es USD, multiplicar por cotización)
+        return a + (p.moneda === 'USD' ? m * (cotizacion || 1) : m);
+      }
     }, 0);
-    if (totalAPagar - totalPagado > 1.0)
-      return toast.warning(`Falta cubrir $ ${(totalAPagar - totalPagado).toFixed(2)}.`);
+
+    const diferencia = totalPagado - totalAPagar;
+
+    // Pago de más → siempre error
+    if (diferencia > 0.01)
+      return toast.error(`El pago excede la deuda en ${simboloDeuda} ${diferencia.toFixed(2)}. Ajuste el monto.`);
+
+    // Pago parcial → mostrar banner de confirmación (solo si NO viene de confirmar explícito)
+    if (diferencia < -0.01 && !forzarParcial) {
+      setPendienteParcial({ falta: Math.abs(diferencia), totalPagado });
+      return;
+    }
 
     setProcesando(true);
     try {
-      await api.post('/contabilidad/caja/pago-deuda', {
+      const res = await api.post('/contabilidad/caja/pago-deuda', {
         header: {
           clienteId: clientePrincipalId,
           tipoDocumento: tipoDoc,
           serieDoc,
+          moneda: monedaDeuda,          // ← moneda real de la deuda (USD o UYU)
+          monedaId: monedaDeuda === 'USD' ? 2 : 1,
           observaciones: observaciones || `Pago de deudas combinadas`,
+          admin: isAdminCaja
         },
         aplicaciones: deudasSeleccionadas.map(d => ({
           tipo: 'PAGO_DEUDA',
-          codigoRef: String(d.DDeIdDocumento),
+          codigoRef: `${d.CodigoOrden || d.OrdIdOrden || `Deuda #${d.DDeIdDocumento}`} ${d.NombreTrabajo || ''}`.trim(),
           descripcion: d.NombreTrabajo || d.CodigoOrden || `Deuda #${d.DDeIdDocumento}`,
           montoOriginal: Number(d.DDeImportePendiente),
           ddeId: d.DDeIdDocumento,
@@ -150,11 +189,11 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
         })),
       });
 
-      toast.success(`Pago registrado: ${seleccionadas.length} deuda(s) por $${fmt(totalAPagar)}`);
-      setSeleccionadas([]); setObservaciones('');
+      toast.success(`Pago registrado: ${seleccionadas.length} deuda(s) por ${simboloDeuda}${fmt(totalPagado)}`);
+      setSeleccionadas([]); setObservaciones(''); setPendienteParcial(null);
       setPagos([{ id: Date.now(), metodoPagoId: metodosPago[0]?.MPaIdMetodoPago || '', moneda: 'UYU', monedaId: 1, monto: '' }]);
       cargarDeudas();
-      if (onPagoCompletado) onPagoCompletado();
+      if (onPagoCompletado) onPagoCompletado(res.data);
     } catch (e) {
       toast.error(e.response?.data?.error || 'Error al procesar el pago.');
     } finally { setProcesando(false); }
@@ -280,6 +319,32 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
               </div>
             )}
 
+            {/* Banner de confirmación de pago parcial */}
+            {pendienteParcial && (
+              <div className="bg-amber-50 border-2 border-amber-400 text-amber-800 px-5 py-4 rounded-2xl flex flex-col gap-3">
+                <div className="flex items-center gap-2 font-black text-sm">
+                  <AlertTriangle size={18} className="text-amber-500" />
+                  PAGO PARCIAL — Faltan {simboloDeuda} {pendienteParcial.falta.toFixed(2)}
+                </div>
+                <p className="text-xs font-medium text-amber-700">
+                  El monto ingresado ({simboloDeuda} {fmt(pendienteParcial.totalPagado)}) no cubre el total de la deuda ({simboloDeuda} {fmt(totalAPagar)}).
+                  La deuda quedará como <strong>PARCIALMENTE PAGADA</strong> con saldo pendiente de {simboloDeuda} {pendienteParcial.falta.toFixed(2)}.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setConfirmarParcial(true); handleProcesar(true); }}
+                    className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black py-2 px-4 rounded-xl text-sm transition-colors">
+                    ✓ Confirmar pago parcial
+                  </button>
+                  <button
+                    onClick={() => setPendienteParcial(null)}
+                    className="flex-1 bg-white border-2 border-amber-400 text-amber-700 font-black py-2 px-4 rounded-xl text-sm hover:bg-amber-50 transition-colors">
+                    ✗ Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Deudas seleccionadas */}
             <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-4">
               <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest">
@@ -323,7 +388,7 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
               {/* Total */}
               <div className="flex items-center justify-between px-5 py-4 bg-indigo-50 rounded-2xl border-2 border-indigo-200 mt-2">
                 <span className="font-black text-indigo-800 text-sm uppercase tracking-widest">Total a Cubrir</span>
-                <span className="font-black text-indigo-700 text-3xl tracking-tight">$ {fmt(totalAPagar)}</span>
+                <span className="font-black text-indigo-700 text-3xl tracking-tight">{simboloDeuda} {fmt(totalAPagar)}</span>
               </div>
             </div>
           </div>
@@ -349,7 +414,7 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
               pagos={pagos}
               onPagosChange={setPagos}
               totalACubrir={totalAPagar}
-              moneda="UYU"
+              moneda={monedaDeuda}
               cotizacion={cotizacion}
               procesando={procesando}
               onConfirmar={handleProcesar}

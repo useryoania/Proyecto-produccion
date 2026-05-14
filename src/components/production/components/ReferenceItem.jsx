@@ -73,8 +73,8 @@ const ReferenceItem = ({ file }) => {
                     {fileName}
                 </a>
                 <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[10px] font-bold text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200 uppercase tracking-wide">
-                        {file.tipo || 'ADJUNTO'}
+                    <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 uppercase tracking-wide">
+                        {file.tipo || file.TipoArchivo || 'ADJUNTO'}
                     </span>
                     {file.notas && (
                         <span className="text-[10px] text-zinc-400 truncate max-w-[200px]" title={file.notas}>

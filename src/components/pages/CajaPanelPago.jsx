@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Plus, X, CheckCircle, Loader2, FileText, Landmark, CreditCard, DollarSign } from 'lucide-react';
 import ChequeRecibirModal from './tesoreria/ChequeRecibirModal';
 import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
@@ -59,8 +59,8 @@ export default function CajaPanelPago({
   tiposDocDisponibles = [],
 }) {
   const esEgreso = mode === 'EGRESO';
-  const tiposDoc = tiposDocDisponibles.length > 0 
-    ? tiposDocDisponibles 
+  const tiposDoc = tiposDocDisponibles.length > 0
+    ? tiposDocDisponibles
     : [{ value: 'NINGUNO', label: 'Sin documento / Cargando...' }];
   const [efectivoRecibido, setEfectivoRecibido] = useState('');
   const [chequeIndexActivo, setChequeIndexActivo] = useState(null);
@@ -74,14 +74,16 @@ export default function CajaPanelPago({
     }, 0);
   }, [pagos, moneda, cotizacion]);
 
-  const diferencia  = totalACubrir - totalIngresado;
-  const tolerancia  = moneda === 'USD' ? 0.05 : 1.0;
-  const balanceOK   = Math.abs(diferencia) <= tolerancia || totalIngresado === 0; // 0 = 100% crédito/deuda
-  const simbMoneda  = moneda === 'USD' ? 'US$' : '$';
+  const diferencia = totalACubrir - totalIngresado;
+  const tolerancia = moneda === 'USD' ? 0.05 : 1.0;
+  const balanceOK = Math.abs(diferencia) <= tolerancia || totalIngresado === 0; // 0 = 100% crédito/deuda
+  const simbMoneda = moneda === 'USD' ? 'US$' : '$';
 
   // ── Helpers carrito ───────────────────────────────────────────────
-  const addPago = () =>
-    onPagosChange([...pagos, { id: Date.now(), metodoPagoId: '', moneda, monto: '' }]);
+  const addPago = () => {
+    const contadoId = metodosPago.find(m => /(contado|efectivo)/i.test(m.MPaDescripcionMetodo))?.MPaIdMetodoPago || metodosPago[0]?.MPaIdMetodoPago || '';
+    onPagosChange([...pagos, { id: Date.now(), metodoPagoId: contadoId, moneda, monto: '' }]);
+  };
 
   const removePago = (id) => onPagosChange(pagos.filter((p) => p.id !== id));
 
@@ -107,18 +109,45 @@ export default function CajaPanelPago({
     );
   };
 
+  // ── Auto-rellenar cuando cambia el total o la moneda base ──
+  useEffect(() => {
+    if (pagos.length === 1 && totalACubrir > 0) {
+      const p = pagos[0];
+      const contadoId = metodosPago.find(m => /(contado|efectivo)/i.test(m.MPaDescripcionMetodo))?.MPaIdMetodoPago || metodosPago[0]?.MPaIdMetodoPago || '';
+
+      // Siempre usar el monto en la moneda de la deuda (sin conversión automática).
+      // Si el usuario quiere pagar en otra moneda, lo cambia manualmente con el selector.
+      const fill = totalACubrir;
+      const monedaCorrecta = moneda; // la moneda de la deuda es la referencia
+
+      const yaEsCorrecto =
+        p.moneda === monedaCorrecta &&
+        parseFloat(p.monto) === parseFloat(fill.toFixed(2)) &&
+        (p.metodoPagoId || !contadoId);
+
+      if (!yaEsCorrecto) {
+        onPagosChange([{
+          ...p,
+          metodoPagoId: p.metodoPagoId || contadoId,
+          moneda: monedaCorrecta,
+          monto: fill.toFixed(2)
+        }]);
+      }
+    }
+  }, [totalACubrir, moneda, cotizacion, metodosPago]); // Solo variables externas para no loopear
+
   // ── Label botón por defecto ────────────────────────────────────────
   const defaultLabel = {
-    COBRO:  'REALIZAR COBRO',
-    VENTA:  'PROCESAR VENTA',
-    MOTOR:  'REGISTRAR OPERACIÓN',
+    COBRO: 'REALIZAR COBRO',
+    VENTA: 'PROCESAR VENTA',
+    MOTOR: 'REGISTRAR OPERACIÓN',
     EGRESO: 'REGISTRAR SALIDA',
   }[mode] || 'CONFIRMAR';
 
   const colorBoton = {
-    COBRO:  'bg-brand-cyan hover:bg-brand-cyan shadow-brand-cyan/30',
-    VENTA:  'bg-brand-cyan hover:bg-brand-cyan shadow-brand-cyan/30',
-    MOTOR:  'bg-violet-600 hover:bg-violet-500 shadow-violet-200',
+    COBRO: 'bg-brand-cyan hover:bg-brand-cyan shadow-brand-cyan/30',
+    VENTA: 'bg-brand-cyan hover:bg-brand-cyan shadow-brand-cyan/30',
+    MOTOR: 'bg-violet-600 hover:bg-violet-500 shadow-violet-200',
     EGRESO: 'bg-rose-600   hover:bg-rose-500   shadow-rose-200',
   }[mode] || 'bg-brand-cyan hover:bg-brand-cyan';
 
@@ -131,7 +160,7 @@ export default function CajaPanelPago({
       <div className="px-6 py-5 border-b border-zinc-200 bg-zinc-50 sticky top-0 z-10">
         <h3 className="font-black text-zinc-800 text-base flex items-center gap-2.5">
           <div className="bg-brand-cyan/10 p-1.5 rounded-lg border border-brand-cyan/20">
-             <FileText size={16} className="text-brand-cyan" />
+            <FileText size={16} className="text-brand-cyan" />
           </div>
           Pago y Documento
         </h3>
@@ -171,9 +200,9 @@ export default function CajaPanelPago({
                   <CustomSelect
                     value={p.metodoPagoId}
                     onChange={(val) => {
-                       updatePago(p.id, 'metodoPagoId', val);
-                       const isCheque = metodosPago.find(m => m.MPaIdMetodoPago === parseInt(val))?.MPaDescripcionMetodo?.toLowerCase().includes('cheque');
-                       if (isCheque && !p.idCheque) setChequeIndexActivo(p.id);
+                      updatePago(p.id, 'metodoPagoId', val);
+                      const isCheque = metodosPago.find(m => m.MPaIdMetodoPago === parseInt(val))?.MPaDescripcionMetodo?.toLowerCase().includes('cheque');
+                      if (isCheque && !p.idCheque) setChequeIndexActivo(p.id);
                     }}
                     options={metodosPago.map(m => ({ value: m.MPaIdMetodoPago, label: m.MPaDescripcionMetodo }))}
                     placeholder="Medio..."
@@ -183,16 +212,24 @@ export default function CajaPanelPago({
                 </div>
 
                 {/* Moneda */}
-                <div className="w-20">
-                  <CustomSelect
-                    value={p.moneda}
-                    onChange={(val) => updatePago(p.id, 'moneda', val)}
-                    options={[{ value: 'UYU', label: '$' }, { value: 'USD', label: 'U$' }]}
-                    size="small"
-                    variant="default"
-                    className="text-center"
-                  />
-                </div>
+                <select
+                  value={p.moneda}
+                  onChange={(e) => {
+                    const newMoneda = e.target.value;
+                    if (pagos.length === 1 && totalACubrir > 0) {
+                      let fill = totalACubrir;
+                      if (moneda === 'UYU' && newMoneda === 'USD') fill = totalACubrir / (cotizacion || 1);
+                      if (moneda === 'USD' && newMoneda === 'UYU') fill = totalACubrir * (cotizacion || 1);
+                      onPagosChange([{ ...p, moneda: newMoneda, monto: fill.toFixed(2) }]);
+                    } else {
+                      updatePago(p.id, 'moneda', newMoneda);
+                    }
+                  }}
+                  className="w-16 bg-slate-50 border border-slate-100 rounded-xl px-2 py-2 text-xs font-black text-slate-600 outline-none text-center"
+                >
+                  <option value="UYU">$</option>
+                  <option value="USD">U$</option>
+                </select>
 
                 {/* Monto */}
                 <input
@@ -204,15 +241,17 @@ export default function CajaPanelPago({
                 />
 
                 {/* Botón Cheque */}
-                {metodosPago.find(m => m.MPaIdMetodoPago === parseInt(p.metodoPagoId))?.MPaDescripcionMetodo?.toLowerCase().includes('cheque') && (
-                  <button
-                    onClick={() => setChequeIndexActivo(p.id)}
-                    className={`text-[10px] font-black px-2 py-2 rounded-xl shrink-0 transition-colors flex items-center gap-1 uppercase tracking-widest ${p.idCheque ? 'bg-emerald-500/20 text-emerald-600 border border-emerald-200' : 'bg-amber-500/20 text-amber-400 border border-amber-200 hover:bg-amber-500/30'}`}
-                    title={p.idCheque ? 'Cheque vinculado' : 'Cargar datos del cheque'}
-                  >
-                    <Landmark size={12} /> {p.idCheque ? 'OK' : 'INFO'}
-                  </button>
-                )}
+                {
+                  metodosPago.find(m => m.MPaIdMetodoPago === parseInt(p.metodoPagoId))?.MPaDescripcionMetodo?.toLowerCase().includes('cheque') && (
+                    <button
+                      onClick={() => setChequeIndexActivo(p.id)}
+                      className={`text-[10px] font-black px-2 py-2 rounded-xl shrink-0 transition-colors flex items-center gap-1 uppercase tracking-widest ${p.idCheque ? 'bg-emerald-500/20 text-emerald-600 border border-emerald-200' : 'bg-amber-500/20 text-amber-400 border border-amber-200 hover:bg-amber-500/30'}`}
+                      title={p.idCheque ? 'Cheque vinculado' : 'Cargar datos del cheque'}
+                    >
+                      <Landmark size={12} /> {p.idCheque ? 'OK' : 'INFO'}
+                    </button>
+                  )
+                }
 
                 {/* Eliminar */}
                 <button
@@ -221,9 +260,10 @@ export default function CajaPanelPago({
                 >
                   <X size={16} />
                 </button>
-              </div>
-            ))}
-          </div>
+              </div >
+            ))
+            }
+          </div >
 
           <div className="flex gap-3 pt-1">
             <button
@@ -241,90 +281,94 @@ export default function CajaPanelPago({
               </button>
             )}
           </div>
-        </div>
+        </div >
 
         {/* ── CALCULADORA DE VUELTO ─────────────────────────────────── */}
-        {(() => {
-          const cashPayments = pagos.filter(p => {
-            const m = metodosPago.find(met => met.MPaIdMetodoPago === parseInt(p.metodoPagoId));
-            return m && /efectivo|contado/i.test(m.MPaDescripcionMetodo);
-          });
-          if (cashPayments.length > 0 && !esEgreso) {
-            const totalEfectivoUYU = cashPayments.reduce((acc, p) => {
-              const val = parseFloat(p.monto) || 0;
-              return acc + (p.moneda === 'USD' ? val * (cotizacion || 1) : val);
-            }, 0);
-            const totalEfectivoUSD = totalEfectivoUYU / (cotizacion || 1);
-            const montoEfectivo = moneda === 'USD' ? totalEfectivoUSD : totalEfectivoUYU;
+        {
+          (() => {
+            const cashPayments = pagos.filter(p => {
+              const m = metodosPago.find(met => met.MPaIdMetodoPago === parseInt(p.metodoPagoId));
+              return m && /efectivo|contado/i.test(m.MPaDescripcionMetodo);
+            });
+            if (cashPayments.length > 0 && !esEgreso) {
+              const totalEfectivoUYU = cashPayments.reduce((acc, p) => {
+                const val = parseFloat(p.monto) || 0;
+                return acc + (p.moneda === 'USD' ? val * (cotizacion || 1) : val);
+              }, 0);
+              const totalEfectivoUSD = totalEfectivoUYU / (cotizacion || 1);
+              const montoEfectivo = moneda === 'USD' ? totalEfectivoUSD : totalEfectivoUYU;
 
-            if (montoEfectivo > 0) {
-              const recibido = parseFloat(efectivoRecibido) || 0;
-              const vuelto = recibido - montoEfectivo;
-              return (
-                <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex flex-col gap-3 shadow-inner">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Calculadora de Vuelto</span>
-                    <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-100">Total Efvo: {simbMoneda} {fmt(montoEfectivo)}</span>
-                  </div>
-                  <div className="flex gap-3 items-center">
-                    <div className="flex-1">
-                      <label className="text-[10px] font-black text-emerald-600/70 uppercase block mb-1 tracking-widest">Recibido</label>
-                      <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 font-black">{simbMoneda}</span>
-                        <input type="number" value={efectivoRecibido} onChange={e => setEfectivoRecibido(e.target.value)} placeholder="0.00" className="w-full bg-zinc-50 border border-emerald-200 rounded-xl pl-9 pr-3 py-2 text-sm font-black text-zinc-800 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm" />
-                      </div>
+              if (montoEfectivo > 0) {
+                const recibido = parseFloat(efectivoRecibido) || 0;
+                const vuelto = recibido - montoEfectivo;
+                return (
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 flex flex-col gap-3 shadow-inner">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">Calculadora de Vuelto</span>
+                      <span className="text-[10px] font-black text-emerald-500 bg-emerald-500/20 px-2 py-0.5 rounded-lg border border-emerald-100">Total Efvo: {simbMoneda} {fmt(montoEfectivo)}</span>
                     </div>
-                    {recibido > 0 && (
-                      <div className="flex-1 text-right">
-                        <label className="text-[10px] font-black text-emerald-600/70 uppercase block mb-1 tracking-widest">Cambio</label>
-                        <span className={`text-xl font-black ${vuelto >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{vuelto >= 0 ? '+' : ''}{fmt(vuelto)}</span>
+                    <div className="flex gap-3 items-center">
+                      <div className="flex-1">
+                        <label className="text-[10px] font-black text-emerald-600/70 uppercase block mb-1 tracking-widest">Recibido</label>
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 font-black">{simbMoneda}</span>
+                          <input type="number" value={efectivoRecibido} onChange={e => setEfectivoRecibido(e.target.value)} placeholder="0.00" className="w-full bg-zinc-50 border border-emerald-200 rounded-xl pl-9 pr-3 py-2 text-sm font-black text-zinc-800 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all shadow-sm" />
+                        </div>
                       </div>
-                    )}
+                      {recibido > 0 && (
+                        <div className="flex-1 text-right">
+                          <label className="text-[10px] font-black text-emerald-600/70 uppercase block mb-1 tracking-widest">Cambio</label>
+                          <span className={`text-xl font-black ${vuelto >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{vuelto >= 0 ? '+' : ''}{fmt(vuelto)}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
+                );
+              }
             }
-          }
-          return null;
-        })()}
+            return null;
+          })()
+        }
 
         {/* ── RESUMEN BALANCE ───────────────────────────────────────── */}
-        {totalACubrir > 0 && (
-          <div className="flex flex-col gap-3 bg-zinc-50 border border-zinc-200 rounded-3xl p-5 shadow-sm">
-            <div className="flex justify-between text-[10px] font-black px-1">
-              <span className="text-zinc-400 uppercase tracking-widest">A Cobrar</span>
-              <span className="text-zinc-800 font-mono">{simbMoneda} {fmt(totalACubrir)}</span>
-            </div>
-            <div className="flex justify-between text-[10px] font-black px-1">
-              <span className="text-zinc-400 uppercase tracking-widest">Recibido</span>
-              <span className="text-emerald-600 font-mono">- {simbMoneda} {fmt(totalIngresado)}</span>
-            </div>
-            <div
-              className={`flex justify-between items-center px-4 py-3 rounded-2xl border text-[10px] font-black mt-1 uppercase tracking-widest
+        {
+          totalACubrir > 0 && (
+            <div className="flex flex-col gap-3 bg-zinc-50 border border-zinc-200 rounded-3xl p-5 shadow-sm">
+              <div className="flex justify-between text-[10px] font-black px-1">
+                <span className="text-zinc-400 uppercase tracking-widest">A Cobrar</span>
+                <span className="text-zinc-800 font-mono">{simbMoneda} {fmt(totalACubrir)}</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-black px-1">
+                <span className="text-zinc-400 uppercase tracking-widest">Recibido</span>
+                <span className="text-emerald-600 font-mono">- {simbMoneda} {fmt(totalIngresado)}</span>
+              </div>
+              <div
+                className={`flex justify-between items-center px-4 py-3 rounded-2xl border text-[10px] font-black mt-1 uppercase tracking-widest
                 ${balanceOK && totalIngresado > 0
-                  ? 'bg-emerald-50 border-emerald-100 text-emerald-600'
-                  : diferencia > 0
-                    ? 'bg-rose-50 border-rose-100 text-rose-600'
-                    : 'bg-white border-zinc-200 text-zinc-400'
-                }`}
-            >
-              <span className="flex items-center gap-2">
-                {totalIngresado === 0
-                  ? mode === 'VENTA' ? '💳 Factura a Crédito' : '⏳ Sin pago inicial'
-                  : balanceOK
-                    ? '✅ Caja Balanceada'
+                    ? 'bg-emerald-50 border-emerald-100 text-emerald-600'
                     : diferencia > 0
-                      ? `❌ Falta ${simbMoneda} ${fmt(Math.abs(diferencia))}`
-                      : `⚡ Excede ${simbMoneda} ${fmt(Math.abs(diferencia))}`}
-              </span>
-              {!balanceOK && totalIngresado > 0 && cotizacion && moneda === 'USD' && (
-                <span className="text-zinc-400 font-black bg-zinc-50 px-2 py-0.5 rounded-md text-[9px] border border-zinc-200">
-                  ($ {fmt(Math.abs(diferencia) * cotizacion)})
+                      ? 'bg-rose-50 border-rose-100 text-rose-600'
+                      : 'bg-white border-zinc-200 text-zinc-400'
+                  }`}
+              >
+                <span className="flex items-center gap-2">
+                  {totalIngresado === 0
+                    ? mode === 'VENTA' ? '💳 Factura a Crédito' : '⏳ Sin pago inicial'
+                    : balanceOK
+                      ? '✅ Caja Balanceada'
+                      : diferencia > 0
+                        ? `❌ Falta ${simbMoneda} ${fmt(Math.abs(diferencia))}`
+                        : `⚡ Excede ${simbMoneda} ${fmt(Math.abs(diferencia))}`}
                 </span>
-              )}
+                {!balanceOK && totalIngresado > 0 && cotizacion && moneda === 'USD' && (
+                  <span className="text-zinc-400 font-black bg-zinc-50 px-2 py-0.5 rounded-md text-[9px] border border-zinc-200">
+                    ($ {fmt(Math.abs(diferencia) * cotizacion)})
+                  </span>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        }
 
         {/* ── DOCUMENTO A EMITIR ────────────────────────────────────── */}
         <div className="flex flex-col gap-3">
@@ -382,10 +426,10 @@ export default function CajaPanelPago({
           )}
         </button>
 
-      </div>
+      </div >
 
       {chequeIndexActivo !== null && (
-        <ChequeRecibirModal 
+        <ChequeRecibirModal
           initialMonto={pagos.find(p => p.id === chequeIndexActivo)?.monto || ''}
           onClose={() => setChequeIndexActivo(null)}
           onSuccess={(idCheque) => {
@@ -394,6 +438,6 @@ export default function CajaPanelPago({
           }}
         />
       )}
-    </div>
+    </div >
   );
 }

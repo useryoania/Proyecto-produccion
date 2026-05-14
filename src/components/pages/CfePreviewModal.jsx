@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, FileText, Printer } from 'lucide-react';
 import api from '../../services/apiClient';
+import { generarPdfFacturaDGI } from '../../utils/pdfGenerator';
 
 export default function CfePreviewModal({ doc, onClose }) {
     const [detalles, setDetalles] = useState([]);
@@ -41,8 +42,8 @@ export default function CfePreviewModal({ doc, onClose }) {
                     <div className="flex space-x-2">
                         <button 
                             className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-full transition-colors"
-                            onClick={() => window.print()}
-                            title="Imprimir Borrador"
+                            onClick={() => generarPdfFacturaDGI(doc, detalles)}
+                            title="Descargar PDF"
                         >
                             <Printer className="w-5 h-5" />
                         </button>
@@ -103,24 +104,46 @@ export default function CfePreviewModal({ doc, onClose }) {
                             {loading ? (
                                 <div className="text-center py-4 text-gray-500">Cargando detalle...</div>
                             ) : detalles.length > 0 ? (
-                                detalles.map((d, i) => (
-                                    <div key={i} className="mb-3 pb-2 border-b border-dashed border-gray-200 last:border-0 text-xs">
-                                        <div className="grid grid-cols-12 gap-2 items-start">
-                                            <div className="col-span-8 font-semibold">
+                                detalles.map((d, i) => {
+                                    const isHeader = (d.DcdCantidad == null && d.DcdSubtotal == null && d.DcdNomItem && d.DcdNomItem.startsWith('Orden:'));
+                                    const isSubtotal = (d.DcdNomItem && d.DcdNomItem.startsWith('SUBTOTAL ORDEN'));
+
+                                    if (isHeader) {
+                                        return (
+                                            <div key={i} className="mb-2 mt-4 pb-1 border-b border-gray-300 text-xs font-black text-indigo-700">
                                                 {d.DcdNomItem}
                                             </div>
-                                            <div className="col-span-1 text-center">{Number(d.DcdCantidad)}</div>
-                                            <div className="col-span-3 text-right">
-                                                {esUYU ? '$' : 'US$'} {Number(d.DcdSubtotal).toLocaleString('es-UY', { minimumFractionDigits: 2 })}
+                                        );
+                                    }
+
+                                    if (isSubtotal) {
+                                        return (
+                                            <div key={i} className="mb-4 pt-1 flex justify-between text-xs font-bold text-gray-600">
+                                                <span>{d.DcdNomItem}</span>
+                                                <span>{esUYU ? '$' : 'US$'} {Number(d.DcdSubtotal).toLocaleString('es-UY', { minimumFractionDigits: 2 })}</span>
                                             </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div key={i} className="mb-3 pb-2 border-b border-dashed border-gray-200 last:border-0 text-xs">
+                                            <div className="grid grid-cols-12 gap-2 items-start">
+                                                <div className="col-span-8 font-semibold">
+                                                    {d.DcdNomItem}
+                                                </div>
+                                                <div className="col-span-1 text-center">{Number(d.DcdCantidad)}</div>
+                                                <div className="col-span-3 text-right">
+                                                    {esUYU ? '$' : 'US$'} {Number(d.DcdSubtotal).toLocaleString('es-UY', { minimumFractionDigits: 2 })}
+                                                </div>
+                                            </div>
+                                            {d.DcdDscItem && (
+                                                <div className="text-[10px] text-gray-500 mt-1 pl-1 leading-tight whitespace-pre-wrap">
+                                                    {d.DcdDscItem}
+                                                </div>
+                                            )}
                                         </div>
-                                        {d.DcdDscItem && (
-                                            <div className="text-[10px] text-gray-500 mt-1 pl-1 leading-tight whitespace-pre-wrap">
-                                                {d.DcdDscItem}
-                                            </div>
-                                        )}
-                                    </div>
-                                ))
+                                    );
+                                })
                             ) : (
                                 <div className="flex justify-between text-xs text-gray-600 py-2">
                                     <span>{isE_Ticket ? 'Por sus compras' : 'Servicios y Productos'}</span>
