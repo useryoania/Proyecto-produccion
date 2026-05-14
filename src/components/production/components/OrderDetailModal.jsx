@@ -22,6 +22,16 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
     const [loadingFiles, setLoadingFiles] = useState(false);
     const [labels, setLabels] = useState([]);
     const [loadingLabels, setLoadingLabels] = useState(false);
+    const [draftStates, setDraftStates] = useState({ status: '', areaStatus: '' });
+
+    useEffect(() => {
+        if (currentOrder) {
+            setDraftStates({
+                status: currentOrder.status || 'Pendiente',
+                areaStatus: currentOrder.areaStatus || ''
+            });
+        }
+    }, [currentOrder]);
 
     // Estado de Edición
     const [editingFileId, setEditingFileId] = useState(null);
@@ -677,56 +687,81 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
 
                     {/* Campos de Estado Editables */}
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3 bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 shadow-sm">
-                        <div className="lg:col-span-2">
-                            <label className="text-[10px] uppercase font-bold text-zinc-500 block mb-1"><i className="fa-solid fa-flag text-indigo-400 mr-1"></i> Estado General</label>
-                            <select 
-                                className="w-full text-sm font-bold text-zinc-700 border border-zinc-300 rounded px-2 py-1.5 outline-none focus:border-blue-500 bg-white shadow-sm"
-                                value={currentOrder.status || 'Pendiente'}
-                                onChange={(e) => handleUpdateOrderStatus(e.target.value)}
-                            >
-                                {configEstados.filter(s => s.TipoEstado === 'ESTADO').length > 0 ? (
-                                    configEstados.filter(s => s.TipoEstado === 'ESTADO').map(s => (
-                                        <option key={s.EstadoID} value={s.Nombre}>{s.Nombre}</option>
-                                    ))
-                                ) : (
-                                    <>
-                                        <option value="Pendiente">Pendiente</option>
-                                        <option value="En Proceso">En Proceso</option>
-                                        <option value="En Lote">En Lote</option>
-                                        <option value="Sublimado">Sublimado</option>
-                                        <option value="Planchado">Planchado</option>
-                                        <option value="Costura">Costura</option>
-                                        <option value="Armado">Armado</option>
-                                        <option value="Terminado">Terminado</option>
-                                        <option value="Despachado">Despachado</option>
-                                        <option value="Entregado">Entregado</option>
-                                        <option value="Cancelado">Cancelado</option>
-                                        <option value="Falla Produccion">Falla de Producción</option>
-                                    </>
-                                )}
-                            </select>
-                        </div>
-                        <div className="lg:col-span-2">
-                            <label className="text-[10px] uppercase font-bold text-zinc-500 block mb-1"><i className="fa-solid fa-layer-group text-indigo-400 mr-1"></i> Estado en su Área</label>
-                            <div className="flex bg-white rounded shadow-sm border border-zinc-300 focus-within:border-blue-500 overflow-hidden pr-1">
-                                <input 
-                                    type="text"
-                                    className="w-full text-sm font-bold text-zinc-700 px-2 py-1.5 outline-none bg-transparent"
-                                    value={currentOrder.areaStatus || ''}
-                                    placeholder="Ej. En Costura..."
-                                    onChange={(e) => setCurrentOrder({ ...currentOrder, areaStatus: e.target.value })}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.target.blur();
-                                        }
-                                    }}
-                                    onBlur={(e) => handleUpdateAreaStatus(e.target.value)}
-                                />
-                                <div className="text-[10px] text-zinc-400 flex items-center shrink-0">
-                                    <i className="fa-solid fa-pen" title="Editar y click afuera para guardar"></i>
-                                </div>
-                            </div>
-                        </div>
+                        {(() => {
+                            const areaId = currentOrder?.area || '';
+                            const filteredGeneral = configEstados.filter(s => 
+                                s.TipoEstado === 'ESTADO' && 
+                                (s.AreaID === 'ADMIN' || s.AreaID === areaId || (s.AreaID && s.AreaID.split(',').includes(areaId)))
+                            );
+                            const filteredArea = configEstados.filter(s => 
+                                s.TipoEstado === 'ESTADOENAREA' && 
+                                (s.AreaID === 'ADMIN' || s.AreaID === areaId || (s.AreaID && s.AreaID.split(',').includes(areaId)))
+                            );
+
+                            const currentStatus = currentOrder?.status;
+                            const currentAreaStatus = currentOrder?.areaStatus;
+
+                            const allGeneralNames = [...new Set([
+                                ...filteredGeneral.map(s => s.Nombre),
+                                ...(currentStatus ? [currentStatus] : [])
+                            ])].sort((a, b) => a.localeCompare(b));
+
+                            const allAreaNames = [...new Set([
+                                ...filteredArea.map(s => s.Nombre),
+                                ...(currentAreaStatus ? [currentAreaStatus] : [])
+                            ])].sort((a, b) => a.localeCompare(b));
+
+                            return (
+                                <>
+                                    <div className="lg:col-span-2">
+                                        <label className="text-[10px] uppercase font-bold text-zinc-500 block mb-1"><i className="fa-solid fa-flag text-indigo-400 mr-1"></i> Estado General</label>
+                                        <div className="flex gap-2 mb-4">
+                                            <select 
+                                                className="flex-1 text-sm font-bold text-zinc-700 border border-zinc-300 rounded px-2 py-1.5 outline-none focus:border-blue-500 bg-white shadow-sm"
+                                                value={draftStates.status}
+                                                onChange={(e) => setDraftStates({ ...draftStates, status: e.target.value })}
+                                            >
+                                                <option value="">-- Seleccionar Estado --</option>
+                                                {allGeneralNames.map(name => (
+                                                    <option key={`gen_${name}`} value={name}>{name}</option>
+                                                ))}
+                                            </select>
+                                            <button 
+                                                onClick={() => handleUpdateOrderStatus(draftStates.status)}
+                                                disabled={draftStates.status === currentOrder.status}
+                                                className={`px-3 py-1.5 rounded border transition-colors flex items-center justify-center shrink-0 ${draftStates.status !== currentOrder.status ? 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100' : 'bg-zinc-100 text-zinc-400 border-zinc-200 cursor-not-allowed'}`}
+                                                title="Actualizar Estado General"
+                                            >
+                                                <i className="fa-solid fa-save"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="lg:col-span-2">
+                                        <label className="text-[10px] uppercase font-bold text-zinc-500 block mb-1"><i className="fa-solid fa-layer-group text-indigo-400 mr-1"></i> Estado en su Área</label>
+                                        <div className="flex gap-2">
+                                            <select 
+                                                className="flex-1 text-sm font-bold text-zinc-700 border border-zinc-300 rounded px-2 py-1.5 outline-none focus:border-blue-500 bg-white shadow-sm"
+                                                value={draftStates.areaStatus}
+                                                onChange={(e) => setDraftStates({ ...draftStates, areaStatus: e.target.value })}
+                                            >
+                                                <option value="">-- Seleccionar Estado --</option>
+                                                {allAreaNames.map(name => (
+                                                    <option key={`area_${name}`} value={name}>{name}</option>
+                                                ))}
+                                            </select>
+                                            <button 
+                                                onClick={() => handleUpdateAreaStatus(draftStates.areaStatus)}
+                                                disabled={draftStates.areaStatus === currentOrder.areaStatus}
+                                                className={`px-3 py-1.5 rounded border transition-colors flex items-center justify-center shrink-0 ${draftStates.areaStatus !== currentOrder.areaStatus ? 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100' : 'bg-zinc-100 text-zinc-400 border-zinc-200 cursor-not-allowed'}`}
+                                                title="Actualizar Estado en su Área"
+                                            >
+                                                <i className="fa-solid fa-save"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </>
+                            );
+                        })()}
                     </div>
 
                     {/* Header Grid: Datos Clave */}

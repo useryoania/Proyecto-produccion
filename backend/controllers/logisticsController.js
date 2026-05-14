@@ -1267,18 +1267,17 @@ exports.getDashboard = async (req, res) => {
                 `),
 
             // 2. Órdenes pendientes sin bultos aún
-            // OPTIMIZACIÓN: LEFT JOIN en lugar de NOT IN (subquery) — mucho más eficiente con índices
+            // OPTIMIZACIÓN: NOT EXISTS en lugar de LEFT JOIN — mucho más eficiente con índices
             pool.request().input('A', sql.VarChar, areaId)
                 .query(`
                     SELECT 
                         o.OrdenID, o.CodigoOrden, o.Cliente, o.DescripcionTrabajo, o.Estado, o.AreaID, o.EstadoLogistica
                     FROM Ordenes o WITH(NOLOCK)
-                    LEFT JOIN (
-                        SELECT DISTINCT OrdenID FROM Logistica_Bultos WITH(NOLOCK) WHERE OrdenID IS NOT NULL
-                    ) lb ON o.OrdenID = lb.OrdenID
                     WHERE o.AreaID = @A
                     AND o.Estado NOT IN ('Entregado', 'Finalizado', 'Cancelado', 'Pendiente')
-                    AND lb.OrdenID IS NULL
+                    AND NOT EXISTS (
+                        SELECT 1 FROM Logistica_Bultos lb WITH(NOLOCK) WHERE lb.OrdenID = o.OrdenID
+                    )
                 `)
         ]);
 

@@ -72,7 +72,15 @@ exports.getAreaDetails = async (req, res) => {
         const columnas = await reqSql.query("SELECT * FROM dbo.ConfigColumnas WHERE AreaID = @id ORDER BY Orden ASC");
 
         // D. Estados (Workflow)
-        const estados = await reqSql.query("SELECT * FROM dbo.ConfigEstados WHERE AreaID = @id ORDER BY Orden ASC");
+        const estados = await reqSql.query(`
+            SELECT * FROM dbo.ConfigEstados 
+            WHERE AreaID = 'ADMIN' 
+               OR AreaID = @id 
+               OR AreaID LIKE '%,' + @id + ',%' 
+               OR AreaID LIKE @id + ',%' 
+               OR AreaID LIKE '%,' + @id
+            ORDER BY Orden ASC
+        `);
 
         res.json({
             equipos: equipos.recordset,
@@ -153,16 +161,22 @@ exports.addStatus = async (req, res) => {
     const { areaId, nombre, colorHex, orden, esFinal, tipoEstado } = req.body;
     try {
         const pool = await getPool();
+        
+        // Calculate the next EstadoID since it's not an IDENTITY column
+        const nextIdResult = await pool.request().query("SELECT ISNULL(MAX(EstadoID), 0) + 1 AS NextID FROM dbo.ConfigEstados WITH(UPDLOCK)");
+        const nextId = nextIdResult.recordset[0].NextID;
+
         await pool.request()
+            .input('EstadoID', sql.Int, nextId)
             .input('AreaID', sql.VarChar(20), areaId)
             .input('Nombre', sql.NVarChar(50), nombre)
             .input('Color', sql.VarChar(20), colorHex || '#cccccc')
             .input('Orden', sql.Int, orden || 0)
             .input('Final', sql.Bit, esFinal ? 1 : 0)
             .input('TipoEstado', sql.NVarChar(50), tipoEstado || 'ESTADOENAREA')
-            .query("INSERT INTO dbo.ConfigEstados (AreaID, Nombre, ColorHex, Orden, EsFinal, TipoEstado) VALUES (@AreaID, @Nombre, @Color, @Orden, @Final, @TipoEstado)");
+            .query("INSERT INTO dbo.ConfigEstados (EstadoID, AreaID, Nombre, ColorHex, Orden, EsFinal, TipoEstado) VALUES (@EstadoID, @AreaID, @Nombre, @Color, @Orden, @Final, @TipoEstado)");
 
-        res.json({ success: true, message: 'Estado agregado' });
+        res.json({ success: true, message: 'Estado agregado', insertId: nextId });
     } catch (err) {
         logger.error("Error adding status:", err);
         res.status(500).json({ error: err.message });
@@ -172,11 +186,12 @@ exports.addStatus = async (req, res) => {
 // ACTUALIZAR ESTADO
 exports.updateStatus = async (req, res) => {
     const { id } = req.params;
-    const { nombre, colorHex, orden, esFinal, tipoEstado } = req.body;
+    const { areaId, nombre, colorHex, orden, esFinal, tipoEstado } = req.body;
     try {
         const pool = await getPool();
         await pool.request()
             .input('ID', sql.Int, id)
+            .input('AreaID', sql.VarChar(20), areaId)
             .input('Nombre', sql.NVarChar(50), nombre)
             .input('Color', sql.VarChar(20), colorHex)
             .input('Orden', sql.Int, orden)
@@ -184,7 +199,8 @@ exports.updateStatus = async (req, res) => {
             .input('TipoEstado', sql.NVarChar(50), tipoEstado)
             .query(`
                 UPDATE dbo.ConfigEstados
-                SET Nombre = ISNULL(@Nombre, Nombre),
+                SET AreaID = ISNULL(@AreaID, AreaID),
+                    Nombre = ISNULL(@Nombre, Nombre),
                     ColorHex = ISNULL(@Color, ColorHex),
                     Orden = ISNULL(@Orden, Orden),
                     EsFinal = ISNULL(@Final, EsFinal),

@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { areasService } from '../../../services/api';
 
-const ConfigStatusesModal = ({ isOpen, onClose, areaCode, initialStatuses }) => {
+const ConfigStatusesModal = ({ isOpen, onClose, areaCode, initialStatuses, areas = [] }) => {
     // Lista local
     const [statusList, setStatusList] = useState([]);
     const [loading, setLoading] = useState(false);
 
     // Estado para nuevo
-    const [newStatus, setNewStatus] = useState({ nombre: '', color: '#cccccc', orden: 0, esFinal: false, tipoEstado: 'ESTADOENAREA' });
+    const [newStatus, setNewStatus] = useState({ areaId: areaCode, nombre: '', color: '#cccccc', orden: 0, esFinal: false, tipoEstado: 'ESTADOENAREA' });
 
     // Estado edición
     const [editingId, setEditingId] = useState(null);
-    const [editForm, setEditForm] = useState({ nombre: '', color: '', orden: 0, esFinal: false, tipoEstado: 'ESTADOENAREA' });
+    const [editForm, setEditForm] = useState({ areaId: areaCode, nombre: '', color: '', orden: 0, esFinal: false, tipoEstado: 'ESTADOENAREA' });
 
     useEffect(() => {
         if (initialStatuses) {
@@ -21,13 +21,22 @@ const ConfigStatusesModal = ({ isOpen, onClose, areaCode, initialStatuses }) => 
 
     if (!isOpen) return null;
 
+    const handleAreaToggle = (currentAreasStr, code) => {
+        let arr = currentAreasStr ? currentAreasStr.split(',') : [];
+        if (code === 'ADMIN') return 'ADMIN';
+        arr = arr.filter(a => a !== 'ADMIN' && a !== '');
+        if (arr.includes(code)) arr = arr.filter(a => a !== code);
+        else arr.push(code);
+        return arr.length > 0 ? arr.join(',') : areaCode;
+    };
+
     // --- AGREGAR ---
     const handleAdd = async () => {
         if (!newStatus.nombre.trim()) return;
         setLoading(true);
         try {
-            await areasService.addStatus({
-                areaId: areaCode,
+            const response = await areasService.addStatus({
+                areaId: newStatus.areaId,
                 nombre: newStatus.nombre,
                 colorHex: newStatus.color,
                 orden: newStatus.orden,
@@ -36,7 +45,7 @@ const ConfigStatusesModal = ({ isOpen, onClose, areaCode, initialStatuses }) => 
             });
             alert('Estado agregado. Se actualizará al recargar.');
             setStatusList(prev => [...prev, {
-                EstadoID: Date.now(), // Temp
+                EstadoID: response.insertId || Date.now(), // Usar el ID real
                 Nombre: newStatus.nombre,
                 ColorHex: newStatus.color,
                 Orden: newStatus.orden,
@@ -44,7 +53,7 @@ const ConfigStatusesModal = ({ isOpen, onClose, areaCode, initialStatuses }) => 
                 TipoEstado: newStatus.tipoEstado,
                 Temp: true
             }].sort((a, b) => a.Orden - b.Orden));
-            setNewStatus({ nombre: '', color: '#cccccc', orden: statusList.length + 1, esFinal: false, tipoEstado: 'ESTADOENAREA' });
+            setNewStatus({ areaId: areaCode, nombre: '', color: '#cccccc', orden: statusList.length + 1, esFinal: false, tipoEstado: 'ESTADOENAREA' });
         } catch (e) {
             console.error(e);
             alert('Error al agregar');
@@ -57,6 +66,7 @@ const ConfigStatusesModal = ({ isOpen, onClose, areaCode, initialStatuses }) => 
     const startEdit = (st) => {
         setEditingId(st.EstadoID);
         setEditForm({
+            areaId: st.AreaID || areaCode,
             nombre: st.Nombre,
             color: st.ColorHex,
             orden: st.Orden,
@@ -68,6 +78,7 @@ const ConfigStatusesModal = ({ isOpen, onClose, areaCode, initialStatuses }) => 
     const saveEdit = async (id) => {
         try {
             await areasService.updateStatus(id, {
+                areaId: editForm.areaId,
                 nombre: editForm.nombre,
                 colorHex: editForm.color,
                 orden: editForm.orden,
@@ -76,6 +87,7 @@ const ConfigStatusesModal = ({ isOpen, onClose, areaCode, initialStatuses }) => 
             });
             setStatusList(prev => prev.map(s => s.EstadoID === id ? {
                 ...s,
+                AreaID: editForm.areaId,
                 Nombre: editForm.nombre,
                 ColorHex: editForm.color,
                 Orden: editForm.orden,
@@ -119,7 +131,26 @@ const ConfigStatusesModal = ({ isOpen, onClose, areaCode, initialStatuses }) => 
                     {/* FORM AGREGAR */}
                     <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm mb-6">
                         <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Nuevo Estado</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-6 gap-3 items-end">
+                        <div className="grid grid-cols-1 md:grid-cols-8 gap-3 items-end">
+                            <div className="md:col-span-2">
+                                <label className="text-[10px] uppercase font-bold text-zinc-400 mb-1 block">Áreas Asignadas</label>
+                                <div className="w-full bg-zinc-50 border border-zinc-200 rounded-lg p-2 h-[38px] overflow-y-auto flex flex-wrap gap-2 items-center hover:h-24 hover:absolute hover:z-50 hover:shadow-xl transition-all">
+                                    <label className="flex items-center gap-1 cursor-pointer">
+                                        <input type="checkbox" className="w-3 h-3 text-emerald-600 rounded"
+                                            checked={newStatus.areaId === 'ADMIN' || newStatus.areaId.split(',').includes('ADMIN')}
+                                            onChange={() => setNewStatus({ ...newStatus, areaId: handleAreaToggle(newStatus.areaId, 'ADMIN') })} />
+                                        <span className="text-[10px] font-bold text-zinc-700">ADMIN</span>
+                                    </label>
+                                    {areas.filter(a => a.code !== 'ADMIN').map(a => (
+                                        <label key={a.code} className="flex items-center gap-1 cursor-pointer">
+                                            <input type="checkbox" className="w-3 h-3 text-emerald-600 rounded"
+                                                checked={newStatus.areaId.split(',').includes(a.code)}
+                                                onChange={() => setNewStatus({ ...newStatus, areaId: handleAreaToggle(newStatus.areaId, a.code) })} />
+                                            <span className="text-[10px] font-bold text-zinc-700">{a.code}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
                             <div className="md:col-span-2">
                                 <label className="text-[10px] uppercase font-bold text-zinc-400 mb-1 block">Nombre</label>
                                 <input type="text" className="w-full px-3 py-2 bg-zinc-50 border border-zinc-200 rounded-lg text-sm font-semibold text-zinc-700 outline-none focus:border-emerald-500"
@@ -188,10 +219,31 @@ const ConfigStatusesModal = ({ isOpen, onClose, areaCode, initialStatuses }) => 
                                                 {/* NOMBRE */}
                                                 <td className="px-4 py-3">
                                                     {isEditing ? (
-                                                        <input type="text" className="w-full px-2 py-1 bg-white border border-emerald-300 rounded focus:outline-none"
-                                                            value={editForm.nombre} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} />
+                                                        <div className="flex flex-col gap-1 relative">
+                                                            <input type="text" className="w-full px-2 py-1 bg-white border border-emerald-300 rounded focus:outline-none"
+                                                                value={editForm.nombre} onChange={e => setEditForm({ ...editForm, nombre: e.target.value })} />
+                                                            <div className="w-full bg-white border border-emerald-300 rounded p-1 max-h-[50px] overflow-y-auto flex flex-wrap gap-1 items-center hover:max-h-[150px] hover:absolute hover:z-50 hover:shadow-xl transition-all hover:top-full mt-1">
+                                                                <label className="flex items-center gap-1 cursor-pointer bg-zinc-100 px-1 rounded">
+                                                                    <input type="checkbox" className="w-3 h-3"
+                                                                        checked={editForm.areaId === 'ADMIN' || editForm.areaId.split(',').includes('ADMIN')}
+                                                                        onChange={() => setEditForm({ ...editForm, areaId: handleAreaToggle(editForm.areaId, 'ADMIN') })} />
+                                                                    <span className="text-[9px] font-bold text-zinc-700">ADMIN</span>
+                                                                </label>
+                                                                {areas.filter(a => a.code !== 'ADMIN').map(a => (
+                                                                    <label key={a.code} className="flex items-center gap-1 cursor-pointer bg-zinc-100 px-1 rounded">
+                                                                        <input type="checkbox" className="w-3 h-3"
+                                                                            checked={editForm.areaId.split(',').includes(a.code)}
+                                                                            onChange={() => setEditForm({ ...editForm, areaId: handleAreaToggle(editForm.areaId, a.code) })} />
+                                                                        <span className="text-[9px] font-bold text-zinc-700">{a.code}</span>
+                                                                    </label>
+                                                                ))}
+                                                            </div>
+                                                        </div>
                                                     ) : (
-                                                        <span className="font-bold text-zinc-700">{st.Nombre}</span>
+                                                        <div className="flex flex-col">
+                                                            <span className="font-bold text-zinc-700">{st.Nombre}</span>
+                                                            <span className="text-[9px] font-bold text-emerald-600/70 uppercase tracking-widest">{st.AreaID || areaCode}</span>
+                                                        </div>
                                                     )}
                                                 </td>
                                                 {/* TIPO */}
