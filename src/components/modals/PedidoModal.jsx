@@ -4,13 +4,8 @@ const PedidoModal = ({ pedido, isOpen, onClose }) => {
   if (!isOpen || !pedido) return null;
 
   return (
-<<<<<<< Updated upstream
     <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60  p-4">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-slate-200">
-=======
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-zinc-200">
->>>>>>> Stashed changes
 
         {/* CABECERA */}
         <div className="px-8 py-6 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
@@ -65,7 +60,7 @@ const PedidoModal = ({ pedido, isOpen, onClose }) => {
             <h3 className="text-sm font-black text-zinc-400 uppercase tracking-widest flex items-center gap-2">
               <i className="fa-solid fa-list-ul text-indigo-500"></i> Detalle de Artículos
             </h3>
-            
+
             {pedido.items?.map((item, idx) => (
               <div key={idx} className="bg-zinc-50 px-5 py-4 flex justify-between items-center border border-zinc-100 rounded-2xl">
                 <div className="flex flex-col">
