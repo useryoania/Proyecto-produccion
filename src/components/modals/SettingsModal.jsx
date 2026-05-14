@@ -42,12 +42,7 @@ const StockModal = ({ isOpen, onClose, areaName, areaCode }) => {
   };
 
   return (
-<<<<<<< HEAD
-    <div className="fixed inset-0 bg-slate-900/60  z-[1300] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
-=======
-    <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-sm z-[1300] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
->>>>>>> main
-      <div
+        <div
         className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300"
         onClick={e => e.stopPropagation()}
       >

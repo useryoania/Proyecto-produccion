@@ -67,11 +67,7 @@ const SlotActionModal = ({ isOpen, onClose, slot, machineId, onSuccess }) => {
     };
 
     return (
-<<<<<<< HEAD
-        <div className="fixed inset-0 bg-slate-900/60  flex items-center justify-center p-4 z-[1400] animate-in fade-in duration-200">
-=======
-        <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[1400] animate-in fade-in duration-200">
->>>>>>> main
+        <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border-t-4 border-blue-500">
                 <div className="px-6 py-4 bg-zinc-50 border-b flex justify-between items-center">
                     <h3 className="font-bold text-zinc-700 flex items-center gap-2">

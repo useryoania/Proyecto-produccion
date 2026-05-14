@@ -289,8 +289,8 @@ exports.anularFactura = async (req, res) => {
 exports.editarFactura = async (req, res) => {
     try {
         const { id } = req.params;
-        const { CliIdCliente, MonIdMoneda, DocSubtotal, DocImpuestos, DocTotal } = req.body;
-        
+        const { DocTipo, CliIdCliente, MonIdMoneda, DocSubtotal, DocImpuestos, DocTotal, DocObservaciones, lineas } = req.body;
+
         const pool = await getPool();
         const transaction = pool.transaction();
         await transaction.begin();
@@ -298,12 +298,12 @@ exports.editarFactura = async (req, res) => {
         const docRes = await transaction.request()
             .input('id', sql.Int, id)
             .query('SELECT CfeEstado, DocPagado, AsiIdAsiento FROM DocumentosContables WHERE DocIdDocumento = @id');
-            
+
         if (docRes.recordset.length === 0) {
             await transaction.rollback();
             return res.status(404).json({ error: 'Documento no encontrado' });
         }
-        
+
         const doc = docRes.recordset[0];
         if (doc.CfeEstado !== 'PENDIENTE') {
             await transaction.rollback();
@@ -314,48 +314,77 @@ exports.editarFactura = async (req, res) => {
             return res.status(400).json({ error: 'No se puede editar un documento pagado generado desde caja.' });
         }
 
+        // 1. Actualizar cabecera del documento
         await transaction.request()
             .input('id', sql.Int, id)
+            .input('docTipo', sql.NVarChar(50), DocTipo || '')
             .input('clienteId', sql.Int, CliIdCliente || 1)
             .input('moneda', sql.Int, MonIdMoneda)
-            .input('subtotal', sql.Decimal(18,2), DocSubtotal)
-            .input('iva', sql.Decimal(18,2), DocImpuestos)
-            .input('total', sql.Decimal(18,2), DocTotal)
+            .input('subtotal', sql.Decimal(18, 2), DocSubtotal)
+            .input('iva', sql.Decimal(18, 2), DocImpuestos)
+            .input('total', sql.Decimal(18, 2), DocTotal)
             .input('cuenta', sql.Int, MonIdMoneda === 2 ? 119 : 118)
+            .input('obs', sql.NVarChar(500), DocObservaciones || '')
             .query(`
-                UPDATE DocumentosContables SET 
-                    CliIdCliente = @clienteId,
-                    MonIdMoneda = @moneda,
-                    DocSubtotal = @subtotal,
-                    DocImpuestos = @iva,
-                    DocTotal = @total,
-                    CueIdCuenta = @cuenta
+                UPDATE DocumentosContables SET
+                    DocTipo           = CASE WHEN @docTipo <> '' THEN @docTipo ELSE DocTipo END,
+                    CliIdCliente      = @clienteId,
+                    MonIdMoneda       = @moneda,
+                    DocSubtotal       = @subtotal,
+                    DocImpuestos      = @iva,
+                    DocTotal          = @total,
+                    CueIdCuenta       = @cuenta,
+                    DocObservaciones  = @obs
                 WHERE DocIdDocumento = @id
             `);
 
+        // 2. Si vienen líneas, reprocesar el detalle
+        if (Array.isArray(lineas) && lineas.length > 0) {
+            // Borrar las líneas anteriores
+            await transaction.request()
+                .input('docId', sql.Int, id)
+                .query('DELETE FROM DocumentosContablesDetalle WHERE DocIdDocumento = @docId');
+
+            // Reinsertar las líneas editadas
+            for (const linea of lineas) {
+                await transaction.request()
+                    .input('docId', sql.Int, id)
+                    .input('nom', sql.NVarChar(255), linea.DcdNomItem || '')
+                    .input('cant', sql.Decimal(18, 4), parseFloat(linea.DcdCantidad) || 1)
+                    .input('precio', sql.Decimal(18, 4), parseFloat(linea.DcdPrecioUnitario) || 0)
+                    .input('sub', sql.Decimal(18, 2), parseFloat(linea.DcdSubtotal) || 0)
+                    .query(`
+                        INSERT INTO DocumentosContablesDetalle
+                            (DocIdDocumento, DcdNomItem, DcdCantidad, DcdPrecioUnitario, DcdSubtotal)
+                        VALUES (@docId, @nom, @cant, @precio, @sub)
+                    `);
+            }
+        }
+
+        // 3. Reemitir asiento contable si existe
         if (doc.AsiIdAsiento) {
             await transaction.request()
                 .input('asiId', sql.Int, doc.AsiIdAsiento)
-                .query("DELETE FROM Cont_AsientosDetalle WHERE AsiIdAsiento = @asiId");
-                
+                .query('DELETE FROM Cont_AsientosDetalle WHERE AsiIdAsiento = @asiId');
+
             const cuentaCliente = MonIdMoneda === 2 ? 119 : 118;
             const cuentaVentas = 411;
-            
+
             await transaction.request()
                 .input('asiId', sql.Int, doc.AsiIdAsiento)
                 .input('cuentaCli', sql.Int, cuentaCliente)
                 .input('cuentaVen', sql.Int, cuentaVentas)
-                .input('total', sql.Decimal(18,2), DocTotal)
+                .input('total', sql.Decimal(18, 2), DocTotal)
                 .query(`
                     INSERT INTO Cont_AsientosDetalle (AsiIdAsiento, CueIdCuenta, DetDebe, DetHaber)
-                    VALUES 
-                    (@asiId, @cuentaCli, @total, 0),
-                    (@asiId, @cuentaVen, 0, @total)
+                    VALUES
+                        (@asiId, @cuentaCli, @total, 0),
+                        (@asiId, @cuentaVen, 0, @total)
                 `);
         }
 
         await transaction.commit();
-        res.json({ success: true, message: 'Documento actualizado correctamente' });
+        res.json({ success: true, message: 'Documento y líneas actualizados correctamente' });
     } catch (err) {
         logger.error('Error editando documento CFE:', err);
         res.status(500).json({ error: err.message });

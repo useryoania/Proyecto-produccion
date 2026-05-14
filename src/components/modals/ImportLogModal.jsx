@@ -2,22 +2,6 @@ const ImportLogModal = ({ isOpen, onClose, logs, isImporting }) => {
     if (!isOpen) return null;
 
     return (
-<<<<<<< HEAD
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-900/70  p-4">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200">
-                <div className="bg-slate-50 px-8 py-6 border-b border-slate-100 flex justify-between items-center">
-=======
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-zinc-900/70 backdrop-blur-sm p-4">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden border border-zinc-200">
-                <div className="bg-zinc-50 px-8 py-6 border-b border-zinc-100 flex justify-between items-center">
->>>>>>> main
-                    <div>
-                        <h2 className="text-2xl font-black text-zinc-800 tracking-tight">Consola de Importación</h2>
-                        <p className="text-zinc-500 text-sm font-medium">Comunicación directa con el ERP</p>
-                    </div>
-                    {isImporting && (
-                        <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-bold animate-pulse">
-                            <i className="fa-solid fa-spinner fa-spin"></i> PROCESANDO
                         </div>
                     )}
                 </div>

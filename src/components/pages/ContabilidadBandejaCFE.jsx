@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, CheckCircle, AlertCircle, Search, Send, FileOutput, Plus, Eye, Edit, XCircle, Printer } from 'lucide-react';
+import { FileText, CheckCircle, AlertCircle, Search, Send, FileOutput, Plus, Edit, XCircle, Printer } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'sonner';
 import api from '../../services/apiClient';
 import { generarPdfFacturaDGI } from '../../utils/pdfGenerator';
 import FacturacionManualModal from './FacturacionManualModal';
-import CfePreviewModal from './CfePreviewModal';
 import CfeEditModal from './CfeEditModal';
 
 const getStatusBadge = (status) => {
@@ -36,8 +35,7 @@ const ContabilidadBandejaCFE = () => {
     const [error, setError] = useState('');
     const [showFacturaModal, setShowFacturaModal] = useState(false);
     
-    // Modals
-    const [previewDoc, setPreviewDoc] = useState(null);
+    // Modal de edición
     const [editDoc, setEditDoc] = useState(null);
 
     // Filtros
@@ -297,14 +295,7 @@ const ContabilidadBandejaCFE = () => {
                                                     >
                                                         <Printer className="h-5 w-5" />
                                                     </button>
-                                                    <button
-                                                        onClick={() => setPreviewDoc(doc)}
-                                                        className="text-gray-500 hover:text-blue-600 transition-colors"
-                                                        title="Vista Previa (Ticket interno)"
-                                                    >
-                                                        <Eye className="h-5 w-5" />
-                                                    </button>
-                                                    {/* [PROVISIONAL] Habilitado editar sin importar si está pagado */}
+                                                    {/* Editar: abre modal completo con líneas de detalle */}
                                                     <button
                                                         onClick={() => setEditDoc(doc)}
                                                         className="text-gray-500 hover:text-yellow-600 transition-colors"
@@ -312,7 +303,7 @@ const ContabilidadBandejaCFE = () => {
                                                     >
                                                         <Edit className="h-5 w-5" />
                                                     </button>
-                                                    {/* [PROVISIONAL] Habilitado anular sin importar si está pagado */}
+                                                    {/* Anular */}
                                                     <button
                                                         onClick={() => handleAnular(doc)}
                                                         className="text-gray-500 hover:text-red-600 transition-colors"
@@ -366,9 +357,7 @@ const ContabilidadBandejaCFE = () => {
                 />
             )}
 
-            {previewDoc && (
-                <CfePreviewModal doc={previewDoc} onClose={() => setPreviewDoc(null)} />
-            )}
+            {/* PreviewModal eliminada — el lápiz abre el modal de edición completo */}
 
             {editDoc && (
                 <CfeEditModal 
