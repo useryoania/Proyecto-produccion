@@ -205,7 +205,10 @@ const LogisticsView = ({ areaCode }) => {
 
         console.log("🔍 Validando despacho estricto para órdenes FINALES:", finalObjects.map(o => `${o.code} [${o.status}]`));
 
-        const validStatuses = ['PRONTO', 'EN LOGISTICA', 'FINALIZADO', 'TERMINADO', 'ENTREGADA', 'ENVIADO'];
+        const validStatuses = [
+            'PRONTO', 'EN LOGISTICA', 'FINALIZADO', 'TERMINADO', 'ENTREGADA', 'ENVIADO',
+            'EN DEPOSITO', 'ESPERANDO RETIRO'
+        ];
 
         const invalidOrders = finalObjects.filter(o => {
             const st = (o.status || '').toUpperCase().trim();

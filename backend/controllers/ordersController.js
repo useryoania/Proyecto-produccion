@@ -762,11 +762,12 @@ exports.updateAreaStatus = async (req, res) => {
 
             await new sql.Request(transaction)
                 .input('OID', sql.Int, id)
+                .input('Est', sql.VarChar(50), areaStatus)
                 .input('User', sql.VarChar, safeUser)
                 .input('Det', sql.NVarChar, `Cambio de estado en area a ${areaStatus}`)
                 .query(`
                    INSERT INTO HistorialOrdenes (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
-                   VALUES (@OID, 'CAMBIO_ESTADO_AREA', GETDATE(), GETDATE(), @User, @Det)
+                   VALUES (@OID, @Est, GETDATE(), GETDATE(), @User, @Det)
                `);
 
             await transaction.commit();

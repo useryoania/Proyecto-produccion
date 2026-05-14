@@ -322,7 +322,7 @@ export default function ConfigPage({ onBack }) {
             {activeModal === 'flows' && <ConfigFlowsModal isOpen={true} onClose={() => setActiveModal(null)} />}
             {activeModal === 'rules' && <ConfigRouteRulesModal isOpen={true} onClose={() => setActiveModal(null)} />}
             {activeModal === 'times' && <ConfigDeliveryTimesModal isOpen={true} onClose={() => setActiveModal(null)} />}
-            {activeModal === 'statuses' && <ConfigStatusesModal isOpen={true} onClose={() => { setActiveModal(null); loadAreaDetails(selectedAreaId); }} areaCode={selectedAreaId} initialStatuses={details.estados} />}
+            {activeModal === 'statuses' && <ConfigStatusesModal isOpen={true} onClose={() => { setActiveModal(null); loadAreaDetails(selectedAreaId); }} areaCode={selectedAreaId} initialStatuses={details.estados} areas={areas} />}
             {activeModal === 'webservices' && <ConfigWebServicesModal isOpen={true} onClose={() => setActiveModal(null)} />}
             {activeModal === 'syncs' && <ConfigSyncModal isOpen={true} onClose={() => setActiveModal(null)} />}
 

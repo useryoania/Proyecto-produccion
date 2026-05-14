@@ -290,7 +290,7 @@ export default function CierreCicloPreviewModal({
             orderSubtotal += sub * rate;
           });
           detallesParaPDF.push({
-            DcdNomItem: `Orden: ${m.OrdCodigoOrden || m.MovConcepto}`,
+            DcdNomItem: `${m.OrdCodigoOrden || m.MovConcepto}`,
             DcdDscItem: m.OrdNombreTrabajo ? m.OrdNombreTrabajo : '',
             DcdCantidad: 1,
             DcdSubtotal: orderSubtotal
@@ -298,14 +298,6 @@ export default function CierreCicloPreviewModal({
         } else {
           let orderSubtotal = 0;
           
-          detallesParaPDF.push({
-            DcdNomItem: `Orden: ${m.OrdCodigoOrden || m.MovConcepto}${m.OrdNombreTrabajo ? ` - ${m.OrdNombreTrabajo}` : ''}`,
-            DcdDscItem: '',
-            DcdCantidad: null,
-            DcdSubtotal: null,
-            isHeader: true
-          });
-
           m.detalles.forEach(d => {
             const ed = detallesEditados[d.DetalleID];
             const sub = ed ? ed.Subtotal : d.Subtotal;
@@ -318,22 +310,17 @@ export default function CierreCicloPreviewModal({
             const descItem = originalSub - finalSub;
             orderSubtotal += finalSub;
             
+            const descArticulo = `${d.ArticuloNombre ? d.ArticuloNombre.trim() + ' - ' : ''}${(d.Descripcion || d.LogPrecioAplicado || 'Servicio').trim()}`;
+            const descOrden = `${m.OrdCodigoOrden || m.MovConcepto}${m.OrdNombreTrabajo ? ` - ${m.OrdNombreTrabajo}` : ''}`;
+            
             detallesParaPDF.push({
-              DcdNomItem: d.Descripcion || d.LogPrecioAplicado || 'Servicio',
-              DcdDscItem: '',
+              DcdNomItem: descArticulo,
+              DcdDscItem: descOrden,
               DcdCantidad: d.Cantidad,
               DcdPrecioUnitario: unitario,
               DcdTotalDescuentos: descItem > 0.01 ? descItem : null,
               DcdSubtotal: finalSub
             });
-          });
-          
-          detallesParaPDF.push({
-            DcdNomItem: `SUBTOTAL ORDEN ${m.OrdCodigoOrden || m.MovConcepto}`,
-            DcdDscItem: '',
-            DcdCantidad: null,
-            DcdSubtotal: orderSubtotal,
-            isSubtotal: true
           });
         }
       } else {
@@ -343,8 +330,8 @@ export default function CierreCicloPreviewModal({
         const finalSub = importe * rate;
         
         detallesParaPDF.push({
-          DcdNomItem: agruparFactura ? `Orden: ${m.OrdCodigoOrden || m.MovConcepto}` : (m.OrdNombreTrabajo || m.MovConcepto || 'Servicio'),
-          DcdDscItem: agruparFactura ? (m.OrdNombreTrabajo || '') : `Orden: ${m.OrdCodigoOrden || m.MovConcepto}`,
+          DcdNomItem: agruparFactura ? `${m.OrdCodigoOrden || m.MovConcepto}` : (m.OrdNombreTrabajo || m.MovConcepto || 'Servicio'),
+          DcdDscItem: agruparFactura ? (m.OrdNombreTrabajo || '') : `${m.OrdCodigoOrden || m.MovConcepto}`,
           DcdCantidad: 1,
           DcdSubtotal: finalSub
         });
@@ -587,6 +574,7 @@ export default function CierreCicloPreviewModal({
                             <td></td>
                             <td className="px-6 py-2.5 text-slate-500 pl-8 flex items-center gap-2">
                               <div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>
+                              {d.ArticuloNombre ? d.ArticuloNombre.trim() + ' - ' : ''}
                               {d.Descripcion || d.LogPrecioAplicado || 'Servicio'}
                             </td>
                             <td className="px-4 py-2.5 text-center font-mono font-medium">{d.Cantidad}</td>
@@ -637,27 +625,7 @@ export default function CierreCicloPreviewModal({
                         );
                       })}
                       
-                      {/* Fila de Subtotal de Orden */}
-                      {!isExcluido && m.detalles?.length > 0 && (
-                        <tr className="bg-slate-50/50 border-t border-slate-100/50">
-                          <td colSpan={5} className="px-4 py-2 text-right text-xs font-bold text-slate-500 uppercase tracking-wide">
-                            Subtotal Orden {m.OrdCodigoOrden || m.MovConcepto}:
-                          </td>
-                          <td className="px-4 py-2 text-right">
-                            <span className="font-mono text-sm font-black text-indigo-700">
-                              {simbolo} {fmt(
-                                m.detalles.reduce((acc, d) => {
-                                  const ed = detallesEditados[d.DetalleID];
-                                  const subt = ed ? ed.Subtotal : d.Subtotal;
-                                  const monBase = Number(cuenta?.MonIdMoneda) === 1 ? 'UYU' : 'USD';
-                                  const rate = (monedaFactura === 'UYU' && monBase === 'USD') ? cotDolar : (monedaFactura === 'USD' && monBase === 'UYU' ? (1/cotDolar) : 1);
-                                  return acc + (subt * rate);
-                                }, 0)
-                              )}
-                            </span>
-                          </td>
-                        </tr>
-                      )}
+
                     </React.Fragment>
                   );
                 })}
