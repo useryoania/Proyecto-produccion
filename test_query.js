@@ -1,1 +1,0 @@
-const { sql, getPool } = require('./backend/config/db'); getPool().then(pool => pool.request().query("SELECT * FROM Logistica_Bultos WHERE CodigoEtiqueta = 'PAQ-7089-596'").then(r => { console.log(r.recordset); process.exit(0); }))
