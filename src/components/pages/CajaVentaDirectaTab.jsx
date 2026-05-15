@@ -25,6 +25,7 @@ export default function CajaVentaDirectaTab({
   onClienteChange,
   defaultTipo = 'RECURSO',
   allowedTipos = null,
+  isAdminCaja = false,
 }) {
   // Cliente
   const [qCliente, setQCliente] = useState('');

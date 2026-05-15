@@ -267,8 +267,8 @@ async function procesarVentaDirecta(payload) {
           .input('Orig', sql.Decimal(18,2), item.precioTotal)
           .input('Final', sql.Decimal(18,2), item.precioTotal)
           .query(`
-            INSERT INTO dbo.TransaccionDetalle (TcaIdTransaccion, TdeTipoReferencia, TdeReferenciaId, TdeCodigoReferencia, TdeImporteOriginal, TdeAjuste, TdeImporteFinal)
-            VALUES (@Tca, @TipoR, @RefId, @CodR, @Orig, 0, @Final)
+            INSERT INTO dbo.TransaccionDetalle (TcaIdTransaccion, TdeTipoReferencia, TdeReferenciaId, TdeCodigoReferencia, TdeImporteOriginal, TdeAjuste, TdeImporteFinal, TdePagado)
+            VALUES (@Tca, @TipoR, @RefId, @CodR, @Orig, 0, @Final, 1)
           `);
     }
 
@@ -326,9 +326,10 @@ async function procesarVentaDirecta(payload) {
        .input('SubTot', sql.Decimal(18,2), desgloseCFE.neto)
        .input('Iva', sql.Decimal(18,2), desgloseCFE.ivaMonto)
        .input('Tot', sql.Decimal(18,2), totalBruto)
-       .query(`INSERT INTO dbo.DocumentosContables (CueIdCuenta, CliIdCliente, MonIdMoneda, DocTipo, DocNumero, DocSerie, DocSubtotal, DocImpuestos, DocTotalDescuentos, DocTotalRecargos, DocTotal, DocEstado, DocFechaEmision, DocUsuarioAlta, TcaIdTransaccion, CfeEstado)
+       .input('DocPagado', sql.Bit, totalAbonadoDeuda >= totalBruto ? 1 : 0)
+       .query(`INSERT INTO dbo.DocumentosContables (CueIdCuenta, CliIdCliente, MonIdMoneda, DocTipo, DocNumero, DocSerie, DocSubtotal, DocImpuestos, DocTotalDescuentos, DocTotalRecargos, DocTotal, DocEstado, DocFechaEmision, DocUsuarioAlta, TcaIdTransaccion, CfeEstado, DocPagado)
                OUTPUT INSERTED.DocIdDocumento
-               VALUES (@Cta, @Cli, @MonId, @DocTipoStr, @Num, @Serie, @SubTot, @Iva, 0, 0, @Tot, @Estado, GETDATE(), @Usr, @Tca, 'PENDIENTE')`);
+               VALUES (@Cta, @Cli, @MonId, @DocTipoStr, @Num, @Serie, @SubTot, @Iva, 0, 0, @Tot, @Estado, GETDATE(), @Usr, @Tca, 'PENDIENTE', @DocPagado)`);
     const dId = iDoc.recordset[0].DocIdDocumento;
 
     // Leer el saldo previo para saber si hay Saldo a Favor que consuma la deuda automáticamente
@@ -415,8 +416,8 @@ async function procesarVentaDirecta(payload) {
             .input('R', sql.Int, dId).input('MT', sql.VarChar(30), 'VTA_CAJA')
             .input('ConceptoVenta', sql.VarChar(200), conceptoVenta)
             .input('CicId', sql.Int, cicId)
-            .query(`INSERT INTO dbo.MovimientosCuenta (CueIdCuenta, MovTipo, MovConcepto, MovImporte, MovSaldoPosterior, DocIdDocumento, MovUsuarioAlta, MovFecha, CicIdCiclo)
-                    VALUES (@Cue, @MT, @ConceptoVenta, @Imp, @Sal, @R, @Usr, GETDATE(), @CicId)`);
+            .query(`INSERT INTO dbo.MovimientosCuenta (CueIdCuenta, MovTipo, MovConcepto, MovImporte, MovSaldoPosterior, DocIdDocumento, MovUsuarioAlta, MovFecha, CicIdCiclo, MovAnulado)
+                    VALUES (@Cue, @MT, @ConceptoVenta, @Imp, @Sal, @R, @Usr, GETDATE(), @CicId, 0)`);
     }
 
     if (totalAbonadoDeuda > 0) {
@@ -428,8 +429,8 @@ async function procesarVentaDirecta(payload) {
                 .input('Sal', sql.Decimal(18,4), saldoP2).input('Usr', sql.Int, usuarioId).input('Doc', sql.Int, dId)
                 .input('ConceptoPago', sql.VarChar(200), conceptoPago)
                 .input('CicId', sql.Int, cicId)
-                .query(`INSERT INTO dbo.MovimientosCuenta (CueIdCuenta, MovTipo, MovConcepto, MovImporte, MovSaldoPosterior, DocIdDocumento, MovUsuarioAlta, MovFecha, CicIdCiclo)
-                        VALUES (@Cue, 'PAGO', @ConceptoPago, @Imp, @Sal, @Doc, @Usr, GETDATE(), @CicId)`);
+                .query(`INSERT INTO dbo.MovimientosCuenta (CueIdCuenta, MovTipo, MovConcepto, MovImporte, MovSaldoPosterior, DocIdDocumento, MovUsuarioAlta, MovFecha, CicIdCiclo, MovAnulado)
+                        VALUES (@Cue, 'PAGO', @ConceptoPago, @Imp, @Sal, @Doc, @Usr, GETDATE(), @CicId, 0)`);
     }
 
     // 7. Asiento Libro Mayor desde Motor (VTA_CAJA)

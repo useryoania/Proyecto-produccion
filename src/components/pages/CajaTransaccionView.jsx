@@ -927,6 +927,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                       <CajaVentaDirectaTab
                         defaultTipo="VENTA_INSUMOS" allowedTipos={['VENTA_INSUMOS', 'VENTA_PRODUCTOS']}
                         metodosPago={metodosPago}
+                        isAdminCaja={isAdminCaja}
                         cotizacion={cotizacion}
                         onVentaExitosa={() => { fetchRetiros(); setVentaPagos([{ id: Date.now(), metodoPagoId: '', moneda: 'UYU', monedaId: 1, monto: '' }]); setVentaObs(''); setVentaTotalACubrir(0); setVentaMoneda('UYU'); setVentaClienteId(''); setVentaClienteNombre(''); }}
                         onClienteChange={(c) => {

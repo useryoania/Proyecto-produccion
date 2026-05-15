@@ -1765,14 +1765,14 @@ async function cerrarCicloCompleto({
              DocFechaDesde, DocFechaHasta, DocSubtotal, DocImpuestos, DocTotal,
              MonIdMoneda, CicIdCiclo, DocEstado,
              DocFechaEmision, DocUsuarioAlta, DocTotalDescuentos, DocTotalRecargos, DocObservaciones,
-             DocCliNombre, DocCliDocumento, DocCliDireccion, DocCliCiudad)
+             DocCliNombre, DocCliDocumento, DocCliDireccion, DocCliCiudad, DocPagado)
           OUTPUT INSERTED.DocIdDocumento
           VALUES
             (@CueIdCuenta, @CliIdCliente, @DocTipo, @DocNumero, 'A',
              @FechaDesde, @FechaHasta, @DocSubtotal, @DocImpuestos, @DocTotal,
              @MonIdMoneda, @CicIdCiclo, 'EMITIDO',
              GETDATE(), @UsuarioAlta, @DocTotalDescuentos, 0, @DocObservaciones,
-             @DocCliNombre, @DocCliDocumento, @DocCliDireccion, @DocCliCiudad)
+             @DocCliNombre, @DocCliDocumento, @DocCliDireccion, @DocCliCiudad, 0)
         `);
     DocIdDocumento = docRes.recordset[0].DocIdDocumento;
 
