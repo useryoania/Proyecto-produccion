@@ -46,6 +46,8 @@ export default {
             },
             fontFamily: {
                 sans: ['Inter', 'system-ui', 'sans-serif'],
+                archivo: ['Archivo', 'system-ui', 'sans-serif'],
+                barlow: ['Barlow', 'sans-serif'],
             },
             boxShadow: {
                 'glow-cyan': '0 0 20px -5px rgba(34, 211, 238, 0.4)',

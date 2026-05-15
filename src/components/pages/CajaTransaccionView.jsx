@@ -20,6 +20,42 @@ import CajaPanelPago from './CajaPanelPago';
 import TicketImpresion from '../common/TicketImpresion';
 import ClienteBilletera from '../common/ClienteBilletera';
 import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
+import { Listbox } from '@headlessui/react';
+import { ChevronDown, Check } from 'lucide-react';
+
+function LightSelect({ value, onChange, options = [], placeholder = 'Seleccionar...' }) {
+  const selected = options.find(o => String(o.value) === String(value));
+  return (
+    <Listbox value={value} onChange={onChange}>
+      <div className="relative">
+        <Listbox.Button className="w-full flex items-center justify-between gap-2 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs font-black text-zinc-800 font-archivo outline-none hover:border-zinc-300 focus:border-brand-cyan focus:ring-2 focus:ring-brand-cyan/10 transition-all shadow-sm">
+          <span className="truncate">{selected ? selected.label : <span className="text-zinc-400">{placeholder}</span>}</span>
+          <ChevronDown size={13} className="text-zinc-400 shrink-0" />
+        </Listbox.Button>
+        <Listbox.Options className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-xl shadow-xl overflow-auto max-h-52 outline-none font-archivo">
+          {options.map(opt => (
+            <Listbox.Option
+              key={opt.value}
+              value={opt.value}
+              className={({ active }) =>
+                `flex items-center justify-between px-3 py-2 text-xs font-black cursor-pointer transition-colors ${
+                  active ? 'bg-zinc-50 text-zinc-900' : 'text-zinc-700'
+                }`
+              }
+            >
+              {({ selected: sel }) => (
+                <>
+                  <span>{opt.label}</span>
+                  {sel && <Check size={12} className="text-brand-cyan shrink-0" />}
+                </>
+              )}
+            </Listbox.Option>
+          ))}
+        </Listbox.Options>
+      </div>
+    </Listbox>
+  );
+}
 
 const TIPOS_DOC = [
   { value: '07', label: 'E-Ticket Contado -> 101' },
@@ -516,13 +552,13 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
       </div>
 
 
-      <div className="min-h-full bg-[#0f1117] text-slate-200 font-sans flex flex-col h-screen overflow-hidden">
-        <div className="border-b border-slate-800 bg-[#0f1117] shrink-0">
-          <div className="flex items-center justify-between px-6 py-3">
+      <div className="min-h-full bg-[#0f1117] text-slate-200 font-sans flex flex-col h-full overflow-hidden">
+        <div className="border-b border-zinc-200 bg-zinc-50 shrink-0">
+          <div className="flex items-center justify-between px-4 py-2">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold">{isAdminCaja ? 'A' : 'C'}</div>
+              <div className="w-8 h-8 rounded-lg bg-brand-cyan/20 flex items-center justify-center text-brand-cyan font-bold">{isAdminCaja ? 'A' : 'C'}</div>
               <div>
-                <h1 className="text-lg font-black text-white leading-none tracking-tight">{isAdminCaja ? 'Caja Administrativa' : 'Caja Central'}</h1>
+                <h1 className="text-lg font-black text-custom-dark leading-none tracking-tight">{isAdminCaja ? 'Caja Administrativa' : 'Caja Central'}</h1>
                 {!isAdminCaja && <p className="text-xs text-emerald-400 font-bold mt-0.5">Estado: ABIERTA</p>}
               </div>
             </div>
@@ -569,23 +605,23 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                 />
                 <button type="submit" className="hidden">Buscar</button>
               </form>
-              <div className="bg-slate-800 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700 h-9">
-                <RefreshCw size={14} className={`text-indigo-400 cursor-pointer hover:text-indigo-300 ${loadingCot ? 'animate-spin' : ''}`} onClick={buscarCotizBCU} />
-                <span className="font-bold text-slate-300">1 US$ = <span className="text-indigo-400">${cotizacion ? fmt(cotizacion) : '---'}</span></span>
+              <div className="bg-white flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-200 h-9">
+                <RefreshCw size={14} className={`text-brand-cyan cursor-pointer hover:text-brand-cyan/80 ${loadingCot ? 'animate-spin' : ''}`} onClick={buscarCotizBCU} />
+                <span className="font-bold text-custom-dark">1 US$ = <span className="text-brand-cyan">${cotizacion ? fmt(cotizacion) : '---'}</span></span>
               </div>
             </div>
           </div>
-          <div className="flex gap-2 px-8 pt-4">
+          <div className="flex gap-2 px-4 pt-2">
             {[
-              { id: 'INGRESOS', label: 'Ingresos a Caja', icon: ArrowDownCircle, color: 'text-emerald-500' },
-              { id: 'EGRESOS', label: 'Salidas / Pagos', icon: ArrowUpCircle, color: 'text-rose-500' },
-              { id: 'OPERACIONES', label: 'Operaciones Turno', icon: History, color: 'text-amber-500' }
+              { id: 'INGRESOS', label: 'Ingresos a Caja', icon: ArrowDownCircle, color: 'text-emerald-500', bgBorder: 'bg-emerald-500' },
+              { id: 'EGRESOS', label: 'Salidas / Pagos', icon: ArrowUpCircle, color: 'text-brand-magenta', bgBorder: 'bg-brand-magenta' },
+              { id: 'OPERACIONES', label: 'Operaciones Turno', icon: History, color: 'text-amber-500', bgBorder: 'bg-amber-500' }
             ].map(t => (
               <button key={t.id} onClick={() => { setActiveTab(t.id); if (t.id === 'INGRESOS') setSubTabIngreso('COBRO'); }}
-                className={`px-8 py-4 rounded-t-3xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 transition-all border-x border-t relative group overflow-hidden ${activeTab === t.id ? 'bg-zinc-50 border-zinc-200 text-zinc-800 shadow-[0_-10px_30px_rgba(0,0,0,0.3)]' : 'bg-transparent border-transparent text-zinc-400 hover:text-zinc-700'}`}>
+                className={`px-8 py-4 rounded-t-3xl text-[10px] font-black font-archivo uppercase tracking-widest flex items-center gap-3 transition-all border-x border-t relative group overflow-hidden ${activeTab === t.id ? 'bg-white border-zinc-200 text-custom-dark shadow-sm' : 'bg-transparent border-transparent text-zinc-400 hover:text-custom-dark'}`}>
                 <t.icon size={18} className={`transition-transform duration-300 ${activeTab === t.id ? t.color + ' scale-110' : 'opacity-40 group-hover:opacity-100 group-hover:scale-110'}`} />
                 {t.label}
-                {activeTab === t.id && <div className="absolute top-0 inset-x-0 h-1 bg-brand-cyan"></div>}
+                {activeTab === t.id && <div className={`absolute top-0 inset-x-0 h-1 ${t.bgBorder}`}></div>}
               </button>
             ))}
           </div>
@@ -595,7 +631,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
           {activeTab === 'INGRESOS' && (
             <div className="flex-1 flex flex-col overflow-hidden">
 
-              <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-3 shrink-0 shadow-sm z-10 overflow-x-auto">
+              <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center gap-1 shrink-0 shadow-sm z-10 overflow-x-auto">
                 {[
                   { id: 'COBRO', label: 'Pago de Pedidos', icon: ShoppingCart },
                   { id: 'VENTA', label: 'Venta de Recursos Adelantados', icon: Plus },
@@ -606,7 +642,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                   { id: 'AUTORIZAR', label: 'Autorizar Entrega', icon: ShieldCheck }
                 ].map(st => (
                   <button key={st.id} onClick={() => setSubTabIngreso(st.id)}
-                    className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all border whitespace-nowrap ${subTabIngreso === st.id ? 'bg-zinc-100 border-brand-cyan/30 text-zinc-800 shadow-lg' : 'bg-transparent border-transparent text-zinc-400 hover:text-zinc-800'}`}>
+                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-1.5 rounded-xl font-black font-archivo text-[10px] uppercase tracking-widest transition-all border whitespace-nowrap ${subTabIngreso === st.id ? 'bg-brand-cyan border-brand-cyan text-white' : 'bg-transparent border-transparent text-zinc-400 hover:text-zinc-800'}`}>
                     <st.icon size={16} /> {st.label}
                   </button>
                 ))}
@@ -618,7 +654,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                     <div className="flex-1 flex overflow-hidden">
                       <div className="w-[440px] border-r border-slate-200 flex flex-col bg-white shrink-0 shadow-lg z-0">
                         <div className="p-6 border-b border-slate-100 flex flex-col gap-5 bg-slate-50/50">
-                          <h3 className="font-black text-slate-400 text-[10px] uppercase tracking-widest flex items-center gap-2 px-1">
+                          <h3 className="font-black font-archivo text-slate-400 text-[10px] uppercase tracking-widest flex items-center gap-2 px-1">
                             <Search size={12} /> Buscar Pedidos Disponibles
                           </h3>
                           <div className="relative group">
@@ -628,15 +664,15 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                               placeholder="Ingrese orden o cliente..."
                               value={searchTerm}
                               onChange={e => setSearchTerm(e.target.value)}
-                              className="bg-zinc-100 border-2 border-zinc-300 rounded-3xl pl-14 pr-6 py-4 text-base text-zinc-100 placeholder-zinc-600 outline-none w-full focus:border-brand-cyan transition-all font-black"
+                              className="bg-zinc-100 border-2 border-zinc-300 rounded-3xl pl-14 pr-6 py-4 text-base text-zinc-100 placeholder-zinc-600 outline-none w-full focus:border-brand-cyan transition-all font-black font-archivo"
                             />
                           </div>
                           <div className="flex gap-2 flex-wrap px-1">
-                            {[{ val: 'todos', l: 'Todos' }, { val: '1', l: 'Comunes' }, { val: '2', l: 'Sem' }, { val: '3', l: 'Rollos' }].map(f => (
+                            {[{ val: 'todos', l: 'Todos' }, { val: '1', l: 'Comunes' }, { val: '2', l: 'Semanales' }, { val: '3', l: 'Rollos' }].map(f => (
                               <button
                                 key={f.val}
                                 onClick={() => setFiltroTipo(f.val)}
-                                className={`px-4 py-2 text-[10px] font-black rounded-xl uppercase tracking-widest transition-all ${filtroTipo === f.val ? 'bg-brand-cyan text-white shadow-md' : 'text-zinc-500 hover:bg-zinc-100'}`}
+                                className={`px-4 py-2 text-[10px] font-black font-archivo rounded-xl uppercase tracking-widest transition-all ${filtroTipo === f.val ? 'bg-brand-cyan text-white shadow-md' : 'text-zinc-500 hover:bg-zinc-100'}`}
                               >
                                 {f.l}
                               </button>
@@ -645,7 +681,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                               {seleccionados.length > 0 && (
                                 <button
                                   onClick={() => setSeleccionados([])}
-                                  className="text-[10px] font-black text-rose-500 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-100 hover:bg-rose-500/20 transition-colors uppercase tracking-widest flex items-center gap-1"
+                                  className="text-[10px] font-black text-brand-magenta bg-brand-magenta/10 px-3 py-1.5 rounded-xl border border-brand-magenta/20 hover:bg-brand-magenta/20 transition-colors uppercase tracking-widest flex items-center gap-1"
                                 >
                                   <X size={12} /> Desmarcar Todos
                                 </button>
@@ -671,30 +707,33 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                             });
                             return (
                               <div key={r.ordenDeRetiro} onClick={() => toggleSeleccion(r)}
-                                className={`cursor-pointer shrink-0 rounded-2xl p-4 border-2 transition-all flex flex-col gap-4 relative overflow-hidden group active:scale-[0.98] ${sel ? 'border-brand-cyan bg-brand-cyan/10 shadow-lg shadow-brand-cyan/20' : 'border-zinc-200 bg-white/50 hover:border-zinc-300'}`}>
+                                className={`cursor-pointer shrink-0 rounded-xl p-3 border-2 transition-all flex flex-col gap-2 relative overflow-hidden group ${sel ? 'border-brand-cyan bg-brand-cyan/10' : 'border-zinc-200 bg-white/50 hover:border-zinc-300'}`}>
 
-                                <div className="flex items-center justify-between gap-4">
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className={`w-10 h-10 rounded-xl border-2 flex items-center justify-center shrink-0 transition-all ${sel ? 'border-brand-cyan bg-brand-cyan shadow-md shadow-brand-cyan/20' : 'border-zinc-200 bg-zinc-100 group-hover:border-zinc-300'}`}>
-                                      {sel && <CheckCircle size={20} className="text-white" />}
-                                    </div>
-                                    <div className="flex flex-col min-w-0">
-                                      <span className={`font-black text-lg transition-colors leading-none tracking-tight uppercase ${sel ? 'text-brand-cyan' : 'text-zinc-100'}`}>{r.ordenDeRetiro}</span>
-                                      <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mt-1.5">{r.lugarRetiro || 'Retiro Local'}</span>
-                                    </div>
+                                {/* Fila superior: checkbox + cliente + pill + monto */}
+                                <div className="flex items-center gap-2">
+                                  {/* Checkbox */}
+                                  <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all ${sel ? 'border-brand-cyan bg-brand-cyan shadow-md shadow-brand-cyan/20' : 'border-zinc-200 bg-zinc-100 group-hover:border-zinc-300'}`}>
+                                    {sel && <CheckCircle size={12} className="text-white" />}
                                   </div>
-                                  <div className="font-black text-right flex flex-col items-end shrink-0 gap-1.5">
-                                    {sumUsd > 0 && <span className="bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-lg text-[10px] font-black border border-emerald-100">US$ {fmt(sumUsd)}</span>}
-                                    {sumUyu > 0 && <span className="bg-brand-cyan/10 text-brand-cyan px-2.5 py-1 rounded-lg text-[10px] font-black border border-brand-cyan/20">${fmt(sumUyu)}</span>}
+
+                                  {/* Nombre + pill */}
+                                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                    <p className="text-xs font-black text-zinc-700 group-hover:text-zinc-900 transition-colors truncate uppercase tracking-wide">{r.CliNombre || 'Consumidor Final'}</p>
+                                    <span className="text-[9px] font-black text-brand-cyan bg-brand-cyan/10 px-1.5 py-0.5 rounded-md border border-brand-cyan/20 uppercase tracking-widest shrink-0">{r.CliCodigoCliente || 'S/C'}</span>
+                                  </div>
+
+                                  {/* Montos */}
+                                  <div className="flex flex-col items-end shrink-0 gap-0.5">
+                                    {sumUsd > 0 && <span className="bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-md text-[9px] font-black border border-emerald-100">US$ {fmt(sumUsd)}</span>}
+                                    {sumUyu > 0 && <span className="bg-brand-cyan/10 text-brand-cyan px-2 py-0.5 rounded-md text-[9px] font-black border border-brand-cyan/20">${fmt(sumUyu)}</span>}
                                   </div>
                                 </div>
 
-                                <div className="flex flex-col gap-2.5 border-t border-zinc-100 pt-3">
-                                  <p className="text-sm font-black text-zinc-500 group-hover:text-zinc-100 transition-colors truncate tracking-wide uppercase">{r.CliNombre || 'Consumidor Final'}</p>
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-[9px] font-black text-brand-cyan bg-brand-cyan/10 px-2 py-0.5 rounded-md border border-brand-cyan/20 uppercase tracking-widest">{r.CliCodigoCliente || 'S/C'}</span>
-                                    {r.estadoRetiro && <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest opacity-70 bg-zinc-100 px-2 py-0.5 rounded-md">{r.estadoRetiro}</span>}
-                                  </div>
+                                {/* Fila inferior: código orden + estado */}
+                                <div className="flex items-center gap-2 pl-7">
+                                  <span className={`font-black text-xs tracking-tight uppercase ${sel ? 'text-brand-cyan' : 'text-zinc-400'}`}>{r.ordenDeRetiro}</span>
+                                  <span className="text-[9px] text-zinc-400 uppercase tracking-widest">{r.lugarRetiro || 'Retiro Local'}</span>
+                                  {r.estadoRetiro && <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest bg-zinc-100 px-1.5 py-0.5 rounded ml-auto">{r.estadoRetiro}</span>}
                                 </div>
                               </div>
                             );
@@ -725,20 +764,20 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                                 <div className="flex bg-white rounded-2xl p-1.5 border border-zinc-200 shadow-inner">
                                   <button
                                     onClick={() => setMonedaExhibicion('UYU')}
-                                    className={`px-6 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 ${monedaExhibicion === 'UYU' ? 'bg-zinc-100 text-zinc-800 shadow-lg ring-1 ring-zinc-700' : 'text-zinc-400 hover:text-zinc-700'}`}
+                                    className={`px-6 py-2 text-[10px] font-black font-archivo uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 ${monedaExhibicion === 'UYU' ? 'bg-brand-cyan text-white' : 'text-zinc-400 hover:text-zinc-700'}`}
                                   >
                                     Pesos ($)
                                   </button>
                                   <button
                                     onClick={() => setMonedaExhibicion('USD')}
-                                    className={`px-6 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 ${monedaExhibicion === 'USD' ? 'bg-zinc-100 text-zinc-800 shadow-lg ring-1 ring-zinc-700' : 'text-zinc-400 hover:text-zinc-700'}`}
+                                    className={`px-6 py-2 text-[10px] font-black font-archivo uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 ${monedaExhibicion === 'USD' ? 'bg-brand-cyan text-white' : 'text-zinc-400 hover:text-zinc-700'}`}
                                   >
                                     Dólares (US$)
                                   </button>
                                 </div>
                               </div>
                               {seleccionados.map(s => (
-                                <div key={s.retiroId} className="bg-white border border-zinc-200 rounded-3xl p-6 flex flex-col gap-4 shadow-xl hover:shadow-2xl hover:border-zinc-300 transition-all">
+                                <div key={s.retiroId} className="bg-white border border-zinc-200 rounded-3xl p-6 flex flex-col gap-4 hover:border-zinc-300 transition-all">
                                   <div className="flex justify-between items-start mb-1">
                                     <div className="flex-1 flex items-center gap-4 flex-wrap">
                                       <span className="font-black text-xl text-brand-cyan tracking-tight">{s.codigoRef}</span>
@@ -759,12 +798,10 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                                       </div>
                                       <div>
                                         <p className="text-[9px] text-zinc-400 font-black uppercase tracking-widest">Motivo Ajuste</p>
-                                        <CustomSelect
+                                        <LightSelect
                                           value={ajustes[s.retiroId]?.tipoAjuste || ''}
                                           onChange={val => setAjustes(p => ({ ...p, [s.retiroId]: { ...p[s.retiroId], tipoAjuste: val } }))}
                                           options={TIPOS_AJUSTE.map(t => ({ value: t.value, label: t.label }))}
-                                          variant="default"
-                                          size="small"
                                           placeholder="Sin ajuste"
                                         />
                                       </div>
@@ -794,7 +831,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                                             ) : cubierto ? (
                                               <span className="w-24 text-center px-2 py-1 bg-brand-cyan/10 text-brand-cyan text-[9px] font-black rounded-lg border border-brand-cyan/20 uppercase tracking-widest">{o.orderEstado === 'Autorizado' ? 'Autorizado' : 'Abonada'}</span>
                                             ) : (
-                                              <span className="w-20 text-center px-2 py-1 bg-rose-50 text-rose-500 text-[9px] font-black rounded-lg border border-rose-100 uppercase tracking-widest">Pendiente</span>
+                                              <span className="w-20 text-center px-2 py-1 bg-brand-magenta/10 text-brand-magenta text-[9px] font-black rounded-lg border border-brand-magenta/20 uppercase tracking-widest">Pendiente</span>
                                             )}
                                           </div>
                                         </div>
@@ -1176,8 +1213,8 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                     </div>
                   )}
                   {subTabIngreso === 'AUTORIZAR' && (
-                    <div className="flex-1 flex p-6 gap-6 min-h-0 bg-zinc-50">
-                      <div className="w-[400px] bg-white border border-zinc-200 rounded-[2rem] flex flex-col overflow-hidden shadow-2xl">
+                    <div className="flex-1 flex min-h-0 bg-zinc-50">
+                      <div className="w-[440px] bg-white border-r border-zinc-200 flex flex-col overflow-hidden shrink-0 shadow-lg z-10">
                         <div className="p-6 border-b border-zinc-200 bg-zinc-50">
                           <h3 className="font-black text-zinc-800 flex items-center gap-2 text-[10px] uppercase tracking-widest"><ShieldCheck className="text-brand-cyan" size={16} /> Retiros Pendientes</h3>
                           <div className="relative mt-4 group">
@@ -1193,7 +1230,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                             </div>
                           ) : retirosFiltrados.map(r => (
                             <div key={r.ordenDeRetiro} onClick={() => setRetiroSelectAut({ retiroId: r.ordenDeRetiro, raw: r, deudaEstimada: calcularMontoRetiro(r) })}
-                              className={`p-4 rounded-2xl border-2 cursor-pointer transition-all active:scale-[0.98] ${retiroSelectAut?.retiroId === r.ordenDeRetiro ? 'border-brand-cyan bg-brand-cyan/10 shadow-lg shadow-brand-cyan/20' : 'border-zinc-200 bg-zinc-50 hover:border-zinc-300 hover:bg-white'}`}>
+                              className={`p-4 rounded-2xl border-2 cursor-pointer transition-colors ${retiroSelectAut?.retiroId === r.ordenDeRetiro ? 'border-brand-cyan bg-brand-cyan/10' : 'border-zinc-200 bg-zinc-50 hover:border-zinc-300 hover:bg-white'}`}>
                               <div className="flex justify-between items-start mb-1">
                                 <span className={`font-black text-sm tracking-tight uppercase ${retiroSelectAut?.retiroId === r.ordenDeRetiro ? 'text-brand-cyan' : 'text-zinc-700'}`}>ORDEN #{r.ordenDeRetiro}</span>
                                 <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">{r.OReFechaAlta ? new Date(r.OReFechaAlta).toLocaleDateString() : '-'}</span>
@@ -1201,14 +1238,14 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                               <div className="text-[11px] text-zinc-400 font-bold mb-3 uppercase truncate">{r.CliNombre}</div>
                               <div className="flex justify-between items-center bg-white/50 p-2 rounded-xl border border-zinc-100">
                                 <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Adeudado:</span>
-                                <span className="font-black text-rose-500 text-sm tracking-tighter">${fmt(calcularMontoRetiro(r))}</span>
+                                <span className="font-black text-brand-magenta text-sm tracking-tighter">${fmt(calcularMontoRetiro(r))}</span>
                               </div>
                             </div>
                           ))}
                         </div>
                       </div>
 
-                      <div className="flex-1 flex items-center justify-center overflow-y-auto">
+                      <div className={`flex-1 flex overflow-y-auto ${!retiroSelectAut ? 'items-center justify-center' : ''}`}>
                         {!retiroSelectAut ? (
                           <div className="text-center opacity-30 py-20 animate-pulse">
                             <ShieldCheck size={80} className="mx-auto mb-6 text-brand-cyan/30" />
@@ -1216,7 +1253,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                             <p className="text-zinc-400 text-[10px] mt-3 max-w-sm mx-auto font-black uppercase tracking-widest leading-relaxed">Selecciona un retiro de la lista para proceder.</p>
                           </div>
                         ) : (
-                          <div className="max-w-xl w-full bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl flex flex-col gap-8 animate-in fade-in zoom-in-95 duration-500 border-t-8 border-t-brand-cyan">
+                          <div className="flex-1 w-full bg-white p-10 flex flex-col gap-8 animate-in fade-in duration-300 border-t-8 border-t-brand-cyan shadow-sm">
                             <div className="text-center">
                               <div className="w-20 h-20 bg-brand-cyan/10 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-brand-cyan/20 shadow-sm">
                                 <ShieldCheck size={40} className="text-brand-cyan" />
@@ -1235,7 +1272,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                                 <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Vencimiento del compromiso (Opcional)</label>
                                 <div className="relative group">
                                   <Calendar size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-brand-cyan transition-colors" />
-                                  <input type="date" value={autVencimiento} onChange={e => setAutVencimiento(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-200 rounded-[1.5rem] pl-16 pr-5 py-4 text-zinc-700 font-bold outline-none focus:border-brand-cyan focus:bg-white transition-all shadow-inner" />
+                                  <input type="date" value={autVencimiento} onChange={e => setAutVencimiento(e.target.value)} onClick={(e) => { try { e.target.showPicker(); } catch(err){} }} className="w-full bg-zinc-50 border-2 border-zinc-200 rounded-[1.5rem] pl-16 pr-5 py-4 text-zinc-700 font-bold outline-none focus:border-brand-cyan focus:bg-white transition-all shadow-inner cursor-pointer" />
                                 </div>
                               </div>
 
@@ -1314,68 +1351,100 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
 
           {activeTab === 'EGRESOS' && (
             <div className="flex-1 flex overflow-hidden bg-zinc-50">
-              <div className="flex-1 p-10 flex justify-center overflow-y-auto">
-                <div className="max-w-3xl w-full bg-white border border-zinc-200 rounded-[2.5rem] p-10 shadow-2xl flex flex-col gap-8 h-fit animate-in fade-in slide-in-from-bottom-10 duration-700 border-t-8 border-t-rose-600">
+              <div className="flex-1 bg-white p-10 flex flex-col gap-8 overflow-y-auto border-t-8 border-t-brand-magenta animate-in fade-in duration-300">
                   <div className="flex items-center justify-between border-b border-zinc-200 pb-8">
                     <div>
-                      <h2 className="text-3xl font-black text-zinc-800 flex items-center gap-4 tracking-tight"><ArrowUpCircle className="text-rose-500" size={32} /> Salida de Dinero</h2>
+                      <h2 className="text-2xl font-black text-zinc-800 flex items-center gap-3 tracking-tight"><ArrowUpCircle className="text-brand-magenta" size={28} /> Salida de Dinero</h2>
                       <p className="text-zinc-400 font-black mt-2 uppercase tracking-widest text-[10px]">Registro de egresos y gastos de caja chica</p>
                     </div>
-                    <div className="bg-rose-50 p-4 rounded-3xl border border-rose-100 shadow-inner">
-                      <DollarSign size={24} className="text-rose-500" />
+                    <div className="bg-brand-magenta/10 p-3 rounded-2xl border border-brand-magenta/20 shadow-sm">
+                      <DollarSign size={20} className="text-brand-magenta" />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-8">
+                  <div className="grid grid-cols-2 gap-6">
                     <div className="col-span-2">
-                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Concepto de Gasto (Plan de Cuentas)</label>
-                      <CustomSelect
+                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Concepto de Gasto (Plan de Cuentas)</label>
+                      <LightSelect
                         value={egresoCuentaCodigo}
                         onChange={setEgresoCuentaCodigo}
                         options={cuentasGastos.map(c => ({ value: c.CueCodigo, label: `[${c.CueCodigo}] ${c.CueNombre}` }))}
-                        variant="default"
                         placeholder="Seleccione cuenta contable..."
                       />
                     </div>
 
                     <div className="col-span-2">
-                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Proveedor / Beneficiario / Destinatario</label>
+                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Proveedor / Beneficiario / Destinatario</label>
                       <div className="relative group">
-                        <User className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-rose-500 transition-colors" size={20} />
-                        <input type="text" value={egresoProveedor} onChange={e => setEgresoProveedor(e.target.value)} placeholder="¿A quién se le entrega el dinero?" className="w-full bg-zinc-50 border-2 border-zinc-200 rounded-[1.5rem] pl-16 pr-6 py-5 text-zinc-800 font-bold focus:border-rose-500 focus:bg-white outline-none transition-all shadow-inner placeholder-zinc-300" />
+                        <User className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-brand-magenta transition-colors" size={18} />
+                        <input type="text" value={egresoProveedor} onChange={e => setEgresoProveedor(e.target.value)} placeholder="¿A quién se le entrega el dinero?" className="w-full bg-zinc-50 border-2 border-zinc-200 rounded-[1rem] pl-12 pr-4 py-3 text-sm text-zinc-800 font-bold focus:border-brand-magenta focus:bg-white outline-none transition-all shadow-inner placeholder-zinc-400" />
                       </div>
                     </div>
 
                     <div className="col-span-1">
-                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Monto de Salida</label>
-                      <div className="flex group shadow-sm rounded-[1.5rem] overflow-hidden border-2 border-zinc-200 focus-within:border-rose-500 transition-all bg-zinc-50 focus-within:bg-white">
-                        <select value={egresoMoneda} onChange={e => setEgresoMoneda(e.target.value)} className="bg-white border-r border-zinc-200 px-5 font-black text-zinc-700 outline-none text-lg cursor-pointer hover:bg-zinc-100 transition-colors appearance-none">
+                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Monto de Salida</label>
+                      <div className="flex group shadow-sm rounded-[1rem] overflow-hidden border-2 border-zinc-200 focus-within:border-brand-magenta transition-all bg-zinc-50 focus-within:bg-white">
+                        <select value={egresoMoneda} onChange={e => setEgresoMoneda(e.target.value)} className="bg-white border-r border-zinc-200 px-4 font-black text-zinc-700 outline-none text-base cursor-pointer hover:bg-zinc-100 transition-colors appearance-none">
                           <option value="UYU">$</option><option value="USD">U$</option>
                         </select>
-                        <input type="number" value={egresoMonto} onChange={e => setEgresoMonto(e.target.value)} placeholder="0.00" className="w-full bg-transparent px-6 py-5 text-3xl font-black text-rose-500 outline-none text-right placeholder-rose-900" />
+                        <input type="number" value={egresoMonto} onChange={e => setEgresoMonto(e.target.value)} placeholder="0.00" className="w-full bg-transparent px-4 py-3 text-2xl font-black text-brand-magenta outline-none text-right placeholder-brand-magenta/30" />
                       </div>
                     </div>
 
                     <div className="col-span-1">
-                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Método de Retiro</label>
-                      <div className="relative group">
-                        <CreditCard className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-rose-500 transition-colors" size={20} />
-                        <select value={egresoMetodoId} onChange={e => setEgresoMetodoId(e.target.value)} className="w-full bg-zinc-50 border-2 border-zinc-200 hover:border-zinc-300 focus:border-rose-500 focus:bg-white rounded-[1.5rem] pl-16 pr-6 py-5 text-zinc-700 font-bold outline-none transition-all shadow-inner appearance-none cursor-pointer">
-                          <option value="">Seleccione forma...</option>
-                          {metodosPago.filter(m => m.MPaAfectaCaja).map(m => <option key={m.MPaIdMetodoPago} value={m.MPaIdMetodoPago}>{m.MPaDescripcionMetodo}</option>)}
-                        </select>
-                        <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-zinc-300">
-                          <ChevronRight size={20} className="rotate-90" />
-                        </div>
-                      </div>
+                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Método de Retiro</label>
+                      <Listbox value={egresoMetodoId} onChange={setEgresoMetodoId}>
+                        {({ open }) => (
+                          <div className="relative group">
+                            <CreditCard className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors z-10 ${open ? 'text-brand-magenta' : 'text-zinc-300 group-hover:text-zinc-400'}`} size={18} />
+                            <Listbox.Button className={`w-full text-left bg-zinc-50 border-2 rounded-[1rem] pl-12 pr-10 py-3 text-sm font-bold outline-none transition-all shadow-inner cursor-pointer ${open ? 'border-brand-magenta bg-white text-zinc-800' : 'border-zinc-200 text-zinc-700 hover:border-zinc-300'}`}>
+                              <span className="block truncate">
+                                {egresoMetodoId 
+                                  ? metodosPago.find(m => String(m.MPaIdMetodoPago) === String(egresoMetodoId))?.MPaDescripcionMetodo || "Seleccione forma..." 
+                                  : "Seleccione forma..."}
+                              </span>
+                              <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
+                                <ChevronDown size={18} className={`transition-transform duration-200 ${open ? 'rotate-180 text-brand-magenta' : 'text-zinc-300'}`} />
+                              </span>
+                            </Listbox.Button>
+                            
+                            <Listbox.Options className="absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded-[1rem] bg-white py-2 shadow-2xl border border-zinc-200 focus:outline-none">
+                              <Listbox.Option value="" className={({ active }) => `relative cursor-pointer select-none py-3 pl-12 pr-4 text-sm font-bold transition-colors ${active ? 'bg-brand-magenta/5 text-brand-magenta' : 'text-zinc-500'}`}>
+                                <span className="block truncate">Seleccione forma...</span>
+                              </Listbox.Option>
+                              {metodosPago.filter(m => m.MPaAfectaCaja).map((m) => (
+                                <Listbox.Option
+                                  key={m.MPaIdMetodoPago}
+                                  value={String(m.MPaIdMetodoPago)}
+                                  className={({ active }) =>
+                                    `relative cursor-pointer select-none py-3 pl-12 pr-4 text-sm font-bold transition-colors ${
+                                      active ? 'bg-brand-magenta/5 text-brand-magenta' : 'text-zinc-700'
+                                    }`
+                                  }
+                                >
+                                  {({ selected }) => (
+                                    <>
+                                      <span className={`block truncate ${selected ? 'text-brand-magenta' : ''}`}>{m.MPaDescripcionMetodo}</span>
+                                      {selected ? (
+                                        <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-brand-magenta">
+                                          <Check size={18} />
+                                        </span>
+                                      ) : null}
+                                    </>
+                                  )}
+                                </Listbox.Option>
+                              ))}
+                            </Listbox.Options>
+                          </div>
+                        )}
+                      </Listbox>
                     </div>
 
                     <div className="col-span-2">
-                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-3 px-1">Referencia / Observaciones de Salida</label>
-                      <textarea value={egresoObs} onChange={e => setEgresoObs(e.target.value)} placeholder="Explique brevemente el destino del dinero..." className="w-full bg-zinc-50 border-2 border-zinc-200 hover:border-zinc-300 focus:border-rose-500 focus:bg-white rounded-[2rem] px-6 py-5 text-zinc-700 font-bold outline-none h-32 resize-none transition-all shadow-inner placeholder-zinc-300" />
+                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest block mb-2 px-1">Referencia / Observaciones de Salida</label>
+                      <textarea value={egresoObs} onChange={e => setEgresoObs(e.target.value)} placeholder="Explique brevemente el destino del dinero..." className="w-full bg-zinc-50 border-2 border-zinc-200 hover:border-zinc-300 focus:border-brand-magenta focus:bg-white rounded-[1.2rem] px-5 py-4 text-sm text-zinc-700 font-bold outline-none h-24 resize-none transition-all shadow-inner placeholder-zinc-400" />
                     </div>
                   </div>
-                </div>
               </div>
 
               <CajaPanelPago
@@ -1410,22 +1479,21 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
             <div className="flex-1 flex flex-col overflow-hidden">
               <div className="bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-3 shrink-0 shadow-sm z-10 overflow-x-auto">
                 {!isAdminCaja && (
-                  <button onClick={() => setShowArqueo(true)} className="flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-black text-sm transition-all border whitespace-nowrap bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-800 hover:bg-slate-50">
-                    <FileText size={18} /> Arqueo de Turno
+                  <button onClick={() => setShowArqueo(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl font-black text-xs transition-all border whitespace-nowrap bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-800 hover:bg-slate-50">
+                    <FileText size={16} /> Arqueo de Turno
                   </button>
                 )}
-                <button className="flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-black text-sm transition-all border whitespace-nowrap bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-200">
-                  <DoorClosed size={18} /> {isAdminCaja ? 'Movimientos Realizados' : 'Cierre de Turno'}
+                <button className="flex items-center gap-2 px-4 py-2 rounded-xl font-black text-xs transition-all border whitespace-nowrap bg-brand-cyan border-brand-cyan text-white shadow-md shadow-brand-cyan/20">
+                  <DoorClosed size={16} /> {isAdminCaja ? 'Movimientos Realizados' : 'Cierre de Turno'}
                 </button>
               </div>
 
-              <div className="flex-1 p-10 flex justify-center overflow-y-auto bg-zinc-50">
-                <div className="max-w-3xl w-full flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-10 duration-700">
-                  <div className="bg-white border border-slate-200 rounded-[3rem] p-12 shadow-2xl relative overflow-hidden border-t-8 border-t-indigo-600">
+              <div className="flex-1 bg-white flex flex-col overflow-y-auto border-t-8 border-t-brand-cyan animate-in fade-in duration-300">
+                  <div className="relative w-full flex flex-col">
 
-                    <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-4">
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white">
                       <div>
-                        <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 tracking-tighter"><DoorClosed className="text-indigo-600" size={32} /> {isAdminCaja ? 'Movimientos Administrativos' : 'Cierre de Caja'}</h2>
+                        <h2 className="text-2xl font-black text-slate-800 flex items-center gap-3 tracking-tighter"><DoorClosed className="text-brand-cyan" size={32} /> {isAdminCaja ? 'Movimientos Administrativos' : 'Cierre de Caja'}</h2>
                         <p className="text-slate-400 font-bold mt-1 uppercase tracking-[0.2em] text-[10px]">{isAdminCaja ? 'Operaciones por rango de fecha' : 'Arqueo y finalización de jornada'}</p>
                       </div>
                       {!isAdminCaja && (
@@ -1436,45 +1504,45 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                     </div>
 
                     {isAdminCaja ? (
-                      <div className="flex flex-col gap-6">
-                        <div className="flex items-end gap-4 bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                      <div className="flex flex-col">
+                        <div className="flex items-end gap-4 bg-slate-50 p-8 border-b border-slate-200">
                           <div className="flex-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Fecha Desde</label>
-                            <input type="date" value={fechaDesdeAdmin} onChange={e => setFechaDesdeAdmin(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-indigo-500" />
+                            <input type="date" value={fechaDesdeAdmin} onChange={e => setFechaDesdeAdmin(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-brand-cyan" />
                           </div>
                           <div className="flex-1">
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 px-1">Fecha Hasta</label>
-                            <input type="date" value={fechaHastaAdmin} onChange={e => setFechaHastaAdmin(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-indigo-500" />
+                            <input type="date" value={fechaHastaAdmin} onChange={e => setFechaHastaAdmin(e.target.value)} className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 outline-none focus:border-brand-cyan" />
                           </div>
                         </div>
 
-                        <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm">
+                        <div className="bg-white overflow-hidden">
                           <div className="overflow-x-auto">
                             <table className="w-full text-left border-collapse">
                               <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200">
-                                  <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
-                                  <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo / Ref</th>
-                                  <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Concepto</th>
-                                  <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ingreso</th>
-                                  <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Egreso</th>
+                                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Fecha</th>
+                                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Tipo / Ref</th>
+                                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Concepto</th>
+                                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Ingreso</th>
+                                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Egreso</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
                                 {cargandoMovsAdmin ? (
-                                  <tr><td colSpan="5" className="px-4 py-8 text-center text-slate-400 font-bold text-sm">Cargando...</td></tr>
+                                  <tr><td colSpan="5" className="px-6 py-8 text-center text-slate-400 font-bold text-sm">Cargando...</td></tr>
                                 ) : movimientosAdmin.length === 0 ? (
-                                  <tr><td colSpan="5" className="px-4 py-8 text-center text-slate-400 font-bold text-sm">No hay movimientos en este rango.</td></tr>
+                                  <tr><td colSpan="5" className="px-6 py-8 text-center text-slate-400 font-bold text-sm">No hay movimientos en este rango.</td></tr>
                                 ) : movimientosAdmin.map((m, i) => (
                                   <tr key={i} className="hover:bg-slate-50/50 transition-colors">
-                                    <td className="px-4 py-3 text-xs text-slate-500 font-medium whitespace-nowrap">{new Date(m.Fecha).toLocaleString('es-UY', { dateStyle: 'short', timeStyle: 'short' })}</td>
-                                    <td className="px-4 py-3">
+                                    <td className="px-6 py-4 text-xs text-slate-500 font-medium whitespace-nowrap">{new Date(m.Fecha).toLocaleString('es-UY', { dateStyle: 'short', timeStyle: 'short' })}</td>
+                                    <td className="px-6 py-4">
                                       <span className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">{m.TipoOperacion}</span>
                                       <span className="font-bold text-slate-700 text-xs">{m.Comprobante !== '-' ? m.Comprobante : m.TipoComprobante}</span>
                                     </td>
-                                    <td className="px-4 py-3 text-xs text-slate-600 font-medium max-w-[200px] truncate" title={m.Concepto}>{m.Concepto}</td>
-                                    <td className="px-4 py-3 text-right font-black text-emerald-600 text-sm">{m.Entrada > 0 ? `$${fmt(m.Entrada)}` : '-'}</td>
-                                    <td className="px-4 py-3 text-right font-black text-rose-600 text-sm">{m.Salida > 0 ? `$${fmt(m.Salida)}` : '-'}</td>
+                                    <td className="px-6 py-4 text-xs text-slate-600 font-medium max-w-[300px] truncate" title={m.Concepto}>{m.Concepto}</td>
+                                    <td className="px-6 py-4 text-right font-black text-emerald-600 text-sm">{m.Entrada > 0 ? `$${fmt(m.Entrada)}` : '-'}</td>
+                                    <td className="px-6 py-4 text-right font-black text-brand-magenta text-sm">{m.Salida > 0 ? `$${fmt(m.Salida)}` : '-'}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -1488,53 +1556,50 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                         <p className="font-black text-zinc-400 uppercase tracking-widest text-sm animate-pulse">Consolidando transacciones...</p>
                       </div>
                     ) : (
-                      <div className="flex flex-col gap-10">
-                        <div className="bg-slate-50/50 rounded-[2.5rem] p-10 grid grid-cols-2 gap-10 border border-slate-100 shadow-inner">
-                          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-                            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mb-2">Monto Inicial Apertura</p>
-                            <p className="text-3xl font-black text-slate-800 tracking-tighter">${fmt(resumenCierre.sesion?.StuMontoInicial || 0)}</p>
+                      <div className="flex flex-col">
+                        <div className="bg-slate-50/50 px-6 py-3 grid grid-cols-2 lg:grid-cols-4 gap-4 border-b border-slate-200">
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                            <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest mb-1">Monto Inicial Apertura</p>
+                            <p className="text-xl font-black text-slate-800 tracking-tight">${fmt(resumenCierre.sesion?.StuMontoInicial || 0)}</p>
                           </div>
-                          <div className="bg-white p-6 rounded-3xl border border-zinc-100 shadow-sm">
-                            <p className="text-[10px] text-emerald-600/60 font-black uppercase tracking-widest mb-2">Total Cobrado (+)</p>
-                            <p className="text-3xl font-black text-emerald-600 tracking-tighter">${fmt(resumenCierre.cobros?.TotalCobrado || 0)}</p>
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                            <p className="text-[9px] text-emerald-600/60 font-black uppercase tracking-widest mb-1">Total Cobrado (+)</p>
+                            <p className="text-xl font-black text-emerald-600 tracking-tight">${fmt(resumenCierre.cobros?.TotalCobrado || 0)}</p>
                           </div>
-                          <div className="bg-white p-6 rounded-3xl border border-zinc-100 shadow-sm">
-                            <p className="text-[10px] text-rose-600/60 font-black uppercase tracking-widest mb-2">Gastos / Egresos (-)</p>
-                            <p className="text-3xl font-black text-rose-600 tracking-tighter">${fmt(resumenCierre.egresos?.TotalEgresos || 0)}</p>
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                            <p className="text-[9px] text-brand-magenta/60 font-black uppercase tracking-widest mb-1">Gastos / Egresos (-)</p>
+                            <p className="text-xl font-black text-brand-magenta tracking-tight">${fmt(resumenCierre.egresos?.TotalEgresos || 0)}</p>
                           </div>
-                          <div className="col-span-1 bg-indigo-600 p-6 rounded-3xl shadow-xl shadow-indigo-100 flex flex-col justify-center">
-                            <p className="text-[10px] text-white/60 font-black uppercase tracking-widest mb-2">Saldo Esperado en Sistema</p>
-                            <p className="text-4xl font-black text-white tracking-tighter">${fmt((resumenCierre.sesion?.StuMontoInicial || 0) + (resumenCierre.cobros?.TotalCobrado || 0) - (resumenCierre.egresos?.TotalEgresos || 0))}</p>
+                          <div className="col-span-1 bg-brand-cyan p-4 rounded-xl shadow-md shadow-brand-cyan/20 flex flex-col justify-center">
+                            <p className="text-[9px] text-white/80 font-black uppercase tracking-widest mb-1">Saldo Esperado en Sistema</p>
+                            <p className="text-2xl font-black text-white tracking-tight">${fmt((resumenCierre.sesion?.StuMontoInicial || 0) + (resumenCierre.cobros?.TotalCobrado || 0) - (resumenCierre.egresos?.TotalEgresos || 0))}</p>
                           </div>
                         </div>
 
                         <>
-                          <div className="bg-white border-2 border-indigo-100 rounded-[2.5rem] p-10 flex flex-col gap-8 shadow-xl relative">
-                            <div className="absolute -top-4 -right-4 bg-indigo-600 text-white p-3 rounded-2xl shadow-lg">
-                              <CheckCircle size={24} />
-                            </div>
-                            <h3 className="font-black text-zinc-800 flex items-center gap-4 text-xl tracking-tight"><DollarSign size={24} className="text-brand-cyan" /> Arqueo Físico de Valores</h3>
+                          <div className="bg-white p-6 flex flex-col gap-6 relative border-b border-slate-200">
+                            <h3 className="font-black text-slate-800 flex items-center gap-4 text-xl tracking-tight"><DollarSign size={24} className="text-brand-cyan" /> Arqueo Físico de Valores</h3>
 
                             <div className="flex flex-col gap-4">
                               <div className="flex justify-between items-end px-1">
-                                <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">Desglose de Efectivo Físico en Cajón</label>
+                                <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Desglose de Efectivo Físico en Cajón</label>
                                 <span className="text-2xl font-black text-brand-cyan tracking-tighter bg-brand-cyan/10 px-4 py-1 rounded-xl border border-brand-cyan/20">Total Físico: $ {fmt(totalDenominaciones)}</span>
                               </div>
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-zinc-50/50 p-6 rounded-[2rem] border-2 border-zinc-100 shadow-inner">
-                                <div className="col-span-2 md:col-span-4"><p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 border-b border-zinc-200 pb-2">Billetes</p></div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50/50 p-4 rounded-xl border border-slate-200 shadow-inner">
+                                <div className="col-span-2 md:col-span-4"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-200 pb-2">Billetes</p></div>
                                 {[2000, 1000, 500, 200, 100, 50, 20].map(den => (
-                                  <div key={den} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-zinc-200 shadow-sm focus-within:border-brand-cyan focus-within:ring-2 focus-within:ring-brand-cyan/20 transition-all">
+                                  <div key={den} className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm focus-within:border-brand-cyan focus-within:ring-2 focus-within:ring-brand-cyan/20 transition-all">
                                     <div className="w-16 text-right"><span className="text-sm font-black text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100">${den}</span></div>
-                                    <span className="text-zinc-300 font-bold">x</span>
-                                    <input type="number" min="0" value={denominaciones[den]} onChange={e => setDenominaciones(p => ({ ...p, [den]: e.target.value }))} placeholder="0" className="w-full bg-transparent text-lg font-black text-zinc-800 outline-none text-center" />
+                                    <span className="text-slate-300 font-bold">x</span>
+                                    <input type="number" min="0" value={denominaciones[den]} onChange={e => setDenominaciones(p => ({ ...p, [den]: e.target.value }))} placeholder="0" className="w-full bg-transparent text-lg font-black text-slate-800 outline-none text-center" />
                                   </div>
                                 ))}
-                                <div className="col-span-2 md:col-span-4 mt-2"><p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-3 border-b border-zinc-200 pb-2">Monedas</p></div>
+                                <div className="col-span-2 md:col-span-4 mt-2"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-200 pb-2">Monedas</p></div>
                                 {[50, 10, 5, 2, 1].map(den => (
-                                  <div key={den} className="flex items-center gap-3 bg-white p-3 rounded-xl border border-zinc-200 shadow-sm focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 transition-all">
+                                  <div key={den} className="flex items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm focus-within:border-amber-500 focus-within:ring-2 focus-within:ring-amber-500/20 transition-all">
                                     <div className="w-16 text-right"><span className="text-sm font-black text-amber-700 bg-amber-50 px-2 py-1 rounded-md border border-amber-100">${den}</span></div>
-                                    <span className="text-zinc-300 font-bold">x</span>
-                                    <input type="number" min="0" value={denominaciones[den]} onChange={e => setDenominaciones(p => ({ ...p, [den]: e.target.value }))} placeholder="0" className="w-full bg-transparent text-lg font-black text-zinc-800 outline-none text-center" />
+                                    <span className="text-slate-300 font-bold">x</span>
+                                    <input type="number" min="0" value={denominaciones[den]} onChange={e => setDenominaciones(p => ({ ...p, [den]: e.target.value }))} placeholder="0" className="w-full bg-transparent text-lg font-black text-slate-800 outline-none text-center" />
                                   </div>
                                 ))}
                               </div>
@@ -1545,7 +1610,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                               const real = parseFloat(cierreMontoFisico) || 0;
                               const diff = real - sis;
                               return (
-                                <div className={`p-8 rounded-[1.5rem] font-black flex justify-between items-center animate-in zoom-in-95 duration-300 border-2 ${Math.abs(diff) < 2 ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-emerald-50' : diff > 0 ? 'bg-brand-cyan/10 border-brand-cyan/30 text-brand-cyan shadow-brand-cyan/10' : 'bg-rose-50 border-rose-200 text-rose-700 shadow-rose-50'}`}>
+                                <div className={`p-4 rounded-xl font-black flex justify-between items-center animate-in zoom-in-95 duration-300 border ${Math.abs(diff) < 2 ? 'bg-emerald-50 border-emerald-200 text-emerald-700 shadow-emerald-50' : diff > 0 ? 'bg-brand-cyan/10 border-brand-cyan/30 text-brand-cyan shadow-brand-cyan/10' : 'bg-brand-magenta/5 border-brand-magenta/20 text-brand-magenta shadow-brand-magenta/5'}`}>
                                   <div className="flex items-center gap-4">
                                     {Math.abs(diff) < 2 ? <CheckCircle size={32} /> : diff > 0 ? <TrendingUp size={32} /> : <TrendingDown size={32} />}
                                     <span className="text-xl tracking-tight uppercase">{Math.abs(diff) < 2 ? 'BALANCE MANTENIDO CON ÉXITO' : diff > 0 ? 'SOBRANTE DE CAJA DETECTADO' : 'FALTANTE DE CAJA DETECTADO'}</span>
@@ -1556,20 +1621,21 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                             })()}
 
                             <div className="flex flex-col gap-2">
-                              <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest mb-2 px-1">Observaciones Finales / Justificación</label>
-                              <textarea value={cierreObs} onChange={e => setCierreObs(e.target.value)} placeholder="Justifique diferencias de arqueo o anote comentarios sobre la jornada..." className="w-full bg-white border-2 border-zinc-100 rounded-[1.5rem] p-6 text-zinc-800 font-bold outline-none h-32 resize-none focus:border-brand-cyan transition-all shadow-sm" />
+                              <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 px-1">Observaciones Finales / Justificación</label>
+                              <textarea value={cierreObs} onChange={e => setCierreObs(e.target.value)} placeholder="Justifique diferencias de arqueo o anote comentarios sobre la jornada..." className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-6 text-slate-800 font-bold outline-none h-32 resize-none focus:border-brand-cyan focus:bg-white transition-all shadow-inner" />
                             </div>
                           </div>
 
-                          <button onClick={handleCerrarCaja} className="w-full bg-rose-600 hover:bg-black text-white font-black py-8 rounded-[2rem] shadow-2xl shadow-rose-200 hover:shadow-black/20 hover:-translate-y-2 transition-all active:scale-[0.98] text-2xl tracking-tighter flex items-center justify-center gap-4 group mt-4">
-                            <Power size={32} className="group-hover:text-rose-400 transition-colors" /> FINALIZAR TURNO Y CERRAR SESIÓN
-                          </button>
+                          <div className="p-8 bg-zinc-50/50">
+                            <button onClick={handleCerrarCaja} className="w-full bg-brand-magenta hover:bg-black text-white font-black py-6 rounded-2xl shadow-xl shadow-brand-magenta/20 hover:shadow-black/20 hover:-translate-y-1 transition-all active:scale-[0.98] text-xl tracking-tighter flex items-center justify-center gap-4 group">
+                              <Power size={28} className="group-hover:text-brand-magenta transition-colors" /> FINALIZAR TURNO Y CERRAR SESIÓN
+                            </button>
+                          </div>
                         </>
 
                       </div>
                     )}
                   </div>
-                </div>
               </div>
             </div>
           )}

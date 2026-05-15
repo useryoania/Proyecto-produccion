@@ -90,93 +90,81 @@ export default function CajaOtrosIngresosTab({ sesion, metodosPago = [], cotizac
   };
 
   return (
-    <div className="flex flex-1 overflow-hidden min-w-0 h-full">
+    <div className="flex flex-col md:flex-row flex-1 overflow-hidden min-w-0 h-full gap-0 bg-zinc-50">
 
       {/* ─── 1. COLUMNA IZQUIERDA: Formulario de Ingreso ───────────── */}
-      <div className="flex-1 flex flex-col min-w-0 bg-slate-50 overflow-y-auto">
-        <div className="p-10 max-w-2xl mx-auto w-full flex flex-col gap-8">
-          
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-200">
-              <ArrowDownCircle size={32} />
-            </div>
-            <div>
-              <h2 className="text-3xl font-black text-slate-800 tracking-tight">Otros Ingresos a Caja</h2>
-              <p className="text-slate-500 font-bold mt-1">Registrá entradas de dinero genéricas que no estén asociadas a clientes ni facturación.</p>
-            </div>
+      <div className="flex-1 flex flex-col min-w-0 bg-white border-r border-zinc-200 overflow-y-auto p-6 shadow-sm">
+        <div className="flex items-center gap-4 mb-6">
+          <div className="w-14 h-14 bg-brand-cyan/10 rounded-2xl flex items-center justify-center text-brand-cyan shadow-sm border border-brand-cyan/20">
+            <ArrowDownCircle size={32} />
           </div>
+          <div>
+            <h2 className="text-2xl font-black text-zinc-800 tracking-tight">Otros Ingresos a Caja</h2>
+            <p className="text-zinc-500 font-bold mt-1 text-sm">Registrá entradas de dinero genéricas que no estén asociadas a clientes ni facturación.</p>
+          </div>
+        </div>
 
-          <div className="bg-white border-2 border-slate-100 rounded-[2.5rem] p-8 shadow-sm flex flex-col gap-6">
-            
-            <div className="flex flex-col gap-3">
-               <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-1">
-                 Concepto / Descripción del Ingreso
-               </label>
-               <div className="relative group">
-                 <Edit3 size={20} className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-emerald-500 transition-colors" />
-                 <input 
-                   type="text" 
-                   value={concepto}
-                   onChange={e => setConcepto(e.target.value)}
-                   placeholder="Ej: Aporte de socio, Ingreso extraordinario..." 
-                   className="w-full bg-slate-50 border-2 border-slate-100 rounded-3xl pl-16 pr-6 py-4 text-slate-800 font-bold focus:border-emerald-500 focus:bg-white outline-none transition-all"
-                 />
-               </div>
-            </div>
-
-            <div className="flex flex-col gap-3 mt-2">
-               <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-1">
-                 Importe y Moneda
-               </label>
-               <div className="flex border-2 border-slate-100 rounded-3xl bg-slate-50 focus-within:border-emerald-500 focus-within:bg-white transition-all overflow-hidden items-stretch">
-                 <select 
-                   value={moneda}
-                   onChange={e => setMoneda(e.target.value)}
-                   className="bg-transparent px-6 font-black text-slate-700 outline-none text-lg cursor-pointer hover:bg-slate-100 border-r-2 border-slate-100"
-                 >
-                   <option value="UYU">UYU</option>
-                   <option value="USD">USD</option>
-                 </select>
-                 <input 
-                   type="number" 
-                   value={montoIngreso}
-                   onChange={e => setMontoIngreso(e.target.value)}
-                   placeholder="0.00" 
-                   className="flex-1 bg-transparent px-6 py-4 text-3xl font-black text-emerald-600 outline-none text-right placeholder-emerald-200"
-                 />
-               </div>
-            </div>
-
-            <div className="flex flex-col gap-3 mt-2">
-               <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest px-1">
-                 Observaciones Adicionales (Opcional)
-               </label>
-               <textarea 
-                 value={observaciones}
-                 onChange={e => setObservaciones(e.target.value)}
-                 placeholder="Detalles adicionales si son necesarios..." 
-                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-3xl px-6 py-4 text-slate-800 font-bold focus:border-emerald-500 focus:bg-white outline-none h-24 resize-none transition-all"
+        <div className="flex flex-col gap-6 flex-1">
+          <div className="flex flex-col gap-3">
+             <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest px-1 font-archivo">
+               Concepto / Descripción del Ingreso
+             </label>
+             <div className="relative group">
+               <Edit3 size={20} className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-brand-cyan transition-colors" />
+               <input 
+                 type="text" 
+                 value={concepto}
+                 onChange={e => setConcepto(e.target.value)}
+                 placeholder="Ej: Aporte de socio, Ingreso extraordinario..." 
+                 className="w-full bg-white border-2 border-zinc-200 rounded-2xl pl-16 pr-6 py-4 text-zinc-800 font-bold focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 outline-none transition-all placeholder-zinc-400"
                />
-            </div>
-
+             </div>
           </div>
+
+          <div className="flex flex-col gap-3 mt-2">
+             <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest px-1 font-archivo">
+               Importe y Moneda
+             </label>
+             <div className="flex border-2 border-zinc-200 rounded-2xl bg-white focus-within:border-brand-cyan focus-within:ring-4 focus-within:ring-brand-cyan/5 transition-all overflow-hidden items-stretch">
+               <select 
+                 value={moneda}
+                 onChange={e => setMoneda(e.target.value)}
+                 className="bg-zinc-50 px-6 font-black text-zinc-700 outline-none text-lg cursor-pointer border-r-2 border-zinc-200"
+               >
+                 <option value="UYU">UYU</option>
+                 <option value="USD">USD</option>
+               </select>
+               <input 
+                 type="number" 
+                 value={montoIngreso}
+                 onChange={e => setMontoIngreso(e.target.value)}
+                 placeholder="0.00" 
+                 className="flex-1 bg-transparent px-6 py-4 text-3xl font-black text-zinc-800 outline-none text-right placeholder-zinc-300"
+               />
+             </div>
+          </div>
+
+          <div className="flex flex-col gap-3 mt-2">
+             <label className="text-[11px] font-black text-zinc-400 uppercase tracking-widest px-1 font-archivo">
+               Observaciones Adicionales (Opcional)
+             </label>
+             <textarea 
+               value={observaciones}
+               onChange={e => setObservaciones(e.target.value)}
+               placeholder="Detalles adicionales si son necesarios..." 
+               className="w-full bg-white border-2 border-zinc-200 rounded-2xl px-6 py-4 text-zinc-800 font-bold focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 outline-none h-24 resize-none transition-all placeholder-zinc-400"
+             />
+          </div>
+
         </div>
       </div>
 
       {/* ─── 2. COLUMNA DERECHA: PANEL FIJO DE PAGO ───────────────────────────── */}
-      <div className="w-[420px] shrink-0 border-l border-slate-200 bg-white relative shadow-xl z-20 flex flex-col h-full animate-in slide-in-from-right-8 duration-300">
-        <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-400 to-emerald-600 z-30"></div>
-        
-        <div className="p-6 border-b border-slate-100 bg-slate-50/80">
-            <h3 className="font-black text-slate-800 flex items-center gap-2 text-sm uppercase tracking-widest">
-              <CreditCard size={16} className="text-emerald-600"/> Confirmar Ingreso
-            </h3>
-            <p className="text-[10px] text-slate-400 mt-1 font-black">CÓMO ENTRÓ EL DINERO</p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+      <div className="flex-1 relative bg-white z-20 flex flex-col h-full overflow-hidden shadow-sm">
+        <div className="flex-1 flex flex-col h-full bg-transparent overflow-y-auto">
           <CajaPanelPago
-            mode="MOTOR"
+            containerClassName="w-full flex flex-col h-full bg-transparent overflow-y-auto"
+            mode="VENTA"
             labelBoton="REGISTRAR INGRESO"
             metodosPago={metodosPago}
             pagos={pagos}

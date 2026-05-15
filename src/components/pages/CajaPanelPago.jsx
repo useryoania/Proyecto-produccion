@@ -1,7 +1,42 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Plus, X, CheckCircle, Loader2, FileText, Landmark, CreditCard, DollarSign } from 'lucide-react';
+import { Plus, X, CheckCircle, Loader2, FileText, Landmark, CreditCard, DollarSign, ChevronDown, Check } from 'lucide-react';
 import ChequeRecibirModal from './tesoreria/ChequeRecibirModal';
-import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
+import { Listbox } from '@headlessui/react';
+
+// Select ligero construido con Headless UI
+function LightSelect({ value, onChange, options = [], placeholder = 'Seleccionar...' }) {
+  const selected = options.find(o => String(o.value) === String(value));
+  return (
+    <Listbox value={value} onChange={onChange}>
+      <div className="relative">
+        <Listbox.Button className="w-full flex items-center justify-between gap-2 bg-white border border-zinc-200 rounded-xl px-3 py-2 text-xs font-black text-zinc-800 font-archivo outline-none hover:border-zinc-300 focus:border-brand-cyan focus:ring-2 focus:ring-brand-cyan/10 transition-all shadow-sm">
+          <span className="truncate">{selected ? selected.label : <span className="text-zinc-400">{placeholder}</span>}</span>
+          <ChevronDown size={13} className="text-zinc-400 shrink-0" />
+        </Listbox.Button>
+        <Listbox.Options className="absolute z-50 mt-1 w-full bg-white border border-zinc-200 rounded-xl shadow-xl overflow-auto max-h-52 outline-none font-archivo">
+          {options.map(opt => (
+            <Listbox.Option
+              key={opt.value}
+              value={opt.value}
+              className={({ active }) =>
+                `flex items-center justify-between px-3 py-2 text-xs font-black cursor-pointer transition-colors ${
+                  active ? 'bg-zinc-50 text-zinc-900' : 'text-zinc-700'
+                }`
+              }
+            >
+              {({ selected: sel }) => (
+                <>
+                  <span>{opt.label}</span>
+                  {sel && <Check size={12} className="text-brand-cyan shrink-0" />}
+                </>
+              )}
+            </Listbox.Option>
+          ))}
+        </Listbox.Options>
+      </div>
+    </Listbox>
+  );
+}
 
 
 
@@ -52,11 +87,12 @@ export default function CajaPanelPago({
   numDoc,
   notas = '',
   onNotas,
-  onConfirmar,
+    onConfirmar,
   procesando = false,
   labelBoton,
   disabledExtra = false,
   tiposDocDisponibles = [],
+  containerClassName = "w-[400px] shrink-0 border-l border-zinc-200 bg-white flex flex-col h-full overflow-y-auto",
 }) {
   const esEgreso = mode === 'EGRESO';
   const tiposDoc = tiposDocDisponibles.length > 0
@@ -145,19 +181,19 @@ export default function CajaPanelPago({
   }[mode] || 'CONFIRMAR';
 
   const colorBoton = {
-    COBRO: 'bg-brand-cyan hover:bg-brand-cyan shadow-brand-cyan/30',
-    VENTA: 'bg-brand-cyan hover:bg-brand-cyan shadow-brand-cyan/30',
-    MOTOR: 'bg-violet-600 hover:bg-violet-500 shadow-violet-200',
-    EGRESO: 'bg-rose-600   hover:bg-rose-500   shadow-rose-200',
-  }[mode] || 'bg-brand-cyan hover:bg-brand-cyan';
+    COBRO: 'bg-brand-cyan hover:bg-brand-cyan shadow-brand-cyan/30 text-zinc-100',
+    VENTA: 'bg-brand-cyan hover:bg-brand-cyan shadow-brand-cyan/30 text-zinc-100',
+    MOTOR: 'bg-violet-600 hover:bg-violet-500 shadow-violet-200 text-zinc-100',
+    EGRESO: 'bg-brand-magenta hover:bg-brand-magenta shadow-brand-magenta/30 text-zinc-100',
+  }[mode] || 'bg-brand-cyan hover:bg-brand-cyan text-zinc-100';
 
   const canConfirm = !procesando && !disabledExtra;
 
   return (
-    <div className="w-[400px] shrink-0 border-l border-zinc-200 bg-white flex flex-col h-full overflow-y-auto shadow-2xl">
+    <div className={containerClassName}>
 
       {/* ── Encabezado ── */}
-      <div className="px-6 py-5 border-b border-zinc-200 bg-zinc-50 sticky top-0 z-10">
+      <div className="px-4 py-3 border-b border-zinc-200 bg-zinc-50 sticky top-0 z-10 shrink-0">
         <h3 className="font-black text-zinc-800 text-base flex items-center gap-2.5">
           <div className="bg-brand-cyan/10 p-1.5 rounded-lg border border-brand-cyan/20">
             <FileText size={16} className="text-brand-cyan" />
@@ -171,7 +207,7 @@ export default function CajaPanelPago({
         </p>
       </div>
 
-      <div className="flex flex-col gap-6 p-6 flex-1">
+      <div className="flex flex-col gap-4 p-4 flex-1">
 
         {/* ── LÍNEAS DE PAGO ────────────────────────────────────────── */}
         <div className="flex flex-col gap-3">
@@ -197,7 +233,7 @@ export default function CajaPanelPago({
               >
                 {/* Método */}
                 <div className="flex-1 min-w-0">
-                  <CustomSelect
+                  <LightSelect
                     value={p.metodoPagoId}
                     onChange={(val) => {
                       updatePago(p.id, 'metodoPagoId', val);
@@ -206,8 +242,6 @@ export default function CajaPanelPago({
                     }}
                     options={metodosPago.map(m => ({ value: m.MPaIdMetodoPago, label: m.MPaDescripcionMetodo }))}
                     placeholder="Medio..."
-                    size="small"
-                    variant="default"
                   />
                 </div>
 
@@ -375,11 +409,10 @@ export default function CajaPanelPago({
           <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-1">
             Tipo de Comprobante
           </label>
-          <CustomSelect
+          <LightSelect
             value={tipoDoc}
             onChange={onTipoDoc}
             options={tiposDoc}
-            variant="default"
             placeholder="Seleccionar documento..."
           />
 
@@ -417,7 +450,7 @@ export default function CajaPanelPago({
         <button
           onClick={onConfirmar}
           disabled={!canConfirm}
-          className={`w-full mt-auto ${colorBoton} disabled:bg-zinc-100 disabled:text-zinc-400 disabled:shadow-none text-zinc-800 font-black py-5 rounded-[2rem] flex justify-center gap-3 items-center text-base shadow-2xl transition-all active:scale-[0.98] uppercase tracking-widest`}
+          className={`w-full mt-auto shrink-0 ${colorBoton} disabled:bg-zinc-100 disabled:text-zinc-400 disabled:shadow-none font-black py-4 rounded-[1.5rem] flex justify-center gap-3 items-center text-sm shadow-xl transition-all active:scale-[0.98] uppercase tracking-widest`}
         >
           {procesando ? (
             <Loader2 className="animate-spin" size={24} />

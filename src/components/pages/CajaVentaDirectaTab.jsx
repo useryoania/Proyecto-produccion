@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Plus, Trash2, Loader2, User, CheckCircle, ArrowRight, Wallet, History } from 'lucide-react';
+import React, { useState, useEffect, Fragment } from 'react';
+import { Search, Plus, Trash2, Loader2, User, CheckCircle, ArrowRight, Wallet, History, ChevronDown, Check } from 'lucide-react';
+import { Listbox, Transition } from '@headlessui/react';
 import api from '../../services/apiClient';
 import { toast } from 'sonner';
 import ClienteBilletera from '../common/ClienteBilletera';
@@ -165,7 +166,7 @@ export default function CajaVentaDirectaTab({
   }, [clienteSel, items, tipoDocumento, obs, pagos, cotizacion, monedaExhibicion, onConfirmarExt]);
 
   return (
-    <div className="flex flex-1 overflow-hidden bg-zinc-50">
+    <div className="flex flex-1 overflow-hidden bg-zinc-50 h-full min-h-0">
       <div className="flex-1 flex flex-col min-h-0 h-full">
         {/* BILLETERA DE CLIENTE STICKY */}
         {clienteSel && (
@@ -177,18 +178,18 @@ export default function CajaVentaDirectaTab({
           </div>
         )}
 
-        <div className="flex-1 p-6 overflow-y-auto">
-          <h2 className="text-2xl font-black text-zinc-800 mb-8 flex items-center gap-3">
+        <div className="flex-1 p-0 overflow-y-auto flex flex-col">
+          <h2 className="text-lg font-black text-zinc-800 mb-2 px-2 pt-2 flex items-center gap-2 shrink-0">
             Nuevo Ingreso / Venta de Rollo por Adelantado
-            <span className="text-[10px] bg-brand-cyan/20 text-brand-cyan px-3 py-1 rounded-full font-black uppercase tracking-widest border border-brand-cyan/30">POS Express</span>
+            <span className="inline-flex items-center justify-center text-[9px] leading-none bg-brand-cyan/10 text-brand-cyan px-1.5 py-0.5 rounded-full font-black uppercase tracking-widest border border-brand-cyan/20 h-4">POS Express</span>
           </h2>
 
-        <div className="flex flex-col gap-8 max-w-5xl">
+        <div className="flex flex-col flex-1 gap-0 w-full">
 
           {/* BLOQUE CLIENTE */}
-          <div className="bg-white border border-zinc-200 rounded-3xl p-8 shadow-[0_10px_40px_rgba(0,0,0,0.04)] relative group/cli transition-all hover:shadow-[0_15px_50px_rgba(0,0,0,0.06)]">
-            <div className="absolute top-0 left-0 w-1.5 h-full bg-brand-cyan rounded-l-3xl opacity-20 group-hover/cli:opacity-100 transition-opacity"></div>
-            <h3 className="font-black text-zinc-400 text-[11px] uppercase tracking-widest mb-6 flex items-center justify-between">
+          <div className="bg-white border border-zinc-200 rounded-none p-3 relative group/cli transition-all shadow-sm">
+            <div className="absolute top-0 left-0 w-1.5 h-full bg-brand-cyan rounded-none opacity-20 group-hover/cli:opacity-100 transition-opacity"></div>
+            <h3 className="font-black text-zinc-400 text-[10px] font-archivo uppercase tracking-widest mb-2 flex items-center justify-between">
               1. Seleccionar Cliente
               {clienteSel && <span className="text-emerald-600 flex items-center gap-1.5 font-bold bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Cliente Verificado <CheckCircle size={12}/></span>}
             </h3>
@@ -240,7 +241,7 @@ export default function CajaVentaDirectaTab({
                 )}
               </div>
             ) : (
-              <div className="flex items-center justify-between bg-brand-cyan/5 border-2 border-brand-cyan/20 rounded-3xl p-6 shadow-sm">
+              <div className="flex items-center justify-between bg-brand-cyan/5 border-2 border-brand-cyan/20 rounded-2xl p-4 shadow-sm">
                 <div className="flex items-center gap-5">
                   <div className="w-16 h-16 rounded-3xl bg-white flex items-center justify-center text-brand-cyan shadow-xl border border-brand-cyan/20 ring-4 ring-brand-cyan/10/30">
                     <User size={32} />
@@ -264,50 +265,88 @@ export default function CajaVentaDirectaTab({
           </div>
 
           {/* BLOQUE ITEMS */}
-          <div className="bg-white border border-zinc-200 rounded-[2.5rem] p-8 shadow-[0_20px_50px_rgba(0,0,0,0.03)] flex flex-col gap-8 relative overflow-hidden">
-            <div className="flex items-center justify-between border-b border-zinc-100 pb-6">
-              <h3 className="font-black text-zinc-400 text-[11px] uppercase tracking-widest">2. Conceptos a Cobrar</h3>
-              <div className="flex bg-zinc-100 rounded-2xl p-1.5 border border-zinc-200">
-                <button onClick={()=>setMonedaExhibicion('UYU')} className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${monedaExhibicion==='UYU'?'bg-white text-brand-cyan shadow-md border border-zinc-200':'text-zinc-500 hover:text-zinc-800'}`}>UYU ($)</button>
-                <button onClick={()=>setMonedaExhibicion('USD')} className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${monedaExhibicion==='USD'?'bg-white text-emerald-700 shadow-md border border-zinc-200':'text-zinc-500 hover:text-zinc-800'}`}>USD (US$)</button>
+          <div className="bg-white border border-zinc-200 border-t-0 rounded-none p-3 shadow-sm flex flex-col flex-1 gap-2 relative overflow-hidden">
+            <div className="flex items-center justify-between border-b border-zinc-100 pb-2">
+              <h3 className="font-black text-zinc-400 text-[10px] font-archivo uppercase tracking-widest">2. Conceptos a Cobrar</h3>
+              <div className="flex bg-zinc-100 rounded-xl p-1 border border-zinc-200">
+                <button onClick={()=>setMonedaExhibicion('UYU')} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${monedaExhibicion==='UYU'?'bg-white text-brand-cyan shadow-sm border border-zinc-200':'text-zinc-500 hover:text-zinc-800'}`}>UYU ($)</button>
+                <button onClick={()=>setMonedaExhibicion('USD')} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${monedaExhibicion==='USD'?'bg-white text-emerald-700 shadow-sm border border-zinc-200':'text-zinc-500 hover:text-zinc-800'}`}>USD (US$)</button>
               </div>
             </div>
 
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-2">
               {items.map((it, idx) => (
-                <div key={it.id} className="flex flex-col gap-6 bg-zinc-50/50 rounded-[2rem] p-6 border border-zinc-100 relative group/item hover:bg-zinc-50 transition-colors">
-                  {idx > 0 && <button onClick={()=>setItems(p=>p.filter(x=>x.id!==it.id))} className="absolute top-5 right-5 text-zinc-300 hover:text-rose-600 p-1.5 transition-all hover:bg-rose-50 rounded-xl"><Trash2 size={18} /></button>}
-                             <div className={`grid ${['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? 'grid-cols-3' : 'grid-cols-2'} gap-6`}>
-                    <div className="flex flex-col gap-2.5">
-                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-2">Operación</label>
-                      <select value={it.tipo} onChange={e=>{
-                        const t=e.target.value;
+                <div key={it.id} className="flex flex-col gap-2 bg-zinc-50/50 rounded-xl p-2 border border-zinc-100 relative group/item hover:bg-zinc-50 transition-colors">
+                  {idx > 0 && <button onClick={()=>setItems(p=>p.filter(x=>x.id!==it.id))} className="absolute top-1 right-1 text-zinc-300 hover:text-rose-600 p-1 transition-all hover:bg-rose-50 rounded-lg"><Trash2 size={14} /></button>}
+                             <div className={`grid ${['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-archivo uppercase font-black text-zinc-400 tracking-widest px-2">Operación</label>
+                      <Listbox value={it.tipo} onChange={t=>{
                         setItems(p=>p.map(x=>x.id===it.id ? {...x, tipo:t, grupo: t === 'VENTA_INSUMOS' ? 'Insumos' : t === 'VENTA_PRODUCTOS' ? 'Productos en el local' : '', codigo: '', descripcion: ''}:x));
-                      }} className="bg-white border-2 border-zinc-200 rounded-2xl px-4 py-3 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 transition-all shadow-sm">
-                        {TIPOS_VENTA.filter(o => !allowedTipos || allowedTipos.includes(o.value)).map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-                      </select>
+                      }}>
+                        <div className="relative">
+                          <Listbox.Button className="relative w-full cursor-pointer rounded-xl bg-white border-2 border-zinc-200 py-2 pl-3 pr-10 text-left text-sm font-bold text-zinc-800 shadow-sm focus:outline-none focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 transition-all">
+                            <span className="block truncate">{TIPOS_VENTA.find(o => o.value === it.tipo)?.label || 'Seleccione'}</span>
+                            <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                              <ChevronDown className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+                            </span>
+                          </Listbox.Button>
+                          <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
+                            <Listbox.Options className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl bg-white py-1 text-base shadow-lg ring-1 ring-black/5 focus:outline-none sm:text-sm">
+                              {TIPOS_VENTA.filter(o => !allowedTipos || allowedTipos.includes(o.value)).map((o) => (
+                                <Listbox.Option key={o.value} className={({ active }) => `relative cursor-pointer select-none py-2 pl-8 pr-4 transition-colors text-sm ${active ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-700'}`} value={o.value}>
+                                  {({ selected }) => (
+                                    <>
+                                      <span className={`block truncate ${selected ? 'font-bold text-zinc-900' : 'font-medium'}`}>{o.label}</span>
+                                      {selected ? <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-zinc-900"><Check className="h-4 w-4" aria-hidden="true" /></span> : null}
+                                    </>
+                                  )}
+                                </Listbox.Option>
+                              ))}
+                            </Listbox.Options>
+                          </Transition>
+                        </div>
+                      </Listbox>
                     </div>
                     {['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) && (
-                      <div className="flex flex-col gap-2.5">
-                        <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-2">Grupo</label>
-                        <select value={it.grupo || ''} onChange={e => {
-                          const val = e.target.value;
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-archivo uppercase font-black text-zinc-400 tracking-widest px-2">Grupo</label>
+                        <Listbox value={it.grupo || ''} onChange={val => {
                           setItems(p=>p.map(x=>x.id===it.id ? {...x, grupo: val, codigo: '', descripcion: ''} : x));
-                        }} className="bg-white border-2 border-zinc-200 rounded-2xl px-4 py-3 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 transition-all shadow-sm" disabled={it.tipo === 'VENTA_INSUMOS' || it.tipo === 'VENTA_PRODUCTOS'}>
-                          <option value="">Seleccione grupo...</option>
-                          {Object.keys(productosAgrupados).filter(g => {
-                             if (it.tipo === 'VENTA_INSUMOS') return g === 'Insumos';
-                             if (it.tipo === 'VENTA_PRODUCTOS') return g === 'Productos en el local';
-                             return /dtf|sublimaci/i.test(g);
-                          }).map(g => (<option key={g} value={g}>{g}</option>))}
-                        </select>
+                        }} disabled={it.tipo === 'VENTA_INSUMOS' || it.tipo === 'VENTA_PRODUCTOS'}>
+                          <div className="relative">
+                            <Listbox.Button className="relative w-full cursor-pointer rounded-xl bg-white border-2 border-zinc-200 py-2 pl-3 pr-10 text-left text-sm font-bold text-zinc-800 shadow-sm focus:outline-none focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 transition-all ui-disabled:bg-zinc-50 ui-disabled:text-zinc-400 ui-disabled:cursor-not-allowed">
+                              <span className="block truncate">{it.grupo || 'Seleccione grupo...'}</span>
+                              <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                                <ChevronDown className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+                              </span>
+                            </Listbox.Button>
+                            <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
+                              <Listbox.Options className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl bg-white py-1 text-base shadow-lg ring-1 ring-black/5 focus:outline-none sm:text-sm">
+                                {Object.keys(productosAgrupados).filter(g => {
+                                   if (it.tipo === 'VENTA_INSUMOS') return g === 'Insumos';
+                                   if (it.tipo === 'VENTA_PRODUCTOS') return g === 'Productos en el local';
+                                   return /dtf|sublimaci/i.test(g);
+                                }).map(g => (
+                                  <Listbox.Option key={g} className={({ active }) => `relative cursor-pointer select-none py-2 pl-8 pr-4 transition-colors text-sm ${active ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-700'}`} value={g}>
+                                    {({ selected }) => (
+                                      <>
+                                        <span className={`block truncate ${selected ? 'font-bold text-zinc-900' : 'font-medium'}`}>{g}</span>
+                                        {selected ? <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-zinc-900"><Check className="h-4 w-4" aria-hidden="true" /></span> : null}
+                                      </>
+                                    )}
+                                  </Listbox.Option>
+                                ))}
+                              </Listbox.Options>
+                            </Transition>
+                          </div>
+                        </Listbox>
                       </div>
                     )}
-                    <div className="flex flex-col gap-2.5">
-                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-2">{['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? 'Producto' : 'Referencia'}</label>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-archivo uppercase font-black text-zinc-400 tracking-widest px-2">{['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? 'Producto' : 'Referencia'}</label>
                       {['RECURSO', 'VENTA_INSUMOS', 'VENTA_PRODUCTOS', 'VENTA_GENERICA'].includes(it.tipo) ? (
-                        <select value={it.codigo} onChange={e => {
-                          const val = e.target.value;
+                        <Listbox value={it.codigo} onChange={val => {
                           const prod = (productosAgrupados[it.grupo] || []).find(x => String(x.CodArticulo) === String(val));
                           
                           let currentMoneda = monedaExhibicion;
@@ -331,22 +370,42 @@ export default function CajaVentaDirectaTab({
                             }
                             return newObj;
                           }));
-                        }} className="bg-white border-2 border-zinc-200 rounded-2xl px-4 py-3 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 transition-all shadow-sm disabled:bg-zinc-100 disabled:text-zinc-400" disabled={!it.grupo}>
-                          <option value="">{it.grupo ? 'Seleccione...' : 'Elegir grupo...'}</option>
-                          {(productosAgrupados[it.grupo] || []).map(p => (<option key={p.CodArticulo} value={p.CodArticulo}>[{p.CodArticulo}] {p.Descripcion}</option>))}
-                        </select>
+                        }} disabled={!it.grupo}>
+                          <div className="relative">
+                            <Listbox.Button className={`relative w-full cursor-pointer rounded-xl bg-white border-2 border-zinc-200 py-2 pl-3 pr-10 text-left text-sm font-bold text-zinc-800 shadow-sm focus:outline-none focus:border-brand-cyan focus:ring-4 focus:ring-brand-cyan/5 transition-all ${!it.grupo ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed' : ''}`}>
+                              <span className="block truncate">{it.codigo && it.descripcion ? `[${it.codigo}] ${it.descripcion}` : (it.grupo ? 'Seleccione...' : 'Elegir grupo...')}</span>
+                              <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                                <ChevronDown className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+                              </span>
+                            </Listbox.Button>
+                            <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
+                              <Listbox.Options className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl bg-white py-1 text-base shadow-lg ring-1 ring-black/5 focus:outline-none sm:text-sm">
+                                {(productosAgrupados[it.grupo] || []).map(p => (
+                                  <Listbox.Option key={p.CodArticulo} className={({ active }) => `relative cursor-pointer select-none py-2 pl-8 pr-4 transition-colors text-sm ${active ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-700'}`} value={p.CodArticulo}>
+                                    {({ selected }) => (
+                                      <>
+                                        <span className={`block truncate ${selected ? 'font-bold text-zinc-900' : 'font-medium'}`}>[{p.CodArticulo}] {p.Descripcion}</span>
+                                        {selected ? <span className="absolute inset-y-0 left-0 flex items-center pl-2 text-zinc-900"><Check className="h-4 w-4" aria-hidden="true" /></span> : null}
+                                      </>
+                                    )}
+                                  </Listbox.Option>
+                                ))}
+                              </Listbox.Options>
+                            </Transition>
+                          </div>
+                        </Listbox>
                       ) : (
-                        <input value={it.codigo} onChange={e=>setItems(p=>p.map(x=>x.id===it.id?{...x, codigo:e.target.value}:x))} placeholder="Ej: XXX" className="bg-white border-2 border-zinc-200 rounded-2xl px-5 py-3 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan placeholder-zinc-300 shadow-sm" />
+                        <input value={it.codigo} onChange={e=>setItems(p=>p.map(x=>x.id===it.id?{...x, codigo:e.target.value}:x))} placeholder="Ej: XXX" className="bg-white border-2 border-zinc-200 rounded-xl px-4 py-2 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan placeholder-zinc-300 shadow-sm" />
                       )}
                     </div>
                   </div>
-                  <div className="grid grid-cols-5 gap-6">
-                    <div className="col-span-2 flex flex-col gap-2.5">
-                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest px-2">Descripción Visible en Documento</label>
-                      <input value={it.descripcion} onChange={e=>setItems(p=>p.map(x=>x.id===it.id?{...x, descripcion:e.target.value}:x))} placeholder="Aclaración opcional..." className="bg-white border-2 border-zinc-200 rounded-2xl px-5 py-3 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan shadow-sm" />
+                  <div className="grid grid-cols-5 gap-2">
+                    <div className="col-span-2 flex flex-col gap-1">
+                      <label className="text-[10px] font-archivo uppercase font-black text-zinc-400 tracking-widest px-2">Descripción Visible en Documento</label>
+                      <input value={it.descripcion} onChange={e=>setItems(p=>p.map(x=>x.id===it.id?{...x, descripcion:e.target.value}:x))} placeholder="Aclaración opcional..." className="bg-white border-2 border-zinc-200 rounded-xl px-4 py-2 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan shadow-sm" />
                     </div>
-                    <div className="flex flex-col gap-2.5 text-center">
-                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest">Cantidad</label>
+                    <div className="flex flex-col gap-1.5 text-center">
+                      <label className="text-[10px] font-archivo uppercase font-black text-zinc-400 tracking-widest">Cantidad</label>
                       <input type="number" step="0.5" value={it.cantidad} onChange={e=>{
                           const val = e.target.value;
                           setItems(p=>p.map(x=>{
@@ -356,10 +415,10 @@ export default function CajaVentaDirectaTab({
                             newObj.precioTotal = Number(unit * (val || 0)).toFixed(2);
                             return newObj;
                           }));
-                      }} className="bg-zinc-100 border-2 border-zinc-200 rounded-2xl px-4 py-3 text-lg font-black text-emerald-600 text-center outline-none focus:border-emerald-500 shadow-inner" />
+                      }} className="bg-zinc-100 border-2 border-zinc-200 rounded-xl px-3 py-2 text-base font-black text-emerald-600 text-center outline-none focus:border-emerald-500 shadow-inner" />
                     </div>
-                    <div className="flex flex-col gap-2.5">
-                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest">Precio U. {monedaExhibicion}</label>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-archivo uppercase font-black text-zinc-400 tracking-widest">Precio U. {monedaExhibicion}</label>
                       <input type="number" step="0.1" value={it.precioUnitario || ''} onChange={e=>{
                           const val = e.target.value;
                           setItems(p=>p.map(x=>{
@@ -368,39 +427,41 @@ export default function CajaVentaDirectaTab({
                             }
                             return x;
                           }));
-                      }} className="bg-zinc-50 border-2 border-brand-cyan/20 rounded-2xl px-5 py-3 text-lg font-black text-zinc-900 outline-none focus:border-brand-cyan text-right shadow-inner" />
+                      }} className="bg-zinc-50 border border-brand-cyan/20 rounded-lg px-3 py-1.5 text-sm font-black text-zinc-900 outline-none focus:border-brand-cyan text-right" />
                     </div>
-                    <div className="flex flex-col gap-2.5">
-                      <label className="text-[10px] uppercase font-black text-zinc-400 tracking-widest">Total {monedaExhibicion}</label>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[9px] font-archivo uppercase font-black text-zinc-400 tracking-widest">Total {monedaExhibicion}</label>
                       <input type="number" step="0.1" value={it.precioTotal} onChange={e=>setItems(p=>p.map(x=>{
-                         if(x.id===it.id) {
+                          if(x.id===it.id) {
                              return {...x, precioTotal:e.target.value};
                          }
                          return x;
-                      }))} className="bg-zinc-50 border-2 border-brand-cyan/20 rounded-2xl px-5 py-3 text-lg font-black text-zinc-900 outline-none focus:border-brand-cyan text-right placeholder-zinc-300 shadow-inner" />
+                      }))} className="bg-zinc-50 border border-brand-cyan/20 rounded-lg px-3 py-1.5 text-sm font-black text-zinc-900 outline-none focus:border-brand-cyan text-right placeholder-zinc-300" />
                     </div>
                   </div>
                 </div>
               ))}
             </div>
 
-            <button onClick={()=>setItems(p=>[...p,{ id:Date.now(), tipo:'RECURSO', grupo:'', codigo:'', descripcion:'', cantidad:1, precioTotal:'' }])} 
-              className="mt-2 w-full py-5 border-2 border-dashed border-zinc-200 hover:border-indigo-400 hover:bg-zinc-50 rounded-[2rem] flex items-center justify-center gap-4 text-zinc-400 hover:text-brand-cyan font-black transition-all group/add active:scale-[0.99]">
-              <div className="w-8 h-8 rounded-xl bg-zinc-100 flex items-center justify-center group-hover/add:bg-brand-cyan-white transition-all shadow-sm"><Plus size={18} /></div>
-              Agregar otro concepto a cobrar
-            </button>
+            <div className="mt-auto pt-4">
+              <button onClick={()=>setItems(p=>[...p,{ id:Date.now(), tipo:'RECURSO', grupo:'', codigo:'', descripcion:'', cantidad:1, precioTotal:'' }])} 
+                className="w-full py-2 border-2 border-dashed border-zinc-200 hover:border-brand-cyan hover:bg-brand-cyan/5 rounded-xl flex items-center justify-center gap-2 text-zinc-400 hover:text-brand-cyan font-black transition-all group/add">
+                <div className="w-5 h-5 rounded flex items-center justify-center group-hover/add:bg-brand-cyan group-hover/add:text-white transition-all shadow-sm"><Plus size={12} /></div>
+                Agregar otro concepto a cobrar
+              </button>
 
-            {/* Total resumen compacto */}
-            <div className="flex justify-between items-center pt-8 border-t border-zinc-100 mt-4 px-2">
+              {/* Total resumen compacto */}
+              <div className="flex justify-between items-center pt-2 border-t border-zinc-100 mt-1 px-2">
               <div className="flex flex-col">
-                <span className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">Total Global a Facturar</span>
-                <span className="text-xs text-zinc-500 font-bold bg-zinc-100 px-3 py-1 rounded-full mt-1.5 border border-zinc-200">Emitiendo documento en {monedaExhibicion}</span>
+                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Total Global a Facturar</span>
+                <span className="text-[10px] text-zinc-500 font-bold bg-zinc-100 px-2 py-0.5 rounded-full mt-1 border border-zinc-200">Emitiendo documento en {monedaExhibicion}</span>
               </div>
               <div className="flex items-end gap-3">
-                <span className={`text-5xl font-black ${monedaExhibicion==='USD'?'text-emerald-600':'text-brand-cyan'} tracking-tighter drop-shadow-sm`}>
+                <span className={`text-3xl font-black ${monedaExhibicion==='USD'?'text-emerald-600':'text-brand-cyan'} tracking-tighter drop-shadow-sm`}>
                   {monedaExhibicion==='USD' ? 'US$' : '$'} {fmt(totalPagar)}
                 </span>
               </div>
+            </div>
             </div>
           </div>
         </div>

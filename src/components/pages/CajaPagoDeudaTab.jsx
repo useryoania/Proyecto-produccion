@@ -126,7 +126,7 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
     const dias = Number(d.DiasVencido || 0);
     if (dias > 30) return { label: `${dias}d vencida`, cls: 'bg-red-100 text-red-700 border-red-200' };
     if (dias > 0)  return { label: `${dias}d vencida`, cls: 'bg-amber-100 text-amber-700 border-amber-200' };
-    return { label: 'Al día', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+    return { label: 'Al día', cls: 'bg-brand-cyan/10 text-brand-cyan border-brand-cyan/20' };
   };
 
   // ─── Procesar pago ────────────────────────────────────────────────────────
@@ -213,13 +213,13 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
           </h3>
 
           <div className="relative group">
-            <Search size={22} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" />
+            <Search size={22} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-brand-cyan transition-colors" />
             <input
               type="text"
               placeholder="Nombre de cliente o código..."
               value={qCliente}
               onChange={e => setQCliente(e.target.value)}
-              className="bg-white border-2 border-slate-200 rounded-[1.5rem] pl-14 pr-6 py-4 text-base text-slate-900 placeholder-slate-400 outline-none w-full focus:border-indigo-500 focus:ring-8 focus:ring-indigo-500/5 transition-all font-bold shadow-sm"
+              className="bg-white border-2 border-slate-200 rounded-[1.5rem] pl-14 pr-6 py-4 text-base text-slate-900 placeholder-slate-400 outline-none w-full focus:border-brand-cyan focus:ring-8 focus:ring-brand-cyan/5 transition-all font-bold shadow-sm"
             />
           </div>
         </div>
@@ -227,8 +227,8 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
         {/* Header Seleccionar/Desmarcar */}
         <div className="px-5 py-3 bg-slate-50/50 border-b border-slate-200 flex items-center justify-between shadow-sm z-10">
           <button onClick={toggleTodas}
-            className="flex items-center gap-2 text-[10px] font-black text-slate-500 hover:text-indigo-600 transition-colors uppercase tracking-widest">
-            {todasSel ? <CheckSquare size={14} className="text-indigo-600" /> : <Square size={14} />}
+            className="flex items-center gap-2 text-[10px] font-black text-slate-500 hover:text-brand-cyan transition-colors uppercase tracking-widest">
+            {todasSel ? <CheckSquare size={14} className="text-brand-cyan" /> : <Square size={14} />}
             {todasSel ? 'Desmarcar a la vista' : 'Seleccionar a la vista'}
           </button>
           <span className="text-[10px] font-black text-slate-500 bg-white px-3 py-1.5 rounded-xl border border-slate-200">
@@ -239,13 +239,13 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
         <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 bg-[#f8fafc]">
           {cargandoDeudas ? (
             <div className="flex flex-col items-center justify-center py-20 gap-3 opacity-50">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand-cyan"></div>
               <p className="text-sm font-bold text-slate-500 uppercase tracking-widest">Cargando deudas...</p>
             </div>
           ) : deudasFiltradas.length === 0 ? (
             <div className="m-auto text-center opacity-50 py-20">
-              <CheckCircle size={48} className="mx-auto mb-4 text-emerald-400" />
-              <p className="text-sm font-black text-emerald-600 uppercase tracking-widest">Sin deudas a la vista</p>
+              <CheckCircle size={48} className="mx-auto mb-4 text-brand-cyan" />
+              <p className="text-sm font-black text-brand-cyan uppercase tracking-widest">Sin deudas a la vista</p>
               <p className="text-xs text-slate-400 font-medium mt-2">No hay deudas que coincidan con la búsqueda.</p>
             </div>
           ) : (
@@ -255,10 +255,10 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
               return (
                 <div key={d.DDeIdDocumento} onClick={() => toggleDeuda(d.DDeIdDocumento)}
                   className={`cursor-pointer shrink-0 rounded-[1.2rem] p-4 border-2 transition-all flex flex-col gap-3 relative overflow-hidden group shadow-sm active:scale-[0.98]
-                    ${sel ? 'border-indigo-500 bg-indigo-50/50 ring-4 ring-indigo-500/10' : 'border-slate-200 bg-white hover:border-indigo-400 hover:shadow-md hover:-translate-y-0.5'}`}>
+                    ${sel ? 'border-brand-cyan bg-brand-cyan/5 ring-4 ring-brand-cyan/10' : 'border-slate-200 bg-white hover:border-brand-cyan/50 hover:shadow-md hover:-translate-y-0.5'}`}>
 
                   <div className="flex items-center gap-2 mb-1">
-                    <User size={12} className={sel ? 'text-indigo-400' : 'text-slate-400'}/>
+                    <User size={12} className={sel ? 'text-brand-cyan/70' : 'text-slate-400'}/>
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 truncate">
                       {d.ClienteNombre}
                     </span>
@@ -267,11 +267,11 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3 min-w-0">
                       <div className={`w-10 h-10 rounded-xl border-2 flex items-center justify-center shrink-0 transition-all
-                        ${sel ? 'border-indigo-500 bg-indigo-500 shadow-md shadow-indigo-500/20' : 'border-slate-200 bg-slate-50 group-hover:border-indigo-400 group-hover:bg-white'}`}>
+                        ${sel ? 'border-brand-cyan bg-brand-cyan shadow-md shadow-brand-cyan/20' : 'border-slate-200 bg-slate-50 group-hover:border-brand-cyan/50 group-hover:bg-white'}`}>
                         {sel && <CheckCircle size={20} className="text-white" />}
                       </div>
                       <div className="flex flex-col min-w-0">
-                        <span className={`font-black text-base transition-colors leading-none tracking-tight truncate ${sel ? 'text-indigo-700' : 'text-slate-900 group-hover:text-indigo-600'}`}>
+                        <span className={`font-black text-base transition-colors leading-none tracking-tight truncate ${sel ? 'text-brand-cyan' : 'text-slate-900 group-hover:text-brand-cyan'}`}>
                           {d.NombreTrabajo || d.CodigoOrden || `Deuda #${d.DDeIdDocumento}`}
                         </span>
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1.5">
@@ -281,7 +281,7 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
                     </div>
                     <div className="font-black text-right flex flex-col items-end shrink-0 gap-1.5">
                       <span className={`text-[10px] font-black px-2.5 py-1 rounded-lg border shadow-sm ${badge.cls}`}>{badge.label}</span>
-                      <span className={`text-base font-black ${sel ? 'text-indigo-700' : 'text-slate-800'}`}>
+                      <span className={`text-base font-black ${sel ? 'text-brand-cyan' : 'text-slate-800'}`}>
                         {d.MonSimbolo || '$'} {fmt(d.DDeImportePendiente)}
                       </span>
                     </div>
@@ -307,7 +307,7 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
             {/* Encabezado */}
             <div className="flex justify-between items-center border-b border-slate-200 pb-4">
               <h2 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-3">
-                <CreditCard size={26} className="text-indigo-600" />
+                <CreditCard size={26} className="text-brand-cyan" />
                 Resumen de Selección
               </h2>
             </div>
@@ -358,7 +358,7 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
                     <div key={d.DDeIdDocumento}
                       className="flex justify-between items-center px-4 py-3 rounded-2xl border gap-4 bg-white border-slate-200">
                       <div className="flex items-center gap-3 min-w-0">
-                        <FileMinus size={16} className="text-indigo-400 shrink-0" />
+                        <FileMinus size={16} className="text-brand-cyan/70 shrink-0" />
                         <div className="min-w-0">
                           <p className="font-black text-slate-800 text-sm truncate">
                             {d.NombreTrabajo || d.CodigoOrden || `Deuda #${d.DDeIdDocumento}`}
@@ -386,9 +386,9 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
               </div>
 
               {/* Total */}
-              <div className="flex items-center justify-between px-5 py-4 bg-indigo-50 rounded-2xl border-2 border-indigo-200 mt-2">
-                <span className="font-black text-indigo-800 text-sm uppercase tracking-widest">Total a Cubrir</span>
-                <span className="font-black text-indigo-700 text-3xl tracking-tight">{simboloDeuda} {fmt(totalAPagar)}</span>
+              <div className="flex items-center justify-between px-5 py-4 bg-brand-cyan/5 rounded-2xl border-2 border-brand-cyan/20 mt-2">
+                <span className="font-black text-brand-cyan text-sm uppercase tracking-widest">Total a Cubrir</span>
+                <span className="font-black text-brand-cyan text-3xl tracking-tight">{simboloDeuda} {fmt(totalAPagar)}</span>
               </div>
             </div>
           </div>
@@ -398,11 +398,11 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
       {/* ─── 3. COLUMNA DERECHA: PANEL FIJO DE PAGO ───────────────────────────── */}
       {seleccionadas.length > 0 && (
         <div className="w-[420px] shrink-0 border-l border-slate-200 bg-white relative shadow-xl z-20 flex flex-col h-full animate-in slide-in-from-right-8 duration-300">
-          <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-400 to-indigo-500 z-30"></div>
+          <div className="absolute top-0 inset-x-0 h-1.5 bg-brand-cyan z-30"></div>
           
           <div className="p-6 border-b border-slate-100 bg-slate-50/80">
              <h3 className="font-black text-slate-800 flex items-center gap-2 text-sm uppercase tracking-widest">
-               <CreditCard size={16} className="text-indigo-600"/> Procesar Pago
+               <CreditCard size={16} className="text-brand-cyan"/> Procesar Pago
              </h3>
              <p className="text-[10px] text-slate-400 mt-1 font-black">MÉTODOS Y COMPROBANTE</p>
           </div>

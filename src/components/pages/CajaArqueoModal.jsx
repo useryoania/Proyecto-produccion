@@ -144,7 +144,7 @@ const CajaArqueoModal = ({ onClose }) => {
         {/* Encabezado */}
         <div className="flex items-center justify-between px-8 py-5 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100 shadow-inner">
+            <div className="w-12 h-12 rounded-xl bg-brand-cyan/10 flex items-center justify-center text-brand-cyan border border-brand-cyan/20 shadow-inner">
               <Layers size={24} />
             </div>
             <div>
@@ -157,11 +157,11 @@ const CajaArqueoModal = ({ onClose }) => {
             <button onClick={fetchData} className="p-2.5 bg-white text-slate-500 hover:text-slate-800 rounded-xl transition-all border border-slate-200 shadow-sm hover:shadow hover:-translate-y-0.5 active:scale-95">
               <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
             </button>
-            <button onClick={handlePrint} className="flex flex-row gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-black text-white font-black rounded-xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:scale-95">
+            <button onClick={handlePrint} className="flex flex-row gap-2 px-5 py-2.5 bg-brand-cyan hover:bg-black text-white font-black rounded-xl transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:scale-95">
               <Printer size={18} /> IMPRIMIR ARCHIVO
             </button>
             <div className="w-px h-8 bg-slate-200 mx-1"></div>
-            <button onClick={onClose} className="p-2.5 rounded-xl bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white border border-rose-100 shadow-sm transition-all hover:-translate-y-0.5 active:scale-95">
+            <button onClick={onClose} className="p-2.5 rounded-xl bg-brand-magenta/10 text-brand-magenta hover:bg-brand-magenta hover:text-white border border-brand-magenta/20 shadow-sm transition-all hover:-translate-y-0.5 active:scale-95">
               <X size={22} />
             </button>
           </div>
@@ -198,29 +198,29 @@ const CajaArqueoModal = ({ onClose }) => {
 
               {/* Agrupaciones */}
               <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-                 <h4 className="text-slate-800 font-black mb-5 flex items-center gap-2 tracking-tight text-lg"><FileText size={20} className="text-indigo-600"/> Agrupado por Medio de Pago</h4>
+                 <h4 className="text-slate-800 font-black mb-5 flex items-center gap-2 tracking-tight text-lg"><FileText size={20} className="text-brand-cyan"/> Agrupado por Medio de Pago</h4>
                  <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-slate-400 uppercase text-[10px] tracking-widest border-b-2 border-slate-100">
                           <th className="pb-3 text-left font-black">Forma de Pago</th>
                           <th className="pb-3 text-right font-black">UYU (Entradas)</th>
-                          <th className="pb-3 text-right font-black text-rose-500">UYU (Salidas)</th>
+                          <th className="pb-3 text-right font-black text-brand-magenta">UYU (Salidas)</th>
                           <th className="pb-3 text-right font-black text-slate-800 bg-slate-50 px-3 rounded-t-xl">Subtotal UYU</th>
                           <th className="pb-3 text-right font-black">USD (Entradas)</th>
-                          <th className="pb-3 text-right font-black text-rose-500">USD (Salidas)</th>
+                          <th className="pb-3 text-right font-black text-brand-magenta">USD (Salidas)</th>
                           <th className="pb-3 text-right font-black text-slate-800 bg-slate-50 px-3 rounded-t-xl">Subtotal USD</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {Object.entries(agrupado.porForma).map(([kp, v], i) => (
                            <tr key={i} className="hover:bg-slate-50 transition-colors">
-                             <td className="py-4 font-black text-indigo-700">{kp}</td>
+                             <td className="py-4 font-black text-brand-cyan">{kp}</td>
                              <td className="py-4 text-right text-slate-600 font-mono font-bold text-[15px]">{fmt(v.UYU_in)}</td>
-                             <td className="py-4 text-right text-rose-600 font-mono font-bold text-[15px]">{fmt(v.UYU_out)}</td>
+                             <td className="py-4 text-right text-brand-magenta font-mono font-bold text-[15px]">{fmt(v.UYU_out)}</td>
                              <td className="py-4 text-right text-slate-800 font-black font-mono text-lg bg-slate-50 px-3">{fmt(v.UYU_in - v.UYU_out)}</td>
                              <td className="py-4 text-right text-slate-600 font-mono font-bold text-[15px]">{fmt(v.USD_in)}</td>
-                             <td className="py-4 text-right text-rose-600 font-mono font-bold text-[15px]">{fmt(v.USD_out)}</td>
+                             <td className="py-4 text-right text-brand-magenta font-mono font-bold text-[15px]">{fmt(v.USD_out)}</td>
                              <td className="py-4 text-right text-slate-800 font-black font-mono text-lg bg-slate-50 px-3">{fmt(v.USD_in - v.USD_out)}</td>
                            </tr>
                         ))}
@@ -243,7 +243,7 @@ const CajaArqueoModal = ({ onClose }) => {
                           <th className="p-4 text-left font-black">Nº Comprobante / Doc</th>
                           <th className="p-4 text-left font-black">Rubro / Concepto</th>
                           <th className="p-4 text-right font-black">Entrada</th>
-                          <th className="p-4 px-6 text-right font-black text-rose-500">Salida</th>
+                          <th className="p-4 px-6 text-right font-black text-brand-magenta">Salida</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -256,7 +256,7 @@ const CajaArqueoModal = ({ onClose }) => {
                               <React.Fragment key={uniqueKey}>
                                 <tr>
                                   <td colSpan="6" className="p-3 px-6 bg-slate-100 text-slate-800 font-black text-sm uppercase tracking-widest border-y border-slate-200">
-                                    Medio de Pago: <span className="text-indigo-600">{fp}</span> <span className="text-slate-400 mx-2">|</span> Moneda: <span className={mon === 'USD' ? 'text-emerald-600' : 'text-slate-700'}>{mon}</span>
+                                    Medio de Pago: <span className="text-brand-cyan">{fp}</span> <span className="text-slate-400 mx-2">|</span> Moneda: <span className={mon === 'USD' ? 'text-emerald-600' : 'text-slate-700'}>{mon}</span>
                                   </td>
                                 </tr>
                               {movsForma.map((m, i) => (
@@ -265,13 +265,13 @@ const CajaArqueoModal = ({ onClose }) => {
                                    <td className="p-4 text-center">
                                      {m.TipoOperacion === 'INGRESO' 
                                         ? <span className="bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-md text-[10px] font-black border border-emerald-200 tracking-widest shadow-sm">INGRESO</span>
-                                        : <span className="bg-rose-50 text-rose-600 px-2.5 py-1 rounded-md text-[10px] font-black border border-rose-200 tracking-widest shadow-sm">EGRESO</span>
+                                        : <span className="bg-brand-magenta/10 text-brand-magenta px-2.5 py-1 rounded-md text-[10px] font-black border border-brand-magenta/30 tracking-widest shadow-sm">EGRESO</span>
                                      }
                                    </td>
-                                   <td className="p-4 font-mono text-xs font-bold text-slate-500">{m.TipoComprobante} {m.Comprobante && m.Comprobante !== '-' ? <span className="text-indigo-600">{m.Comprobante}</span> : ''}</td>
+                                   <td className="p-4 font-mono text-xs font-bold text-slate-500">{m.TipoComprobante} {m.Comprobante && m.Comprobante !== '-' ? <span className="text-brand-cyan">{m.Comprobante}</span> : ''}</td>
                                    <td className="p-4 font-bold text-slate-800">{m.Concepto}</td>
                                    <td className="p-4 text-right font-black text-emerald-600 font-mono text-base">{m.Entrada > 0 ? `${m.Moneda} ${fmt(m.Entrada)}` : '-'}</td>
-                                   <td className="p-4 px-6 text-right font-black text-rose-600 font-mono text-base">{m.Salida > 0  ? `${m.Moneda} ${fmt(m.Salida)}`  : '-'}</td>
+                                   <td className="p-4 px-6 text-right font-black text-brand-magenta font-mono text-base">{m.Salida > 0  ? `${m.Moneda} ${fmt(m.Salida)}`  : '-'}</td>
                                 </tr>
                               ))}
                               </React.Fragment>

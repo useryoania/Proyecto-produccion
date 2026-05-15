@@ -45,7 +45,7 @@ const ClienteBilletera = ({ clienteId, clienteNombre }) => {
       {loading && <Loader2 className="animate-spin text-indigo-500 shrink-0" size={14} />}
 
       {/* Saldo Pesos */}
-      <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl border transition-all shadow-sm ${ctaUYU?.CueSaldoActual < 0 ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-indigo-50 border-indigo-100 text-indigo-700'}`}>
+      <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl border transition-all shadow-sm ${ctaUYU?.CueSaldoActual < 0 ? 'bg-rose-50 border-rose-200 text-rose-600' : 'bg-brand-cyan/10 border-brand-cyan/20 text-brand-cyan'}`}>
         <Coins size={14} className="opacity-80" />
         <span className="text-[10px] font-black uppercase tracking-tighter opacity-60">UYU</span>
         <span className="text-sm font-black text-slate-900 font-mono italic">$ {fmt(ctaUYU?.CueSaldoActual)}</span>
