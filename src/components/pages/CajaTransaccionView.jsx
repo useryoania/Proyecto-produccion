@@ -1627,8 +1627,8 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                           </div>
 
                           <div className="p-8 bg-zinc-50/50">
-                            <button onClick={handleCerrarCaja} className="w-full bg-brand-magenta hover:bg-black text-white font-black py-6 rounded-2xl shadow-xl shadow-brand-magenta/20 hover:shadow-black/20 hover:-translate-y-1 transition-all active:scale-[0.98] text-xl tracking-tighter flex items-center justify-center gap-4 group">
-                              <Power size={28} className="group-hover:text-brand-magenta transition-colors" /> FINALIZAR TURNO Y CERRAR SESIÓN
+                            <button onClick={handleCerrarCaja} className="w-full bg-brand-magenta hover:opacity-90 text-white font-black py-6 rounded-2xl shadow-xl shadow-brand-magenta/20 transition-all active:scale-[0.98] text-xl tracking-tighter flex items-center justify-center gap-4">
+                              <Power size={28} /> FINALIZAR TURNO Y CERRAR SESIÓN
                             </button>
                           </div>
                         </>
