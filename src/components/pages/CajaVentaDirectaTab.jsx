@@ -405,7 +405,7 @@ export default function CajaVentaDirectaTab({
                       <label className="text-[10px] font-archivo uppercase font-black text-zinc-400 tracking-widest px-2">Descripción Visible en Documento</label>
                       <input value={it.descripcion} onChange={e=>setItems(p=>p.map(x=>x.id===it.id?{...x, descripcion:e.target.value}:x))} placeholder="Aclaración opcional..." className="bg-white border-2 border-zinc-200 rounded-xl px-4 py-2 text-sm font-bold text-zinc-800 outline-none focus:border-brand-cyan shadow-sm" />
                     </div>
-                    <div className="flex flex-col gap-1.5 text-center">
+                    <div className="flex flex-col gap-1 text-center">
                       <label className="text-[10px] font-archivo uppercase font-black text-zinc-400 tracking-widest">Cantidad</label>
                       <input type="number" step="0.5" value={it.cantidad} onChange={e=>{
                           const val = e.target.value;
@@ -416,9 +416,9 @@ export default function CajaVentaDirectaTab({
                             newObj.precioTotal = Number(unit * (val || 0)).toFixed(2);
                             return newObj;
                           }));
-                      }} className="bg-zinc-100 border-2 border-zinc-200 rounded-xl px-3 py-2 text-base font-black text-emerald-600 text-center outline-none focus:border-emerald-500 shadow-inner" />
+                      }} className="bg-zinc-100 border-2 border-zinc-200 rounded-xl px-4 py-2 text-sm font-black text-emerald-600 text-center outline-none focus:border-emerald-500 shadow-inner" />
                     </div>
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1">
                       <label className="text-[10px] font-archivo uppercase font-black text-zinc-400 tracking-widest">Precio U. {monedaExhibicion}</label>
                       <input type="number" step="0.1" value={it.precioUnitario || ''} onChange={e=>{
                           const val = e.target.value;
@@ -428,16 +428,16 @@ export default function CajaVentaDirectaTab({
                             }
                             return x;
                           }));
-                      }} className="bg-zinc-50 border border-brand-cyan/20 rounded-lg px-3 py-1.5 text-sm font-black text-zinc-900 outline-none focus:border-brand-cyan text-right" />
+                      }} className="bg-zinc-50 border-2 border-zinc-200 rounded-xl px-4 py-2 text-sm font-black text-zinc-900 outline-none focus:border-brand-cyan text-right shadow-sm" />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-[9px] font-archivo uppercase font-black text-zinc-400 tracking-widest">Total {monedaExhibicion}</label>
+                      <label className="text-[10px] font-archivo uppercase font-black text-zinc-400 tracking-widest">Total {monedaExhibicion}</label>
                       <input type="number" step="0.1" value={it.precioTotal} onChange={e=>setItems(p=>p.map(x=>{
                           if(x.id===it.id) {
                              return {...x, precioTotal:e.target.value};
                          }
                          return x;
-                      }))} className="bg-zinc-50 border border-brand-cyan/20 rounded-lg px-3 py-1.5 text-sm font-black text-zinc-900 outline-none focus:border-brand-cyan text-right placeholder-zinc-300" />
+                      }))} className="bg-zinc-50 border-2 border-zinc-200 rounded-xl px-4 py-2 text-sm font-black text-zinc-900 outline-none focus:border-brand-cyan text-right placeholder-zinc-300 shadow-sm" />
                     </div>
                   </div>
                 </div>
