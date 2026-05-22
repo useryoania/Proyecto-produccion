@@ -1824,16 +1824,13 @@ exports.anularRetiro = async (req, res) => {
         transaction = new sql.Transaction(pool);
         await transaction.begin();
 
-        // 2. Anular el Retiro (Estado 6)
         await transaction.request()
             .input('ID', sql.Int, OReId)
             .input('Usr', sql.Int, usuarioId)
-            .input('Motivo', sql.NVarChar(255), motivo)
             .query(`
                 UPDATE OrdenesRetiro 
                 SET OReEstadoActual = 6, 
-                    OReFechaEstadoActual = GETDATE(),
-                    OReNotaInterna = COALESCE(OReNotaInterna, '') + ' [ANULADO: ' + @Motivo + ']'
+                    OReFechaEstadoActual = GETDATE()
                 WHERE OReIdOrdenRetiro = @ID;
 
                 INSERT INTO HistoricoEstadosOrdenesRetiro (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)

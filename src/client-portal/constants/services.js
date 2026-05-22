@@ -19,11 +19,7 @@ export const SERVICES_LIST = [
         label: 'Sublimación',
         desc: 'Estampado por calor en poliéster.',
         icon: Palette,
-        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSemmGLC_EfGOGmj4kTfl3ciB53GY62R57EmKuJNh8nDtKvQNA/viewform',
-        formEntries: {
-            clienteId: 'entry.262281569',
-            terminos: { id: 'entry.36260443', value: 'Acepto' }
-        },
+
 
         // Configuration
         config: {
@@ -66,11 +62,7 @@ export const SERVICES_LIST = [
         label: 'DTF (Direct to Film)',
         desc: 'Transferencia digital sobre film.',
         icon: Layers,
-        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSclGdB5XurRZjulUhx3aNwSZvXD1WvXvi1Z9sVJxyL-YToDOg/viewform',
-        formEntries: {
-            clienteId: 'entry.1901865367',
-            terminos: { id: 'entry.263737237', value: 'Acepto' }
-        },
+
 
         config: {
             variantMode: 'select', // User selects from dropdown (fetched from DF: DF)
@@ -93,11 +85,7 @@ export const SERVICES_LIST = [
         label: 'EcoUV',
         desc: 'Impresión UV alta resolución.',
         icon: ImageIcon,
-        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSciNCn6SjH57kR-QeRmXqLK4pOnRrk9PaKZyiiKOqc_kkCvPw/viewform',
-        formEntries: {
-            clienteId: 'entry.1901865367',
-            terminos: { id: 'entry.261786299', value: 'Acepto' }
-        },
+
 
         config: {
             variantMode: 'fixed',
@@ -125,10 +113,7 @@ export const SERVICES_LIST = [
         label: 'Bordado',
         desc: 'Personalización con hilos.',
         icon: Scissors,
-        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLScnxn6xsaMriuLadczeEoWJzQ4fmmeKaFwQutpJoBqi8vRI1A/viewform',
-        formEntries: {
-            clienteId: 'entry.217602422'
-        },
+
 
         config: {
             variantMode: 'select', // Enable variant fetch
@@ -175,10 +160,7 @@ export const SERVICES_LIST = [
         label: 'Corte',
         desc: 'Corte láser y tizada.',
         icon: Zap,
-        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSc-WAW7vfEbCIzLQt7Ty18d4ckEdzvHz6Fnqk4xe0NTqmmHVA/viewform',
-        formEntries: {
-            clienteId: 'entry.217602422'
-        },
+
 
         config: {
             variantMode: 'fixed', // Fixed to Corte
@@ -205,10 +187,7 @@ export const SERVICES_LIST = [
         label: 'TPU',
         desc: 'Etiquetas y parches en PU.',
         icon: Box,
-        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSfGsRWRkshDjsW5AsQD0oIJiKo_oR15x8mjSA0DnEhtsxv5AA/viewform',
-        formEntries: {
-            clienteId: 'entry.1683355647'
-        },
+
 
         config: {
             variantMode: 'fixed',
@@ -237,11 +216,7 @@ export const SERVICES_LIST = [
         label: 'Directa 3.20m',
         desc: 'Gigantografía gran formato.',
         icon: Printer,
-        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLScVwNflx459s7Tk6EyfittLRwkzGhjTIu4FakV5NU72QOCAgQ/viewform',
-        formEntries: {
-            clienteId: 'entry.262281569',
-            terminos: { id: 'entry.36260443', value: 'Acepto' }
-        },
+
 
         config: {
             variantMode: 'fixed',

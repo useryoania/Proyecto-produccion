@@ -642,6 +642,9 @@ const ShelfSlot = ({
 
       {/* Slot Content (Static & Sharp) */}
       <div className="absolute inset-0 grid place-items-center pointer-events-none select-none z-10">
+        {(dataList[0]?.ReceptorNombre || dataList[0]?.AgenciaNombre) && (
+          <span className="absolute top-1 left-1.5 text-[8px] font-black text-white/70 leading-none tracking-widest uppercase">ENC</span>
+        )}
         <span className="text-base font-black text-white leading-none tracking-tight">
           {dataList[0]?.PagoHandy 
             ? dataList[0]?.OrdenRetiro?.replace('R-', 'PW-') 

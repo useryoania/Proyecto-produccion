@@ -287,7 +287,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: isMobile ? '0 20px' : '0 48px',
         height: '70px',
-        background: (!isMobile && isPortalPage) ? 'rgba(24,24,27,0.75)' : (isPortalPage || menuOpen || scrolled) ? 'rgba(13,13,13,0.98)' : 'transparent',
+        background: (!isMobile && isPortalPage) ? 'rgba(254,24,27,0.75)' : (isPortalPage || menuOpen || scrolled) ? 'rgba(13,13,13,0.98)' : 'transparent',
         backdropFilter: 'none',
         WebkitBackdropFilter: 'none',
         borderBottom: ((isPortalPage || scrolled) && !menuOpen && isMobile) ? '1px solid rgba(255,255,255,0.08)' : 'none',
@@ -298,7 +298,7 @@ export default function LandingNavbar({ onOpenLoginModal }) {
           {isPortalPage && (
             <>
               <div style={{ width: '1px', height: isMobile ? '28px' : '36px', background: 'rgba(255,255,255,0.2)' }}></div>
-              <span style={{ fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: isMobile ? '15px' : '17px', color: '#fff', letterSpacing: '0.04em' }}>AUTOGESTIÓN</span>
+              <span style={{ fontFamily: "'Barlow', sans-serif", fontWeight: 700, fontSize: isMobile ? '15px' : '17px', color: '#fff', letterSpacing: '0.04em' }}>ENTORNO DE PRUEBAS</span>
             </>
           )}
         </div>
