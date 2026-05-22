@@ -2386,7 +2386,7 @@ BEGIN
         SELECT @PkDetailArgs =
             STUFF((
                 SELECT
-                    N', N''' + p.ColName + N'='', CONVERT(nvarchar(4000), @' + p.ColName + N'), N''; '''
+                    N', N''' + p.ColName + N'='', CONVERT(nvarchar(4000), @' + p.ColName + N'), N''; ''
                 FROM @PkCols p
                 ORDER BY p.Ord
                 FOR XML PATH(''), TYPE
@@ -4514,12 +4514,12 @@ GO
                 INSERT INTO [dbo].[MovimientosCuenta] (
                     CueIdCuenta, MovTipo, MovConcepto, MovImporte, MovSaldoPosterior,
                     OrdIdOrden, OReIdOrdenRetiro, PagIdPago, DocIdDocumento,
-                    MovRefExterna, MovFecha, MovUsuarioAlta, MovObservaciones, CicIdCiclo
+                    MovRefExterna, MovFecha, MovUsuarioAlta, MovObservaciones, CicIdCiclo, MovAnulado
                 )
                 VALUES (
                     @CueIdCuenta, @MovTipo, @MovConcepto, @MovImporte, @NuevoSaldo,
                     @OrdIdOrden, @OReIdOrdenRetiro, @PagIdPago, @DocIdDocumento,
-                    @MovRefExterna, GETDATE(), @MovUsuarioAlta, @MovObservaciones, @CicIdCiclo
+                    @MovRefExterna, GETDATE(), @MovUsuarioAlta, @MovObservaciones, @CicIdCiclo, 0
                 );
 
                 SET @MovIdGenerado   = SCOPE_IDENTITY();
