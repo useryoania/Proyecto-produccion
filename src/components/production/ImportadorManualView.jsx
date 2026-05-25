@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import api from '../../services/apiClient';
 
 export default function ImportadorManualView({ isModal = false, onClose = null, onImportSuccess = null }) {
     const [docsInput, setDocsInput] = useState('');
@@ -32,9 +30,7 @@ export default function ImportadorManualView({ isModal = false, onClose = null, 
                 return;
             }
             try {
-                const res = await axios.get(`${API_BASE_URL}/api/clients?q=${encodeURIComponent(clientSearch)}`, {
-                    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-                });
+                const res = await api.get(`/clients?q=${encodeURIComponent(clientSearch)}`);
                 setFoundClients(res.data || []);
             } catch (err) {
                 console.error("Error searching clients:", err);
@@ -65,11 +61,8 @@ export default function ImportadorManualView({ isModal = false, onClose = null, 
 
         setLoadingPreview(true);
         try {
-            const token = localStorage.getItem('token');
-            const res = await axios.post(`${API_BASE_URL}/api/rest-sync/preview-on-demand`, {
+            const res = await api.post(`/rest-sync/preview-on-demand`, {
                 docNumbers: docs
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
             });
 
             setPreviewData(res.data.preview);
@@ -100,8 +93,6 @@ export default function ImportadorManualView({ isModal = false, onClose = null, 
 
         setLoadingImport(true);
         try {
-            const token = localStorage.getItem('token');
-            
             // Enviamos los numeros de doc y ADEMAS el payload de los seleccionados para obviar buscar de nuevo
             const docsToImport = [...new Set(selectedRows.map(idx => previewData[idx].orden))];
             const payloadsToImport = [...new Set(selectedRows.map(idx => {
@@ -110,11 +101,9 @@ export default function ImportadorManualView({ isModal = false, onClose = null, 
                 return r;
             }))];
 
-            const res = await axios.post(`${API_BASE_URL}/api/rest-sync/import-on-demand`, {
+            const res = await api.post(`/rest-sync/import-on-demand`, {
                 docNumbers: docsToImport,
                 payloads: payloadsToImport
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
             });
 
             setImportResult(res.data);
