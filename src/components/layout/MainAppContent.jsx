@@ -479,6 +479,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
                 <Route path="/admin/duplicate-clients" element={<DuplicateClientsPage />} />
                 <Route path="/admin/helpdesk" element={<HelpDeskAdminView />} />
+                <Route path="/atencion-cliente/helpdesk" element={<HelpDeskAdminView />} />
                 <Route path="/admin/products-integration" element={<ProductsIntegration />} />
                 <Route path="/admin/special-prices" element={<SpecialPrices />} />
                 <Route path="/admin/base-prices" element={<BasePrices />} />
@@ -708,7 +709,7 @@ const DynamicRouter = ({ menuItems }) => {
     // Fallback si no se encuentra ruta exacta
     if (!menuItem) {
         if (currentPath === '/consultas/ordenes') return <OrdersQueryView />;
-        if (currentPath === '/admin/helpdesk') return <HelpDeskAdminView />;
+        if (currentPath === '/admin/helpdesk' || currentPath === '/atencion-cliente/helpdesk') return <HelpDeskAdminView />;
 
         // En lugar del fantasma, rebotamos al usuario silenciosamente de vuelta a su dashboard
         return <Navigate to="/" replace />;

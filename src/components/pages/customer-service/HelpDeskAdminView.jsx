@@ -140,14 +140,42 @@ export const HelpDeskAdminView = () => {
         // Unirse al room de admin para recibir actualizaciones en tiempo real
         socket.emit('join:helpdesk_admin');
 
-        const handleInboxUpdate = () => fetchTickets();
-        socket.on('ticket:new', handleInboxUpdate);
-        socket.on('ticket:updated', handleInboxUpdate);
+        const handleNewTicket = (data) => {
+            fetchTickets();
+            if (data) {
+                toast.info(`Nuevo ticket recibido #${data.ticketId}`, {
+                    description: data.asunto || 'Sin asunto',
+                    action: {
+                        label: 'Ver Ticket',
+                        onClick: () => setSelectedTicketId(data.ticketId)
+                    },
+                    duration: 10000,
+                });
+            }
+        };
+
+        const handleTicketUpdated = (data) => {
+            fetchTickets();
+            // Si el mensaje nuevo fue de un cliente
+            if (data && data.autor === 'client') {
+                toast(`Mensaje nuevo en Ticket #${data.ticketId}`, {
+                    description: 'El cliente ha enviado una nueva respuesta.',
+                    action: {
+                        label: 'Abrir',
+                        onClick: () => setSelectedTicketId(data.ticketId)
+                    },
+                    duration: 8000,
+                });
+            }
+        };
+
+        socket.on('ticket:new', handleNewTicket);
+        socket.on('ticket:updated', handleTicketUpdated);
 
         return () => {
             socket.emit('leave:helpdesk_admin');
-            socket.off('ticket:new', handleInboxUpdate);
-            socket.off('ticket:updated', handleInboxUpdate);
+            socket.off('ticket:new', handleNewTicket);
+            socket.off('ticket:updated', handleTicketUpdated);
         };
     }, []);
 
