@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Routes, Route, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { io } from "socket.io-client";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CirclePile, AlertTriangle } from "lucide-react";
 import { LayoutGrid, CalendarCheck, ScanLine, Truck } from "lucide-react";
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
+import Swal from 'sweetalert2';
 // Componentes de Vistas
 import ProductionTable from "../../production/components/ProductionTable"; // Restored
 // import OrderCard from "../../production/components/OrderCard"; // Grid components commented out
@@ -114,9 +115,39 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
     const [sidebarMode, setSidebarMode] = useState("rolls");
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [clientFilter, setClientFilter] = useState("");
-    const [variantFilter, setVariantFilter] = useState("ALL");
-    const [statusFilter, setStatusFilter] = useState("ALL");
-    const [priorityFilter, setPriorityFilter] = useState("ALL");
+    const [activeFilters, setActiveFilters] = useState({
+        priorities: [],
+        statuses: [],
+        variants: []
+    });
+    const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
+    const filterDropdownRef = React.useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (filterDropdownRef.current && !filterDropdownRef.current.contains(event.target)) {
+                setIsFilterDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const toggleFilter = (category, value) => {
+        setActiveFilters(prev => {
+            const current = prev[category] || [];
+            if (current.includes(value)) {
+                return { ...prev, [category]: current.filter(v => v !== value) };
+            }
+            return { ...prev, [category]: [...current, value] };
+        });
+    };
+
+    const clearFilters = () => {
+        setActiveFilters({ priorities: [], statuses: [], variants: [] });
+    };
+
+    const activeFilterCount = (activeFilters.priorities?.length || 0) + (activeFilters.statuses?.length || 0) + (activeFilters.variants?.length || 0);
 
     const [isNewOrderOpen, setIsNewOrderOpen] = useState(false);
     const [isStockOpen, setIsStockOpen] = useState(false);
@@ -176,22 +207,34 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
         refetchInterval: 30000, // Polling every 30s as backup
     });
 
+    const queryClient = useQueryClient();
+
     // Socket.io: escuchar actualizaciones en tiempo real
     useEffect(() => {
         const socket = io(SOCKET_URL);
         socket.on('server:order_updated', (payload) => {
             console.log('🔔 Evento socket order_updated:', payload);
-            refetch(); // refrescar al recibir notificación
+            refetch(); // refrescar lista principal
+            
+            // Refrescar también los tableros hijos (Planeación, Kanban, etc)
+            if (areaKey) {
+                queryClient.invalidateQueries(['rollsBoard', areaKey]);
+                queryClient.invalidateQueries(['productionBoard', areaKey]);
+            }
         });
         return () => {
             socket.disconnect();
         };
-    }, [refetch]);
+    }, [refetch, areaKey, queryClient]);
 
     // 4. COMPUTED FILTERS (Dynamic based on data)
     const availablePriorities = useMemo(() => {
-        const unique = new Set(dbOrders.map(o => o.priority || 'Normal'));
         const orderPreference = ['Normal', 'Urgente', 'Reposición', 'Falla'];
+        const unique = new Set(dbOrders.map(o => {
+            const raw = o.priority || 'Normal';
+            const preferred = orderPreference.find(p => p.toLowerCase() === raw.toLowerCase());
+            return preferred || raw;
+        }));
         return ['ALL', ...Array.from(unique).sort((a, b) => {
             const idxA = orderPreference.indexOf(a);
             const idxB = orderPreference.indexOf(b);
@@ -203,9 +246,12 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
     }, [dbOrders]);
 
     const availableStatuses = useMemo(() => {
-        const unique = new Set(dbOrders.map(o => o.status || 'Pendiente'));
-        // Standard Workflow Order
         const orderPreference = ['Pendiente', 'Produccion', 'En Lote', 'Imprimiendo', 'Control y Calidad', 'Pronto', 'Entregado', 'Finalizado', 'Cancelado'];
+        const unique = new Set(dbOrders.map(o => {
+            const raw = o.status || 'Pendiente';
+            const preferred = orderPreference.find(p => p.toLowerCase() === raw.toLowerCase());
+            return preferred || (raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase());
+        }));
         return ['ALL', ...Array.from(unique).filter(Boolean).sort((a, b) => {
             const idxA = orderPreference.findIndex(p => p.toLowerCase() === a.toLowerCase());
             const idxB = orderPreference.findIndex(p => p.toLowerCase() === b.toLowerCase());
@@ -219,7 +265,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
     const availableVariants = useMemo(() => {
         const unique = new Set(
             dbOrders
-                .map(o => (o.variantCode || '').trim())
+                .map(o => (o.variantCode || '').trim().toUpperCase())
                 .filter(v => v && v !== 'N/A' && v !== '')
         );
         return ['ALL', ...Array.from(unique).sort((a, b) => a.localeCompare(b))];
@@ -235,17 +281,18 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
             else result = result.filter(o => o[filterField] === sidebarFilter);
         }
         if (clientFilter) result = result.filter(o => o.client?.toLowerCase().includes(clientFilter.toLowerCase()));
-        if (variantFilter !== 'ALL') result = result.filter(o => (o.variantCode || '').trim() === variantFilter);
-        if (statusFilter !== 'ALL') {
-            // Exact match (case insensitive) now that filters are dynamic
-            result = result.filter(o => (o.status || 'Pendiente').toLowerCase() === statusFilter.toLowerCase());
+        
+        if (activeFilters.variants && activeFilters.variants.length > 0) {
+            result = result.filter(o => activeFilters.variants.includes((o.variantCode || '').trim().toUpperCase()));
         }
-        if (priorityFilter !== 'ALL') {
-            // Exact match (case insensitive)
-            result = result.filter(o => (o.priority || 'Normal').toLowerCase() === priorityFilter.toLowerCase());
+        if (activeFilters.statuses && activeFilters.statuses.length > 0) {
+            result = result.filter(o => activeFilters.statuses.some(s => s.toLowerCase() === (o.status || 'Pendiente').toLowerCase()));
+        }
+        if (activeFilters.priorities && activeFilters.priorities.length > 0) {
+            result = result.filter(o => activeFilters.priorities.some(p => p.toLowerCase() === (o.priority || 'Normal').toLowerCase()));
         }
         return result;
-    }, [dbOrders, sidebarFilter, sidebarMode, clientFilter, variantFilter, areaKey, statusFilter, priorityFilter]);
+    }, [dbOrders, sidebarFilter, sidebarMode, clientFilter, activeFilters, areaKey]);
 
     const renderSidebar = () => null;
 
@@ -268,77 +315,105 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
 
             <div className="w-px h-5 bg-zinc-200 mx-1"></div>
 
-            {/* Prioridad */}
-            <div className="flex items-center gap-2">
-                <span className="text-[10px] uppercase font-black text-zinc-400 tracking-wider mr-1">Prioridad:</span>
-                {availablePriorities.map(p => {
-                    const isSelected = priorityFilter === p;
-                    const isUrgent = ['Urgente', 'Reposición', 'Falla'].includes(p);
-                    
-                    let selectedClass = isUrgent 
-                        ? 'bg-brand-magenta text-white border-brand-magenta shadow-sm' 
-                        : 'bg-zinc-700 text-white border-zinc-700 shadow-sm';
-                        
-                    let unselectedClass = 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:text-brand-cyan hover:border-brand-cyan/30 shadow-sm';
+            {/* Filtro Multiselector */}
+            <div className="relative" ref={filterDropdownRef}>
+                <button
+                    onClick={(e) => { e.stopPropagation(); setIsFilterDropdownOpen(prev => !prev); }}
+                    className={`flex items-center gap-2 px-3 py-1.5 text-xs font-bold border rounded-lg transition-colors shadow-sm ${
+                        activeFilterCount > 0
+                            ? 'bg-brand-cyan text-white border-brand-cyan hover:bg-[#005a7a]'
+                            : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:text-brand-cyan hover:border-brand-cyan/30'
+                    }`}
+                >
+                    <i className="fa-solid fa-filter"></i>
+                    Filtros
+                    {activeFilterCount > 0 && (
+                        <span className="ml-1 px-1.5 h-4 flex items-center justify-center bg-white/20 rounded-md text-[10px] leading-none">
+                            {activeFilterCount}
+                        </span>
+                    )}
+                </button>
 
-                    return (
-                        <button
-                            key={p}
-                            onClick={() => setPriorityFilter(p)}
-                            className={`flex items-center px-3 py-1.5 text-xs font-bold border rounded-lg transition-colors capitalize ${isSelected ? selectedClass : unselectedClass}`}
-                        >
-                            {p === 'ALL' ? 'Todas' : p}
-                        </button>
-                    );
-                })}
+                {isFilterDropdownOpen && (
+                    <div className="absolute top-full mt-2 left-0 w-[320px] bg-white rounded-xl shadow-xl border border-zinc-200 z-50 overflow-hidden flex flex-col max-h-[60vh] sm:max-h-[400px]">
+                        <div className="flex justify-between items-center p-3 border-b border-zinc-100 bg-zinc-50 shrink-0">
+                            <span className="text-sm font-bold text-zinc-700">Filtros Activos</span>
+                            {activeFilterCount > 0 && (
+                                <button onClick={clearFilters} className="text-xs text-brand-cyan hover:text-[#005a7a] hover:underline font-bold transition-colors">
+                                    Limpiar todos
+                                </button>
+                            )}
+                        </div>
+                        <div className="p-4 overflow-y-auto flex flex-col gap-5">
+                            {/* Prioridad */}
+                            <div>
+                                <span className="text-[10px] uppercase font-black text-zinc-400 tracking-wider mb-2 block">Prioridad</span>
+                                <div className="flex flex-wrap gap-2">
+                                    {availablePriorities.filter(p => p !== 'ALL').map(p => {
+                                        const isSelected = activeFilters.priorities.includes(p);
+                                        const isUrgent = ['Urgente', 'Reposición', 'Falla'].includes(p);
+                                        let selectedClass = isUrgent 
+                                            ? 'bg-brand-magenta text-white border-brand-magenta' 
+                                            : 'bg-zinc-700 text-white border-zinc-700';
+                                        let unselectedClass = 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300';
+                                        return (
+                                            <button
+                                                key={p}
+                                                onClick={() => toggleFilter('priorities', p)}
+                                                className={`px-3 py-1.5 text-xs font-bold border rounded-lg transition-colors capitalize shadow-sm ${isSelected ? selectedClass : unselectedClass}`}
+                                            >
+                                                {p}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            {/* Estado */}
+                            <div>
+                                <span className="text-[10px] uppercase font-black text-zinc-400 tracking-wider mb-2 block">Estado</span>
+                                <div className="flex flex-wrap gap-2">
+                                    {availableStatuses.filter(s => s !== 'ALL').map(s => {
+                                        const isSelected = activeFilters.statuses.includes(s);
+                                        return (
+                                            <button
+                                                key={s}
+                                                onClick={() => toggleFilter('statuses', s)}
+                                                className={`px-3 py-1.5 text-xs font-bold border rounded-lg transition-colors capitalize shadow-sm ${
+                                                    isSelected ? 'bg-brand-cyan text-white border-brand-cyan' : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300'
+                                                }`}
+                                            >
+                                                {s}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            {/* Variante */}
+                            {availableVariants.filter(v => v !== 'ALL').length > 0 && (
+                                <div>
+                                    <span className="text-[10px] uppercase font-black text-zinc-400 tracking-wider mb-2 block">Variante</span>
+                                    <div className="flex flex-wrap gap-2">
+                                        {availableVariants.filter(v => v !== 'ALL').map(v => {
+                                            const isSelected = activeFilters.variants.includes(v);
+                                            return (
+                                                <button
+                                                    key={v}
+                                                    onClick={() => toggleFilter('variants', v)}
+                                                    className={`px-3 py-1.5 text-xs font-bold border rounded-lg transition-colors capitalize shadow-sm ${
+                                                        isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300'
+                                                    }`}
+                                                >
+                                                    {v}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
-
-            <div className="w-px h-5 bg-zinc-200 mx-1"></div>
-
-            {/* Estado */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-                <span className="text-[10px] uppercase font-black text-zinc-400 tracking-wider mr-1">Estado:</span>
-                {availableStatuses.map(s => {
-                    const isSelected = statusFilter === s;
-                    let selectedClass = 'bg-brand-cyan text-white border-brand-cyan shadow-sm';
-                    let unselectedClass = 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:text-brand-cyan hover:border-brand-cyan/30 shadow-sm';
-
-                    return (
-                        <button
-                            key={s}
-                            onClick={() => setStatusFilter(s)}
-                            className={`flex items-center px-3 py-1.5 text-xs font-bold border rounded-lg transition-colors capitalize whitespace-nowrap ${isSelected ? selectedClass : unselectedClass}`}
-                        >
-                            {s === 'ALL' ? 'Todos' : s}
-                        </button>
-                    );
-                })}
-            </div>
-
-            <div className="w-px h-5 bg-zinc-200 mx-1"></div>
-
-            {/* Variante */}
-            {availableVariants.length > 1 && (
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-                    <span className="text-[10px] uppercase font-black text-zinc-400 tracking-wider mr-1">Variante:</span>
-                    {availableVariants.map(v => {
-                        const isSelected = variantFilter === v;
-                        return (
-                            <button
-                                key={v}
-                                onClick={() => setVariantFilter(v)}
-                                className={`flex items-center px-3 py-1.5 text-xs font-bold border rounded-lg transition-colors capitalize whitespace-nowrap ${
-                                    isSelected
-                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                                        : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:text-indigo-600 hover:border-indigo-300 shadow-sm'
-                                }`}
-                            >
-                                {v === 'ALL' ? 'Todas' : v}
-                            </button>
-                        );
-                    })}
-                </div>
-            )}
 
             <div className="w-px h-5 bg-zinc-200 mx-1"></div>
 
@@ -346,7 +421,64 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
             <div className="flex items-center gap-1">
                 <button
                     disabled={selectedIds.length === 0}
-                    onClick={() => setIsRollModalOpen(true)}
+                    onClick={() => {
+                        if (areaKey === 'DF' || areaKey === 'DTF') {
+                            const selectedOrdersList = dbOrders.filter(o => selectedIds.includes(o.id));
+                            const variantSet = new Set();
+                            const materialSet = new Set();
+                            
+                            selectedOrdersList.forEach(o => {
+                                variantSet.add((o.variantCode || '').trim().toLowerCase());
+                                materialSet.add((o.material || '').trim().toLowerCase());
+                            });
+
+                            if (variantSet.size > 1) {
+                                Swal.fire({
+                                    title: 'Error!',
+                                    text: 'No se permite asignar órdenes DTF con distinto material al mismo lote.',
+                                    iconHtml: '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#BD0C7E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>',
+                                    customClass: { 
+                                        popup: '!p-0 overflow-hidden rounded-xl',
+                                        icon: 'border-none !mt-5 !mb-2',
+                                        title: '!pt-0',
+                                        htmlContainer: 'mb-5 px-6',
+                                        actions: '!w-full !m-0',
+                                        confirmButton: '!w-full !m-0 !rounded-none py-4 text-lg font-bold'
+                                    },
+                                    background: '#f4f4f5',
+                                    color: '#000000',
+                                    confirmButtonColor: '#BD0C7E',
+                                    confirmButtonText: 'Aceptar'
+                                }).then(() => {
+                                    setSelectedIds([]);
+                                });
+                                return;
+                            }
+                            if (materialSet.size > 1) {
+                                Swal.fire({
+                                    title: 'Error!',
+                                    text: 'No se permite asignar órdenes DTF con distinto material al mismo lote.',
+                                    iconHtml: '<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="#BD0C7E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>',
+                                    customClass: { 
+                                        popup: '!p-0 overflow-hidden rounded-xl',
+                                        icon: 'border-none !mt-5 !mb-2',
+                                        title: '!pt-0',
+                                        htmlContainer: 'mb-5 px-6',
+                                        actions: '!w-full !m-0',
+                                        confirmButton: '!w-full !m-0 !rounded-none py-4 text-lg font-bold'
+                                    },
+                                    background: '#f4f4f5',
+                                    color: '#000000',
+                                    confirmButtonColor: '#BD0C7E',
+                                    confirmButtonText: 'Aceptar'
+                                }).then(() => {
+                                    setSelectedIds([]);
+                                });
+                                return;
+                            }
+                        }
+                        setIsRollModalOpen(true);
+                    }}
                     className={`h-[30px] flex items-center gap-2 px-3 text-xs font-bold border rounded-lg transition-colors shadow-sm whitespace-nowrap ${
                         selectedIds.length > 0
                             ? 'bg-brand-cyan text-white border-brand-cyan hover:bg-[#005a7a]'

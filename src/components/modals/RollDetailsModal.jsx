@@ -1,7 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import api, { ordersService, rollsService, insumosService } from '../../services/api';
+import api, { ordersService, rollsService, insumosService, productionService } from '../../services/api';
 import { printLabelsHelper } from '../../utils/printHelper';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 
 // --- SUB-COMPONENT: MODAL DE SELECCIÓN DE BOBINA ---
 const BobinaAssignmentModal = ({ isOpen, onClose, onSelect, currentMetros, areaCode = 'ECOUV' }) => {
@@ -88,7 +90,7 @@ const BobinaAssignmentModal = ({ isOpen, onClose, onSelect, currentMetros, areaC
                     <h3 className="font-bold text-zinc-800 flex items-center gap-2">
                         <i className="fa-solid fa-barcode"></i> Asignar Bobina
                     </h3>
-                    <button onClick={onClose} className="text-zinc-400 hover:text-red-500"><i className="fa-solid fa-xmark text-xl"></i></button>
+                    <button onClick={onClose} className="text-zinc-400 hover:text-brand-magenta"><i className="fa-solid fa-xmark text-xl"></i></button>
                 </div>
 
                 <div className="p-4 border-b border-zinc-100 bg-white sticky top-0 z-10">
@@ -99,7 +101,7 @@ const BobinaAssignmentModal = ({ isOpen, onClose, onSelect, currentMetros, areaC
                             autoFocus
                             type="text"
                             placeholder="Escanear etiqueta o buscar material..."
-                            className="w-full pl-10 pr-4 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-lg font-bold text-zinc-700"
+                            className="w-full pl-10 pr-4 py-2 border border-brand-cyan/40 rounded-lg focus:ring-2 focus:ring-brand-cyan outline-none text-lg font-bold text-zinc-700"
                             value={search}
                             onChange={e => setSearch(e.target.value)}
                             onKeyDown={handleKeyDown}
@@ -121,7 +123,7 @@ const BobinaAssignmentModal = ({ isOpen, onClose, onSelect, currentMetros, areaC
                                 className={`p-3 rounded-lg border cursor-pointer transition-all flex justify-between items-center group
                                     ${b.MetrosRestantes < currentMetros
                                         ? 'bg-amber-50 border-amber-200 hover:border-amber-400'
-                                        : 'bg-white border-zinc-200 hover:border-blue-400 hover:shadow-md'}`}
+                                        : 'bg-white border-zinc-200 hover:border-brand-cyan/50 hover:shadow-md'}`}
                             >
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 mb-1">
@@ -140,7 +142,7 @@ const BobinaAssignmentModal = ({ isOpen, onClose, onSelect, currentMetros, areaC
                                     </div>
                                     <div className="text-[10px] uppercase font-bold text-zinc-400">{b.Estado}</div>
                                 </div>
-                                <i className="fa-solid fa-chevron-right text-zinc-300 ml-3 group-hover:text-blue-500"></i>
+                                <i className="fa-solid fa-chevron-right text-zinc-300 ml-3 group-hover:text-brand-cyan"></i>
                             </div>
                         ))
                     )}
@@ -197,14 +199,14 @@ const SwapConfigDialog = ({ isOpen, onClose, onConfirm, bobinaId }) => {
                     <h3 className="font-bold text-zinc-800 flex items-center gap-2">
                         <i className="fa-solid fa-rotate"></i> Cambio de Bobina
                     </h3>
-                    <button onClick={onClose} className="text-zinc-400 hover:text-red-500"><i className="fa-solid fa-xmark text-xl"></i></button>
+                    <button onClick={onClose} className="text-zinc-400 hover:text-brand-magenta"><i className="fa-solid fa-xmark text-xl"></i></button>
                 </div>
 
                 <div className="p-6 space-y-6">
-                    <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg flex items-center gap-3">
-                        <i className="fa-solid fa-tape text-blue-500 text-xl"></i>
+                    <div className="bg-brand-cyan/10 border border-brand-cyan/20 p-3 rounded-lg flex items-center gap-3">
+                        <i className="fa-solid fa-tape text-brand-cyan text-xl"></i>
                         <div>
-                            <div className="text-xs text-blue-400 font-bold uppercase">Bobina Saliente</div>
+                            <div className="text-xs text-brand-cyan font-bold uppercase">Bobina Saliente</div>
                             <div className="font-black text-zinc-700">ID: {bobinaId}</div>
                         </div>
                     </div>
@@ -213,10 +215,10 @@ const SwapConfigDialog = ({ isOpen, onClose, onConfirm, bobinaId }) => {
                     <div>
                         <label className="block text-sm font-bold text-zinc-700 mb-3">¿En qué estado queda la bobina?</label>
                         <div className="grid grid-cols-2 gap-3">
-                            <label className={`cursor-pointer border-2 rounded-lg p-3 flex flex-col items-center gap-2 transition-all ${action === 'exhausted' ? 'border-red-500 bg-red-50' : 'border-zinc-200 hover:border-red-200'}`}>
+                            <label className={`cursor-pointer border-2 rounded-lg p-3 flex flex-col items-center gap-2 transition-all ${action === 'exhausted' ? 'border-brand-magenta bg-brand-magenta/10' : 'border-zinc-200 hover:border-brand-magenta/30'}`}>
                                 <input type="radio" name="swapAction" className="hidden" value="exhausted" checked={action === 'exhausted'} onChange={() => setAction('exhausted')} />
-                                <i className={`fa-solid fa-skull-crossbones text-2xl ${action === 'exhausted' ? 'text-red-600' : 'text-zinc-300'}`}></i>
-                                <span className={`text-xs font-bold ${action === 'exhausted' ? 'text-red-700' : 'text-zinc-500'}`}>Se Terminó</span>
+                                <i className={`fa-solid fa-skull-crossbones text-2xl ${action === 'exhausted' ? 'text-brand-magenta' : 'text-zinc-300'}`}></i>
+                                <span className={`text-xs font-bold ${action === 'exhausted' ? 'text-brand-magenta/90' : 'text-zinc-500'}`}>Se Terminó</span>
                             </label>
                             <label className={`cursor-pointer border-2 rounded-lg p-3 flex flex-col items-center gap-2 transition-all ${action === 'return' ? 'border-emerald-500 bg-emerald-50' : 'border-zinc-200 hover:border-emerald-200'}`}>
                                 <input type="radio" name="swapAction" className="hidden" value="return" checked={action === 'return'} onChange={() => setAction('return')} />
@@ -266,7 +268,64 @@ const SwapConfigDialog = ({ isOpen, onClose, onConfirm, bobinaId }) => {
 
                 <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex justify-end gap-3">
                     <button onClick={onClose} className="px-4 py-2 text-zinc-500 font-bold hover:bg-zinc-200 rounded-lg text-sm">Cancelar</button>
-                    <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-sm shadow-md shadow-blue-500/20">Continuar <i className="fa-solid fa-arrow-right ml-1"></i></button>
+                    <button onClick={handleSubmit} className="px-4 py-2 bg-brand-cyan hover:bg-brand-cyan/90 text-white font-bold rounded-lg text-sm shadow-md shadow-brand-cyan/20">Continuar <i className="fa-solid fa-arrow-right ml-1"></i></button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const MoveOrderModal = ({ isOpen, onClose, onConfirm, currentRollId, areaCode }) => {
+    const [rolls, setRolls] = React.useState([]);
+    const [loading, setLoading] = React.useState(false);
+
+    React.useEffect(() => {
+        if (isOpen) {
+            setLoading(true);
+            productionService.getBoard(areaCode)
+                .then(data => {
+                    const availableRolls = (data.pendingRolls || []).filter(r => String(r.id) !== String(currentRollId));
+                    setRolls(availableRolls);
+                })
+                .catch(err => toast.error('Error cargando lotes'))
+                .finally(() => setLoading(false));
+        }
+    }, [isOpen, areaCode, currentRollId]);
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[1800] flex items-center justify-center bg-black/60 p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[80vh]">
+                <div className="px-5 py-4 bg-zinc-50 border-b border-zinc-200 flex justify-between items-center">
+                    <h3 className="font-bold text-zinc-800 flex items-center gap-2">
+                        <i className="fa-solid fa-arrow-right-arrow-left"></i> Mover a otro Lote
+                    </h3>
+                    <button onClick={onClose} className="text-zinc-400 hover:text-brand-magenta"><i className="fa-solid fa-xmark text-xl"></i></button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 bg-zinc-50 space-y-2 custom-scrollbar">
+                    {loading ? (
+                        <div className="text-center py-10 text-zinc-400"><i className="fa-solid fa-circle-notch fa-spin text-2xl"></i> Cargando lotes...</div>
+                    ) : rolls.length === 0 ? (
+                        <div className="text-center py-10 opacity-50">
+                            <i className="fa-solid fa-box-open text-4xl text-zinc-300 mb-2"></i>
+                            <p className="text-sm text-zinc-500">No hay otros lotes activos disponibles.</p>
+                        </div>
+                    ) : (
+                        rolls.map(r => (
+                            <div 
+                                key={r.id} 
+                                onClick={() => onConfirm(r.id)}
+                                className="p-3 rounded-lg border border-zinc-200 bg-white hover:border-brand-cyan/50 hover:shadow-md cursor-pointer transition-all flex justify-between items-center group"
+                            >
+                                <div>
+                                    <div className="font-bold text-zinc-800" style={{ color: r.color || '#333' }}>{r.name}</div>
+                                    <div className="text-xs text-zinc-500 mt-1">{r.currentUsage?.toFixed(1)}m / {r.capacity}m • {r.orders?.length || 0} órdenes</div>
+                                </div>
+                                <i className="fa-solid fa-chevron-right text-zinc-300 ml-3 group-hover:text-brand-cyan"></i>
+                            </div>
+                        ))
+                    )}
                 </div>
             </div>
         </div>
@@ -277,6 +336,9 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
     // Referencia para cerrar al hacer clic fuera
     const modalRef = useRef(null);
 
+    // Obtener el area code real de la URL o del roll
+    const currentAreaCode = roll?.areaId || roll?.AreaID || (typeof window !== 'undefined' ? window.location.pathname.split('/')[2] : 'ECOUV');
+
     // Estado local para datos frescos
     const [freshRoll, setFreshRoll] = React.useState(roll);
     const [loading, setLoading] = React.useState(false);
@@ -285,6 +347,33 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
     const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
     const [isSwapConfigOpen, setIsSwapConfigOpen] = useState(false);
     const [swapConfig, setSwapConfig] = useState(null);
+
+    // Estado Modal Mover Orden
+    const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
+    const [orderToMove, setOrderToMove] = useState(null);
+
+    const openMoveModal = (order) => {
+        setOrderToMove(order);
+        setIsMoveModalOpen(true);
+    };
+
+    const handleMoveOrder = async (targetRollId) => {
+        if (!orderToMove) return;
+        setIsMoveModalOpen(false);
+        try {
+            await rollsService.moveOrder({
+                orderId: orderToMove.id,
+                targetRollId: targetRollId
+            });
+            toast.success("Orden movida correctamente");
+            loadFreshData();
+            if (onUpdate) onUpdate();
+        } catch (err) {
+            console.error("Error moviendo orden", err);
+            toast.error("No se pudo mover la orden");
+        }
+        setOrderToMove(null);
+    };
 
     // Función auxiliar para cargar datos frescos
     const loadFreshData = () => {
@@ -690,281 +779,362 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
         setIsAssignModalOpen(true);
     };
 
-    return (
+    const handleDragEnd = async (result) => {
+        if (!result.destination) return;
+        if (result.source.index === result.destination.index) return;
+
+        const items = Array.from(orders);
+        const [reorderedItem] = items.splice(result.source.index, 1);
+        items.splice(result.destination.index, 0, reorderedItem);
+
+        const newOrders = items.map((o, idx) => ({ ...o, sequence: idx + 1, Secuencia: idx + 1 }));
+        setFreshRoll(prev => ({ ...prev, orders: newOrders }));
+
+        const orderIds = newOrders.map(o => o.id || o.OrdenID);
+        try {
+            await rollsService.reorderOrders(freshRoll.id, orderIds);
+            if (onUpdate) onUpdate();
+        } catch (err) {
+            console.error(err);
+            toast.error("Error al reordenar");
+            loadFreshData();
+        }
+    };
+
+    return createPortal(
         <>
-            <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-sm z-[1400] flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={onClose}>
+            <div className="fixed inset-0 bg-zinc-900/60 z-40 flex items-center justify-center pl-16 pt-14 animate-in fade-in duration-200" onClick={onClose}>
                 <div
                     ref={modalRef}
-                    className="bg-white rounded-xl shadow-2xl w-full max-w-[95vw] h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+                    className="bg-white rounded-2xl shadow-2xl w-[90%] h-[90%] flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 border border-zinc-200/80"
                     onClick={e => e.stopPropagation()}
                 >
 
                     {/* Header */}
-                    <div className="px-6 py-4 border-b border-zinc-100 flex justify-between items-center bg-white shrink-0">
-                        <div className="flex flex-col">
-                            <h3 className="text-xl font-black text-zinc-800 flex items-center gap-2">
-                                <i className="fa-solid fa-scroll text-blue-500"></i>
-                                {loading ? 'Cargando...' : freshRoll.name}
-                                {loading && <i className="fa-solid fa-spinner fa-spin text-sm text-zinc-400 ml-2"></i>}
-                            </h3>
-                            <div className="flex items-center gap-2 mt-1">
-                                {freshRoll.id && String(freshRoll.id).startsWith('R-') && (
-                                    <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded uppercase tracking-wider">
-                                        {freshRoll.id}
-                                    </span>
-                                )}
+                    <div className="shrink-0 border-b border-zinc-100">
+                        <div className="px-6 py-4 flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-white shadow-sm bg-brand-cyan">
+                                    <i className="fa-solid fa-scroll text-sm" />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-lg font-black text-zinc-800 leading-none">
+                                            {loading ? 'Cargando...' : freshRoll.name}
+                                        </h3>
+                                        {loading && <i className="fa-solid fa-spinner fa-spin text-xs text-zinc-400" />}
+                                        {freshRoll.id && String(freshRoll.id).startsWith('R-') && (
+                                            <span className="text-[10px] font-bold bg-zinc-100 text-zinc-500 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                {freshRoll.id}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-zinc-400 mt-0.5">Detalle del lote de producción</p>
+                                </div>
                             </div>
+                            <button
+                                onClick={onClose}
+                                className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:bg-brand-magenta/10 hover:text-brand-magenta transition-all"
+                            >
+                                <i className="fa-solid fa-xmark text-base" />
+                            </button>
                         </div>
-                        <button
-                            onClick={onClose}
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-400 hover:bg-zinc-100 hover:text-red-500 transition-colors"
-                        >
-                            <i className="fa-solid fa-xmark text-xl"></i>
-                        </button>
                     </div>
 
                     {/* Stats Bar */}
-                    <div className="px-6 py-5 bg-zinc-50 border-b border-zinc-200 flex gap-8 items-center flex-wrap shrink-0">
-                        <div className="flex flex-col items-start min-w-[80px]">
-                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Órdenes</span>
-                            <span className="text-3xl font-black text-zinc-700 leading-none">{totalOrders}</span>
+                    <div className="px-6 py-4 bg-zinc-50/70 border-b border-zinc-100 flex gap-3 items-stretch flex-wrap shrink-0">
+                        {/* Ordenes */}
+                        <div className="flex items-center gap-3 bg-white border border-zinc-200 rounded-xl px-4 py-3 shadow-sm min-w-[100px]">
+                            <div className="w-8 h-8 rounded-lg bg-brand-cyan/10 flex items-center justify-center text-brand-cyan">
+                                <i className="fa-solid fa-file-lines text-sm" />
+                            </div>
+                            <div>
+                                <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Órdenes</div>
+                                <div className="text-2xl font-black text-zinc-800 leading-none">{totalOrders}</div>
+                            </div>
                         </div>
 
-                        <div className="w-px h-10 bg-zinc-200"></div>
-
-                        <div className="flex flex-col items-start min-w-[80px]">
-                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Archivos</span>
-                            <span className={`text-3xl font-black leading-none flex items-center gap-1 ${totalFiles > 0 ? 'text-blue-500' : 'text-zinc-300'}`}>
-                                {totalFiles} <i className="fa-solid fa-paperclip text-sm opacity-40 -mt-2"></i>
-                            </span>
+                        {/* Archivos */}
+                        <div className="flex items-center gap-3 bg-white border border-zinc-200 rounded-xl px-4 py-3 shadow-sm min-w-[100px]">
+                            <div className="w-8 h-8 rounded-lg bg-brand-cyan/10 flex items-center justify-center text-brand-cyan">
+                                <i className="fa-solid fa-paperclip text-sm" />
+                            </div>
+                            <div>
+                                <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Archivos</div>
+                                <div className={`text-2xl font-black leading-none ${totalFiles > 0 ? 'text-brand-cyan' : 'text-zinc-300'}`}>{totalFiles}</div>
+                            </div>
                         </div>
 
-                        <div className="w-px h-10 bg-zinc-200"></div>
-
-                        {/* SECCIÓN BOBINA / MATERIAL */}
-                        <div className="flex flex-col items-start min-w-[200px]">
-                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Bobina Asignada</span>
-                            {freshRoll.BobinaID ? (
-                                <div className="flex items-center gap-2">
-                                    <span className="bg-green-100 text-green-700 px-3 py-1 rounded font-bold text-sm border border-green-200 shadow-sm flex items-center cursor-pointer hover:bg-green-200" onClick={startSwapProcess} title="Clic para cambiar/agotar bobina">
-                                        <i className="fa-solid fa-check-circle mr-2"></i>
-                                        ID: {freshRoll.CodeBobina || freshRoll.BobinaID}
-                                    </span>
-                                    <button onClick={startSwapProcess} className="text-zinc-400 hover:text-blue-500 w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-100" title="Cambiar Bobina"><i className="fa-solid fa-rotate"></i></button>
+                        {/* Total Metros */}
+                        <div className="flex items-center gap-3 bg-white border border-zinc-200 rounded-xl px-4 py-3 shadow-sm min-w-[110px]">
+                            <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-500">
+                                <i className="fa-solid fa-ruler-horizontal text-sm" />
+                            </div>
+                            <div>
+                                <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Total m</div>
+                                <div className="text-2xl font-black text-zinc-800 leading-none">
+                                    {totalMeters.toFixed(2)}<span className="text-xs text-zinc-400 font-bold ml-0.5">m</span>
                                 </div>
-                            ) : (
-                                <div className="flex items-center gap-2">
-                                    <span className="text-red-500 font-bold text-xs italic flex items-center bg-red-50 px-2 py-1 rounded border border-red-100">
-                                        <i className="fa-solid fa-circle-exclamation mr-1"></i> Sin Asignar
-                                    </span>
-                                    <button
-                                        className="text-[10px] bg-blue-600 text-white px-2 py-1 rounded font-bold hover:bg-blue-700 transition-colors shadow-sm animate-pulse flex items-center gap-1"
-                                        onClick={startSwapProcess}
-                                    >
-                                        <i className="fa-solid fa-barcode"></i> ASIGNAR
-                                    </button>
-                                </div>
-                            )}
-                            <div className="mt-1 text-[10px] text-zinc-400 truncate max-w-[200px]" title={orders[0]?.material}>
-                                Mat: {orders[0]?.material || 'N/A'}
                             </div>
                         </div>
 
-                        <div className="w-px h-10 bg-zinc-200"></div>
-
-                        <div className="flex flex-col items-start min-w-[80px]">
-                            <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-1">Total Metros</span>
-                            <div className="flex items-baseline gap-1">
-                                <span className="text-3xl font-black text-zinc-700 leading-none">{totalMeters.toFixed(2)}</span>
-                                <span className="text-xs font-bold text-zinc-400">m</span>
+                        {/* Bobina */}
+                        <div className="flex items-center gap-3 bg-white border border-zinc-200 rounded-xl px-4 py-3 shadow-sm">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm ${freshRoll.BobinaID ? 'bg-green-50 text-green-600' : 'bg-brand-magenta/10 text-brand-magenta'}`}>
+                                <i className="fa-solid fa-tape" />
+                            </div>
+                            <div>
+                                <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest mb-1">Bobina</div>
+                                {freshRoll.BobinaID ? (
+                                    <div className="flex items-center gap-1.5">
+                                        <span
+                                            className="text-xs font-black text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-lg cursor-pointer hover:bg-green-100 transition-colors flex items-center gap-1"
+                                            onClick={startSwapProcess}
+                                            title="Clic para cambiar bobina"
+                                        >
+                                            <i className="fa-solid fa-check-circle text-[10px]" />
+                                            {freshRoll.CodeBobina || freshRoll.BobinaID}
+                                        </span>
+                                        <button onClick={startSwapProcess} className="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-brand-cyan hover:bg-brand-cyan/10 rounded-lg transition-all" title="Cambiar Bobina">
+                                            <i className="fa-solid fa-rotate text-xs" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] font-bold text-brand-magenta">Sin asignar</span>
+                                        <button
+                                            className="text-[9px] bg-brand-cyan text-white px-2 py-0.5 rounded-lg font-black hover:bg-brand-cyan/90 transition-colors"
+                                            onClick={startSwapProcess}
+                                        >
+                                            ASIGNAR
+                                        </button>
+                                    </div>
+                                )}
+                                {orders[0]?.material && (
+                                    <div className="text-[9px] text-zinc-400 truncate max-w-[180px] mt-0.5">{orders[0].material}</div>
+                                )}
                             </div>
                         </div>
 
-                        <div className="flex-1 flex flex-col justify-end items-end min-w-[140px] ml-auto">
-                            <div className="text-xs font-bold text-zinc-500 mb-2 flex justify-between w-full">
-                                <span className="uppercase tracking-wide text-[10px]">Capacidad</span>
-                                <span><span className="text-zinc-800">{freshRoll.currentUsage?.toFixed(1)}</span> <span className="text-zinc-400">/ {freshRoll.capacity}m</span></span>
+                        {/* Capacidad - push to right */}
+                        <div className="ml-auto flex flex-col justify-center bg-white border border-zinc-200 rounded-xl px-4 py-3 shadow-sm min-w-[180px]">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Capacidad</span>
+                                <span className="text-xs font-bold text-zinc-600">
+                                    <span className="text-zinc-800">{freshRoll.currentUsage?.toFixed(1)}</span>
+                                    <span className="text-zinc-400"> / {freshRoll.capacity}m</span>
+                                </span>
                             </div>
-                            <div className="w-full h-3 bg-zinc-200 rounded-full overflow-hidden shadow-inner">
+                            <div className="w-full h-2.5 bg-zinc-100 rounded-full overflow-hidden">
                                 <div
-                                    className="h-full transition-all duration-700 ease-out relative overflow-hidden"
-                                    style={{
-                                        width: `${capacityPercent}%`,
-                                        background: freshRoll.color || '#3b82f6'
-                                    }}
+                                    className="h-full rounded-full transition-all duration-700 ease-out relative overflow-hidden bg-brand-cyan"
+                                    style={{ width: `${capacityPercent}%` }}
                                 >
-                                    <div className="absolute inset-0 bg-white/20 animate-[pulse_2s_infinite]"></div>
+                                    <div className="absolute inset-0 bg-white/20" />
                                 </div>
                             </div>
+                            <div className="text-[9px] text-zinc-400 mt-1 text-right font-bold">{capacityPercent.toFixed(0)}% usado</div>
                         </div>
                     </div>
 
                     {/* Body Table */}
-                    <div className="flex-1 overflow-y-auto bg-zinc-50/30 p-6 min-h-[300px]">
-                        <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
+                    <div className="flex-1 overflow-y-auto p-5 min-h-[300px] bg-zinc-50/40">
+                        <DragDropContext onDragEnd={handleDragEnd}>
+                            <div className="bg-white border border-zinc-200 rounded-xl overflow-hidden shadow-sm overflow-x-auto">
                             <table className="w-full text-sm text-left min-w-[800px]">
-                                <thead className="text-xs text-zinc-500 uppercase bg-zinc-50 border-b border-zinc-200 font-bold tracking-wider sticky top-0 z-10">
+                                <thead className="text-[10px] text-zinc-500 uppercase bg-zinc-50 border-b border-zinc-200 font-black tracking-widest sticky top-0 z-10">
                                     <tr>
                                         <th className="px-4 py-3 w-10 text-center">
                                             <input
                                                 type="checkbox"
-                                                className="w-4 h-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                className="w-4 h-4 rounded border-zinc-300 text-brand-cyan focus:ring-brand-cyan cursor-pointer"
                                                 checked={orders.length > 0 && selectedOrderIds.length === orders.length}
                                                 onChange={handleToggleAll}
                                             />
                                         </th>
-                                        <th className="px-4 py-3 w-12 text-center text-zinc-300">#</th>
+                                        <th className="px-4 py-3 w-10 text-center text-zinc-300">#</th>
                                         <th className="px-4 py-3">Orden</th>
                                         <th className="px-4 py-3">Cliente / Trabajo</th>
-                                        <th className="px-4 py-3">Material</th>
-                                        <th className="px-4 py-3 w-16 text-center"><i className="fa-solid fa-paperclip"></i></th>
-                                        <th className="px-4 py-3 w-16 text-center">Metros</th>
-                                        <th className="px-4 py-3 w-32 text-center">Prioridad</th>
-                                        <th className="px-4 py-3 w-10 text-center" title="Notas"><i className="fa-regular fa-comment-dots"></i></th>
-                                        <th className="px-4 py-3 w-24 text-center">Acciones</th>
+                                        <th className="px-4 py-3">Material / Variante</th>
+                                        <th className="px-4 py-3 w-16 text-center"><i className="fa-solid fa-paperclip" /></th>
+                                        <th className="px-4 py-3 w-20 text-center">Metros</th>
+                                        <th className="px-4 py-3 w-28 text-center">Prioridad</th>
+                                        <th className="px-4 py-3 w-10 text-center"><i className="fa-regular fa-comment-dots" /></th>
+                                        <th className="px-4 py-3 w-20 text-center">Acciones</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-zinc-100">
-                                    {orders.map((o, idx) => (
-                                        <tr key={o.id} className={`transition-colors group ${selectedOrderIds.includes(o.id) ? 'bg-blue-50/60' : 'hover:bg-blue-50/40'}`}>
-                                            <td className="px-4 py-3 text-center">
-                                                <input
-                                                    type="checkbox"
-                                                    className="w-4 h-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                                    checked={selectedOrderIds.includes(o.id)}
-                                                    onChange={() => handleToggleOne(o.id)}
-                                                />
-                                            </td>
+                                <Droppable droppableId={`roll-${freshRoll.id}`}>
+                                    {(provided) => (
+                                        <tbody 
+                                            className="divide-y divide-zinc-100"
+                                            ref={provided.innerRef}
+                                            {...provided.droppableProps}
+                                        >
+                                            {orders.map((o, idx) => (
+                                                <Draggable key={String(o.id || o.OrdenID)} draggableId={String(o.id || o.OrdenID)} index={idx}>
+                                                    {(provided, snapshot) => (
+                                                        <tr 
+                                                            ref={provided.innerRef}
+                                                            {...provided.draggableProps}
+                                                            style={provided.draggableProps.style}
+                                                            className={`transition-colors group ${selectedOrderIds.includes(o.id) ? 'bg-brand-cyan/10' : 'hover:bg-slate-50'} ${snapshot.isDragging ? 'bg-white shadow-xl ring-1 ring-brand-cyan/50 opacity-90' : ''}`}
+                                                        >
+                                                            <td className="px-4 py-3 text-center">
+                                                                <div className="flex items-center justify-center gap-2">
+                                                                    <div {...provided.dragHandleProps} className="text-zinc-300 hover:text-zinc-500 cursor-grab active:cursor-grabbing px-1">
+                                                                        <i className="fa-solid fa-grip-vertical"></i>
+                                                                    </div>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        className="w-4 h-4 rounded border-zinc-300 text-brand-cyan focus:ring-brand-cyan cursor-pointer"
+                                                                        checked={selectedOrderIds.includes(o.id)}
+                                                                        onChange={() => handleToggleOne(o.id)}
+                                                                    />
+                                                                </div>
+                                                            </td>
                                             <td className="px-4 py-3 text-center text-zinc-300 font-mono text-xs">{idx + 1}</td>
-                                            <td className="px-4 py-3 font-bold text-zinc-700 min-w-[120px]">Orden No.: {o.code || o.CodigoOrden}</td>
-                                            <td className="px-4 py-3 max-w-[240px]">
-                                                <div className="font-bold text-zinc-700 truncate">{o.client || o.Cliente}</div>
-                                                <div className="text-xs text-zinc-400 truncate italic">{o.desc || o.DescripcionTrabajo}</div>
+                                            <td className="px-4 py-3 font-bold text-zinc-700 min-w-[120px] font-mono text-xs">
+                                                {o.code || o.CodigoOrden}
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <div className="text-zinc-600 font-medium truncate uppercase text-xs">{o.material || o.Material || '-'}</div>
+                                            <td className="px-4 py-3 max-w-[240px]">
+                                                <div className="font-semibold text-zinc-800 truncate text-sm">{o.client || o.Cliente}</div>
+                                                <div className="text-xs text-zinc-400 truncate mt-0.5">{o.desc || o.DescripcionTrabajo}</div>
+                                            </td>
+                                            <td className="px-4 py-3 max-w-[240px]">
+                                                <div className="font-semibold text-zinc-800 truncate text-sm">
+                                                    {o.material || o.Material || '-'}
+                                                </div>
                                                 {o.variantCode && (
-                                                    <div className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold text-indigo-500 bg-indigo-50 mt-1 border border-indigo-100">
+                                                    <div className="text-xs text-zinc-400 truncate mt-0.5">
                                                         {o.variantCode}
                                                     </div>
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 {o.fileCount > 0 ? (
-                                                    <span className="bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full text-[10px] font-bold border border-blue-200">
+                                                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-cyan/10 text-brand-cyan text-[10px] font-black border border-brand-cyan/30">
                                                         {o.fileCount}
                                                     </span>
                                                 ) : (
-                                                    <span className="text-zinc-200 text-xs">-</span>
+                                                    <span className="text-zinc-200 text-xs">—</span>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 text-center font-mono font-bold text-zinc-700">
-                                                {o.magnitude || 0}<span className="text-[10px] text-zinc-400 ml-0.5">m</span>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className="font-black text-zinc-800 text-sm">{o.magnitude || 0}</span>
+                                                <span className="text-[10px] text-zinc-400 ml-0.5">m</span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className={`px-2 py-1 rounded text-[10px] font-bold border uppercase tracking-wide
+                                                <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border
                                                     ${o.priority === 'Urgente'
-                                                        ? 'bg-red-50 text-red-600 border-red-100'
-                                                        : 'bg-zinc-50 text-zinc-500 border-zinc-100'}`}>
-                                                    {(o.priority || 'Normal')}
+                                                        ? 'bg-brand-magenta/10 text-brand-magenta border-brand-magenta/20'
+                                                        : 'bg-zinc-50 text-zinc-400 border-zinc-200'}`}>
+                                                    {o.priority || 'Normal'}
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 {o.note && o.note.trim() !== '' && (
                                                     <div className="group/note relative flex justify-center">
-                                                        <i className="fa-solid fa-message text-amber-500 text-lg cursor-help"></i>
-                                                        <div className="absolute bottom-full mb-2 hidden group-hover/note:block z-50 w-48 p-2 bg-zinc-800 text-white text-xs rounded shadow-lg">
+                                                        <i className="fa-solid fa-message text-amber-400 cursor-help" />
+                                                        <div className="absolute bottom-full mb-2 hidden group-hover/note:block z-50 w-48 p-2 bg-zinc-800 text-white text-xs rounded-lg shadow-lg">
                                                             {o.note}
-                                                            <div className="absolute top-full left-1/2 -ml-1 border-4 border-transparent border-t-zinc-800"></div>
+                                                            <div className="absolute top-full left-1/2 -ml-1 border-4 border-transparent border-t-zinc-800" />
                                                         </div>
                                                     </div>
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <div className="flex items-center justify-center gap-2">
+                                                <div className="flex items-center justify-center gap-1">
                                                     <button
                                                         onClick={() => onViewOrder && onViewOrder(o)}
-                                                        className="w-7 h-7 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 transition-all"
+                                                        className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-400 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all"
                                                         title="Ver detalle orden"
                                                     >
-                                                        <i className="fa-regular fa-eye"></i>
+                                                        <i className="fa-regular fa-eye text-sm" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => openMoveModal(o)}
+                                                        className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-400 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all"
+                                                        title="Mover a otro Lote"
+                                                    >
+                                                        <i className="fa-solid fa-arrow-right-arrow-left text-sm" />
                                                     </button>
                                                     <button
                                                         onClick={() => handleUnassign(o)}
-                                                        className="w-7 h-7 flex items-center justify-center rounded-full text-zinc-400 hover:text-red-600 hover:bg-red-50 transition-all"
-                                                        title="Sacar del Rollo (Deshacer)"
+                                                        className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-400 hover:text-brand-magenta hover:bg-brand-magenta/10 transition-all"
+                                                        title="Sacar del Rollo"
                                                     >
-                                                        <i className="fa-solid fa-rotate-left"></i>
+                                                        <i className="fa-solid fa-rotate-left text-sm" />
                                                     </button>
                                                 </div>
                                             </td>
-                                        </tr>
-                                    ))}
-                                    {orders.length === 0 && (
-                                        <tr>
-                                            <td colSpan="8" className="text-center py-12">
-                                                <div className="flex flex-col items-center justify-center opacity-40">
-                                                    <i className="fa-solid fa-folder-open text-4xl mb-2 text-zinc-300"></i>
-                                                    <span className="text-zinc-500 italic">No hay órdenes en este lote.</span>
-                                                </div>
-                                            </td>
-                                        </tr>
+                                                        </tr>
+                                                    )}
+                                                </Draggable>
+                                            ))}
+                                            {provided.placeholder}
+                                            {orders.length === 0 && (
+                                                <tr>
+                                                    <td colSpan="10" className="text-center py-16">
+                                                        <div className="flex flex-col items-center justify-center text-zinc-300">
+                                                            <i className="fa-solid fa-folder-open text-5xl mb-3" />
+                                                            <span className="text-zinc-400 text-sm font-medium">No hay órdenes en este lote.</span>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
                                     )}
-                                </tbody>
+                                </Droppable>
                             </table>
                         </div>
+                        </DragDropContext>
                     </div>
 
                     {/* Footer */}
-                    <div className="px-6 py-4 border-t border-zinc-100 bg-white flex justify-end gap-3 z-10 shrink-0">
-                        {selectedOrderIds.length > 0 && (
+                    <div className="px-6 py-3.5 border-t border-zinc-100 bg-white flex items-center gap-2 z-10 shrink-0">
+                        {/* Left group */}
+                        <div className="flex items-center gap-2 mr-auto flex-wrap">
                             <button
-                                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-md shadow-red-500/20 active:scale-95 mr-auto animate-in fade-in"
-                                onClick={handleUnassignMultiple}
+                                className={`px-3 py-2 ${freshRoll.labelsCount > 0 ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/20' : 'bg-brand-cyan hover:bg-brand-cyan/90 shadow-brand-cyan/20'} text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95`}
+                                onClick={handleGenerateLabels}
+                                disabled={loading}
                             >
-                                <i className="fa-solid fa-rotate-left"></i> Sacar ({selectedOrderIds.length})
+                                <i className={`fa-solid ${freshRoll.labelsCount > 0 ? 'fa-print' : 'fa-tags'}`} />
+                                {freshRoll.labelsCount > 0 ? 'Imprimir Etiquetas' : 'Generar Etiquetas'}
                             </button>
-                        )}
-
-                        {/* Botón de medición oculto temporalmente */}
-                        {false && selectedOrderIds.length > 0 && (
                             <button
-                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-md shadow-indigo-500/20 active:scale-95 animate-in fade-in"
-                                onClick={handleServerProcess}
+                                className="px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-md shadow-emerald-500/20 active:scale-95"
+                                onClick={handleExportExcel}
                             >
-                                <i className="fa-solid fa-robot"></i> Descargar y Medir ({selectedOrderIds.length})
+                                <i className="fa-solid fa-file-excel" /> Reporte Excel
                             </button>
-                        )}
+                        </div>
 
-                        {selectedOrderIds.length > 0 && (
+                        {/* Right group */}
+                        <div className="flex items-center gap-2">
+                            {selectedOrderIds.length > 0 && (
+                                <>
+                                    <button
+                                        className="px-3 py-2 bg-brand-cyan hover:bg-brand-cyan/90 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-md shadow-brand-cyan/20 active:scale-95 animate-in fade-in"
+                                        onClick={handleDownloadFiles}
+                                    >
+                                        <i className="fa-solid fa-download" /> Descargar ({selectedOrderIds.length})
+                                    </button>
+                                    <button
+                                        className="px-3 py-2 bg-brand-magenta hover:bg-brand-magenta/90 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-md shadow-brand-magenta/20 active:scale-95 animate-in fade-in"
+                                        onClick={handleUnassignMultiple}
+                                    >
+                                        <i className="fa-solid fa-rotate-left" /> Sacar ({selectedOrderIds.length})
+                                    </button>
+                                </>
+                            )}
                             <button
-                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-md shadow-blue-500/20 active:scale-95 animate-in fade-in"
-                                onClick={handleDownloadFiles}
+                                className="px-4 py-2 border border-zinc-200 hover:bg-zinc-50 text-zinc-600 rounded-xl text-xs font-black transition-colors active:scale-95"
+                                onClick={onClose}
                             >
-                                <i className="fa-solid fa-download"></i> Descargar ({selectedOrderIds.length})
+                                Cerrar
                             </button>
-                        )}
-
-                        <button
-                            className={`px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-md shadow-emerald-500/20 active:scale-95 ${selectedOrderIds.length > 0 ? '' : 'mr-auto'}`}
-                            onClick={handleExportExcel}
-                        >
-                            <i className="fa-solid fa-file-excel"></i> Descargar Reporte Excel
-                        </button>
-                        <button
-                            className={`px-4 py-2 ${freshRoll.labelsCount > 0 ? 'bg-orange-500 hover:bg-orange-600' : 'bg-indigo-500 hover:bg-indigo-600'} text-white rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-md shadow-indigo-500/20 active:scale-95 mr-auto ml-2`}
-                            onClick={handleGenerateLabels}
-                            disabled={loading}
-                        >
-                            <i className={`fa-solid ${freshRoll.labelsCount > 0 ? 'fa-print' : 'fa-tags'}`}></i>
-                            {freshRoll.labelsCount > 0 ? 'Imprimir Etiquetas Existentes' : 'Generar Etiquetas'}
-                        </button>
-                        <button
-                            className="px-6 py-2 border border-zinc-200 hover:bg-zinc-50 text-zinc-600 rounded-lg text-sm font-bold transition-colors active:scale-95"
-                            onClick={onClose}
-                        >
-                            Cerrar
-                        </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -975,7 +1145,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                 onClose={() => setIsAssignModalOpen(false)}
                 onSelect={handleAssignBobina}
                 currentMetros={totalMeters}
-                areaCode={freshRoll.areaId || 'ECOUV'}
+                areaCode={currentAreaCode}
             />
 
             {/* NUEVO DIÁLOGO DE CONFIGURACIÓN DE SWAP */}
@@ -985,7 +1155,17 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                 onConfirm={handleSwapConfigConfirmed}
                 bobinaId={freshRoll.BobinaID}
             />
-        </>
+
+            {/* MODAL PARA MOVER ORDEN */}
+            <MoveOrderModal
+                isOpen={isMoveModalOpen}
+                onClose={() => setIsMoveModalOpen(false)}
+                onConfirm={handleMoveOrder}
+                currentRollId={freshRoll.id}
+                areaCode={currentAreaCode}
+            />
+        </>,
+        document.body
     );
 };
 

@@ -2,8 +2,10 @@ import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } fro
 import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket, ScanLine, FileText, Cpu, FileDown, Inbox } from 'lucide-react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 import { useAuth } from '../../context/AuthContext';
+import { apiClient } from '../../client-portal/api/apiClient';
+import { socket } from '../../services/socketService';
 import Navbar from './Navbar';
 
 // ── Auto-reload en caso de chunks desactualizados (cache stale post-deploy) ──
@@ -248,7 +250,7 @@ const getLucideIcon = (name) => lucideIconMapRaw[name?.toLowerCase?.()?.trim?.()
 // ============================================
 // 2. COMPONENTE NAVNODE (Mejorado)
 // ============================================
-const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, isCollapsed, setIsCollapsed }) => {
+const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, isCollapsed, setIsCollapsed, hasAdminPendingResponse }) => {
     const hasChildren = item.children && item.children.length > 0;
     const isOpen = openMenus[item.IdModulo];
     const isChildActive = hasChildren && item.children.some(c => {
@@ -259,6 +261,10 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
     });
     const isSelected = location.pathname === item.Ruta || (hasChildren && isChildActive);
 
+    const isAtencionCliente = item.Nombre?.toLowerCase()?.trim() === 'atención al cliente' || item.Nombre?.toLowerCase()?.trim() === 'atencion al cliente';
+    const isHelpdeskOption = item.Nombre?.toLowerCase()?.trim() === 'helpdesk' || item.Nombre?.toLowerCase()?.trim() === 'helpdesk / tickets' || item.Nombre?.toLowerCase()?.trim() === 'tickets';
+    const showBadge = (isAtencionCliente || isHelpdeskOption) && hasAdminPendingResponse;
+
     const baseClasses = "flex items-center mx-2 rounded-md cursor-pointer select-none transition-all duration-200 group relative";
 
     return (
@@ -268,9 +274,11 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                     ${baseClasses}
                     ${isSelected
                         ? "bg-brand-cyan text-white shadow-md shadow-brand-cyan/30"
-                        : isOpen && hasChildren
-                            ? "bg-zinc-800/70 text-white opacity-100"
-                            : "text-slate-100 opacity-70 hover:opacity-100 md:hover:bg-zinc-800 md:hover:text-white active:bg-zinc-800 active:text-white"
+                        : showBadge
+                            ? "bg-red-500/20 text-white border border-red-500/30 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+                            : isOpen && hasChildren
+                                ? "bg-zinc-800/70 text-white opacity-100"
+                                : "text-slate-100 opacity-70 hover:opacity-100 md:hover:bg-zinc-800 md:hover:text-white active:bg-zinc-800 active:text-white"
                     }
                     py-2.5
                 `}
@@ -297,7 +305,7 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                 title={isCollapsed ? item.Nombre : ''}
             >
 
-                <div className="w-12 flex-shrink-0 flex items-center justify-center text-base md:group-hover:scale-110 transition-transform duration-300">
+                <div className="w-12 flex-shrink-0 flex items-center justify-center text-base md:group-hover:scale-110 transition-transform duration-300 relative">
                     {getLucideIcon(item.Nombre) ? (
                         (() => { const LucideIcon = getLucideIcon(item.Nombre); return <LucideIcon size={22} className={isSelected ? 'text-white' : (isOpen && hasChildren ? 'text-brand-cyan' : 'text-slate-300 md:group-hover:text-brand-cyan')} />; })()
                     ) : (
@@ -310,8 +318,8 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
 
                 {!isCollapsed && (
                     <>
-                        <span className={`flex-1 text-xs font-medium tracking-wide whitespace-nowrap ${isSelected || isOpen ? 'text-white font-bold' : 'text-slate-100'}`}>
-                            {item.Nombre}
+                        <span className={`flex-grow flex items-center justify-between text-xs font-medium tracking-wide whitespace-nowrap ${isSelected || isOpen ? 'text-white font-bold' : 'text-slate-100'}`}>
+                            <span className="truncate">{item.Nombre}</span>
                         </span>
 
                         {hasChildren && (
@@ -348,6 +356,7 @@ const NavNode = ({ item, openMenus, toggleMenu, navigate, location, level = 0, i
                                     level={level + 1}
                                     isCollapsed={isCollapsed}
                                     setIsCollapsed={setIsCollapsed}
+                                    hasAdminPendingResponse={hasAdminPendingResponse}
                                 />
                             ))}
                         </div>
@@ -369,10 +378,118 @@ const MainAppContent = ({ menuItems = [] }) => {
     const [isCollapsed, setIsCollapsed] = useState(true);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [showLogoutModal, setShowLogoutModal] = useState(false);
+    const [hasAdminPendingResponse, setHasAdminPendingResponse] = useState(false);
 
     useEffect(() => {
         setIsMobileMenuOpen(false);
     }, [location.pathname]);
+
+    // Fetch tickets for Admin Attention badge on mount or user change
+    useEffect(() => {
+        if (!user) return;
+
+        const checkTicketsForBadge = async () => {
+            try {
+                const res = await apiClient.get('/tickets');
+                if (res.success && Array.isArray(res.data)) {
+                    const hasPending = res.data.some(t => Number(t.TicEstado) === 1);
+                    setHasAdminPendingResponse(hasPending);
+                }
+            } catch (error) {
+                console.error('Error fetching tickets for admin badge:', error);
+            }
+        };
+
+        checkTicketsForBadge();
+    }, [user]);
+
+    // Socket subscription for Admin Attention badge
+    useEffect(() => {
+        if (!user) return;
+
+        socket.emit('join:helpdesk_admin');
+
+        const handleUpdate = (data, isNew = false) => {
+            apiClient.get('/tickets').then(res => {
+                if (res.success && Array.isArray(res.data)) {
+                    const hasPending = res.data.some(t => Number(t.TicEstado) === 1);
+                    setHasAdminPendingResponse(hasPending);
+                }
+            }).catch(e => console.error("Error refreshing admin tickets:", e));
+
+            if (data) {
+                if (isNew) {
+                    const duration = 10000;
+                    toast.custom((t) => (
+                        <div 
+                            className="relative flex items-center gap-3 w-full bg-zinc-100 p-4 rounded-none shadow-lg border border-zinc-200 cursor-pointer overflow-hidden min-w-[300px] group" 
+                            onClick={() => {
+                                const helpdeskPath = menuItems.find(item => item.Ruta?.includes('helpdesk'))?.Ruta || '/admin/helpdesk';
+                                toast.dismiss(t);
+                                navigate(`${helpdeskPath}?ticketId=${data.ticketId}`);
+                            }}
+                        >
+                            <style>{`
+                                @keyframes toast-shrink-progress { from { width: 100%; } to { width: 0%; } }
+                                .group:hover .toast-progress-bar {
+                                    animation-play-state: paused !important;
+                                }
+                            `}</style>
+                            <div 
+                                className="toast-progress-bar absolute top-0 left-0 h-1.5 bg-[#EC008C]" 
+                                style={{ animation: `toast-shrink-progress ${duration}ms linear forwards` }} 
+                            />
+                            <Ticket className="text-brand-magenta shrink-0" size={24} />
+                            <div className="flex flex-col mt-1">
+                                <span className="text-brand-magenta font-black text-base leading-tight">Nuevo Ticket #{data.ticketId}</span>
+                                <span className="text-brand-magenta/80 font-bold text-xs mt-0.5">{data.asunto || 'Sin asunto'}</span>
+                            </div>
+                        </div>
+                    ), { duration });
+                } else if (data.autor === 'client') {
+                    const duration = 8000;
+                    toast.custom((t) => (
+                        <div 
+                            className="relative flex items-center gap-3 w-full bg-zinc-100 p-4 rounded-none shadow-lg border border-zinc-200 cursor-pointer overflow-hidden min-w-[300px] group" 
+                            onClick={() => {
+                                const helpdeskPath = menuItems.find(item => item.Ruta?.includes('helpdesk'))?.Ruta || '/admin/helpdesk';
+                                toast.dismiss(t);
+                                navigate(`${helpdeskPath}?ticketId=${data.ticketId}`);
+                            }}
+                        >
+                            <style>{`
+                                @keyframes toast-shrink-progress { from { width: 100%; } to { width: 0%; } }
+                                .group:hover .toast-progress-bar {
+                                    animation-play-state: paused !important;
+                                }
+                            `}</style>
+                            <div 
+                                className="toast-progress-bar absolute top-0 left-0 h-1.5 bg-[#EC008C]" 
+                                style={{ animation: `toast-shrink-progress ${duration}ms linear forwards` }} 
+                            />
+                            <Headset className="text-brand-magenta shrink-0" size={24} />
+                            <div className="flex flex-col mt-1">
+                                <span className="text-brand-magenta font-black text-base leading-tight">Respuesta en Ticket #{data.ticketId}</span>
+                                <span className="text-brand-magenta/80 font-bold text-xs mt-0.5">El cliente ha enviado un mensaje.</span>
+                            </div>
+                        </div>
+                    ), { duration });
+                }
+            }
+        };
+
+        const onTicketNew = (data) => handleUpdate(data, true);
+        const onTicketUpdated = (data) => handleUpdate(data, false);
+
+        socket.on('ticket:new', onTicketNew);
+        socket.on('ticket:updated', onTicketUpdated);
+
+        return () => {
+            socket.emit('leave:helpdesk_admin');
+            socket.off('ticket:new', onTicketNew);
+            socket.off('ticket:updated', onTicketUpdated);
+        };
+    }, [user]);
 
     // Ocultador dinámico del glitch de Safari Mobile
     useEffect(() => {
@@ -638,6 +755,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                                     location={location}
                                     isCollapsed={isCollapsed && !isMobileMenuOpen}
                                     setIsCollapsed={setIsCollapsed}
+                                    hasAdminPendingResponse={hasAdminPendingResponse}
                                 />
                             </div>
                         ))}

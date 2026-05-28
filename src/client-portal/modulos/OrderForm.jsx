@@ -33,9 +33,9 @@ import EcouvTerminacionesUI from './EcouvTerminacionesUI';
 
 const ServiceAccordion = ({ title, isActive, onToggle, children, icon: Icon, main = false }) => {
     return (
-        <div className={`rounded-3xl border transition-all duration-300 overflow-hidden ${isActive ? 'border-zinc-700 bg-custom-dark shadow-xl shadow-black/20' : 'border-zinc-700/50 bg-custom-dark/60'}`}>
+        <div className={`md:!rounded-3xl !rounded-none border-y !border-x-0 md:!border transition-all duration-300 ${isActive ? 'border-zinc-700 bg-custom-dark shadow-xl shadow-black/20 overflow-visible' : 'border-zinc-700/50 bg-custom-dark/60 overflow-hidden'} -mx-4 md:mx-0`}>
             <div
-                className={`p-6 flex items-center justify-between cursor-pointer transition-colors ${isActive ? 'bg-custom-dark text-zinc-100' : 'hover:bg-custom-dark text-zinc-400'}`}
+                className={`p-4 md:p-6 flex items-center justify-between cursor-pointer transition-colors ${isActive ? 'bg-custom-dark text-zinc-100 md:rounded-t-[1.7rem] rounded-t-none' : 'hover:bg-custom-dark text-zinc-400 md:rounded-[1.7rem] rounded-none'}`}
                 onClick={onToggle}
             >
                 <div className="flex items-center gap-4">
@@ -46,12 +46,47 @@ const ServiceAccordion = ({ title, isActive, onToggle, children, icon: Icon, mai
             </div>
 
             {isActive && (
-                <div className="p-6 border-t border-zinc-700/50 animate-in slide-in-from-top-4">
+                <div className="p-4 md:p-6 border-t border-zinc-700/50 animate-in slide-in-from-top-4">
                     {children}
                 </div>
             )}
         </div>
     );
+};
+
+// Helper to robustly resolve material printable width from DB 'Ancho' field or fallback to regex name parsing
+const resolveMaterialWidth = (matObj) => {
+    if (!matObj) return 1.50;
+    
+    // 1. Try parsing from Ancho if it's a valid positive number
+    if (matObj && matObj.Ancho !== undefined && matObj.Ancho !== null) {
+        const rawAncho = typeof matObj.Ancho === 'string' 
+            ? parseFloat(matObj.Ancho.replace(',', '.')) 
+            : parseFloat(matObj.Ancho);
+        if (!isNaN(rawAncho) && rawAncho > 0) {
+            return rawAncho;
+        }
+    }
+    
+    // 2. Fallback: extract from description name
+    const matName = matObj.Material || matObj.Descripcion || (typeof matObj === 'string' ? matObj : '');
+    if (matName) {
+        // Look for number inside parenthesis, e.g., (1,83) or (1.83) or (1,70 m)
+        const parenMatch = matName.match(/\((\d+(?:[.,]\d+)?)(?:\s*m)?/);
+        if (parenMatch) {
+            const parsed = parseFloat(parenMatch[1].replace(',', '.'));
+            if (!isNaN(parsed) && parsed > 0) return parsed;
+        }
+        
+        // Look for any decimal number in the string, e.g. 1.83 or 1,83
+        const numberMatch = matName.match(/(\d+(?:[.,]\d+)+)/);
+        if (numberMatch) {
+            const parsed = parseFloat(numberMatch[1].replace(',', '.'));
+            if (!isNaN(parsed) && parsed > 0) return parsed;
+        }
+    }
+    
+    return 1.50;
 };
 
 const OrderForm = ({ serviceId: propServiceId }) => {
@@ -113,6 +148,25 @@ const OrderForm = ({ serviceId: propServiceId }) => {
     );
 
     const [twinfaceSame, setTwinfaceSame] = useState(false);
+    const [applyMaterialToAll, setApplyMaterialToAll] = useState(false);
+
+    const handleApplyMaterialToAll = (checked) => {
+        setApplyMaterialToAll(checked);
+        if (checked && items.length > 0) {
+            const firstMaterial = items[0].material;
+            const updated = items.map(it => ({ ...it, material: firstMaterial }));
+            actions.setItems(updated);
+        }
+    };
+
+    const handleItemMaterialChange = (itemId, val) => {
+        if (applyMaterialToAll) {
+            const updated = items.map(it => ({ ...it, material: val }));
+            actions.setItems(updated);
+        } else {
+            actions.updateItem(itemId, 'material', val);
+        }
+    };
 
     // --- Handlers for File Uploads (that need UI feedback or validation) ---
 
@@ -167,26 +221,43 @@ const OrderForm = ({ serviceId: propServiceId }) => {
 
             // Validation of Printable Width
             if (result.width && !result.measurementError) {
-                let selectedMatName = globalMaterial;
-                if (!config.singleMaterial && !config.hideMaterial) {
-                    const currentItem = items.find(it => it.id === itemId);
-                    if (currentItem && currentItem.material) {
-                        selectedMatName = currentItem.material;
+                const currentItem = items.find(it => it.id === itemId);
+                const itemMaterial = currentItem?.material || '';
+
+                let selectedMatName;
+                let maxWidth;
+
+                if (serviceId === 'sublimacion') {
+                    // For sublimación: validate against item material if selected, else default 1.83m
+                    if (itemMaterial) {
+                        selectedMatName = itemMaterial;
+                        const matList = dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || []);
+                        const matObj = matList.find(m => (m.Material || m.Descripcion || m) === itemMaterial) || itemMaterial;
+                        maxWidth = resolveMaterialWidth(matObj);
+                    } else {
+                        selectedMatName = null;
+                        maxWidth = 1.83;
                     }
+                } else {
+                    selectedMatName = globalMaterial;
+                    if (config.materialMode === 'multiple' && itemMaterial) {
+                        selectedMatName = itemMaterial;
+                    }
+                    const matList = dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || []);
+                    const matObj = matList.find(m => (m.Material || m.Descripcion || m) === selectedMatName) || selectedMatName;
+                    maxWidth = resolveMaterialWidth(matObj);
                 }
 
-                const matObj = dynamicMaterials.find(m => m.Material === selectedMatName);
-                if (matObj && matObj.Ancho) {
-                    const fileWidthM = result.unit === 'meters' ? result.width : (result.width / 300) * 0.0254;
-                    const maxWidth = parseFloat(matObj.Ancho);
+                const fileWidthM = result.unit === 'meters' ? result.width : (result.width / 300) * 0.0254;
+                const maxPrintableWidth = maxWidth - 0.03;
 
-                    if (fileWidthM > maxWidth + 0.001) {
-                        actions.setErrorModalMessage(
-                            `El ancho del archivo(${fileWidthM.toFixed(3)}m) excede el ancho imprimible del material "${selectedMatName}"(${maxWidth}m).Por favor, ajuste el archivo o seleccione otro material.`
-                        );
-                        actions.setErrorModalOpen(true);
-                        return false;
-                    }
+                if (fileWidthM > maxPrintableWidth + 0.001) {
+                    const matLabel = selectedMatName || `ancho máximo ${maxWidth.toFixed(2)}m`;
+                    actions.setErrorModalMessage(
+                        `El ancho del archivo (${fileWidthM.toFixed(2)}m) excede el ancho imprimible del material "${matLabel}" (${maxPrintableWidth.toFixed(2)}m). Por favor, ajuste el archivo o seleccione otro material.`
+                    );
+                    actions.setErrorModalOpen(true);
+                    return false;
                 }
 
                 // Validación de alto máximo para DTF (2.50m)
@@ -780,7 +851,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
         <div className="animate-fade-in pb-20">
             {specificConfig && (specificConfig.description || specificConfig.image) && (
                 <div className="mb-8 animate-fade-in-down">
-                    <GlassCard className="border-l-4 border-l-brand-gold overflow-hidden !p-0">
+                    <GlassCard className="-mx-4 md:mx-0 md:!rounded-xl !rounded-none !border-r-0 md:!border-r border-y md:border-y-0 border-l-4 border-l-brand-gold overflow-hidden !p-0">
                         <div className="flex flex-col md:flex-row">
                             {specificConfig.image && <div className="w-full md:w-1/3 min-h-[200px] md:min-h-0 bg-zinc-800/40 relative"><img src={specificConfig.image} alt="Info" className="absolute inset-0 w-full h-full object-cover opacity-80" /></div>}
                             <div className="flex-1 p-8">
@@ -794,11 +865,15 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                 </div>
             )}
 
-            <div className="flex items-center gap-4 mb-6">
-                <CustomButton variant="ghost" onClick={() => navigate('/portal')} icon={ArrowLeft} className="text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800">Volver</CustomButton>
+            <div className="flex flex-col md:flex-row md:items-center gap-2 md:gap-4 mb-6 px-4 md:px-0">
+                <div className="flex-shrink-0">
+                    <CustomButton variant="ghost" onClick={() => navigate('/portal')} icon={ArrowLeft} className="text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 -ml-4 md:ml-0 px-2">Volver</CustomButton>
+                </div>
                 <div>
-                    <h2 className="text-2xl font-black text-zinc-100 flex items-center gap-2 uppercase tracking-widest">Nuevo Pedido: <span className="text-cyan-400">{serviceInfo?.label}</span></h2>
-                    <p className="text-sm text-zinc-500 font-bold tracking-tight">{serviceInfo?.desc}</p>
+                    <h2 className="text-xl md:text-2xl font-black text-zinc-100 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 uppercase tracking-widest leading-tight">
+                        <span>Nuevo Pedido:</span> <span className="text-cyan-400">{serviceInfo?.label}</span>
+                    </h2>
+                    <p className="text-xs md:text-sm text-zinc-500 font-bold tracking-tight mt-1">{serviceInfo?.desc}</p>
                 </div>
             </div>
 
@@ -812,7 +887,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
             <form onSubmit={handleSubmit} className="space-y-6">
 
                 {/* 1. Datos Generales (Resumed) */}
-                <GlassCard title="Datos Generales del Pedido" icon={ClipboardList}>
+                <GlassCard title="Datos Generales del Pedido" icon={ClipboardList} className="-mx-4 md:mx-0 md:!rounded-xl !rounded-none !border-x-0 md:!border-x border-y md:border-y-0 px-4 md:px-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="md:col-span-2">
                             <FormInput label="Nombre del Proyecto / Trabajo *" placeholder="Ej: Camisetas Verano 2024" value={jobName} onChange={(e) => actions.setJobName(e.target.value)} required />
@@ -854,7 +929,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                     >
                         <div className="space-y-8">
                             {/* Material Selectors for Main Service */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-custom-dark rounded-2xl border border-zinc-700/50">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-custom-dark md:rounded-2xl rounded-none border-y border-x-0 md:border-x border-zinc-700/50 -mx-4 md:mx-0">
                                 {config.variantMode === 'select' && serviceId !== 'bordado' && serviceId !== 'EMB' && (
                                     <div>
                                         <label className="block text-xs font-bold uppercase text-zinc-400 mb-2">Variante / Sub-Categoría *</label>
@@ -868,8 +943,8 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                     </div>
                                 )}
 
-                                {/* Global Material Selector - Hidden for Bordado */}
-                                {config.materialMode === 'single' && serviceId !== 'bordado' && serviceId !== 'EMB' && (
+                                {/* Global Material Selector - Hidden for Bordado and Sublimacion */}
+                                {config.materialMode === 'single' && serviceId !== 'bordado' && serviceId !== 'EMB' && serviceId !== 'sublimacion' && (
                                     <div>
                                         <label className="block text-xs font-bold uppercase text-zinc-400 mb-2">{serviceInfo?.config?.materialLabel || 'Material / Soporte'} *</label>
                                         <CustomSelect
@@ -961,28 +1036,48 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                     </div>
                                     <div className="space-y-4">
                                         {items.map((item, index) => (
-                                            <div key={item.id} className="bg-brand-dark p-4 rounded-2xl border border-zinc-700/50 shadow-sm">
+                                            <div key={item.id} className="bg-brand-dark p-4 md:rounded-2xl rounded-none border-y border-x-0 md:border-x border-zinc-700/50 shadow-sm -mx-4 md:mx-0">
                                                 <div className="flex justify-between items-center mb-4 pb-2 border-b border-zinc-700/30">
                                                     <span className="text-[10px] font-black bg-cyan-400/10 text-cyan-400 py-1 px-3 rounded-full border border-cyan-500/20">ARCHIVO {index + 1}</span>
                                                     <button type="button" onClick={() => actions.removeItem(item.id)}><Trash2 size={16} className="text-zinc-500 hover:text-red-400 transition-colors" /></button>
                                                 </div>
-                                                {/* File Uploads for Item */}
-                                                {/* Item Material Override (moved up) */}
+                                                {/* Item Material Override */}
                                                 {config.materialMode === 'multiple' && (
                                                     <div className="mb-4 px-1">
-                                                        <label className="block text-[9px] uppercase font-black text-zinc-400 mb-1">Material (Específico)</label>
-                                                        <CustomSelect
-                                                            value={item.material}
-                                                            onChange={(val) => actions.updateItem(item.id, 'material', val)}
-                                                            options={(uniqueVariants.length > 0 ? dynamicMaterials : (serviceInfo?.materials || [])).map(m => {
-                                                                const val = m.Material || m;
-                                                                return { value: val, label: val };
-                                                            })}
-                                                            placeholder="Heredar Global..."
-                                                            variant="black"
-                                                            size="small"
-                                                            disabled={uniqueVariants.length > 0 && dynamicMaterials.length === 0}
-                                                        />
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <label className="block text-[9px] uppercase font-black text-zinc-400">Material (Específico)</label>
+                                                            {index === 0 && (
+                                                                <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={applyMaterialToAll}
+                                                                        onChange={(e) => handleApplyMaterialToAll(e.target.checked)}
+                                                                        className="w-3 h-3 rounded border-zinc-600 accent-cyan-400 cursor-pointer"
+                                                                    />
+                                                                    <span className="text-[9px] font-bold uppercase text-zinc-500">Aplicar a todo el pedido</span>
+                                                                </label>
+                                                            )}
+                                                        </div>
+                                                        {(index === 0 || !applyMaterialToAll) ? (
+                                                            <CustomSelect
+                                                                value={item.material}
+                                                                onChange={(val) => handleItemMaterialChange(item.id, val)}
+                                                                options={(dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || [])).map(m => {
+                                                                    const val = m.Material || m.Descripcion || m;
+                                                                    return { value: val, label: val };
+                                                                })}
+                                                                placeholder="Selecciona material"
+                                                                variant="black"
+                                                                size="small"
+                                                                disabled={uniqueVariants.length > 0 && dynamicMaterials.length === 0}
+                                                            />
+                                                        ) : (
+                                                            <div className="flex items-center gap-2 px-3 py-2 bg-zinc-900/60 border border-zinc-700/50 rounded-[10px] text-xs text-zinc-400">
+                                                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400/60 flex-shrink-0"></span>
+                                                                <span className="truncate">{items[0]?.material || 'Sin material'}</span>
+                                                                <span className="ml-auto text-[9px] font-black uppercase text-cyan-500/60 flex-shrink-0">Global</span>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
 
@@ -990,6 +1085,12 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                                     <div className={isBlackoutSelected ? "md:col-span-4" : "md:col-span-6"}>
                                                         <FileUploadZone id={item.id} label={isBlackoutSelected ? "Frente" : (config.productionFileLabel || "Archivo")} selectedFile={item.file} onFileSelected={(f) => handleFileUpload(item.id, 'file', f)} />
                                                         {item.file && <div className="mt-2 text-[10px] font-bold text-zinc-400 bg-zinc-900/60 p-1 px-2 rounded border border-zinc-700/50 w-fit flex gap-1"><FileCode size={12} className="text-cyan-400/60" /> {item.file.name}</div>}
+                                                        {item.file && item.file.pageCount != null && (
+                                                            <div className="mt-1 text-[10px] font-bold text-zinc-500 bg-zinc-900/40 px-2 py-0.5 rounded border border-zinc-700/40 w-fit flex items-center gap-1">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                                                {item.file.pageCount} {item.file.pageCount === 1 ? 'página' : 'páginas'}
+                                                            </div>
+                                                        )}
 
                                                         {isDirectaTwinface && (
                                                             <div className="mt-2 flex items-center gap-2">
@@ -1016,7 +1117,13 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                                             <PrintSettingsPanel
                                                                 originalWidthM={item.file.unit === 'meters' ? item.file.width : (item.file.width / 300) * 0.0254}
                                                                 originalHeightM={item.file.unit === 'meters' ? item.file.height : (item.file.height / 300) * 0.0254}
-                                                                materialMaxWidthM={((dynamicMaterials.find(m => m.Material === (config.materialMode === 'single' ? globalMaterial : item.material)))?.Ancho) ? parseFloat((dynamicMaterials.find(m => m.Material === (config.materialMode === 'single' ? globalMaterial : item.material))).Ancho) : 1.50}
+                                                                materialMaxWidthM={(() => {
+                                                                    const isSingleMat = config.materialMode === 'single';
+                                                                    const itemMat = isSingleMat ? globalMaterial : (item.material || globalMaterial);
+                                                                    const matList = dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || []);
+                                                                    const foundMat = matList.find(m => (m.Material || m.Descripcion || m) === itemMat);
+                                                                    return resolveMaterialWidth(foundMat || itemMat);
+                                                                })()}
                                                                 values={item.printSettings || {}} copies={item.copies}
                                                                 onCopiesChange={(v) => actions.updateItem(item.id, 'copies', v)}
                                                                 onChange={(s) => actions.updateItem(item.id, 'printSettings', s)}
@@ -1040,7 +1147,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                                 e.target.value = ''; // Reset para poder elegir el mismo archivo
                                                 const newId = Date.now();
                                                 const lastItem = items[items.length - 1];
-                                                const newMaterial = lastItem ? lastItem.material : globalMaterial;
+                                                const newMaterial = globalMaterial;
                                                 const newItem = { id: newId, file: null, fileBack: null, copies: 1, material: newMaterial, note: '', doubleSided: false, printSettings: {} };
                                                 actions.setItems([...items, newItem]);
                                                 const success = await handleFileUpload(newId, 'file', file);
@@ -1245,7 +1352,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
 
                 {/* Footer */}
                 <div className="mt-8">
-                    <div className="bg-custom-dark text-white p-8 rounded-3xl shadow-2xl shadow-black/30 flex flex-col md:flex-row items-center justify-between gap-8 border border-zinc-700/50">
+                    <div className="bg-custom-dark text-white p-8 md:rounded-3xl rounded-none shadow-2xl shadow-black/30 flex flex-col md:flex-row items-center justify-between gap-8 border-y border-x-0 md:border-x border-zinc-700/50 -mx-4 md:mx-0">
                         <div className="flex gap-10">
                             <div><p className="text-[11px] uppercase font-bold text-zinc-500">Servicio</p><p className="text-xl font-bold text-zinc-100">{serviceInfo?.label}</p></div>
                             <div><p className="text-[11px] uppercase font-bold text-zinc-500">Prioridad</p><p className={`text-xl font-bold ${urgency?.toLowerCase() === 'urgente' ? 'text-custom-magenta' : 'text-cyan-400'}`}>{urgency}</p></div>

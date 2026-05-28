@@ -23,7 +23,12 @@ exports.getBoardData = async (req, res) => {
         // A. TRAER ROLLOS ACTIVOS
         const rollsRes = await pool.request()
             .input('AreaID', sql.VarChar(20), area)
-            .query("SELECT * FROM dbo.Rollos WHERE AreaID = @AreaID AND Estado NOT IN ('Cerrado', 'Cancelado')");
+            .query(`
+                SELECT r.*, u.Nombre AS CreadorNombre, u.IdUsuario AS CreadorId
+                FROM dbo.Rollos r
+                LEFT JOIN dbo.Usuarios u ON r.UsuarioID = u.IdUsuario
+                WHERE r.AreaID = @AreaID AND r.Estado NOT IN ('Cerrado', 'Cancelado')
+            `);
 
         // B. TRAER ÓRDENES (Consulta Completa con Conteo de Archivos)
         const ordersRes = await pool.request()
@@ -66,6 +71,8 @@ exports.getBoardData = async (req, res) => {
             status: r.Estado,
             machineId: r.MaquinaID,
             currentUsage: 0,
+            creador: r.CreadorNombre,
+            userId: r.CreadorId,
             orders: []
         }));
 
@@ -181,15 +188,63 @@ exports.moveOrder = async (req, res) => {
             }
         }
 
-        // 2. Transacción para mover las órdenes
-        const transaction = new sql.Transaction(pool);
-        await transaction.begin();
+        // 2. VALIDACION DTF (DF)
+        if (idsToMove.length === 0) return res.status(400).json({ error: "No se especificaron órdenes." });
+
+            // VALIDACION DTF (DF)
+            if (targetRollId) {
+                const orderData = await pool.request()
+                    .query(`SELECT AreaID, Variante, Material FROM dbo.Ordenes WHERE OrdenID IN (${idsToMove.join(',')})`);
+                
+                const isDTF = orderData.recordset.some(o => o.AreaID === 'DF' || o.AreaID === 'DTF');
+                
+                if (isDTF) {
+                    const variantSet = new Set();
+                    const materialSet = new Set();
+                    
+                    orderData.recordset.forEach(o => {
+                        variantSet.add((o.Variante || '').trim().toLowerCase());
+                        materialSet.add((o.Material || '').trim().toLowerCase());
+                    });
+
+                    if (variantSet.size > 1) {
+                        return res.status(400).json({ error: "⛔ En DTF no se permite mover órdenes con distintas variantes juntas." });
+                    }
+                    if (materialSet.size > 1) {
+                        return res.status(400).json({ error: "⛔ En DTF no se permite mover órdenes con distintos materiales juntas." });
+                    }
+
+                    const existingOrdersData = await pool.request()
+                        .input('RID_CHECK', sql.VarChar(20), String(targetRollId))
+                        .query(`SELECT TOP 1 Variante, Material FROM dbo.Ordenes WHERE RolloID = @RID_CHECK`);
+                    
+                    if (existingOrdersData.recordset.length > 0) {
+                        const existingOrder = existingOrdersData.recordset[0];
+                        const existingVariant = (existingOrder.Variante || '').trim().toLowerCase();
+                        const existingMaterial = (existingOrder.Material || '').trim().toLowerCase();
+                        
+                        const newVariant = Array.from(variantSet)[0];
+                        const newMaterial = Array.from(materialSet)[0];
+
+                        if (existingVariant && existingVariant !== newVariant) {
+                            return res.status(400).json({ error: `⛔ El lote de destino ya contiene órdenes con variante '${existingOrder.Variante}'. No puedes mezclar variantes en DTF.` });
+                        }
+                        if (existingMaterial && existingMaterial !== newMaterial) {
+                            return res.status(400).json({ error: `⛔ El lote de destino ya contiene órdenes con material '${existingOrder.Material}'. No puedes mezclar materiales en DTF.` });
+                        }
+                    }
+                }
+            }
+
+            // 2. Transacción para mover las órdenes
+            const transaction = new sql.Transaction(pool);
+            await transaction.begin();
 
         try {
             for (const id of idsToMove) {
                 await new sql.Request(transaction)
                     .input('OrdenID', sql.Int, id)
-                    .input('RolloID', sql.VarChar(20), targetRollId || null)
+                    .input('RolloID', sql.VarChar(20), targetRollId ? String(targetRollId) : null)
                     .query(`
                         UPDATE dbo.Ordenes 
                         SET 
@@ -239,6 +294,11 @@ exports.moveOrder = async (req, res) => {
             `);
 
             await transaction.commit();
+
+            if (req.app.get('socketio')) {
+                req.app.get('socketio').emit('server:order_updated', { type: 'order_moved' });
+            }
+
             res.json({ success: true });
 
         } catch (innerErr) {
@@ -258,6 +318,7 @@ exports.moveOrder = async (req, res) => {
 // ==========================================
 exports.createRoll = async (req, res) => {
     let { areaId, name, capacity, color, bobinaId } = req.body;
+    const userId = req.user ? (req.user.id || req.user.IdUsuario) : null;
     // if (areaId === 'DF') areaId = 'DTF'; // DISABLED: User requested to keep DF
 
     try {
@@ -295,10 +356,11 @@ exports.createRoll = async (req, res) => {
                 .input('Capacidad', sql.Decimal(10, 2), capacity || 100)
                 .input('Color', sql.VarChar(10), color || '#3b82f6')
                 .input('BobinaID', sql.Int, bobinaId || null)
+                .input('UsuarioID', sql.Int, userId)
                 .query(`
-                    INSERT INTO dbo.Rollos (Nombre, AreaID, CapacidadMaxima, ColorHex, Estado, MaquinaID, FechaCreacion, BobinaID)
+                    INSERT INTO dbo.Rollos (Nombre, AreaID, CapacidadMaxima, ColorHex, Estado, MaquinaID, FechaCreacion, BobinaID, UsuarioID)
                     OUTPUT INSERTED.RolloID
-                    VALUES (NULLIF(@Nombre, ''), @AreaID, @Capacidad, @Color, 'Abierto', NULL, GETDATE(), @BobinaID);
+                    VALUES (NULLIF(@Nombre, ''), @AreaID, @Capacidad, @Color, 'Abierto', NULL, GETDATE(), @BobinaID, @UsuarioID);
                 `);
 
             const rollId = insertResult.recordset[0].RolloID;
@@ -313,6 +375,12 @@ exports.createRoll = async (req, res) => {
             }
 
             await transaction.commit();
+
+            // Emitir evento socket para actualizar el frontend (tablero de planeación)
+            if (req.app.get('socketio')) {
+                req.app.get('socketio').emit('server:order_updated', { type: 'roll_created', rollId });
+            }
+
             res.json({ success: true, rollId, message: 'Rollo creado exitosamente' });
 
         } catch (innerErr) {
@@ -333,7 +401,10 @@ exports.reorderOrders = async (req, res) => {
     const { rollId, orderIds } = req.body;
     // orderIds espera un array ej: [105, 102, 108] en el orden deseado
 
-    if (!rollId || !Array.isArray(orderIds)) {
+    // RolloID en la tabla Ordenes es un Int, así que lo parseamos
+    const rollIdInt = parseInt(rollId, 10);
+
+    if (!rollId || isNaN(rollIdInt) || !Array.isArray(orderIds)) {
         return res.status(400).json({ error: "Datos inválidos: rollId y orderIds requeridos" });
     }
 
@@ -352,8 +423,7 @@ exports.reorderOrders = async (req, res) => {
                 await new sql.Request(transaction)
                     .input('Secuencia', sql.Int, newSequence)
                     .input('OID', sql.Int, orderId)
-                    // CORRECCIÓN: Usamos VarChar(20) porque tus IDs de rollo son strings (ej 'R-123456')
-                    .input('RolloID', sql.VarChar(20), rollId)
+                    .input('RolloID', sql.Int, rollIdInt)
                     .query(`
                         UPDATE dbo.Ordenes 
                         SET Secuencia = @Secuencia 
@@ -446,6 +516,11 @@ exports.updateRollGeneral = async (req, res) => {
             }
 
             await transaction.commit();
+
+            if (req.app.get('socketio')) {
+                req.app.get('socketio').emit('server:order_updated', { type: 'roll_updated', rollId });
+            }
+
             res.json({ success: true, message: "Rollo actualizado" });
 
         } catch (innerErr) {
@@ -565,6 +640,11 @@ exports.swapBobina = async (req, res) => {
                 .query("UPDATE dbo.Ordenes SET BobinaID = @BID WHERE RolloID = @RID");
 
             await transaction.commit();
+
+            if (req.app.get('socketio')) {
+                req.app.get('socketio').emit('server:order_updated', { type: 'bobina_swapped', rollId });
+            }
+
             res.json({ success: true, message: "Cambio de bobina registrado exitosamente." });
 
         } catch (inner) {
@@ -619,6 +699,11 @@ exports.dismantleRoll = async (req, res) => {
                 `);
 
             await transaction.commit();
+
+            if (req.app.get('socketio')) {
+                req.app.get('socketio').emit('server:order_updated', { type: 'roll_dismantled', rollId });
+            }
+
             res.json({ success: true, message: "Rollo desarmado." });
 
         } catch (innerErr) {
@@ -720,6 +805,11 @@ exports.splitRoll = async (req, res) => {
                 .query("UPDATE Ordenes SET Estado = 'Finalizado' WHERE RolloID = @RID");
 
             await transaction.commit();
+
+            if (req.app.get('socketio')) {
+                req.app.get('socketio').emit('server:order_updated', { type: 'roll_split', rollId, newRollId });
+            }
+
             res.json({ success: true, newRollId, message: "Lote dividido correctamente." });
 
         } catch (inner) {

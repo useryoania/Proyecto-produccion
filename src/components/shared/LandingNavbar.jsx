@@ -9,6 +9,8 @@ import Swal from 'sweetalert2';
 import { motion, AnimatePresence } from 'framer-motion';
 import PreciosLeadModal from './PreciosLeadModal';
 import PreciosListModal from './PreciosListModal';
+import { apiClient } from '../../client-portal/api/apiClient';
+import { socket } from '../../services/socketService';
 
 
 
@@ -190,6 +192,8 @@ export default function LandingNavbar({ onOpenLoginModal }) {
   const [preciosHovered, setPreciosHovered] = useState(false);
   const [showPreciosModal, setShowPreciosModal] = useState(false);
   const [showPreciosListModal, setShowPreciosListModal] = useState(false);
+  const [tickets, setTickets] = useState([]);
+  const [hasPendingResponse, setHasPendingResponse] = useState(false);
 
   const pathname = location?.pathname || (typeof window !== 'undefined' ? window.location.pathname : '');
   const isAuthPage = pathname === '/login' || pathname === '/register';
@@ -200,6 +204,56 @@ export default function LandingNavbar({ onOpenLoginModal }) {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Fetch tickets for support badge in LandingNavbar
+  useEffect(() => {
+    if (!user || user.role === 'ADMIN' || user.role === 'STAFF') return;
+
+    const fetchTickets = async () => {
+      try {
+        const res = await apiClient.get('/tickets');
+        if (res.success && Array.isArray(res.data)) {
+          setTickets(res.data);
+          const hasPending = res.data.some(t => t.TicEstado === 3);
+          setHasPendingResponse(hasPending);
+        }
+      } catch (error) {
+        console.error('Error fetching tickets in LandingNavbar:', error);
+      }
+    };
+
+    fetchTickets();
+  }, [user]);
+
+  // Socket updates for support badge in LandingNavbar
+  useEffect(() => {
+    if (!user || user.role === 'ADMIN' || user.role === 'STAFF' || tickets.length === 0) return;
+
+    tickets.forEach(t => {
+      socket.emit('join:ticket', { ticketId: t.TicIdTicket });
+    });
+
+    const handleSocketUpdate = () => {
+      apiClient.get('/tickets').then(res => {
+        if (res.success && Array.isArray(res.data)) {
+          setTickets(res.data);
+          const hasPending = res.data.some(t => t.TicEstado === 3);
+          setHasPendingResponse(hasPending);
+        }
+      }).catch(err => console.error("Error refreshing tickets in LandingNavbar on socket event:", err));
+    };
+
+    socket.on('ticket:new_message', handleSocketUpdate);
+    socket.on('ticket:updated', handleSocketUpdate);
+
+    return () => {
+      tickets.forEach(t => {
+        socket.emit('leave:ticket', { ticketId: t.TicIdTicket });
+      });
+      socket.off('ticket:new_message', handleSocketUpdate);
+      socket.off('ticket:updated', handleSocketUpdate);
+    };
+  }, [user, tickets.length]);
 
   const isClient = user?.userType === 'CLIENT' || user?.role === 'WEB_CLIENT';
   let sessionType = null;
@@ -546,11 +600,25 @@ export default function LandingNavbar({ onOpenLoginModal }) {
                 <MessageSquare size={16} /> Contacto
               </button>
 
-              <button onClick={() => { setMenuOpen(false); navigate('/portal/soporte'); }} style={{
-                width: '85%', padding: '14px', border: '1px solid rgba(0,174,239,0.3)', borderRadius: 12,
-                background: 'rgba(0,174,239,0.06)', color: '#00AEEF', fontSize: 14, fontWeight: 600, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
-              }}>
+              <button 
+                onClick={() => { setMenuOpen(false); navigate('/portal/soporte'); }} 
+                className={hasPendingResponse ? "animate-pulse" : ""}
+                style={{
+                  width: '85%', padding: '14px', borderRadius: 12,
+                  fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  ...(hasPendingResponse ? {
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#fff',
+                    boxShadow: '0 0 15px rgba(239, 68, 68, 0.2)',
+                  } : {
+                    border: '1px solid rgba(0,174,239,0.3)',
+                    background: 'rgba(0,174,239,0.06)',
+                    color: '#00AEEF',
+                  })
+                }}
+              >
                 <HelpCircle size={16} /> Soporte / Ayuda
               </button>
 

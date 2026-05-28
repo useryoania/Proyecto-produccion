@@ -29,8 +29,10 @@ export function useFileUploader() {
                     ? result.width
                     : (result.width / 300) * 0.0254;
 
-                if (widthInMeters > config.maxMaterialWidth + 0.001) {
-                    throw new Error(`El ancho del archivo (${widthInMeters.toFixed(3)}m) excede el ancho imprimible (${config.maxMaterialWidth}m).`);
+                const maxPrintableWidth = config.maxMaterialWidth - 0.03;
+
+                if (widthInMeters > maxPrintableWidth + 0.001) {
+                    throw new Error(`El ancho del archivo (${widthInMeters.toFixed(2)}m) excede el ancho imprimible (${maxPrintableWidth.toFixed(2)}m).`);
                 }
             }
 

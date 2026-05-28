@@ -667,7 +667,7 @@ function activationPage(message, success) {
                 <div class="icon">${success ? successSvg : errorSvg}</div>
                 <h2>${success ? '¡Cuenta Activada!' : 'Ocurrió un error'}</h2>
                 <p>${message}</p>
-                <a href="http://localhost:5173/login" class="btn">Ir al Login</a>
+                <a href="https://user.com.uy/login" class="btn">Ir al Login</a>
             </div>
         </div>
 

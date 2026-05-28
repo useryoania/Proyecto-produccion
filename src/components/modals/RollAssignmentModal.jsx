@@ -8,7 +8,7 @@ const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders
 
     const navigate = useNavigate();
 
-    const [mode, setMode] = useState('existing');
+    const [mode, setMode] = useState('new');
     const [rollName, setRollName] = useState('');
     const [selectedRoll, setSelectedRoll] = useState(null);
     const [activeRolls, setActiveRolls] = useState([]);
@@ -17,6 +17,7 @@ const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders
 
     useEffect(() => {
         if (isOpen && areaCode) {
+            setMode('new');
             setLoadingRolls(true);
             rollsService.getActiveRolls(areaCode)
                 .then(data => {

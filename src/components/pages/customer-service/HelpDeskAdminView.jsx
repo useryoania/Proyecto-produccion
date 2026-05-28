@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { apiClient, API_BASE_URL } from '../../../client-portal/api/apiClient';
 import { socket } from '../../../services/socketService';
 import { GlassCard } from '../../../client-portal/pautas/GlassCard';
@@ -60,7 +61,7 @@ const CustomSelect = ({ value, onChange, options, className, placeholder = "Sele
                 <>
                     {/* Puente invisible que cubre el gap entre el botón y el panel */}
                     <div className="absolute left-0 right-0 h-2 z-[4999]" style={{ top: '100%' }} />
-                    <div className="absolute z-[5000] w-full min-w-max overflow-auto rounded-xl bg-white py-1 text-sm shadow-xl ring-1 ring-black/5 custom-scrollbar font-medium max-h-60" style={{ top: 'calc(100% + 4px)' }}>
+                    <div className="absolute z-[5000] w-full min-w-max rounded-xl bg-white py-1 text-sm shadow-xl ring-1 ring-black/5 font-medium overflow-hidden" style={{ top: 'calc(100% + 4px)' }}>
                         {options.map((option, idx) => {
                             const isSelected = String(option.value) === String(value);
                             return (
@@ -121,6 +122,7 @@ const getStatusSelectClass = (statusId) => {
 
 export const HelpDeskAdminView = () => {
     const { user } = useAuth();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [tickets, setTickets] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedTicketId, setSelectedTicketId] = useState(null);
@@ -129,6 +131,14 @@ export const HelpDeskAdminView = () => {
     // Filtros inbox
     const [filterDep, setFilterDep] = useState('ALL');
     const [filterEstado, setFilterEstado] = useState('ALL'); // Todos por defecto
+
+    // Auto-seleccionar ticket desde los query params (e.g. ?ticketId=123)
+    useEffect(() => {
+        const ticketIdParam = searchParams.get('ticketId');
+        if (ticketIdParam) {
+            setSelectedTicketId(parseInt(ticketIdParam));
+        }
+    }, [searchParams]);
 
     useEffect(() => {
         apiClient.get('/tickets/categorias').then(res => {
@@ -142,31 +152,10 @@ export const HelpDeskAdminView = () => {
 
         const handleNewTicket = (data) => {
             fetchTickets();
-            if (data) {
-                toast.info(`Nuevo ticket recibido #${data.ticketId}`, {
-                    description: data.asunto || 'Sin asunto',
-                    action: {
-                        label: 'Ver Ticket',
-                        onClick: () => setSelectedTicketId(data.ticketId)
-                    },
-                    duration: 10000,
-                });
-            }
         };
 
         const handleTicketUpdated = (data) => {
             fetchTickets();
-            // Si el mensaje nuevo fue de un cliente
-            if (data && data.autor === 'client') {
-                toast(`Mensaje nuevo en Ticket #${data.ticketId}`, {
-                    description: 'El cliente ha enviado una nueva respuesta.',
-                    action: {
-                        label: 'Abrir',
-                        onClick: () => setSelectedTicketId(data.ticketId)
-                    },
-                    duration: 8000,
-                });
-            }
         };
 
         socket.on('ticket:new', handleNewTicket);
@@ -265,7 +254,12 @@ export const HelpDeskAdminView = () => {
 
                             {/* Fila 2: Asunto vs Estado */}
                             <div className="flex justify-between items-center gap-4">
-                                <h4 className="font-semibold text-sm line-clamp-1 text-zinc-800 flex-1 text-left">{t.TicAsunto}</h4>
+                                <h4 className="font-semibold text-sm line-clamp-1 text-zinc-800 flex-1 text-left flex items-center gap-2">
+                                    {Number(t.TicEstado) === 1 && (
+                                        <span className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-sm animate-pulse shrink-0" />
+                                    )}
+                                    <span>{t.TicAsunto}</span>
+                                </h4>
                                 <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full shrink-0 ${getStatusBadgeClass(t.TicEstado)}`}>
                                     {getStatusText(t.TicEstado)}
                                 </span>

@@ -310,13 +310,64 @@ export const fileService = {
 
                 if (dims) {
                     dimensions = dims;
-                    // Si todavía no tenemos pageCount (regex parser), obtenerlo con pdf.js
-                    if (!pageCount) {
-                        try {
+                    // Si es multipágina, calcular el alto total (suma) y ancho máximo
+                    try {
+                        let pdfRef = null;
+                        if (!pageCount) {
                             const arrayBuffer = await file.arrayBuffer();
-                            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                            pageCount = pdf.numPages;
-                        } catch (e) { }
+                            pdfRef = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                            pageCount = pdfRef.numPages;
+                        }
+                        
+                        if (pageCount > 1) {
+                            // Cargar la referencia si no se cargó arriba (ej: vino del fallback)
+                            if (!pdfRef) {
+                                const arrayBuffer = await file.arrayBuffer();
+                                pdfRef = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                            }
+                            
+                            let totalHeightM = 0;
+                            let maxWidthM = 0;
+                            
+                            for (let i = 1; i <= pageCount; i++) {
+                                const page = await pdfRef.getPage(i);
+                                let widthPt, heightPt;
+                                const mediaBox = page._pageInfo?.view || page.view;
+                                if (mediaBox && mediaBox.length === 4) {
+                                    widthPt = Math.abs(mediaBox[2] - mediaBox[0]);
+                                    heightPt = Math.abs(mediaBox[3] - mediaBox[1]);
+                                } else {
+                                    try {
+                                        const dict = page._pageInfo?.rawDict || page.pageDict;
+                                        const mb = dict?.get?.('MediaBox');
+                                        if (mb && mb.length === 4) {
+                                            widthPt = Math.abs(mb[2] - mb[0]);
+                                            heightPt = Math.abs(mb[3] - mb[1]);
+                                        }
+                                    } catch (e) {}
+                                }
+                                if (!widthPt || !heightPt) {
+                                    const viewport = page.getViewport({ scale: 1 });
+                                    widthPt = viewport.width;
+                                    heightPt = viewport.height;
+                                }
+                                
+                                const pageW = (widthPt / 72) * 0.0254;
+                                const pageH = (heightPt / 72) * 0.0254;
+                                
+                                if (pageW > maxWidthM) maxWidthM = pageW;
+                                totalHeightM += pageH;
+                            }
+                            
+                            dimensions = {
+                                width: parseFloat(maxWidthM.toFixed(3)),
+                                height: parseFloat(totalHeightM.toFixed(3)),
+                                unit: 'meters'
+                            };
+                            console.log(`[PDF PARSER] Suma de ${pageCount} páginas: Ancho Max = ${dimensions.width}m, Alto Total = ${dimensions.height}m`);
+                        }
+                    } catch (e) {
+                        console.error('[PDF PARSER] Error sumando páginas de PDF:', e);
                     }
                 } else {
                     measurementError = "No se pudo extraer dimensiones del PDF";

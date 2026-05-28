@@ -6,6 +6,18 @@ import { useToast } from '../../../pautas/Toast';
 import { useAuth } from '../../../auth/AuthContext';
 import { SERVICES_LIST } from '../../../constants/services';
 
+const findDefaultMaterial = (materialsList) => {
+    if (!materialsList || materialsList.length === 0) return '';
+    const found = materialsList.find(m => {
+        const name = (m.Material || m.Descripcion || m || '').toLowerCase();
+        return name.includes('hexagonal') && (name.includes('1.83') || name.includes('1,83'));
+    });
+    if (found) {
+        return found.Material || found.Descripcion || found;
+    }
+    return materialsList[0].Material || materialsList[0].Descripcion || materialsList[0];
+};
+
 const initialState = {
     // Form Data
     jobName: '',
@@ -369,7 +381,7 @@ export const useOrderForm = (serviceId, overrides = {}) => {
             if (!variantName) return;
             apiClient.get(`/nomenclators/materials/${dbAreaId}/${encodeURIComponent(variantName)}`).then(mRes => {
                 if (mRes.success && mRes.data.length > 0) {
-                    const firstMat = mRes.data[0].Material;
+                    const firstMat = findDefaultMaterial(mRes.data);
                     dispatch({
                         type: actionTypes.SET_DATA,
                         data: { dynamicMaterials: mRes.data, globalMaterial: firstMat }
@@ -468,7 +480,7 @@ export const useOrderForm = (serviceId, overrides = {}) => {
             apiClient.get(`/nomenclators/materials/${dbAreaId}/${encodeURIComponent(newSubType)}`).then(res => {
                 if (res.success && res.data.length > 0) {
                     dispatch({ type: actionTypes.SET_DATA, data: { dynamicMaterials: res.data } });
-                    const firstMat = res.data[0].Material;
+                    const firstMat = findDefaultMaterial(res.data);
                     setGlobalMaterial(firstMat);
                 } else {
                     dispatch({ type: actionTypes.SET_DATA, data: { dynamicMaterials: [] } });

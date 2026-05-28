@@ -29,21 +29,30 @@ exports.getBoard = async (req, res) => {
             .input('Area', sql.VarChar, area)
             .query(`
                 SELECT 
-                    RolloID as id, 
-                    RolloID as rollCode, 
-                    Nombre as name, 
-                    Estado as status, 
-                    MaquinaID as machineId,
-                    ISNULL(MetrosTotales, 0) as usage,
-                    ISNULL(CapacidadMaxima, 0) as capacity,
-                    ColorHex as color,
-                    ISNULL(TotalOrdenes, 0) as ordersCount
-                FROM dbo.[Rollos] 
-                WHERE AreaID = @Area AND Estado NOT IN ('Cerrado', 'Finalizado')
+                    r.RolloID as id, 
+                    r.RolloID as rollCode, 
+                    r.Nombre as name, 
+                    r.Estado as status, 
+                    r.MaquinaID as machineId,
+                    ISNULL(r.MetrosTotales, 0) as usage,
+                    ISNULL(r.CapacidadMaxima, 0) as capacity,
+                    r.ColorHex as color,
+                    ISNULL(r.TotalOrdenes, 0) as ordersCount,
+                    u.Nombre AS CreadorNombre, 
+                    u.IdUsuario AS CreadorId
+                FROM dbo.[Rollos] r
+                LEFT JOIN dbo.Usuarios u ON r.UsuarioID = u.IdUsuario
+                WHERE r.AreaID = @Area AND r.Estado NOT IN ('Cerrado', 'Finalizado')
             `);
 
         // Inicializamos usage a 0 para recalcularlo basado en órdenes reales
-        let allRolls = rollsRes.recordset.map(r => ({ ...r, orders: [], usage: 0 }));
+        let allRolls = rollsRes.recordset.map(r => ({ 
+            ...r, 
+            creador: r.CreadorNombre,
+            userId: r.CreadorId,
+            orders: [], 
+            usage: 0 
+        }));
 
         // 3. Obtener Órdenes de esos Rollos
         const ordersRes = await POOL.request()

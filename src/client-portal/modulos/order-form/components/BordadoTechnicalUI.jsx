@@ -33,7 +33,7 @@ export const BordadoTechnicalUI = ({
 
     return (
         <div className={`animate-in slide-in-from-top duration-500 ${compact ? 'mb-0' : 'mb-8'}`}>
-            <div className={`${compact ? 'bg-zinc-900/40 p-6' : 'bg-zinc-900/60 p-8'} rounded-[2rem] border border-zinc-700/50 relative overflow-hidden`}>
+            <div className={`${compact ? 'bg-zinc-900/40 p-6' : 'bg-zinc-900/60 p-8'} rounded-[2rem] border border-zinc-700/50 relative`}>
                 {!compact && (
                     <div className="absolute top-0 right-0 p-8 opacity-5 text-brand-gold">
                         <Scissors size={120} />

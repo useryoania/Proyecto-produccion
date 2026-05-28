@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '../../context/AuthContext';
 import { toast } from 'sonner'; // Importar Toast
 import Swal from 'sweetalert2';
 import { rollsService, productionService } from '../../services/api';
@@ -18,6 +19,7 @@ import { motion } from 'framer-motion';
 import { Listbox, Transition } from '@headlessui/react';
 
 const PlaneacionTrabajo = ({ AreaID }) => {
+    const { user } = useAuth();
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const areaCode = AreaID; // Internal alias for compatibility
@@ -182,8 +184,32 @@ const PlaneacionTrabajo = ({ AreaID }) => {
     const backlogOrders = rollsData?.pendingOrders || [];
     const activeRolls = rollsData?.rolls || [];
     const machines = localBoardData.machines || [];
-    const pendingRolls = localBoardData.pendingRolls || [];
+    const rawPendingRolls = localBoardData.pendingRolls || [];
     const loading = loadingRolls || loadingProd;
+
+    // Helper to determine if roll is from user
+    const isMyRoll = (r) => {
+        if (!user || !r) return false;
+        const uid = String(user.id);
+        const uname = user.nombre || '';
+        const userEmail = user.usuario || '';
+        return String(r.IdEmpleado) === uid || 
+               String(r.userId) === uid ||
+               String(r.creatorId) === uid ||
+               String(r.creadorId) === uid ||
+               String(r.idCreator) === uid ||
+               String(r.createdBy) === uid ||
+               (r.creador && r.creador === uname) ||
+               (r.operator && r.operator === uname) ||
+               (r.operatorName && r.operatorName === uname) ||
+               (r.usuario && r.usuario === userEmail);
+    };
+
+    const pendingRolls = useMemo(() => {
+        const myRolls = rawPendingRolls.filter(isMyRoll);
+        const otherRolls = rawPendingRolls.filter(r => !isMyRoll(r));
+        return [...myRolls, ...otherRolls];
+    }, [rawPendingRolls, user]);
 
     const refreshBoard = () => {
         refetchRolls();
@@ -520,28 +546,49 @@ const PlaneacionTrabajo = ({ AreaID }) => {
                                         {...provided.droppableProps}
                                         className={`flex-1 overflow-y-auto p-0 flex flex-col -space-y-px custom-scrollbar transition-colors ${snapshot.isDraggingOver ? 'bg-brand-cyan/5' : 'bg-zinc-50/30'}`}
                                     >
-                                        {pendingRolls.map((roll, index) => (
-                                            <Draggable key={roll.id} draggableId={String(roll.id)} index={index}>
-                                                {(provided, snapshot) => (
-                                                    <div
-                                                        ref={provided.innerRef}
-                                                        {...provided.draggableProps}
-                                                        {...provided.dragHandleProps}
-                                                        style={{
-                                                            ...provided.draggableProps.style,
-                                                            opacity: snapshot.isDragging ? 0.8 : 1,
-                                                        }}
-                                                    >
-                                                        <RollCard
-                                                            roll={roll}
-                                                            onViewDetails={(r) => setInspectingRollId(r.id)}
-                                                            isSelected={selectedRollIds.includes(roll.id)}
-                                                            onToggleSelect={handleToggleRoll}
-                                                        />
-                                                    </div>
-                                                )}
-                                            </Draggable>
-                                        ))}
+                                        {pendingRolls.map((roll, index) => {
+                                            const isMine = isMyRoll(roll);
+                                            const prevRoll = index > 0 ? pendingRolls[index - 1] : null;
+                                            const hasMyRolls = pendingRolls.some(isMyRoll);
+                                            
+                                            const showMyHeader = index === 0 && isMine;
+                                            const showOtherHeader = hasMyRolls && (!isMine) && (index === 0 || isMyRoll(prevRoll));
+
+                                            return (
+                                                <React.Fragment key={roll.id}>
+                                                    {showMyHeader && (
+                                                        <div className="bg-custom-cyan/10 py-1.5 px-3 text-[10px] font-black text-brand-cyan uppercase tracking-widest sticky top-0 z-20 border-b-2 border-custom-cyan/30 backdrop-blur-sm flex items-center gap-2 shadow-sm">
+                                                            <i className="fa-solid fa-user text-custom-cyan"></i> Mis Lotes
+                                                        </div>
+                                                    )}
+                                                    {showOtherHeader && (
+                                                        <div className="bg-custom-dark/5 py-1.5 px-3 text-[10px] font-black text-brand-dark/80 uppercase tracking-widest sticky top-0 z-20 border-b border-custom-dark/10 backdrop-blur-sm mt-1 flex items-center gap-2">
+                                                            <i className="fa-solid fa-users text-custom-dark/50"></i> Otros Lotes
+                                                        </div>
+                                                    )}
+                                                    <Draggable draggableId={String(roll.id)} index={index}>
+                                                        {(provided, snapshot) => (
+                                                            <div
+                                                                ref={provided.innerRef}
+                                                                {...provided.draggableProps}
+                                                                {...provided.dragHandleProps}
+                                                                style={{
+                                                                    ...provided.draggableProps.style,
+                                                                    opacity: snapshot.isDragging ? 0.8 : 1,
+                                                                }}
+                                                            >
+                                                                <RollCard
+                                                                    roll={roll}
+                                                                    onViewDetails={(r) => setInspectingRollId(r.id)}
+                                                                    isSelected={selectedRollIds.includes(roll.id)}
+                                                                    onToggleSelect={handleToggleRoll}
+                                                                />
+                                                            </div>
+                                                        )}
+                                                    </Draggable>
+                                                </React.Fragment>
+                                            );
+                                        })}
                                         {provided.placeholder}
                                     </div>
                                 )}

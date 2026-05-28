@@ -24,6 +24,7 @@ import { Logo } from '../../components/Logo';
 import { usePushNotifications } from '../hooks/usePushNotifications';
 import { PushNotificationBanner } from '../components/PushNotificationBanner';
 import LandingNavbar from '../../components/shared/LandingNavbar';
+import { socket } from '../../services/socketService';
 
 const BASE_URL = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '') : '';
 
@@ -44,6 +45,8 @@ export const MainLayout = ({ children }) => {
     const [webContent, setWebContent] = useState({ sidebar: [], popup: [] });
     const [showPopup, setShowPopup] = useState(false);
     const [showLogoutModal, setShowLogoutModal] = useState(false);
+    const [tickets, setTickets] = useState([]);
+    const [hasPendingResponse, setHasPendingResponse] = useState(false);
 
     // Push notifications (pre-permission banner)
     const { showBanner, acceptPush, dismissPush } = usePushNotifications();
@@ -97,6 +100,56 @@ export const MainLayout = ({ children }) => {
         fetchConfig();
     }, []);
 
+    // Fetch tickets for support badge
+    useEffect(() => {
+        if (!user) return;
+
+        const fetchTickets = async () => {
+            try {
+                const res = await apiClient.get('/tickets');
+                if (res.success && Array.isArray(res.data)) {
+                    setTickets(res.data);
+                    const hasPending = res.data.some(t => t.TicEstado === 3);
+                    setHasPendingResponse(hasPending);
+                }
+            } catch (error) {
+                console.error('Error fetching tickets for badge:', error);
+            }
+        };
+
+        fetchTickets();
+    }, [user]);
+
+    // Socket updates subscription for support badge
+    useEffect(() => {
+        if (!user || tickets.length === 0) return;
+
+        tickets.forEach(t => {
+            socket.emit('join:ticket', { ticketId: t.TicIdTicket });
+        });
+
+        const handleSocketUpdate = () => {
+            apiClient.get('/tickets').then(res => {
+                if (res.success && Array.isArray(res.data)) {
+                    setTickets(res.data);
+                    const hasPending = res.data.some(t => t.TicEstado === 3);
+                    setHasPendingResponse(hasPending);
+                }
+            }).catch(err => console.error("Error refreshing tickets on socket event:", err));
+        };
+
+        socket.on('ticket:new_message', handleSocketUpdate);
+        socket.on('ticket:updated', handleSocketUpdate);
+
+        return () => {
+            tickets.forEach(t => {
+                socket.emit('leave:ticket', { ticketId: t.TicIdTicket });
+            });
+            socket.off('ticket:new_message', handleSocketUpdate);
+            socket.off('ticket:updated', handleSocketUpdate);
+        };
+    }, [user, tickets.length]);
+
     // Early return AFTER all hooks — respeta las reglas de React
     if (checking) return <div style={{ width: '100vw', height: '100vh', background: '#18181b' }} />;
 
@@ -120,7 +173,7 @@ export const MainLayout = ({ children }) => {
         setShowLogoutModal(true);
     };
 
-    const NavItem = ({ to, icon: Icon, label }) => (
+    const NavItem = ({ to, icon: Icon, label, badge, isNotification }) => (
         <Link
             to={to}
             onClick={() => setIsMobileMenuOpen(false)}
@@ -128,11 +181,14 @@ export const MainLayout = ({ children }) => {
         flex items-center gap-3 px-4 py-3 rounded-xl transition-all text-sm
         ${isActive(to)
                     ? 'text-zinc-100 border border-brand-cyan/40 bg-brand-cyan/5'
-                    : 'text-zinc-500 border border-zinc-800 hover:border-zinc-600 hover:text-zinc-300 hover:bg-brand-dark/50'}
+                    : isNotification
+                        ? 'bg-red-500/20 text-white border border-red-500/30 animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.2)]'
+                        : 'text-zinc-500 border border-zinc-800 hover:border-zinc-600 hover:text-zinc-300 hover:bg-brand-dark/50'}
       `}
         >
             <Icon size={20} strokeWidth={1.5} />
             <span className="font-medium tracking-wide">{label}</span>
+            {badge}
         </Link>
     );
 
@@ -262,7 +318,12 @@ export const MainLayout = ({ children }) => {
                     <NavItem to="/portal/pickup" icon={Package} label="Retiro de Pedidos" />
                     <NavItem to="/portal/payments" icon={CreditCard} label="Pagos Pendientes" />
                     <NavItem to="/portal/history" icon={History} label="Historial" />
-                    <NavItem to="/portal/soporte" icon={MessageSquare} label="Soporte / Ayuda" />
+                    <NavItem 
+                        to="/portal/soporte" 
+                        icon={MessageSquare} 
+                        label="Soporte / Ayuda" 
+                        isNotification={hasPendingResponse}
+                    />
 
                     {/* <div className="pt-4 mt-4 border-t border-zinc-800">
                         <Link to="/portal/club">

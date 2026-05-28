@@ -40,4 +40,10 @@ backend/token.json
 
 # Carpetas de dependencias adicionales
 backend/node_modules/
-logs/
+backend/logs/
+backend/ComprobantesPagos/
+backend/tickets/
+
+*.bat
+*.sql
+

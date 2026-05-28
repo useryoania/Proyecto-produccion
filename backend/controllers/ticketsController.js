@@ -329,7 +329,27 @@ exports.replyToTicket = async (req, res) => {
             updateQ += ` WHERE TicIdTicket = @Tic`;
             await transaction.request().input('Tic', sql.Int, ticketId).query(updateQ);
 
+            // Obtener información del creador del ticket para la notificación push antes de committear
+            const ticketInfoRes = await transaction.request()
+                .input('Tic', sql.Int, ticketId)
+                .query(`SELECT CliIdCliente, TicAsunto FROM Tickets WHERE TicIdTicket = @Tic`);
+            const ticketInfo = ticketInfoRes.recordset[0];
+
             await transaction.commit();
+
+            // Notificación push al cliente si responde el staff públicamente
+            if (!isClient && !notaInternaFlag && ticketInfo?.CliIdCliente) {
+                try {
+                    const pushService = require('../services/pushNotificationService');
+                    await pushService.sendToClient(ticketInfo.CliIdCliente, {
+                        title: `Respuesta en Ticket #${ticketId}`,
+                        body: `Soporte respondió: "${ticketInfo.TicAsunto || 'Sin asunto'}"`,
+                        url: `/portal/soporte/${ticketId}`
+                    });
+                } catch (pushErr) {
+                    logger.error('[WebPush] Error al enviar notificación de ticket:', pushErr.message);
+                }
+            }
 
             // Emitir al room del ticket (cliente + admin mirando ese hilo)
             const io = req.app.get('socketio');
@@ -381,10 +401,31 @@ exports.updateTicketStatus = async (req, res) => {
             return res.json({ success: true, message: 'Ticket derivado a nueva área.' });
         }
 
+        // Obtener la información del ticket para la notificación push
+        const ticketInfoRes = await pool.request()
+            .input('Tic', sql.Int, ticketId)
+            .query(`SELECT CliIdCliente, TicAsunto FROM Tickets WHERE TicIdTicket = @Tic`);
+        const ticketInfo = ticketInfoRes.recordset[0];
+
         await pool.request()
             .input('Tic', sql.Int, ticketId)
             .input('E', sql.Int, estadoToSet)
             .query(`UPDATE Tickets SET TicEstado = @E, TicFechaActualizacion = GETDATE() WHERE TicIdTicket = @Tic`);
+
+        // Notificar al cliente si el estado cambia a Resuelto (4) o Cerrado (5)
+        if (ticketInfo?.CliIdCliente && (estadoToSet === 4 || estadoToSet === 5)) {
+            try {
+                const pushService = require('../services/pushNotificationService');
+                const estadoText = estadoToSet === 4 ? 'Resuelto' : 'Cerrado';
+                await pushService.sendToClient(ticketInfo.CliIdCliente, {
+                    title: `Ticket #${ticketId} ${estadoText}`,
+                    body: `Tu ticket "${ticketInfo.TicAsunto || 'Sin asunto'}" ha sido marcado como ${estadoText.toLowerCase()}.`,
+                    url: `/portal/soporte/${ticketId}`
+                });
+            } catch (pushErr) {
+                logger.error('[WebPush] Error al enviar notificación de cambio de estado:', pushErr.message);
+            }
+        }
 
         const io2 = req.app.get('socketio');
         if (io2) io2.to(`ticket:${ticketId}`).to('helpdesk:admin').emit('ticket:updated', { ticketId: parseInt(ticketId), nuevoEstado: estadoToSet });

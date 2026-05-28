@@ -112,8 +112,8 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
         { field: 'code', headerName: 'Orden', width: 130 },
         { field: 'client', headerName: 'Cliente', width: 150 },
         { field: 'desc', headerName: 'Trabajo', width: 180 },
-        { field: 'material', headerName: 'Material', minWidth: 250 },
         { field: 'variantCode', headerName: 'Variante', width: 110 },
+        { field: 'material', headerName: 'Material', minWidth: 250 },
         { field: 'magnitude', headerName: 'Cantidad', width: 100 },
         { field: 'status', headerName: 'Estado', width: 100, cellRenderer: StatusRenderer },
         { field: 'areaStatus', headerName: 'Estado Área', width: 120 },
@@ -270,9 +270,9 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
         <div className="flex flex-col h-full w-full bg-white overflow-hidden animate-in fade-in duration-300 relative">
             
             {/* Toolbar Superior */}
-            {rowData.length > 0 && <div className="px-4 py-2 border-b-2 border-zinc-200 bg-zinc-50 flex justify-between items-center shrink-0 z-20">
+            {(toolbarContent || rowData.length > 0) && <div className="px-4 py-2 border-b-2 border-zinc-200 bg-zinc-50 flex justify-between items-center shrink-0 z-20">
                 {/* Contenido Dinámico (Filtros, Historial, etc) */}
-                <div className="flex-1 flex items-center overflow-x-auto no-scrollbar">
+                <div className="flex-1 flex items-center overflow-visible flex-wrap gap-2">
                     {toolbarContent}
                 </div>
 

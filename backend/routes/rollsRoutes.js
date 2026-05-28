@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/rollsController'); // 👈 Aquí se llama "controller"
+const { verifyToken } = require('../middleware/authMiddleware');
 
 router.get('/board', controller.getBoardData);
 router.get('/list', controller.getRollosActivos); // Endpoint específico para combo
 router.post('/move', controller.moveOrder);
-router.post('/create', controller.createRoll);
+router.post('/create', verifyToken, controller.createRoll);
 router.post('/reorder', controller.reorderOrders);
 
 // 👇 CORREGIDO: Debe decir "controller" (singular), igual que arriba
