@@ -44,3 +44,5 @@ backend/tickets/
 *.sql
 
 backend/ordenes/
+backend/public/
+
