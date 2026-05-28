@@ -31,11 +31,7 @@ backend/token.json
 !package.json
 !package-lock.json
 !tsconfig.json
-<<<<<<< HEAD
-!src/assets/animations/Loading.json
-=======
 !src/assets/animations/
->>>>>>> main
 .antigravity_rules.md
 
 # Carpetas de dependencias adicionales
