@@ -246,6 +246,7 @@ const postControlArchivo = async (req, res) => {
         if (!archivoId) return res.status(400).json({ error: 'Falta ID del ítem (archivoId/servicioId)' });
 
         let ordenId, codigoOrden, existeOrden, areaId, noDocERP, proximoServicio;
+        let fileData = null;
 
         if (isService) {
             // CONTROL DE SERVICIO EXTRA
@@ -286,12 +287,20 @@ const postControlArchivo = async (req, res) => {
                 `);
         } else {
             // CONTROL DE ARCHIVO ESTÁNDAR
-            const fileData = await new sql.Request(transaction)
+            fileData = await new sql.Request(transaction)
                 .input('ArchivoID', sql.Int, archivoId)
                 .query(`
-                    SELECT AO.OrdenID, AO.NombreArchivo, O.AreaID, O.CodigoOrden, O.NoDocERP, O.ProximoServicio
+                    SELECT AO.OrdenID, AO.NombreArchivo, AO.Metros as MetrosArchivo,
+                           O.AreaID, O.CodigoOrden, O.NoDocERP, O.ProximoServicio,
+                           O.CliIdCliente, O.ProIdProducto, O.IdClienteReact, O.IdProductoReact,
+                           O.CodCliente, O.CodArticulo, O.Nota as NotaOriginal,
+                           O.RolloID, O.MaquinaID,
+                           R.Nombre as NombreLote,
+                           CE.Nombre as NombreMaquina
                     FROM ArchivosOrden AO WITH (NOLOCK)
                     LEFT JOIN Ordenes O WITH (NOLOCK) ON AO.OrdenID = O.OrdenID
+                    LEFT JOIN Rollos R WITH (NOLOCK) ON O.RolloID = R.RolloID
+                    LEFT JOIN ConfigEquipos CE WITH (NOLOCK) ON ISNULL(O.MaquinaID, R.MaquinaID) = CE.EquipoID
                     WHERE AO.ArchivoID = @ArchivoID
                 `);
 
@@ -301,10 +310,10 @@ const postControlArchivo = async (req, res) => {
             }
 
             const row = fileData.recordset[0];
-            ordenId = row.OrdenID;
-            codigoOrden = row.CodigoOrden;
-            areaId = row.AreaID;
-            noDocERP = row.NoDocERP;
+            ordenId      = row.OrdenID;
+            codigoOrden  = row.CodigoOrden;
+            areaId       = row.AreaID;
+            noDocERP     = row.NoDocERP;
             proximoServicio = row.ProximoServicio;
 
             await new sql.Request(transaction)
@@ -332,9 +341,28 @@ const postControlArchivo = async (req, res) => {
 
             // Metros reales a reponer (si viene del front)
             const metrosReponer = req.body.metrosReponer ? parseFloat(req.body.metrosReponer) : null;
-            const equipoId = req.body.equipoId ? parseInt(req.body.equipoId) : null; // Capturamos EquipoID
+            const equipoId = req.body.equipoId ? parseInt(req.body.equipoId) : null;
 
-            const safeMotivo = (motivo || '').toString().trim();
+            // Construir Nota compuesta para la nueva orden de falla
+            const row = !isService ? fileData.recordset[0] : null;
+            const notaOriginal  = (row?.NotaOriginal || '').trim();
+            const nombreMaquina = row?.NombreMaquina || '';
+            const nombreLote    = row?.NombreLote    || '';
+            const tipoFallaDesc = fallaIDClean;  // se muestra el ID; podría JOIN TiposFalla si existe
+            const safeMotivo    = (motivo || '').toString().trim();
+
+            // Partes de la nota
+            const partesFalla = [];
+            if (safeMotivo)     partesFalla.push(`Motivo: ${safeMotivo}`);
+            if (metrosReponer)  partesFalla.push(`Reponer: ${metrosReponer}m`);
+            if (nombreMaquina)  partesFalla.push(`Máquina: ${nombreMaquina}`);
+            if (nombreLote)     partesFalla.push(`Lote: ${nombreLote}`);
+            const notaFallaDetalle = partesFalla.join(' | ');
+            // Nota final = nota original + detalle de la falla
+            const notaFinal = notaOriginal
+                ? `${notaOriginal} || FALLA: ${notaFallaDetalle}`
+                : (notaFallaDetalle || 'Reposición por Falla');
+
             const obsFalla = metrosReponer
                 ? `${safeMotivo} (Reponer: ${metrosReponer}m)`
                 : safeMotivo;
@@ -342,36 +370,39 @@ const postControlArchivo = async (req, res) => {
             const nuevoCodigo = `${codigoOrden} -F${archivoId} `;
 
             await new sql.Request(transaction)
-                .input('OldID', sql.Int, ordenId)
-                .input('NewCode', sql.NVarChar, nuevoCodigo)
-                .input('TipoFallaID', sql.Int, fallaIDClean)
-                .input('SafeMotivo', sql.NVarChar(sql.MAX), obsFalla)
-                .input('EquipoID', sql.Int, equipoId)
+                .input('OldID',         sql.Int,            ordenId)
+                .input('NewCode',       sql.NVarChar,       nuevoCodigo)
+                .input('TipoFallaID',   sql.Int,            fallaIDClean)
+                .input('SafeMotivo',    sql.NVarChar(sql.MAX), obsFalla)
+                .input('EquipoID',      sql.Int,            equipoId)
                 .input('CantidadFalla', sql.Decimal(10, 2), metrosReponer)
-                .input('ArchivoID', sql.Int, archivoId)
-                .input('AreaID', sql.NVarChar, areaId)
+                .input('ArchivoID',     sql.Int,            archivoId)
+                .input('AreaID',        sql.NVarChar,       areaId)
+                .input('NotaFinal',     sql.NVarChar(sql.MAX), notaFinal)
                 .query(`
-                    -- Insertar la nueva Orden de Falla con todos los campos solicitados
+                    -- Nueva Orden de Falla
                     INSERT INTO dbo.Ordenes(
                         CodigoOrden, Cliente, FechaIngreso, FechaEstimadaEntrega,
                         Material, DescripcionTrabajo, Prioridad,
                         Estado, EstadoenArea, AreaID,
-                        Magnitud, IdCabezalERP, ProximoServicio, Observaciones, NoDocERP,
-                        FechaEntradaSector, ArchivosCount, Variante, UM, 
-                        IdClienteReact, IdProductoReact, CodCliente, CodArticulo, CostoTotal
+                        Magnitud, IdCabezalERP, ProximoServicio, Nota, NoDocERP,
+                        FechaEntradaSector, ArchivosCount, Variante, UM,
+                        IdClienteReact, CliIdCliente, CodCliente,
+                        IdProductoReact, ProIdProducto, CodArticulo, CostoTotal
                     )
                     SELECT
                         @NewCode, Cliente, GETDATE(), FechaEstimadaEntrega,
-                        Material, DescripcionTrabajo, 'ALTA',
+                        Material, DescripcionTrabajo, 'Urgente',
                         'Pendiente', 'Pendiente', AreaID,
-                        Magnitud, IdCabezalERP, ProximoServicio, 'Reposición por Falla', NoDocERP,
+                        Magnitud, IdCabezalERP, ProximoServicio, @NotaFinal, NoDocERP,
                         GETDATE(), 1, Variante, UM,
-                        IdClienteReact, IdProductoReact, CodCliente, CodArticulo, 0
+                        IdClienteReact, CliIdCliente, CodCliente,
+                        IdProductoReact, ProIdProducto, CodArticulo, 0
                     FROM dbo.Ordenes
                     WHERE OrdenID = @OldID;
-                    
-                    UPDATE dbo.Ordenes 
-                    SET Observaciones = CONCAT(Observaciones, ' [Esperando Reposición]')
+
+                    UPDATE dbo.Ordenes
+                    SET Observaciones = CONCAT(ISNULL(Observaciones,''), ' [Esperando Reposición]')
                     WHERE OrdenID = @OldID;
 
                     -- Registrar Falla en tabla auxiliar
@@ -384,7 +415,6 @@ const postControlArchivo = async (req, res) => {
             const newOrderId = newOrderRes.recordset[0]?.OrdenID;
 
             if (newOrderId) {
-                // Si tenemos metros especificos, los usamos. Si no, copiamos el original.
                 const metrosSQL = metrosReponer !== null ? `@MetrosReponer` : `Metros`;
 
                 const insertRequest = new sql.Request(transaction)
@@ -396,17 +426,52 @@ const postControlArchivo = async (req, res) => {
                 }
 
                 await insertRequest.query(`
-                    -- Insertar archivo asociado a la nueva orden (Clonando datos)
                     INSERT INTO dbo.ArchivosOrden(
                         OrdenID, NombreArchivo, RutaAlmacenamiento, Metros, Copias, Ancho, Alto, Observaciones,
                         TipoArchivo, FechaSubida, EstadoArchivo
                     )
-                    SELECT 
+                    SELECT
                         @NewOrderID, NombreArchivo, RutaAlmacenamiento, ${metrosSQL}, Copias, Ancho, Alto, 'Reposición por Falla',
                         TipoArchivo, GETDATE(), 'Pendiente'
                     FROM dbo.ArchivosOrden WHERE ArchivoID = @OldFileID
                 `);
             }
+
+            // ── Capturar hermanas que ya estaban en Canasto Produccion (retroactivas) ──
+            let ordenesRetroactivas = [];
+            if (noDocERP) {
+                const retRes = await new sql.Request(transaction)
+                    .input('NoDoc',  sql.VarChar(50), noDocERP)
+                    .input('AreaID', sql.VarChar(50), areaId)
+                    .input('OID',    sql.Int,         ordenId)
+                    .query(`SELECT CodigoOrden FROM Ordenes
+                             WHERE NoDocERP = @NoDoc
+                               AND AreaID   = @AreaID
+                               AND OrdenID != @OID
+                               AND EstadoLogistica = 'Canasto Produccion'
+                               AND Estado NOT IN ('CANCELADO', 'Retenido')`);
+                ordenesRetroactivas = retRes.recordset.map(r => r.CodigoOrden);
+            }
+
+            // ── Mover todas las órdenes hermanas del área a "Canasto Falla" ──
+            // Incluye la orden actual y todas las del mismo pedido (NoDocERP) en el área
+            if (noDocERP) {
+                await new sql.Request(transaction)
+                    .input('NoDoc',  sql.VarChar(50), noDocERP)
+                    .input('AreaID', sql.VarChar(50), areaId)
+                    .query(`UPDATE Ordenes
+                               SET EstadoLogistica = 'Canasto Falla'
+                             WHERE NoDocERP = @NoDoc
+                               AND AreaID   = @AreaID
+                               AND Estado  NOT IN ('CANCELADO', 'Retenido')`);
+            } else {
+                await new sql.Request(transaction)
+                    .input('OID', sql.Int, ordenId)
+                    .query(`UPDATE Ordenes SET EstadoLogistica = 'Canasto Falla' WHERE OrdenID = @OID`);
+            }
+
+            // Guardar para incluir en la respuesta final
+            req._fallaData = { fallaDetectada: true, ordenesRetroactivas };
         }
 
         // 4. Verificación de Completitud
@@ -494,6 +559,66 @@ const postControlArchivo = async (req, res) => {
                     destinoLogistica = 'Esperando Reposición';
                 } else if (isReposicion) {
                     destinoLogistica = 'Canasto Reposiciones';
+                }
+
+                // Verificar si alguna hermana del pedido (mismo NoDocERP + AreaID) tiene fallas
+                // → si sí, esta orden también va a "Canasto Falla" aunque sus propios archivos estén OK
+                if (noDocERP && destinoLogistica === 'Canasto Produccion') {
+                    const fallaHermanaRes = await new sql.Request(transaction)
+                        .input('NoDoc',  sql.VarChar(50), noDocERP)
+                        .input('AreaID', sql.VarChar(50), areaId)
+                        .input('OID',    sql.Int,         ordenId)
+                        .query(`
+                            SELECT COUNT(*) as TieneFalla
+                            FROM ArchivosOrden AO
+                            INNER JOIN Ordenes O ON AO.OrdenID = O.OrdenID
+                            WHERE O.NoDocERP = @NoDoc
+                              AND O.AreaID   = @AreaID
+                              AND O.OrdenID != @OID
+                              AND AO.EstadoArchivo = 'FALLA'
+                        `);
+                    const tieneFallaHermana = (fallaHermanaRes.recordset[0]?.TieneFalla || 0) > 0;
+                    if (tieneFallaHermana) {
+                        destinoLogistica = 'Canasto Falla';
+                        logger.info(`[postControlArchivo] Orden ${ordenId} OK pero hermana tiene FALLA → Canasto Falla`);
+                    }
+                }
+
+                // ── ¿Está el pedido COMPLETAMENTE resuelto para poder liberar el Canasto Falla? ──
+                // Condición: ninguna orden del pedido tiene archivos pendientes o en FALLA
+                // (incluye las órdenes de reposición -F creadas)
+                if (noDocERP && destinoLogistica === 'Canasto Falla') {
+                    const liberacionRes = await new sql.Request(transaction)
+                        .input('NoDoc',  sql.VarChar(50), noDocERP)
+                        .input('AreaID', sql.VarChar(50), areaId)
+                        .query(`
+                            -- Archivos sin resolver (Pendiente o FALLA) de CUALQUIER orden del pedido en el área
+                            SELECT COUNT(*) as SinResolver
+                            FROM ArchivosOrden AO
+                            INNER JOIN Ordenes O ON AO.OrdenID = O.OrdenID
+                            WHERE O.NoDocERP = @NoDoc
+                              AND O.AreaID   = @AreaID
+                              AND O.Estado  NOT IN ('CANCELADO')
+                              AND (AO.EstadoArchivo IS NULL
+                                OR AO.EstadoArchivo NOT IN ('OK','Finalizado','CANCELADO'))
+                        `);
+                    const sinResolver = (liberacionRes.recordset[0]?.SinResolver || 0);
+                    if (sinResolver === 0) {
+                        // ¡Todo OK! Recopilar qué órdenes están en Canasto Falla para liberarlas
+                        const enFallaRes = await new sql.Request(transaction)
+                            .input('NoDoc',  sql.VarChar(50), noDocERP)
+                            .input('AreaID', sql.VarChar(50), areaId)
+                            .query(`SELECT OrdenID, CodigoOrden FROM Ordenes
+                                     WHERE NoDocERP = @NoDoc
+                                       AND AreaID   = @AreaID
+                                       AND EstadoLogistica = 'Canasto Falla'
+                                       AND Estado NOT IN ('CANCELADO')`);
+                        const ordenesParaLiberar = enFallaRes.recordset.map(r => r.CodigoOrden);
+                        if (ordenesParaLiberar.length > 0) {
+                            logger.info(`[postControlArchivo] Pedido ${noDocERP} RESUELTO → listoParaProduccion: ${ordenesParaLiberar.join(', ')}`);
+                            req._liberacionData = { listoParaProduccion: true, ordenesParaLiberar };
+                        }
+                    }
                 }
 
                 // ACTUALIZACIÓN DE ESTADOS
@@ -601,7 +726,22 @@ END
             req.app.get('socketio').emit('server:order_updated', { orderId: ordenId });
         }
 
-        res.json({ success: true, orderCompleted, totalBultos, nuevoEstado, destinoLogistica, proximoServicio, message: 'Estado actualizado correctamente' });
+        // Construir respuesta incluyendo datos de falla y/o liberación
+        const fallaData = req._fallaData || {};
+        const liberacionData = req._liberacionData || {};
+
+        res.json({
+            success: true,
+            orderCompleted,
+            totalBultos,
+            nuevoEstado,
+            destinoLogistica,
+            proximoServicio,
+            message: 'Estado actualizado correctamente',
+            // Datos para modales del frontend:
+            ...fallaData,       // { fallaDetectada, ordenesRetroactivas }
+            ...liberacionData,  // { listoParaProduccion, ordenesParaLiberar }
+        });
 
     } catch (err) {
         if (transaction) {
@@ -970,60 +1110,100 @@ const createCustomerReplacementOrder = async (req, res) => {
         transaction = new sql.Transaction(pool);
         await transaction.begin();
 
-        // 1. Obtener Datos Orden Original
+        // 1. Obtener Datos Orden Original (con Máquina y Lote)
         const ordRes = await new sql.Request(transaction)
             .input('ID', sql.Int, originalOrderId)
-            .query("SELECT * FROM Ordenes WHERE OrdenID = @ID");
+            .query(`
+                SELECT O.*,
+                       R.Nombre as NombreRollo,
+                       CE.Nombre as NombreMaquina,
+                       CE.EquipoID as EquipoID
+                FROM Ordenes O
+                LEFT JOIN Rollos R ON O.RolloID = R.RolloID
+                LEFT JOIN ConfigEquipos CE ON ISNULL(O.MaquinaID, R.MaquinaID) = CE.EquipoID
+                WHERE O.OrdenID = @ID
+            `);
 
         if (ordRes.recordset.length === 0) throw new Error("Orden original no encontrada");
         const originalOrder = ordRes.recordset[0];
 
-        // 1b. Preparar Observaciones Globales
-        // El usuario pide: "las observaciones que ponga en el registro de la falla, ponerselo a la orden nueva."
-        let finalGlobalObs = globalObservation || 'Reposición Cliente';
-        const fileObsList = [];
+        // 1b. Obtener datos originales de los archivos para validar límites (metros y copias)
+        const fileIds = files.map(f => parseInt(f.id)).filter(id => !isNaN(id));
+        const placeholders = fileIds.map((_, i) => `@FID${i}`).join(',');
+        const origFilesReq = new sql.Request(transaction);
+        fileIds.forEach((id, i) => origFilesReq.input(`FID${i}`, sql.Int, id));
+        const origFilesRes = await origFilesReq.query(
+            `SELECT ArchivoID, Metros as MetrosOrig, Copias as CopiasOrig FROM dbo.ArchivosOrden WHERE ArchivoID IN (${placeholders})`
+        );
+        const origFilesMap = {};
+        origFilesRes.recordset.forEach(r => { origFilesMap[r.ArchivoID] = r; });
 
-        files.forEach(f => {
-            if (f.obs) {
-                // Buscar nombre archivo si es posible, o solo poner la obs. 
-                // Como f es solo {id, meters, obs}, no tengo el nombre aqui facil.
-                // Pero puedo poner "- [Obs]"
-                fileObsList.push(`- ${f.obs}`);
+        // 1c. Validar límites antes de proceder
+        for (const file of files) {
+            const orig = origFilesMap[parseInt(file.id)];
+            if (!orig) throw new Error(`Archivo ID ${file.id} no encontrado en la orden original`);
+
+            const metersReq = parseFloat(file.meters);
+            const copiesReq = parseInt(file.copies) || parseInt(orig.CopiasOrig);
+            const metersOrig = parseFloat(orig.MetrosOrig);
+            const copiesOrig = parseInt(orig.CopiasOrig);
+
+            if (metersReq > metersOrig) {
+                throw new Error(
+                    `No se puede reponer más metros que los originales. ` +
+                    `Solicitado: ${metersReq}m — Máximo permitido: ${metersOrig}m`
+                );
             }
-        });
-
-        if (fileObsList.length > 0) {
-            finalGlobalObs += `\nDetalles:\n${fileObsList.join('\n')}`;
+            if (copiesReq > copiesOrig) {
+                throw new Error(
+                    `No se puede reponer más copias que las originales. ` +
+                    `Solicitado: ${copiesReq} copias — Máximo permitido: ${copiesOrig} copias`
+                );
+            }
         }
 
         // 2. Crear Nueva Orden de Reposición
-        // Generar codigo: ORD-123 -R (Si ya existe -R, buscar -R2?)
         const suffix = `-R${Math.floor(Math.random() * 1000)}`;
         const newCode = `${originalOrder.CodigoOrden} ${suffix}`;
 
+        // Construir NOTA DE LA ORDEN: obs del defecto (campo global del form) + contexto máquina/lote
+        const maquinaInfo = originalOrder.NombreMaquina ? `Máquina: ${originalOrder.NombreMaquina}` : '';
+        const loteInfo    = originalOrder.NombreRollo   ? `Lote: ${originalOrder.NombreRollo}`     : '';
+        const contextInfo = [maquinaInfo, loteInfo].filter(Boolean).join(' | ');
+        const globalObsBase = (globalObservation || '').trim(); // obs general de la falla ingresada por el usuario
+        // Ordenes.Nota = "[texto del usuario] | Máquina: X | Lote: Y"
+        const ordenNota = contextInfo
+            ? (globalObsBase ? `${globalObsBase} | ${contextInfo}` : contextInfo)
+            : (globalObsBase || 'Reposición Cliente');
+
+        // EquipoID de la máquina original (para FallasProduccion)
+        const equipoIdOriginal = originalOrder.EquipoID || null;
+
         const insertOrderResult = await new sql.Request(transaction)
-            .input('NewCode', sql.NVarChar, newCode)
-            .input('OldID', sql.Int, originalOrderId)
-            .input('GlobalObs', sql.NVarChar, finalGlobalObs)
+            .input('NewCode',  sql.NVarChar,       newCode)
+            .input('OldID',    sql.Int,            originalOrderId)
+            .input('NotaOrd',  sql.NVarChar(sql.MAX), ordenNota)
             .query(`
                 INSERT INTO dbo.Ordenes(
                     CodigoOrden, Cliente, FechaIngreso, FechaEstimadaEntrega,
                     Material, DescripcionTrabajo, Prioridad,
                     Estado, EstadoenArea, AreaID,
-                    Magnitud, IdCabezalERP, ProximoServicio, Observaciones, NoDocERP,
-                    FechaEntradaSector, ArchivosCount, Variante, UM, 
-                    IdClienteReact, IdProductoReact, CodCliente, CodArticulo, CostoTotal
+                    Magnitud, IdCabezalERP, ProximoServicio, Nota, NoDocERP,
+                    FechaEntradaSector, ArchivosCount, Variante, UM,
+                    IdClienteReact, CliIdCliente, CodCliente,
+                    IdProductoReact, ProIdProducto, CodArticulo, CostoTotal
                 )
                 SELECT
-                    @NewCode, Cliente, GETDATE(), DATEADD(day, 2, GETDATE()), -- 2 dias default para reposición
-                    Material, DescripcionTrabajo, 'URGENTE', -- Prioridad Alta
+                    @NewCode, Cliente, GETDATE(), DATEADD(day, 2, GETDATE()),
+                    Material, DescripcionTrabajo, 'Urgente',
                     'Pendiente', 'Pendiente', AreaID,
-                    Magnitud, IdCabezalERP, ProximoServicio, @GlobalObs, NoDocERP,
+                    Magnitud, IdCabezalERP, ProximoServicio, @NotaOrd, NoDocERP,
                     GETDATE(), 0, Variante, UM,
-                    IdClienteReact, IdProductoReact, CodCliente, CodArticulo, 0
+                    IdClienteReact, CliIdCliente, CodCliente,
+                    IdProductoReact, ProIdProducto, CodArticulo, 0
                 FROM dbo.Ordenes
                 WHERE OrdenID = @OldID;
-                
+
                 SELECT SCOPE_IDENTITY() as NewID;
              `);
 
@@ -1033,24 +1213,37 @@ const createCustomerReplacementOrder = async (req, res) => {
 
         // 3. Insertar Archivos Seleccionados
         for (const file of files) {
-            // file: { id, meters, obs, copies }
-            const oldFileId = file.id;
-            const metersToReprint = file.meters;
-            const copiesToReprint = file.copies || 1;
-            const obs = file.obs || 'Reposición Cliente';
+            const oldFileId       = parseInt(file.id);
+            const metersToReprint = Number(file.meters) || 0;  // asegurar número
+            const orig            = origFilesMap[oldFileId];
+            const copiesToReprint = parseInt(file.copies) || parseInt(orig?.CopiasOrig) || 1;
 
+            // file.obs = "Motivo / Observación de la Falla" (por archivo)
+            const userObs = (file.obs || '').trim();
+
+            // ──────────────────────────────────────────────────
+            // NOTA DE LA ORDEN: obs del archivo + contexto (qué máquina/lote lo imprimió)
+            const notaOrden = contextInfo
+                ? (userObs ? `${userObs} | ${contextInfo}` : contextInfo)
+                : (userObs || 'Reposición Cliente');
+
+            // OBSERVACIÓN DE FALLAS: lo que escribió el usuario como obs general de la falla
+            const obsParaFalla = globalObsBase || `Reposición cliente - Orden ${originalOrder.CodigoOrden}`;
+            // ──────────────────────────────────────────────────
+
+            // Insertar archivo en la nueva orden
             await new sql.Request(transaction)
-                .input('NewOrderID', sql.Int, newOrderId)
-                .input('OldFileID', sql.Int, oldFileId)
-                .input('Metros', sql.Decimal(10, 2), metersToReprint)
-                .input('Copias', sql.Int, copiesToReprint)
-                .input('Obs', sql.NVarChar, obs)
+                .input('NewOrderID', sql.Int,             newOrderId)
+                .input('OldFileID',  sql.Int,             oldFileId)
+                .input('Metros',     sql.Decimal(10,2),   metersToReprint)
+                .input('Copias',     sql.Int,             copiesToReprint)
+                .input('Obs',        sql.NVarChar,        notaOrden)
                 .query(`
                     INSERT INTO dbo.ArchivosOrden(
                         OrdenID, NombreArchivo, RutaAlmacenamiento, Metros, Copias, Ancho, Alto, Observaciones,
                         FechaSubida, EstadoArchivo, TipoArchivo
                     )
-                    SELECT 
+                    SELECT
                         @NewOrderID, NombreArchivo, RutaAlmacenamiento, @Metros, @Copias, Ancho, Alto, @Obs,
                         GETDATE(), 'Pendiente', TipoArchivo
                     FROM dbo.ArchivosOrden WHERE ArchivoID = @OldFileID
@@ -1058,19 +1251,24 @@ const createCustomerReplacementOrder = async (req, res) => {
 
             totalFiles++;
 
-            // Registrar en FallasProduccion (Safe Mode)
+            // Registrar en FallasProduccion: obs global de la falla + EquipoID + metros reales
             try {
-                await new sql.Request(transaction)
-                    .input('OldID', sql.Int, originalOrderId)
-                    .input('FileID', sql.Int, oldFileId)
-                    .input('AreaID', sql.VarChar, originalOrder.AreaID || 'General')
-                    .input('Metros', sql.Decimal(10, 2), metersToReprint)
-                    .input('Obs', sql.NVarChar, obs)
-                    .query(`
-                        INSERT INTO FallasProduccion(OrdenID, ArchivoID, AreaID, FechaFalla, TipoFalla, CantidadFalla, Observaciones)
-                        VALUES(@OldID, @FileID, @AreaID, GETDATE(), 1, @Metros, @Obs) 
-                    `);
-            } catch (e) { logger.info('FallasProduccion insert failed (ignoring):', e.message); }
+                const fallaReq = new sql.Request(transaction);
+                fallaReq.input('OldID',    sql.Int,           originalOrderId);
+                fallaReq.input('FileID',   sql.Int,           oldFileId);
+                fallaReq.input('AreaID',   sql.VarChar,       originalOrder.AreaID || 'General');
+                fallaReq.input('Metros',   sql.Decimal(10,2), metersToReprint);
+                fallaReq.input('ObsFalla', sql.NVarChar,      obsParaFalla);
+                fallaReq.input('EquipoID', sql.Int,           equipoIdOriginal);
+                await fallaReq.query(`
+                    INSERT INTO FallasProduccion
+                        (OrdenID, ArchivoID, AreaID, FechaFalla, TipoFalla, CantidadFalla, EquipoID, Observaciones)
+                    VALUES
+                        (@OldID, @FileID, @AreaID, GETDATE(), 1, @Metros, @EquipoID, @ObsFalla)
+                `);
+            } catch (e) {
+                logger.warn(`FallasProduccion insert failed (metros=${metersToReprint}, equipo=${equipoIdOriginal}):`, e.message);
+            }
         }
 
         // Actualizar contador archivos orden nueva
@@ -1247,6 +1445,91 @@ async function completarOrden(req, res) {
     }
 }
 
+/**
+ * CONFIRMAR FALLA: registra en auditoría que el operador confirmó
+ * que movió físicamente las órdenes al Canasto Falla.
+ */
+const confirmarFalla = async (req, res) => {
+    const { userId, noDocERP, areaId, ordenesAfectadas = [] } = req.body;
+    try {
+        const pool = await getPool();
+        const detalle = `Operador confirmó movimiento a Canasto Falla. Órdenes: ${ordenesAfectadas.join(', ')}`;
+        await pool.request()
+            .input('UID',     sql.Int,               userId || 1)
+            .input('Accion',  sql.NVarChar(100),     'CONFIRM_CANASTO_FALLA')
+            .input('Detalle', sql.NVarChar(sql.MAX),  detalle)
+            .query(`INSERT INTO dbo.Auditoria (UsuarioID, Accion, Detalle, Fecha)
+                    VALUES (@UID, @Accion, @Detalle, GETDATE())`);
+        res.json({ success: true });
+    } catch (err) {
+        logger.error('confirmarFalla:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+/**
+ * LIBERAR CANASTO FALLA: mueve todas las órdenes del pedido de
+ * 'Canasto Falla' a 'Canasto Produccion' y registra en auditoría.
+ */
+const liberarCanastaFalla = async (req, res) => {
+    const { userId, noDocERP, areaId } = req.body;
+    if (!noDocERP || !areaId) return res.status(400).json({ error: 'Faltan noDocERP o areaId' });
+
+    let transaction;
+    try {
+        const pool = await getPool();
+        transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        // 1. Verificar que todo esté OK (seguridad doble)
+        const checkRes = await new sql.Request(transaction)
+            .input('NoDoc',  sql.VarChar(50), noDocERP)
+            .input('AreaID', sql.VarChar(50), areaId)
+            .query(`SELECT COUNT(*) as SinResolver
+                    FROM ArchivosOrden AO
+                    INNER JOIN Ordenes O ON AO.OrdenID = O.OrdenID
+                    WHERE O.NoDocERP = @NoDoc
+                      AND O.AreaID   = @AreaID
+                      AND O.Estado  NOT IN ('CANCELADO')
+                      AND (AO.EstadoArchivo IS NULL
+                        OR AO.EstadoArchivo NOT IN ('OK','Finalizado','CANCELADO'))`);
+
+        const sinResolver = checkRes.recordset[0]?.SinResolver || 0;
+        if (sinResolver > 0) {
+            await transaction.rollback();
+            return res.status(409).json({ error: `Todavía hay ${sinResolver} archivo(s) sin resolver.` });
+        }
+
+        // 2. Mover Canasto Falla → Canasto Produccion
+        const updRes = await new sql.Request(transaction)
+            .input('NoDoc',  sql.VarChar(50), noDocERP)
+            .input('AreaID', sql.VarChar(50), areaId)
+            .query(`UPDATE Ordenes
+                       SET EstadoLogistica = 'Canasto Produccion'
+                     WHERE NoDocERP = @NoDoc
+                       AND AreaID   = @AreaID
+                       AND EstadoLogistica = 'Canasto Falla'
+                       AND Estado NOT IN ('CANCELADO')`);
+        const cantActualizadas = updRes.rowsAffected[0] || 0;
+
+        // 3. Auditoría
+        await new sql.Request(transaction)
+            .input('UID',     sql.Int,               userId || 1)
+            .input('Accion',  sql.NVarChar(100),     'LIBERACION_CANASTO_FALLA')
+            .input('Detalle', sql.NVarChar(sql.MAX),  `Pedido ${noDocERP} / Área ${areaId}: ${cantActualizadas} órdenes liberadas a Canasto Producción.`)
+            .query(`INSERT INTO dbo.Auditoria (UsuarioID, Accion, Detalle, Fecha)
+                    VALUES (@UID, @Accion, @Detalle, GETDATE())`);
+
+        await transaction.commit();
+        res.json({ success: true, ordenesActualizadas: cantActualizadas });
+
+    } catch (err) {
+        if (transaction) { try { await transaction.rollback(); } catch (e) {} }
+        logger.error('liberarCanastaFalla:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+
 module.exports = {
     getOrdenes,
     getArchivosPorOrden,
@@ -1258,6 +1541,8 @@ module.exports = {
     getCompletedOrdersForReplacement,
     createCustomerReplacementOrder,
     getRelatedOrders,
-    completarOrden
+    completarOrden,
+    confirmarFalla,
+    liberarCanastaFalla
 };
 

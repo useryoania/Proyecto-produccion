@@ -9,6 +9,8 @@ import OrderRequirementsList from '../../logistics/OrderRequirementsList';
 import { printLabelsHelper } from "../../../utils/printHelper";
 import QuotationEditModal from '../../logistics/QuotationEditModal';
 import { useAuth } from '../../../context/AuthContext';
+import ModalConfirmacionFalla from './ModalConfirmacionFalla';
+import ModalLiberacionFalla from './ModalLiberacionFalla';
 
 
 const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
@@ -43,6 +45,11 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
     const [cancelReason, setCancelReason] = useState("");
     const [cancelType, setCancelType] = useState(null); // 'ORDER' | 'REQUEST' | 'FILE'
     const [fileToCancel, setFileToCancel] = useState(null);
+
+    // Estado modales Canasto Falla
+    const [modalFallaData,      setModalFallaData]      = useState(null);
+    const [modalLiberacionData, setModalLiberacionData] = useState(null);
+    const [liberandoFalla,      setLiberandoFalla]      = useState(false);
 
     // Estado Nuevo Producto/Servicio
     const [isAddingService, setIsAddingService] = useState(false);
@@ -100,53 +107,79 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
         );
     };
 
-    const handleControlItem = (item, estado, isService = false) => {
+    const handleControlItem = async (item, estado, isService = false) => {
         const itemId = item.id || item.ArchivoID || item.ServicioID;
-        const user = JSON.parse(localStorage.getItem('user')) || {};
-        const safeUser = user.id || user.UsuarioControl || user.nombre || 'Sistema';
+        const safeUser = user?.id || user?.UsuarioControl || 1;
+        const payload = { archivoId: itemId, estado, usuario: safeUser, isService };
 
         if (estado === 'FALLA') {
             const motivo = prompt("Ingrese el motivo de la falla:");
             if (!motivo) return;
+            payload.motivo = motivo;
+        }
 
-            toast.promise(
-                fileControlService.postControl({
-                    archivoId: itemId,
-                    estado: 'FALLA',
-                    motivo,
-                    usuario: safeUser,
-                    isService: isService
-                }),
-                {
-                    loading: 'Registrando falla...',
-                    success: () => {
-                        reloadFiles();
-                        if (onOrderUpdated) onOrderUpdated();
-                        return 'Falla registrada';
-                    },
-                    error: 'Error al registrar'
-                }
-            );
-        } else {
-            toast.promise(
-                fileControlService.postControl({
-                    archivoId: itemId,
-                    estado: estado,
-                    usuario: safeUser,
-                    isService: isService
-                }),
-                {
-                    loading: 'Actualizando estado...',
-                    success: () => {
-                        reloadFiles();
-                        if (onOrderUpdated) onOrderUpdated();
-                        return `Estado actualizado a ${estado}`;
-                    },
-                    error: 'Error al actualizar'
-                }
-            );
+        try {
+            const res = await fileControlService.postControl(payload);
+            reloadFiles();
+            if (onOrderUpdated) onOrderUpdated();
+            toast.success(estado === 'FALLA' ? 'Falla registrada' : `Estado actualizado a ${estado}`);
+
+            // Modal: hermanas retroactivas movidas a Canasto Falla
+            if (res?.data?.fallaDetectada && res.data.ordenesRetroactivas?.length > 0) {
+                setModalFallaData({
+                    ordenes:  res.data.ordenesRetroactivas,
+                    noDocERP: currentOrder?.noDocERP || currentOrder?.NoDocERP,
+                    areaId:   currentOrder?.area
+                });
+            }
+            // Modal: pedido completamente resuelto, listo para liberar
+            if (res?.data?.listoParaProduccion && res.data.ordenesParaLiberar?.length > 0) {
+                setModalLiberacionData({
+                    ordenes:  res.data.ordenesParaLiberar,
+                    noDocERP: currentOrder?.noDocERP || currentOrder?.NoDocERP,
+                    areaId:   currentOrder?.area
+                });
+            }
+        } catch (e) {
+            toast.error('Error: ' + (e.response?.data?.error || e.message));
         }
     };
+
+    // Operador confirmó que movió físicamente las órdenes al Canasto Falla
+    const handleConfirmarFalla = async () => {
+        try {
+            await api.post('/production-file-control/canasto-falla/confirmar', {
+                userId:           user?.id,
+                noDocERP:         modalFallaData.noDocERP,
+                areaId:           modalFallaData.areaId,
+                ordenesAfectadas: modalFallaData.ordenes
+            });
+            setModalFallaData(null);
+            toast.success('Confirmación registrada');
+        } catch (e) {
+            toast.error('Error al confirmar: ' + (e.response?.data?.error || e.message));
+        }
+    };
+
+    // Operador confirma liberación → sistema mueve a Canasto Produccion
+    const handleLiberarFalla = async () => {
+        setLiberandoFalla(true);
+        try {
+            await api.post('/production-file-control/canasto-falla/liberar', {
+                userId:   user?.id,
+                noDocERP: modalLiberacionData.noDocERP,
+                areaId:   modalLiberacionData.areaId
+            });
+            setModalLiberacionData(null);
+            if (onOrderUpdated) onOrderUpdated();
+            toast.success('¡Órdenes liberadas al Canasto Producción!');
+        } catch (e) {
+            toast.error('Error al liberar: ' + (e.response?.data?.error || e.message));
+        } finally {
+            setLiberandoFalla(false);
+        }
+    };
+
 
     const handleDeleteService = (fileId) => {
         if (serviceFiles.length <= 1) {
@@ -645,7 +678,17 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
     };
 
     return createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
+        <>
+            <ModalConfirmacionFalla
+                ordenes={modalFallaData?.ordenes}
+                onConfirm={handleConfirmarFalla}
+            />
+            <ModalLiberacionFalla
+                ordenes={modalLiberacionData?.ordenes}
+                onConfirm={handleLiberarFalla}
+                loading={liberandoFalla}
+            />
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
 
             <div
                 className="absolute inset-0 bg-zinc-900/60 transition-opacity"
@@ -1095,7 +1138,8 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                     </div>
                 </div>
             )}
-        </div>,
+            </div>
+        </>,
         document.body
     );
 };

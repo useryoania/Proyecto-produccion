@@ -55,6 +55,8 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
   const [clienteIdNumerico, setClienteIdNumerico] = useState(null);
   const [notas, setNotas] = useState('');
   const [monedaOp, setMonedaOp] = useState('UYU'); // moneda de la operación
+  const [articuloSearch, setArticuloSearch] = useState({}); // { [lineId]: string } búsqueda por línea
+  const [articuloOpen, setArticuloOpen] = useState({}); // { [lineId]: bool }
 
   // Búsqueda de clientes y pagos mixtos
   const [qCliente, setQCliente] = useState('');
@@ -301,15 +303,15 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
         api.get('/nomenclators/departments').catch(() => ({ data: { success: false, data: [] } })),
         api.get('/contabilidad/articulos').catch(() => ({ data: { success: false, data: [] } })),
         api.get('/apipagos/metodos').catch(() => ({ data: [] })),
-        api.get('/contabilidad/cotizacion-hoy').catch(() => null)
+        api.get('/apicotizaciones/hoy').catch(() => null)
       ]);
       setClientes(resClientes.data || []);
       setMetodosPago(Array.isArray(resMetodosPago.data) ? resMetodosPago.data : []);
 
-      if (resCotizacion?.data?.success && resCotizacion.data?.data?.CotDolar) {
-        setCotizacion(resCotizacion.data.data.CotDolar);
-      } else if (resCotizacion?.data?.promedio) {
-        setCotizacion(resCotizacion.data.promedio);
+      if (resCotizacion?.data?.cotizaciones?.[0]?.CotDolar) {
+        setCotizacion(resCotizacion.data.cotizaciones[0].CotDolar);
+      } else if (resCotizacion?.data?.data?.promedio) {
+        setCotizacion(resCotizacion.data.data.promedio);
       }
 
       if (resNomencladores.data?.success) {
@@ -423,7 +425,7 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
         }, 100);
         return {
           ...prev,
-          CliIdCliente: val,
+          CliIdCliente: idNumerico || val,
           DocCliNombre: c.Nombre || c.NombreFantasia || '',
           DocCliDocumento: c.CioRuc || c.IDCliente || '',
           DocCliDireccion: c.DireccionTrabajo || '',
@@ -513,19 +515,27 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
   };
 
   const updateLinea = (id, field, value) => {
+    let shouldRecalc = false;
+    let recalcConcepto = '';
+    let recalcCantidad = 1;
+    let recalcClienteId = null;
+    let recalcMonedaId = 1;
+
     setFormData(prev => {
       const lineToUpdate = prev.Lineas.find(l => l.id === id);
       if (!lineToUpdate) return prev;
 
       const updatedLine = { ...lineToUpdate, [field]: value };
-      
+
       const conceptoChanged = field === 'concepto' && value !== lineToUpdate.concepto;
       const cantidadChanged = field === 'cantidad' && value !== lineToUpdate.cantidad;
 
       if ((conceptoChanged || cantidadChanged) && updatedLine.concepto) {
-        setTimeout(() => {
-          recalcularPrecioLineaManual(id, updatedLine.concepto, updatedLine.cantidad, prev.CliIdCliente, prev.MonIdMoneda);
-        }, 50);
+        shouldRecalc = true;
+        recalcConcepto = updatedLine.concepto;
+        recalcCantidad = updatedLine.cantidad;
+        recalcClienteId = prev.CliIdCliente;
+        recalcMonedaId = prev.MonIdMoneda;
       }
 
       if (field === 'precioUnitario') {
@@ -537,6 +547,13 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
         Lineas: prev.Lineas.map(l => l.id === id ? updatedLine : l)
       };
     });
+
+    // Efecto secundario FUERA del updater para evitar doble ejecución en Strict Mode
+    if (shouldRecalc) {
+      setTimeout(() => {
+        recalcularPrecioLineaManual(id, recalcConcepto, recalcCantidad, recalcClienteId, recalcMonedaId);
+      }, 50);
+    }
   };
 
   // --- Helpers de Pagos Mixtos ---
@@ -741,6 +758,7 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
           mode="COBRO"
           totalACubrir={totales.total}
           moneda={monedaOp}
+          onMonedaChange={setMonedaOp}
           cotizacion={cotizacion}
           metodosPago={metodosPago}
           pagos={pagos}
@@ -940,8 +958,24 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
             {/* Panel de Conceptos */}
             <div className="bg-white border border-zinc-200 rounded-2xl p-4 shadow-sm flex flex-col gap-3">
               <form id="factura-form" onSubmit={handleSubmit} className="flex flex-col gap-3">
-                <div className="flex justify-between items-center shrink-0 pb-1.5 border-b border-zinc-100">
-                  <h3 className="font-black text-zinc-400 text-[10px] uppercase tracking-widest">2. Conceptos del Comprobante</h3>
+                <div className="flex justify-between items-center shrink-0 pb-1.5 border-b border-zinc-100 flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    <h3 className="font-black text-zinc-400 text-[10px] uppercase tracking-widest">2. Conceptos del Comprobante</h3>
+                    {/* Selector moneda del documento */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Moneda:</span>
+                      <div className="flex bg-zinc-100 border border-zinc-200 rounded-lg p-0.5 gap-0.5">
+                        <button type="button" onClick={() => setMonedaOp('UYU')}
+                          className={`px-2.5 py-1 text-[9px] font-black rounded-md transition-all ${ monedaOp === 'UYU' ? 'bg-blue-600 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-700' }`}>
+                          $ UYU
+                        </button>
+                        <button type="button" onClick={() => setMonedaOp('USD')}
+                          className={`px-2.5 py-1 text-[9px] font-black rounded-md transition-all ${ monedaOp === 'USD' ? 'bg-amber-500 text-white shadow-sm' : 'text-zinc-500 hover:text-zinc-700' }`}>
+                          U$S USD
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                   <button
                     type="button"
                     onClick={addLinea}
@@ -957,7 +991,12 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
                       <tr>
                         <th className="p-2.5 pl-4">Concepto o Descripción</th>
                         <th className="p-2.5 w-16 text-right">Cant.</th>
-                        <th className="p-2.5 w-24 text-right">Precio Unit.</th>
+                        <th className="p-2.5 w-28 text-right">
+                          Precio Unit.
+                          <span className={`ml-1 text-[9px] font-black px-1.5 py-0.5 rounded-full ${monedaOp === 'USD' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>
+                            {monedaOp === 'USD' ? 'U$S' : '$UY'}
+                          </span>
+                        </th>
                         <th className="p-2.5 w-24 text-center">IVA %</th>
                         <th className="p-2.5 w-24 text-right">Subtotal Neto</th>
                         <th className="p-2.5 w-24 text-right">Total con IVA</th>
@@ -971,28 +1010,59 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
                         const ivaRate = (line.iva !== undefined && line.iva !== null) ? parseFloat(line.iva) : 22;
                         const subtotalConIva = qty * price;
                         const subtotalNeto = subtotalConIva / (1 + ivaRate / 100);
+                        const searchTerm = articuloSearch[line.id] !== undefined ? articuloSearch[line.id] : line.concepto;
+                        const artFiltered = searchTerm.length > 0
+                          ? articulos.filter(a => a.NombreArticulo?.toLowerCase().includes(searchTerm.toLowerCase())).slice(0, 12)
+                          : articulos.slice(0, 12);
 
                         return (
-                          <tr key={line.id} className="hover:bg-zinc-50/50">
+                          <tr key={line.id} className="hover:bg-zinc-50/50 align-top">
                             <td className="p-1.5 pl-4">
-                              <div className="flex flex-col gap-0.5">
+                              {/* Autocomplete de artículos */}
+                              <div className="relative">
                                 <input
                                   type="text"
                                   required
-                                  placeholder="Concepto o Descripción"
-                                  list="articulos-list"
-                                  className="w-full bg-transparent border-none focus:ring-0 text-xs font-bold outline-none text-zinc-800 placeholder-zinc-300"
-                                  value={line.concepto}
-                                  onChange={e => updateLinea(line.id, 'concepto', e.target.value)}
+                                  placeholder="Escribir concepto o buscar artículo..."
+                                  className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-2.5 py-1.5 text-xs font-bold outline-none focus:border-indigo-500 focus:bg-white text-zinc-800 placeholder-zinc-300"
+                                  value={searchTerm}
+                                  autoComplete="off"
+                                  onFocus={() => setArticuloOpen(prev => ({ ...prev, [line.id]: true }))}
+                                  onBlur={() => setTimeout(() => setArticuloOpen(prev => ({ ...prev, [line.id]: false })), 150)}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    setArticuloSearch(prev => ({ ...prev, [line.id]: val }));
+                                    updateLinea(line.id, 'concepto', val);
+                                  }}
                                 />
-                                <input
-                                  type="text"
-                                  placeholder="Detalle adicional / Sublínea"
-                                  className="w-full bg-transparent border-none focus:ring-0 text-[10px] text-zinc-400 placeholder-zinc-300 outline-none"
-                                  value={line.DcdDscItem || ''}
-                                  onChange={e => updateLinea(line.id, 'DcdDscItem', e.target.value)}
-                                />
+                                {articuloOpen[line.id] && artFiltered.length > 0 && (
+                                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-zinc-200 rounded-xl shadow-xl z-50 max-h-48 overflow-y-auto">
+                                    {artFiltered.map(a => (
+                                      <button
+                                        key={a.CodigoArticulo}
+                                        type="button"
+                                        onMouseDown={() => {
+                                          updateLinea(line.id, 'concepto', a.NombreArticulo);
+                                          setArticuloSearch(prev => ({ ...prev, [line.id]: a.NombreArticulo }));
+                                          setArticuloOpen(prev => ({ ...prev, [line.id]: false }));
+                                        }}
+                                        className="w-full text-left px-3 py-2 text-xs font-bold text-zinc-800 hover:bg-indigo-50 hover:text-indigo-700 transition-colors flex justify-between items-center gap-2 border-b border-zinc-50 last:border-0"
+                                      >
+                                        <span className="truncate">{a.NombreArticulo}</span>
+                                        <span className="text-[9px] text-zinc-400 shrink-0">{a.CodigoArticulo}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
+                              {/* Sublínea siempre visible */}
+                              <input
+                                type="text"
+                                placeholder="↳ Sublínea / detalle adicional"
+                                className="w-full mt-1 px-2.5 py-1 text-[10px] text-zinc-500 bg-white border border-zinc-100 rounded-md outline-none focus:border-indigo-300 placeholder-zinc-300"
+                                value={line.DcdDscItem || ''}
+                                onChange={e => updateLinea(line.id, 'DcdDscItem', e.target.value)}
+                              />
                             </td>
                             <td className="p-1.5">
                               <input
@@ -1004,13 +1074,22 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
                               />
                             </td>
                             <td className="p-1.5">
-                              <input
-                                type="number"
-                                required min="0" step="any"
-                                className="w-full bg-zinc-50 border border-zinc-200 rounded-lg px-2 py-1 text-xs text-right font-bold outline-none focus:border-indigo-500 focus:bg-white"
-                                value={line.precioUnitario}
-                                onChange={e => updateLinea(line.id, 'precioUnitario', e.target.value)}
-                              />
+                              <div className="relative">
+                                <span className={`absolute left-2 top-1/2 -translate-y-1/2 text-[9px] font-black select-none pointer-events-none ${monedaOp === 'USD' ? 'text-amber-600' : 'text-blue-500'}`}>
+                                  {monedaOp === 'USD' ? 'U$S' : '$'}
+                                </span>
+                                <input
+                                  type="number"
+                                  required min="0" step="any"
+                                  className={`w-full bg-zinc-50 border rounded-lg pl-8 pr-2 py-1 text-xs text-right font-bold outline-none focus:bg-white ${
+                                    monedaOp === 'USD'
+                                      ? 'border-amber-200 focus:border-amber-400'
+                                      : 'border-zinc-200 focus:border-indigo-500'
+                                  }`}
+                                  value={line.precioUnitario}
+                                  onChange={e => updateLinea(line.id, 'precioUnitario', e.target.value)}
+                                />
+                              </div>
                               {line.precioNote && (
                                 <span className="text-[8px] text-indigo-500 font-semibold block text-right mt-0.5 italic" title={line.precioNote}>
                                   {line.precioNote}
@@ -1029,10 +1108,10 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
                               </select>
                             </td>
                             <td className="p-1.5 text-right font-mono text-[11px] text-zinc-500 font-semibold">
-                              {formatMoney(subtotalNeto)}
+                              <span className={`text-[8px] mr-0.5 ${monedaOp === 'USD' ? 'text-amber-500' : 'text-blue-400'}`}>{monedaOp === 'USD' ? 'U$S' : '$'}</span>{formatMoney(subtotalNeto)}
                             </td>
                             <td className="p-1.5 text-right font-mono text-xs font-black text-zinc-800">
-                              {formatMoney(subtotalConIva)}
+                              <span className={`text-[9px] mr-0.5 ${monedaOp === 'USD' ? 'text-amber-600' : 'text-blue-500'}`}>{monedaOp === 'USD' ? 'U$S' : '$'}</span>{formatMoney(subtotalConIva)}
                             </td>
                             <td className="p-1.5 text-center">
                               {formData.Lineas.length > 1 && (

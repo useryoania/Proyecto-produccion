@@ -1056,17 +1056,35 @@ async function getMovimientos(CueIdCuenta, FechaDesde = null, FechaHasta = null,
             AND dd.DDeImportePendiente > 0.01
         ) THEN 1 ELSE 0 END AS BIT
       ) AS EsPendientePago,
-      COALESCE(
-        (SELECT TOP 1 CodigoOrden FROM dbo.Ordenes WITH(NOLOCK) WHERE OrdenID = m.OrdIdOrden),
-        (SELECT TOP 1 OrdCodigoOrden FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OrdIdOrden = m.OrdIdOrden),
-        (SELECT TOP 1 OrdCodigoOrden FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OReIdOrdenRetiro = m.OReIdOrdenRetiro),
-        m.MovRefExterna
-      ) AS CodigoOrdenStr
+      oa.CodigoOrdenStr,
+      oa.CodigoOrdenStr AS OrdCodigoOrden,
+      oa.NombreTrabajo AS OrdNombreTrabajo,
+      (
+         SELECT d.ID AS DetalleID, a.CodArticulo, d.Cantidad, d.PrecioUnitario, d.Subtotal, d.LogPrecioAplicado, a.Descripcion, pc.Moneda, a.CodStock, sa.Articulo AS ArticuloNombre
+         FROM dbo.PedidosCobranza pc WITH(NOLOCK)
+         JOIN dbo.PedidosCobranzaDetalle d WITH(NOLOCK) ON pc.ID = d.PedidoCobranzaID
+         LEFT JOIN dbo.Articulos a WITH(NOLOCK) ON a.ProIdProducto = d.ProIdProducto
+         LEFT JOIN dbo.StockArt sa WITH(NOLOCK) ON a.CodStock = sa.CodStock
+         WHERE LTRIM(RTRIM(pc.NoDocERP)) = oa.CodigoOrdenStr
+         FOR JSON PATH
+      ) AS DetallesJSON
     FROM dbo.MovimientosCuenta m WITH(NOLOCK)
     LEFT JOIN dbo.Pagos p WITH(NOLOCK) ON p.PagIdPago = m.PagIdPago
     LEFT JOIN dbo.TransaccionesCaja tca WITH(NOLOCK) ON tca.TcaIdTransaccion = p.PagTcaIdTransaccion
     LEFT JOIN dbo.DocumentosContables dc WITH(NOLOCK) ON dc.DocIdDocumento = m.DocIdDocumento
     LEFT JOIN dbo.DocumentosContables dcPago WITH(NOLOCK) ON dcPago.TcaIdTransaccion = p.PagTcaIdTransaccion
+    OUTER APPLY (
+      SELECT COALESCE(
+        (SELECT TOP 1 CodigoOrden FROM dbo.Ordenes WITH(NOLOCK) WHERE OrdenID = m.OrdIdOrden),
+        (SELECT TOP 1 OrdCodigoOrden FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OrdIdOrden = m.OrdIdOrden),
+        (SELECT TOP 1 OrdCodigoOrden FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OReIdOrdenRetiro = m.OReIdOrdenRetiro),
+        m.MovRefExterna
+      ) AS CodigoOrdenStr,
+      COALESCE(
+        (SELECT TOP 1 DescripcionTrabajo FROM dbo.Ordenes WITH(NOLOCK) WHERE OrdenID = m.OrdIdOrden),
+        (SELECT TOP 1 OrdNombreTrabajo FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OrdIdOrden = m.OrdIdOrden)
+      ) AS NombreTrabajo
+    ) oa
     WHERE m.CueIdCuenta = @CueIdCuenta
       ${filtroFecha}
     ORDER BY m.MovFecha DESC, m.MovIdMovimiento DESC

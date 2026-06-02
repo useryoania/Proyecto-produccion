@@ -330,7 +330,7 @@ exports.crearFacturaManual = async (req, res) => {
         // El genérico (ID 2089 = "Consumidor Final") NO tiene cuenta corriente propia.
         // Cualquier otro cliente — aunque el doc sea e-Ticket (B2C para DGI) — sí la tiene.
         const cliIdNum = parseInt(CliIdCliente) || 0;
-        const isRealClient = cliIdNum > 1 && cliIdNum !== CONSUMIDOR_FINAL_ID && cliIdNum !== 100101;
+        const isRealClient = cliIdNum > 0 && cliIdNum !== CONSUMIDOR_FINAL_ID && cliIdNum !== 100101;
         if (isRealClient) {
             const cueTipo = MonIdMoneda === 2 ? 'DINERO_USD' : 'DINERO_UYU';
             const ctaMonedaId = await contabilidadService.obtenerOCrearCuenta(CliIdCliente, cueTipo, {
@@ -526,9 +526,9 @@ exports.anularFactura = async (req, res) => {
         }
 
         // Si está pagado, revertir transacciones de caja y liberar las órdenes asociadas
-        if (doc.DocPagado && doc.TcaIdTransaccion) {
-            const tcaId = doc.TcaIdTransaccion;
-            const usuarioId = req.user?.id || 70;
+        const tcaId = doc.TcaIdTransaccion || null;
+        const usuarioId = req.user?.id || 70;
+        if (doc.DocPagado && tcaId) {
 
             // 1. Obtener los IDs de las órdenes de retiro antes de borrarlas
             const ordRetiroRes = await transaction.request()
@@ -605,12 +605,14 @@ exports.anularFactura = async (req, res) => {
         // Revertir de MovimientosCuenta y saldo de CuentasCliente si existieran (exceptuando órdenes/entregas que se liberan)
         const movsRes = await transaction.request()
             .input('id', sql.Int, id)
-            .query("SELECT CueIdCuenta, MovImporte FROM dbo.MovimientosCuenta WHERE DocIdDocumento = @id AND (MovAnulado IS NULL OR MovAnulado = 0) AND MovTipo NOT IN ('ORDEN', 'ENTREGA')");
+            .input('tcaId', sql.Int, tcaId || 0)
+            .query("SELECT CueIdCuenta, MovImporte FROM dbo.MovimientosCuenta WHERE (DocIdDocumento = @id OR (@tcaId > 0 AND PagIdPago IN (SELECT PagIdPago FROM dbo.Pagos WHERE PagTcaIdTransaccion = @tcaId))) AND (MovAnulado IS NULL OR MovAnulado = 0) AND MovTipo NOT IN ('ORDEN', 'ENTREGA')");
         
         if (movsRes.recordset.length > 0) {
             await transaction.request()
                 .input('id', sql.Int, id)
-                .query("UPDATE dbo.MovimientosCuenta SET MovAnulado = 1 WHERE DocIdDocumento = @id AND MovTipo NOT IN ('ORDEN', 'ENTREGA')");
+                .input('tcaId', sql.Int, tcaId || 0)
+                .query("UPDATE dbo.MovimientosCuenta SET MovAnulado = 1 WHERE (DocIdDocumento = @id OR (@tcaId > 0 AND PagIdPago IN (SELECT PagIdPago FROM dbo.Pagos WHERE PagTcaIdTransaccion = @tcaId))) AND MovTipo NOT IN ('ORDEN', 'ENTREGA')");
 
             for (const mov of movsRes.recordset) {
                 await transaction.request()
@@ -845,7 +847,8 @@ exports.editarFactura = async (req, res) => {
         // 3. Revertir y actualizar cuenta corriente de clientes (MovimientosCuenta y CuentasCliente)
         const oldMovs = await transaction.request()
             .input('id', sql.Int, id)
-            .query("SELECT CueIdCuenta, MovImporte FROM dbo.MovimientosCuenta WHERE DocIdDocumento = @id AND (MovAnulado IS NULL OR MovAnulado = 0) AND MovTipo NOT IN ('ORDEN', 'ENTREGA')");
+            .input('tcaId', sql.Int, doc.TcaIdTransaccion || 0)
+            .query("SELECT CueIdCuenta, MovImporte FROM dbo.MovimientosCuenta WHERE (DocIdDocumento = @id OR (@tcaId > 0 AND PagIdPago IN (SELECT PagIdPago FROM dbo.Pagos WHERE PagTcaIdTransaccion = @tcaId))) AND (MovAnulado IS NULL OR MovAnulado = 0) AND MovTipo NOT IN ('ORDEN', 'ENTREGA')");
 
         for (const mov of oldMovs.recordset) {
             await transaction.request()
@@ -856,11 +859,12 @@ exports.editarFactura = async (req, res) => {
 
         await transaction.request()
             .input('id', sql.Int, id)
-            .query("UPDATE dbo.MovimientosCuenta SET MovAnulado = 1 WHERE DocIdDocumento = @id AND MovTipo NOT IN ('ORDEN', 'ENTREGA')");
+            .input('tcaId', sql.Int, doc.TcaIdTransaccion || 0)
+            .query("UPDATE dbo.MovimientosCuenta SET MovAnulado = 1 WHERE (DocIdDocumento = @id OR (@tcaId > 0 AND PagIdPago IN (SELECT PagIdPago FROM dbo.Pagos WHERE PagTcaIdTransaccion = @tcaId))) AND MovTipo NOT IN ('ORDEN', 'ENTREGA')");
 
         // Insertar los nuevos movimientos para el cliente actual si es cliente real
         const cliIdNum = parseInt(CliIdCliente) || 0;
-        const isRealClient = cliIdNum > 1 && cliIdNum !== CONSUMIDOR_FINAL_ID && cliIdNum !== 100101;
+        const isRealClient = cliIdNum > 0 && cliIdNum !== CONSUMIDOR_FINAL_ID && cliIdNum !== 100101;
         if (isRealClient) {
             const cueTipo = MonIdMoneda === 2 ? 'DINERO_USD' : 'DINERO_UYU';
             const ctaMonedaId = await contabilidadService.obtenerOCrearCuenta(CliIdCliente, cueTipo, {

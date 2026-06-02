@@ -2134,8 +2134,8 @@ exports.getOrdenesAnticipo = async (req, res) => {
       .query(`
         SELECT m.MovIdMovimiento, m.CueIdCuenta, m.MovTipo, m.MovConcepto, m.MovImporte, m.MovFecha,
                m.OrdIdOrden, m.OReIdOrdenRetiro, m.PagIdPago, m.MovObservaciones, m.DocIdDocumento,
-               COALESCE(od.OrdCodigoOrden, erp.CodigoOrden) AS OrdCodigoOrden,
-               COALESCE(od.OrdNombreTrabajo, erp.DescripcionTrabajo) AS OrdNombreTrabajo,
+               oa.CodigoOrdenStr AS OrdCodigoOrden,
+               oa.NombreTrabajo AS OrdNombreTrabajo,
                ISNULL(od.OrdCantidad, 1) AS OrdCantidad,
                ISNULL(od.OrdDescuentoAplicado, 0) AS OrdDescuentoAplicado,
                od.OrdMaterialPlanilla,
@@ -2148,12 +2148,24 @@ exports.getOrdenesAnticipo = async (req, res) => {
                    JOIN dbo.PedidosCobranzaDetalle d WITH(NOLOCK) ON pc.ID = d.PedidoCobranzaID
                    LEFT JOIN dbo.Articulos a WITH(NOLOCK) ON a.ProIdProducto = d.ProIdProducto
                    LEFT JOIN dbo.StockArt sa WITH(NOLOCK) ON a.CodStock = sa.CodStock
-                   WHERE LTRIM(RTRIM(pc.NoDocERP)) = COALESCE(od.OrdCodigoOrden, erp.CodigoOrden)
+                   WHERE LTRIM(RTRIM(pc.NoDocERP)) = oa.CodigoOrdenStr
                    FOR JSON PATH
                 ) AS DetallesJSON
         FROM dbo.MovimientosCuenta m WITH(NOLOCK)
+        OUTER APPLY (
+          SELECT COALESCE(
+            (SELECT TOP 1 CodigoOrden FROM dbo.Ordenes WITH(NOLOCK) WHERE OrdenID = m.OrdIdOrden),
+            (SELECT TOP 1 OrdCodigoOrden FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OrdIdOrden = m.OrdIdOrden),
+            (SELECT TOP 1 OrdCodigoOrden FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OReIdOrdenRetiro = m.OReIdOrdenRetiro),
+            m.MovRefExterna
+          ) AS CodigoOrdenStr,
+          COALESCE(
+            (SELECT TOP 1 DescripcionTrabajo FROM dbo.Ordenes WITH(NOLOCK) WHERE OrdenID = m.OrdIdOrden),
+            (SELECT TOP 1 OrdNombreTrabajo FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OrdIdOrden = m.OrdIdOrden)
+          ) AS NombreTrabajo
+        ) oa
         LEFT JOIN dbo.Ordenes erp WITH(NOLOCK) ON erp.OrdenID = m.OrdIdOrden
-        LEFT JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON od.OrdCodigoOrden = erp.CodigoOrden
+        LEFT JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON od.OrdCodigoOrden = oa.CodigoOrdenStr
         LEFT JOIN dbo.Articulos p WITH(NOLOCK) ON od.ProIdProducto = p.ProIdProducto
         LEFT JOIN dbo.StockArt s WITH(NOLOCK) ON p.CodStock = s.CodStock
         WHERE m.CueIdCuenta IN (SELECT CueIdCuenta FROM dbo.CuentasCliente WHERE CliIdCliente = @Cli)

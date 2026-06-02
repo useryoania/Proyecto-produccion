@@ -1571,11 +1571,11 @@ const generarNotaCredito = async (req, res) => {
       const tipoCtaReal = monId === 2 ? 'DINERO_USD' : 'DINERO_UYU';
       let cueIdReal = null;
       if (!esConsumidorFinalGenerico) {
-        const ctaR = await new sql.Request(transaction)
-          .input('Cli', sql.Int, cliIdNum)
-          .input('Tipo', sql.VarChar(20), tipoCtaReal)
-          .query(`SELECT TOP 1 CueIdCuenta FROM dbo.CuentasCliente WHERE CliIdCliente = @Cli AND CueTipo = @Tipo AND CueActiva = 1`);
-        cueIdReal = ctaR.recordset[0]?.CueIdCuenta;
+        const contabilidadService = require('../services/contabilidadService');
+        cueIdReal = await contabilidadService.obtenerOCrearCuenta(cliIdNum, tipoCtaReal, {
+            MonIdMoneda: monId,
+            UsuarioAlta: usuarioId
+        }, transaction);
         if (!cueIdReal) {
           throw new Error('El cliente no tiene una cuenta corriente activa para esta moneda.');
         }
@@ -1775,11 +1775,11 @@ const generarNotaDebito = async (req, res) => {
       const tipoCtaReal = monId === 2 ? 'DINERO_USD' : 'DINERO_UYU';
       let cueIdReal = null;
       if (!esConsumidorFinalGenerico) {
-        const ctaR = await new sql.Request(transaction)
-          .input('Cli', sql.Int, cliIdNum)
-          .input('Tipo', sql.VarChar(20), tipoCtaReal)
-          .query(`SELECT TOP 1 CueIdCuenta FROM dbo.CuentasCliente WHERE CliIdCliente = @Cli AND CueTipo = @Tipo AND CueActiva = 1`);
-        cueIdReal = ctaR.recordset[0]?.CueIdCuenta;
+        const contabilidadService = require('../services/contabilidadService');
+        cueIdReal = await contabilidadService.obtenerOCrearCuenta(cliIdNum, tipoCtaReal, {
+            MonIdMoneda: monId,
+            UsuarioAlta: usuarioId
+        }, transaction);
         if (!cueIdReal) {
           throw new Error('El cliente no tiene una cuenta corriente activa para esta moneda.');
         }
@@ -2502,3 +2502,83 @@ async function imputarAnticipoADeuda(req, res) {
 module.exports.imputarAnticipoADeuda = imputarAnticipoADeuda;
 module.exports.guardarComprobante = guardarComprobante;
 
+
+// --- BANDEJA DOCUMENTOS INTERNOS (no-CFE) ------------------------------------
+const getDocumentosInternos = async (req, res) => {
+  try {
+    const pool = await getPool();
+    const { desde = null, hasta = null, tipo = 'TODOS', cliente = '', page = 1, limit = 50 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const fechaDesde = desde
+      ? (() => { const [y,m,d] = desde.split('T')[0].split('-'); const dt = new Date(y,m-1,d); dt.setHours(0,0,0,0); return dt; })()
+      : (() => { const dt = new Date(); dt.setDate(dt.getDate()-30); dt.setHours(0,0,0,0); return dt; })();
+    const fechaHasta = hasta
+      ? (() => { const [y,m,d] = hasta.split('T')[0].split('-'); const dt = new Date(y,m-1,d); dt.setHours(23,59,59,999); return dt; })()
+      : (() => { const dt = new Date(); dt.setHours(23,59,59,999); return dt; })();
+    const filtroCliente = cliente ? '%' + cliente.trim() + '%' : null;
+    const r = pool.request()
+      .input('FecDesde', sql.DateTime, fechaDesde)
+      .input('FecHasta', sql.DateTime, fechaHasta)
+      .input('Limit',    sql.Int, parseInt(limit))
+      .input('Offset',   sql.Int, offset)
+      .input('FiltroCliente', sql.NVarChar(200), filtroCliente);
+
+    const clienteFilter = filtroCliente ? 'AND (c.Nombre LIKE @FiltroCliente OR c.NombreFantasia LIKE @FiltroCliente)' : '';
+    const clienteFilterEgr = filtroCliente ? 'AND e.EgrProveedor LIKE @FiltroCliente' : '';
+
+    const ingresoQ = `
+      SELECT 'INGRESO' AS TipoOperacion, t.TcaIdTransaccion AS DocId, t.TcaFecha AS Fecha,
+        ISNULL(ct1.Detalle, t.TcaTipoDocumento) AS TipoDoc, t.TcaTipoDocumento AS CodTipoDoc,
+        ISNULL(t.TcaSerieDoc,'') AS Serie, ISNULL(t.TcaNumeroDoc,'') AS Numero,
+        ISNULL(c.Nombre, 'Consumidor Final') AS ClienteNombre, t.TcaClienteId AS ClienteId,
+        CASE WHEN p.PagIdMonedaPago = 2 THEN 'USD' ELSE 'UYU' END AS Moneda,
+        SUM(p.PagMontoPago) AS Total, t.TcaEstado AS Estado,
+        ISNULL(t.TcaObservaciones,'') AS Observaciones, mp.MPaDescripcionMetodo AS MetodoPago,
+        COALESCE(u.Nombre, u.Usuario, 'Sistema') AS Usuario
+      FROM dbo.TransaccionesCaja t WITH(NOLOCK)
+      JOIN dbo.Pagos p WITH(NOLOCK) ON p.PagTcaIdTransaccion = t.TcaIdTransaccion
+      LEFT JOIN dbo.MetodosPagos mp WITH(NOLOCK) ON mp.MPaIdMetodoPago = p.MPaIdMetodoPago
+      LEFT JOIN dbo.Config_TiposDocumento ct1 WITH(NOLOCK) ON ct1.CodDocumento = t.TcaTipoDocumento
+      LEFT JOIN dbo.Clientes c WITH(NOLOCK) ON c.CliIdCliente = t.TcaClienteId
+      LEFT JOIN dbo.Usuarios u WITH(NOLOCK) ON u.IdUsuario = t.TcaUsuarioId
+      WHERE t.TcaFecha BETWEEN @FecDesde AND @FecHasta
+        AND t.TcaEstado IN ('COMPLETADO','COMPLETADA','COBRADO')
+        AND p.PagTipoMovimiento != 'ANULADO'
+        AND NOT EXISTS (
+          SELECT 1 FROM dbo.DocumentosContables dc WITH(NOLOCK)
+          WHERE dc.TcaIdTransaccion = t.TcaIdTransaccion
+        )
+        ${clienteFilter}
+      GROUP BY t.TcaIdTransaccion, t.TcaFecha, ct1.Detalle, t.TcaTipoDocumento,
+               t.TcaSerieDoc, t.TcaNumeroDoc, c.Nombre, t.TcaClienteId,
+               p.PagIdMonedaPago, t.TcaEstado, t.TcaObservaciones, mp.MPaDescripcionMetodo, u.Nombre, u.Usuario
+    `;
+    const egresoQ = `
+      SELECT 'EGRESO' AS TipoOperacion, e.EgrIdEgreso AS DocId, e.EgrFecha AS Fecha,
+        ISNULL(ct2.Detalle, e.EgrTipoDocumento) AS TipoDoc, e.EgrTipoDocumento AS CodTipoDoc,
+        ISNULL(e.EgrSerieDoc,'') AS Serie, ISNULL(e.EgrNumeroDoc,'') AS Numero,
+        ISNULL(e.EgrProveedor,'-') AS ClienteNombre, NULL AS ClienteId,
+        e.EgrMoneda AS Moneda, e.EgrMonto AS Total, e.EgrEstado AS Estado,
+        ISNULL(e.EgrConcepto,'') AS Observaciones, mp2.MPaDescripcionMetodo AS MetodoPago,
+        COALESCE(u2.Nombre, u2.Usuario, 'Sistema') AS Usuario
+      FROM dbo.EgresosCaja e WITH(NOLOCK)
+      LEFT JOIN dbo.MetodosPagos mp2 WITH(NOLOCK) ON mp2.MPaIdMetodoPago = e.MPaIdMetodoPago
+      LEFT JOIN dbo.Config_TiposDocumento ct2 WITH(NOLOCK) ON ct2.CodDocumento = e.EgrTipoDocumento
+      LEFT JOIN dbo.Usuarios u2 WITH(NOLOCK) ON u2.IdUsuario = e.EgrUsuarioId
+      WHERE e.EgrFecha BETWEEN @FecDesde AND @FecHasta AND e.EgrEstado = 'REGISTRADO'
+        ${clienteFilterEgr}
+    `;
+
+    let finalQ;
+    if (tipo === 'INGRESO') finalQ = ingresoQ + ' ORDER BY Fecha DESC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY';
+    else if (tipo === 'EGRESO') finalQ = egresoQ + ' ORDER BY Fecha DESC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY';
+    else finalQ = `SELECT * FROM (${ingresoQ} UNION ALL ${egresoQ}) AS docs ORDER BY Fecha DESC OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY`;
+
+    const result = await r.query(finalQ);
+    return res.json({ success: true, data: result.recordset, page: parseInt(page), limit: parseInt(limit) });
+  } catch (err) {
+    logger.error('[CAJA] getDocumentosInternos:', err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+};
+module.exports.getDocumentosInternos = getDocumentosInternos;

@@ -72,6 +72,7 @@ app.use('/api/failures', require('./routes/failuresRoutes'));
 app.use('/api/clients', require('./routes/clientsRoutes'));
 app.use('/api/workflows', require('./routes/workflowsRoutes'));
 app.use('/api/logistics', require('./routes/logisticsRoutes'));
+app.use('/api/canastos', require('./routes/canastosRoutes'));
 app.use('/api/rolls', require('./routes/rollsRoutes'));
 app.use('/api/rest-sync', require('./routes/restSyncRoutes'));
 app.use('/api/measurements', require('./routes/measurementRoutes'));

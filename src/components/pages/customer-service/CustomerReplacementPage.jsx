@@ -83,12 +83,43 @@ const CustomerReplacementPage = () => {
                 setReplacementDetails(copy);
                 return prev.filter(id => id !== fileId);
             } else {
+                // Pre-cargar valores originales como defaults
+                const fileData = files.find(f => f.ArchivoID === fileId);
+                if (fileData) {
+                    setReplacementDetails(prev => ({
+                        ...prev,
+                        [fileId]: {
+                            meters: parseFloat(fileData.Metros || 0).toFixed(2),
+                            copies: parseInt(fileData.Copias || 1),
+                            obs: ''
+                        }
+                    }));
+                }
                 return [...prev, fileId];
             }
         });
     };
 
     const updateDetail = (fileId, field, value) => {
+        // Validar límites para metros y copias
+        if (field === 'meters') {
+            const fileData = files.find(f => f.ArchivoID === fileId);
+            const maxMeters = parseFloat(fileData?.Metros || 0);
+            const val = parseFloat(value);
+            if (!isNaN(val) && maxMeters > 0 && val > maxMeters) {
+                setToast({ visible: true, message: `⚠️ No podés reponer más de ${maxMeters.toFixed(2)}m (metros originales)`, type: 'warning' });
+                value = maxMeters.toString();
+            }
+        }
+        if (field === 'copies') {
+            const fileData = files.find(f => f.ArchivoID === fileId);
+            const maxCopies = parseInt(fileData?.Copias || 0);
+            const val = parseInt(value);
+            if (!isNaN(val) && maxCopies > 0 && val > maxCopies) {
+                setToast({ visible: true, message: `⚠️ No podés reponer más de ${maxCopies} copias (copias originales)`, type: 'warning' });
+                value = maxCopies.toString();
+            }
+        }
         setReplacementDetails(prev => ({
             ...prev,
             [fileId]: {
@@ -105,20 +136,37 @@ const CustomerReplacementPage = () => {
             return;
         }
 
-        // Validate details
+        // Validate details and enforce limits client-side
         const items = selectedFileIds.map(fid => {
             const details = replacementDetails[fid] || {};
-            // If meters not specified, maybe assume full reprint? or required?
-            // Let's assume required or check logic. If empty, maybe defaults to original? Not safe.
-            // Let's require meters or 0.
+            const fileData = files.find(f => f.ArchivoID === fid);
+            const maxMeters = parseFloat(fileData?.Metros || 0);
+            const maxCopies = parseInt(fileData?.Copias || 0);
+            const metersVal = parseFloat(details.meters) || 0;
+            const copiesVal = parseInt(details.copies) || maxCopies;
+
+            // Validate against originals
+            if (metersVal > maxMeters && maxMeters > 0) {
+                setToast({ visible: true, message: `⛔ El archivo "${fileData?.NombreArchivo}" supera los metros originales (${maxMeters}m)`, type: 'error' });
+                return null; // Flag error
+            }
+            if (copiesVal > maxCopies && maxCopies > 0) {
+                setToast({ visible: true, message: `⛔ El archivo "${fileData?.NombreArchivo}" supera las copias originales (${maxCopies})`, type: 'error' });
+                return null; // Flag error
+            }
+
             return {
                 id: fid,
-                meters: details.meters || 0,
+                meters: metersVal,
+                copies: copiesVal,
                 obs: details.obs || ''
             };
         });
 
-        if (items.some(i => !i.meters || parseFloat(i.meters) <= 0)) {
+        // If any validation failed, abort
+        if (items.some(i => i === null)) return;
+
+        if (items.some(i => !i.meters || i.meters <= 0)) {
             if (!confirm("Algunos archivos tienen 0 metros. ¿Continuar?")) return;
         }
 
@@ -302,34 +350,44 @@ const CustomerReplacementPage = () => {
                                                             <div className="px-4 pb-4 pt-0 flex flex-col gap-3 animate-in slide-in-from-top-2 duration-200">
                                                                 <div className="flex gap-4">
                                                                     <div className="w-1/3">
-                                                                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Metros a Reponer</label>
+                                                                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                                                                            Metros a Reponer
+                                                                            <span className="ml-1 text-blue-400 normal-case font-normal">(máx: {parseFloat(file.Metros || 0).toFixed(2)}m)</span>
+                                                                        </label>
                                                                         <input
                                                                             type="number"
                                                                             step="0.01"
+                                                                            min="0.01"
+                                                                            max={parseFloat(file.Metros || 0)}
                                                                             className="w-full px-3 py-2 bg-slate-50 border border-blue-200 rounded-lg text-sm font-bold text-slate-700 focus:border-blue-500 outline-none bg-blue-50/20"
-                                                                            placeholder="Ej: 1.5"
-                                                                            value={details.meters || ''}
+                                                                            placeholder={`Ej: ${parseFloat(file.Metros || 0).toFixed(2)}`}
+                                                                            value={details.meters ?? ''}
                                                                             onChange={e => updateDetail(file.ArchivoID, 'meters', e.target.value)}
                                                                         />
                                                                     </div>
                                                                     <div className="w-1/3">
-                                                                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Copias</label>
+                                                                        <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                                                                            Copias
+                                                                            <span className="ml-1 text-blue-400 normal-case font-normal">(máx: {file.Copias})</span>
+                                                                        </label>
                                                                         <input
                                                                             type="number"
                                                                             step="1"
+                                                                            min="1"
+                                                                            max={parseInt(file.Copias || 1)}
                                                                             className="w-full px-3 py-2 bg-slate-50 border border-blue-200 rounded-lg text-sm font-bold text-slate-700 focus:border-blue-500 outline-none bg-blue-50/20"
-                                                                            placeholder="Ej: 1"
-                                                                            value={details.copies || file.Copias || '1'}
+                                                                            placeholder={`${file.Copias}`}
+                                                                            value={details.copies ?? parseInt(file.Copias || 1)}
                                                                             onChange={e => updateDetail(file.ArchivoID, 'copies', e.target.value)}
                                                                         />
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex-1">
-                                                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Motivo / Observación (Se añadirá a la orden)</label>
+                                                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Motivo / Observación de la Falla</label>
                                                                     <input
                                                                         type="text"
                                                                         className="w-full px-3 py-2 bg-slate-50 border border-blue-200 rounded-lg text-sm font-medium text-slate-700 focus:border-blue-500 outline-none bg-blue-50/20"
-                                                                        placeholder="Describa el problema..."
+                                                                        placeholder="Describa el problema (la máquina y lote se agregan automáticamente)"
                                                                         value={details.obs || ''}
                                                                         onChange={e => updateDetail(file.ArchivoID, 'obs', e.target.value)}
                                                                     />

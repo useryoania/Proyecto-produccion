@@ -175,36 +175,38 @@ exports.toggleRollStatus = async (req, res) => {
                 if (destination === 'production') {
                     await new sql.Request(transaction)
                         .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
-                        .query("UPDATE dbo.Rollos SET Estado = 'En Cola', MaquinaID = NULL WHERE CAST(RolloID AS VARCHAR(50)) = @RID"); // Vuelve a la cola general? O se queda asignada? Asumimos liberar maquina.
+                        .query("UPDATE dbo.Rollos SET Estado = 'En Cola', MaquinaID = NULL WHERE CAST(RolloID AS VARCHAR(50)) = @RID");
 
                     await new sql.Request(transaction).input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
                         .query("UPDATE dbo.BitacoraProduccion SET FechaFin = GETDATE() WHERE CAST(RolloID AS VARCHAR(50)) = @RID AND FechaFin IS NULL");
 
+                    // Vuelve a produccion: limpiamos MaquinaID de las ordenes (la máquina queda libre)
                     await new sql.Request(transaction)
                         .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
                         .query(`UPDATE dbo.Ordenes SET Estado = 'Produccion', EstadoenArea = 'En Lote', MaquinaID = NULL WHERE CAST(RolloID AS VARCHAR(50)) = @RID`);
 
-                    await registerHistoryForOrders(transaction, currentRoll.RolloID, 'En Lote', userId, 'Fin Proceso Maquina - Retorna a Cola');
+                    await registerHistoryForOrders(transaction, currentRoll.RolloID, 'En Lote', userId, 'Fin Proceso Máquina - Retorna a Cola');
 
                 } else {
                     // Opción B: FINALIZAR COMPLETAMENTE (ENVIAR A CALIDAD) - Default
+                    // El Rollo pasa a Finalizado pero conserva MaquinaID para historial
                     await new sql.Request(transaction)
                         .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
-                        .query(`UPDATE dbo.Rollos SET Estado = 'Finalizado', MaquinaID = NULL WHERE CAST(RolloID AS VARCHAR(50)) = @RID`);
+                        .query(`UPDATE dbo.Rollos SET Estado = 'Finalizado' WHERE CAST(RolloID AS VARCHAR(50)) = @RID`);
 
                     await new sql.Request(transaction).input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
                         .query("UPDATE dbo.BitacoraProduccion SET FechaFin = GETDATE() WHERE CAST(RolloID AS VARCHAR(50)) = @RID AND FechaFin IS NULL");
 
-                    // Actualizar Ordenes -> Control y Calidad
+                    // Las órdenes van a Control y Calidad CONSERVANDO RolloID y MaquinaID
+                    // (Control de calidad necesita saber en qué máquina y lote se imprimieron)
                     await new sql.Request(transaction)
                         .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
-                        .query(`UPDATE dbo.Ordenes 
-                            SET Estado = 'Produccion', 
-                                EstadoenArea = 'Control y Calidad', 
-                                MaquinaID = NULL 
+                        .query(`UPDATE dbo.Ordenes
+                            SET Estado        = 'Produccion',
+                                EstadoenArea  = 'Control y Calidad'
                             WHERE CAST(RolloID AS VARCHAR(50)) = @RID`);
 
-                    await registerHistoryForOrders(transaction, currentRoll.RolloID, 'Control y Calidad', userId, 'Fin Produccion - Enviado a Control');
+                    await registerHistoryForOrders(transaction, currentRoll.RolloID, 'Control y Calidad', userId, 'Fin Producción - Enviado a Control');
                     await registrarAuditoria(transaction, userId, 'FIN_PRODUCCION', `Rollo ${rollId} finalizado`, ip);
                 }
             }

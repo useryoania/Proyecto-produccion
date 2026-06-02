@@ -83,6 +83,7 @@ router.post('/caja/transaccion/:id/anular',   caja.anularTransaccion);
 router.get('/caja/transaccion/:id',           caja.getTransaccion);
 router.get('/caja/historial/:clienteId',      caja.getHistorialCliente);
 router.get('/caja/movimientos-turno',         caja.getMovimientosTurno);
+router.get('/caja/documentos',                caja.getDocumentosInternos); // Bandeja de recibos/egresos
 
 
 // Sesión de caja (apertura / cierre)
