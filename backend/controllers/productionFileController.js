@@ -1553,11 +1553,8 @@ module.exports = {
     createCustomerReplacementOrder,
     getRelatedOrders,
     completarOrden,
-<<<<<<< HEAD
-    getMotivosCancelacion
-=======
+    getMotivosCancelacion,
     confirmarFalla,
     liberarCanastaFalla
->>>>>>> ed128d368e0200971a5801fc1435036c1c99ff94
 };
 

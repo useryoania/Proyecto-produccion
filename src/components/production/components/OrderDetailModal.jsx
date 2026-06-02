@@ -9,13 +9,10 @@ import OrderRequirementsList from '../../logistics/OrderRequirementsList';
 import { printLabelsHelper } from "../../../utils/printHelper";
 import QuotationEditModal from '../../logistics/QuotationEditModal';
 import { useAuth } from '../../../context/AuthContext';
-<<<<<<< HEAD
 import { Listbox, Transition } from '@headlessui/react';
 import { Check, ChevronDown } from 'lucide-react';
-=======
 import ModalConfirmacionFalla from './ModalConfirmacionFalla';
 import ModalLiberacionFalla from './ModalLiberacionFalla';
->>>>>>> ed128d368e0200971a5801fc1435036c1c99ff94
 
 
 const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
