@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { Listbox, ListboxButton, ListboxOptions, ListboxOption, Transition } from '@headlessui/react';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { useAuth } from "../../context/AuthContext";
-import { fileControlService, ordersService } from "../../services/api";
+import { fileControlService, ordersService, rollsService } from "../../services/api";
 import KPICard from '../common/KPICard';
 import OrderCard from '../production/components/OrderCard';
 import RollDetailsModal from '../modals/RollDetailsModal';
@@ -111,8 +111,9 @@ const FilePrintControl = ({ areaCode }) => {
 
   // 0. Load Falla Types
   useEffect(() => {
-    fileControlService.getFallaTypes().then(setFallaTypes).catch(console.error);
-  }, []);
+    const area = areaCode || 'DTF';
+    fileControlService.getFallaTypes(area).then(setFallaTypes).catch(console.error);
+  }, [areaCode]);
 
   // 1. Load active rolls
   useEffect(() => {
@@ -340,29 +341,53 @@ const FilePrintControl = ({ areaCode }) => {
   const handleFinalizarOrden = async () => {
     if (!selectedOrder || finalizandoOrden) return;
     setFinalizandoOrden(true);
-    const completedId = selectedOrder.id;
-    const nextService = selectedOrder.nextService;
+
+    const loteCompleto = orders.length > 0 && orders.every(o => o.controlled);
+    const ordersToComplete = loteCompleto ? orders : [selectedOrder];
     
     try {
-      const res = await fileControlService.completarOrden(completedId);
-      if (res.success) {
-        // Quitar la orden de la lista inmediatamente sin esperar al socket
-        setOrders(prev => prev.filter(o => o.id !== completedId));
+      let lastRes = null;
+      let someError = null;
+
+      for (const order of ordersToComplete) {
+        const res = await fileControlService.completarOrden(order.id);
+        if (res.success) {
+          lastRes = res;
+          handlePrintLabels(order.id);
+        } else {
+          someError = res.error || `Error al finalizar la orden ${order.code || order.id}`;
+          setToast({ visible: true, message: someError, type: 'error' });
+        }
+      }
+
+      if (lastRes && !someError) {
+        const completedIds = ordersToComplete.map(o => o.id);
+        
+        setOrders(prev => {
+          const nextOrders = prev.filter(o => !completedIds.includes(o.id));
+          
+          const isLastInRoll = nextOrders.length === 0 && activeRoll && activeRoll.id && activeRoll.id !== 'todo';
+          
+          if (isLastInRoll) {
+            rollsService.update(activeRoll.id, { estado: 'Finalizado' }).catch(console.error);
+            setRollos(prevRolls => prevRolls.filter(r => r.id !== activeRoll.id));
+          }
+
+          setCompletedOrderData({
+            ordenId: selectedOrder.id,
+            destino: lastRes.estadoLogistica || 'LOGÍSTICA',
+            proximoServicio: selectedOrder.nextService,
+            isLastInRoll: isLastInRoll
+          });
+          
+          return nextOrders;
+        });
+
         setSelectedOrder(null);
         setFiles([]);
-        setCompletedOrderData({
-          ordenId: completedId,
-          destino: res.estadoLogistica || 'LOGÍSTICA',
-          proximoServicio: nextService
-        });
-        
-        // Auto-imprimir etiquetas
-        handlePrintLabels(completedId);
-      } else {
-        setToast({ visible: true, message: res.error || 'Error al finalizar la orden', type: 'error' });
       }
     } catch (e) {
-      setToast({ visible: true, message: 'Error de conexión al finalizar la orden', type: 'error' });
+      setToast({ visible: true, message: 'Error de conexión al finalizar', type: 'error' });
     } finally {
       setFinalizandoOrden(false);
     }
@@ -719,8 +744,8 @@ const FilePrintControl = ({ areaCode }) => {
                     <i className="fa-solid fa-check-circle text-2xl"></i>
                   )}
                   <div>
-                    <div className="font-black text-lg">{finalizandoOrden ? 'FINALIZANDO...' : 'FINALIZAR ORDEN'}</div>
-                    <div className="text-xs opacity-90">Todos los archivos listos · Pulsar para cerrar</div>
+                    <div className="font-black text-lg">{finalizandoOrden ? 'FINALIZANDO...' : (orders.length > 0 && orders.every(o => o.controlled) ? 'FINALIZAR LOTE COMPLETO' : 'FINALIZAR ORDEN')}</div>
+                    <div className="text-xs opacity-90">{orders.length > 0 && orders.every(o => o.controlled) ? 'Finalizar todas las órdenes del lote a la vez' : 'Todos los archivos listos · Pulsar para cerrar'}</div>
                   </div>
                 </button>
               </div>
@@ -754,16 +779,59 @@ const FilePrintControl = ({ areaCode }) => {
               {controlAction === 'FALLA' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Tipo de Falla</label>
-                  <select
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-red-400 font-medium text-sm text-slate-700"
-                    value={failureType}
-                    onChange={(e) => setFailureType(e.target.value)}
-                  >
-                    <option value="">Seleccione...</option>
-                    {fallaTypes.map(f => (
-                      <option key={f.FallaID} value={f.FallaID} title={f.DescripcionDefault}>{f.Titulo}</option>
-                    ))}
-                  </select>
+                  <div className="relative z-[1500]">
+                    <Listbox value={failureType} onChange={setFailureType}>
+                      <div className="relative">
+                        <ListboxButton className="relative w-full cursor-pointer rounded-xl bg-slate-50 py-3 pl-4 pr-10 text-left border border-slate-200 focus:outline-none focus-visible:border-red-400 sm:text-sm">
+                          <span className={`block truncate font-medium ${failureType ? 'text-slate-700' : 'text-slate-400'}`}>
+                            {failureType ? fallaTypes.find(f => f.FallaID === failureType)?.Titulo : 'Seleccione...'}
+                          </span>
+                          <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
+                            <ChevronsUpDown className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                          </span>
+                        </ListboxButton>
+                        <Transition
+                          as={Fragment}
+                          leave="transition ease-in duration-100"
+                          leaveFrom="opacity-100"
+                          leaveTo="opacity-0"
+                        >
+                          <ListboxOptions className="absolute mt-1 max-h-60 w-full overflow-auto rounded-xl bg-white py-2 text-base shadow-lg ring-1 ring-black/5 focus:outline-none sm:text-sm z-50">
+                            <ListboxOption
+                              value=""
+                              className={({ active }) =>
+                                `relative cursor-pointer select-none py-2.5 pl-10 pr-4 ${active ? 'bg-red-50 text-red-600' : 'text-slate-500'}`
+                              }
+                            >
+                              <span className="block truncate italic">Seleccione...</span>
+                            </ListboxOption>
+                            {fallaTypes.map((falla) => (
+                              <ListboxOption
+                                key={falla.FallaID}
+                                className={({ active }) =>
+                                  `relative cursor-pointer select-none py-2.5 pl-10 pr-4 ${active ? 'bg-red-50 text-red-600' : 'text-slate-700'}`
+                                }
+                                value={falla.FallaID}
+                              >
+                                {({ selected }) => (
+                                  <>
+                                    <span className={`block truncate ${selected ? 'font-black' : 'font-medium'}`} title={falla.DescripcionDefault}>
+                                      {falla.Titulo}
+                                    </span>
+                                    {selected ? (
+                                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-red-600">
+                                        <Check className="h-4 w-4" aria-hidden="true" />
+                                      </span>
+                                    ) : null}
+                                  </>
+                                )}
+                              </ListboxOption>
+                            ))}
+                          </ListboxOptions>
+                        </Transition>
+                      </div>
+                    </Listbox>
+                  </div>
                 </div>
               )}
 
@@ -837,11 +905,21 @@ const FilePrintControl = ({ areaCode }) => {
               </div>
 
               <div className="space-y-3 w-full">
-                <button onClick={() => { const id = completedOrderData?.ordenId; setCompletedOrderData(null); handlePrintLabels(id); }} className="w-full py-3 rounded-xl bg-brand-cyan text-white font-black text-lg shadow-lg shadow-brand-cyan/30 hover:bg-brand-cyan hover:scale-[1.02] transition-all active:scale-95">
+                <button onClick={() => { 
+                  const id = completedOrderData?.ordenId; 
+                  const wasLast = completedOrderData?.isLastInRoll;
+                  setCompletedOrderData(null); 
+                  if (wasLast) setActiveRoll(null);
+                  handlePrintLabels(id); 
+                }} className="w-full py-3 rounded-xl bg-brand-cyan text-white font-black text-lg shadow-lg shadow-brand-cyan/30 hover:bg-brand-cyan hover:scale-[1.02] transition-all active:scale-95">
                   <i className="fa-solid fa-print mr-2"></i> IMPRIMIR ETIQUETAS
                 </button>
                 <div className="flex gap-2">
-                  <button onClick={() => setCompletedOrderData(null)} className="flex-1 py-3 rounded-xl bg-white border-2 border-slate-200 text-slate-500 font-bold text-sm hover:bg-slate-50">
+                  <button onClick={() => {
+                    const wasLast = completedOrderData?.isLastInRoll;
+                    setCompletedOrderData(null);
+                    if (wasLast) setActiveRoll(null);
+                  }} className="flex-1 py-3 rounded-xl bg-white border-2 border-slate-200 text-slate-500 font-bold text-sm hover:bg-slate-50">
                     Cerrar
                   </button>
                   {autoAdvance && <div className="flex items-center justify-center px-4 bg-slate-100 rounded-xl text-slate-400 text-xs font-bold">

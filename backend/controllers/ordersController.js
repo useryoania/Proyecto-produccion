@@ -360,6 +360,35 @@ exports.assignRoll = async (req, res) => {
         if (targetOrderIds.length === 0) throw new Error("No se especificaron órdenes.");
 
         // ----------------------------------------------------
+        // REGLA DE NEGOCIO PARA SUBLIMACIÓN (SB)
+        // No permitir mezclar papel con otros materiales en el mismo lote
+        // ----------------------------------------------------
+        if (areaCode === 'SB') {
+            const newOrderData = await new sql.Request(pool)
+                .query(`SELECT Material FROM dbo.Ordenes WHERE OrdenID IN (${targetOrderIds.join(',')})`);
+
+            const newHasPapel = newOrderData.recordset.some(o => (o.Material || '').toLowerCase().includes('papel'));
+            const newHasOther = newOrderData.recordset.some(o => !(o.Material || '').toLowerCase().includes('papel'));
+
+            if (newHasPapel && newHasOther) {
+                return res.status(400).json({ error: '⛔ En Sublimación no se puede mezclar papel con otros materiales en el mismo lote.' });
+            }
+
+            if (!isNew && rollId) {
+                const existingData = await new sql.Request(pool)
+                    .input('RID_SB', typeof rollId === 'number' ? sql.Int : sql.VarChar(20), rollId)
+                    .query(`SELECT TOP 1 Material FROM dbo.Ordenes WHERE RolloID = @RID_SB`);
+
+                if (existingData.recordset.length > 0) {
+                    const existingHasPapel = (existingData.recordset[0].Material || '').toLowerCase().includes('papel');
+                    if (existingHasPapel !== newHasPapel) {
+                        return res.status(400).json({ error: '⛔ En Sublimación no se puede mezclar papel con otros materiales en el mismo lote.' });
+                    }
+                }
+            }
+        }
+
+        // ----------------------------------------------------
         // REGLA DE NEGOCIO PARA DTF (DF)
         // No permitir mezclar variantes o materiales en el mismo lote
         // ----------------------------------------------------
@@ -1249,7 +1278,7 @@ exports.getEstadosConfig = async (req, res) => {
                   ,[Orden]
                   ,[EsFinal]
                   ,[TipoEstado]
-              FROM [SecureAppDB].[dbo].[ConfigEstados]
+              FROM dbo.ConfigEstados
               ORDER BY [Orden] ASC
         `);
         res.json(r.recordset);
@@ -1476,7 +1505,7 @@ exports.unassignOrder = async (req, res) => {
 // ... (Otras funciones) ...
 
 exports.cancelOrder = async (req, res) => {
-    const { orderId, reason, usuario } = req.body;
+    const { orderId, reason, motivoId, detalles, usuario } = req.body;
     logger.info(`🚫 Cancelando Orden ID: ${orderId}`);
 
     try {
@@ -1494,12 +1523,16 @@ exports.cancelOrder = async (req, res) => {
             await new sql.Request(transaction)
                 .input('ID', sql.Int, orderId)
                 .input('Obs', sql.NVarChar, obsText)
+                .input('MotivoID', sql.Int, motivoId || null)
+                .input('Detalles', sql.NVarChar, detalles || null)
                 .query(`
                     UPDATE Ordenes 
                     SET Estado = 'Cancelado', 
                         EstadoenArea = 'Cancelado', 
                         Nota = CONCAT(ISNULL(Nota, ''), @Obs),
-                        Observaciones = CONCAT(ISNULL(Observaciones, ''), @Obs)
+                        Observaciones = CONCAT(ISNULL(Observaciones, ''), @Obs),
+                        MotivoCancelacionID = @MotivoID,
+                        DetallesCancelacion = @Detalles
                     WHERE OrdenID = @ID
                 `);
 
@@ -1507,12 +1540,16 @@ exports.cancelOrder = async (req, res) => {
             await new sql.Request(transaction)
                 .input('ID', sql.Int, orderId)
                 .input('User', sql.VarChar(100), safeUser)
+                .input('MotivoID', sql.Int, motivoId || null)
+                .input('Detalles', sql.NVarChar, detalles || null)
                 .query(`
                     UPDATE ArchivosOrden 
                     SET EstadoArchivo = 'CANCELADO',
                         UsuarioControl = @User,
                         FechaControl = GETDATE(),
-                        Observaciones = CONCAT(ISNULL(Observaciones, ''), ' [ORDEN CANCELADA]')
+                        Observaciones = CONCAT(ISNULL(Observaciones, ''), ' [ORDEN CANCELADA]'),
+                        MotivoCancelacionID = @MotivoID,
+                        DetallesCancelacion = @Detalles
                     WHERE OrdenID = @ID AND EstadoArchivo != 'CANCELADO'
                 `);
 
@@ -1751,7 +1788,7 @@ exports.getOrderServices = async (req, res) => {
 };
 
 exports.cancelRequest = async (req, res) => {
-    const { orderId, reason, usuario } = req.body;
+    const { orderId, reason, motivoId, detalles, usuario } = req.body;
     logger.info(`🔥 Cancelando PEDIDO COMPLETO (Request), Ref Order: ${orderId}`);
 
     try {
@@ -1779,11 +1816,15 @@ exports.cancelRequest = async (req, res) => {
                 const r1 = await new sql.Request(transaction)
                     .input('NoDoc', sql.VarChar(50), noDoc)
                     .input('Obs', sql.NVarChar, obsText)
+                    .input('MotivoID', sql.Int, motivoId || null)
+                    .input('Detalles', sql.NVarChar, detalles || null)
                     .query(`
                         UPDATE Ordenes 
                         SET Estado = 'CANCELADO', 
                             EstadoenArea = 'Cancelado',
-                            Observaciones = CONCAT(ISNULL(Observaciones, ''), @Obs)
+                            Observaciones = CONCAT(ISNULL(Observaciones, ''), @Obs),
+                            MotivoCancelacionID = @MotivoID,
+                            DetallesCancelacion = @Detalles
                         WHERE NoDocERP = @NoDoc AND Estado != 'CANCELADO'
                     `);
                 rowsAffected = r1.rowsAffected[0];
@@ -1792,12 +1833,16 @@ exports.cancelRequest = async (req, res) => {
                 await new sql.Request(transaction)
                     .input('NoDoc', sql.VarChar(50), noDoc)
                     .input('User', sql.VarChar(100), safeUser)
+                    .input('MotivoID', sql.Int, motivoId || null)
+                    .input('Detalles', sql.NVarChar, detalles || null)
                     .query(`
                         UPDATE AO
                         SET AO.EstadoArchivo = 'CANCELADO',
                             AO.UsuarioControl = @User,
                             AO.FechaControl = GETDATE(),
-                            AO.Observaciones = CONCAT(ISNULL(AO.Observaciones, ''), ' [PEDIDO CANCELADO]')
+                            AO.Observaciones = CONCAT(ISNULL(AO.Observaciones, ''), ' [PEDIDO CANCELADO]'),
+                            AO.MotivoCancelacionID = @MotivoID,
+                            AO.DetallesCancelacion = @Detalles
                         FROM ArchivosOrden AO
                         INNER JOIN Ordenes O ON AO.OrdenID = O.OrdenID
                         WHERE O.NoDocERP = @NoDoc AND AO.EstadoArchivo != 'CANCELADO'
@@ -1807,11 +1852,15 @@ exports.cancelRequest = async (req, res) => {
                 const r2 = await new sql.Request(transaction)
                     .input('ID', sql.Int, orderId)
                     .input('Obs', sql.NVarChar, obsText)
+                    .input('MotivoID', sql.Int, motivoId || null)
+                    .input('Detalles', sql.NVarChar, detalles || null)
                     .query(`
                         UPDATE Ordenes 
                         SET Estado = 'CANCELADO', 
                             EstadoenArea = 'Cancelado',
-                            Observaciones = CONCAT(ISNULL(Observaciones, ''), @Obs)
+                            Observaciones = CONCAT(ISNULL(Observaciones, ''), @Obs),
+                            MotivoCancelacionID = @MotivoID,
+                            DetallesCancelacion = @Detalles
                         WHERE OrdenID = @ID
                     `);
                 rowsAffected = r2.rowsAffected[0];
@@ -1819,11 +1868,15 @@ exports.cancelRequest = async (req, res) => {
                 await new sql.Request(transaction)
                     .input('ID', sql.Int, orderId)
                     .input('User', sql.VarChar(100), safeUser)
+                    .input('MotivoID', sql.Int, motivoId || null)
+                    .input('Detalles', sql.NVarChar, detalles || null)
                     .query(`
                      UPDATE ArchivosOrden 
                      SET EstadoArchivo = 'CANCELADO',
                          UsuarioControl = @User,
-                         FechaControl = GETDATE()
+                         FechaControl = GETDATE(),
+                         MotivoCancelacionID = @MotivoID,
+                         DetallesCancelacion = @Detalles
                      WHERE OrdenID = @ID AND EstadoArchivo != 'CANCELADO'
                  `);
             }
@@ -1871,7 +1924,7 @@ exports.getOrderHistory = async (req, res) => {
     }
 };
 exports.cancelFile = async (req, res) => {
-    const { fileId, reason, usuario } = req.body;
+    const { fileId, reason, motivoId, detalles, usuario } = req.body;
     logger.info(`🚫 Cancelando Archivo ID: ${fileId} | Motivo: ${reason}`);
 
     try {
@@ -1885,12 +1938,16 @@ exports.cancelFile = async (req, res) => {
                 .input('ID', sql.Int, fileId)
                 .input('Obs', sql.NVarChar, reason || 'Cancelado por usuario')
                 .input('User', sql.VarChar(100), String(usuario || 'Sistema'))
+                .input('MotivoID', sql.Int, motivoId || null)
+                .input('Detalles', sql.NVarChar, detalles || null)
                 .query(`
                     UPDATE dbo.ArchivosOrden 
                     SET EstadoArchivo = 'CANCELADO', 
                         Observaciones = CONCAT(Observaciones, ' [CANCELADO: ', @Obs, ']'),
                         UsuarioControl = @User,
-                        FechaControl = GETDATE()
+                        FechaControl = GETDATE(),
+                        MotivoCancelacionID = @MotivoID,
+                        DetallesCancelacion = @Detalles
                     WHERE ArchivoID = @ID
                 `);
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Fragment } from 'react';
 import { createPortal } from 'react-dom';
 import { ordersService, fileControlService } from '../../../services/api';
 import api from '../../../services/apiClient';
@@ -9,6 +9,8 @@ import OrderRequirementsList from '../../logistics/OrderRequirementsList';
 import { printLabelsHelper } from "../../../utils/printHelper";
 import QuotationEditModal from '../../logistics/QuotationEditModal';
 import { useAuth } from '../../../context/AuthContext';
+import { Listbox, Transition } from '@headlessui/react';
+import { Check, ChevronDown } from 'lucide-react';
 
 
 const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
@@ -40,9 +42,23 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
 
     // Estado Cancelación
     const [cancelModalOpen, setCancelModalOpen] = useState(false);
-    const [cancelReason, setCancelReason] = useState("");
+    const [cancelDetails, setCancelDetails] = useState("");
     const [cancelType, setCancelType] = useState(null); // 'ORDER' | 'REQUEST' | 'FILE'
     const [fileToCancel, setFileToCancel] = useState(null);
+    const [motivosOptions, setMotivosOptions] = useState([]);
+    const [selectedMotivo, setSelectedMotivo] = useState(null);
+
+    useEffect(() => {
+        if (cancelModalOpen) {
+            fileControlService.getMotivosCancelacion().then(res => {
+                if (Array.isArray(res)) setMotivosOptions(res);
+            }).catch(err => console.error(err));
+        } else {
+            setSelectedMotivo(null);
+            setCancelDetails("");
+        }
+    }, [cancelModalOpen]);
+
 
     // Estado Nuevo Producto/Servicio
     const [isAddingService, setIsAddingService] = useState(false);
@@ -359,7 +375,8 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
     const startCancellingFile = (file) => {
         setFileToCancel(file);
         setCancelType('FILE');
-        setCancelReason("");
+        setCancelDetails("");
+        setSelectedMotivo(null);
         setCancelModalOpen(true);
     };
 
@@ -423,17 +440,22 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
     };
 
     const handleConfirmCancel = async () => {
-        if (!cancelReason.trim()) {
-            toast.error("Debe ingresar un motivo para cancelar.");
+        if (!selectedMotivo && !cancelDetails.trim()) {
+            toast.error("Debe seleccionar un motivo o ingresar detalles para cancelar.");
             return;
         }
 
         const user = JSON.parse(localStorage.getItem('user')) || {};
-        // Fallback robusto: Intenta ID numérico, string, o default 1 (Sistema)
         const safeUser = user.id || user.UsuarioID || user.userId || 1;
 
+        const combinedReason = selectedMotivo 
+            ? `${selectedMotivo.Titulo}${cancelDetails.trim() ? ' - ' + cancelDetails.trim() : ''}`
+            : cancelDetails.trim();
+
         const commonPayload = {
-            reason: cancelReason,
+            reason: combinedReason,
+            motivoId: selectedMotivo ? selectedMotivo.MotivoID : null,
+            detalles: cancelDetails.trim() || null,
             usuario: safeUser
         };
 
@@ -463,7 +485,8 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
             loading: 'Procesando cancelación...',
             success: (msg) => {
                 setCancelModalOpen(false);
-                setCancelReason("");
+                setCancelDetails("");
+                setSelectedMotivo(null);
                 setCancelType(null);
                 setFileToCancel(null);
                 if (onOrderUpdated) onOrderUpdated();
@@ -717,16 +740,49 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                     <div className="lg:col-span-2">
                                         <label className="text-[10px] uppercase font-bold text-zinc-500 block mb-1"><i className="fa-solid fa-flag text-brand-cyan mr-1"></i> Estado General</label>
                                         <div className="flex gap-2 mb-4">
-                                            <select 
-                                                className="flex-1 text-sm font-bold text-zinc-700 border border-zinc-300 rounded px-2 py-1.5 outline-none focus:border-brand-cyan bg-white shadow-sm"
-                                                value={draftStates.status}
-                                                onChange={(e) => setDraftStates({ ...draftStates, status: e.target.value })}
-                                            >
-                                                <option value="">-- Seleccionar Estado --</option>
-                                                {allGeneralNames.map(name => (
-                                                    <option key={`gen_${name}`} value={name}>{name}</option>
-                                                ))}
-                                            </select>
+                                            <div className="relative flex-1">
+                                                <Listbox value={draftStates.status} onChange={(val) => setDraftStates({ ...draftStates, status: val })}>
+                                                    <div className="relative">
+                                                        <Listbox.Button className="relative w-full text-sm font-bold text-zinc-700 border border-zinc-300 rounded px-3 py-1.5 text-left outline-none bg-white shadow-sm hover:border-brand-cyan focus:border-brand-cyan transition-all cursor-pointer">
+                                                            <span className="block truncate">{draftStates.status || '-- Seleccionar Estado --'}</span>
+                                                            <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-zinc-400">
+                                                                <ChevronDown size={14} />
+                                                            </span>
+                                                        </Listbox.Button>
+                                                        <Transition
+                                                            as={Fragment}
+                                                            leave="transition ease-in duration-100"
+                                                            leaveFrom="opacity-100"
+                                                            leaveTo="opacity-0"
+                                                        >
+                                                            <Listbox.Options className="absolute mt-1 w-full rounded-xl bg-white py-1 text-sm shadow-xl border border-zinc-100 focus:outline-none z-[9999]">
+                                                                {allGeneralNames.map(name => (
+                                                                    <Listbox.Option
+                                                                        key={`gen_${name}`}
+                                                                        className={({ active }) =>
+                                                                            `relative cursor-pointer select-none py-2 pl-9 pr-4 ${
+                                                                                active ? 'bg-brand-cyan/10 text-brand-cyan' : 'text-zinc-700'
+                                                                            }`
+                                                                        }
+                                                                        value={name}
+                                                                    >
+                                                                        {({ selected }) => (
+                                                                            <>
+                                                                                <span className={`block truncate ${selected ? 'font-bold' : 'font-medium'}`}>{name}</span>
+                                                                                {selected && (
+                                                                                    <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-brand-cyan">
+                                                                                        <Check size={14} strokeWidth={3} />
+                                                                                    </span>
+                                                                                )}
+                                                                            </>
+                                                                        )}
+                                                                    </Listbox.Option>
+                                                                ))}
+                                                            </Listbox.Options>
+                                                        </Transition>
+                                                    </div>
+                                                </Listbox>
+                                            </div>
                                             <button 
                                                 onClick={() => handleUpdateOrderStatus(draftStates.status)}
                                                 disabled={draftStates.status === currentOrder.status}
@@ -740,16 +796,49 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                     <div className="lg:col-span-2">
                                         <label className="text-[10px] uppercase font-bold text-zinc-500 block mb-1"><i className="fa-solid fa-layer-group text-brand-cyan mr-1"></i> Estado en su Área</label>
                                         <div className="flex gap-2">
-                                            <select 
-                                                className="flex-1 text-sm font-bold text-zinc-700 border border-zinc-300 rounded px-2 py-1.5 outline-none focus:border-brand-cyan bg-white shadow-sm"
-                                                value={draftStates.areaStatus}
-                                                onChange={(e) => setDraftStates({ ...draftStates, areaStatus: e.target.value })}
-                                            >
-                                                <option value="">-- Seleccionar Estado --</option>
-                                                {allAreaNames.map(name => (
-                                                    <option key={`area_${name}`} value={name}>{name}</option>
-                                                ))}
-                                            </select>
+                                            <div className="relative flex-1">
+                                                <Listbox value={draftStates.areaStatus} onChange={(val) => setDraftStates({ ...draftStates, areaStatus: val })}>
+                                                    <div className="relative">
+                                                        <Listbox.Button className="relative w-full text-sm font-bold text-zinc-700 border border-zinc-300 rounded px-3 py-1.5 text-left outline-none bg-white shadow-sm hover:border-brand-cyan focus:border-brand-cyan transition-all cursor-pointer">
+                                                            <span className="block truncate">{draftStates.areaStatus || '-- Seleccionar Estado --'}</span>
+                                                            <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-zinc-400">
+                                                                <ChevronDown size={14} />
+                                                            </span>
+                                                        </Listbox.Button>
+                                                        <Transition
+                                                            as={Fragment}
+                                                            leave="transition ease-in duration-100"
+                                                            leaveFrom="opacity-100"
+                                                            leaveTo="opacity-0"
+                                                        >
+                                                            <Listbox.Options className="absolute mt-1 w-full rounded-xl bg-white py-1 text-sm shadow-xl border border-zinc-100 focus:outline-none z-[9999]">
+                                                                {allAreaNames.map(name => (
+                                                                    <Listbox.Option
+                                                                        key={`area_${name}`}
+                                                                        className={({ active }) =>
+                                                                            `relative cursor-pointer select-none py-2 pl-9 pr-4 ${
+                                                                                active ? 'bg-brand-cyan/10 text-brand-cyan' : 'text-zinc-700'
+                                                                            }`
+                                                                        }
+                                                                        value={name}
+                                                                    >
+                                                                        {({ selected }) => (
+                                                                            <>
+                                                                                <span className={`block truncate ${selected ? 'font-bold' : 'font-medium'}`}>{name}</span>
+                                                                                {selected && (
+                                                                                    <span className="absolute inset-y-0 left-0 flex items-center pl-2.5 text-brand-cyan">
+                                                                                        <Check size={14} strokeWidth={3} />
+                                                                                    </span>
+                                                                                )}
+                                                                            </>
+                                                                        )}
+                                                                    </Listbox.Option>
+                                                                ))}
+                                                            </Listbox.Options>
+                                                        </Transition>
+                                                    </div>
+                                                </Listbox>
+                                            </div>
                                             <button 
                                                 onClick={() => handleUpdateAreaStatus(draftStates.areaStatus)}
                                                 disabled={draftStates.areaStatus === currentOrder.areaStatus}
@@ -1069,12 +1158,57 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                         </p>
 
                         <div className="mb-6">
-                            <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">Motivo de Cancelación</label>
+                            <label className="block text-xs font-bold text-zinc-500 uppercase mb-2">
+                                Motivo de Cancelación <span className="text-red-500">*</span>
+                            </label>
+                            
+                            {/* Selector de Motivos (MotivosCancelacion) */}
+                            <div className="relative mb-3 z-50">
+                                <Listbox value={selectedMotivo} onChange={setSelectedMotivo}>
+                                    <div className="relative">
+                                        <Listbox.Button className="relative w-full cursor-pointer rounded-xl bg-zinc-50 py-3 pl-4 pr-10 text-left border border-zinc-200 focus:outline-none focus-visible:border-brand-magenta sm:text-sm">
+                                            <span className={`block truncate font-medium ${selectedMotivo ? 'text-zinc-900' : 'text-zinc-400'}`}>
+                                                {selectedMotivo ? selectedMotivo.Titulo : 'Seleccione un motivo...'}
+                                            </span>
+                                            <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4">
+                                                <ChevronDown className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+                                            </span>
+                                        </Listbox.Button>
+                                        <Transition as={Fragment} leave="transition ease-in duration-100" leaveFrom="opacity-100" leaveTo="opacity-0">
+                                            <Listbox.Options className="absolute mt-1 max-h-60 w-full overflow-auto rounded-xl bg-white py-2 text-base shadow-lg ring-1 ring-black/5 focus:outline-none sm:text-sm z-50">
+                                                {motivosOptions.map((motivo) => (
+                                                    <Listbox.Option
+                                                        key={motivo.MotivoID}
+                                                        className={({ active }) =>
+                                                            `relative cursor-pointer select-none py-2.5 pl-10 pr-4 ${active ? 'bg-brand-magenta/10 text-brand-magenta' : 'text-zinc-700'}`
+                                                        }
+                                                        value={motivo}
+                                                    >
+                                                        {({ selected }) => (
+                                                            <>
+                                                                <span className={`block truncate ${selected ? 'font-black' : 'font-medium'}`}>
+                                                                    {motivo.Titulo}
+                                                                </span>
+                                                                {selected ? (
+                                                                    <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-brand-magenta">
+                                                                        <Check className="h-4 w-4" aria-hidden="true" />
+                                                                    </span>
+                                                                ) : null}
+                                                            </>
+                                                        )}
+                                                    </Listbox.Option>
+                                                ))}
+                                            </Listbox.Options>
+                                        </Transition>
+                                    </div>
+                                </Listbox>
+                            </div>
+
                             <textarea
                                 className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl outline-none focus:border-red-400 min-h-[100px] text-sm font-medium text-zinc-700 resize-none"
-                                placeholder="Indique un motivo..."
-                                value={cancelReason}
-                                onChange={(e) => setCancelReason(e.target.value)}
+                                placeholder="Detalles adicionales (opcional)..."
+                                value={cancelDetails}
+                                onChange={(e) => setCancelDetails(e.target.value)}
                                 autoFocus
                             ></textarea>
                         </div>

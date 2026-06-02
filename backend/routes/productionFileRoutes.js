@@ -28,6 +28,7 @@ router.get('/ordenes', productionFileController.getOrdenes);
 router.get('/orden/:ordenId/archivos', productionFileController.getArchivosPorOrden);
 router.get('/view-drive-file', productionFileController.viewDriveFile);
 router.get('/tipos-falla', productionFileController.getTiposFalla);
+router.get('/motivos-cancelacion', productionFileController.getMotivosCancelacion);
 router.post('/controlar', productionFileController.postControlArchivo);
 router.post('/update-copy-count', productionFileController.updateFileCopyCount);
 router.post('/orden/:ordenId/completar', productionFileController.completarOrden);

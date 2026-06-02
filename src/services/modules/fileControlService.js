@@ -50,6 +50,12 @@ export const fileControlService = {
         return response.data;
     },
 
+    getMotivosCancelacion: async () => {
+        const response = await api.get('/production-file-control/motivos-cancelacion');
+        return response.data;
+    },
+
+
     /**
      * Obtiene métricas del Rollo
      */

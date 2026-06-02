@@ -468,7 +468,8 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
                             return;
                         }
 
-                        if (areaKey === 'DF' || areaKey === 'DTF') {
+                        const upperArea = (areaKey || '').toUpperCase();
+                        if (upperArea === 'DF' || upperArea === 'DTF') {
                             const variantSet = new Set();
                             const materialSet = new Set();
                             

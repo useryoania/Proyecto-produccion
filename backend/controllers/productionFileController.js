@@ -622,7 +622,7 @@ const getTiposFalla = async (req, res) => {
 
         let query = "SELECT FallaID, Titulo, DescripcionDefault FROM TiposFallas";
         if (areaId) {
-            query += " WHERE AreaID = @AreaID OR AreaID = 'General'";
+            query += " WHERE AreaID = @AreaID";
         }
         query += " ORDER BY EsFrecuente DESC, Titulo ASC";
 
@@ -634,6 +634,17 @@ const getTiposFalla = async (req, res) => {
     } catch (err) {
         logger.error("Error getTiposFalla:", err);
         res.status(500).json({ error: 'Error al obtener tipos de falla' });
+    }
+};
+
+const getMotivosCancelacion = async (req, res) => {
+    try {
+        const pool = await getPool();
+        const result = await pool.request().query("SELECT MotivoID, Titulo, DescripcionDefault FROM MotivosCancelacion ORDER BY Titulo ASC");
+        res.json(result.recordset);
+    } catch (err) {
+        logger.error("Error getMotivosCancelacion:", err);
+        res.status(500).json({ error: 'Error al obtener motivos de cancelación' });
     }
 };
 
@@ -1258,6 +1269,7 @@ module.exports = {
     getCompletedOrdersForReplacement,
     createCustomerReplacementOrder,
     getRelatedOrders,
-    completarOrden
+    completarOrden,
+    getMotivosCancelacion
 };
 

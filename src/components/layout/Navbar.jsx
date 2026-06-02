@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../../services/apiClient';
 import logoMini from '../../assets/images/logo/logo-mini.svg';
+import { Bell, BellRing } from 'lucide-react';
 
 const Navbar = ({ onSwitchTab, currentView, onToggleMobileMenu, isMobileMenuOpen }) => {
   const { user } = useAuth();
@@ -94,8 +95,8 @@ const Navbar = ({ onSwitchTab, currentView, onToggleMobileMenu, isMobileMenuOpen
           </h1>
         </div>
       </div>
-      {/* Búsqueda Integral */}
-      <div className="hidden md:block w-48 shrink-0">
+      {/* Centro: Búsqueda + Listado */}
+      <div className="hidden md:flex items-center justify-center gap-3 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -121,31 +122,31 @@ const Navbar = ({ onSwitchTab, currentView, onToggleMobileMenu, isMobileMenuOpen
             <i className="fa-solid fa-magnifying-glass text-md"></i>
           </button>
         </form>
+        <button
+          className="flex items-center justify-center gap-2 h-9 px-3 rounded-lg text-xs uppercase transition-all duration-300 text-slate-100 hover:text-blue-500 bg-zinc-700 shrink-0 active:scale-95"
+          onClick={() => navigate('/consultas/ordenes')}
+          title="Listado de Órdenes"
+        >
+          <span className="font-bold">Listado de ordenes</span>
+          <i className="fa-solid fa-list-ul"></i>
+        </button>
       </div>
-
-      {/* Listado de ordenes */}
-      <button
-        className="hidden md:flex items-center justify-center gap-2 h-9 px-3 rounded-lg text-xs uppercase transition-all duration-300 text-slate-100 hover:text-blue-500 bg-zinc-700 shrink-0 active:scale-95"
-        onClick={() => navigate('/consultas/ordenes')}
-        title="Listado de Órdenes"
-      >
-        <span className="font-bold">Listado de ordenes</span>
-        <i className="fa-solid fa-list-ul"></i>
-      </button>
 
       {/* DERECHA: Notificaciones y Usuario */}
       <div className="flex items-center gap-6">
-        {/* <div
+        {/* Notificaciones */}
+        <div
           className="relative cursor-pointer group"
           onClick={() => setShowNotifications(!showNotifications)}
         >
-          <div className="w-9 h-9 flex items-center justify-center rounded-full bg-slate-50 text-slate-400 group-hover:bg-cyan-50 group-hover:text-cyan-500 transition-colors">
-            <i className="fa-solid fa-bell"></i>
+          <div className="w-9 h-9 flex items-center justify-center rounded-full bg-zinc-700 text-slate-300 group-hover:bg-zinc-600 group-hover:text-white transition-colors">
+            <Bell size={20} className="group-hover:hidden" />
+            <BellRing size={20} className="hidden group-hover:block animate-[bell-ring_0.5s_ease-in-out]" />
           </div>
-          <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white border-2 border-white shadow-sm">
+          <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand-magenta text-[9px] font-bold text-white border-2 border-red-600 shadow-sm">
             3
-          </span> 
-        </div> */}
+          </span>
+        </div>
 
         {/* Usuario */}
         <div className="flex items-center gap-4 scale-[0.80] sm:scale-100 origin-right">

@@ -5,6 +5,7 @@ import loadingAnim from '../../assets/animations/Loading-CMYK.json';
 import { ArrowUp, ArrowDown, ChevronsUp, Lock, Layers, ListOrdered, RefreshCw, ChevronDown } from 'lucide-react';
 import { rollsService } from '../../services/modules/rollsService';
 import { areasService } from '../../services/modules/areasService';
+import { socket } from '../../services/socketService';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -235,6 +236,30 @@ export default function CoordinacionView() {
     }, [selectedArea]);
 
     useEffect(() => { loadData(); }, [loadData]);
+
+    // ─── Socket Listener ───────────────────────────────────────────────────
+    useEffect(() => {
+        const handleServerUpdate = () => {
+            // Recargar datos sin mostrar el loader gigante (para no molestar al usuario)
+            if (selectedArea) {
+                rollsService.getBoard(selectedArea.code).then(data => {
+                    const sorted = sortPendingOrders(data.pendingOrders || []);
+                    setPendingOrders(sorted);
+                    const movable = (data.rolls || []).filter(r => MOVABLE_STATES.includes((r.status || '').toLowerCase()));
+                    const locked  = (data.rolls || []).filter(r => !MOVABLE_STATES.includes((r.status || '').toLowerCase()));
+                    setRolls([...movable, ...locked]);
+                }).catch(e => console.error("Error en socket reload:", e));
+            }
+        };
+
+        socket.on('server:order_updated', handleServerUpdate);
+        socket.on('server:new_order', handleServerUpdate);
+        
+        return () => {
+            socket.off('server:order_updated', handleServerUpdate);
+            socket.off('server:new_order', handleServerUpdate);
+        };
+    }, [selectedArea]);
 
     // ── Order movement ─────────────────────────────────────────────────────
 

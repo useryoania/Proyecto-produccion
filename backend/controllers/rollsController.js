@@ -500,7 +500,7 @@ exports.reorderOrders = async (req, res) => {
 // 5. ACTUALIZAR DETALLES GENERALE DEL ROLLO (Nombre, Color, Bobina, Capacidad)
 exports.updateRollGeneral = async (req, res) => {
     // Frontend sends 'BobinaID' (PascalCase) usually, but we check both just in case
-    let { rollId, name, color, BobinaID, bobinaId, capacity } = req.body;
+    let { rollId, name, color, BobinaID, bobinaId, capacity, estado } = req.body;
 
     // Normalize bobinaId
     if (BobinaID !== undefined) bobinaId = BobinaID;
@@ -530,6 +530,10 @@ exports.updateRollGeneral = async (req, res) => {
             if (capacity !== undefined) {
                 updates.push("CapacidadMaxima = @Capacidad");
                 request.input('Capacidad', sql.Decimal(10, 2), capacity);
+            }
+            if (estado !== undefined) {
+                updates.push("Estado = @Estado");
+                request.input('Estado', sql.VarChar(50), estado);
             }
 
             // Lógica Especial Bobina
