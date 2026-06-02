@@ -155,6 +155,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
     const [isCartOpen, setIsCartOpen] = useState(false);
     const [isRollModalOpen, setIsRollModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [flashingRows, setFlashingRows] = useState([]);
 
     const hideImportar = ['corte', 'costura', 'bordado', 'estampado', 'twc', 'twt', 'emb'].includes((areaKey || '').toLowerCase());
 
@@ -214,6 +215,12 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
         const socket = io(SOCKET_URL);
         socket.on('server:order_updated', (payload) => {
             console.log('🔔 Evento socket order_updated:', payload);
+            
+            if (payload.movedIds && Array.isArray(payload.movedIds)) {
+                setFlashingRows(payload.movedIds);
+                setTimeout(() => setFlashingRows([]), 3000);
+            }
+
             refetch(); // refrescar lista principal
             
             // Refrescar también los tableros hijos (Planeación, Kanban, etc)
@@ -639,8 +646,8 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
 
                 <main className={`flex-1 bg-zinc-50 overflow-hidden flex flex-col h-full items-stretch ${isActive('') || isActive('tabla') || isActive('planeacion') || isActive('control') || isActive('logistica') ? 'p-0' : 'p-6'}`}>
                     <Routes>
-                        <Route index element={<ProductionTable rowData={filteredOrders} onRowSelected={setSelectedIds} selectedRowIds={selectedIds} onRowClick={setSelectedOrder} columnDefs={areaConfig.defaultColDefs} toolbarContent={tableToolbar} />} />
-                        <Route path="tabla" element={<ProductionTable rowData={filteredOrders} onRowSelected={setSelectedIds} selectedRowIds={selectedIds} onRowClick={setSelectedOrder} columnDefs={areaConfig.defaultColDefs} toolbarContent={tableToolbar} />} />
+                        <Route index element={<ProductionTable rowData={filteredOrders} onRowSelected={setSelectedIds} selectedRowIds={selectedIds} onRowClick={setSelectedOrder} columnDefs={areaConfig.defaultColDefs} toolbarContent={tableToolbar} flashingRowIds={flashingRows} />} />
+                        <Route path="tabla" element={<ProductionTable rowData={filteredOrders} onRowSelected={setSelectedIds} selectedRowIds={selectedIds} onRowClick={setSelectedOrder} columnDefs={areaConfig.defaultColDefs} toolbarContent={tableToolbar} flashingRowIds={flashingRows} />} />
 
                         <Route path="lotes" element={<RollsKanban areaCode={areaKey} />} />
 

@@ -280,10 +280,11 @@ export default function CoordinacionView() {
             newGroup.unshift(order);
         } else return;
 
-        // Only update the sequence badge for the order that was actually moved
-        const maxSeq = Math.max(0, ...pendingOrders.map(o => o.sequence ?? 0));
-        const movedObj = newGroup.find(o => o.id === order.id);
-        if (movedObj) movedObj.sequence = maxSeq + 1;
+        // Update sequence locally to match what backend will do: n - i
+        const n = newGroup.length;
+        newGroup.forEach((o, i) => {
+            o.sequence = n - i;
+        });
 
         // Rebuild full sorted list
         const newPending = sortPendingOrders([...otherOrders, ...newGroup]);
@@ -292,7 +293,7 @@ export default function CoordinacionView() {
         // Persist — send only this group's IDs in new order
         setSaving(true);
         try {
-            await rollsService.reorderPendingOrders(selectedArea.code, newGroup.map(o => o.id));
+            await rollsService.reorderPendingOrders(selectedArea.code, newGroup.map(o => o.id), order.id);
         } catch {
             toast.error('Error guardando orden');
             loadData(); // revert
@@ -323,7 +324,7 @@ export default function CoordinacionView() {
 
         setSaving(true);
         try {
-            await rollsService.reorderRolls(selectedArea.code, newMovable.map(r => r.id));
+            await rollsService.reorderRolls(selectedArea.code, newMovable.map(r => r.id), roll.id);
         } catch {
             toast.error('Error guardando orden de lotes');
             loadData();

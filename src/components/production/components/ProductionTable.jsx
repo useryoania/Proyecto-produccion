@@ -9,7 +9,7 @@ import {
     flexRender
 } from '@tanstack/react-table';
 
-export default function ProductionTable({ rowData = [], onRowSelected, selectedRowIds, onRowClick, columnDefs: propColumnDefs, toolbarContent }) {
+export default function ProductionTable({ rowData = [], onRowSelected, selectedRowIds, onRowClick, columnDefs: propColumnDefs, toolbarContent, flashingRowIds = [] }) {
 
     const [rowSelection, setRowSelection] = useState({});
     const [columnVisibility, setColumnVisibility] = useState({});
@@ -364,6 +364,7 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
                                         onClick={() => row.toggleSelected()}
                                         className={`
                                             cursor-pointer transition-all border-b border-zinc-100 group row-appear
+                                            ${flashingRowIds.map(String).includes(String(row.id)) ? 'flash-emerald' : ''}
                                             ${row.original?.priority === 'Falla' || row.original?.priority === 'FALLA'
                                                 ? (isSelected ? 'bg-red-100 hover:bg-red-200' : 'bg-red-50 hover:bg-red-100 text-red-600')
                                                 : (isSelected ? 'bg-custom-cyan/40 hover:bg-custom-cyan/50' : 'bg-white hover:bg-zinc-50')
@@ -439,6 +440,14 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
                 }
                 .row-appear {
                     animation: rowAppear 0.25s ease both;
+                }
+                @keyframes flashEmerald {
+                    0% { background-color: #10b981; color: white; }
+                    10% { background-color: #34d399; color: black; }
+                    100% { background-color: transparent; }
+                }
+                tr.flash-emerald td {
+                    animation: flashEmerald 3s ease-out forwards;
                 }
             `}</style>
         </div>

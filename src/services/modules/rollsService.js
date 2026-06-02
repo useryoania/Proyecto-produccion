@@ -73,12 +73,12 @@ export const rollsService = {
         const response = await api.post('/measurements/download-zip', { orderIds }, { responseType: 'blob' });
         return response.data;
     },
-    reorderPendingOrders: async (areaId, orderIds) => {
-        const { data } = await api.post('/rolls/reorder-pending', { areaId, orderIds });
+    reorderPendingOrders: async (areaId, orderIds, movedId) => {
+        const { data } = await api.post('/rolls/reorder-pending', { areaId, orderIds, movedId });
         return data;
     },
-    reorderRolls: async (areaId, rollIds) => {
-        const { data } = await api.post('/rolls/reorder-rolls', { areaId, rollIds });
+    reorderRolls: async (areaId, rollIds, movedId) => {
+        const { data } = await api.post('/rolls/reorder-rolls', { areaId, rollIds, movedId });
         return data;
     }
 };

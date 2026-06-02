@@ -1469,7 +1469,7 @@ exports.magicRollAssignment = async (req, res) => {
 // COORDINACION: REORDENAR ÓRDENES PENDIENTES
 // ==========================================
 exports.reorderPendingOrders = async (req, res) => {
-    const { areaId, orderIds } = req.body;
+    const { areaId, orderIds, movedId } = req.body;
     if (!areaId || !Array.isArray(orderIds) || orderIds.length === 0)
         return res.status(400).json({ error: 'areaId y orderIds son requeridos.' });
 
@@ -1490,6 +1490,10 @@ exports.reorderPendingOrders = async (req, res) => {
                             WHERE OrdenID = @OID AND AreaID = @AREA AND Estado = 'Pendiente'`);
             }
             await transaction.commit();
+            if (req.app.get('socketio')) {
+                const idsToFlash = movedId ? [movedId] : orderIds;
+                req.app.get('socketio').emit('server:order_updated', { type: 'reorder_pending_orders', areaId, movedIds: idsToFlash });
+            }
             res.json({ success: true });
         } catch (inner) {
             await transaction.rollback();
@@ -1505,7 +1509,7 @@ exports.reorderPendingOrders = async (req, res) => {
 // COORDINACION: REORDENAR LOTES
 // ==========================================
 exports.reorderRolls = async (req, res) => {
-    const { areaId, rollIds } = req.body;
+    const { areaId, rollIds, movedId } = req.body;
     if (!areaId || !Array.isArray(rollIds) || rollIds.length === 0)
         return res.status(400).json({ error: 'areaId y rollIds son requeridos.' });
 
@@ -1536,6 +1540,10 @@ exports.reorderRolls = async (req, res) => {
                             AND Estado IN ('Abierto', 'En Cola')`);
             }
             await transaction.commit();
+            if (req.app.get('socketio')) {
+                const idsToFlash = movedId ? [movedId] : rollIds;
+                req.app.get('socketio').emit('server:order_updated', { type: 'reorder_rolls', areaId, movedIds: idsToFlash });
+            }
             res.json({ success: true });
         } catch (inner) {
             await transaction.rollback();
