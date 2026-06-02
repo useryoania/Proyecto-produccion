@@ -367,7 +367,7 @@ export default function CajaPanelPago({
                   }`}
                 >
                   <Building2 size={14} />
-                  Con RUT
+                  E-Factura
                 </button>
               </div>
             ) : hasReciboVouchers ? (
@@ -441,7 +441,7 @@ export default function CajaPanelPago({
                   onClick={() => handleSelectCondicion('CONTADO')}
                   className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
                     derivedCondicion === 'CONTADO'
-                      ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200'
+                      ? 'bg-emerald-500 text-white shadow-md'
                       : 'text-zinc-500 hover:text-zinc-700 bg-transparent hover:bg-zinc-200/50'
                   }`}
                 >
@@ -453,7 +453,7 @@ export default function CajaPanelPago({
                   onClick={() => handleSelectCondicion('CREDITO')}
                   className={`flex-1 py-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
                     derivedCondicion === 'CREDITO'
-                      ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200'
+                      ? 'bg-amber-500 text-white shadow-md'
                       : 'text-zinc-500 hover:text-zinc-700 bg-transparent hover:bg-zinc-200/50 disabled:opacity-40 disabled:cursor-not-allowed'
                   }`}
                 >
@@ -462,18 +462,7 @@ export default function CajaPanelPago({
               </div>
             )}
 
-            {/* Selector de Moneda de la Operación */}
-            {onMonedaChange && (
-              <LightSelect
-                value={moneda}
-                onChange={onMonedaChange}
-                options={[
-                  { value: 'UYU', label: 'UYU ($)' },
-                  { value: 'USD', label: 'USD (US$)' }
-                ]}
-                placeholder="Moneda de la Operación..."
-              />
-            )}
+
           </div>
 
           {/* COLUMNA 2: Formas de Pago & Calculadora de Vuelto */}
@@ -630,7 +619,10 @@ export default function CajaPanelPago({
                   return acc + (p.moneda === 'USD' ? val * (cotizacion || 1) : val);
                 }, 0);
                 const totalEfectivoUSD = totalEfectivoUYU / (cotizacion || 1);
-                const montoEfectivo = moneda === 'USD' ? totalEfectivoUSD : totalEfectivoUYU;
+                let montoEfectivo = moneda === 'USD' ? totalEfectivoUSD : totalEfectivoUYU;
+                if (montoEfectivo === 0 && pagos.length === 1) {
+                  montoEfectivo = totalACubrir;
+                }
 
                 if (montoEfectivo > 0) {
                   const recibido = parseFloat(efectivoRecibido) || 0;
@@ -649,9 +641,9 @@ export default function CajaPanelPago({
                           <span className="text-slate-500">Recibido:</span>
                           <input
                             type="number"
-                            value={efectivoRecibido}
+                            value={efectivoRecibido || montoEfectivo.toFixed(2)}
                             onChange={e => setEfectivoRecibido(e.target.value)}
-                            placeholder="0.00"
+                            placeholder={montoEfectivo.toFixed(2)}
                             className="w-24 bg-white border border-emerald-300 rounded-lg px-2.5 py-1 text-xs text-right font-black outline-none focus:border-emerald-500 shadow-inner text-emerald-800"
                           />
                         </div>
@@ -899,7 +891,10 @@ export default function CajaPanelPago({
                 return acc + (p.moneda === 'USD' ? val * (cotizacion || 1) : val);
               }, 0);
               const totalEfectivoUSD = totalEfectivoUYU / (cotizacion || 1);
-              const montoEfectivo = moneda === 'USD' ? totalEfectivoUSD : totalEfectivoUYU;
+              let montoEfectivo = moneda === 'USD' ? totalEfectivoUSD : totalEfectivoUYU;
+              if (montoEfectivo === 0 && pagos.length === 1) {
+                montoEfectivo = totalACubrir;
+              }
 
               if (montoEfectivo > 0) {
                 const recibido = parseFloat(efectivoRecibido) || 0;
@@ -1023,7 +1018,7 @@ export default function CajaPanelPago({
                     : 'text-zinc-500 hover:text-zinc-700 bg-transparent hover:bg-zinc-200/50'
                 }`}
               >
-                Con RUT
+                E-Factura
               </button>
             </div>
           ) : hasReciboVouchers ? (
@@ -1088,10 +1083,10 @@ export default function CajaPanelPago({
               <button
                 type="button"
                 onClick={() => handleSelectCondicion('CONTADO')}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
                   derivedCondicion === 'CONTADO'
-                    ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200'
-                    : 'text-zinc-500 hover:text-zinc-700 bg-transparent hover:bg-zinc-200/50'
+                    ? 'bg-emerald-500 text-white shadow-md border-emerald-600'
+                    : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:bg-zinc-200/50'
                 }`}
               >
                 Contado
@@ -1100,10 +1095,10 @@ export default function CajaPanelPago({
                 type="button"
                 disabled={derivedTipoCliente === 'PEDIDO_CAJA'}
                 onClick={() => handleSelectCondicion('CREDITO')}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all border ${
                   derivedCondicion === 'CREDITO'
-                    ? 'bg-white text-zinc-900 shadow-sm border border-zinc-200'
-                    : 'text-zinc-500 hover:text-zinc-700 bg-transparent hover:bg-zinc-200/50 disabled:opacity-40 disabled:cursor-not-allowed'
+                    ? 'bg-amber-500 text-white shadow-md border-amber-600'
+                    : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:bg-zinc-200/50 disabled:opacity-40 disabled:cursor-not-allowed'
                 }`}
               >
                 Crédito

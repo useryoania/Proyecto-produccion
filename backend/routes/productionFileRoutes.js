@@ -44,4 +44,8 @@ router.get('/ordenes/entregadas', productionFileController.getCompletedOrdersFor
 router.get('/orden/:ordenId/relacionadas', productionFileController.getRelatedOrders);
 router.post('/ordenes/reposicion', productionFileController.createCustomerReplacementOrder);
 
+// --- CANASTO FALLA (Confirmación y Liberación) ---
+router.post('/canasto-falla/confirmar', productionFileController.confirmarFalla);
+router.post('/canasto-falla/liberar',   productionFileController.liberarCanastaFalla);
+
 module.exports = router;

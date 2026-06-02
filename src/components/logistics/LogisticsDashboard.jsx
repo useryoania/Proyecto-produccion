@@ -12,6 +12,7 @@ import DepositoDashboard from './DepositoDashboard';
 import ImportadorManualView from '../production/ImportadorManualView';
 import LabelGenerationPage from '../pages/LabelGenerationPage';
 import QuotationView from './QuotationView';
+import CanastosView from './CanastosView';
 
 // Dynamic Import with auto-reload on stale chunks
 const DepositStockPage = React.lazy(() =>
@@ -109,6 +110,8 @@ const LogisticsDashboard = ({ areaCode }) => {
                 return <div className="absolute inset-0 overflow-y-auto"><ImportadorManualView embedded={true} /></div>;
             case 'quotation':
                 return <div className="absolute inset-0"><QuotationView {...commonProps} /></div>;
+            case 'canastos':
+                return <CanastosView {...commonProps} />;
             case 'labels':
                 return <div className="absolute inset-0"><LabelGenerationPage initialArea={globalArea !== 'TODOS' ? globalArea : ''} /></div>;
 

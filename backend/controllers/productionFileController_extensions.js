@@ -1,3 +1,4 @@
+const { sql, getPool } = require('../config/db');
 const logger = require('../utils/logger');
 
 /**
@@ -41,6 +42,8 @@ const getCompletedOrdersForReplacement = async (req, res) => {
 /**
  * 8. Crear Orden de Reposición (Batch)
  * Recibe lista de archivos a reponer de una orden ya terminada.
+ * Validaciones: metros ≤ metros originales, copias ≤ copias originales.
+ * Observación de archivo: incluye máquina y lote de la impresión original.
  */
 const createCustomerReplacementOrder = async (req, res) => {
     const { originalOrderId, files, globalObservation, userId } = req.body;
@@ -58,14 +61,54 @@ const createCustomerReplacementOrder = async (req, res) => {
         // 1. Obtener Datos Orden Original
         const ordRes = await new sql.Request(transaction)
             .input('ID', sql.Int, originalOrderId)
-            .query("SELECT * FROM Ordenes WHERE OrdenID = @ID");
+            .query(`
+                SELECT O.*, 
+                       R.Nombre as NombreRollo,
+                       CE.Nombre as NombreMaquina
+                FROM Ordenes O
+                LEFT JOIN Rollos R ON O.RolloID = R.RolloID
+                LEFT JOIN ConfigEquipos CE ON ISNULL(O.MaquinaID, R.MaquinaID) = CE.EquipoID
+                WHERE O.OrdenID = @ID
+            `);
 
         if (ordRes.recordset.length === 0) throw new Error("Orden original no encontrada");
         const originalOrder = ordRes.recordset[0];
 
-        // 2. Crear Nueva Orden de Reposición
-        // Generar codigo: ORD-123 -R (Si ya existe -R, buscar -R2?)
-        // Simplificación: Agregar -R + Random o Timestamp corto para unicidad simple
+        // 2. Obtener datos originales de cada archivo para validar límites
+        const fileIds = files.map(f => parseInt(f.id)).filter(id => !isNaN(id));
+        const placeholders = fileIds.map((_, i) => `@FID${i}`).join(',');
+        const origFilesReq = new sql.Request(transaction);
+        fileIds.forEach((id, i) => origFilesReq.input(`FID${i}`, sql.Int, id));
+        const origFilesRes = await origFilesReq.query(
+            `SELECT ArchivoID, Metros as MetrosOrig, Copias as CopiasOrig FROM dbo.ArchivosOrden WHERE ArchivoID IN (${placeholders})`
+        );
+        const origFilesMap = {};
+        origFilesRes.recordset.forEach(r => { origFilesMap[r.ArchivoID] = r; });
+
+        // 3. Validar límites (metros y copias) antes de proceder
+        for (const file of files) {
+            const orig = origFilesMap[parseInt(file.id)];
+            if (!orig) throw new Error(`Archivo ID ${file.id} no encontrado en la orden original`);
+
+            const metersReq = parseFloat(file.meters);
+            const copiesReq = parseInt(file.copies) || parseInt(orig.CopiasOrig);
+            const metersOrig = parseFloat(orig.MetrosOrig);
+            const copiesOrig = parseInt(orig.CopiasOrig);
+
+            if (metersReq > metersOrig) {
+                throw new Error(
+                    `No se puede reponer más metros de los originales. Archivo ID ${file.id}: solicitado ${metersReq}m, máximo permitido ${metersOrig}m`
+                );
+            }
+            if (copiesReq > copiesOrig) {
+                throw new Error(
+                    `No se puede reponer más copias de las originales. Archivo ID ${file.id}: solicitado ${copiesReq} copias, máximo permitido ${copiesOrig} copias`
+                );
+            }
+        }
+
+        // 4. Crear Nueva Orden de Reposición
+        // Generar codigo con sufijo -R + número corto para unicidad
         const suffix = `-R${Math.floor(Math.random() * 1000)}`;
         const newCode = `${originalOrder.CodigoOrden} ${suffix}`;
 
@@ -83,8 +126,8 @@ const createCustomerReplacementOrder = async (req, res) => {
                     IDCliente, IDProducto, CodCliente, CodArticulo
                 )
                 SELECT
-                    @NewCode, Cliente, GETDATE(), DATEADD(day, 2, GETDATE()), -- 2 dias default para reposición
-                    Material, DescripcionTrabajo, 'URGENTE', -- Prioridad Alta
+                    @NewCode, Cliente, GETDATE(), DATEADD(day, 2, GETDATE()),
+                    Material, DescripcionTrabajo, 'URGENTE',
                     'Pendiente', 'Pendiente', AreaID,
                     Magnitud, IdCabezalERP, ProximoServicio, @GlobalObs, NoDocERP,
                     GETDATE(), 0, Variante, UnidadMedida,
@@ -99,44 +142,53 @@ const createCustomerReplacementOrder = async (req, res) => {
 
         let totalFiles = 0;
 
-        // 3. Insertar Archivos Seleccionados
+        // 5. Insertar Archivos Seleccionados con validación y obs enriquecida
         for (const file of files) {
-            // file: { id, meters, obs }
-            const oldFileId = file.id;
-            const metersToReprint = file.meters;
-            const obs = file.obs || 'Reposición Cliente';
+            const oldFileId = parseInt(file.id);
+            const metersToReprint = parseFloat(file.meters);
+            const orig = origFilesMap[oldFileId];
+            const copiesToReprint = parseInt(file.copies) || parseInt(orig.CopiasOrig);
+
+            // Construir observación enriquecida con máquina y lote originales
+            const maquinaInfo = originalOrder.NombreMaquina ? `Máquina: ${originalOrder.NombreMaquina}` : '';
+            const loteInfo = originalOrder.NombreRollo ? `Lote: ${originalOrder.NombreRollo}` : '';
+            const contextInfo = [maquinaInfo, loteInfo].filter(Boolean).join(' | ');
+            const userObs = (file.obs || '').trim();
+            const fullObs = contextInfo
+                ? (userObs ? `${userObs} | ${contextInfo}` : contextInfo)
+                : (userObs || 'Reposición Cliente');
 
             await new sql.Request(transaction)
                 .input('NewOrderID', sql.Int, newOrderId)
                 .input('OldFileID', sql.Int, oldFileId)
                 .input('Metros', sql.Decimal(10, 2), metersToReprint)
-                .input('Obs', sql.NVarChar, obs)
+                .input('Copias', sql.Int, copiesToReprint)
+                .input('Obs', sql.NVarChar, fullObs)
                 .query(`
                     INSERT INTO dbo.ArchivosOrden(
                         OrdenID, NombreArchivo, RutaAlmacenamiento, Metros, Copias, Ancho, Alto, Material, Observaciones,
                         TipoArchivo, FechaSubida, EstadoArchivo
                     )
                     SELECT 
-                        @NewOrderID, NombreArchivo, RutaAlmacenamiento, @Metros, Copias, Ancho, Alto, Material, @Obs,
+                        @NewOrderID, NombreArchivo, RutaAlmacenamiento, @Metros, @Copias, Ancho, Alto, Material, @Obs,
                         TipoArchivo, GETDATE(), 'Pendiente'
                     FROM dbo.ArchivosOrden WHERE ArchivoID = @OldFileID
                 `);
 
             totalFiles++;
 
-            // Registrar en FallasProduccion para historial (TipoFalla Genérico 'Reposición Cliente' o similar)
-            // Asumimos TipoFallaID 99 o NULL si no es critica la estadística exacta aqui, 
-            // pero mejor insertar para traza.
-            // Si no tenemos ID de tipo falla, enviamos NULL o 1 (General).
+            // Registrar en FallasProduccion para trazabilidad
+            // Observación de falla: descripción del problema (obs del usuario)
+            const obsParaFalla = userObs || `Reposición cliente - Orden ${originalOrder.CodigoOrden}`;
             await new sql.Request(transaction)
                 .input('OldID', sql.Int, originalOrderId)
                 .input('FileID', sql.Int, oldFileId)
                 .input('AreaID', sql.VarChar, originalOrder.AreaID || 'General')
                 .input('Metros', sql.Decimal(10, 2), metersToReprint)
-                .input('Obs', sql.NVarChar, obs)
+                .input('ObsFalla', sql.NVarChar, obsParaFalla)
                 .query(`
                     INSERT INTO FallasProduccion(OrdenID, ArchivoID, AreaID, FechaFalla, TipoFalla, CantidadFalla, Observaciones)
-                    VALUES(@OldID, @FileID, @AreaID, GETDATE(), 1, @Metros, @Obs) 
+                    VALUES(@OldID, @FileID, @AreaID, GETDATE(), 1, @Metros, @ObsFalla)
                 `);
         }
 
@@ -150,7 +202,9 @@ const createCustomerReplacementOrder = async (req, res) => {
         res.json({ success: true, newOrderId, newCode });
 
     } catch (error) {
-        if (transaction) await transaction.rollback();
+        if (transaction) {
+            try { await transaction.rollback(); } catch (e) { }
+        }
         logger.error("Error createCustomerReplacementOrder:", error);
         res.status(500).json({ error: error.message });
     }

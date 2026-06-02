@@ -2,6 +2,7 @@ const LogisticsLayout = ({ children, activeTab, setActiveTab, globalArea, setGlo
     let tabs = [
         { id: 'import', label: 'Cargar Órdenes', icon: 'fa-file-import' },
         { id: 'quotation', label: 'Cotización', icon: 'fa-file-invoice-dollar' },
+        { id: 'canastos', label: 'Canastos', icon: 'fa-basket-shopping' },
         { id: 'labels', label: 'Etiquetas', icon: 'fa-tags' },
         { id: 'dispatch', label: 'Crear Remito', icon: 'fa-file-invoice' },
         { id: 'history', label: 'Historial', icon: 'fa-clock-rotate-left' },

@@ -39,18 +39,21 @@ exports.emitirCFE = async (doc, lineas, cotDolar = 40.0) => {
                 const refTipoUpper = (refDoc.DocTipo || '').toUpperCase();
                 let tpoDocRef = 'e_Ticket';
                 
+                const isNC = refTipoUpper.includes('NC') || refTipoUpper.includes('NOTA DE CREDITO') || refTipoUpper.includes('NOTA DE CRÉDITO');
+                const isND = refTipoUpper.includes('ND') || refTipoUpper.includes('NOTA DE DEBITO') || refTipoUpper.includes('NOTA DE DÉBITO');
+                
                 if (refTipoUpper.includes('TICKET')) {
-                    if (refTipoUpper.includes('CREDITO') || refTipoUpper.includes('CRE')) {
+                    if (isNC) {
                         tpoDocRef = 'nc_e_Ticket';
-                    } else if (refTipoUpper.includes('DEBITO') || refTipoUpper.includes('DEB')) {
+                    } else if (isND) {
                         tpoDocRef = 'nd_e_Ticket';
                     } else {
                         tpoDocRef = 'e_Ticket';
                     }
                 } else if (refTipoUpper.includes('FACTURA')) {
-                    if (refTipoUpper.includes('CREDITO') || refTipoUpper.includes('CRE')) {
+                    if (isNC) {
                         tpoDocRef = 'nc_e_Factura';
-                    } else if (refTipoUpper.includes('DEBITO') || refTipoUpper.includes('DEB')) {
+                    } else if (isND) {
                         tpoDocRef = 'nd_e_Factura';
                     } else {
                         tpoDocRef = 'e_Factura';
@@ -116,9 +119,12 @@ exports.emitirCFE = async (doc, lineas, cotDolar = 40.0) => {
 
             const docTipoUpper = (doc.DocTipo || '').toUpperCase();
             let tipoCFE = 101;
-            if (docTipoUpper.includes('CREDITO') || docTipoUpper.includes('CRE')) {
+            const isDocNC = docTipoUpper.includes('NC') || docTipoUpper.includes('NOTA DE CREDITO') || docTipoUpper.includes('NOTA DE CRÉDITO');
+            const isDocND = docTipoUpper.includes('ND') || docTipoUpper.includes('NOTA DE DEBITO') || docTipoUpper.includes('NOTA DE DÉBITO');
+            
+            if (isDocNC) {
                 tipoCFE = esRUT ? 112 : 102;
-            } else if (docTipoUpper.includes('DEBITO') || docTipoUpper.includes('DEB')) {
+            } else if (isDocND) {
                 tipoCFE = esRUT ? 113 : 103;
             } else {
                 tipoCFE = esRUT ? 111 : 101;

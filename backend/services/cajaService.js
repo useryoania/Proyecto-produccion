@@ -1169,23 +1169,11 @@ async function procesarTransaccion(payload) {
                            + ISNULL('Técnico: ' + CAST(pcd.DatoTecnico AS VARCHAR(1000)) + CHAR(13)+CHAR(10), '')
                            + ISNULL(CAST(pcd.LogPrecioAplicado AS VARCHAR(1000)), CAST(td.TdeDescripcion AS VARCHAR(1000))), 
                        1000),
-                       CAST(COALESCE(
-                           CASE WHEN pcd.Cantidad IS NOT NULL AND pcd.Cantidad != FLOOR(pcd.Cantidad) THEN pcd.Cantidad ELSE NULL END,
-                           CASE WHEN od.OrdCantidad IS NOT NULL AND od.OrdCantidad != FLOOR(od.OrdCantidad) THEN od.OrdCantidad ELSE NULL END,
-                           pcd.Cantidad,
-                           od.OrdCantidad,
-                           1.0
-                       ) AS DECIMAL(18,4)),
-                       ROUND(td.TdeImporteFinal / NULLIF(COALESCE(
-                           CASE WHEN pcd.Cantidad IS NOT NULL AND pcd.Cantidad != FLOOR(pcd.Cantidad) THEN pcd.Cantidad ELSE NULL END,
-                           CASE WHEN od.OrdCantidad IS NOT NULL AND od.OrdCantidad != FLOOR(od.OrdCantidad) THEN od.OrdCantidad ELSE NULL END,
-                           pcd.Cantidad,
-                           od.OrdCantidad,
-                           1.0
-                       ), 0), 2),
-                       ROUND(td.TdeImporteFinal / 1.22, 2),
-                       ROUND(td.TdeImporteFinal - td.TdeImporteFinal / 1.22, 2),
-                       td.TdeImporteFinal
+                       CAST(ISNULL(pcd.Cantidad, ISNULL(od.OrdCantidad, 1.0)) AS DECIMAL(18,4)),
+                       ROUND(ISNULL(pcd.Subtotal, ISNULL(td.TdeImporteFinal, 0)) / NULLIF(ISNULL(pcd.Cantidad, ISNULL(od.OrdCantidad, 1.0)), 0), 4),
+                       ROUND(ISNULL(pcd.Subtotal, ISNULL(td.TdeImporteFinal, 0)) / 1.22, 2),
+                       ROUND(ISNULL(pcd.Subtotal, ISNULL(td.TdeImporteFinal, 0)) - ISNULL(pcd.Subtotal, ISNULL(td.TdeImporteFinal, 0)) / 1.22, 2),
+                       ISNULL(pcd.Subtotal, ISNULL(td.TdeImporteFinal, 0))
                    FROM dbo.TransaccionDetalle td
                    LEFT JOIN dbo.RelOrdenesRetiroOrdenes rel ON rel.OReIdOrdenRetiro = td.TdeReferenciaId
                        AND td.TdeTipoReferencia = 'ORDEN_RETIRO'
@@ -1199,7 +1187,6 @@ async function procesarTransaccion(payload) {
                                  ELSE LEN(ISNULL(od.OrdCodigoOrden, CAST(td.TdeCodigoReferencia AS VARCHAR(100)))) END)
                    -- JOIN estricto: solo el detalle que pertenece a ese PedidosCobranza (sin OR que genera productos cartesianos)
                    LEFT JOIN dbo.PedidosCobranzaDetalle pcd ON pcd.PedidoCobranzaID = pc.ID
-                       AND (od.OrdCodigoOrden IS NULL OR CAST(pcd.OrdenID AS VARCHAR(100)) = od.OrdCodigoOrden)
                    LEFT JOIN dbo.Articulos art ON art.ProIdProducto = ISNULL(pcd.ProIdProducto, od.ProIdProducto)
                    WHERE td.TcaIdTransaccion = @tcaId
                  `);
@@ -1880,16 +1867,32 @@ async function generarCFEDesdeOrdenesDirectas({ orderIds, clienteId, monto, mone
       SELECT
         @docId,
         od.OrdCodigoOrden,
-        LEFT(ISNULL(art.Descripcion, ISNULL(od.OrdNombreTrabajo, 'Servicios de Produccion')), 80),
+        LEFT(ISNULL(art_pcd.Descripcion, ISNULL(art.Descripcion, ISNULL(od.OrdNombreTrabajo, 'Servicios de Produccion'))), 80),
         LEFT('Orden: ' + ISNULL(od.OrdCodigoOrden,'')
-             + ISNULL(' (' + od.OrdNombreTrabajo + ')',''), 500),
-        ISNULL(od.OrdCantidad, 1.0),
-        ROUND(ISNULL(od.OrdCostoFinal, 0) / NULLIF(ISNULL(od.OrdCantidad, 1.0), 0), 2),
-        ROUND(ISNULL(od.OrdCostoFinal, 0) / 1.22, 2),
-        ROUND(ISNULL(od.OrdCostoFinal, 0) - ISNULL(od.OrdCostoFinal, 0) / 1.22, 2),
-        ISNULL(od.OrdCostoFinal, 0)
+             + ISNULL(' (' + od.OrdNombreTrabajo + ')','')
+             + ISNULL(CHAR(13)+CHAR(10) + 'Servicio: ' + CAST(pcd.LogPrecioAplicado AS VARCHAR(1000)), ''), 500),
+        CAST(COALESCE(
+          CASE WHEN pcd.Cantidad IS NOT NULL AND pcd.Cantidad != FLOOR(pcd.Cantidad) THEN pcd.Cantidad ELSE NULL END,
+          CASE WHEN od.OrdCantidad IS NOT NULL AND od.OrdCantidad != FLOOR(od.OrdCantidad) THEN od.OrdCantidad ELSE NULL END,
+          pcd.Cantidad,
+          od.OrdCantidad,
+          1.0
+        ) AS DECIMAL(18,4)),
+        ROUND(ISNULL(pcd.Subtotal, ISNULL(od.OrdCostoFinal, 0)) / NULLIF(COALESCE(
+          CASE WHEN pcd.Cantidad IS NOT NULL AND pcd.Cantidad != FLOOR(pcd.Cantidad) THEN pcd.Cantidad ELSE NULL END,
+          CASE WHEN od.OrdCantidad IS NOT NULL AND od.OrdCantidad != FLOOR(od.OrdCantidad) THEN od.OrdCantidad ELSE NULL END,
+          pcd.Cantidad,
+          od.OrdCantidad,
+          1.0
+        ), 0), 4),
+        ROUND(ISNULL(pcd.Subtotal, ISNULL(od.OrdCostoFinal, 0)) / 1.22, 2),
+        ROUND(ISNULL(pcd.Subtotal, ISNULL(od.OrdCostoFinal, 0)) - ISNULL(pcd.Subtotal, ISNULL(od.OrdCostoFinal, 0)) / 1.22, 2),
+        ISNULL(pcd.Subtotal, ISNULL(od.OrdCostoFinal, 0))
       FROM dbo.OrdenesDeposito od
+      LEFT JOIN dbo.PedidosCobranza pc ON LTRIM(RTRIM(pc.NoDocERP)) = od.OrdCodigoOrden
+      LEFT JOIN dbo.PedidosCobranzaDetalle pcd ON pcd.PedidoCobranzaID = pc.ID
       LEFT JOIN dbo.Articulos art ON art.ProIdProducto = od.ProIdProducto
+      LEFT JOIN dbo.Articulos art_pcd ON art_pcd.ProIdProducto = pcd.ProIdProducto
       WHERE od.OrdIdOrden IN (${idList})
     `);
 

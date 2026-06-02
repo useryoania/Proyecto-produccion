@@ -19,19 +19,49 @@ const getStatusBadge = (status) => {
 
 const getTipoDocName = (tipo) => {
     const MAP = {
-        '07': 'E-Ticket Contado', '08': 'E-Ticket Crédito',
-        '10': 'N.Crédito E-Ticket', '01': 'E-Factura Contado',
-        '02': 'E-Factura Crédito', '04': 'N.Crédito E-Factura',
+        // Códigos numéricos DGI
+        '07': 'E-Ticket NC',  '08': 'E-Ticket Crédito',
+        '10': 'E-Ticket NC',  '01': 'E-Ticket Contado',
+        '02': 'E-Factura Crédito', '04': 'E-Factura NC',
         '107': 'E-Ticket Contado', '108': 'E-Ticket Crédito',
         '101': 'E-Factura Contado', '102': 'E-Factura Crédito',
+        // Otros tipos
         'PedidoCaja': 'Pedido Caja', 'PC': 'Pedido Caja', 'Pedidos Caja': 'Pedido Caja',
-        'FACTURA': 'Factura de Crédito', 'E-TICKET': 'e-Ticket',
-        'FACTURA_CICLO': 'Estado de Cuenta',
-        'NOTA_CREDITO': 'Nota de Crédito', 'NOTA_DEBITO': 'Nota de Débito',
+        'FACTURA': 'E-Factura Crédito', 'E-TICKET': 'E-Ticket Contado',
+        'FACTURA_CICLO': 'Edo. Cuenta',
+        'NOTA_CREDITO': 'E-Ticket NC', 'NOTA_DEBITO': 'E-Ticket ND',
+        // Valores tal cual vienen de Config_TiposDocumento.Detalle
+        'E-Ticket Contado': 'E-Ticket Contado',
+        'E-Ticket Credito': 'E-Ticket Crédito',
+        'E-Ticket Crédito': 'E-Ticket Crédito',
+        'E-Ticket Nota De Credito': 'E-Ticket NC',
+        'E-Ticket Nota De Crédito': 'E-Ticket NC',
+        'E-Factura Nota De Credito': 'E-Factura NC',
+        'E-Factura Nota De Crédito': 'E-Factura NC',
+        'E-Factura Contado': 'E-Factura Contado',
+        'E-Factura Credito': 'E-Factura Crédito',
+        'E-Factura Crédito': 'E-Factura Crédito',
+        'E-Ticket Nota De Deb': 'E-Ticket ND',
+        'E-Factura Nota De Deb': 'E-Factura ND',
+        'Nota de Credito': 'E-Ticket NC',
+        'Nota de Crédito': 'E-Ticket NC',
+        'Nota de Debito': 'E-Ticket ND',
+        'Nota de Débito': 'E-Ticket ND',
     };
     if (!tipo) return '—';
     const k = String(tipo).trim();
-    return MAP[k] || k;
+    if (MAP[k]) return MAP[k];
+    // Fallback: reducir strings largos con patrones comunes
+    const tl = k.toLowerCase();
+    if (tl.includes('nota de cre') || tl.includes('nota de cr')) {
+        return tl.includes('factura') ? 'E-Factura NC' : 'E-Ticket NC';
+    }
+    if (tl.includes('nota de deb')) {
+        return tl.includes('factura') ? 'E-Factura ND' : 'E-Ticket ND';
+    }
+    if (tl.includes('e-ticket') || tl.includes('eticket')) return 'E-Ticket Contado';
+    if (tl.includes('e-factura') || tl.includes('efactura')) return 'E-Factura Contado';
+    return k;
 };
 
 const isFiscalCfe = (tipo) => {
@@ -653,7 +683,7 @@ const ContabilidadBandejaCFE = () => {
                                             {getTipoDocName(doc.DocTipo)}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                                            {doc.DocSerie}-{doc.DocNumero}
+                                            {doc.DocSerie}-{parseInt(doc.DocNumero, 10) || doc.DocNumero}
                                         </td>
                                         <td className="px-6 py-4 text-sm text-gray-500">
                                             <div className="text-gray-900 font-medium">
@@ -745,7 +775,8 @@ const ContabilidadBandejaCFE = () => {
                                                     >
                                                         <Printer className="h-5 w-5" />
                                                     </button>
-                                                    {/* Editar: abre FacturacionManualModal en modo editar */}
+                                                    {/* Editar: solo para facturas, no para NC/ND */}
+                                                    {!(isCreditNote(doc.DocTipo) || String(doc.DocTipo).toUpperCase().includes('DEBITO')) && (
                                                     <button
                                                         onClick={() => setEditDocId(doc.DocIdDocumento)}
                                                         className="text-gray-500 hover:text-yellow-600 transition-colors"
@@ -753,6 +784,7 @@ const ContabilidadBandejaCFE = () => {
                                                     >
                                                         <Edit className="h-5 w-5" />
                                                     </button>
+                                                    )}
                                                     {/* Reversar */}
                                                     <button
                                                         onClick={() => handleAnular(doc)}

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
-import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket, ScanLine, FileText, Cpu, FileDown, Inbox } from 'lucide-react';
+import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket, ScanLine, FileText, Cpu, FileDown, Inbox, Receipt } from 'lucide-react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
@@ -80,6 +80,7 @@ const ContabilidadMotorReglasAdmin = lazyWithRetry(() => import('../pages/Contab
 const ContabilidadReconciliacionView = lazyWithRetry(() => import('../pages/ContabilidadReconciliacionView'));
 const ContabilidadTesoreriaView    = lazyWithRetry(() => import('../pages/ContabilidadTesoreriaView'));
 const ContabilidadBandejaCFE       = lazyWithRetry(() => import('../pages/ContabilidadBandejaCFE'));
+const BandejaDocumentosInternos    = lazyWithRetry(() => import('../pages/BandejaDocumentosInternos'));
 const CronAdminView                = lazyWithRetry(() => import('../pages/CronAdminView'));
 const CoordinacionView             = lazyWithRetry(() => import('../pages/CoordinacionView'));
 
@@ -232,6 +233,11 @@ const lucideIconMapRaw = {
     'bandeja de tesoreria': Inbox,
     'bandeja tesoreria':    Inbox,
     'bandeja cfe':          ClipboardList,
+    'bandeja interna':      Receipt,
+    'bandeja documentos internos': Receipt,
+    'documentos internos':  Receipt,
+    'recibos':              Receipt,
+    'recibos y egresos':    Receipt,
     'cron':                 Terminal,
     // Administración sub-items
     'caja': Banknote,
@@ -623,6 +629,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <Route path="/contabilidad/motor"             element={<ContabilidadMotorReglasAdmin />} />
                 <Route path="/contabilidad/reconciliacion"    element={<ContabilidadReconciliacionView />} />
                 <Route path="/contabilidad/bandeja-cfe"       element={<ContabilidadBandejaCFE />} />
+                <Route path="/contabilidad/bandeja-interna"   element={<BandejaDocumentosInternos />} />
                 <Route path="/contabilidad/tesoreria"         element={<ContabilidadTesoreriaView />} />
                 <Route path="/contabilidad/caja-admin"        element={<CajaTransaccionView isAdminCaja={true} />} />
                 <Route path="/admin/cron"                     element={<CronAdminView />} />
