@@ -134,6 +134,10 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
     }, []);
 
     const toggleFilter = (category, value) => {
+        if (showCancelled) {
+            setShowCancelled(false);
+            setCancelledOrders([]);
+        }
         setActiveFilters(prev => {
             const current = prev[category] || [];
             if (current.includes(value)) {
@@ -156,6 +160,30 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
     const [isRollModalOpen, setIsRollModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [flashingRows, setFlashingRows] = useState([]);
+    const [showCancelled, setShowCancelled] = useState(false);
+    const [cancelledOrders, setCancelledOrders] = useState([]);
+    const [loadingCancelled, setLoadingCancelled] = useState(false);
+
+    const handleToggleCancelled = async () => {
+        const next = !showCancelled;
+        setShowCancelled(next);
+        setIsFilterDropdownOpen(false);
+        if (next && areaKey && areaKey.toLowerCase() !== 'area') {
+            setLoadingCancelled(true);
+            try {
+                // Reutilizamos getByArea (mismo que órdenes activas) con mode='cancelled'
+                const data = await ordersService.getByArea(areaKey, 'cancelled');
+                setCancelledOrders(Array.isArray(data) ? data : []);
+            } catch (e) {
+                console.error('Error cargando canceladas:', e);
+                setCancelledOrders([]);
+            } finally {
+                setLoadingCancelled(false);
+            }
+        } else {
+            setCancelledOrders([]);
+        }
+    };
 
     const hideImportar = ['corte', 'costura', 'bordado', 'estampado', 'twc', 'twt', 'emb'].includes((areaKey || '').toLowerCase());
 
@@ -278,17 +306,36 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
         return ['ALL', ...Array.from(unique).sort((a, b) => a.localeCompare(b))];
     }, [dbOrders]);
 
+    const availableMaterials = useMemo(() => {
+        const unique = new Set(
+            dbOrders
+                .map(o => (o.material || '').trim())
+                .filter(v => v && v !== '')
+        );
+        return [...Array.from(unique).sort((a, b) => a.localeCompare(b))];
+    }, [dbOrders]);
+
+    const isDTF = ['DF', 'DTF'].includes((areaKey || '').toUpperCase());
+
     // 5. FILTRADO
+    const displayOrders = showCancelled ? cancelledOrders : dbOrders;
     const filteredOrders = useMemo(() => {
-        let result = dbOrders;
+        // En modo canceladas: mostrar todas sin aplicar filtros activos de la sesión normal
+        if (showCancelled) {
+            return [...displayOrders].sort((a, b) =>
+                new Date(b.entryDate || 0) - new Date(a.entryDate || 0)
+            );
+        }
+
+        let result = displayOrders;
         
         // Fallas: por priority='Falla' O por código con -F
         const isFalla = (o) => (o.priority || '').toLowerCase() === 'falla' || (o.code || '').toUpperCase().includes('-F');
         // Reposiciones: por priority='Reposición' O por código con -R
         const isReposicion = (o) => (o.priority || '').toLowerCase() === 'reposición' || (o.code || '').toUpperCase().includes('-R');
 
-        const allFallas = dbOrders.filter(isFalla);
-        const allReposiciones = dbOrders.filter(o => !isFalla(o) && isReposicion(o));
+        const allFallas = displayOrders.filter(isFalla);
+        const allReposiciones = displayOrders.filter(o => !isFalla(o) && isReposicion(o));
 
         if (sidebarFilter !== 'ALL') {
             let filterField = sidebarMode === 'rolls' ? 'rollId' : 'printer';
@@ -323,7 +370,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
 
         // Fallas 1°, Reposiciones 2°, resto
         return [...allFallas, ...allReposiciones, ...resultWithoutFallas];
-    }, [dbOrders, sidebarFilter, sidebarMode, clientFilter, activeFilters, areaKey]);
+    }, [displayOrders, sidebarFilter, sidebarMode, clientFilter, activeFilters, areaKey, showCancelled]);
 
     const renderSidebar = () => null;
 
@@ -366,7 +413,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
                 </button>
 
                 {isFilterDropdownOpen && (
-                    <div className="absolute top-full mt-2 left-0 w-[320px] bg-white rounded-xl shadow-xl border border-zinc-200 z-50 overflow-hidden flex flex-col max-h-[60vh] sm:max-h-[400px]">
+                    <div className="absolute top-full mt-2 left-0 w-[320px] bg-white rounded-xl shadow-xl border border-zinc-200 z-50 flex flex-col">
                         <div className="flex justify-between items-center p-3 border-b border-zinc-100 bg-zinc-50 shrink-0">
                             <span className="text-sm font-bold text-zinc-700">Filtros Activos</span>
                             {activeFilterCount > 0 && (
@@ -375,7 +422,7 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
                                 </button>
                             )}
                         </div>
-                        <div className="p-4 overflow-y-auto flex flex-col gap-5">
+                        <div className="p-4 flex flex-col gap-5">
                             {/* Prioridad */}
                             <div>
                                 <span className="text-[10px] uppercase font-black text-zinc-400 tracking-wider mb-2 block">Prioridad</span>
@@ -419,28 +466,67 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
                                     })}
                                 </div>
                             </div>
-                            {/* Variante */}
-                            {availableVariants.filter(v => v !== 'ALL').length > 0 && (
-                                <div>
-                                    <span className="text-[10px] uppercase font-black text-zinc-400 tracking-wider mb-2 block">Variante</span>
-                                    <div className="flex flex-wrap gap-2">
-                                        {availableVariants.filter(v => v !== 'ALL').map(v => {
-                                            const isSelected = activeFilters.variants.includes(v);
-                                            return (
-                                                <button
-                                                    key={v}
-                                                    onClick={() => toggleFilter('variants', v)}
-                                                    className={`px-3 py-1.5 text-xs font-bold border rounded-lg transition-colors capitalize shadow-sm ${
-                                                        isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300'
-                                                    }`}
-                                                >
-                                                    {v}
-                                                </button>
-                                            );
-                                        })}
+                            {/* Variante o Material según área */}
+                            {isDTF ? (
+                                availableMaterials.length > 0 && (
+                                    <div>
+                                        <span className="text-[10px] uppercase font-black text-zinc-400 tracking-wider mb-2 block">Material</span>
+                                        <div className="flex flex-wrap gap-2">
+                                            {availableMaterials.map(m => {
+                                                const isSelected = activeFilters.variants.includes(m);
+                                                return (
+                                                    <button
+                                                        key={m}
+                                                        onClick={() => toggleFilter('variants', m)}
+                                                        className={`px-3 py-1.5 text-xs font-bold border rounded-lg transition-colors capitalize shadow-sm ${
+                                                            isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300'
+                                                        }`}
+                                                    >
+                                                        {m}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </div>
+                                )
+                            ) : (
+                                availableVariants.filter(v => v !== 'ALL').length > 0 && (
+                                    <div>
+                                        <span className="text-[10px] uppercase font-black text-zinc-400 tracking-wider mb-2 block">Variante</span>
+                                        <div className="flex flex-wrap gap-2">
+                                            {availableVariants.filter(v => v !== 'ALL').map(v => {
+                                                const isSelected = activeFilters.variants.includes(v);
+                                                return (
+                                                    <button
+                                                        key={v}
+                                                        onClick={() => toggleFilter('variants', v)}
+                                                        className={`px-3 py-1.5 text-xs font-bold border rounded-lg transition-colors capitalize shadow-sm ${
+                                                            isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50 hover:border-zinc-300'
+                                                        }`}
+                                                    >
+                                                        {v}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )
                             )}
+
+                            {/* Separador + Cancelados */}
+                            <div className="border-t border-zinc-200 pt-4">
+                                <button
+                                    onClick={handleToggleCancelled}
+                                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-bold border rounded-lg transition-colors shadow-sm ${
+                                        showCancelled
+                                            ? 'bg-red-600 text-white border-red-600'
+                                            : 'bg-white text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300'
+                                    }`}
+                                >
+                                    <i className="fa-solid fa-ban"></i>
+                                    {showCancelled ? 'Ocultar cancelados' : 'Ver órdenes canceladas'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

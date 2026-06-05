@@ -275,10 +275,9 @@ const printEtiquetas = async (req, res) => {
                     @page { size: 10cm 15cm; margin: 0; }
                     body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; background: #fff; color: #000; }
                     .label-page { 
-                        width: 10cm; height: 14.8cm;
+                        width: 10cm; height: 15cm;
                         position: relative; 
                         box-sizing: border-box; 
-                        overflow: hidden;
                         page-break-after: always;
                         border: 1px dashed #eee; 
                         padding: 15px; 
@@ -297,7 +296,7 @@ const printEtiquetas = async (req, res) => {
                     .date-text { font-size: 13px; font-weight: bold; }
 
                     /* CUERPO DE DOS COLUMNAS */
-                    .layout-main { display: flex; flex: 1; gap: 10px; }
+                    .layout-main { display: flex; flex: 1; min-height: 0; gap: 10px; }
                     
                     /* COLUMNA IZQUIERDA: LOS DOS CODIGOS */
                     .left-col { 
@@ -306,7 +305,7 @@ const printEtiquetas = async (req, res) => {
                         flex-direction: column; 
                         align-items: center; 
                         justify-content: flex-start; 
-                        border-right: 2px solid #000; 
+                        
                         padding-right: 15px;
                         gap: 15px;
                     }
@@ -314,9 +313,9 @@ const printEtiquetas = async (req, res) => {
                     .qr-box { width: 150px; height: 150px; }
                     .qr-caption { font-family: monospace; font-size: 16px; font-weight: 900; margin-top: 8px; text-align: center; letter-spacing: 1px; }
                     
-                    .order-info-block { text-align: center; margin-top: auto; }
-                    .big-order-text { font-size: 20px; font-weight: 900; line-height: 1.1; margin-bottom: 5px; color: #000; }
-                    .bulto-count-text { font-size: 18px; font-weight: 700; background: #000; color: #fff; padding: 2px 10px; border-radius: 4px; }
+                    .order-info-block { text-align: center; border-top: 2px solid #000; padding-top: 10px; margin-top: 10px; width: 100%; }
+                    .big-order-text { font-weight: 900; line-height: 1; margin-bottom: 6px; color: #000; white-space: nowrap; display: inline-block; }
+                    .bulto-count-text { font-size: 22px; font-weight: 700; background: #000; color: #fff; padding: 4px 14px; border-radius: 4px; display: inline-block; width: 80%; box-sizing: border-box; text-align: center; }
 
                     /* COLUMNA DERECHA: SERVICIOS */
                     .right-col { width: 40%; padding-left: 5px; }
@@ -349,7 +348,7 @@ const printEtiquetas = async (req, res) => {
                     }
 
                     @media screen {
-                        .label-page { border: 1px dashed #ccc; margin: 20px auto; width: 380px; height: 560px; }
+                        .label-page { border: 1px dashed #ccc; margin: 20px auto; width: 380px; min-height: 600px; height: auto; }
                         body { background: #f0f0f0; padding-bottom: 50px; }
                     }
                     @media print {
@@ -416,10 +415,6 @@ const printEtiquetas = async (req, res) => {
                                 <div class="qr-caption">${flippedCode}</div>
                             </div>
 
-                            <div class="order-info-block">
-                                <div class="big-order-text">${label.CodigoOrden}</div>
-                                <div class="bulto-count-text">BULTO ${label.NumeroBulto} / ${label.TotalBultos}</div>
-                            </div>
                         </div>
 
                         <div class="right-col">
@@ -473,6 +468,11 @@ const printEtiquetas = async (req, res) => {
                         </div>
                     </div>
 
+                    <div class="order-info-block">
+                        <div id="order-text-${index}" class="big-order-text">${label.CodigoOrden}</div>
+                        <div class="bulto-count-text">BULTO ${label.NumeroBulto} / ${label.TotalBultos}</div>
+                    </div>
+
                     <script>
                         new QRCode(document.getElementById("qr-bulto-${index}"), {
                             text: "${label.CodigoEtiqueta}",
@@ -482,6 +482,25 @@ const printEtiquetas = async (req, res) => {
                 </div>
             `;
         }).join('')}
+            <script>
+                window.addEventListener('load', function() {
+                    document.querySelectorAll('.big-order-text').forEach(function(el) {
+                        var container = el.parentElement;
+                        var maxW = container.offsetWidth;
+                        if (!maxW) return;
+                        var fontSize = 10;
+                        el.style.fontSize = fontSize + 'px';
+                        while (el.offsetWidth < maxW * 0.98 && fontSize < 200) {
+                            fontSize += 1;
+                            el.style.fontSize = fontSize + 'px';
+                        }
+                        while (el.offsetWidth > maxW && fontSize > 8) {
+                            fontSize -= 1;
+                            el.style.fontSize = fontSize + 'px';
+                        }
+                    });
+                });
+            </script>
             </body>
             </html>
         `;

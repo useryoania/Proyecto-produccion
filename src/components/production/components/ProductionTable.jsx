@@ -398,6 +398,9 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
                         Página {table.getState().pagination.pageIndex + 1} de {table.getPageCount() || 1}
                     </span>
                     <span className="font-medium text-zinc-400">({rowData.length} órdenes en total)</span>
+                    <span className="bg-brand-cyan/10 text-brand-cyan px-2 py-1 rounded-md font-bold">
+                        {rowData.reduce((sum, o) => sum + (parseFloat(o.magnitude) || 0), 0).toFixed(2)} m²
+                    </span>
                 </span>
                 
                 <div className="flex items-center gap-2">

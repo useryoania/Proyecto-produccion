@@ -141,7 +141,7 @@ export const printLabels = (labels) => {
                   justify-content: center; align-items: center; 
               }
               .left-panel img { width: 180px; height: 180px; object-fit: contain; margin-bottom: 10px; }
-              .order-code { font-size: 38px; font-weight: 900; line-height: 1; }
+              .order-code { font-size: 52px; font-weight: 900; line-height: 1; width: 80%; word-break: break-all; }
               .bulto-code { font-size: 24px; font-weight: bold; margin-top: 5px; }
               .ref-code { font-size: 12px; margin-top: 15px; }
 

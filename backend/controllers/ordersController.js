@@ -120,6 +120,8 @@ exports.getOrdersByArea = async (req, res) => {
         const estadosFinales = "'Entregado', 'Finalizado', 'Cancelado'";
         if (mode === 'history') {
             query += ` AND o.Estado IN (${estadosFinales})`;
+        } else if (mode === 'cancelled') {
+            query += ` AND o.Estado IN ('Cancelado', 'CANCELADO', 'Anulado', 'RECHAZADO')`;
         } else if (mode === 'all') {
             // No filtrar por estado
         } else {

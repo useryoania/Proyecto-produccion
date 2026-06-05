@@ -10,11 +10,6 @@ export const ordersService = {
         const response = await api.get('/orders/active', { params });
         return response.data;
     },
-    getCancelledSummary: async (areaKey) => {
-        const params = areaKey ? { area: areaKey } : {};
-        const response = await api.get('/orders/cancelled', { params });
-        return response.data;
-    },
     getFailedSummary: async (areaKey) => {
         const params = areaKey ? { area: areaKey } : {};
         const response = await api.get('/orders/failed', { params });

@@ -833,22 +833,39 @@ const FilePrintControl = ({ areaCode }) => {
                 </div>
               )}
 
-              {controlAction === 'FALLA' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
-                    Cantidad a Reponer (Metros) <span className="text-slate-400 font-normal normal-case">(Opcional)</span>
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-red-400 font-medium text-sm text-slate-700"
-                    placeholder="Ej: 2.5"
-                    value={metersToReprint}
-                    onChange={(e) => setMetersToReprint(e.target.value)}
-                  />
-                </div>
-              )}
+              {controlAction === 'FALLA' && (() => {
+                const fileAlto = parseFloat(selectedFileForAction?.Alto || 0);
+                const maxReponer = fileAlto > 0 ? Math.max(0, fileAlto - 0.01) : null;
+                return (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
+                      Cantidad a Reponer (Metros) <span className="text-slate-400 font-normal normal-case">(Opcional)</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max={maxReponer ?? undefined}
+                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-red-400 font-medium text-sm text-slate-700"
+                      placeholder="Ej: 2.5"
+                      value={metersToReprint}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (maxReponer !== null && parseFloat(val) > maxReponer) {
+                          setMetersToReprint(maxReponer.toFixed(2));
+                        } else {
+                          setMetersToReprint(val);
+                        }
+                      }}
+                    />
+                    {maxReponer !== null && (
+                      <p className="text-xs text-slate-400 mt-1">
+                        Máximo: <span className="font-bold text-slate-500">{maxReponer.toFixed(2)} m</span> (largo del archivo: {fileAlto.toFixed(2)} m)
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
