@@ -979,7 +979,7 @@ async function getMovimientos(CueIdCuenta, FechaDesde = null, FechaHasta = null,
       WHERE CueIdCuenta = @CueIdCuentaA
         AND CAST(MovFecha AS DATE) < @FechaDesdeA
         AND (MovAnulado IS NULL OR MovAnulado = 0)
-        AND MovTipo NOT IN ('ORDEN', 'ENTREGA', 'ORDEN_ANTICIPO')
+        AND MovTipo NOT IN ('ORDEN', 'ORDEN_ANTICIPO')
     `);
     saldoArrastre = Number(arrastreRes.recordset[0]?.SaldoArrastre ?? 0);
   }
@@ -1123,7 +1123,12 @@ async function getMovimientos(CueIdCuenta, FechaDesde = null, FechaHasta = null,
     } else if (['NOTA_CREDITO', 'REVERSO', 'DEVOLUCION'].includes(m.MovTipo)) {
       isVisible = true;
       importeVirtual = Math.abs(Number(m.MovImporte));
-    } else if (['ORDEN', 'ENTREGA', 'ORDEN_ANTICIPO'].includes(m.MovTipo)) {
+    } else if (m.MovTipo === 'ENTREGA') {
+      // ENTREGA: consumo de metros de un plan — siempre visible (es el movimiento principal en cuentas de Recursos)
+      isVisible = true;
+      importeVirtual = Number(m.MovImporte); // negativo (consumo)
+    } else if (['ORDEN', 'ORDEN_ANTICIPO'].includes(m.MovTipo)) {
+      // ORDEN/ORDEN_ANTICIPO: en cuentas monetarias son débitos internos consolidados en CIERRE_CICLO
       isVisible = false;
       importeVirtual = 0;
     } else {
@@ -1671,6 +1676,7 @@ async function cerrarCicloCompleto({
   actualizarCliente = false
 }) {
   const pool = await getPool();
+  const contabilidadCore = require('./contabilidadCore');
 
   // 0. Procesar ediciones manuales de detalles
   if (detallesEditados && detallesEditados.length > 0) {
@@ -1919,111 +1925,85 @@ async function cerrarCicloCompleto({
         docImpuestos /= cotDolar;
       }
 
-      const docRes = await pool.request()
-        .input('CueIdCuenta',   sql.Int,          cueIdFactura)
-        .input('CliIdCliente',  sql.Int,          ciclo.CliIdCliente)
-        .input('DocTipo',       sql.VarChar(50),  tipoDocumento)
-        .input('DocNumero',     sql.VarChar(50),  docNumero)
-        .input('DocSerie',      sql.VarChar(10),  docSerie)
-        .input('DocSubtotal',   sql.Decimal(18,4), docSubtotal)
-        .input('DocImpuestos',  sql.Decimal(18,4), docImpuestos)
-        .input('DocTotalDescuentos', sql.Decimal(18,4), docDescuentos)
-        .input('DocTotal',      sql.Decimal(18,4), docTotal) 
-        .input('MonIdMoneda',   sql.Int,          targetMonId)
-        .input('CicIdCiclo',    sql.Int,          CicIdCiclo)
-        .input('FechaDesde',    sql.DateTime,     new Date(ciclo.CicFechaInicio))
-        .input('FechaHasta',    sql.DateTime,     fechaCierreReal)
-        .input('UsuarioAlta',   sql.Int,          UsuarioAlta)
-        .input('DocObservaciones', sql.NVarChar(sql.MAX), docObservaciones)
-        .input('DocCliNombre', sql.NVarChar(255), cliDgiNombre)
-        .input('DocCliDocumento', sql.NVarChar(50), cliDgiDocumento)
-        .input('DocCliDireccion', sql.NVarChar(255), cliDgiDireccion)
-        .input('DocCliCiudad', sql.NVarChar(100), cliDgiCiudad)
-        .input('DocPagado', sql.TinyInt, tipoDocumento.toUpperCase().includes('CONTADO') ? 1 : 0)
-        .query(`
-          INSERT INTO dbo.DocumentosContables
-            (CueIdCuenta, CliIdCliente, DocTipo, DocNumero, DocSerie,
-             DocFechaDesde, DocFechaHasta, DocSubtotal, DocImpuestos, DocTotal,
-             MonIdMoneda, CicIdCiclo, DocEstado, CfeEstado,
-             DocFechaEmision, DocUsuarioAlta, DocTotalDescuentos, DocTotalRecargos, DocObservaciones,
-             DocCliNombre, DocCliDocumento, DocCliDireccion, DocCliCiudad, DocPagado)
-          OUTPUT INSERTED.DocIdDocumento
-          VALUES
-            (@CueIdCuenta, @CliIdCliente, @DocTipo, @DocNumero, @DocSerie,
-             @FechaDesde, @FechaHasta, @DocSubtotal, @DocImpuestos, @DocTotal,
-             @MonIdMoneda, @CicIdCiclo, 'EMITIDO', 'PENDIENTE',
-             GETDATE(), @UsuarioAlta, @DocTotalDescuentos, 0, @DocObservaciones,
-             @DocCliNombre, @DocCliDocumento, @DocCliDireccion, @DocCliCiudad, @DocPagado)
-        `);
-    DocIdDocumento = docRes.recordset[0].DocIdDocumento;
+      // Refactored to use crearDocumentoContable
+      const mappedLineas = [];
+      if (detallesParaPDF && detallesParaPDF.length > 0) {
+        for (const d of detallesParaPDF) {
+          const bruto = d.DcdSubtotal != null ? Number(d.DcdSubtotal) : 0;
+          const ivaRate = d.DcdIvaRate != null ? Number(d.DcdIvaRate) : 22;
+          const divisor = 1 + ivaRate / 100;
+          let dcdSubtotal  = bruto / divisor;
+          let dcdImpuestos = bruto - dcdSubtotal;
+          let dcdTotal     = bruto;
+          
+          dcdSubtotal  = Math.round(dcdSubtotal  * 10000) / 10000;
+          dcdImpuestos = Math.round(dcdImpuestos * 10000) / 10000;
+          dcdTotal     = Math.round(dcdTotal     * 10000) / 10000;
+          
+          mappedLineas.push({
+            nomItem: (d.DcdNomItem || '').substring(0, 255),
+            dscItem: (d.DcdDscItem || '').substring(0, 1000),
+            cantidad: d.DcdCantidad != null ? Number(d.DcdCantidad) : 1,
+            precioUnitario: d.DcdPrecioUnitario != null ? Number(d.DcdPrecioUnitario) : dcdSubtotal,
+            subtotal: dcdSubtotal,
+            impuestos: dcdImpuestos,
+            total: dcdTotal,
+            totalDescuentos: d.DcdTotalDescuentos || 0,
+            descuentoStr: d.DcdDescuentoStr || null
+          });
+        }
+      }
 
-    // Vincular el documento generado a los movimientos del ciclo facturado para que dejen de estar pendientes
-    const linkReq = pool.request()
-      .input('DocId', sql.Int, DocIdDocumento)
-      .input('CicIdCiclo', sql.Int, CicIdCiclo);
-    
-    let linkQueryAdd = '';
-    if (excluidos && excluidos.length > 0) {
-      const inClause = excluidos.map((id, i) => {
-        linkReq.input(`ex${i}`, sql.Int, id);
-        return `@ex${i}`;
-      }).join(',');
-      linkQueryAdd = `AND MovIdMovimiento NOT IN (${inClause})`;
-    }
+      DocIdDocumento = await contabilidadCore.crearDocumentoContable({
+        header: {
+          cueIdCuenta: cueIdFactura,
+          clienteId: ciclo.CliIdCliente,
+          monedaId: targetMonId,
+          tipo: tipoDocumento,
+          numero: docNumero,
+          serie: docSerie,
+          subtotal: docSubtotal,
+          impuestos: docImpuestos,
+          totalDescuentos: docDescuentos,
+          total: docTotal,
+          estado: 'EMITIDO',
+          cfeEstado: 'PENDIENTE',
+          usuarioId: UsuarioAlta,
+          observaciones: docObservaciones,
+          docPagado: tipoDocumento.toUpperCase().includes('CONTADO'),
+          cicIdCiclo: CicIdCiclo,
+          docFechaDesde: ciclo.CicFechaInicio,
+          docFechaHasta: fechaCierreReal,
+          docCliNombre: cliDgiNombre,
+          docCliDocumento: cliDgiDocumento,
+          docCliDireccion: cliDgiDireccion,
+          docCliCiudad: cliDgiCiudad
+        },
+        lineas: mappedLineas
+      });
 
-    await linkReq.query(`
-      UPDATE dbo.MovimientosCuenta
-      SET DocIdDocumento = @DocId
-      WHERE CicIdCiclo = @CicIdCiclo
-        AND (MovAnulado IS NULL OR MovAnulado = 0)
-        AND DocIdDocumento IS NULL
-        ${linkQueryAdd}
-    `);
-
-
-  // 4. Insertar detalles para el PDF
-  if (detallesParaPDF && detallesParaPDF.length > 0) {
-    for (const [index, d] of detallesParaPDF.entries()) {
-      // El DcdSubtotal almacenado en detallesParaPDF es el importe bruto (con IVA incluido).
-      // Hay que descomponer: neto = bruto / 1.22, iva = bruto - neto, total = bruto
-      const bruto = d.DcdSubtotal != null ? Number(d.DcdSubtotal) : 0;
-      const ivaRate = d.DcdIvaRate != null ? Number(d.DcdIvaRate) : 22; // si viene con tasa, la usa; si no, 22%
-      const divisor = 1 + ivaRate / 100;
-      let dcdSubtotal  = bruto / divisor;                  // neto sin IVA
-      let dcdImpuestos = bruto - dcdSubtotal;              // IVA calculado correctamente
-      let dcdTotal     = bruto;                            // total con IVA
-      
-      // Redondear a 4 decimales
-      dcdSubtotal  = Math.round(dcdSubtotal  * 10000) / 10000;
-      dcdImpuestos = Math.round(dcdImpuestos * 10000) / 10000;
-      dcdTotal     = Math.round(dcdTotal     * 10000) / 10000;
-      
-      let nomItem = d.DcdNomItem || '';
-      let dscItem = d.DcdDscItem || '';
-      let cant = d.DcdCantidad != null ? Number(d.DcdCantidad) : 1;  // DEFAULT 1 — columna NOT NULL
-      let punit = d.DcdPrecioUnitario != null ? Number(d.DcdPrecioUnitario) : dcdSubtotal;
-      let totDesc = d.DcdTotalDescuentos || 0;
-      let descStr = d.DcdDescuentoStr || null;
-
-      await pool.request()
+      // Vincular el documento generado a los movimientos del ciclo facturado para que dejen de estar pendientes
+      const linkReq = pool.request()
         .input('DocId', sql.Int, DocIdDocumento)
-        .input('NomItem', sql.VarChar(255), nomItem.substring(0, 255))
-        .input('DscItem', sql.VarChar(1000), dscItem.substring(0, 1000))
-        .input('Cantidad', sql.Decimal(18,4), cant)
-        .input('PrecioUnitario', sql.Decimal(18,4), punit)
-        .input('TotalDescuentos', sql.Decimal(18,4), totDesc)
-        .input('DescuentoStr', sql.VarChar(100), descStr)
-        .input('Subtotal', sql.Decimal(18,4), dcdSubtotal)
-        .input('Impuestos', sql.Decimal(18,4), dcdImpuestos)
-        .input('Total', sql.Decimal(18,4), dcdTotal)
-        .query(`
-          INSERT INTO dbo.DocumentosContablesDetalle
-          (DocIdDocumento, DcdNomItem, DcdDscItem, DcdCantidad, DcdPrecioUnitario, DcdSubtotal, DcdImpuestos, DcdTotal, DcdTotalDescuentos, DcdDescuentoStr)
-          VALUES
-          (@DocId, @NomItem, @DscItem, @Cantidad, @PrecioUnitario, @Subtotal, @Impuestos, @Total, @TotalDescuentos, @DescuentoStr)
-        `);
-    }
-  }
+        .input('CicIdCiclo', sql.Int, CicIdCiclo);
+      
+      let linkQueryAdd = '';
+      if (excluidos && excluidos.length > 0) {
+        const inClause = excluidos.map((id, i) => {
+          linkReq.input(`ex${i}`, sql.Int, id);
+          return `@ex${i}`;
+        }).join(',');
+        linkQueryAdd = `AND MovIdMovimiento NOT IN (${inClause})`;
+      }
+
+      await linkReq.query(`
+        UPDATE dbo.MovimientosCuenta
+        SET DocIdDocumento = @DocId
+        WHERE CicIdCiclo = @CicIdCiclo
+          AND (MovAnulado IS NULL OR MovAnulado = 0)
+          AND DocIdDocumento IS NULL
+          ${linkQueryAdd}
+      `);
 
   // 5. Crear DeudaDocumento — va en la cuenta de la moneda de la factura
   if (saldoFacturar > 0 && DocIdDocumento) {
