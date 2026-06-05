@@ -11,6 +11,7 @@
 const svc    = require('../services/contabilidadService');
 const logger = require('../utils/logger');
 const { getPool, sql } = require('../config/db');
+const { crearDocumentoContable } = require('../services/contabilidadCore');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
 // ============================================================
@@ -669,45 +670,40 @@ exports.crearPlan = async (req, res) => {
       docNumero = `${prefijo}-${anio}-${String(numero).padStart(5, '0')}`;
       const importe = PlaImportePagado ? parseFloat(PlaImportePagado) : 0;
 
-      // Insertar DocumentoContable
+      // Insertar DocumentoContable y Detalles
       const docEstado = (DocTipo === 'FACTURA' && importe <= 0) ? 'EMITIDO' : 'COBRADO';
-      const docRes = await pool.request()
-        .input('CueIdCuenta',  sql.Int,           parseInt(CueIdCuenta))
-        .input('CliIdCliente', sql.Int,           parseInt(CliIdCliente))
-        .input('DocTipo',      sql.VarChar(20),  DocTipo)
-        .input('DocNumero',    sql.VarChar(50),  docNumero)
-        .input('DocTotal',     sql.Decimal(18,4), importe)
-        .input('DocSubtotal',  sql.Decimal(18,4), importe)
-        .input('MonIdMoneda',  sql.Int,           MonedaPagoId ? parseInt(MonedaPagoId) : 1)
-        .input('DocEstado',    sql.VarChar(20),  docEstado)
-        .input('UsuarioAlta',  sql.Int,           UsuarioAlta)
-        .query(`
-          INSERT INTO dbo.DocumentosContables
-            (CueIdCuenta, CliIdCliente, DocTipo, DocNumero, DocSerie,
-             DocSubtotal, DocTotal, MonIdMoneda, DocEstado,
-             DocFechaEmision, DocUsuarioAlta)
-          OUTPUT INSERTED.DocIdDocumento
-          VALUES
-            (@CueIdCuenta, @CliIdCliente, @DocTipo, @DocNumero, 'A',
-             @DocSubtotal, @DocTotal, @MonIdMoneda, @DocEstado,
-             GETDATE(), @UsuarioAlta)
-        `);
-      DocIdDocumento = docRes.recordset[0].DocIdDocumento;
+      const pUnit = (req.body.PlaPrecioUnitario !== undefined && req.body.PlaPrecioUnitario !== null)
+        ? parseFloat(req.body.PlaPrecioUnitario)
+        : (PlaImportePagado ? parseFloat(PlaImportePagado) / parseFloat(PlaCantidadTotal) : 0.0);
 
-      // Insertar en DocumentosContablesDetalle
-      await pool.request()
-        .input('DocId',    sql.Int,           DocIdDocumento)
-        .input('Nom',      sql.VarChar(200),  `Adquisición de Plan de Recursos #${PlaIdPlan}`.substring(0, 200))
-        .input('Desc',     sql.VarChar(500),  `${PlaDescripcion || ''}`.substring(0, 500))
-        .input('Cant',     sql.Decimal(18,4), parseFloat(PlaCantidadTotal) || 1.0)
-        .input('PUnit',    sql.Decimal(18,4), PlaPrecioUnitario ? parseFloat(PlaPrecioUnitario) : (PlaImportePagado ? parseFloat(PlaImportePagado)/parseFloat(PlaCantidadTotal) : 0.0))
-        .input('Monto',    sql.Decimal(18,2), importe)
-        .query(`
-          INSERT INTO dbo.DocumentosContablesDetalle
-            (DocIdDocumento, DcdNomItem, DcdDscItem, DcdCantidad, DcdPrecioUnitario, DcdSubtotal, DcdImpuestos, DcdTotal)
-          VALUES
-            (@DocId, @Nom, @Desc, @Cant, @PUnit, @Monto, 0.0, @Monto)
-        `);
+      DocIdDocumento = await crearDocumentoContable({
+        header: {
+          cueIdCuenta: parseInt(CueIdCuenta),
+          clienteId: parseInt(CliIdCliente),
+          monedaId: MonedaPagoId ? parseInt(MonedaPagoId) : 1,
+          tipo: DocTipo,
+          numero: docNumero,
+          serie: 'A',
+          subtotal: importe,
+          impuestos: 0,
+          total: importe,
+          docPagado: docEstado === 'COBRADO',
+          estado: docEstado,
+          cfeEstado: null,
+          usuarioId: UsuarioAlta
+        },
+        lineas: [
+          {
+            nomItem: `Adquisición de Plan de Recursos #${PlaIdPlan}`.substring(0, 200),
+            dscItem: `${PlaDescripcion || ''}`.substring(0, 500),
+            cantidad: parseFloat(PlaCantidadTotal) || 1.0,
+            precioUnitario: pUnit,
+            subtotal: importe,
+            impuestos: 0,
+            total: importe
+          }
+        ]
+      });
 
 
       if (DocTipo === 'FACTURA') {

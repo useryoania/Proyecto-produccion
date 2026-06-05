@@ -209,10 +209,322 @@ const desglosarIVA = (totalMonto, tasaIVA = 22) => {
   };
 };
 
+const crearDocumentoContable = async ({ header, lineas }, transaction = null) => {
+  if (!header.cueIdCuenta || !header.clienteId || !header.monedaId || !header.tipo || !header.numero || !header.serie || !header.usuarioId) {
+    throw new Error('[crearDocumentoContable] Faltan parámetros obligatorios en el cabezal del documento.');
+  }
+
+  const pool = transaction ? null : await getPool();
+  const request = transaction ? new sql.Request(transaction) : pool.request();
+  
+  const totalDescuentos = header.totalDescuentos !== undefined ? header.totalDescuentos : 0;
+  const totalRecargos = header.totalRecargos !== undefined ? header.totalRecargos : 0;
+  let estado = header.estado !== undefined ? String(header.estado).toUpperCase().trim() : 'PAGADO';
+  if (estado === 'COBRADO' || estado === '1' || estado === 'PAGADO') {
+    estado = 'PAGADO';
+  } else if (estado === '0' || estado === 'ANULADO') {
+    estado = 'ANULADO';
+  }
+  const cfeEstado = header.cfeEstado !== undefined && header.cfeEstado !== null ? String(header.cfeEstado) : null;
+  const tcaIdTransaccion = header.tcaIdTransaccion !== undefined ? header.tcaIdTransaccion : null;
+  const asiIdAsiento = header.asiIdAsiento !== undefined ? header.asiIdAsiento : null;
+  const observaciones = header.observaciones !== undefined && header.observaciones !== null ? String(header.observaciones) : null;
+  const docPagado = header.docPagado !== undefined ? (header.docPagado ? 1 : 0) : 0;
+  const docIdDocumentoRef = header.docIdDocumentoRef !== undefined ? header.docIdDocumentoRef : null;
+  const docMotivoRef = header.docMotivoRef !== undefined && header.docMotivoRef !== null ? String(header.docMotivoRef) : null;
+  const cicIdCiclo = header.cicIdCiclo !== undefined ? header.cicIdCiclo : null;
+  const docFechaDesde = header.docFechaDesde !== undefined ? header.docFechaDesde : null;
+  const docFechaHasta = header.docFechaHasta !== undefined ? header.docFechaHasta : null;
+  const docCliNombre = header.docCliNombre !== undefined && header.docCliNombre !== null ? String(header.docCliNombre) : null;
+  const docCliDocumento = header.docCliDocumento !== undefined && header.docCliDocumento !== null ? String(header.docCliDocumento) : null;
+  const docCliDireccion = header.docCliDireccion !== undefined && header.docCliDireccion !== null ? String(header.docCliDireccion) : null;
+  const docCliCiudad = header.docCliCiudad !== undefined && header.docCliCiudad !== null ? String(header.docCliCiudad) : null;
+  
+  const resCab = await request
+    .input('Cue', sql.Int, header.cueIdCuenta)
+    .input('Cli', sql.Int, header.clienteId)
+    .input('MonId', sql.Int, header.monedaId)
+    .input('Tipo', sql.VarChar(50), String(header.tipo))
+    .input('Num', sql.VarChar(50), String(header.numero))
+    .input('Serie', sql.VarChar(10), String(header.serie))
+    .input('Sub', sql.Decimal(18, 4), header.subtotal)
+    .input('Imp', sql.Decimal(18, 4), header.impuestos)
+    .input('TotalDesc', sql.Decimal(18, 4), totalDescuentos)
+    .input('TotalRec', sql.Decimal(18, 4), totalRecargos)
+    .input('Tot', sql.Decimal(18, 4), header.total)
+    .input('Estado', sql.VarChar(20), estado)
+    .input('CfeEstado', sql.VarChar(20), cfeEstado)
+    .input('Usr', sql.Int, header.usuarioId)
+    .input('TcaId', sql.Int, tcaIdTransaccion)
+    .input('AsiId', sql.Int, asiIdAsiento)
+    .input('Obs', sql.NVarChar(500), observaciones)
+    .input('Pagado', sql.Bit, docPagado)
+    .input('DocRef', sql.Int, docIdDocumentoRef)
+    .input('MotRef', sql.NVarChar(300), docMotivoRef)
+    .input('CicId', sql.Int, cicIdCiclo)
+    .input('FDesde', sql.DateTime, docFechaDesde ? new Date(docFechaDesde) : null)
+    .input('FHasta', sql.DateTime, docFechaHasta ? new Date(docFechaHasta) : null)
+    .input('CliNombre', sql.NVarChar(200), docCliNombre)
+    .input('CliDoc', sql.NVarChar(20), docCliDocumento)
+    .input('CliDir', sql.NVarChar(200), docCliDireccion)
+    .input('CliCiu', sql.NVarChar(100), docCliCiudad)
+    .query(`
+      INSERT INTO dbo.DocumentosContables 
+        (CueIdCuenta, CliIdCliente, MonIdMoneda, DocTipo, DocNumero, DocSerie,
+         DocSubtotal, DocImpuestos, DocTotalDescuentos, DocTotalRecargos, DocTotal,
+         DocEstado, CfeEstado, DocFechaEmision, DocUsuarioAlta, TcaIdTransaccion, AsiIdAsiento,
+         DocObservaciones, DocPagado, DocIdDocumentoRef, DocMotivoRef, CicIdCiclo, DocFechaDesde, DocFechaHasta,
+         DocCliNombre, DocCliDocumento, DocCliDireccion, DocCliCiudad)
+      OUTPUT INSERTED.DocIdDocumento
+      VALUES 
+        (@Cue, @Cli, @MonId, @Tipo, @Num, @Serie,
+         @Sub, @Imp, @TotalDesc, @TotalRec, @Tot,
+         @Estado, @CfeEstado, GETDATE(), @Usr, @TcaId, @AsiId,
+         @Obs, @Pagado, @DocRef, @MotRef, @CicId, @FDesde, @FHasta,
+         @CliNombre, @CliDoc, @CliDir, @CliCiu)
+    `);
+
+  const docId = resCab.recordset[0].DocIdDocumento;
+
+  if (Array.isArray(lineas) && lineas.length > 0) {
+    for (const linea of lineas) {
+      if (!linea.nomItem || linea.cantidad === undefined || linea.precioUnitario === undefined || linea.subtotal === undefined || linea.total === undefined) {
+        throw new Error('[crearDocumentoContable] Falta algún parámetro obligatorio en una línea de detalle.');
+      }
+      
+      const reqLine = transaction ? new sql.Request(transaction) : pool.request();
+      const dscItem = linea.dscItem !== undefined ? linea.dscItem : null;
+      const lineImpuestos = linea.impuestos !== undefined ? linea.impuestos : 0;
+      const ordCodigoOrden = linea.ordCodigoOrden !== undefined ? linea.ordCodigoOrden : null;
+      const lineTotalDescuentos = linea.totalDescuentos !== undefined ? linea.totalDescuentos : 0;
+      const lineDescuentoStr = linea.descuentoStr !== undefined ? linea.descuentoStr : null;
+      
+      await reqLine
+        .input('DocId', sql.Int, docId)
+        .input('OrdCod', sql.VarChar(100), ordCodigoOrden)
+        .input('Nom', sql.NVarChar(255), linea.nomItem.substring(0, 255))
+        .input('Dsc', sql.NVarChar(1000), dscItem ? dscItem.substring(0, 1000) : null)
+        .input('Cant', sql.Decimal(18, 4), linea.cantidad)
+        .input('Precio', sql.Decimal(18, 4), linea.precioUnitario)
+        .input('Sub', sql.Decimal(18, 2), linea.subtotal)
+        .input('Imp', sql.Decimal(18, 2), lineImpuestos)
+        .input('Tot', sql.Decimal(18, 2), linea.total)
+        .input('TotalDesc', sql.Decimal(18, 4), lineTotalDescuentos)
+        .input('DescStr', sql.VarChar(100), lineDescuentoStr)
+        .query(`
+          INSERT INTO dbo.DocumentosContablesDetalle
+            (DocIdDocumento, OrdCodigoOrden, DcdNomItem, DcdDscItem, DcdCantidad, DcdPrecioUnitario, DcdSubtotal, DcdImpuestos, DcdTotal, DcdTotalDescuentos, DcdDescuentoStr)
+          VALUES
+            (@DocId, @OrdCod, @Nom, @Dsc, @Cant, @Precio, @Sub, @Imp, @Tot, @TotalDesc, @DescStr)
+        `);
+    }
+  }
+
+  return docId;
+};
+
+/**
+ * resolverLineasDetalle
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Lógica intermedia centralizada para construir el array `lineas` que se
+ * pasa a crearDocumentoContable.
+ *
+ * Soporta dos modos (mutuamente excluyentes):
+ *  - { tcaIdTransaccion }  → lee TransaccionDetalle y resuelve órdenes:
+ *       Modo moderno: via RelOrdenesRetiroOrdenes → OrdenesDeposito
+ *       Fallback legacy: od.OReIdOrdenRetiro = td.TdeReferenciaId (órdenes viejas sin Rel)
+ *       Si la referencia es ORDEN_DEPOSITO directa también la resuelve.
+ *       Si hay PedidosCobranzaDetalle lo usa; sino fallback a campos de OrdenesDeposito.
+ *
+ *  - { orderIds: number[] } → resuelve directamente desde OrdenesDeposito por OrdIdOrden
+ *       Usado por generarCFEDesdeOrdenesDirectas.
+ *
+ * @param {object}  opts
+ * @param {number}  [opts.tcaIdTransaccion]
+ * @param {number[]}[opts.orderIds]
+ * @param {object}  transaction  - Transacción mssql activa (o null para usar pool)
+ * @returns {Promise<object[]>}  Array de líneas formateadas para crearDocumentoContable
+ */
+const resolverLineasDetalle = async ({ tcaIdTransaccion, orderIds } = {}, transaction = null) => {
+  const pool = transaction ? null : await getPool();
+  const makeReq = () => transaction ? new sql.Request(transaction) : pool.request();
+
+  // ── MODO 1: desde TransaccionDetalle ──────────────────────────────────────
+  if (tcaIdTransaccion) {
+    const res = await makeReq()
+      .input('tcaId', sql.Int, tcaIdTransaccion)
+      .query(`
+        SELECT
+          ISNULL(od.OrdCodigoOrden, td.TdeCodigoReferencia) AS OrdCodigoOrden,
+          LEFT(COALESCE(
+               NULLIF(NULLIF(LTRIM(RTRIM(art.Descripcion)), 'Articulos User'), 'Articulos User USD'),
+               NULLIF(NULLIF(LTRIM(RTRIM(artod.Descripcion)), 'Articulos User'), 'Articulos User USD'),
+               NULLIF(LTRIM(RTRIM(od.OrdMaterialPlanilla)), ''),
+               od.OrdNombreTrabajo,
+               td.TdeDescripcion,
+               'Servicios de Produccion'
+           ), 80) AS NomItem,
+          LEFT(
+              'Orden: ' + ISNULL(od.OrdCodigoOrden, td.TdeCodigoReferencia)
+              + ISNULL(' (' + od.OrdNombreTrabajo + ')', '')
+              + CHAR(13)+CHAR(10)
+              + ISNULL('Tecnico: ' + CAST(pcd.DatoTecnico AS VARCHAR(1000)) + CHAR(13)+CHAR(10), '')
+              + ISNULL(CAST(pcd.LogPrecioAplicado AS VARCHAR(1000)), ISNULL(CAST(td.TdeDescripcion AS VARCHAR(1000)), '')),
+          1000) AS DscItem,
+          CAST(ISNULL(pcd.Cantidad, ISNULL(od.OrdCantidad, 1.0)) AS DECIMAL(18,4)) AS Cantidad,
+          ROUND(ISNULL(pcd.Subtotal, ISNULL(td.TdeImporteFinal, 0))
+                / NULLIF(ISNULL(pcd.Cantidad, ISNULL(od.OrdCantidad, 1.0)), 0), 4) AS PrecioUnitario,
+          ROUND(ISNULL(pcd.Subtotal, ISNULL(td.TdeImporteFinal, 0)) / 1.22, 2) AS Subtotal,
+          ROUND(ISNULL(pcd.Subtotal, ISNULL(td.TdeImporteFinal, 0))
+                - ISNULL(pcd.Subtotal, ISNULL(td.TdeImporteFinal, 0)) / 1.22, 2) AS Impuestos,
+          ISNULL(pcd.Subtotal, ISNULL(td.TdeImporteFinal, 0)) AS Total
+        FROM dbo.TransaccionDetalle td
+        -- Intento 1: relacion moderna por tabla intermedia
+        LEFT JOIN dbo.RelOrdenesRetiroOrdenes rel
+          ON rel.OReIdOrdenRetiro = td.TdeReferenciaId
+          AND td.TdeTipoReferencia = 'ORDEN_RETIRO'
+        -- OrdenesDeposito: moderno via rel | LEGACY FALLBACK via OReIdOrdenRetiro | directo si ORDEN_DEPOSITO
+        LEFT JOIN dbo.OrdenesDeposito od ON (
+            (td.TdeTipoReferencia = 'ORDEN_RETIRO'   AND rel.OrdIdOrden IS NOT NULL AND od.OrdIdOrden = rel.OrdIdOrden)
+         OR (td.TdeTipoReferencia = 'ORDEN_RETIRO'   AND rel.OrdIdOrden IS NULL     AND od.OReIdOrdenRetiro = td.TdeReferenciaId)
+         OR (td.TdeTipoReferencia = 'ORDEN_DEPOSITO' AND od.OrdIdOrden = td.TdeReferenciaId)
+        )
+        LEFT JOIN dbo.PedidosCobranza pc ON CAST(pc.NoDocERP AS VARCHAR(100)) =
+            LEFT(ISNULL(od.OrdCodigoOrden, CAST(td.TdeCodigoReferencia AS VARCHAR(100))),
+                 CASE WHEN CHARINDEX(' ', ISNULL(od.OrdCodigoOrden, CAST(td.TdeCodigoReferencia AS VARCHAR(100)))) > 0
+                      THEN CHARINDEX(' ', ISNULL(od.OrdCodigoOrden, CAST(td.TdeCodigoReferencia AS VARCHAR(100)))) - 1
+                      ELSE LEN(ISNULL(od.OrdCodigoOrden, CAST(td.TdeCodigoReferencia AS VARCHAR(100)))) END)
+        LEFT JOIN dbo.PedidosCobranzaDetalle pcd ON pcd.PedidoCobranzaID = pc.ID
+        LEFT JOIN dbo.Articulos art    ON art.ProIdProducto   = ISNULL(pcd.ProIdProducto, od.ProIdProducto)
+        LEFT JOIN dbo.Articulos artod  ON artod.ProIdProducto = od.ProIdProducto
+        WHERE td.TcaIdTransaccion = @tcaId
+          AND td.TdeTipoReferencia IN ('ORDEN_RETIRO', 'ORDEN_DEPOSITO')
+      `);
+
+    return res.recordset.map(r => ({
+      ordCodigoOrden:  r.OrdCodigoOrden  || null,
+      nomItem:         (r.NomItem         || 'Servicio').substring(0, 80),
+      dscItem:         (r.DscItem         || '').substring(0, 1000),
+      cantidad:        parseFloat(r.Cantidad)        || 1,
+      precioUnitario:  parseFloat(r.PrecioUnitario)  || 0,
+      subtotal:        parseFloat(r.Subtotal)         || 0,
+      impuestos:       parseFloat(r.Impuestos)        || 0,
+      total:           parseFloat(r.Total)            || 0,
+    }));
+  }
+
+  // ── MODO 2: desde array de OrdIdOrden (generarCFEDesdeOrdenesDirectas) ────
+  if (orderIds && orderIds.length > 0) {
+    const idList = orderIds.map(Number).filter(n => !isNaN(n)).join(',');
+    if (!idList) return [];
+
+    const res = await makeReq().query(`
+      SELECT
+        od.OrdCodigoOrden,
+        LEFT(COALESCE(
+            NULLIF(NULLIF(LTRIM(RTRIM(art_pcd.Descripcion)), 'Articulos User'), 'Articulos User USD'),
+            NULLIF(NULLIF(LTRIM(RTRIM(art.Descripcion)),     'Articulos User'), 'Articulos User USD'),
+            NULLIF(LTRIM(RTRIM(od.OrdMaterialPlanilla)), ''),
+            od.OrdNombreTrabajo,
+            'Servicios de Produccion'
+        ), 80) AS NomItem,
+        LEFT('Orden: ' + ISNULL(od.OrdCodigoOrden,'')
+             + ISNULL(' (' + od.OrdNombreTrabajo + ')','')
+             + ISNULL(CHAR(13)+CHAR(10) + 'Servicio: ' + CAST(pcd.LogPrecioAplicado AS VARCHAR(1000)), ''), 500) AS DscItem,
+        CAST(COALESCE(
+          CASE WHEN pcd.Cantidad IS NOT NULL AND pcd.Cantidad != FLOOR(pcd.Cantidad) THEN pcd.Cantidad ELSE NULL END,
+          CASE WHEN od.OrdCantidad  IS NOT NULL AND od.OrdCantidad  != FLOOR(od.OrdCantidad)  THEN od.OrdCantidad  ELSE NULL END,
+          pcd.Cantidad,
+          od.OrdCantidad,
+          1.0
+        ) AS DECIMAL(18,4)) AS Cantidad,
+        ROUND(ISNULL(pcd.Subtotal, ISNULL(od.OrdCostoFinal, 0)) / NULLIF(COALESCE(
+          CASE WHEN pcd.Cantidad IS NOT NULL AND pcd.Cantidad != FLOOR(pcd.Cantidad) THEN pcd.Cantidad ELSE NULL END,
+          CASE WHEN od.OrdCantidad IS NOT NULL AND od.OrdCantidad != FLOOR(od.OrdCantidad) THEN od.OrdCantidad ELSE NULL END,
+          pcd.Cantidad, od.OrdCantidad, 1.0
+        ), 0), 4) AS PrecioUnitario,
+        ROUND(ISNULL(pcd.Subtotal, ISNULL(od.OrdCostoFinal, 0)) / 1.22, 2) AS Subtotal,
+        ROUND(ISNULL(pcd.Subtotal, ISNULL(od.OrdCostoFinal, 0))
+              - ISNULL(pcd.Subtotal, ISNULL(od.OrdCostoFinal, 0)) / 1.22, 2) AS Impuestos,
+        ISNULL(pcd.Subtotal, ISNULL(od.OrdCostoFinal, 0)) AS Total
+      FROM dbo.OrdenesDeposito od
+      LEFT JOIN dbo.PedidosCobranza pc          ON LTRIM(RTRIM(pc.NoDocERP)) = od.OrdCodigoOrden
+      LEFT JOIN dbo.PedidosCobranzaDetalle pcd  ON pcd.PedidoCobranzaID = pc.ID
+      LEFT JOIN dbo.Articulos art               ON art.ProIdProducto    = od.ProIdProducto
+      LEFT JOIN dbo.Articulos art_pcd           ON art_pcd.ProIdProducto = pcd.ProIdProducto
+      WHERE od.OrdIdOrden IN (${idList})
+    `);
+
+    return res.recordset.map(r => ({
+      ordCodigoOrden:  r.OrdCodigoOrden  || null,
+      nomItem:         (r.NomItem         || 'Servicio').substring(0, 80),
+      dscItem:         (r.DscItem         || '').substring(0, 1000),
+      cantidad:        parseFloat(r.Cantidad)        || 1,
+      precioUnitario:  parseFloat(r.PrecioUnitario)  || 0,
+      subtotal:        parseFloat(r.Subtotal)         || 0,
+      impuestos:       parseFloat(r.Impuestos)        || 0,
+      total:           parseFloat(r.Total)            || 0,
+    }));
+  }
+
+  return [];
+};
+
+const actualizarFirmaCFE = async (docId, { cae, numeroOficial, urlQR }, transaction = null) => {
+  const pool = transaction ? null : await getPool();
+  const request = transaction ? new sql.Request(transaction) : pool.request();
+  
+  await request
+    .input('Id', sql.Int, docId)
+    .input('CAE', sql.VarChar(255), cae)
+    .input('Oficial', sql.VarChar(100), numeroOficial)
+    .input('Url', sql.NVarChar(sql.MAX), urlQR)
+    .query(`
+      UPDATE dbo.DocumentosContables 
+      SET CfeEstado = 'ACEPTADO_DGI', 
+          CfeCAE = @CAE, 
+          CfeNumeroOficial = @Oficial, 
+          CfeUrlImpresion = @Url
+      WHERE DocIdDocumento = @Id
+    `);
+};
+
+const anularDocumentoContable = async (docId, transaction = null) => {
+  const pool = transaction ? null : await getPool();
+  const request = transaction ? new sql.Request(transaction) : pool.request();
+  
+  await request
+    .input('Id', sql.Int, docId)
+    .query(`
+      UPDATE dbo.DocumentosContables 
+      SET DocEstado = 'ANULADO', 
+          CfeEstado = 'ANULADO' 
+      WHERE DocIdDocumento = @Id
+    `);
+};
+
+const marcarDocumentoComoPagado = async (docId, transaction = null) => {
+  const pool = transaction ? null : await getPool();
+  const request = transaction ? new sql.Request(transaction) : pool.request();
+  
+  await request
+    .input('Id', sql.Int, docId)
+    .query(`
+      UPDATE dbo.DocumentosContables 
+      SET DocPagado = 1 
+      WHERE DocIdDocumento = @Id
+    `);
+};
+
 module.exports = {
-  CUENTAS,              // Fallback — usar solo si Motor no tiene reglas
+  CUENTAS,
   generarAsientoCompleto,
-  resolverLineasDesdeMotor, // NUEVO: construye líneas desde Motor
+  resolverLineasDesdeMotor,
+  resolverLineasDetalle,
   desglosarIVA,
-  getCuentaId
+  getCuentaId,
+  crearDocumentoContable,
+  actualizarFirmaCFE,
+  anularDocumentoContable,
+  marcarDocumentoComoPagado
 };

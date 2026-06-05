@@ -3,7 +3,7 @@ const logger = require('../utils/logger');
 
 // ID del cliente genérico "Consumidor Final" — no tiene cuenta corriente propia
 const CONSUMIDOR_FINAL_ID = 2089;
-const { resolverLineasDesdeMotor, generarAsientoCompleto } = require('../services/contabilidadCore');
+const { resolverLineasDesdeMotor, generarAsientoCompleto, crearDocumentoContable, actualizarFirmaCFE, anularDocumentoContable } = require('../services/contabilidadCore');
 const sisnetService = require('../services/sisnetService');
 const contabilidadService = require('../services/contabilidadService');
 
@@ -120,19 +120,11 @@ exports.enviarADGI = async (req, res) => {
         const resultSISNET = await sisnetService.emitirCFE(doc, lineasResult.recordset, cotDolar);
         
         // 4. Actualizar base de datos con respuesta real
-        await pool.request()
-            .input('Id', sql.Int, id)
-            .input('CAE', sql.VarChar(255), resultSISNET.vencimiento) // Guardamos el texto de vencimiento/CAE aquí para retrocompatibilidad
-            .input('Oficial', sql.VarChar(100), resultSISNET.serie)
-            .input('Url', sql.NVarChar, resultSISNET.urlQR)
-            .query(`
-                UPDATE DocumentosContables 
-                SET CfeEstado = 'ACEPTADO_DGI', 
-                    CfeCAE = @CAE, 
-                    CfeNumeroOficial = @Oficial, 
-                    CfeUrlImpresion = @Url
-                WHERE DocIdDocumento = @Id
-            `);
+        await actualizarFirmaCFE(id, {
+            cae: resultSISNET.vencimiento, // Guardamos el texto de vencimiento/CAE aquí para retrocompatibilidad
+            numeroOficial: resultSISNET.serie,
+            urlQR: resultSISNET.urlQR
+        });
             
         logger.info(`Documento ${id} emitido exitosamente a DGI. CAE: ${resultSISNET.cae}`);
         res.json({ message: 'Documento enviado exitosamente', cae: resultSISNET.cae, numeroOficial: resultSISNET.serie });
@@ -264,67 +256,49 @@ exports.crearFacturaManual = async (req, res) => {
             }
         }
 
-        // 2. Crear documento CFE
-        const insertDoc = await request
-            .input('tipo', sql.VarChar(50), config.Detalle)
-            .input('cuenta', sql.Int, MonIdMoneda === 2 ? 119 : 118)
-            .input('moneda', sql.Int, MonIdMoneda)
-            .input('clienteId', sql.Int, CliIdCliente || 1)
-            .input('subtotal', sql.Decimal(18,2), Totales.subtotal)
-            .input('iva', sql.Decimal(18,2), Totales.iva)
-            .input('total', sql.Decimal(18,2), Totales.total)
-            .input('serie', sql.VarChar(10), serie)
-            .input('numero', sql.Int, numero)
-            .input('usuario', sql.Int, req.user?.id || 1)
-            .input('cliNombre', sql.NVarChar(200), DocCliNombre || '')
-            .input('cliDoc', sql.NVarChar(20), DocCliDocumento || '')
-            .input('cliDir', sql.NVarChar(200), DocCliDireccion || '')
-            .input('cliCiu', sql.NVarChar(100), DocCliCiudad || '')
-            .input('docPagado', sql.Bit, isPaid ? 1 : 0)
-            .input('tcaId', sql.Int, tcaId)
-            .query(`
-                INSERT INTO DocumentosContables 
-                (DocTipo, CueIdCuenta, MonIdMoneda, CliIdCliente, DocSubtotal, DocImpuestos, 
-                 DocTotalDescuentos, DocTotalRecargos, DocTotal, DocEstado, 
-                 DocFechaEmision, DocUsuarioAlta, CfeEstado, DocSerie, DocNumero, DocPagado, TcaIdTransaccion,
-                 DocCliNombre, DocCliDocumento, DocCliDireccion, DocCliCiudad)
-                OUTPUT INSERTED.DocIdDocumento
-                VALUES 
-                (@tipo, @cuenta, @moneda, @clienteId, @subtotal, @iva, 
-                 0, 0, @total, 1, 
-                 GETDATE(), @usuario, CASE WHEN @tipo LIKE '%Pedido%' OR @tipo LIKE '%PEDIDO%' OR @tipo = 'PedidoCaja' THEN 'BORRADOR' ELSE 'PENDIENTE' END, @serie, @numero, @docPagado, @tcaId,
-                 @cliNombre, @cliDoc, @cliDir, @cliCiu)
-            `);
-            
-        const docId = insertDoc.recordset[0].DocIdDocumento;
+        // 2. Crear documento CFE y sus detalles
+        const mappedLineas = (Array.isArray(Lineas) ? Lineas : []).map(linea => {
+            const cant = parseFloat(linea.cantidad) || 0;
+            const precio = parseFloat(linea.precioUnitario) || 0;
+            const ivaRate = parseFloat(linea.iva) || 22;
+            const lineTotal = cant * precio;
+            const lineNeto = lineTotal / (1 + ivaRate / 100);
+            const lineIva = lineTotal - lineNeto;
+            return {
+                nomItem: (linea.concepto || '').substring(0, 255),
+                dscItem: linea.DcdDscItem || linea.sublinea || '',
+                cantidad: cant,
+                precioUnitario: precio,
+                subtotal: lineNeto,
+                impuestos: lineIva,
+                total: lineTotal
+            };
+        });
 
-        // 2.5 Insertar las líneas del detalle
-        if (Array.isArray(Lineas) && Lineas.length > 0) {
-            for (const linea of Lineas) {
-                const cant = parseFloat(linea.cantidad) || 0;
-                const precio = parseFloat(linea.precioUnitario) || 0;
-                const ivaRate = parseFloat(linea.iva) || 22;
-                const lineTotal = cant * precio;
-                const lineNeto = lineTotal / (1 + ivaRate / 100);
-                const lineIva = lineTotal - lineNeto;
-
-                const reqLine = transaction.request();
-                await reqLine
-                    .input('docId', sql.Int, docId)
-                    .input('nom', sql.NVarChar(255), linea.concepto || '')
-                    .input('dsc', sql.NVarChar(255), linea.DcdDscItem || linea.sublinea || '')
-                    .input('cant', sql.Decimal(18, 4), cant)
-                    .input('precio', sql.Decimal(18, 4), precio)
-                    .input('sub', sql.Decimal(18, 2), lineNeto)
-                    .input('imp', sql.Decimal(18, 2), lineIva)
-                    .input('tot', sql.Decimal(18, 2), lineTotal)
-                    .query(`
-                        INSERT INTO DocumentosContablesDetalle
-                            (DocIdDocumento, DcdNomItem, DcdDscItem, DcdCantidad, DcdPrecioUnitario, DcdSubtotal, DcdImpuestos, DcdTotal)
-                        VALUES (@docId, @nom, @dsc, @cant, @precio, @sub, @imp, @tot)
-                    `);
-            }
-        }
+        const docTipoStr = config.Detalle || '';
+        const docId = await crearDocumentoContable({
+            header: {
+                cueIdCuenta: MonIdMoneda === 2 ? 119 : 118,
+                clienteId: CliIdCliente || 1,
+                monedaId: MonIdMoneda,
+                tipo: docTipoStr,
+                numero: String(numero),
+                serie: serie,
+                subtotal: Totales.subtotal,
+                impuestos: Totales.iva,
+                total: Totales.total,
+                estado: 'COBRADO',
+                cfeEstado: (docTipoStr.includes('Pedido') || docTipoStr.includes('PEDIDO') || docTipoStr === 'PedidoCaja') ? 'BORRADOR' : 'PENDIENTE',
+                usuarioId: req.user?.id || 1,
+                tcaIdTransaccion: tcaId,
+                docPagado: isPaid,
+                docCliNombre: DocCliNombre || '',
+                docCliDocumento: DocCliDocumento || '',
+                docCliDireccion: DocCliDireccion || '',
+                docCliCiudad: DocCliCiudad || ''
+            },
+            lineas: mappedLineas
+        }, transaction);
 
         // 2.7 Registrar en Cuenta Corriente de Cliente si es cliente real
         // El genérico (ID 2089 = "Consumidor Final") NO tiene cuenta corriente propia.
@@ -651,9 +625,7 @@ exports.anularFactura = async (req, res) => {
             .query("UPDATE dbo.DeudaDocumento SET DDeEstado = 'CANCELADA', DDeImportePendiente = 0 WHERE DocIdDocumento = @id");
 
         // Marcar como anulado el documento
-        await transaction.request()
-            .input('id', sql.Int, id)
-            .query("UPDATE DocumentosContables SET CfeEstado = 'ANULADO', DocEstado = 0 WHERE DocIdDocumento = @id");
+        await anularDocumentoContable(id, transaction);
 
         // Revertir Asiento Contable si existe
         if (doc.AsiIdAsiento) {

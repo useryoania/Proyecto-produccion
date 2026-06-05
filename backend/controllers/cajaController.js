@@ -51,9 +51,10 @@ const procesarVentaDirecta = async (req, res) => {
     if (!data.header || !data.items?.length)
       return res.status(400).json({ success:false, error:'Faltan datos de la venta.' });
 
+    const esPedidoCaja = data.header.tipoDocumento === 'PC';
     const esCredito = data.header.tipoDocumento === '02' || data.header.tipoDocumento === '08' || data.header.tipoDocumento === 'FACT_CREDITO';
-    if (!esCredito && (!data.pagos || data.pagos.length === 0)) {
-      return res.status(400).json({ success:false, error:'Debe incluir al menos un mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©todo de pago vÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido para ventas al contado.' });
+    if (!esCredito && !esPedidoCaja && (!data.pagos || data.pagos.length === 0)) {
+      return res.status(400).json({ success:false, error:'Debe incluir al menos un metodo de pago valido para ventas al contado.' });
     }
 
     const resultado = await cajaService.procesarVentaDirecta({ ...data, usuarioId });
@@ -1144,10 +1145,10 @@ const procesarPagoDeuda = async (req, res) => {
         await contabilidadSvc.registrarMovimiento({
           CueIdCuenta:      dde.CueIdCuenta,
           MovTipo:          'PAGO',
-          MovConcepto:      `Pago deuda ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ${ap.descripcion || 'Deuda #' + ddeId}`,
+          MovConcepto:      ('Pago deuda - ' + (ap.descripcion || ('Deuda #' + ddeId))).substring(0, 300),
           MovImporte:       montoAplicar,
           MovUsuarioAlta:   usuarioId,
-          MovObservaciones: `DeudaDoc #${ddeId} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Pagado: ${montoAplicar.toFixed(4)} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Pendiente: ${nuevoPendiente.toFixed(4)} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â Estado: ${nuevoEstado}`,
+          MovObservaciones: ('DeudaDoc #' + ddeId + ' | Pagado: ' + montoAplicar.toFixed(4) + ' | Pendiente: ' + nuevoPendiente.toFixed(4) + ' | Estado: ' + nuevoEstado).substring(0, 500),
         });
 
         // ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ Si la deuda quedÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³ COBRADA ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ marcar las OrdenesDeposito asociadas como Pagadas (estado 7) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢
@@ -2278,7 +2279,7 @@ const registrarPagoAnticipo = async (req, res) => {
       // HABER: Anticipos de Clientes (obligaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n futura)
       try {
         await contabilidadCore.generarAsientoCompleto({
-          concepto:         `Anticipo Cli#${cliId} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${conceptoFull}`,
+          concepto:         ('Anticipo #' + cliId + ' - ' + conceptoFull).substring(0, 200),
           usuarioId,
           tcaIdTransaccion: tcaId,
           origen:           'ANTICIPO',
