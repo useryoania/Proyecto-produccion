@@ -307,7 +307,8 @@ async function registrarPagoCompleto(opts) {
               UPDATE dbo.MovimientosCuenta
               SET MovTipo = 'VTA_CAJA',
                   DocIdDocumento = @docId,
-                  MovConcepto = 'Factura Web ' + '${cfe.serie}-${cfe.numero}'
+                  MovConcepto = 'Factura Web ' + '${cfe.serie}-${cfe.numero}',
+                  MovFecha = GETDATE()
               WHERE OrdIdOrden IN (${ordIds.join(',')})
                 AND MovTipo = 'ORDEN'
             `);
