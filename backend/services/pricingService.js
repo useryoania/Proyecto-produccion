@@ -565,19 +565,36 @@ class PricingService {
 
     }
 
-    static async setBasePrice(codArticulo, precio, moneda = 'UYU') {
+    static async setBasePrice(codArticulo, precio, moneda = 'UYU', proIdProducto = null) {
         const pool = await getPool();
-        await pool.request()
-            .input('Cod', sql.NVarChar, codArticulo.trim())
-            .input('Pre', sql.Decimal(18, 4), precio)
-            .input('MonIdMoneda', sql.Int, moneda.toUpperCase() === 'USD' ? 2 : 1)
-            .query(`
-                MERGE PreciosBase AS target
-                USING (SELECT @Cod AS CodArticulo, @MonIdMoneda AS MonIdMoneda) AS source
-                ON (target.CodArticulo = source.CodArticulo AND target.MonIdMoneda = source.MonIdMoneda)
-                WHEN MATCHED THEN UPDATE SET Precio = @Pre, UltimaActualizacion = GETDATE()
-                WHEN NOT MATCHED THEN INSERT (CodArticulo, Precio, MonIdMoneda, UltimaActualizacion) VALUES (@Cod, @Pre, @MonIdMoneda, GETDATE());
-            `);
+        
+        if (proIdProducto) {
+            await pool.request()
+                .input('Cod', sql.NVarChar, codArticulo ? codArticulo.trim() : '')
+                .input('ProId', sql.Int, proIdProducto)
+                .input('Pre', sql.Decimal(18, 4), precio)
+                .input('MonIdMoneda', sql.Int, moneda.toUpperCase() === 'USD' ? 2 : 1)
+                .query(`
+                    MERGE PreciosBase AS target
+                    USING (SELECT @ProId AS ProIdProducto, @MonIdMoneda AS MonIdMoneda) AS source
+                    ON (target.ProIdProducto = source.ProIdProducto AND target.MonIdMoneda = source.MonIdMoneda)
+                    WHEN MATCHED THEN UPDATE SET Precio = @Pre, UltimaActualizacion = GETDATE()
+                    WHEN NOT MATCHED THEN INSERT (ProIdProducto, CodArticulo, Precio, MonIdMoneda, UltimaActualizacion) VALUES (@ProId, @Cod, @Pre, @MonIdMoneda, GETDATE());
+                `);
+        } else {
+            // Fallback legacy por si se llama sin proIdProducto
+            await pool.request()
+                .input('Cod', sql.NVarChar, codArticulo.trim())
+                .input('Pre', sql.Decimal(18, 4), precio)
+                .input('MonIdMoneda', sql.Int, moneda.toUpperCase() === 'USD' ? 2 : 1)
+                .query(`
+                    MERGE PreciosBase AS target
+                    USING (SELECT @Cod AS CodArticulo, @MonIdMoneda AS MonIdMoneda) AS source
+                    ON (target.CodArticulo = source.CodArticulo AND target.MonIdMoneda = source.MonIdMoneda)
+                    WHEN MATCHED THEN UPDATE SET Precio = @Pre, UltimaActualizacion = GETDATE()
+                    WHEN NOT MATCHED THEN INSERT (CodArticulo, Precio, MonIdMoneda, UltimaActualizacion) VALUES (@Cod, @Pre, @MonIdMoneda, GETDATE());
+                `);
+        }
     }
 }
 

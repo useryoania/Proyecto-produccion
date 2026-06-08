@@ -1126,6 +1126,58 @@ async function procesarTransaccion(payload) {
 
              header.docIdDocumento = docIdDocumento;
 
+             // ── RECIBO de caja automatico (correlativo RC-) ───────────────
+             if (docIdDocumento && totalCobrado > 0) {
+               try {
+                 const recSeq = await new sql.Request(transaction)
+                   .query(`UPDATE dbo.SecuenciaDocumentos SET SecUltimoNumero = SecUltimoNumero + 1
+                           OUTPUT INSERTED.SecUltimoNumero
+                           WHERE SecTipoDoc = 'RECIBO' AND SecSerie = 'RC'`);
+                 const numRecibo = recSeq.recordset[0]?.SecUltimoNumero;
+                 if (numRecibo) {
+                   const cueCajaCode = isOrdenUSD ? '1.1.2' : '1.1.1';
+                   const cueCajaRes  = await new sql.Request(transaction)
+                     .input('Cod', sql.VarChar(20), cueCajaCode)
+                     .query('SELECT CueId FROM dbo.Cont_PlanCuentas WHERE CueCodigo = @Cod');
+                   const cueCajaId = cueCajaRes.recordset[0]?.CueId || (isOrdenUSD ? 119 : 118);
+                   const reciboId = await contabilidadCore.crearDocumentoContable({
+                     header: {
+                       cueIdCuenta:       cueCajaId,
+                       clienteId:         header.clienteId || 1,
+                       monedaId:          monedaId,
+                       tipo:              'RECIBO',
+                       numero:            String(numRecibo),
+                       serie:             'RC',
+                       subtotal:          totalCobrado,
+                       impuestos:         0,
+                       total:             totalCobrado,
+                       estado:            'COBRADO',
+                       cfeEstado:         null,
+                       usuarioId:         usuarioId || 1,
+                       tcaIdTransaccion:  tcaIdTransaccion || null,
+                       observaciones:     ('Recibo de cobro - ' + tipoDocVal + ' ' + serieCFE + '-' + String(numeroCFE)).substring(0, 200),
+                       docPagado:         true,
+                       docIdDocumentoRef: docIdDocumento
+                     },
+                     lineas: [{
+                       nomItem:        'Cobro en efectivo',
+                       dscItem:        ('Corresponde a: ' + tipoDocVal + ' ' + serieCFE + '-' + String(numeroCFE)).substring(0, 500),
+                       cantidad:       1,
+                       precioUnitario: totalCobrado,
+                       subtotal:       totalCobrado,
+                       impuestos:      0,
+                       total:          totalCobrado
+                     }]
+                   }, transaction);
+                   logger.info(`[CAJA-CFE] Recibo RC-${String(numRecibo).padStart(6,'0')} (ID=${reciboId}) generado para Doc #${docIdDocumento}`);
+                 }
+               } catch (eRecibo) {
+                 logger.warn(`[CAJA-CFE] Recibo no generado (no critico): ${eRecibo.message}`);
+               }
+             }
+             // ──────────────────────────────────────────────────────────────
+
+
              // Para PedidoCaja: insertar los items desde TransaccionDetalle (son servicios libres, no órdenes)
              if (esPedidoCaja) {
                await new sql.Request(transaction)

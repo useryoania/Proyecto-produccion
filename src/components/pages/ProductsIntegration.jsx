@@ -1,18 +1,48 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import api from '../../services/api';
 import { toast } from 'sonner';
 
 // ─── Modal de Edición con combos dependientes ─────────────────────────────────
 const EditModal = ({ article, allArticles, onClose, onSaved }) => {
-    const isNew = !article?.CodArticulo;
+    const isNew = !article?.ProIdProducto;
 
     const [form, setForm] = useState({
         proIdProducto: null, codArticulo: '', idProdReact: '',
         descripcion: '', codStock: '',
         grupo: '', supFlia: '', mostrar: true,
         anchoImprimible: '', llevaPapel: false, monIdMoneda: '',
+        producto_maestro_id: ''
     });
     const [saving, setSaving] = useState(false);
+    const [imageFile, setImageFile] = useState(null);
+    const [imagePreview, setImagePreview] = useState(article?.url_imagen || null);
+    const [wmsMasters, setWmsMasters] = useState([]);
+    const [wmsSearch, setWmsSearch] = useState('');
+    const [wmsDropdownOpen, setWmsDropdownOpen] = useState(false);
+    const [wmsVariants, setWmsVariants] = useState([]);
+    const fileInputRef = useRef(null);
+
+    useEffect(() => {
+        api.get('/products-integration/wms/masters').then(res => {
+            if (res.data?.success) setWmsMasters(res.data.data);
+        }).catch(err => console.error("Error fetching WMS Masters:", err));
+    }, []);
+
+    useEffect(() => {
+        if (form.producto_maestro_id) {
+            api.get(`/products-integration/wms/variants/${form.producto_maestro_id}`)
+               .then(res => setWmsVariants(res.data.data || []))
+               .catch(err => console.error("Error fetching variants:", err));
+            
+            if (wmsMasters.length > 0) {
+                const selectedMaster = wmsMasters.find(m => String(m.id) === String(form.producto_maestro_id));
+                if (selectedMaster) setWmsSearch(`${selectedMaster.id} - ${selectedMaster.nombre}`);
+            }
+        } else {
+            setWmsVariants([]);
+            if (wmsMasters.length > 0) setWmsSearch('');
+        }
+    }, [form.producto_maestro_id, wmsMasters]);
 
     useEffect(() => {
         if (article) {
@@ -28,12 +58,12 @@ const EditModal = ({ article, allArticles, onClose, onSaved }) => {
                 anchoImprimible: article.anchoimprimible != null ? String(article.anchoimprimible) : '',
                 llevaPapel:      !!article.LLEVAPAPEL,
                 monIdMoneda:     article.MonIdMoneda != null ? String(article.MonIdMoneda) : '',
+                producto_maestro_id: article.producto_maestro_id != null ? String(article.producto_maestro_id) : ''
             });
         }
     }, [article]);
 
-    // ── Opciones para combos dependientes ──────────────────────────────────────
-    // 1. SupFlia únicos ordenados
+    // Opciones para combos dependientes
     const supFlias = useMemo(() => {
         const seen = new Set();
         return allArticles
@@ -42,7 +72,6 @@ const EditModal = ({ article, allArticles, onClose, onSaved }) => {
             .sort((a, b) => a.val?.localeCompare(b.val));
     }, [allArticles]);
 
-    // 2. Grupos que existen dentro de la SupFlia seleccionada
     const grupos = useMemo(() => {
         const seen = new Set();
         return allArticles
@@ -55,7 +84,6 @@ const EditModal = ({ article, allArticles, onClose, onSaved }) => {
             .sort((a, b) => a.val?.localeCompare(b.val));
     }, [allArticles, form.supFlia]);
 
-    // 3. CodStock que existen dentro del Grupo seleccionado (con descripción de StockArt)
     const stocks = useMemo(() => {
         const seen = new Set();
         return allArticles
@@ -75,15 +103,22 @@ const EditModal = ({ article, allArticles, onClose, onSaved }) => {
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
         const newVal = type === 'checkbox' ? checked : value;
-
         setForm(prev => {
             const next = { ...prev, [name]: newVal };
-            // Al cambiar SupFlia → limpiar Grupo y CodStock si ya no aplica
             if (name === 'supFlia') { next.grupo = ''; next.codStock = ''; }
-            // Al cambiar Grupo → limpiar CodStock si ya no aplica
             if (name === 'grupo')   { next.codStock = ''; }
             return next;
         });
+    };
+
+    const handleImageChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setImageFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => setImagePreview(reader.result);
+            reader.readAsDataURL(file);
+        }
     };
 
     const handleSubmit = async (e) => {
@@ -104,227 +139,354 @@ const EditModal = ({ article, allArticles, onClose, onSaved }) => {
                 monIdMoneda:     form.monIdMoneda !== '' ? parseInt(form.monIdMoneda) : null,
             };
 
+            let proId = form.proIdProducto;
+
             if (isNew) {
-                await api.post('/products-integration/create', payload);
+                const res = await api.post('/products-integration/create', payload);
+                // Si la API retorna el nuevo ID creado, lo usaríamos aquí para wms/img
             } else {
                 await api.post('/products-integration/update', {
                     ...payload,
-                    proIdProducto: form.proIdProducto,
+                    proIdProducto: proId,
                 });
+
+                // 2. Guardar WMS ID
+                if (form.producto_maestro_id !== (article?.producto_maestro_id != null ? String(article.producto_maestro_id) : '')) {
+                    await api.put(`/products-integration/wms/${proId}`, {
+                        producto_maestro_id: form.producto_maestro_id !== '' ? parseInt(form.producto_maestro_id) : null
+                    });
+                }
+
+                // 3. Subir Imagen
+                if (imageFile) {
+                    const formData = new FormData();
+                    formData.append('image', imageFile);
+                    await api.post(`/products-integration/upload-image/${proId}`, formData, {
+                        headers: { 'Content-Type': 'multipart/form-data' }
+                    });
+                }
             }
 
             toast.success(isNew ? 'Artículo creado' : 'Artículo actualizado');
-            onSaved(form);
+            onSaved({ ...form, url_imagen: imagePreview }); // optimistically update UI
         } catch (err) {
             toast.error('Error: ' + (err.response?.data?.error || err.message));
         } finally { setSaving(false); }
     };
 
-    const inputCls = "w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition bg-white";
-    const selectCls = "w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition bg-white";
-    const labelCls = "block text-xs font-semibold text-slate-500 mb-1";
+    const inputCls = "w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition bg-slate-50 focus:bg-white";
+    const selectCls = inputCls;
+    const labelCls = "block text-xs font-bold tracking-wide text-slate-500 uppercase mb-1.5";
 
     return (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
                 {/* Header */}
-                <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
-                    <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                        <i className={`fa-solid ${isNew ? 'fa-plus-circle text-green-500' : 'fa-pen-to-square text-indigo-500'}`}></i>
-                        {isNew ? 'Nuevo Artículo' : `Editar · ProId ${article?.ProIdProducto ?? '—'}`}
+                <div className="flex items-center justify-between p-6 bg-slate-50 border-b border-slate-100 shrink-0">
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isNew ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
+                            <i className={`fa-solid ${isNew ? 'fa-plus' : 'fa-pen'}`}></i>
+                        </div>
+                        {isNew ? 'Nuevo Artículo' : `Editar Artículo`}
                     </h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 rounded"><i className="fa-solid fa-times"></i></button>
+                    <button onClick={onClose} className="w-8 h-8 flex items-center justify-center bg-slate-200 hover:bg-slate-300 text-slate-500 rounded-full transition-colors"><i className="fa-solid fa-times"></i></button>
                 </div>
 
                 {/* Body */}
-                <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-5 space-y-4 text-sm">
+                <form id="edit-form" onSubmit={handleSubmit} className="overflow-y-auto flex-1 p-8 text-sm">
+                    <div className="flex flex-col lg:flex-row gap-8">
+                        {/* Left Column - Main Details */}
+                        <div className="flex-1 space-y-6">
+                            
+                            {!isNew && (
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-xs font-bold text-slate-400 uppercase">ID Interno (ProIdProducto)</span>
+                                    <span className="text-2xl font-black text-slate-800">#{article?.ProIdProducto ?? '—'}</span>
+                                </div>
+                            )}
 
-                    {/* ProIdProducto (siempre solo lectura) + CodArticulo e IDReact editables */}
-                    {!isNew && (
-                        <div className="flex items-center gap-2 bg-indigo-50 rounded-lg px-3 py-2 text-xs border border-indigo-100">
-                            <i className="fa-solid fa-key text-indigo-300"></i>
-                            <span className="text-indigo-400 font-semibold">ProId:</span>
-                            <strong className="text-indigo-800">{article?.ProIdProducto ?? '—'}</strong>
-                            <span className="text-indigo-200 mx-1">|</span>
-                            <span className="text-indigo-400 font-semibold">Identificador interno (no editable)</span>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className={labelCls}>Código Artículo *</label>
+                                    <input name="codArticulo" value={form.codArticulo} onChange={handleChange} className={inputCls} placeholder="Ej: 1152" />
+                                </div>
+                                <div>
+                                    <label className={labelCls}>IDReact</label>
+                                    <input type="number" name="idProdReact" value={form.idProdReact} onChange={handleChange} className={inputCls} placeholder="Ej: 54" />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className={labelCls}>Descripción</label>
+                                <input name="descripcion" value={form.descripcion} onChange={handleChange} className={inputCls} placeholder="Nombre del artículo" />
+                            </div>
+
+                            <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-4">
+                                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2 mb-2">
+                                    <i className="fa-solid fa-sitemap text-blue-500"></i> Clasificación
+                                </h3>
+                                <div>
+                                    <label className={labelCls}>Sup. Familia</label>
+                                    <select name="supFlia" value={form.supFlia} onChange={handleChange} className={selectCls}>
+                                        <option value="">— Seleccionar —</option>
+                                        {supFlias.map(x => <option key={x.val} value={x.val}>{x.label}</option>)}
+                                    </select>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className={labelCls}>Grupo</label>
+                                        <select name="grupo" value={form.grupo} onChange={handleChange} className={selectCls} disabled={!form.supFlia && grupos.length === 0}>
+                                            <option value="">— Seleccionar —</option>
+                                            {grupos.map(x => <option key={x.val} value={x.val}>{x.label}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className={labelCls}>Cód. Stock</label>
+                                        <select name="codStock" value={form.codStock} onChange={handleChange} className={selectCls} disabled={!form.grupo && stocks.length === 0}>
+                                            <option value="">— Seleccionar —</option>
+                                            {stocks.map(x => <option key={x.val} value={x.val}>{x.label}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className={labelCls}>Moneda</label>
+                                    <select name="monIdMoneda" value={form.monIdMoneda} onChange={handleChange} className={selectCls}>
+                                        <option value="">— Sin especificar —</option>
+                                        <option value="1">$ UYU — Pesos Uruguayos</option>
+                                        <option value="2">USD — Dólares</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className={labelCls}>Ancho Imprimible</label>
+                                    <input type="number" step="0.01" min="0" name="anchoImprimible" value={form.anchoImprimible} onChange={handleChange} className={inputCls} placeholder="Ej: 1.60" />
+                                </div>
+                            </div>
+
+                            <div className="flex gap-8 pt-2">
+                                <label className="flex items-center gap-3 cursor-pointer group">
+                                    <div className="relative flex items-center justify-center">
+                                        <input type="checkbox" name="mostrar" checked={form.mostrar} onChange={handleChange} className="peer sr-only" />
+                                        <div className="w-10 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                                    </div>
+                                    <span className="font-bold text-slate-700 group-hover:text-slate-900">Mostrar Activo</span>
+                                </label>
+
+                                <label className="flex items-center gap-3 cursor-pointer group">
+                                    <div className="relative flex items-center justify-center">
+                                        <input type="checkbox" name="llevaPapel" checked={form.llevaPapel} onChange={handleChange} className="peer sr-only" />
+                                        <div className="w-10 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500"></div>
+                                    </div>
+                                    <span className="font-bold text-slate-700 group-hover:text-slate-900">Lleva Papel</span>
+                                </label>
+                            </div>
                         </div>
-                    )}
 
-                    {/* CodArticulo + IDReact editables en 2 columnas */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className={labelCls}>Código Artículo *</label>
-                            <input name="codArticulo" value={form.codArticulo} onChange={handleChange}
-                                className={inputCls} placeholder="Ej: 1152" />
+                        {/* Right Column - WMS & Image */}
+                        <div className="w-full lg:w-72 flex flex-col gap-6">
+                            <div className="bg-blue-50 rounded-2xl p-5 border border-blue-100">
+                                <h3 className="font-bold text-blue-800 text-sm flex items-center gap-2 mb-4">
+                                    <i className="fa-solid fa-boxes-stacked"></i> Integración WMS
+                                </h3>
+                                <div>
+                                    <label className="block text-xs font-bold text-blue-700 uppercase mb-2">WMS Master ID</label>
+                                    <div className="relative">
+                                        <div className="flex items-center w-full px-4 py-3 border border-blue-200 rounded-xl text-sm font-bold text-blue-900 bg-white focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-500/20 transition-all shadow-inner">
+                                            <input 
+                                                type="text" 
+                                                className="w-full bg-transparent outline-none placeholder-blue-300"
+                                                placeholder="Buscar producto maestro..."
+                                                value={wmsSearch}
+                                                onChange={(e) => {
+                                                    setWmsSearch(e.target.value);
+                                                    setWmsDropdownOpen(true);
+                                                    if (e.target.value === '') setForm(prev => ({...prev, producto_maestro_id: ''}));
+                                                }}
+                                                onFocus={() => setWmsDropdownOpen(true)}
+                                                onBlur={() => setTimeout(() => setWmsDropdownOpen(false), 200)}
+                                            />
+                                            <i className={`fa-solid fa-chevron-down text-blue-400 transition-transform ${wmsDropdownOpen ? 'rotate-180' : ''}`}></i>
+                                        </div>
+                                        
+                                        {wmsDropdownOpen && (
+                                            <div className="absolute z-50 w-full mt-1 bg-white border border-blue-100 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+                                                {wmsMasters.filter(m => `${m.id} ${m.nombre}`.toLowerCase().includes(wmsSearch.toLowerCase())).map(m => (
+                                                    <div 
+                                                        key={m.id} 
+                                                        className="px-4 py-2 hover:bg-blue-50 cursor-pointer text-sm font-medium text-slate-700 transition-colors"
+                                                        onClick={() => {
+                                                            setForm(prev => ({...prev, producto_maestro_id: String(m.id)}));
+                                                            setWmsSearch(`${m.id} - ${m.nombre}`);
+                                                            setWmsDropdownOpen(false);
+                                                        }}
+                                                    >
+                                                        <span className="font-bold text-blue-600 mr-2">#{m.id}</span>
+                                                        {m.nombre}
+                                                    </div>
+                                                ))}
+                                                {wmsMasters.filter(m => `${m.id} ${m.nombre}`.toLowerCase().includes(wmsSearch.toLowerCase())).length === 0 && (
+                                                    <div className="px-4 py-3 text-sm text-slate-500 italic text-center">No se encontraron resultados</div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <p className="text-[10px] text-blue-600/80 font-medium mt-2 leading-tight">Busca y selecciona el producto maestro en el WMS para leer el stock en tiempo real.</p>
+                                </div>
+                                
+                                {/* Display Variants */}
+                                {wmsVariants.length > 0 && (
+                                    <div className="mt-4 pt-4 border-t border-blue-200/50">
+                                        <label className="block text-[10px] font-bold text-blue-700 uppercase mb-2">Variantes Encontradas ({wmsVariants.length})</label>
+                                        <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto pr-1">
+                                            {wmsVariants.map(v => (
+                                                <span key={v.variante_id} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-blue-100 text-blue-800 text-[10px] font-bold border border-blue-200" title={v.codigo_variante}>
+                                                    {v.nombre_variante || v.codigo_variante}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex-1 min-h-[200px] border-2 border-dashed border-slate-300 hover:border-blue-400 rounded-2xl bg-slate-50 flex flex-col items-center justify-center relative overflow-hidden transition-colors group cursor-pointer"
+                                onClick={() => fileInputRef.current?.click()}>
+                                {imagePreview ? (
+                                    <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="text-center p-6">
+                                        <div className="w-16 h-16 bg-white shadow-sm rounded-full flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
+                                            <i className="fa-solid fa-cloud-arrow-up text-2xl text-blue-500"></i>
+                                        </div>
+                                        <p className="font-bold text-slate-700 text-sm">Cargar Imagen</p>
+                                        <p className="text-xs text-slate-400 mt-1">PNG, JPG o WEBP</p>
+                                    </div>
+                                )}
+                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <span className="text-white font-bold bg-black/50 px-4 py-2 rounded-full backdrop-blur-sm">
+                                        <i className="fa-solid fa-camera mr-2"></i> Cambiar Foto
+                                    </span>
+                                </div>
+                                <input type="file" ref={fileInputRef} onChange={handleImageChange} accept="image/*" className="hidden" />
+                            </div>
                         </div>
-                        <div>
-                            <label className={labelCls}>IDReact <span className="text-slate-400 font-normal">(entero, opcional)</span></label>
-                            <input type="number" name="idProdReact" value={form.idProdReact} onChange={handleChange}
-                                className={inputCls} placeholder="Ej: 54" />
-                        </div>
-                    </div>
-
-
-
-
-                    {/* Descripción */}
-                    <div>
-                        <label className={labelCls}>Descripción</label>
-                        <input name="descripcion" value={form.descripcion} onChange={handleChange}
-                            className={inputCls} placeholder="Nombre del artículo" />
-                    </div>
-
-                    {/* ── Combos dependientes ────────────────────────────── */}
-                    <div className="rounded-lg border border-slate-200 p-3 space-y-3 bg-slate-50">
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                            <i className="fa-solid fa-sitemap mr-1 text-indigo-400"></i> Clasificación (árbol)
-                        </p>
-
-                        {/* Nivel 1: SupFlia */}
-                        <div>
-                            <label className={labelCls}>Sup. Familia</label>
-                            <select name="supFlia" value={form.supFlia} onChange={handleChange} className={selectCls}>
-                                <option value="">— Seleccionar —</option>
-                                {supFlias.map(x => (
-                                    <option key={x.val} value={x.val}>{x.label}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Nivel 2: Grupo (filtrado por SupFlia) */}
-                        <div>
-                            <label className={labelCls}>
-                                Grupo
-                                {!form.supFlia && <span className="ml-1 text-slate-400 font-normal">(seleccioná Familia primero)</span>}
-                            </label>
-                            <select name="grupo" value={form.grupo} onChange={handleChange}
-                                className={selectCls} disabled={!form.supFlia && grupos.length === 0}>
-                                <option value="">— Seleccionar —</option>
-                                {grupos.map(x => (
-                                    <option key={x.val} value={x.val}>{x.label}</option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Nivel 3: CodStock (filtrado por Grupo) */}
-                        <div>
-                            <label className={labelCls}>
-                                Cód. Stock
-                                {!form.grupo && <span className="ml-1 text-slate-400 font-normal">(seleccioná Grupo primero)</span>}
-                            </label>
-                            <select name="codStock" value={form.codStock} onChange={handleChange}
-                                className={selectCls} disabled={!form.grupo && stocks.length === 0}>
-                                <option value="">— Seleccionar —</option>
-                                {stocks.map(x => (
-                                    <option key={x.val} value={x.val}>{x.label}</option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-
-                    {/* Moneda */}
-                    <div>
-                        <label className={labelCls}>
-                            Moneda <span className="text-slate-400 font-normal">(para precios y facturación)</span>
-                        </label>
-                        <select name="monIdMoneda" value={form.monIdMoneda} onChange={handleChange} className={selectCls}>
-                            <option value="">— Sin especificar —</option>
-                            <option value="1">$ UYU — Pesos Uruguayos</option>
-                            <option value="2">USD — Dólares</option>
-                        </select>
-                    </div>
-
-                    {/* Ancho imprimible */}
-                    <div>
-                        <label className={labelCls}>Ancho Imprimible (metros)</label>
-                        <input type="number" step="0.01" min="0" name="anchoImprimible"
-                            value={form.anchoImprimible}
-                            onChange={handleChange}
-                            className={inputCls}
-                            placeholder="Ej: 1.60" />
-                    </div>
-
-                    {/* Checkboxes */}
-                    <div className="flex gap-6 pt-1">
-                        {[
-                            { name: 'mostrar',    label: 'Mostrar',     color: 'accent-green-600' },
-                            { name: 'llevaPapel', label: 'Lleva Papel', color: 'accent-blue-600'  },
-                        ].map(({ name, label, color }) => (
-                            <label key={name} className="flex items-center gap-2 cursor-pointer select-none">
-                                <input type="checkbox" name={name} checked={form[name]} onChange={handleChange}
-                                    className={`${color} w-4 h-4`} />
-                                <span className="font-medium text-slate-700">{label}</span>
-                            </label>
-                        ))}
                     </div>
                 </form>
 
                 {/* Footer */}
-                <div className="flex justify-end gap-2 p-5 border-t border-slate-100 shrink-0">
-                    <button type="button" onClick={onClose}
-                        className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg text-sm transition">
-                        Cancelar
-                    </button>
-                    <button onClick={handleSubmit} disabled={saving}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition disabled:opacity-60 flex items-center gap-2">
-                        {saving && <i className="fa-solid fa-spinner fa-spin"></i>}
-                        {isNew ? 'Crear' : 'Guardar'}
-                    </button>
+                <div className="flex items-center justify-between p-6 bg-slate-50 border-t border-slate-100 shrink-0">
+                    <p className="text-xs font-semibold text-slate-400">
+                        {isNew ? 'Completá los campos para crear' : 'Recordá guardar tus cambios'}
+                    </p>
+                    <div className="flex gap-3">
+                        <button type="button" onClick={onClose} className="px-6 py-3 font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition">Cancelar</button>
+                        <button type="submit" form="edit-form" disabled={saving} className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30 transition-all disabled:opacity-60 flex items-center gap-2">
+                            {saving && <i className="fa-solid fa-spinner fa-spin"></i>}
+                            {isNew ? 'Crear Artículo' : 'Guardar Cambios'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
     );
 };
 
-// ─── Fila artículo ────────────────────────────────────────────────────────────
-const ArticleRow = ({ art, onEdit }) => {
-    // Parsear correctamente el decimal que viene del servidor
+// ─── Componente de Tarjeta de Artículo (Modern Card) ──────────────────────────
+const ArticleCard = ({ art, onEdit }) => {
     const ancho = parseFloat(art.anchoimprimible);
-
+    const isWmsSynced = art.producto_maestro_id != null;
+    
     return (
-        <tr className="hover:bg-indigo-50/40 transition-colors group text-xs">
-            <td className="pl-14 pr-3 py-2 font-mono font-bold text-indigo-700 w-32 whitespace-nowrap">
-                {art.ProIdProducto ?? '—'}
-            </td>
-            <td className="px-3 py-2 font-mono text-slate-500 w-28 whitespace-nowrap">
-                {art.CodArticulo?.trim()}
-            </td>
-            <td className="px-3 py-2 text-center w-24">
-                {art.IDProdReact != null
-                    ? <span className="text-slate-600">{art.IDProdReact}</span>
-                    : <span className="text-slate-300 italic">null</span>}
-            </td>
-            <td className="px-3 py-2 text-slate-700 max-w-xs truncate" title={art.Descripcion?.trim()}>
-                {art.Descripcion?.trim()}
-            </td>
-            <td className="px-3 py-2 text-center w-16">
-                <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full font-bold ${art.Mostrar ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
-                    {art.Mostrar ? '✓' : '✗'}
-                </span>
-            </td>
-            <td className="px-3 py-2 text-center w-16">
-                <span className={`inline-flex items-center justify-center w-5 h-5 rounded-full font-bold ${art.LLEVAPAPEL ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'}`}>
-                    {art.LLEVAPAPEL ? '✓' : '✗'}
-                </span>
-            </td>
-            <td className="px-3 py-2 text-center w-16">
-                {art.MonIdMoneda === 2
-                    ? <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-700">USD</span>
-                    : art.MonIdMoneda === 1
-                        ? <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">UYU</span>
-                        : <span className="text-slate-300 text-xs">—</span>}
-            </td>
-            <td className="px-3 py-2 text-center w-16 text-slate-500">
-                {ancho > 0 ? `${ancho}m` : <span className="text-slate-300">—</span>}
-            </td>
-            <td className="px-3 py-2 w-10 text-right">
-                <button onClick={() => onEdit(art)}
-                    className="opacity-0 group-hover:opacity-100 transition text-slate-400 hover:text-indigo-600 p-1.5 rounded hover:bg-indigo-50"
-                    title="Editar">
-                    <i className="fa-solid fa-pen-to-square"></i>
-                </button>
-            </td>
-        </tr>
+        <div className="bg-white rounded-2xl border border-slate-200 hover:border-blue-300 shadow-sm hover:shadow-xl hover:shadow-blue-500/10 transition-all overflow-hidden flex flex-col group h-full">
+            <div className="relative h-40 bg-slate-100 shrink-0 overflow-hidden">
+                {art.url_imagen ? (
+                    <img src={art.url_imagen} alt={art.Descripcion} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
+                        <i className="fa-solid fa-image text-4xl mb-2"></i>
+                        <span className="text-xs font-bold uppercase tracking-widest">Sin Foto</span>
+                    </div>
+                )}
+                <div className="absolute top-3 left-3 flex flex-col gap-1.5">
+                    {isWmsSynced && (
+                        <div className="bg-blue-600/90 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm flex items-center gap-1.5" title="Sincronizado con WMS">
+                            <i className="fa-solid fa-link"></i> WMS: {art.producto_maestro_id}
+                        </div>
+                    )}
+                    {art.Mostrar === false && (
+                        <div className="bg-red-500/90 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-full shadow-sm flex items-center gap-1.5" title="Oculto">
+                            <i className="fa-solid fa-eye-slash"></i> Oculto
+                        </div>
+                    )}
+                </div>
+                <div className="absolute top-3 right-3">
+                    <button onClick={() => onEdit(art)} className="w-9 h-9 rounded-full bg-white/90 backdrop-blur-md text-slate-400 hover:text-blue-600 hover:bg-white shadow-sm flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0" title="Editar Artículo">
+                        <i className="fa-solid fa-pen"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div className="p-4 flex flex-col flex-1">
+                <div className="flex items-center justify-between mb-2">
+                    {/* Quitamos CodArticulo como se pidió */}
+                    <div></div>
+                    <div>
+                        {art.MonIdMoneda === 2 && <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100">USD</span>}
+                        {art.MonIdMoneda === 1 && <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-md border border-blue-100">UYU</span>}
+                        {art.MonIdMoneda !== 1 && art.MonIdMoneda !== 2 && <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-md border border-slate-200">S/M</span>}
+                    </div>
+                </div>
+                
+                <h4 className="font-bold text-slate-800 text-sm leading-tight mb-3 line-clamp-2" title={art.Descripcion?.trim()}>
+                    {art.Descripcion?.trim()}
+                </h4>
+                
+                <div className="mt-auto grid grid-cols-2 gap-2 text-[11px] font-semibold">
+                    <div className="bg-slate-50 rounded-lg p-2 flex items-center gap-2">
+                        <i className="fa-solid fa-tag text-slate-400"></i>
+                        <div className="flex flex-col leading-tight">
+                            <span className="text-slate-400 text-[9px] uppercase tracking-wider">Precio Base</span>
+                            <span className="text-slate-700">{art.PrecioBase != null ? `$${parseFloat(art.PrecioBase).toFixed(2)}` : '—'}</span>
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-lg p-2 flex items-center gap-2">
+                        <i className="fa-solid fa-boxes-stacked text-slate-400"></i>
+                        <div className="flex flex-col leading-tight">
+                            <span className="text-slate-400 text-[9px] uppercase tracking-wider">Stock WMS</span>
+                            <span className={art.StockWMS > 0 ? "text-emerald-600 font-bold" : "text-slate-400"}>{art.StockWMS ?? 0}</span>
+                        </div>
+                    </div>
+
+                    <div className="bg-slate-50 rounded-lg p-2 flex items-center gap-2">
+                        <i className="fa-solid fa-layer-group text-slate-400"></i>
+                        <div className="flex flex-col leading-tight">
+                            <span className="text-slate-400 text-[9px] uppercase tracking-wider">Variantes</span>
+                            <span className="text-slate-700">{art.CantidadVariantes ?? 0}</span>
+                        </div>
+                    </div>
+
+                    {ancho > 0 ? (
+                        <div className="bg-slate-50 rounded-lg p-2 flex items-center gap-2">
+                            <i className="fa-solid fa-ruler-horizontal text-slate-400"></i>
+                            <div className="flex flex-col leading-tight">
+                                <span className="text-slate-400 text-[9px] uppercase tracking-wider">Ancho</span>
+                                <span className="text-slate-700">{ancho}m</span>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-slate-50 rounded-lg p-2 flex items-center gap-2">
+                            <i className="fa-solid fa-scroll text-slate-400"></i>
+                            <div className="flex flex-col leading-tight">
+                                <span className="text-slate-400 text-[9px] uppercase tracking-wider">Papel</span>
+                                <span className={art.LLEVAPAPEL ? "text-blue-600" : "text-slate-400"}>{art.LLEVAPAPEL ? "Sí" : "No"}</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
     );
 };
 
@@ -334,6 +496,7 @@ const ProductsIntegration = () => {
     const [loading, setLoading]   = useState(false);
     const [search, setSearch]     = useState('');
     const [editing, setEditing]   = useState(null);
+    const [selectedNode, setSelectedNode] = useState('all'); // 'all', 'sup||X', 'grp||X||Y'
     const [expanded, setExpanded] = useState({});
 
     const load = useCallback(() => {
@@ -346,67 +509,42 @@ const ProductsIntegration = () => {
 
     useEffect(() => { load(); }, [load]);
 
-    const toggle = (key) => setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
-
-    const expandAll = () => {
-        const all = {};
-        articles.forEach(a => {
-            const sup = (a.SupFlia || '').trim();
-            const grp = (a.Grupo || '').trim();
-            const stk = (a.CodStock || '').trim();
-            if (sup) all[`sup-${sup}`] = true;
-            if (sup && grp) all[`grp-${sup}-${grp}`] = true;
-            if (sup && grp && stk) all[`stk-${sup}-${grp}-${stk}`] = true;
-        });
-        setExpanded(all);
-    };
-
-    // ── Árbol SupFlia → Grupo → CodStock → Artículos ──────────────────────────
-    const tree = useMemo(() => {
-        const s = search.toLowerCase().trim();
-        const filtered = s
-            ? articles.filter(a =>
-                (a.CodArticulo || '').toLowerCase().includes(s) ||
-                (a.Descripcion || '').toLowerCase().includes(s) ||
-                String(a.ProIdProducto || '').includes(s) ||
-                String(a.IDProdReact  || '').includes(s) ||
-                (a.CodStock || '').toLowerCase().includes(s))
-            : articles;
-
-        const supMap = {};
-        filtered.forEach(a => {
-            const sup = (a.SupFlia  || '').trim() || '(Sin Familia)';
-            const grp = (a.Grupo    || '').trim() || '(Sin Grupo)';
-            const stk = (a.CodStock || '').trim() || '(Sin Stock)';
-
-            if (!supMap[sup]) supMap[sup] = {};
-            if (!supMap[sup][grp]) supMap[sup][grp] = { nombre: a.DescripcionGrupo || '', stocks: {} };
-            if (!supMap[sup][grp].stocks[stk]) {
-                supMap[sup][grp].stocks[stk] = {
-                    descripcion: a.DescripcionStock || '',
-                    items: []
-                };
-            }
-            supMap[sup][grp].stocks[stk].items.push(a);
-        });
-        return supMap;
-    }, [articles, search]);
-
     useEffect(() => {
-        if (search.length > 1) {
+        if (articles.length > 0) {
             const all = {};
-            Object.keys(tree).forEach(sup => {
-                all[`sup-${sup}`] = true;
-                Object.keys(tree[sup]).forEach(grp => {
-                    all[`grp-${sup}-${grp}`] = true;
-                    Object.keys(tree[sup][grp].stocks).forEach(stk => {
-                        all[`stk-${sup}-${grp}-${stk}`] = true;
-                    });
-                });
+            articles.forEach(a => {
+                const sup = (a.SupFlia || '').trim() || '(Sin Familia)';
+                all[`sup||${sup}`] = true;
             });
             setExpanded(all);
         }
-    }, [search, tree]);
+    }, [articles]);
+
+    const toggle = (key, e) => {
+        if(e) e.stopPropagation();
+        setExpanded(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+
+    // Árbol SupFlia → Grupo
+    const tree = useMemo(() => {
+        const supMap = {};
+        articles.forEach(a => {
+            const sup = (a.SupFlia  || '').trim() || '(Sin Familia)';
+            const grp = (a.Grupo    || '').trim() || '(Sin Grupo)';
+
+            if (!supMap[sup]) supMap[sup] = { count: 0, grupos: {} };
+            supMap[sup].count++;
+            
+            if (!supMap[sup].grupos[grp]) {
+                supMap[sup].grupos[grp] = { 
+                    nombre: a.DescripcionGrupo || '', 
+                    count: 0 
+                };
+            }
+            supMap[sup].grupos[grp].count++;
+        });
+        return supMap;
+    }, [articles]);
 
     const handleSaved = (formData) => {
         setArticles(prev => {
@@ -423,6 +561,8 @@ const ProductsIntegration = () => {
                     anchoimprimible: parseFloat(formData.anchoImprimible) || 0,
                     LLEVAPAPEL:      formData.llevaPapel ? 1 : 0,
                     MonIdMoneda:     formData.monIdMoneda !== '' ? parseInt(formData.monIdMoneda) : null,
+                    producto_maestro_id: formData.producto_maestro_id !== '' ? parseInt(formData.producto_maestro_id) : null,
+                    url_imagen:      formData.url_imagen || updated[idx].url_imagen
                 };
                 return updated;
             }
@@ -433,168 +573,182 @@ const ProductsIntegration = () => {
 
     const supKeys = Object.keys(tree).sort();
 
+    // Filtro para el Grid Principal
+    const displayArticles = useMemo(() => {
+        let list = articles;
+        
+        // Filtro por texto
+        const s = search.toLowerCase().trim();
+        if (s) {
+            list = list.filter(a =>
+                (a.CodArticulo || '').toLowerCase().includes(s) ||
+                (a.Descripcion || '').toLowerCase().includes(s) ||
+                String(a.ProIdProducto || '').includes(s) ||
+                String(a.IDProdReact  || '').includes(s) ||
+                (a.CodStock || '').toLowerCase().includes(s)
+            );
+        }
+
+        // Filtro por sidebar
+        if (selectedNode === 'all') return list;
+        
+        const parts = selectedNode.split('||');
+        if (parts[0] === 'sup') {
+            return list.filter(a => (a.SupFlia || '').trim() === parts[1]);
+        }
+        if (parts[0] === 'grp') {
+            return list.filter(a => (a.SupFlia || '').trim() === parts[1] && (a.Grupo || '').trim() === parts[2]);
+        }
+        return list;
+    }, [articles, search, selectedNode]);
+
     return (
         <div className="h-full flex flex-col bg-slate-50 overflow-hidden">
-
             {/* Header */}
-            <div className="p-3 bg-white border-b border-slate-200 flex flex-wrap items-center gap-3 shadow-sm">
-                <div className="flex-1 min-w-0">
-                    <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                        <i className="fa-solid fa-sitemap text-indigo-600 text-base"></i>
-                        Artículos
-                    </h1>
-                    <p className="text-xs text-slate-400">
-                        {loading ? 'Cargando...' : `${articles.length} artículos`}
-                    </p>
+            <div className="p-5 bg-white border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm z-10 shrink-0">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+                        <i className="fa-solid fa-box-open text-xl"></i>
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-black text-slate-800 tracking-tight">Catálogo y WMS</h1>
+                        <p className="text-sm font-semibold text-slate-400">
+                            Gestiona productos y vinculaciones desde un solo lugar.
+                        </p>
+                    </div>
                 </div>
 
-                <div className="relative w-64">
-                    <i className="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
-                    <input className="w-full pl-8 pr-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition bg-white"
-                        placeholder="ProId, Cód, Descripción, Stock..."
-                        value={search} onChange={e => setSearch(e.target.value)} />
-                </div>
-
-                <div className="flex gap-1.5">
-                    <button onClick={expandAll}
-                        className="px-3 py-2 text-xs border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100 transition">
-                        <i className="fa-solid fa-expand mr-1"></i>Todo
+                <div className="flex gap-2">
+                    <button onClick={load} className="px-4 py-2.5 text-xs font-bold bg-white border-2 border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors shadow-sm" title="Recargar">
+                        <i className="fa-solid fa-rotate"></i>
                     </button>
-                    <button onClick={() => setExpanded({})}
-                        className="px-3 py-2 text-xs border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100 transition">
-                        <i className="fa-solid fa-compress mr-1"></i>Colapsar
-                    </button>
-                    <button onClick={load}
-                        className="p-2 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-100 transition" title="Recargar">
-                        <i className="fa-solid fa-rotate text-sm"></i>
-                    </button>
-                    <button onClick={() => setEditing({})}
-                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition shadow-sm">
+                    <button onClick={() => setEditing({})} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-600/30 transition-all">
                         <i className="fa-solid fa-plus"></i> Nuevo
                     </button>
                 </div>
             </div>
 
-            {/* Árbol */}
-            <div className="flex-1 overflow-auto">
-                <table className="w-full text-sm border-collapse">
-                    <thead className="sticky top-0 z-10">
-                        <tr className="bg-slate-100 border-b border-slate-200 text-xs text-slate-500 font-semibold uppercase tracking-wide">
-                            <th className="px-4 py-2.5 text-left w-32">ProIdProducto</th>
-                            <th className="px-3 py-2.5 text-left w-28">CodArticulo</th>
-                            <th className="px-3 py-2.5 text-center w-24">IDReact</th>
-                            <th className="px-3 py-2.5 text-left">Descripción</th>
-                            <th className="px-3 py-2.5 text-center w-16">Mostrar</th>
-                            <th className="px-3 py-2.5 text-center w-16">Papel</th>
-                            <th className="px-3 py-2.5 text-center w-16">Moneda</th>
-                            <th className="px-3 py-2.5 text-center w-16">Ancho</th>
-                            <th className="w-10"></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {loading && (
-                            <tr><td colSpan={8} className="py-20 text-center text-slate-400">
-                                <i className="fa-solid fa-spinner fa-spin mr-2"></i> Cargando...
-                            </td></tr>
-                        )}
+            {/* Layout a 2 columnas */}
+            <div className="flex-1 flex overflow-hidden">
+                
+                {/* Sidebar */}
+                <div className="w-80 bg-white border-r border-slate-200 flex flex-col h-full shrink-0">
+                    <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+                        <h2 className="font-bold text-slate-800 text-sm">Categorias / Familias</h2>
+                        <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2 py-1 rounded-md">{supKeys.length} Familias</span>
+                    </div>
+                    
+                    <div className="p-4 border-b border-slate-100">
+                        <div className="relative">
+                            <i className="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+                            <input className="w-full pl-8 pr-3 py-2 border border-slate-200 bg-slate-50 rounded-lg text-sm outline-none focus:border-blue-500 focus:bg-white transition-all"
+                                placeholder="Filtrar productos..."
+                                value={search} onChange={e => setSearch(e.target.value)} />
+                        </div>
+                    </div>
 
-                        {!loading && supKeys.map(sup => {
-                            const supKey = `sup-${sup}`;
-                            const supOpen = !!expanded[supKey];
-                            const grpKeys = Object.keys(tree[sup]).sort();
-                            const supCount = grpKeys.reduce((a, g) =>
-                                a + Object.values(tree[sup][g].stocks).reduce((b, s) => b + s.items.length, 0), 0);
+                    <div className="flex-1 overflow-y-auto p-3 space-y-1 custom-scrollbar">
+                        {/* Boton "Todos los productos" */}
+                        <div 
+                            className={`flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${selectedNode === 'all' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-100'}`}
+                            onClick={() => setSelectedNode('all')}
+                        >
+                            <div className="flex items-center gap-3">
+                                <i className="fa-solid fa-globe text-sm opacity-80"></i>
+                                <span className="text-sm font-bold">Todos los Productos</span>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${selectedNode === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{articles.length}</span>
+                        </div>
+
+                        {/* Arbol */}
+                        {supKeys.map(sup => {
+                            const supKey = `sup||${sup}`;
+                            const isSelected = selectedNode === supKey;
+                            const isExpanded = !!expanded[supKey];
+                            const grpKeys = Object.keys(tree[sup].grupos).sort();
 
                             return (
-                                <React.Fragment key={supKey}>
-                                    {/* Nivel 1: SupFlia */}
-                                    <tr className="bg-amber-50 border-y border-amber-200 cursor-pointer select-none hover:bg-amber-100/80 transition"
-                                        onClick={() => toggle(supKey)}>
-                                        <td colSpan={8} className="px-3 py-2">
-                                            <div className="flex items-center gap-2">
-                                                <i className={`fa-solid ${supOpen ? 'fa-folder-open text-amber-500' : 'fa-folder text-amber-400'} text-sm`}></i>
-                                                <span className="font-bold text-amber-900 text-sm">Familia {sup}</span>
-                                                <span className="text-[10px] bg-amber-200 text-amber-700 px-2 py-0.5 rounded-full">{supCount}</span>
-                                                <i className={`fa-solid fa-chevron-${supOpen ? 'up' : 'down'} text-amber-400 text-[10px] ml-auto`}></i>
-                                            </div>
-                                        </td>
-                                    </tr>
+                                <div key={supKey} className="mt-2">
+                                    <div 
+                                        className={`flex items-center justify-between px-3 py-2.5 rounded-xl cursor-pointer transition-colors ${isSelected ? 'bg-blue-600 text-white shadow-md' : 'text-slate-700 hover:bg-slate-100'}`}
+                                        onClick={() => setSelectedNode(supKey)}
+                                    >
+                                        <div className="flex items-center gap-3 overflow-hidden">
+                                            <i 
+                                                className={`fa-solid ${isExpanded ? 'fa-folder-open' : 'fa-folder'} text-sm ${isSelected ? 'opacity-90' : 'text-amber-400'}`}
+                                                onClick={(e) => toggle(supKey, e)}
+                                            ></i>
+                                            <span className="text-sm font-bold truncate">Familia {sup}</span>
+                                        </div>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{tree[sup].count}</span>
+                                    </div>
 
-                                    {supOpen && grpKeys.map(grp => {
-                                        const grpKey  = `grp-${sup}-${grp}`;
-                                        const grpOpen = !!expanded[grpKey];
-                                        const grpInfo = tree[sup][grp];
-                                        const stkKeys = Object.keys(grpInfo.stocks).sort();
-                                        const grpCount = stkKeys.reduce((a, s) => a + grpInfo.stocks[s].items.length, 0);
-                                        const grpLabel = grpInfo.nombre?.trim()
-                                            ? `${grp} — ${grpInfo.nombre.trim()}`
-                                            : grp;
+                                    {/* Grupos */}
+                                    {isExpanded && (
+                                        <div className="ml-5 mt-1 border-l-2 border-slate-100 pl-2 space-y-1">
+                                            {grpKeys.map(grp => {
+                                                const grpKey = `grp||${sup}||${grp}`;
+                                                const isGrpSelected = selectedNode === grpKey;
+                                                const gInfo = tree[sup].grupos[grp];
+                                                const gLabel = gInfo.nombre ? `${grp} - ${gInfo.nombre}` : grp;
 
-                                        return (
-                                            <React.Fragment key={grpKey}>
-                                                {/* Nivel 2: Grupo */}
-                                                <tr className="bg-slate-50 border-b border-slate-200 cursor-pointer select-none hover:bg-slate-100/80 transition"
-                                                    onClick={() => toggle(grpKey)}>
-                                                    <td colSpan={8} className="pl-8 pr-3 py-1.5">
-                                                        <div className="flex items-center gap-2">
-                                                            <i className={`fa-solid ${grpOpen ? 'fa-folder-open text-indigo-400' : 'fa-folder text-indigo-300'} text-xs`}></i>
-                                                            <span className="font-semibold text-slate-700 text-xs">{grpLabel}</span>
-                                                            <span className="text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full">{grpCount}</span>
-                                                            <i className={`fa-solid fa-chevron-${grpOpen ? 'up' : 'down'} text-slate-400 text-[10px] ml-auto`}></i>
+                                                return (
+                                                    <div 
+                                                        key={grpKey} 
+                                                        className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-colors ${isGrpSelected ? 'bg-blue-50 text-blue-700 font-bold' : 'text-slate-600 hover:bg-slate-100'}`}
+                                                        onClick={() => setSelectedNode(grpKey)}
+                                                    >
+                                                        <div className="flex items-center gap-2 overflow-hidden">
+                                                            <i className={`fa-solid fa-folder text-xs ${isGrpSelected ? 'text-blue-500' : 'text-amber-400'}`}></i>
+                                                            <span className="text-xs truncate" title={gLabel}>{gLabel}</span>
                                                         </div>
-                                                    </td>
-                                                </tr>
-
-                                                {grpOpen && stkKeys.map(stk => {
-                                                    const stkKey  = `stk-${sup}-${grp}-${stk}`;
-                                                    const stkOpen = !!expanded[stkKey];
-                                                    const stkInfo = grpInfo.stocks[stk];
-                                                    const arts    = stkInfo.items;
-                                                    const stkDesc = stkInfo.descripcion;
-
-                                                    return (
-                                                        <React.Fragment key={stkKey}>
-                                                            {/* Nivel 3: CodStock */}
-                                                            <tr className="border-b border-slate-100 cursor-pointer select-none hover:bg-teal-50/40 transition"
-                                                                onClick={() => toggle(stkKey)}>
-                                                                <td colSpan={8} className="pl-12 pr-3 py-1">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <i className={`fa-solid fa-layer-group text-[10px] ${stkOpen ? 'text-teal-500' : 'text-slate-400'}`}></i>
-                                                                        <span className="font-mono text-xs text-slate-600 font-semibold">{stk}</span>
-                                                                        {stkDesc && (
-                                                                            <span className="text-xs text-slate-400">— {stkDesc}</span>
-                                                                        )}
-                                                                        <span className="text-[10px] bg-teal-50 text-teal-600 border border-teal-200 px-1.5 py-0.5 rounded-full">{arts.length}</span>
-                                                                        <i className={`fa-solid fa-chevron-${stkOpen ? 'up' : 'down'} text-slate-300 text-[10px] ml-auto`}></i>
-                                                                    </div>
-                                                                </td>
-                                                            </tr>
-
-                                                            {/* Nivel 4: Artículos */}
-                                                            {stkOpen && arts.map(art => (
-                                                                <ArticleRow
-                                                                    key={art.ProIdProducto ?? art.CodArticulo}
-                                                                    art={art}
-                                                                    onEdit={setEditing}
-                                                                />
-                                                            ))}
-                                                        </React.Fragment>
-                                                    );
-                                                })}
-                                            </React.Fragment>
-                                        );
-                                    })}
-                                </React.Fragment>
+                                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md shrink-0 ${isGrpSelected ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'}`}>{gInfo.count}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
                             );
                         })}
+                    </div>
+                </div>
 
-                        {!loading && supKeys.length === 0 && (
-                            <tr><td colSpan={8} className="py-20 text-center text-slate-400 italic">
-                                No se encontraron artículos
-                            </td></tr>
-                        )}
-                    </tbody>
-                </table>
+                {/* Main Content (Grid) */}
+                <div className="flex-1 overflow-y-auto p-6 bg-slate-50 custom-scrollbar">
+                    {loading ? (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                            <i className="fa-solid fa-circle-notch fa-spin text-4xl mb-4 text-blue-500"></i>
+                            <p className="font-bold">Cargando catálogo...</p>
+                        </div>
+                    ) : displayArticles.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                            <i className="fa-solid fa-box-open text-6xl mb-4 text-slate-200"></i>
+                            <p className="font-bold text-lg text-slate-500">No se encontraron artículos</p>
+                        </div>
+                    ) : (
+                        <div>
+                            <div className="mb-6 flex items-center justify-between">
+                                <h2 className="text-lg font-bold text-slate-800">
+                                    {selectedNode === 'all' && 'Todos los Productos'}
+                                    {selectedNode.startsWith('sup') && `Familia ${selectedNode.split('||')[1]}`}
+                                    {selectedNode.startsWith('grp') && `Grupo ${selectedNode.split('||')[2]}`}
+                                </h2>
+                                <span className="bg-white border border-slate-200 text-slate-600 text-xs font-bold px-3 py-1 rounded-full shadow-sm">{displayArticles.length} resultados</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-5">
+                                {displayArticles.map(art => (
+                                    <ArticleCard
+                                        key={art.ProIdProducto ?? art.CodArticulo}
+                                        art={art}
+                                        onEdit={setEditing}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
             </div>
 
             {/* Modal */}

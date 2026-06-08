@@ -30,9 +30,9 @@ const getBasePrices = async (req, res) => {
 
 // Guardar Precio Base (Individual)
 const saveBasePrice = async (req, res) => {
-    const { codArticulo, precio, moneda } = req.body;
+    const { codArticulo, precio, moneda, proIdProducto } = req.body;
     try {
-        await PricingService.setBasePrice(codArticulo, precio, moneda === 'USD' ? 2 : 1);
+        await PricingService.setBasePrice(codArticulo, precio, moneda === 'USD' ? 2 : 1, proIdProducto);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -64,9 +64,10 @@ const saveBasePricesBulk = async (req, res) => {
                             WHERE ID = @Id
                         `);
                 } else {
-                    // PreciosBase ahora sólo utiliza ProIdProducto (INT)
+                    // PreciosBase ahora sólo utiliza ProIdProducto (INT) pero la tabla aún requiere CodArticulo
                     await request
                         .input('ProId', sql.Int, item.proIdProducto || null)
+                        .input('CodArticulo', sql.VarChar, item.codArticulo || '')
                         .input('Precio', sql.Decimal(18, 4), item.precio)
                         .input('MonIdMoneda', sql.Int, (item.moneda === 'USD' || item.moneda === 2) ? 2 : 1)
                         .query(`
@@ -78,8 +79,8 @@ const saveBasePricesBulk = async (req, res) => {
                                 WHEN MATCHED THEN
                                     UPDATE SET Precio = @Precio, UltimaActualizacion = GETDATE()
                                 WHEN NOT MATCHED THEN
-                                    INSERT (ProIdProducto, Precio, MonIdMoneda, UltimaActualizacion)
-                                    VALUES (@ProId, @Precio, @MonIdMoneda, GETDATE());
+                                    INSERT (ProIdProducto, CodArticulo, Precio, MonIdMoneda, UltimaActualizacion)
+                                    VALUES (@ProId, @CodArticulo, @Precio, @MonIdMoneda, GETDATE());
                             END
                         `);
                 }

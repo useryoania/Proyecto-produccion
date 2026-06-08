@@ -102,9 +102,9 @@ async function registrarPagoCompleto(opts) {
     }
 
     // ── 2. TransaccionesCaja ──────────────────────────────────────────────────
-    const sesRes = await transaction.request()
-      .query(`SELECT TOP 1 StuIdSesion FROM dbo.SesionesTurno WHERE StuEstado='ABIERTA' ORDER BY StuFechaApertura DESC`);
-    const sesionId = sesRes.recordset[0]?.StuIdSesion || null;
+    // Se fuerza a NULL la sesión para que actúe como Caja Administrativa y no ensucie 
+    // el turno del cajero de mostrador (que sí usa StuIdSesion abierta).
+    const sesionId = null;
 
     const nDocRes = await transaction.request()
       .query(`SELECT ISNULL(MAX(TcaNumeroDoc),0)+1 AS N FROM dbo.TransaccionesCaja WHERE TcaTipoDocumento='COBRO_WEB'`);
@@ -133,6 +133,35 @@ async function registrarPagoCompleto(opts) {
            @Monto, 0, @Monto, @Monto, @Moneda, @Obs)
       `);
     const tcaId = tcaRes.recordset[0].TcaIdTransaccion;
+
+    // ── 2.5 Insertar TransaccionDetalle ──────────────────────────────────────
+    if (ordenRetiroId) {
+      await transaction.request()
+        .input('TcaId', sql.Int, tcaId)
+        .input('RetId', sql.Int, ordenRetiroId)
+        .input('Monto', sql.Decimal(18,4), totalMonto)
+        .query(`
+          INSERT INTO dbo.TransaccionDetalle
+            (TcaIdTransaccion, TdeTipoReferencia, TdeReferenciaId, TdeImporteOriginal, TdeAjuste, TdeImporteFinal, TdePagado)
+          VALUES
+            (@TcaId, 'ORDEN_RETIRO', @RetId, @Monto, 0, @Monto, 1)
+        `);
+    } else if (ordIds.length > 0) {
+      const q = await transaction.request().query(`SELECT OrdIdOrden, OrdCostoFinal, OrdCodigoOrden FROM dbo.OrdenesDeposito WHERE OrdIdOrden IN (${ordIds.join(',')})`);
+      for (const row of q.recordset) {
+        await transaction.request()
+          .input('TcaId', sql.Int, tcaId)
+          .input('OrdId', sql.Int, row.OrdIdOrden)
+          .input('Cod', sql.VarChar(100), row.OrdCodigoOrden || null)
+          .input('Costo', sql.Decimal(18,4), row.OrdCostoFinal || 0)
+          .query(`
+            INSERT INTO dbo.TransaccionDetalle
+              (TcaIdTransaccion, TdeTipoReferencia, TdeReferenciaId, TdeCodigoReferencia, TdeImporteOriginal, TdeAjuste, TdeImporteFinal, TdePagado)
+            VALUES
+              (@TcaId, 'ORDEN_DEPOSITO', @OrdId, @Cod, @Costo, 0, @Costo, 1)
+          `);
+      }
+    }
 
     // ── 3. Pagos ──────────────────────────────────────────────────────────────
     let pagoId = null;

@@ -13,6 +13,7 @@ import ImportadorManualView from '../production/ImportadorManualView';
 import LabelGenerationPage from '../pages/LabelGenerationPage';
 import QuotationView from './QuotationView';
 import CanastosView from './CanastosView';
+import WmsReceiveSalesView from './WmsReceiveSalesView';
 
 // Dynamic Import with auto-reload on stale chunks
 const DepositStockPage = React.lazy(() =>
@@ -114,7 +115,8 @@ const LogisticsDashboard = ({ areaCode }) => {
                 return <CanastosView {...commonProps} />;
             case 'labels':
                 return <div className="absolute inset-0"><LabelGenerationPage initialArea={globalArea !== 'TODOS' ? globalArea : ''} /></div>;
-
+            case 'receive_sales':
+                return <div className="absolute inset-0 overflow-y-auto"><WmsReceiveSalesView {...commonProps} /></div>;
             case 'dashboard':
                 return <DepositoDashboard />;
             case 'dispatch':

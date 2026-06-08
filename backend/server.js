@@ -182,7 +182,14 @@ app.use('/api/chat', require('./routes/chatRoutes'));
 
 try {
     app.use('/api/analytics', require('./routes/analyticsRoutes'));
-} catch (e) { logger.error("❌ Error loading analytics routes:", e); }
+} catch (e) { logger.error("❌ Error loading analytics routes:", e.message); }
+
+// INTEGRACIÓN WMS (Inventario Externo + Logística Pedidos)
+try {
+    app.use('/api/wms', require('./routes/wmsRoutes'));
+    app.use('/api/wms-logistica', require('./routes/logisticaWmsRoutes'));
+    logger.info('✅ [MÓDULO] Integración WMS activada en /api/wms y /api/wms-logistica');
+} catch (e) { logger.error('❌ Error loading WMS routes:', e.message); }
 
 // --- CRON: Sincronización de lista de precios desde Google Sheets ---
 if (process.env.NODE_ENV !== 'test') {

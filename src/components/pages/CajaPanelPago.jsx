@@ -147,6 +147,7 @@ export default function CajaPanelPago({
   const hasReciboVouchers = !esEgreso && !hasStandardVouchers && tiposDoc.some(t => ['05', 'RECIBO_ANTICIPO'].includes(t.value));
 
   const resultingDocDescription = useMemo(() => {
+    if (esEgreso) return 'SALIDA DE CAJA';
     if (tipoDoc === '40') return 'PEDIDO CAJA';
     if (tipoDoc === '07') return 'E-TICKET CONTADO';
     if (tipoDoc === '08') return 'E-TICKET CRÉDITO';
@@ -158,7 +159,7 @@ export default function CajaPanelPago({
     
     const matched = tiposDoc.find(t => t.value === tipoDoc);
     return matched ? String(matched.label).toUpperCase() : 'COMPROBANTE';
-  }, [tipoDoc, tiposDoc]);
+  }, [esEgreso, tipoDoc, tiposDoc]);
 
   useEffect(() => {
     if (tipoDoc && tipoDoc !== 'NINGUNO') {
@@ -281,8 +282,8 @@ export default function CajaPanelPago({
           <div className="flex flex-col gap-1">
             <span className="text-[9px] font-black text-zinc-450 uppercase tracking-widest leading-none">Documento a Generar:</span>
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse shrink-0" />
-              <span className="text-xl lg:text-2xl font-black tracking-tight text-zinc-900 uppercase">
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 animate-pulse ${esEgreso ? 'bg-brand-magenta' : 'bg-purple-600'}`} />
+              <span className={`text-xl lg:text-2xl font-black tracking-tight uppercase ${esEgreso ? 'text-brand-magenta' : 'text-zinc-900'}`}>
                 {resultingDocDescription}
               </span>
             </div>
@@ -331,7 +332,19 @@ export default function CajaPanelPago({
           {/* COLUMNA 1: Toggles de Comprobantes & Condición (Sin Etiquetas) */}
           <div className="flex flex-col gap-4">
             
-            {hasStandardVouchers ? (
+            {esEgreso ? (
+              // Modo EGRESO: comprobante fijo, no hay selección
+              <div className="flex items-center gap-3 bg-brand-magenta/5 border border-brand-magenta/20 rounded-2xl px-4 py-3">
+                <div className="w-2 h-2 rounded-full bg-brand-magenta shrink-0" />
+                <div className="flex flex-col">
+                  <span className="text-[9px] font-black text-brand-magenta/60 uppercase tracking-widest">Comprobante</span>
+                  <span className="text-xs font-black text-brand-magenta uppercase">Salida de Caja (EG-)</span>
+                </div>
+                <div className="ml-auto bg-brand-magenta/10 border border-brand-magenta/20 rounded-xl px-3 py-1 text-[10px] font-black text-brand-magenta uppercase tracking-widest">
+                  {numDoc || numDocPredict}
+                </div>
+              </div>
+            ) : hasStandardVouchers ? (
               <div className="flex bg-zinc-100 border border-zinc-200 rounded-2xl p-1 gap-1">
                 <button
                   type="button"
@@ -411,8 +424,8 @@ export default function CajaPanelPago({
               />
             )}
 
-            {/* SERIE & NÚMERO */}
-            {tipoDoc !== 'NINGUNO' && (
+            {/* SERIE & NÚMERO (solo para no-egreso) */}
+            {!esEgreso && tipoDoc !== 'NINGUNO' && (
               <div className="flex gap-3">
                 <div className="flex-1 flex items-center gap-2 bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2 shadow-inner">
                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 select-none">Serie:</span>
@@ -985,7 +998,19 @@ export default function CajaPanelPago({
 
         {/* DOCUMENTO A EMITIR (Vertical) */}
         <div className="flex flex-col gap-3">
-          {hasStandardVouchers ? (
+          {esEgreso ? (
+            // Modo EGRESO: documento fijo EGRESO_CAJA, no hay selección de tipo
+            <div className="flex items-center gap-3 bg-brand-magenta/5 border border-brand-magenta/20 rounded-2xl px-4 py-3">
+              <div className="w-2 h-2 rounded-full bg-brand-magenta shrink-0" />
+              <div className="flex flex-col min-w-0">
+                <span className="text-[9px] font-black text-brand-magenta/60 uppercase tracking-widest">Comprobante</span>
+                <span className="text-sm font-black text-brand-magenta uppercase tracking-tight">Salida de Caja (EG-)</span>
+              </div>
+              <div className="ml-auto bg-brand-magenta/10 border border-brand-magenta/20 rounded-xl px-3 py-1 text-[10px] font-black text-brand-magenta uppercase tracking-widest">
+                {numDoc || numDocPredict}
+              </div>
+            </div>
+          ) : hasStandardVouchers ? (
             <div className="flex bg-zinc-100 border border-zinc-200 rounded-2xl p-1 gap-1">
               <button
                 type="button"
@@ -1060,7 +1085,7 @@ export default function CajaPanelPago({
             />
           )}
 
-          {tipoDoc !== 'NINGUNO' && (
+          {!esEgreso && tipoDoc !== 'NINGUNO' && (
             <div className="flex gap-2.5">
               <input
                 type="text"
