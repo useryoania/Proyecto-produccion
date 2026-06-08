@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
-import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket, ScanLine, FileText, Cpu, FileDown, Inbox, Receipt } from 'lucide-react';
+import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket, ScanLine, FileText, Cpu, FileDown, Inbox, Receipt, ShoppingCart } from 'lucide-react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
@@ -65,6 +65,8 @@ const HelpDeskAdminView = lazyWithRetry(() => import('../pages/customer-service/
 const OrderSearchPage = lazyWithRetry(() => import('../logistics/OrderSearchPage'));
 const EntregaPedidosView = lazyWithRetry(() => import('../pages/customer-service/EntregaPedidosView'));
 const DepositoDashboard = lazyWithRetry(() => import('../logistics/DepositoDashboard'));
+const WmsOrderPage = lazyWithRetry(() => import('../pages/customer-service/WmsOrderPage'));
+const WmsLogisticsPage = lazyWithRetry(() => import('../pages/customer-service/WmsLogisticsPage'));
 const NomenclatorsABM = lazyWithRetry(() => import('../pages/admin/NomenclatorsABM')); // <-- ADDED
 const SysAdminPage = lazyWithRetry(() => import('../pages/admin/SysAdminPage'));
 const LeadsCRMView = lazyWithRetry(() => import('../pages/ventas/LeadsCRMView'));
@@ -203,6 +205,8 @@ const lucideIconMapRaw = {
     // Atención al Cliente sub-items
     'ingreso materiales': PackagePlus,
     'reposiciones': RefreshCw,
+    'pedido productos wms': ShoppingCart,
+    'preparacion pedidos wms': Package,
     // Gestión de Precios sub-items
     'precios estándar': BadgeDollarSign,
     'precios estandar': BadgeDollarSign,
@@ -600,6 +604,8 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <Route path="/logistica/buscar-ordenes" element={<OrderSearchPage />} />
                 <Route path="/logistica/dashboard-deposito" element={<DepositoDashboard />} />
                 <Route path="/atencion-cliente/entrega-pedidos" element={<EntregaPedidosView />} />
+                <Route path="/atencion-cliente/pedidos-wms" element={<WmsOrderPage />} />
+                <Route path="/logistica/pedidos-wms" element={<WmsLogisticsPage />} />
                 <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
                 <Route path="/admin/duplicate-clients" element={<DuplicateClientsPage />} />
                 <Route path="/admin/helpdesk" element={<HelpDeskAdminView />} />

@@ -6,6 +6,7 @@ const LogisticsLayout = ({ children, activeTab, setActiveTab, globalArea, setGlo
         { id: 'quotation', label: 'Cotización', icon: 'fa-file-invoice-dollar' },
         { id: 'canastos', label: 'Canastos', icon: 'fa-basket-shopping' },
         { id: 'labels', label: 'Etiquetas', icon: 'fa-tags' },
+        { id: 'receive_sales', label: 'Recibir órdenes de venta', icon: 'fa-boxes-packing' },
         { id: 'dispatch', label: 'Crear Remito', icon: 'fa-file-invoice' },
         { id: 'history', label: 'Historial', icon: 'fa-clock-rotate-left' },
         { id: 'transport', label: 'En Viaje', icon: 'fa-truck-arrow-right' },
@@ -16,6 +17,10 @@ const LogisticsLayout = ({ children, activeTab, setActiveTab, globalArea, setGlo
 
     if (isAreaContext) {
         tabs = tabs.filter(t => !['import', 'quotation'].includes(t.id));
+    }
+
+    if (globalArea === 'DEPOSITO') {
+        tabs = tabs.filter(t => !['import', 'quotation', 'canastos', 'labels'].includes(t.id));
     }
 
 

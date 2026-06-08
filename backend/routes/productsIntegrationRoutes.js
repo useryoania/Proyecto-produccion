@@ -20,4 +20,18 @@ router.post('/update', controller.updateLocalProduct);
 // 6. Crear Producto Local (nuevo)
 router.post('/create', controller.createLocalProduct);
 
+const uploadArticulo = require('../middleware/multerArticulosConfig');
+
+// 7. Actualizar ID Maestro WMS
+router.put('/wms/:id', controller.updateWmsMasterId);
+
+// 7.1 Obtener Master Products de WMS
+router.get('/wms/masters', controller.getWmsMasters);
+
+// 7.2 Obtener Variantes de un Master Product del WMS
+router.get('/wms/variants/:id', controller.getWmsVariants);
+
+// 8. Cargar Imagen Articulo
+router.post('/upload-image/:id', uploadArticulo.single('image'), controller.uploadArticleImage);
+
 module.exports = router;

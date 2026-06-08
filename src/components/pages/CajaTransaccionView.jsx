@@ -28,6 +28,7 @@ import ChequeRecibirModal from './tesoreria/ChequeRecibirModal';
 import { CustomSelect } from '../../client-portal/pautas/CustomSelect';
 import { Listbox } from '@headlessui/react';
 import { ChevronDown, Check } from 'lucide-react';
+import VoucherEgresoModal from './VoucherEgresoModal';
 
 function LightSelect({ value, onChange, options = [], placeholder = 'Seleccionar...' }) {
   const selected = options.find(o => String(o.value) === String(value));
@@ -97,6 +98,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
   const [loadingSesion, setLoadingSesion] = useState(true);
   const [modalApertura, setModalApertura] = useState(false);
   const [montoInicial, setMontoInicial] = useState('');
+  const [montoInicialUSD, setMontoInicialUSD] = useState('');
 
   const [metodosPago, setMetodosPago] = useState([]);
   const [cuentasGastos, setCuentasGastos] = useState([]);
@@ -167,6 +169,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
   const [egresoNumDocPredict, setEgresoNumDocPredict] = useState('');
   const [egresoObs, setEgresoObs] = useState('');
   const [procesandoEgreso, setProcesandoEgreso] = useState(false);
+  const [egresoVoucher, setEgresoVoucher] = useState(null); // datos del voucher modal
 
   const [retiroSelectAut, setRetiroSelectAut] = useState(null);
   const [autMotivo, setAutMotivo] = useState('');
@@ -573,7 +576,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
 
   const handleAbrirCaja = async () => {
     try {
-      const res = await api.post('/contabilidad/caja/sesion/abrir', { montoInicial });
+      const res = await api.post('/contabilidad/caja/sesion/abrir', { montoInicial, montoInicialUSD });
       toast.success('Caja iniciada exitosamente.');
       setSesion(res.data.sesion);
       setModalApertura(false);
@@ -644,7 +647,9 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
 
     try {
       await api.post(`/contabilidad/caja/sesion/${sesion.StuIdSesion}/cerrar`, {
-        montoFinal: parseFloat(cierreMontoFisico), observaciones: finalObs
+        montoFinal: parseFloat(cierreMontoFisico), 
+        montoFinalUSD: parseFloat(totalDenominacionesUSD), 
+        observaciones: finalObs
       });
       toast.success('Sesión de caja cerrada.');
       setSesion(null); setModalApertura(true); setActiveTab('COBRO');
@@ -925,16 +930,24 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
     setProcesandoEgreso(true);
     try {
       const ctaSelec = cuentasGastos.find(c => c.CueCodigo === egresoCuentaCodigo);
-      await api.post('/contabilidad/caja/egreso', {
+      const respEgreso = await api.post('/contabilidad/caja/egreso', {
         stuIdSesion: isAdminCaja ? null : sesion?.StuIdSesion, cuentaGastoCodigo: egresoCuentaCodigo,
         concepto: ctaSelec?.CueNombre || 'Gasto no mapeado', proveedor: egresoProveedor,
         monto: egresoMonto, moneda: egresoMoneda, monedaId: egresoMoneda === 'USD' ? 2 : 1,
         cotizacion: egresoMoneda === 'USD' ? cotizacion : null, metodoPagoId: egresoMetodoId,
-        tipoDocumento: egresoTipoDoc, serieDoc: egresoSerieDoc, observaciones: egresoObs,
+        tipoDocumento: 'EGRESO', serieDoc: 'EG', observaciones: egresoObs,
         admin: isAdminCaja
       });
-      toast.success('Egreso y asiento registrados.');
+      toast.success('Egreso registrado correctamente. PDF guardado automáticamente.');
       setEgresoCuentaCodigo(''); setEgresoProveedor(''); setEgresoMonto(''); setEgresoObs('');
+      // Cargar datos del voucher para mostrar el modal
+      try {
+        const egrId = respEgreso.data?.egrIdEgreso;
+        if (egrId) {
+          const vResp = await api.get(`/contabilidad/caja/egreso/${egrId}/voucher`);
+          if (vResp.data?.success) setEgresoVoucher(vResp.data.voucher);
+        }
+      } catch (eVoucher) { /* no crítico */ }
     } catch (e) { toast.error(e.response?.data?.error || 'Error al registrar egreso'); }
     finally { setProcesandoEgreso(false); }
   };
@@ -1001,16 +1014,28 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
             <h2 className="text-3xl font-black text-zinc-800 tracking-tight">Caja Cerrada</h2>
             <p className="text-xs text-zinc-400 font-bold uppercase tracking-widest leading-relaxed">Debes abrir una sesión de turno para registrar movimientos de dinero.</p>
           </div>
-          <div className="flex flex-col gap-3">
-            <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest px-1">Monto Inicial en Efectivo ($)</label>
-            <input
-              type="number"
-              autoFocus
-              placeholder="Ej: 5000.00"
-              value={montoInicial}
-              onChange={e => setMontoInicial(e.target.value)}
-              className="bg-zinc-50 border-2 border-zinc-200 focus:border-brand-cyan rounded-2xl px-6 py-4 text-3xl font-black text-center text-zinc-800 outline-none transition-all shadow-inner placeholder-zinc-300"
-            />
+          <div className="flex gap-4">
+            <div className="flex flex-col gap-3 flex-1">
+              <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest px-1">Monto Inicial (UYU)</label>
+              <input
+                type="number"
+                autoFocus
+                placeholder="Ej: 5000.00"
+                value={montoInicial}
+                onChange={e => setMontoInicial(e.target.value)}
+                className="bg-zinc-50 border-2 border-zinc-200 focus:border-brand-cyan rounded-2xl px-4 py-4 text-2xl font-black text-center text-zinc-800 outline-none transition-all shadow-inner placeholder-zinc-300 w-full"
+              />
+            </div>
+            <div className="flex flex-col gap-3 flex-1">
+              <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest px-1">Monto Inicial (USD)</label>
+              <input
+                type="number"
+                placeholder="Ej: 100.00"
+                value={montoInicialUSD}
+                onChange={e => setMontoInicialUSD(e.target.value)}
+                className="bg-zinc-50 border-2 border-zinc-200 focus:border-emerald-500 rounded-2xl px-4 py-4 text-2xl font-black text-center text-zinc-800 outline-none transition-all shadow-inner placeholder-zinc-300 w-full"
+              />
+            </div>
           </div>
           <button onClick={handleAbrirCaja} className="w-full bg-brand-cyan hover:bg-amber-500 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-brand-cyan/20 flex justify-center items-center gap-3 uppercase tracking-widest text-sm">
             Abrir Caja <ArrowRight size={20} />
@@ -2149,7 +2174,7 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
 
               <CajaPanelPago
                 mode="EGRESO"
-                tiposDocDisponibles={tiposDocumentos}
+                tiposDocDisponibles={[]}
                 totalACubrir={parseFloat(egresoMonto) || 0}
                 moneda={egresoMoneda}
                 cotizacion={cotizacion}
@@ -2161,11 +2186,10 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                     setEgresoMonto(newPagos[0].monto);
                   }
                 }}
-                tipoDoc={egresoTipoDoc}
-                onTipoDoc={setEgresoTipoDoc}
-                serieDoc={egresoSerieDoc}
-                onSerieDoc={setEgresoSerieDoc}
-                numDoc={egresoTipoDoc === 'NINGUNO' ? 'Sin número' : (egresoNumDocPredict || 'Generando...')}
+                tipoDoc="EGRESO"
+                onTipoDoc={() => {}}
+                serieDoc="EG"
+                onSerieDoc={() => {}}
                 notas={egresoObs}
                 onNotas={setEgresoObs}
                 onConfirmar={handleRealizarEgreso}
@@ -2575,6 +2599,13 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
             </div>
           </div>
         </div>
+      )}
+      {/* ── Modal Voucher de Egreso ── */}
+      {egresoVoucher && (
+        <VoucherEgresoModal
+          voucher={egresoVoucher}
+          onClose={() => setEgresoVoucher(null)}
+        />
       )}
     </>
   );
