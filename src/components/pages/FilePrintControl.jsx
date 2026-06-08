@@ -91,10 +91,12 @@ const FilePrintControl = ({ areaCode }) => {
   const [completedOrderData, setCompletedOrderData] = useState(null);
   const [fallaTypes, setFallaTypes] = useState([]);
   const [finalizandoOrden, setFinalizandoOrden] = useState(false);
+  const [pendingSelectCode, setPendingSelectCode] = useState(null);
 
   // Falla Form
   const [failureType, setFailureType] = useState('');
   const [metersToReprint, setMetersToReprint] = useState('');
+  const [reponerCompleto, setReponerCompleto] = useState(false);
   const [actionReason, setActionReason] = useState('');
 
   // --- DERIVED STATE ---
@@ -126,6 +128,12 @@ const FilePrintControl = ({ areaCode }) => {
 
   useEffect(() => {
     fetchRollos();
+    socket.on('server:order_updated', fetchRollos);
+    socket.on('lotes:updated', fetchRollos);
+    return () => {
+      socket.off('server:order_updated', fetchRollos);
+      socket.off('lotes:updated', fetchRollos);
+    };
   }, [fetchRollos]);
 
   // 2. Load Orders when Roll changes
@@ -148,11 +156,16 @@ const FilePrintControl = ({ areaCode }) => {
           sequence: o.Secuencia || 0,
           failures: o.CantidadFallas || 0,
           hasLabels: o.CantidadEtiquetas || 0,
-
+          rolloId: o.RolloID || null,
           nextService: o.ProximoServicio,
           meters: parseFloat(o.Magnitud) || 0
         }));
         setOrders(normalized);
+        // Auto-select pending order after lote switch
+        if (pendingSelectCode) {
+          const toSelect = normalized.find(o => o.code === pendingSelectCode);
+          if (toSelect) { setSelectedOrder(toSelect); setPendingSelectCode(null); }
+        }
       } catch (e) { console.error(e); }
       finally { setLoadingOrders(false); }
     };
@@ -292,7 +305,7 @@ const FilePrintControl = ({ areaCode }) => {
   // --- HELPERS ---
   const orderMetrics = React.useMemo(() => {
     const total = files.length;
-    const done = files.filter(f => ['OK', 'FINALIZADO'].includes(f.EstadoArchivo)).length;
+    const done = files.filter(f => ['OK', 'FINALIZADO', 'CANCELADO'].includes(f.EstadoArchivo)).length;
     return { total, done, percent: total > 0 ? Math.round((done / total) * 100) : 0 };
   }, [files]);
 
@@ -339,6 +352,68 @@ const FilePrintControl = ({ areaCode }) => {
   };
 
   // --- ACTIONS HANDLERS ---
+  // --- FALLA ORDER DETECTION ---
+  const isFallaOrder = /\-F\d+$/.test(selectedOrder?.code || '');
+  const originalOrderCode = isFallaOrder ? selectedOrder.code.replace(/\-F\d+$/, '') : null;
+
+  const handleCorregirFalla = async () => {
+    if (!originalOrderCode) return;
+
+    // Step 1: Finalizar la orden -F antes de navegar
+    try {
+      setFinalizandoOrden(true);
+      const res = await fileControlService.completarOrden(selectedOrder.id);
+      if (!res.success) {
+        setToast({ visible: true, message: res.error || 'Error al finalizar la reposición', type: 'error' });
+        setFinalizandoOrden(false);
+        return;
+      }
+    } catch (e) {
+      console.error(e);
+      setToast({ visible: true, message: 'Error al finalizar la reposición', type: 'error' });
+      setFinalizandoOrden(false);
+      return;
+    } finally {
+      setFinalizandoOrden(false);
+    }
+
+    // Step 2: Navegar al lote de la orden original
+    try {
+      // Strategy 1: use getRelatedOrders (works regardless of order status)
+      const related = await fileControlService.getRelatedOrders(selectedOrder.id);
+      const original = (related || []).find(o =>
+        (o.CodigoOrden || o.code) === originalOrderCode
+      );
+
+      let rolloId = original?.RolloID || original?.rolloId || null;
+
+      // Strategy 2: search active orders if related didn't give us a rollo
+      if (!rolloId) {
+        const activeOrders = await fileControlService.getOrdenes(originalOrderCode, '', areaCode || 'DTF');
+        const found = activeOrders.find(o => o.CodigoOrden === originalOrderCode);
+        rolloId = found?.RolloID || null;
+      }
+
+      if (rolloId) {
+        const targetRollo = rollos.find(r => r.id === rolloId);
+        if (targetRollo) {
+          setPendingSelectCode(originalOrderCode);
+          setActiveRoll(targetRollo);
+          return;
+        }
+      }
+
+      // Strategy 3: no rollo found — clear filter and search by code
+      setPendingSelectCode(originalOrderCode);
+      setSearchTerm(originalOrderCode);
+      setActiveRoll(null);
+      setToast({ visible: true, message: `Buscando orden original ${originalOrderCode}...`, type: 'info' });
+    } catch (e) {
+      console.error(e);
+      setToast({ visible: true, message: 'Error buscando la orden original', type: 'error' });
+    }
+  };
+
   const handleFinalizarOrden = async () => {
     if (!selectedOrder || finalizandoOrden) return;
     setFinalizandoOrden(true);
@@ -433,23 +508,127 @@ const FilePrintControl = ({ areaCode }) => {
     setActionReason('');
     setFailureType('');
     setMetersToReprint('');
+    setReponerCompleto(false);
   };
 
   const closeModal = () => {
     setControlAction(null);
     setSelectedFileForAction(null);
+    setReponerCompleto(false);
+  };
+
+  const printFailureLabel = ({ order, file, tipoFalla, observacion }) => {
+    const printWindow = window.open('', '_blank', 'width=600,height=800');
+    if (!printWindow) return;
+    const orderCode = order?.code || order?.CodigoOrden || '---';
+    const client = order?.client || order?.Cliente || '---';
+    const material = file?.Material || file?.material || order?.material || '';
+    const ancho = parseFloat(file?.Ancho || 0).toFixed(2);
+    const alto = parseFloat(file?.Alto || 0).toFixed(2);
+    const fecha = new Date().toLocaleDateString('es-ES');
+
+    printWindow.document.write(`<!DOCTYPE html>
+<html>
+<head>
+  <title>Etiqueta de Falla</title>
+  <style>
+    @page { size: 10cm 15cm; margin: 0; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #fff; color: #000; }
+    .label-page {
+      width: 10cm; box-sizing: border-box;
+      padding: 12px; display: flex; flex-direction: column;
+      margin: 0 auto; background: white; min-height: 15cm;
+    }
+    .header { border-bottom: 3px solid #000; padding-bottom: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .header-left { flex: 1; min-width: 0; }
+    .header-right { text-align: right; min-width: 100px; }
+    .label-bold { font-weight: 900; font-size: 11px; text-transform: uppercase; color: #000; }
+    .value-text { font-size: 14px; font-weight: 800; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #000; }
+    .body-section { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 0; gap: 12px; }
+    .falla-word {
+      font-size: 88px; font-weight: 900; line-height: 1; letter-spacing: -2px;
+      background: #000; color: #fff;
+      width: 100%; text-align: center; padding: 8px 0;
+    }
+    .tipo-falla {
+      font-size: 20px; font-weight: 900; text-transform: uppercase; text-align: center;
+      border: 3px solid #000; padding: 6px 20px; width: 90%; box-sizing: border-box;
+    }
+    .obs-box {
+      font-size: 13px; font-weight: 600; text-align: center; color: #000;
+      width: 90%; line-height: 1.4; border-top: 1px solid #000; padding-top: 10px;
+    }
+    .footer { border-top: 3px solid #000; padding-top: 8px; margin-top: 8px; text-align: center; }
+    .order-num { font-size: 38px; font-weight: 900; display: inline-block; white-space: nowrap; color: #000; }
+    .dim-text { font-size: 12px; color: #000; margin-top: 2px; }
+    @media screen {
+      .label-page { border: 1px dashed #999; margin: 20px auto; width: 380px; }
+      body { background: #e0e0e0; padding-bottom: 40px; }
+    }
+    @media print { .no-print { display: none !important; } body { background: #fff; } }
+  </style>
+</head>
+<body>
+  <div class="no-print" style="position:sticky;top:0;z-index:100;padding:12px;text-align:center;background:#222;color:white;">
+    <button onclick="window.print()" style="padding:8px 24px;font-size:15px;cursor:pointer;background:#000;color:white;border:none;border-radius:6px;font-weight:bold;">🖨️ IMPRIMIR</button>
+  </div>
+  <div class="label-page">
+    <div class="header">
+      <div class="header-left">
+        <div class="label-bold">Cliente</div>
+        <div class="value-text">${client}</div>
+        ${material ? `<div class="label-bold" style="margin-top:4px;">Material</div><div class="value-text" style="font-size:13px;">${material}</div>` : ''}
+      </div>
+      <div class="header-right">
+        <div class="label-bold">Fecha</div>
+        <div class="value-text" style="font-size:13px;">${fecha}</div>
+        <div class="label-bold" style="margin-top:6px;">Medida</div>
+        <div class="value-text" style="font-size:13px;">${ancho} x ${alto} m</div>
+      </div>
+    </div>
+
+    <div class="body-section">
+      <div class="falla-word">FALLA</div>
+      ${tipoFalla ? `<div class="tipo-falla">${tipoFalla}</div>` : ''}
+      ${observacion ? `<div class="obs-box">${observacion}</div>` : ''}
+    </div>
+
+    <div class="footer">
+      <div class="order-num">${orderCode}</div>
+      <div class="dim-text">${material}</div>
+    </div>
+  </div>
+  <script>window.addEventListener('load', function() {
+    var el = document.querySelector('.order-num');
+    if (!el) return;
+    var maxW = el.parentElement.offsetWidth * 0.8;
+    var fs = 10;
+    el.style.fontSize = fs + 'px';
+    while (el.offsetWidth < maxW && fs < 200) { fs++; el.style.fontSize = fs + 'px'; }
+    while (el.offsetWidth > maxW && fs > 8) { fs--; el.style.fontSize = fs + 'px'; }
+    setTimeout(function() { window.print(); }, 800);
+  });</script>
+</body>
+</html>`);
+    printWindow.document.close();
   };
 
   const handleSubmitModal = async () => {
     if (!selectedFileForAction) return;
 
+    if (controlAction === 'FALLA' && !failureType) {
+      setToast({ visible: true, message: 'Seleccioná el tipo de falla antes de confirmar', type: 'error' });
+      return;
+    }
+
     const payload = {
       archivoId: selectedFileForAction.ArchivoID || selectedFileForAction.id,
-      estado: controlAction, // Correct field
+      estado: controlAction,
       motivo: actionReason,
       tipoFalla: failureType,
-      metrosReponer: metersToReprint, // Correct field
-      usuario: user?.usuario || user?.username || 'Sistema', // String username
+      metrosReponer: metersToReprint,
+      usuario: user?.usuario || user?.username || 'Sistema',
       isService: selectedFileForAction.isService
     };
 
@@ -457,14 +636,24 @@ const FilePrintControl = ({ areaCode }) => {
       const res = await fileControlService.controlarArchivo(payload);
       if (res.success) {
         setToast({ visible: true, message: 'Acción registrada correctamente', type: 'success' });
+        if (controlAction === 'FALLA') {
+          const fallaLabel = fallaTypes.find(f => f.FallaID === failureType)?.Titulo || failureType;
+          printFailureLabel({
+            order: selectedOrder,
+            file: selectedFileForAction,
+            tipoFalla: fallaLabel,
+            observacion: actionReason,
+          });
+        }
         refreshCurrentOrder();
         closeModal();
       } else {
-        alert("Error al registrar acción");
+        setToast({ visible: true, message: res.message || 'Error al registrar acción', type: 'error' });
       }
     } catch (e) {
       console.error(e);
-      alert("Error de conexión");
+      const msg = e?.response?.data?.message || e?.message || 'Error al registrar acción';
+      setToast({ visible: true, message: msg, type: 'error' });
     }
   };
 
@@ -731,21 +920,34 @@ const FilePrintControl = ({ areaCode }) => {
             {/* BOTTOM COMPLETION BUTTON - aparece cuando todos los archivos están listos */}
             {orderMetrics.done === orderMetrics.total && orderMetrics.total > 0 && selectedOrder.status !== 'PRONTO' && (
               <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom duration-500">
-                <button
-                  onClick={handleFinalizarOrden}
-                  disabled={finalizandoOrden}
-                  className="bg-brand-cyan text-white px-6 py-4 rounded-2xl shadow-2xl shadow-brand-cyan/40 flex items-center gap-4 hover:bg-cyan-600 active:scale-95 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {finalizandoOrden ? (
-                    <i className="fa-solid fa-circle-notch fa-spin text-2xl"></i>
-                  ) : (
-                    <i className="fa-solid fa-check-circle text-2xl"></i>
-                  )}
-                  <div>
-                    <div className="font-black text-lg">{finalizandoOrden ? 'FINALIZANDO...' : (orders.length > 0 && orders.every(o => o.controlled) && orders.every(o => (o.failures || 0) === 0) ? 'FINALIZAR LOTE COMPLETO' : 'FINALIZAR ORDEN')}</div>
-                    <div className="text-xs opacity-90">{orders.length > 0 && orders.every(o => o.controlled) && orders.every(o => (o.failures || 0) === 0) ? 'Finalizar todas las órdenes del lote a la vez' : 'Todos los archivos listos · Pulsar para cerrar'}</div>
-                  </div>
-                </button>
+                {isFallaOrder ? (
+                  <button
+                    onClick={handleCorregirFalla}
+                    className="bg-[#BD0C7E] text-white px-6 py-4 rounded-2xl shadow-2xl shadow-[#BD0C7E]/40 flex items-center gap-4 hover:bg-[#9a0a67] active:scale-95 transition-all"
+                  >
+                    <i className="fa-solid fa-rotate-left text-2xl"></i>
+                    <div>
+                      <div className="font-black text-lg">CORREGIR FALLA</div>
+                      <div className="text-xs opacity-90">Ir al lote con la orden original · {originalOrderCode}</div>
+                    </div>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleFinalizarOrden}
+                    disabled={finalizandoOrden}
+                    className="bg-brand-cyan text-white px-6 py-4 rounded-2xl shadow-2xl shadow-brand-cyan/40 flex items-center gap-4 hover:bg-cyan-600 active:scale-95 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    {finalizandoOrden ? (
+                      <i className="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+                    ) : (
+                      <i className="fa-solid fa-check-circle text-2xl"></i>
+                    )}
+                    <div>
+                      <div className="font-black text-lg">{finalizandoOrden ? 'FINALIZANDO...' : (orders.length > 0 && orders.every(o => o.controlled) && orders.every(o => (o.failures || 0) === 0) ? 'FINALIZAR LOTE COMPLETO' : 'FINALIZAR ORDEN')}</div>
+                      <div className="text-xs opacity-90">{orders.length > 0 && orders.every(o => o.controlled) && orders.every(o => (o.failures || 0) === 0) ? 'Finalizar todas las órdenes del lote a la vez' : 'Todos los archivos listos · Pulsar para cerrar'}</div>
+                    </div>
+                  </button>
+                )}
               </div>
             )}
 
@@ -767,8 +969,8 @@ const FilePrintControl = ({ areaCode }) => {
       {controlAction && (controlAction === 'FALLA' || controlAction === 'CANCELADO') && (
         <div className="fixed inset-0 z-[1400] bg-black/40  flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className={`px-6 py-4 border-b flex justify-between items-center ${controlAction === 'FALLA' ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-200'}`}>
-              <h3 className={`font-black text-lg ${controlAction === 'FALLA' ? 'text-red-600' : 'text-slate-600'}`}>
+            <div className={`px-6 py-4 border-b flex justify-between items-center ${controlAction === 'FALLA' ? 'bg-[#BD0C7E]/10 border-[#BD0C7E]/20' : 'bg-slate-50 border-slate-200'}`}>
+              <h3 className={`font-black text-lg ${controlAction === 'FALLA' ? 'text-[#BD0C7E]' : 'text-slate-600'}`}>
                 {controlAction === 'FALLA' ? 'REPORTAR FALLA DE IMPRESIÓN' : 'CANCELAR ARCHIVO'}
               </h3>
               <button onClick={closeModal} className="text-slate-400 hover:text-slate-600"><i className="fa-solid fa-xmark text-xl"></i></button>
@@ -780,7 +982,7 @@ const FilePrintControl = ({ areaCode }) => {
                   <div className="relative z-[1500]">
                     <Listbox value={failureType} onChange={setFailureType}>
                       <div className="relative">
-                        <ListboxButton className="relative w-full cursor-pointer rounded-xl bg-slate-50 py-3 pl-4 pr-10 text-left border border-slate-200 focus:outline-none focus-visible:border-red-400 sm:text-sm">
+                        <ListboxButton className="relative w-full cursor-pointer rounded-xl bg-slate-50 py-3 pl-4 pr-10 text-left border border-slate-200 focus:outline-none focus-visible:border-[#BD0C7E] sm:text-sm">
                           <span className={`block truncate font-medium ${failureType ? 'text-slate-700' : 'text-slate-400'}`}>
                             {failureType ? fallaTypes.find(f => f.FallaID === failureType)?.Titulo : 'Seleccione...'}
                           </span>
@@ -798,7 +1000,7 @@ const FilePrintControl = ({ areaCode }) => {
                             <ListboxOption
                               value=""
                               className={({ active }) =>
-                                `relative cursor-pointer select-none py-2.5 pl-10 pr-4 ${active ? 'bg-red-50 text-red-600' : 'text-slate-500'}`
+                                `relative cursor-pointer select-none py-2.5 pl-10 pr-4 ${active ? 'bg-[#BD0C7E]/10 text-[#BD0C7E]' : 'text-slate-500'}`
                               }
                             >
                               <span className="block truncate italic">Seleccione...</span>
@@ -807,7 +1009,7 @@ const FilePrintControl = ({ areaCode }) => {
                               <ListboxOption
                                 key={falla.FallaID}
                                 className={({ active }) =>
-                                  `relative cursor-pointer select-none py-2.5 pl-10 pr-4 ${active ? 'bg-red-50 text-red-600' : 'text-slate-700'}`
+                                  `relative cursor-pointer select-none py-2.5 pl-10 pr-4 ${active ? 'bg-[#BD0C7E]/10 text-[#BD0C7E]' : 'text-slate-700'}`
                                 }
                                 value={falla.FallaID}
                               >
@@ -817,7 +1019,7 @@ const FilePrintControl = ({ areaCode }) => {
                                       {falla.Titulo}
                                     </span>
                                     {selected ? (
-                                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-red-600">
+                                      <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-[#BD0C7E]">
                                         <Check className="h-4 w-4" aria-hidden="true" />
                                       </span>
                                     ) : null}
@@ -839,28 +1041,49 @@ const FilePrintControl = ({ areaCode }) => {
                 return (
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">
-                      Cantidad a Reponer (Metros) <span className="text-slate-400 font-normal normal-case">(Opcional)</span>
+                      Metros a Reponer
                     </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max={maxReponer ?? undefined}
-                      className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-red-400 font-medium text-sm text-slate-700"
-                      placeholder="Ej: 2.5"
-                      value={metersToReprint}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (maxReponer !== null && parseFloat(val) > maxReponer) {
-                          setMetersToReprint(maxReponer.toFixed(2));
-                        } else {
-                          setMetersToReprint(val);
-                        }
-                      }}
-                    />
-                    {maxReponer !== null && (
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={maxReponer ?? undefined}
+                        disabled={reponerCompleto}
+                        className={`flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-[#BD0C7E] font-medium text-sm text-slate-700 ${reponerCompleto ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        placeholder="Ej: 2.5"
+                        value={metersToReprint}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (maxReponer !== null && parseFloat(val) > maxReponer) {
+                            setMetersToReprint(maxReponer.toFixed(2));
+                          } else {
+                            setMetersToReprint(val);
+                          }
+                        }}
+                      />
+                      <label className="flex items-center gap-2 cursor-pointer shrink-0 select-none">
+                        <input
+                          type="checkbox"
+                          checked={reponerCompleto}
+                          onChange={(e) => {
+                            setReponerCompleto(e.target.checked);
+                            if (e.target.checked) {
+                              setMetersToReprint(fileAlto > 0 ? fileAlto.toFixed(2) : '');
+                            } else {
+                              setMetersToReprint('');
+                            }
+                          }}
+                          className="w-4 h-4 accent-[#BD0C7E] cursor-pointer"
+                        />
+                        <span className="text-xs font-semibold text-slate-600 whitespace-nowrap">
+                          Completo ({fileAlto > 0 ? fileAlto.toFixed(2) : '?'} m)
+                        </span>
+                      </label>
+                    </div>
+                    {maxReponer !== null && !reponerCompleto && (
                       <p className="text-xs text-slate-400 mt-1">
-                        Máximo: <span className="font-bold text-slate-500">{maxReponer.toFixed(2)} m</span> (largo del archivo: {fileAlto.toFixed(2)} m)
+                        Máximo: <span className="font-bold text-slate-500">{maxReponer.toFixed(2)} m</span>
                       </p>
                     )}
                   </div>
@@ -882,7 +1105,7 @@ const FilePrintControl = ({ areaCode }) => {
                 <button onClick={closeModal} className="flex-1 py-3 rounded-xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50 transition-colors">Cancelar</button>
                 <button
                   onClick={handleSubmitModal}
-                  className={`flex-1 py-3 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 ${controlAction === 'FALLA' ? 'bg-red-500 shadow-red-200 hover:bg-red-600' : 'bg-slate-700 shadow-slate-300 hover:bg-slate-800'}`}
+                  className={`flex-1 py-3 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 ${controlAction === 'FALLA' ? 'bg-[#BD0C7E] shadow-[#BD0C7E]/30 hover:bg-[#9a0a67]' : 'bg-slate-700 shadow-slate-300 hover:bg-slate-800'}`}
                 >
                   Confirmar
                 </button>

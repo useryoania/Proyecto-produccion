@@ -184,10 +184,14 @@ const FileControlCard = ({ file, refreshOrder, onAction }) => {
                             <div className="w-full h-full rounded-full bg-red-100 text-red-600 flex items-center justify-center">
                                 <i className="fa-solid fa-triangle-exclamation text-xl"></i>
                             </div>
+                        ) : isCancelled ? (
+                            <div className="w-full h-full rounded-full bg-zinc-100 text-zinc-400 flex items-center justify-center" title="Archivo cancelado">
+                                <i className="fa-solid fa-ban text-xl"></i>
+                            </div>
                         ) : (
                             <button
                                 onClick={handleIncrement}
-                                disabled={loading || isCancelled}
+                                disabled={loading}
                                 className={`w-full h-full rounded-full flex items-center justify-center shadow-sm transition-all active:scale-95 font-bold
                                     ${loading ? 'bg-zinc-100 text-zinc-400' : 'bg-brand-cyan hover:bg-[#005a7a] text-white shadow-brand-cyan/20'}
                                 `}

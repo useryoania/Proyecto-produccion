@@ -1370,10 +1370,14 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                 {/* Footer */}
                 <div className="mt-8">
                     <div className="bg-custom-dark text-white p-8 md:rounded-3xl rounded-none shadow-2xl shadow-black/30 flex flex-col md:flex-row items-center justify-between gap-8 border-y border-x-0 md:border-x border-zinc-700/50 -mx-4 md:mx-0">
-                        <div className="flex gap-10">
+                        <div className="flex gap-10 flex-wrap">
                             <div><p className="text-[11px] uppercase font-bold text-zinc-500">Servicio</p><p className="text-xl font-bold text-zinc-100">{serviceInfo?.label}</p></div>
                             <div><p className="text-[11px] uppercase font-bold text-zinc-500">Prioridad</p><p className={`text-xl font-bold ${urgency?.toLowerCase() === 'urgente' ? 'text-custom-magenta' : 'text-cyan-400'}`}>{urgency}</p></div>
                             <div><p className="text-[11px] uppercase font-bold text-zinc-500">Items (Total)</p><p className="text-2xl font-black text-zinc-100">{items.length}</p></div>
+                            <div><p className="text-[11px] uppercase font-bold text-zinc-500">Largo Total</p><p className="text-2xl font-black text-cyan-400">{items.reduce((acc, it) => {
+                                const h = it.printSettings?.finalHeightM || (it.file?.unit === 'meters' ? it.file?.height : (it.file?.height ? (it.file.height / 300) * 0.0254 : 0)) || 0;
+                                return acc + (h * (it.copies || 1));
+                            }, 0).toFixed(2)}m</p></div>
                         </div>
                         <CustomButton type="submit" variant="primary" className="w-full md:w-auto px-14 py-5 !bg-cyan-400 !text-zinc-900 hover:!bg-cyan-300 font-black text-lg rounded-2xl shadow-lg shadow-cyan-500/20" isLoading={loading} icon={Save}>Confirmar Pedido</CustomButton>
                     </div>

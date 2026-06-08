@@ -252,21 +252,6 @@ async function registrarPagoCompleto(opts) {
       logger.warn(`[PAGO-SVC] Asiento no generado: ${eA.message}`);
     }
 
-    // ── 8. Actualizar HandyTransactions / MercadoPagoTransactions ────────────
-    if (handyTxId) {
-      await transaction.request()
-        .input('txId',  sql.VarChar(100), handyTxId)
-        .input('PagId', sql.Int, pagoId)
-        .input('TcaId', sql.Int, tcaId)
-        .query(`UPDATE dbo.HandyTransactions SET PagIdPago=@PagId, TcaIdTransaccion=@TcaId WHERE TransactionId=@txId`);
-    }
-    if (mpTxId) {
-      await transaction.request()
-        .input('txId',  sql.VarChar(100), mpTxId)
-        .input('PagId', sql.Int, pagoId)
-        .input('TcaId', sql.Int, tcaId)
-        .query(`UPDATE dbo.MercadoPagoTransactions SET PagIdPago=@PagId, TcaIdTransaccion=@TcaId WHERE TransactionId=@txId`);
-    }
 
     await transaction.commit();
     logger.info(`[PAGO-SVC] ✅ Pago completo: TcaId=${tcaId} PagId=${pagoId} Imputado=${totalImputado.toFixed(2)} Retiro=${ordenRetiroId}`);

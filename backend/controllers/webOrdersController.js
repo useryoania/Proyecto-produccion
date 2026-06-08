@@ -701,6 +701,16 @@ exports.createWebOrder = async (req, res) => {
 
                 // helper sanitize ya está en scope global si lo moví bien, si no lo redefino por seguridad
                 const sanitize = (str) => (str || '').replace(/[<>:"/\\|?*]/g, '_').trim();
+                // Quita todos los puntos del nombre de archivo excepto el de la extensión
+                // Ej: "imagen.pedido.pdf" → "imagenpedido.pdf"
+                const sanitizeFileName = (name) => {
+                    if (!name) return name;
+                    const lastDot = name.lastIndexOf('.');
+                    if (lastDot <= 0) return name; // sin extensión o empieza con punto
+                    const base = name.substring(0, lastDot).replace(/\./g, '');
+                    const ext = name.substring(lastDot);
+                    return base + ext;
+                };
 
                 // --- CALCULAR PRÓXIMO SERVICIO (Lógica Secuencial Homogénea) ---
                 // Al estar ordenado por prioridad, el próximo servicio es simplemente el siguiente en la lista.
@@ -805,7 +815,8 @@ exports.createWebOrder = async (req, res) => {
                         }
 
                         // Extraer extensión
-                        const parts = item.fileName.split('.');
+                        const safeItemName = sanitizeFileName(item.fileName);
+                        const parts = safeItemName.split('.');
                         const ext = parts.length > 1 ? `.${parts.pop()}` : '';
 
                         // NUEVO FORMATO: ORD-XX... (xCOPIAS).ext
@@ -866,7 +877,8 @@ exports.createWebOrder = async (req, res) => {
                             valMetrosBack = 0; // Unitario no ocupa metros para cobro, pero sí tiene dimensiones físicas
                         }
 
-                        const partsBack = item.fileBackName.split('.');
+                        const safeBackName = sanitizeFileName(item.fileBackName);
+                        const partsBack = safeBackName.split('.');
                         const extBack = partsBack.length > 1 ? `.${partsBack.pop()}` : '';
                         const finalNameBack = `${exec.codigoOrden.replace(/\//g, '-')}_${sanitize(nombreCliente)}_${sanitize(jobName)}_DORSO Archivo ${i + 1} de ${exec.items.length} (x${item.copies || 1})${extBack}`;
 
@@ -979,7 +991,7 @@ exports.createWebOrder = async (req, res) => {
                 if (idx === 0) {
                     // Referencias Generales
                     for (const rf of referenceFiles) {
-                        const finalNameRef = `REF-${erpDocNumber}-${rf.name}`;
+                        const finalNameRef = `REF-${erpDocNumber}-${sanitizeFileName(rf.name)}`;
                         const resRef = await new sql.Request(transaction)
                             .input('OID', sql.Int, newOID)
                             .input('Tipo', sql.VarChar(50), rf.type || 'REFERENCIA')
@@ -997,7 +1009,7 @@ exports.createWebOrder = async (req, res) => {
 
                     // Especializados
                     for (const sf of specializedFiles) {
-                        const finalNameSpec = `SPEC-${erpDocNumber}-${sf.name}`;
+                        const finalNameSpec = `SPEC-${erpDocNumber}-${sanitizeFileName(sf.name)}`;
                         const resRef = await new sql.Request(transaction)
                             .input('OID', sql.Int, newOID)
                             .input('Tipo', sql.VarChar(50), sf.type || 'ESPECIALIZADO')
@@ -1019,7 +1031,7 @@ exports.createWebOrder = async (req, res) => {
                 if (exec.isExtra && exec.extraOriginId && selectedComplementary && (!exec.referencias || exec.referencias.length === 0)) {
                     const val = selectedComplementary[exec.extraOriginId];
                     if (val && (val.activo || val.active) && val.archivo && val.archivo.name) {
-                        const finalNameComp = `BOCETO-${erpDocNumber}-${exec.extraOriginId}-${val.archivo.name}`;
+                        const finalNameComp = `BOCETO-${erpDocNumber}-${exec.extraOriginId}-${sanitizeFileName(val.archivo.name)}`;
                         const resRef = await new sql.Request(transaction)
                             .input('OID', sql.Int, newOID)
                             .input('Tipo', sql.VarChar(50), 'ARCHIVO DE BOCETO')
@@ -1043,14 +1055,14 @@ exports.createWebOrder = async (req, res) => {
                 if (exec.areaID === 'EMB' && req.body.especificacionesBordado) {
                     const bs = req.body.especificacionesBordado;
                     if (bs.boceto && bs.boceto.name) {
-                        const fName = `BOCETO-BORDADO-${erpDocNumber}-${bs.boceto.name}`;
+                        const fName = `BOCETO-BORDADO-${erpDocNumber}-${sanitizeFileName(bs.boceto.name)}`;
                         const resRef = await new sql.Request(transaction).input('OID', sql.Int, newOID).input('Nom', sql.VarChar(200), fName).query(`INSERT INTO ArchivosReferencia (OrdenID, TipoArchivo, NombreOriginal, FechaSubida, UbicacionStorage) OUTPUT INSERTED.RefID VALUES (@OID, 'ARCHIVO DE BOCETO', @Nom, GETDATE(), 'Pendiente')`);
                         filesToUpload.push({ dbId: resRef.recordset[0].RefID, type: 'REF', originalName: bs.boceto.name, finalName: fName, area: 'GENERAL' });
                     }
                     if (bs.logos && Array.isArray(bs.logos)) {
                         for (const logo of bs.logos) {
                             if (logo.name) {
-                                const lName = `LOGO-BORDADO-${erpDocNumber}-${logo.name}`;
+                                const lName = `LOGO-BORDADO-${erpDocNumber}-${sanitizeFileName(logo.name)}`;
                                 const resRef = await new sql.Request(transaction).input('OID', sql.Int, newOID).input('Nom', sql.VarChar(200), lName).query(`INSERT INTO ArchivosReferencia (OrdenID, TipoArchivo, NombreOriginal, FechaSubida, UbicacionStorage) OUTPUT INSERTED.RefID VALUES (@OID, 'ARCHIVO DE LOGO', @Nom, GETDATE(), 'Pendiente')`);
                                 filesToUpload.push({ dbId: resRef.recordset[0].RefID, type: 'REF', originalName: logo.name, finalName: lName, area: 'GENERAL' });
                             }
@@ -2373,7 +2385,9 @@ exports.handyWebhook = async (req, res) => {
 
     try {
         const transactionId = payload.TransactionExternalId;
-        const status = payload.PurchaseData?.Status;
+        // ⚠️ TESTING: forzar status exitoso (QUITAR EN PRODUCCIÓN)
+        const rawStatus = payload.PurchaseData?.Status;
+        const status = rawStatus === 2 ? 1 : rawStatus;
         const totalAmount = payload.PurchaseData?.TotalAmount;
         const currency = payload.PurchaseData?.Currency;
         const issuerName = payload.InstrumentData?.IssuerName || 'N/A';

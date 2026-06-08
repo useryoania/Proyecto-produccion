@@ -965,13 +965,18 @@ exports.getRolloMetrics = async (req, res) => {
 
                     -- Contadores de Archivos
                     COUNT(AO.ArchivoID) as TotalFiles,
-                    SUM(CASE WHEN AO.EstadoArchivo IN ('OK', 'Finalizado') THEN 1 ELSE 0 END) as OKFiles,
+                    SUM(CASE WHEN AO.EstadoArchivo IN ('OK', 'Finalizado', 'CANCELADO', 'Cancelado') THEN 1 ELSE 0 END) as OKFiles,
                     SUM(CASE WHEN AO.EstadoArchivo IN ('FALLA', 'Falla') THEN 1 ELSE 0 END) as FailFiles,
                     
-                    -- Suma de Metros PLANIFICADOS (Total del Lote sumando magnitudes de ordenes)
-                    SUM(DISTINCT TRY_CAST(O.Magnitud AS DECIMAL(10,2))) as MetrosTotalesLote,
+                    -- Metros TOTALES del Lote: suma de metros reales de TODOS los archivos (base consistente)
+                    (
+                        SELECT SUM(ISNULL(AO3.Metros, 0) * ISNULL(AO3.Copias, 1))
+                        FROM dbo.ArchivosOrden AO3 WITH (NOLOCK)
+                        INNER JOIN dbo.Ordenes O3 WITH (NOLOCK) ON AO3.OrdenID = O3.OrdenID
+                        WHERE CAST(O3.RolloID AS VARCHAR(50)) = CAST(@RID AS VARCHAR(50))
+                    ) as MetrosTotalesLote,
                     
-                    -- Suma de Metros YA CONTROLADOS (revisados: OK, Falla o Cancelado)
+                    -- Metros YA CONTROLADOS (OK, Falla o Cancelado)
                     (
                         SELECT SUM(ISNULL(AO2.Metros, 0) * ISNULL(AO2.Copias, 1))
                         FROM dbo.ArchivosOrden AO2 WITH (NOLOCK)
