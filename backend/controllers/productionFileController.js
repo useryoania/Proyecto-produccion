@@ -80,9 +80,19 @@ AND(
 AND(
     @IsLabelMode = 1
     OR(
-        -- En la vista de CONTROL: la orden desaparece solo cuando fue finalizada (Pronto/Retenido),
-        -- no antes. El operario debe poder ver la orden aunque todos los archivos estén OK.
-        (${isControlView ? 1 : 0} = 1 AND O.Estado NOT IN ('Pronto', 'PRONTO', 'Retenido', 'RETENIDO'))
+        -- En la vista de CONTROL: la orden desaparece solo cuando fue finalizada (Pronto),
+        -- pero si está Retenida con una reposición (-F) activa, debe seguir visible para poder corregirla.
+        (${isControlView ? 1 : 0} = 1 AND (
+            O.Estado NOT IN ('Pronto', 'PRONTO', 'Retenido', 'RETENIDO')
+            OR (
+                O.Estado IN ('Retenido', 'RETENIDO')
+                AND EXISTS (
+                    SELECT 1 FROM dbo.Ordenes Repo
+                    WHERE Repo.CodigoOrden LIKE O.CodigoOrden + '-F%'
+                      AND Repo.Estado NOT IN ('Pronto', 'PRONTO', 'Finalizado', 'CANCELADO')
+                )
+            )
+        ))
         OR
         -- En otras vistas: comportamiento original (ocultar si no hay archivos pendientes)
         (${isControlView ? 0 : 1} = 1 AND
@@ -784,6 +794,10 @@ END
                               AND Estado IN ('Abierto', 'En Cola', 'En maquina', 'Pausado')
                         `);
                     logger.info(`[postControlArchivo] Lote ${rolloId} quedó vacío → cancelado automáticamente.`);
+                    // Notificar a todos los clientes que el lote fue cancelado
+                    if (req.app.get('socketio')) {
+                        req.app.get('socketio').emit('lotes:updated', { rolloId, action: 'cancelled' });
+                    }
                 }
             } catch (eCleanup) {
                 logger.error(`[postControlArchivo] Error en auto-cleanup lote ${rolloId}: ${eCleanup.message}`);
@@ -1457,26 +1471,45 @@ const getRelatedOrders = async (req, res) => {
         const { ordenId } = req.params;
         const pool = await getPool();
 
-        // Primero obtener el NoDocERP de la orden actual
+        // Primero obtener NoDocERP y CodigoOrden de la orden actual
         const currentRes = await pool.request()
             .input('ID', sql.Int, ordenId)
-            .query("SELECT NoDocERP FROM Ordenes WHERE OrdenID = @ID");
+            .query("SELECT NoDocERP, CodigoOrden FROM Ordenes WHERE OrdenID = @ID");
 
-        if (!currentRes.recordset.length || !currentRes.recordset[0].NoDocERP) {
-            return res.json([]); // No tiene NoDoc, no hay relacionadas
+        if (!currentRes.recordset.length) return res.json([]);
+
+        const { NoDocERP: noDoc, CodigoOrden: codigoActual } = currentRes.recordset[0];
+
+        let relatedRes;
+
+        if (noDoc) {
+            // Caso normal: buscar por NoDocERP
+            relatedRes = await pool.request()
+                .input('NoDoc', sql.VarChar, noDoc)
+                .input('ExcludeID', sql.Int, ordenId)
+                .query(`
+                    SELECT OrdenID, CodigoOrden, AreaID, DescripcionTrabajo, Estado, Material, RolloID
+                    FROM Ordenes
+                    WHERE NoDocERP = @NoDoc AND OrdenID != @ExcludeID
+                    ORDER BY OrdenID
+                `);
+        } else {
+            // Fallback: orden sin NoDocERP (ej. órdenes de prueba)
+            // Si es una orden -F, buscar la madre; si es madre, buscar sus -F
+            const isFalla = codigoActual.match(/-F\d+$/);
+            const baseCode = isFalla ? codigoActual.replace(/-F\d+$/, '') : codigoActual;
+
+            relatedRes = await pool.request()
+                .input('BaseCode', sql.NVarChar, baseCode)
+                .input('ExcludeID', sql.Int, ordenId)
+                .query(`
+                    SELECT OrdenID, CodigoOrden, AreaID, DescripcionTrabajo, Estado, Material, RolloID
+                    FROM Ordenes
+                    WHERE (CodigoOrden = @BaseCode OR CodigoOrden LIKE @BaseCode + '-F%')
+                      AND OrdenID != @ExcludeID
+                    ORDER BY OrdenID
+                `);
         }
-
-        const noDoc = currentRes.recordset[0].NoDocERP;
-
-        const relatedRes = await pool.request()
-            .input('NoDoc', sql.VarChar, noDoc)
-            .input('ExcludeID', sql.Int, ordenId)
-            .query(`
-                SELECT OrdenID, CodigoOrden, AreaID, DescripcionTrabajo, Estado, Material
-                FROM Ordenes 
-                WHERE NoDocERP = @NoDoc AND OrdenID != @ExcludeID
-                ORDER BY OrdenID
-            `);
 
         res.json(relatedRes.recordset);
 
@@ -1521,9 +1554,18 @@ async function completarOrden(req, res) {
             .query(`SELECT COUNT(*) as Fallas FROM ArchivosOrden WHERE OrdenID = @OID AND EstadoArchivo = 'FALLA'`);
         const tieneFallas = (fallaCheck.recordset[0]?.Fallas || 0) > 0;
 
+        // Verificar si es una orden de reposición (-F) y obtener código
+        const codigoRes = await new sql.Request(transaction)
+            .input('OID', sql.Int, ordenId)
+            .query("SELECT CodigoOrden FROM Ordenes WHERE OrdenID = @OID");
+        const codigoOrden = codigoRes.recordset[0]?.CodigoOrden || '';
+        const isFallaOrder = /-F\d+$/.test(codigoOrden);
+
         const nuevoEstado = tieneFallas ? 'Retenido' : 'Pronto';
         const nuevoEstadoArea = tieneFallas ? 'Retenido' : 'Pronto';
-        const estadoLogistica = tieneFallas ? 'Esperando Reposición' : 'Canasto Produccion';
+        const estadoLogistica = tieneFallas
+            ? 'Esperando Reposición'
+            : (isFallaOrder ? 'Canasto Reposiciones' : 'Canasto Produccion');
 
         // Actualizar la orden
         await new sql.Request(transaction)
@@ -1537,6 +1579,33 @@ async function completarOrden(req, res) {
         if (io) {
             io.emit('server:order_updated', { orderId: ordenId, status: nuevoEstado, timestamp: new Date() });
             io.emit('server:ordersUpdated', { count: 1 });
+        }
+
+        // Si es una orden -F completada sin fallas, liberar la madre
+        if (isFallaOrder && !tieneFallas) {
+            try {
+                const codigoMadre = codigoOrden.replace(/-F\d+$/, '');
+                const madreRes = await pool.request()
+                    .input('CodigoMadre', sql.NVarChar, codigoMadre)
+                    .query(`
+                        SELECT O.OrdenID,
+                               (SELECT COUNT(*) FROM ArchivosOrden WHERE OrdenID = O.OrdenID AND EstadoArchivo = 'FALLA') as FallasRestantes
+                        FROM Ordenes O
+                        WHERE O.CodigoOrden = @CodigoMadre
+                    `);
+                if (madreRes.recordset.length > 0) {
+                    const { OrdenID: madreId, FallasRestantes } = madreRes.recordset[0];
+                    if (FallasRestantes === 0) {
+                        await pool.request()
+                            .input('MID', sql.Int, madreId)
+                            .query(`UPDATE Ordenes SET Estado = 'Pronto', EstadoenArea = 'Pronto', EstadoLogistica = 'Canasto Produccion' WHERE OrdenID = @MID`);
+                        if (io) io.emit('server:order_updated', { orderId: madreId, status: 'Pronto' });
+                        logger.info(`[completarOrden] Madre ${codigoMadre} liberada → Pronto`);
+                    }
+                }
+            } catch (eMadre) {
+                logger.error(`[completarOrden] Error liberando madre: ${eMadre.message}`);
+            }
         }
 
         // Generar etiquetas si corresponde

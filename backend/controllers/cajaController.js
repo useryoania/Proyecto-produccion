@@ -1650,22 +1650,8 @@ const procesarPagoDeuda = async (req, res) => {
           logger.info(`[PAGO-DEUDA] OrdenRetiro ${oreId} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ estado ${nuevoEst}, PagId=${primerPagoId}`);
         }
 
-        // Vincular HandyTransactions si viene handyTxId
-        if (header.handyTxId) {
-          await new sql.Request(transaction)
-            .input('txId',  sql.VarChar(100), header.handyTxId)
-            .input('PagId', sql.Int, primerPagoId)
-            .input('TcaId', sql.Int, tcaIdPago)
-            .query(`UPDATE dbo.HandyTransactions SET PagIdPago=@PagId, TcaIdTransaccion=@TcaId WHERE TransactionId=@txId`);
-        }
-        // Vincular MercadoPagoTransactions si viene mpTxId
-        if (header.mpTxId) {
-          await new sql.Request(transaction)
-            .input('txId',  sql.VarChar(100), header.mpTxId)
-            .input('PagId', sql.Int, primerPagoId)
-            .input('TcaId', sql.Int, tcaIdPago)
-            .query(`UPDATE dbo.MercadoPagoTransactions SET PagIdPago=@PagId, TcaIdTransaccion=@TcaId WHERE TransactionId=@txId`);
-        }
+
+
       }
 
       await transaction.commit();

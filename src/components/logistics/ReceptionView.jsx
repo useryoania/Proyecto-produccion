@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import Swal from 'sweetalert2';
 import api from '../../services/api';
 import { socket } from '../../services/socketService';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -163,8 +164,18 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
 
                 // VALIDATIONS
                 if (data.Estado === 'ESPERANDO_RETIRO') {
-                    toast.warning('Remito sin validación de transporte');
-                    if (!confirm("⚠️ ALERTA DE SEGURIDAD\n\nEste remito aún figura como 'ESPERANDO RETIRO'.\nEl transportista o cadete NO ha escaneado/validado la salida de la mercadería.\n\n¿Desea FORZAR la recepción de todos modos?")) {
+                    const result = await Swal.fire({
+                        icon: 'warning',
+                        title: '⚠️ Alerta de Seguridad',
+                        html: `<p>Este remito aún figura como <strong>'ESPERANDO RETIRO'</strong>.</p><p style="margin-top:8px">El transportista o cadete <strong>NO ha escaneado/validado</strong> la salida de la mercadería.</p>`,
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, forzar recepción',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#d33',
+                        cancelButtonColor: '#6b7280',
+                        reverseButtons: true,
+                    });
+                    if (!result.isConfirmed) {
                         setRemitoCode('');
                         setLoading(false);
                         return;
@@ -173,7 +184,18 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
 
                 // AREA VALIDATION
                 if (currentArea && data.AreaDestinoID !== currentArea && currentArea !== 'ADMIN' && currentArea !== 'TODOS') {
-                    if (!confirm(`⛔ ALERTA DE AREA INCORRECTA\n\nEste remito está destinado a: ${data.AreaDestinoID}\nEstás recepcionando en: ${currentArea}\n\n¿Estás seguro que deseas recepcionarlo aquí?`)) {
+                    const result = await Swal.fire({
+                        icon: 'error',
+                        title: '⛔ Área Incorrecta',
+                        html: `<p>Este remito está destinado a: <strong>${data.AreaDestinoID}</strong></p><p style="margin-top:8px">Estás recepcionando en: <strong>${currentArea}</strong></p>`,
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, recepcionar aquí',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#d33',
+                        cancelButtonColor: '#6b7280',
+                        reverseButtons: true,
+                    });
+                    if (!result.isConfirmed) {
                         setRemitoCode('');
                         setLoading(false);
                         return;
@@ -286,9 +308,20 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
         }
     };
 
-    const confirmManualSelection = () => {
+    const confirmManualSelection = async () => {
         if (manualSelection.length === 0) return;
-        if (!confirm(`¿Confirmar recepción manual de ${manualSelection.length} bultos?`)) return;
+        const result = await Swal.fire({
+            icon: 'question',
+            title: 'Confirmar recepción manual',
+            text: `¿Confirmar recepción manual de ${manualSelection.length} bulto${manualSelection.length !== 1 ? 's' : ''}?`,
+            showCancelButton: true,
+            confirmButtonText: 'Sí, confirmar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#4f46e5',
+            cancelButtonColor: '#6b7280',
+            reverseButtons: true,
+        });
+        if (!result.isConfirmed) return;
 
         const payload = {
             envioId: loadedRemito.EnvioID,
@@ -298,18 +331,29 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
         batchReceiveMutation.mutate(payload);
     };
 
-    const handleMarkMissing = () => {
+    const handleMarkMissing = async () => {
         const unscanned = Object.values(itemMap).filter(i => !i.scanned);
         if (unscanned.length === 0) return;
 
-        if (confirm(`¿Cerrar recepción con FALTANTES?\n\nSe marcarán ${unscanned.length} bultos como PERDIDOS/EXTRAVIADOS.\nEsta acción es irreversible.`)) {
-            const payload = {
-                envioId: loadedRemito.EnvioID,
-                usuarioId: user?.id || 1,
-                itemsRecibidos: unscanned.map(i => ({ bultoId: i.BultoID, estado: 'PERDIDO' }))
-            };
-            batchReceiveMutation.mutate(payload);
-        }
+        const result = await Swal.fire({
+            icon: 'warning',
+            title: '¿Cerrar con faltantes?',
+            html: `Se marcarán <strong>${unscanned.length} bulto${unscanned.length !== 1 ? 's' : ''}</strong> como <strong>PERDIDOS/EXTRAVIADOS</strong>.<br><br>Esta acción es <strong>irreversible</strong>.`,
+            showCancelButton: true,
+            confirmButtonText: 'Sí, cerrar con faltantes',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#d33',
+            cancelButtonColor: '#6b7280',
+            reverseButtons: true,
+        });
+        if (!result.isConfirmed) return;
+
+        const payload = {
+            envioId: loadedRemito.EnvioID,
+            usuarioId: user?.id || 1,
+            itemsRecibidos: unscanned.map(i => ({ bultoId: i.BultoID, estado: 'PERDIDO' }))
+        };
+        batchReceiveMutation.mutate(payload);
     };
 
     const handleSync = async () => {

@@ -228,8 +228,13 @@ export const PrintSettingsPanel = ({
                         <div className="flex flex-col items-start cursor-help group flex-1">
                             <p className="font-medium text-zinc-300 text-sm">Impresión Estándar (1:1)</p>
                             <p className="text-xs mt-0.5 text-zinc-500">Se imprimirá tal cual el archivo.</p>
-                            <div className="mt-2 font-mono bg-brand-dark px-3 py-1.5 rounded text-[10px] border border-zinc-700 text-zinc-400 group-hover:bg-cyan-400/10 group-hover:border-cyan-500/30 group-hover:text-cyan-300 transition-colors">
-                                Dim: {originalWidthM.toFixed(2)}m x {originalHeightM.toFixed(2)}m
+                            <div className="mt-2 flex flex-wrap gap-2">
+                                <div className="font-mono bg-brand-dark px-3 py-1.5 rounded text-[10px] border border-zinc-700 text-zinc-400 group-hover:bg-cyan-400/10 group-hover:border-cyan-500/30 group-hover:text-cyan-300 transition-colors">
+                                    Dim: {originalWidthM.toFixed(2)}m x {originalHeightM.toFixed(2)}m
+                                </div>
+                                <div className="font-mono bg-brand-dark px-3 py-1.5 rounded text-[10px] border border-cyan-500/30 text-cyan-400">
+                                    Largo total: {(originalHeightM * copies).toFixed(2)}m
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -270,11 +275,16 @@ export const PrintSettingsPanel = ({
                                     />
                                 </div>
                                 {/* Reduced Final Width Display instead of Input */}
-                                {selectedScale && (
-                                    <div className="text-[10px] text-zinc-400 bg-zinc-900/60 p-2 rounded border border-zinc-700/50">
-                                        Ancho Final: <strong className="text-cyan-300">{(originalWidthM * (SCALE_TABLE.find(s => s.scale == parseInt(selectedScale))?.factor || 100) / 100).toFixed(2)}m</strong>
-                                    </div>
-                                )}
+                                {selectedScale && (() => {
+                                    const factor = (SCALE_TABLE.find(s => s.scale == parseInt(selectedScale))?.factor || 100) / 100;
+                                    const finalH = originalHeightM * factor;
+                                    return (
+                                        <div className="text-[10px] text-zinc-400 bg-zinc-900/60 p-2 rounded border border-zinc-700/50 flex flex-wrap gap-3">
+                                            <span>Ancho Final: <strong className="text-cyan-300">{(originalWidthM * factor).toFixed(2)}m</strong></span>
+                                            <span>Largo total: <strong className="text-cyan-400">{(finalH * copies).toFixed(2)}m</strong></span>
+                                        </div>
+                                    );
+                                })()}
                             </div>
 
                             {/* Info Visual Escala */}
