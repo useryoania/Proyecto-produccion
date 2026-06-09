@@ -363,6 +363,7 @@ async function registrarPagoCompleto(opts) {
         pagoId,
         usuarioId
       }).then(async (cfe) => {
+        if (cfe && cfe.docId) {
           // Usamos el helper centralizado para convertir ORDEN -> VTA_CAJA
           const contabilidadSvc = require('./contabilidadService');
           await contabilidadSvc.transformarMovimiento({
