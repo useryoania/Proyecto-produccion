@@ -398,7 +398,7 @@ const printEtiquetas = async (req, res) => {
                             <div class="label-bold" style="margin-top: 5px;">TRABAJO</div>
                             <div class="value-text" style="font-size: 14px; white-space: normal;">${label.DescripcionTrabajo || '-'}</div>
                             <div class="value-text" style="font-size: 14px; white-space: normal; margin-top: 2px;">${label.Material || '-'}</div>
-                            <div class="value-text" style="font-size: 16px; font-weight: 900; color: ${isUrgente ? 'red' : 'black'}; margin-top: 2px;">${label.Prioridad || 'NORMAL'}</div>
+                            <div class="value-text" style="font-size: 16px; font-weight: 900; color: black; margin-top: 2px;">${label.Prioridad || 'NORMAL'}</div>
                         </div>
                         <div class="header-right">
                             <div class="label-bold">ÁREA ORIGEN</div>

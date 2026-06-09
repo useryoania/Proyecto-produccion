@@ -268,7 +268,42 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
         }
     };
 
-    const handlePrint = () => window.print();
+    const handlePrint = () => {
+        const printContent = document.getElementById('print-detail') || document.getElementById('printable-area');
+        if (!printContent) {
+            window.print();
+            return;
+        }
+        const win = window.open('', '_blank', 'width=800,height=900');
+        if (win) {
+            win.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Imprimir Remito</title>
+                    <script src="https://cdn.tailwindcss.com"></script>
+                    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+                    <style>
+                        @page { margin: 10mm; }
+                        body { background: white; color: black; font-family: sans-serif; }
+                        #print-detail, #printable-area { width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; border: none !important; box-shadow: none !important; }
+                    </style>
+                </head>
+                <body>
+                    <div style="padding: 20px;">
+                        ${printContent.outerHTML}
+                    </div>
+                    <script>
+                        setTimeout(() => { window.print(); window.close(); }, 800);
+                    </script>
+                </body>
+                </html>
+            `);
+            win.document.close();
+        } else {
+            window.print();
+        }
+    };
 
     const handleDirectSubmit = () => {
         const destinations = Object.keys(dispatchGroups);
@@ -301,9 +336,18 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
             <div className="flex flex-col w-full max-w-3xl bg-slate-100 print:bg-white h-auto rounded-xl overflow-hidden shadow-sm">
                 <style>{`
                     @media print {
-                        body * { visibility: hidden; }
-                        #print-detail, #print-detail * { visibility: visible; }
-                        #print-detail { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; }
+                        body > *:not(#print-detail) { display: none !important; }
+                        #print-detail {
+                            position: fixed !important;
+                            inset: 0;
+                            z-index: 2147483647;
+                            background: white;
+                            overflow: visible;
+                            padding: 20px;
+                            display: block !important;
+                            visibility: visible !important;
+                        }
+                        #print-detail * { visibility: visible !important; }
                     }
                 `}</style>
 
@@ -593,7 +637,7 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
                                 visibility: visible;
                             }
                             #printable-area {
-                                position: absolute;
+                                position: fixed;
                                 left: 0;
                                 top: 0;
                                 width: 100%;

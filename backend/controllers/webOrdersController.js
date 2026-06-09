@@ -2409,9 +2409,7 @@ exports.handyWebhook = async (req, res) => {
 
     try {
         const transactionId = payload.TransactionExternalId;
-        // ⚠️ TESTING: forzar status exitoso (QUITAR EN PRODUCCIÓN)
-        const rawStatus = payload.PurchaseData?.Status;
-        const status = rawStatus === 2 ? 1 : rawStatus;
+        const status = payload.PurchaseData?.Status;
         const totalAmount = payload.PurchaseData?.TotalAmount;
         const currency = payload.PurchaseData?.Currency;
         const issuerName = payload.InstrumentData?.IssuerName || 'N/A';

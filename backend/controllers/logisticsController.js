@@ -614,14 +614,14 @@ exports.getIncomingRemitos = async (req, res) => {
             SELECT e.*, 
                    (SELECT COUNT(*) FROM Logistica_EnvioItems WHERE EnvioID = e.EnvioID) as TotalItems
             FROM Logistica_Envios e
-            WHERE e.Estado IN ('ESPERANDO_RETIRO', 'EN_TRANSITO', 'DESPACHADO')
+            WHERE e.Estado IN ('ESPERANDO_RETIRO', 'EN_TRANSITO', 'EN_TRANSITO_PARCIAL', 'DESPACHADO')
             ORDER BY e.FechaSalida DESC
         ` : `
             SELECT e.*, 
                    (SELECT COUNT(*) FROM Logistica_EnvioItems WHERE EnvioID = e.EnvioID) as TotalItems
             FROM Logistica_Envios e
             WHERE e.AreaDestinoID = @A
-            AND e.Estado IN ('ESPERANDO_RETIRO', 'EN_TRANSITO', 'DESPACHADO')
+            AND e.Estado IN ('ESPERANDO_RETIRO', 'EN_TRANSITO', 'EN_TRANSITO_PARCIAL', 'DESPACHADO')
             ORDER BY e.FechaSalida DESC
         `;
         
