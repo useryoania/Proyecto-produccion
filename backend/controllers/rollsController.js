@@ -13,10 +13,11 @@ exports.getNextRollName = async (req, res) => {
     try {
         const pool  = await getPool();
         const now   = new Date();
-        const yyyy  = now.getFullYear();
-        const mm    = String(now.getMonth() + 1).padStart(2, '0');
+        const monthNames = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+        const yy    = String(now.getFullYear()).slice(2);
+        const mmm   = monthNames[now.getMonth()];
         const dd    = String(now.getDate()).padStart(2, '0');
-        const datePrefix = `${yyyy}${mm}${dd}`;          // "20260603"
+        const datePrefix = `${yy}${mmm}${dd}`;                 // Ej: "26jun08"
         const areaLower  = area.toLowerCase();            // "df"
 
         // Contar lotes de esta área creados hoy (cualquier estado)

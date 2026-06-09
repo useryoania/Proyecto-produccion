@@ -37,10 +37,11 @@ const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders
                 .catch(() => {
                     // Fallback local si el endpoint falla
                     const now = new Date();
-                    const yyyy = now.getFullYear();
-                    const mm = String(now.getMonth() + 1).padStart(2, '0');
+                    const monthNames = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+                    const yy = String(now.getFullYear()).slice(2);
+                    const mmm = monthNames[now.getMonth()];
                     const dd = String(now.getDate()).padStart(2, '0');
-                    setRollName(`${yyyy}${mm}${dd}-${areaCode.toLowerCase()}1`);
+                    setRollName(`${yy}${mmm}${dd}-${areaCode.toLowerCase()}1`);
                 });
         }
     }, [isOpen, areaCode]);

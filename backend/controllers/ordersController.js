@@ -1523,7 +1523,13 @@ exports.cancelOrder = async (req, res) => {
         await transaction.begin();
 
         try {
-            // 1. Cancelar la Orden
+            // 1. Obtener NoDocERP antes de cancelar
+            const docRes = await new sql.Request(transaction)
+                .input('ID', sql.Int, orderId)
+                .query("SELECT NoDocERP FROM Ordenes WHERE OrdenID = @ID");
+            const noDocERP = docRes.recordset[0]?.NoDocERP;
+
+            // 1b. Cancelar la Orden
             await new sql.Request(transaction)
                 .input('ID', sql.Int, orderId)
                 .input('Obs', sql.NVarChar, obsText)
@@ -1581,6 +1587,18 @@ exports.cancelOrder = async (req, res) => {
                `);
 
             await transaction.commit();
+
+            try {
+                if (noDocERP) {
+                    const ERPSyncService = require('../services/erpSyncService');
+                    let userIdInt = 1;
+                    if (typeof usuario === 'object' && usuario.UsuarioID) userIdInt = parseInt(usuario.UsuarioID);
+                    else if (typeof usuario === 'number') userIdInt = usuario;
+                    await ERPSyncService.syncFinalOrderIntegration(noDocERP, userIdInt, safeUser, null, { skipDeposito: true });
+                }
+            } catch (errSync) {
+                logger.error("❌ Error recotizando orden tras cancelar:", errSync);
+            }
 
             // 3. Notificación SOCKET (Dual para compatibilidad)
             try {
@@ -1888,6 +1906,16 @@ exports.cancelRequest = async (req, res) => {
             await transaction.commit();
 
             try {
+                if (noDoc) {
+                    const ERPSyncService = require('../services/erpSyncService');
+                    let userIdInt = 1;
+                    if (typeof usuario === 'object' && usuario.UsuarioID) userIdInt = parseInt(usuario.UsuarioID);
+                    else if (typeof usuario === 'number') userIdInt = usuario;
+                    await ERPSyncService.syncFinalOrderIntegration(noDoc, userIdInt, safeUser, null, { skipDeposito: true });
+                }
+            } catch (syncErr) {
+                logger.error("❌ Error recotizando orden tras cancelar Request:", syncErr);
+            }            try {
                 const io = req.app.get('socketio');
                 if (io) io.emit('server:order_updated', { orderId });
             } catch (sockErr) { logger.error(sockErr); }
@@ -1955,12 +1983,18 @@ exports.cancelFile = async (req, res) => {
                     WHERE ArchivoID = @ID
                 `);
 
-            // 2. Obtener OrdenID
+            // 2. Obtener OrdenID y NoDocERP
             const orderRes = await new sql.Request(transaction)
                 .input('ID', sql.Int, fileId)
-                .query("SELECT OrdenID FROM ArchivosOrden WHERE ArchivoID = @ID");
+                .query(`
+                    SELECT A.OrdenID, O.NoDocERP 
+                    FROM ArchivosOrden A 
+                    INNER JOIN Ordenes O ON A.OrdenID = O.OrdenID 
+                    WHERE A.ArchivoID = @ID
+                `);
 
             const ordenId = orderRes.recordset[0]?.OrdenID;
+            const noDocERP = orderRes.recordset[0]?.NoDocERP;
             let orderCancelled = false;
 
             if (ordenId) {
@@ -2016,6 +2050,18 @@ exports.cancelFile = async (req, res) => {
             }
 
             await transaction.commit();
+
+            try {
+                if (noDocERP) {
+                    const ERPSyncService = require('../services/erpSyncService');
+                    let userIdInt = 1;
+                    if (typeof usuario === 'object' && usuario.UsuarioID) userIdInt = parseInt(usuario.UsuarioID);
+                    else if (typeof usuario === 'number') userIdInt = usuario;
+                    await ERPSyncService.syncFinalOrderIntegration(noDocERP, userIdInt, String(usuario || 'Sistema').substring(0,99), null, { skipDeposito: true });
+                }
+            } catch (errSync) {
+                logger.error("❌ Error recotizando orden tras cancelar Archivo:", errSync);
+            }
 
             // Socket fuera de transacción
             try {

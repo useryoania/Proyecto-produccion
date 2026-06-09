@@ -1,18 +1,93 @@
 import React, { useEffect, useState } from 'react';
 import { GlassCard } from '../pautas/GlassCard';
 import { apiClient } from '../api/apiClient';
-import { Loader2, RefreshCw, Layers, Trash2, Check, Settings, Circle, Ban, AlertTriangle } from 'lucide-react';
-
+import { Loader2, RefreshCw, Layers, Trash2, Check, Settings, Circle, Ban, AlertTriangle, Search, Factory } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ConfirmationModal } from '../pautas/ConfirmationModal';
+import { socket } from '../../services/socketService';
+
+const STATUS_CONFIG = {
+    zombie: {
+        color: 'text-red-400',
+        bg: 'bg-red-500/10',
+        border: 'border-red-500/30',
+        glow: 'shadow-[0_0_12px_rgba(239,68,68,0.2)]',
+        icon: <AlertTriangle size={15} />,
+        label: 'ERROR',
+        dot: 'bg-red-500',
+    },
+    pendiente: {
+        color: 'text-zinc-400',
+        bg: 'bg-zinc-500/10',
+        border: 'border-zinc-600/30',
+        glow: '',
+        icon: <Circle size={15} />,
+        label: 'PENDIENTE',
+        dot: 'bg-zinc-500',
+    },
+    cancelado: {
+        color: 'text-red-400/60',
+        bg: 'bg-red-500/5',
+        border: 'border-red-500/20',
+        glow: '',
+        icon: <Ban size={15} />,
+        label: 'CANCELADO',
+        dot: 'bg-red-500/50',
+    },
+    finalizado: {
+        color: 'text-emerald-400',
+        bg: 'bg-emerald-500/10',
+        border: 'border-emerald-500/30',
+        glow: 'shadow-[0_0_12px_rgba(52,211,153,0.15)]',
+        icon: <Check size={15} strokeWidth={3} />,
+        label: 'PRONTO',
+        dot: 'bg-emerald-400',
+    },
+    activo: {
+        color: 'text-brand-cyan',
+        bg: 'bg-brand-cyan/10',
+        border: 'border-brand-cyan/30',
+        glow: 'shadow-[0_0_12px_rgba(0,174,239,0.15)]',
+        icon: <Settings size={15} className="animate-[spin_3s_linear_infinite]" />,
+        label: 'EN PROCESO',
+        dot: 'bg-custom-cyan',
+    },
+};
+
+const getStatusKey = (status) => {
+    const s = (status || '').toUpperCase();
+    if (s.includes('CARGANDO')) return 'zombie';
+    if (s.includes('PENDIENTE')) return 'pendiente';
+    if (s.includes('CANCELADO')) return 'cancelado';
+    if (s.includes('FINALIZADO') || s.includes('PRONTO') || s.includes('ENTREGADO')) return 'finalizado';
+    return 'activo';
+};
+
+const getProjectStatus = (subOrders) => {
+    const statuses = subOrders.map(so => getStatusKey(so.Estado));
+    if (statuses.every(s => s === 'cancelado')) return 'cancelado';
+    if (statuses.every(s => s === 'finalizado')) return 'finalizado';
+    if (statuses.every(s => s === 'pendiente' || s === 'zombie')) return 'pendiente';
+    if (statuses.some(s => s === 'zombie')) return 'zombie';
+    if (statuses.some(s => s === 'activo')) return 'activo';
+    return 'pendiente';
+};
+
+const FILTER_TABS = [
+    { key: 'ALL', label: 'Todos' },
+    { key: 'ACTIVE', label: 'En Proceso' },
+    { key: 'PENDING', label: 'Pendientes' },
+    { key: 'DONE', label: 'Finalizados' },
+    { key: 'CANCELLED', label: 'Cancelados' },
+];
 
 export const FactoryView = () => {
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [areaMap, setAreaMap] = useState({});
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('ALL');
+    const [expandedProject, setExpandedProject] = useState(null);
 
-    // Modal State
     const [modal, setModal] = useState({
         isOpen: false,
         title: '',
@@ -34,29 +109,6 @@ export const FactoryView = () => {
         } finally {
             setLoading(false);
         }
-    };
-
-    const handleDelete = (id, isZombie, e) => {
-        e?.stopPropagation();
-        setModal({
-            isOpen: true,
-            title: isZombie ? "Eliminar Registro Incompleto" : "Cancelar Orden Pendiente",
-            message: isZombie
-                ? "Este registro tuvo un error de carga. Al eliminarlo, desaparecerá permanentemente. \n¿Deseas continuar?"
-                : "La orden pasará a estado 'Cancelado' pero permanecerá en tu historial. \n¿Estás seguro?",
-            type: isZombie ? 'danger' : 'warning',
-            confirmText: isZombie ? 'Eliminar' : 'Cancelar Orden',
-            onConfirm: async () => {
-                setLoading(true);
-                try {
-                    await apiClient.delete(`/web-orders/incomplete/${id}`);
-                    await fetchOrders();
-                } catch (err) {
-                    alert("Error: " + err.message);
-                    setLoading(false);
-                }
-            }
-        });
     };
 
     const handleDeleteBundle = (docId, e) => {
@@ -105,28 +157,31 @@ export const FactoryView = () => {
         });
     };
 
-    const fetchAreaMapping = async () => {
-        try {
-            const res = await apiClient.get('/web-orders/area-mapping');
-            if (res.success) {
-                // Nuevo formato: { names: {}, visibility: {} }
-                setAreaMap(res.data?.names || res.data || {});
-            }
-        } catch (error) {
-            console.error("Error fetching area mapping:", error);
-        }
-    };
-
-    const getAreaName = (code) => {
-        return areaMap[code] || code;
-    };
-
     useEffect(() => {
         fetchOrders();
-        fetchAreaMapping();
     }, []);
 
+    // ── Socket: actualización en tiempo real cuando cambia estado de una orden ──
+    useEffect(() => {
+        let debounceTimer = null;
 
+        const handleOrderUpdate = () => {
+            // Debounce: si llegan múltiples eventos seguidos, solo hacemos un fetch
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                fetchOrders();
+            }, 600);
+        };
+
+        socket.on('server:ordersUpdated', handleOrderUpdate);
+        socket.on('server:order_updated', handleOrderUpdate);
+
+        return () => {
+            clearTimeout(debounceTimer);
+            socket.off('server:ordersUpdated', handleOrderUpdate);
+            socket.off('server:order_updated', handleOrderUpdate);
+        };
+    }, []);
 
     // Agrupación por Proyecto
     const projects = {};
@@ -145,178 +200,263 @@ export const FactoryView = () => {
         if (order.Material) projects[docId].materials.add(order.Material);
     });
 
-    const getStatusStyle = (status) => {
-        const s = (status || '').toUpperCase();
-        if (s.includes('CARGANDO')) return { color: 'text-rose-500', bg: 'bg-rose-50', icon: <AlertTriangle size={14} />, label: 'INCOMPLETO' };
-        if (s.includes('PENDIENTE')) return { color: 'text-zinc-400', bg: 'bg-zinc-100', icon: <Circle size={14} />, label: 'PENDIENTE' };
-        if (s.includes('CANCELADO')) return { color: 'text-rose-600 line-through', bg: 'bg-rose-50', icon: <Ban size={14} />, label: 'CANCELADO' };
-        if (s.includes('FINALIZADO') || s.includes('PRONTO')) return { color: 'text-emerald-600', bg: 'bg-emerald-50', icon: <Check size={14} />, label: 'PRONTO' };
-        return { color: 'text-amber-500', bg: 'bg-amber-50', icon: <Settings size={14} className="animate-spin-slow" />, label: 'EN PROCESO' }; // Default Active
-    };
+    // Filtrado
+    const filteredProjects = Object.values(projects).filter(p => {
+        const searchLower = searchTerm.toLowerCase();
+        const matchesSearch = !searchTerm ||
+            p.id.toString().toLowerCase().includes(searchLower) ||
+            (p.title || '').toLowerCase().includes(searchLower);
+        if (!matchesSearch) return false;
 
-    if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-zinc-300" /></div>;
+        const projectStatus = getProjectStatus(p.subOrders);
+        if (statusFilter === 'ALL') return true;
+        if (statusFilter === 'CANCELLED') return projectStatus === 'cancelado';
+        if (statusFilter === 'DONE') return projectStatus === 'finalizado';
+        if (statusFilter === 'PENDING') return projectStatus === 'pendiente' || projectStatus === 'zombie';
+        if (statusFilter === 'ACTIVE') return projectStatus === 'activo';
+        return true;
+    });
+
+    // Count badges
+    const statusCounts = Object.values(projects).reduce((acc, p) => {
+        const s = getProjectStatus(p.subOrders);
+        if (s === 'activo') acc.ACTIVE++;
+        else if (s === 'pendiente' || s === 'zombie') acc.PENDING++;
+        else if (s === 'finalizado') acc.DONE++;
+        else if (s === 'cancelado') acc.CANCELLED++;
+        acc.ALL++;
+        return acc;
+    }, { ALL: 0, ACTIVE: 0, PENDING: 0, DONE: 0, CANCELLED: 0 });
+
+    if (loading) return (
+        <div className="flex flex-col items-center justify-center py-32 gap-4">
+            <div className="relative">
+                <div className="w-12 h-12 rounded-full border-2 border-zinc-700 border-t-custom-cyan animate-spin" />
+                <div className="absolute inset-0 w-12 h-12 rounded-full border-2 border-transparent border-b-brand-magenta animate-[spin_1.5s_linear_infinite_reverse] opacity-50" />
+            </div>
+            <p className="text-zinc-500 text-xs font-bold tracking-widest uppercase">Cargando pedidos...</p>
+        </div>
+    );
 
     return (
-        <div className="space-y-4 animate-fade-in p-2 md:p-6 pb-20 max-w-5xl mx-auto">
-            <div className="flex flex-col gap-4 mb-6">
-                <div className="flex justify-between items-center">
-                    <div>
-                        <h2 className="text-2xl font-black text-zinc-800 tracking-tighter">MIS PEDIDOS</h2>
-                        <p className="text-zinc-400 text-xs font-bold tracking-widest uppercase">Estado de Producción</p>
-                    </div>
-                    <button onClick={fetchOrders} className="p-2 bg-white border rounded-full hover:bg-zinc-50 shadow-sm transition-all"><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /></button>
-                </div>
+        <div className="space-y-6 animate-fade-in max-w-6xl mx-auto">
 
-                {/* Filters & Search */}
-                <div className="flex flex-col md:flex-row gap-4">
+            {/* ── Header ── */}
+            <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-brand-cyan/10 border border-brand-cyan/20 flex items-center justify-center shrink-0">
+                        <Factory size={18} className="text-custom-cyan" />
+                    </div>
+                    <div>
+                        <h2 className="text-xl sm:text-2xl font-black text-zinc-100 tracking-tight font-barlow leading-none">MIS PEDIDOS</h2>
+                        <p className="text-zinc-500 text-[10px] font-bold tracking-[0.2em] uppercase mt-0.5">Estado de Producción</p>
+                    </div>
+                </div>
+                <button
+                    onClick={fetchOrders}
+                    className="p-2.5 rounded-xl border border-zinc-700/50 bg-custom-dark hover:border-brand-cyan/30 hover:bg-brand-cyan/5 transition-all group shrink-0"
+                    title="Refrescar"
+                >
+                    <RefreshCw size={16} className="text-zinc-400 group-hover:text-custom-cyan transition-colors" />
+                </button>
+            </div>
+
+            {/* ── Search + Filters ── */}
+            <div className="glass-panel rounded-xl p-4 space-y-4">
+                <div className="relative">
+                    <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
                     <input
                         type="text"
-                        placeholder="Buscar por #ID, Título..."
-                        className="flex-1 p-2 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-zinc-200"
+                        placeholder="Buscar por #ID, título del trabajo..."
+                        className="w-full pl-11 pr-4 py-3 bg-zinc-800/50 border border-zinc-700/50 rounded-xl text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-brand-cyan/40 focus:bg-zinc-800 transition-all font-medium"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
-                    <div className="flex bg-zinc-100 p-1 rounded-lg overflow-x-auto">
-                        {['ALL', 'ACTIVE', 'PENDING', 'DONE', 'CANCELLED'].map(filter => (
-                            <button
-                                key={filter}
-                                onClick={() => setStatusFilter(filter)}
-                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all whitespace-nowrap ${statusFilter === filter ? 'bg-white shadow text-zinc-800' : 'text-zinc-400 hover:text-zinc-600'}`}
-                            >
-                                {filter === 'ALL' ? 'TODOS' : filter === 'ACTIVE' ? 'EN PROCESO' : filter === 'PENDING' ? 'PENDIENTES' : filter === 'DONE' ? 'FINALIZADOS' : 'CANCELADOS'}
-                            </button>
-                        ))}
-                    </div>
+                </div>
+
+                <div className="flex flex-wrap sm:flex-nowrap gap-1.5">
+                    {FILTER_TABS.map(tab => (
+                        <button
+                            key={tab.key}
+                            onClick={() => setStatusFilter(tab.key)}
+                            className={`
+                                relative flex items-center justify-center gap-2 px-2 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all flex-1 basis-[31%] sm:basis-0
+                                ${statusFilter === tab.key
+                                    ? 'bg-brand-cyan/15 text-custom-cyan border border-brand-cyan/30 shadow-[0_0_10px_rgba(0,174,239,0.1)]'
+                                    : 'text-zinc-500 border border-zinc-800 hover:border-zinc-600 hover:text-zinc-300'
+                                }
+                            `}
+                        >
+                            {tab.label}
+                            {statusCounts[tab.key] > 0 && (
+                                <span className={`
+                                    min-w-[18px] h-[18px] flex items-center justify-center rounded-full text-[10px] font-black px-1
+                                    ${statusFilter === tab.key
+                                        ? 'bg-custom-cyan/20 text-custom-cyan'
+                                        : 'bg-zinc-800 text-zinc-500'
+                                    }
+                                `}>
+                                    {statusCounts[tab.key]}
+                                </span>
+                            )}
+                        </button>
+                    ))}
                 </div>
             </div>
 
-            {Object.keys(projects).length === 0 ? (
-                <div className="p-10 text-center border-2 border-dashed border-zinc-200 rounded-2xl text-zinc-400">
-                    <Layers className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm font-medium">Sin pedidos activos</p>
+            {/* ── Orders List ── */}
+            {filteredProjects.length === 0 ? (
+                <div className="glass-panel rounded-xl p-16 flex flex-col items-center justify-center gap-3">
+                    <div className="w-16 h-16 rounded-2xl bg-zinc-800/50 border border-zinc-700/30 flex items-center justify-center mb-2">
+                        <Layers className="w-7 h-7 text-zinc-600" />
+                    </div>
+                    <p className="text-zinc-400 text-sm font-bold">Sin pedidos encontrados</p>
+                    <p className="text-zinc-600 text-xs">Los pedidos que realices aparecerán aquí</p>
                 </div>
             ) : (
-                <div className="grid gap-4">
-                    {Object.values(projects)
-                        .filter(p => {
-                            // Search Filter
-                            const searchLower = searchTerm.toLowerCase();
-                            const matchesSearch = p.id.toString().includes(searchLower) || p.title.toLowerCase().includes(searchLower);
-                            if (!matchesSearch) return false;
+                <div className="space-y-3">
+                    {filteredProjects.map((project, pIdx) => {
+                        const projectStatus = getProjectStatus(project.subOrders);
+                        const statusConf = STATUS_CONFIG[projectStatus];
+                        const hasZombies = project.subOrders.some(so => so.Estado === 'Cargando...');
+                        const allPending = project.subOrders.every(so => ['Pendiente', 'Cargando...'].includes(so.Estado));
+                        const materialList = Array.from(project.materials);
 
-                            // Status Filter
-                            const statusSet = new Set(p.subOrders.map(so => so.Estado));
-                            const isCancelled = [...statusSet].every(s => s === 'Cancelado');
-                            const isDone = [...statusSet].every(s => ['Finalizado', 'Pronto', 'Entregado'].some(done => s.includes(done)));
-                            const isPending = [...statusSet].every(s => ['Pendiente', 'Cargando...'].includes(s));
-                            const isActive = !isCancelled && !isDone && !isPending;
+                        return (
+                            <motion.div
+                                key={project.id}
+                                initial={{ opacity: 0, y: 12 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: pIdx * 0.04, duration: 0.3 }}
+                                className={`glass-panel rounded-xl overflow-hidden transition-all duration-300 hover:border-zinc-600/50 ${statusConf.glow}`}
+                            >
+                                <div className="px-4 py-4 sm:px-6 sm:py-5 space-y-2">
+                                    {/* Fila 1: dot + ID | material | estado + acción */}
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-2 h-2 rounded-full ${statusConf.dot} shrink-0 ${projectStatus === 'activo' ? 'animate-pulse' : ''}`} />
+                                        <span className="text-lg font-black text-zinc-100 tracking-tight font-barlow shrink-0">
+                                            {project.id}
+                                        </span>
 
-                            if (statusFilter === 'ALL') return true;
-                            if (statusFilter === 'CANCELLED') return isCancelled;
-                            if (statusFilter === 'DONE') return isDone;
-                            if (statusFilter === 'PENDING') return isPending;
-                            if (statusFilter === 'ACTIVE') return isActive;
-                            return true;
-                        })
-                        .map((project) => {
-                            const hasZombies = project.subOrders.some(so => so.Estado === 'Cargando...');
-                            const allPending = project.subOrders.every(so => ['Pendiente', 'Cargando...'].includes(so.Estado));
-                            const materialList = Array.from(project.materials).join(', ');
+                                        {/* Material en el medio */}
+                                        {materialList.length > 0 && (
+                                            <div className="flex items-center gap-1 flex-1 min-w-0">
+                                                <span className="text-[10px] text-zinc-400 bg-zinc-800/80 border border-zinc-700/50 px-2 py-0.5 rounded font-bold uppercase tracking-wide truncate">
+                                                    {materialList[0]}
+                                                </span>
+                                                {materialList.length > 1 && (
+                                                    <span className="text-[10px] text-zinc-500 font-bold shrink-0">+{materialList.length - 1}</span>
+                                                )}
+                                            </div>
+                                        )}
+                                        {materialList.length === 0 && <div className="flex-1" />}
 
-                            return (
-                                <div key={project.id} className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden flex flex-col md:flex-row min-h-[140px]">
-
-                                    {/* Left: Info Principal (White Background) - Fixed Width */}
-                                    <div className="p-6 md:w-80 border-b md:border-b-0 md:border-r border-zinc-100 flex flex-col justify-center relative bg-white z-10 shrink-0">
-                                        <div className="flex items-baseline gap-2 mb-2">
-                                            <span className="text-2xl font-black text-zinc-800 tracking-tighter">ORD-{project.id}</span>
-                                            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
-                                                {new Date(project.date).toLocaleString('es-ES', {
-                                                    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
-                                                })}
+                                        {/* Estado + acción a la derecha */}
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${statusConf.bg} ${statusConf.color} ${statusConf.border} border`}>
+                                                {statusConf.icon}
+                                                {statusConf.label}
                                             </span>
-                                        </div>
-                                        <h3 className="text-sm font-bold text-zinc-700 leading-tight mb-3">{project.title}</h3>
-
-                                        {/* Material List Vertical */}
-                                        <div className="flex flex-col gap-1 max-h-[100px] overflow-y-auto scrollbar-hide">
-                                            {Array.from(project.materials).map((mat, i) => (
-                                                <div key={i} className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider truncate border-l-2 border-zinc-200 pl-2 py-0.5">
-                                                    {mat}
-                                                </div>
-                                            ))}
-                                            {project.materials.size === 0 && (
-                                                <span className="text-[10px] text-zinc-300 font-bold uppercase italic">Sin material</span>
+                                            {(hasZombies || allPending) && (
+                                                hasZombies ? (
+                                                    <button onClick={(e) => handleDeleteBundle(project.id, e)} className="p-1.5 rounded-lg text-red-400 border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 transition-all" title="Eliminar error">
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                ) : (
+                                                    <button onClick={(e) => handleCancelProject(project.subOrders, e)} className="p-1.5 rounded-lg text-zinc-400 border border-zinc-700/50 hover:text-red-400 hover:border-red-500/30 transition-all" title="Cancelar">
+                                                        <Ban size={12} />
+                                                    </button>
+                                                )
                                             )}
                                         </div>
-
-                                        {hasZombies ? (
-                                            <button onClick={(e) => handleDeleteBundle(project.id, e)} className="mt-4 w-fit text-[9px] font-black text-rose-600 hover:bg-rose-50 flex items-center gap-2 border border-rose-100 px-3 py-1.5 rounded-full transition-all">
-                                                <Trash2 size={10} /> ELIMINAR ERROR
-                                            </button>
-                                        ) : allPending ? (
-                                            <button onClick={(e) => handleCancelProject(project.subOrders, e)} className="mt-4 w-fit text-[9px] font-black text-zinc-400 hover:text-rose-600 hover:bg-rose-50 flex items-center gap-2 border border-zinc-100 hover:border-rose-100 px-3 py-1.5 rounded-full transition-all">
-                                                <Ban size={10} /> CANCELAR PEDIDO
-                                            </button>
-                                        ) : null}
                                     </div>
 
-                                    {/* Right: Stepper (Subtle Gray Background) */}
-                                    <div className="flex-1 bg-zinc-50/50 p-6 flex items-center overflow-x-auto scrollbar-hide">
-                                        <div className="flex items-start gap-0 min-w-max mx-auto md:mx-0">
-                                            {project.subOrders.sort((a, b) => (a.CodigoOrden > b.CodigoOrden ? 1 : -1)).map((so, idx, arr) => {
-                                                const style = getStatusStyle(so.Estado);
-                                                const isZombie = so.Estado === 'Cargando...';
-                                                const isPending = so.Estado === 'Pendiente';
-
-                                                // Determine Connector Color
-                                                const isDone = so.Estado.toLowerCase().includes('finalizado') || so.Estado.toLowerCase().includes('pronto') || so.Estado.toLowerCase().includes('entregado');
-                                                const connectorColor = isDone ? 'bg-emerald-400' : 'bg-zinc-200';
-
-                                                return (
-                                                    <React.Fragment key={so.OrdenID}>
-                                                        <div className="flex flex-col items-center relative min-w-[120px] group">
-
-                                                            {/* Status Circle */}
-                                                            <div
-                                                                className={`w-10 h-10 rounded-full flex items-center justify-center border-[3px] transition-all z-10 mb-2 bg-white ${hasZombies && isZombie ? 'border-rose-200 animate-pulse' : 'border-zinc-200 shadow-sm'}`}
-                                                            >
-                                                                <div className={style.color}>{style.icon}</div>
-
-                                                                {(isZombie || isPending) && (
-                                                                    <button
-                                                                        onClick={(e) => handleDelete(so.OrdenID, isZombie, e)}
-                                                                        className="absolute -top-2 -right-2 bg-white shadow-sm border border-zinc-200 rounded-full p-1 text-zinc-400 hover:text-rose-500 hover:scale-110 transition-all z-20"
-                                                                    >
-                                                                        <Trash2 size={10} />
-                                                                    </button>
-                                                                )}
-                                                            </div>
-
-                                                            {/* Labels */}
-                                                            <div className="text-center px-1">
-                                                                <div className="text-[10px] font-black text-zinc-700 uppercase tracking-tight leading-tight mb-1">{getAreaName(so.AreaID)}</div>
-                                                                <div className={`text-[9px] font-bold uppercase tracking-wider ${style.color.replace('line-through', '')}`}>
-                                                                    {so.Estado === 'Cargando...' ? 'ERROR' : so.Estado}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Connector */}
-                                                        {idx < arr.length - 1 && (
-                                                            <div className="flex-1 self-start mt-5 -mx-6 z-0 min-w-[40px]">
-                                                                <div className={`h-[3px] w-full rounded-full ${connectorColor}`}></div>
-                                                            </div>
-                                                        )}
-                                                    </React.Fragment>
-                                                );
+                                    {/* Fila 2: descripción (izq) + fecha (der) */}
+                                    <div className="flex items-baseline justify-between gap-3">
+                                        <p className="text-sm text-zinc-300 font-semibold truncate">
+                                            {project.title || 'Sin descripción'}
+                                        </p>
+                                        <span className="text-[11px] text-zinc-500 font-medium shrink-0">
+                                            {new Date(project.date).toLocaleString('es-ES', {
+                                                day: '2-digit', month: 'short', year: 'numeric'
                                             })}
-                                        </div>
+                                        </span>
                                     </div>
-
                                 </div>
-                            );
-                        })}
+
+                                {/* Toggle pipeline */}
+                                <button
+                                    onClick={() => setExpandedProject(expandedProject === project.id ? null : project.id)}
+                                    className="w-full flex items-center justify-center gap-1.5 py-2 border-t border-zinc-800/60 text-[10px] font-bold text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30 transition-all"
+                                >
+                                    {expandedProject === project.id
+                                        ? <><span>OCULTAR ETAPAS</span><span className="text-[10px]">▲</span></>
+                                        : <><span>VER ETAPAS</span><span className="text-[10px]">▼</span></>}
+                                </button>
+
+                                <AnimatePresence initial={false}>
+                                    {expandedProject === project.id && (
+                                        <motion.div
+                                            key="pipeline"
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: 'auto', opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            transition={{ duration: 0.25, ease: 'easeInOut' }}
+                                            className="overflow-hidden border-t border-zinc-800/60 bg-zinc-900/20"
+                                        >
+                                            <div className="px-4 py-4 overflow-x-auto scrollbar-hide">
+                                                <div className="flex justify-center min-w-full">
+                                                <div className="inline-flex items-center gap-0">
+                                                    {(() => {
+                                                        const originalOrders = project.subOrders
+                                                            .filter(so => !(so.CodigoOrden || '').toUpperCase().includes('-F'))
+                                                            .sort((a, b) => (a.CodigoOrden > b.CodigoOrden ? 1 : -1));
+
+                                                        return originalOrders.map((so, idx, arr) => {
+                                                            const sKey = getStatusKey(so.Estado);
+                                                            const sConf = STATUS_CONFIG[sKey];
+                                                            const isDone = sKey === 'finalizado';
+                                                            const isZombie = so.Estado === 'Cargando...';
+
+                                                            return (
+                                                                <React.Fragment key={so.OrdenID}>
+                                                                    <div className="flex flex-col items-center min-w-[90px]">
+                                                                        <div className={`
+                                                                            w-9 h-9 rounded-full flex items-center justify-center border-2
+                                                                            ${sConf.border} ${sConf.bg} transition-all mb-1.5
+                                                                            ${isZombie ? 'animate-pulse' : ''}
+                                                                            ${isDone ? 'shadow-[0_0_12px_rgba(52,211,153,0.2)]' : ''}
+                                                                            ${sKey === 'activo' ? 'shadow-[0_0_12px_rgba(0,174,239,0.15)]' : ''}
+                                                                        `}>
+                                                                            <span className={sConf.color}>{sConf.icon}</span>
+                                                                        </div>
+                                                                        <div className="text-center">
+                                                                            <div className="text-[10px] font-black text-zinc-300 uppercase tracking-tight leading-tight">
+                                                                                {so.AreaID || '—'}
+                                                                            </div>
+                                                                            <div className={`text-[9px] font-bold uppercase tracking-wider ${sConf.color}`}>
+                                                                                {isZombie ? 'ERROR' : so.Estado}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                    {idx < arr.length - 1 && (
+                                                                        <div className="flex-1 self-start mt-[18px] -mx-2 min-w-[20px]">
+                                                                            <div className={`h-[2px] w-full rounded-full ${isDone ? 'bg-emerald-500/40' : 'bg-zinc-700/50'}`} />
+                                                                        </div>
+                                                                    )}
+                                                                </React.Fragment>
+                                                            );
+                                                        });
+                                                    })()}
+                                                </div>
+                                                </div>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </motion.div>
+                        );
+                    })}
                 </div>
             )}
 

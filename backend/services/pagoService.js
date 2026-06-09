@@ -352,18 +352,6 @@ async function registrarPagoCompleto(opts) {
         if (cfe && cfe.docId) {
           const { getPool } = require('../config/db');
           const poolAsync = await getPool();
-          // Convertimos la ORDEN fantasma en VTA_CAJA para que el cliente vea la factura en su estado de cuenta
-          await poolAsync.request()
-            .input('docId', sql.Int, cfe.docId)
-            .query(`
-              UPDATE dbo.MovimientosCuenta
-              SET MovTipo = 'VTA_CAJA',
-                  DocIdDocumento = @docId,
-                  MovConcepto = 'Factura Web ' + '${cfe.serie}-${cfe.numero}',
-                  MovFecha = GETDATE()
-              WHERE OrdIdOrden IN (${ordIds.join(',')})
-                AND MovTipo = 'ORDEN'
-            `);
           // Ligamos el pago al documento de la factura
           await poolAsync.request()
             .input('docId', sql.Int, cfe.docId)
@@ -371,7 +359,7 @@ async function registrarPagoCompleto(opts) {
             .query(`
               UPDATE dbo.MovimientosCuenta
               SET DocIdDocumento = @docId
-              WHERE PagIdPago = @pagoId AND MovTipo = 'PAGO'
+              WHERE PagIdPago = @pagoId AND MovTipo IN ('PAGO', 'COBRO_CTA')
             `);
         }
       }).catch(e => logger.error(`[PAGO-SVC] Error generando CFE tras pago ${pagoId}: ${e.message}`));

@@ -82,8 +82,15 @@ AND(
     OR(
         -- En la vista de CONTROL: la orden desaparece solo cuando fue finalizada (Pronto),
         -- pero si está Retenida con una reposición (-F) activa, debe seguir visible para poder corregirla.
+        -- EXCEPCIÓN: si se seleccionó un lote específico, las 'Pronto' de ESE lote siguen visibles
+        -- para que al corregir una falla la orden madre no desaparezca.
         (${isControlView ? 1 : 0} = 1 AND (
             O.Estado NOT IN ('Pronto', 'PRONTO', 'Retenido', 'RETENIDO')
+            OR (
+                O.Estado IN ('Pronto', 'PRONTO')
+                AND @RolloID IS NOT NULL AND @RolloID <> '' AND @RolloID <> 'todo'
+                AND CAST(O.RolloID AS NVARCHAR(50)) = @RolloID
+            )
             OR (
                 O.Estado IN ('Retenido', 'RETENIDO')
                 AND EXISTS (
@@ -1581,7 +1588,9 @@ async function completarOrden(req, res) {
             io.emit('server:ordersUpdated', { count: 1 });
         }
 
-        // Si es una orden -F completada sin fallas, liberar la madre
+        // Si es una orden -F completada sin fallas, desbloquear la madre (NO auto-finalizar).
+        // La madre vuelve al lote de Control como "controlada" para que el operador
+        // pueda verificarla y finalizar el lote completo manualmente.
         if (isFallaOrder && !tieneFallas) {
             try {
                 const codigoMadre = codigoOrden.replace(/-F\d+$/, '');
@@ -1596,15 +1605,17 @@ async function completarOrden(req, res) {
                 if (madreRes.recordset.length > 0) {
                     const { OrdenID: madreId, FallasRestantes } = madreRes.recordset[0];
                     if (FallasRestantes === 0) {
+                        // Solo desbloquear: Retenido → Pendiente (vuelve al lote de Control)
+                        // El operador la finalizará manualmente junto con el resto del lote.
                         await pool.request()
                             .input('MID', sql.Int, madreId)
-                            .query(`UPDATE Ordenes SET Estado = 'Pronto', EstadoenArea = 'Pronto', EstadoLogistica = 'Canasto Produccion' WHERE OrdenID = @MID`);
-                        if (io) io.emit('server:order_updated', { orderId: madreId, status: 'Pronto' });
-                        logger.info(`[completarOrden] Madre ${codigoMadre} liberada → Pronto`);
+                            .query(`UPDATE Ordenes SET Estado = 'Pendiente', EstadoenArea = 'Pendiente' WHERE OrdenID = @MID AND Estado IN ('Retenido', 'RETENIDO')`);
+                        if (io) io.emit('server:order_updated', { orderId: madreId, status: 'Pendiente' });
+                        logger.info(`[completarOrden] Madre ${codigoMadre} desbloqueada → Pendiente (esperando finalización manual en lote)`);
                     }
                 }
             } catch (eMadre) {
-                logger.error(`[completarOrden] Error liberando madre: ${eMadre.message}`);
+                logger.error(`[completarOrden] Error desbloqueando madre: ${eMadre.message}`);
             }
         }
 

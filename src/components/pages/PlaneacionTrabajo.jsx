@@ -17,6 +17,7 @@ import { Layers, Printer, Plus } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { motion } from 'framer-motion';
 import { Listbox, Transition } from '@headlessui/react';
+import { socket } from '../../services/socketService';
 
 const PlaneacionTrabajo = ({ AreaID }) => {
     const { user } = useAuth();
@@ -215,6 +216,19 @@ const PlaneacionTrabajo = ({ AreaID }) => {
         refetchRolls();
         refetchProd();
     };
+
+    // Listeners para actualizaciones en tiempo real
+    useEffect(() => {
+        const handleUpdate = () => refreshBoard();
+        socket.on('server:order_updated', handleUpdate);
+        socket.on('server:ordersUpdated', handleUpdate);
+        socket.on('lotes:updated', handleUpdate);
+        return () => {
+            socket.off('server:order_updated', handleUpdate);
+            socket.off('server:ordersUpdated', handleUpdate);
+            socket.off('lotes:updated', handleUpdate);
+        };
+    }, [refetchRolls, refetchProd]);
 
     // HANDLERS
     const handleToggleOrder = (orderId, isSelected) => {

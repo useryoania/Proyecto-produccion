@@ -1229,22 +1229,46 @@ exports.getClientOrders = async (req, res) => {
         const result = await pool.request()
             .input('cod', sql.Int, codCliente)
             .query(`
-                SELECT TOP 50
-                    o.OrdIdOrden AS OrdenID,
-                    o.OrdCodigoOrden AS CodigoOrden,
-                    o.OrdNombreTrabajo AS DescripcionTrabajo,
-                    art.Descripcion AS Material,
-                    o.OrdFechaEstadoActual AS FechaIngreso,
-                    e.EOrNombreEstado AS Estado,
-                    o.OrdCostoFinal AS Total,
-                    m.MonSimbolo AS Moneda
-                FROM OrdenesDeposito o WITH(NOLOCK)
-                INNER JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
-                LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
-                LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
-                LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = o.ProIdProducto
-                WHERE c.CodCliente = @cod
-                ORDER BY o.OrdFechaEstadoActual DESC
+                SELECT TOP 100 * FROM (
+                    -- Órdenes web (tabla interna Ordenes)
+                    SELECT
+                        o.OrdenID       AS OrdenID,
+                        o.CodigoOrden   AS CodigoOrden,
+                        o.NoDocERP      AS NoDocERP,
+                        o.DescripcionTrabajo AS DescripcionTrabajo,
+                        o.Material      AS Material,
+                        o.FechaIngreso  AS FechaIngreso,
+                        o.Estado        AS Estado,
+                        o.AreaID        AS AreaID,
+                        NULL            AS Total,
+                        NULL            AS Moneda,
+                        'WEB'           AS Origen
+                    FROM Ordenes o WITH(NOLOCK)
+                    WHERE o.CodCliente = @cod
+
+                    UNION ALL
+
+                    -- Órdenes ERP (tabla OrdenesDeposito)
+                    SELECT
+                        o.OrdIdOrden        AS OrdenID,
+                        o.OrdCodigoOrden    AS CodigoOrden,
+                        o.OrdCodigoOrden    AS NoDocERP,
+                        o.OrdNombreTrabajo  AS DescripcionTrabajo,
+                        art.Descripcion     AS Material,
+                        o.OrdFechaEstadoActual AS FechaIngreso,
+                        e.EOrNombreEstado   AS Estado,
+                        NULL                AS AreaID,
+                        o.OrdCostoFinal     AS Total,
+                        m.MonSimbolo        AS Moneda,
+                        'ERP'               AS Origen
+                    FROM OrdenesDeposito o WITH(NOLOCK)
+                    INNER JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+                    LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
+                    LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
+                    LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = o.ProIdProducto
+                    WHERE c.CodCliente = @cod
+                ) combined
+                ORDER BY combined.FechaIngreso DESC
             `);
 
         res.json({ success: true, data: result.recordset });

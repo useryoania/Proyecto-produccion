@@ -53,7 +53,9 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
     useEffect(() => {
         if (cancelModalOpen) {
             fileControlService.getMotivosCancelacion().then(res => {
-                if (Array.isArray(res)) setMotivosOptions(res);
+                if (Array.isArray(res)) {
+                    setMotivosOptions([...res, { MotivoID: 'otros', Titulo: 'Otros' }]);
+                }
             }).catch(err => console.error(err));
         } else {
             setSelectedMotivo(null);
@@ -478,16 +480,26 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
             return;
         }
 
+        if (selectedMotivo?.MotivoID === 'otros' && !cancelDetails.trim()) {
+            toast.error("Por favor, especifique el motivo de cancelación.");
+            return;
+        }
+
         const user = JSON.parse(localStorage.getItem('user')) || {};
         const safeUser = user.id || user.UsuarioID || user.userId || 1;
 
-        const combinedReason = selectedMotivo 
-            ? `${selectedMotivo.Titulo}${cancelDetails.trim() ? ' - ' + cancelDetails.trim() : ''}`
-            : cancelDetails.trim();
+        const isOtros = selectedMotivo?.MotivoID === 'otros';
+        const finalMotivoId = isOtros ? null : (selectedMotivo ? selectedMotivo.MotivoID : null);
+
+        const combinedReason = isOtros
+            ? `Otros - ${cancelDetails.trim()}`
+            : (selectedMotivo 
+                ? `${selectedMotivo.Titulo}${cancelDetails.trim() ? ' - ' + cancelDetails.trim() : ''}`
+                : cancelDetails.trim());
 
         const commonPayload = {
             reason: combinedReason,
-            motivoId: selectedMotivo ? selectedMotivo.MotivoID : null,
+            motivoId: finalMotivoId,
             detalles: cancelDetails.trim() || null,
             usuario: safeUser
         };
@@ -911,7 +923,8 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                 {(() => {
                                     // 1. Suma de Producción
                                     const prodTotal = productionFiles.reduce((acc, f) => {
-                                        if ((f.Estado || '').toUpperCase() === 'CANCELADO') return acc;
+                                        const fStatus = (f.Estado || f.estado || f.EstadoArchivo || '').toUpperCase();
+                                        if (fStatus === 'CANCELADO') return acc;
                                         return acc + ((parseFloat(f.copias || f.Copias || 1)) * (parseFloat(f.metros || f.width || f.Metros || 0)));
                                     }, 0);
 
@@ -1059,7 +1072,8 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                             <span className="font-bold text-zinc-400 uppercase text-xs tracking-wider">Metraje Total Estimado</span>
                                             <span className="font-black text-brand-cyan text-xl font-mono">
                                                 {productionFiles.reduce((acc, f) => {
-                                                    if ((f.Estado || '').toUpperCase() === 'CANCELADO') return acc;
+                                                    const fStatus = (f.Estado || f.estado || f.EstadoArchivo || '').toUpperCase();
+                                                    if (fStatus === 'CANCELADO') return acc;
                                                     return acc + ((f.copias || f.copies || f.Copias || 1) * (f.metros || f.width || f.Metros || 0));
                                                 }, 0).toFixed(2)}m
                                             </span>
@@ -1247,13 +1261,24 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                 </Listbox>
                             </div>
 
-                            <textarea
-                                className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl outline-none focus:border-red-400 min-h-[100px] text-sm font-medium text-zinc-700 resize-none"
-                                placeholder="Detalles adicionales (opcional)..."
-                                value={cancelDetails}
-                                onChange={(e) => setCancelDetails(e.target.value)}
-                                autoFocus
-                            ></textarea>
+                            {selectedMotivo?.MotivoID === 'otros' ? (
+                                <input
+                                    type="text"
+                                    className="w-full p-3 bg-white border border-brand-magenta/30 rounded-xl outline-none focus:border-brand-magenta text-sm font-bold text-zinc-800 shadow-sm"
+                                    placeholder="Especifique el motivo de cancelación *"
+                                    value={cancelDetails}
+                                    onChange={(e) => setCancelDetails(e.target.value)}
+                                    autoFocus
+                                />
+                            ) : (
+                                <textarea
+                                    className="w-full p-3 bg-zinc-50 border border-zinc-200 rounded-xl outline-none focus:border-red-400 min-h-[100px] text-sm font-medium text-zinc-700 resize-none"
+                                    placeholder="Detalles adicionales (opcional)..."
+                                    value={cancelDetails}
+                                    onChange={(e) => setCancelDetails(e.target.value)}
+                                    autoFocus
+                                ></textarea>
+                            )}
                         </div>
                         <div className="flex gap-3 justify-end">
                             <button

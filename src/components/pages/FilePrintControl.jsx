@@ -129,9 +129,11 @@ const FilePrintControl = ({ areaCode }) => {
   useEffect(() => {
     fetchRollos();
     socket.on('server:order_updated', fetchRollos);
+    socket.on('server:ordersUpdated', fetchRollos);
     socket.on('lotes:updated', fetchRollos);
     return () => {
       socket.off('server:order_updated', fetchRollos);
+      socket.off('server:ordersUpdated', fetchRollos);
       socket.off('lotes:updated', fetchRollos);
     };
   }, [fetchRollos]);
@@ -213,8 +215,9 @@ const FilePrintControl = ({ areaCode }) => {
   useEffect(() => {
     const handleUpdate = (data) => {
       if (activeRoll) {
+        const rId = activeRoll.id === 'todo' ? '' : activeRoll.id;
         // Refresh orders list
-        fileControlService.getOrdenes(searchTerm, activeRoll.id, areaCode || 'DTF').then(newOrders => {
+        fileControlService.getOrdenes(searchTerm, rId, areaCode || 'DTF').then(newOrders => {
           const normalized = (newOrders || []).map(o => ({
             id: o.OrdenID,
             code: o.CodigoOrden,
@@ -236,14 +239,22 @@ const FilePrintControl = ({ areaCode }) => {
             const fresh = normalized.find(o => o.id === selectedOrder.id);
             if (fresh) {
               // Updarte current selection
-              setSelectedOrder(prev => ({ ...prev, ...fresh }));
+              setSelectedOrder(prev => {
+                if (!prev) return null; // Prevent resurrecting a cleared order
+                if (prev.id !== fresh.id) return prev;
+                return { ...prev, ...fresh };
+              });
 
               // AUTO ADVANCE LOGIC
               // Check if status changed to a completed state
               const isCompleted = ['PRONTO', 'FINALIZADO', 'ENTREGADO'].includes(fresh.status?.toUpperCase());
               const wasCompleted = ['PRONTO', 'FINALIZADO', 'ENTREGADO'].includes(selectedOrder.status?.toUpperCase());
 
-              if (isCompleted && !wasCompleted) {
+              // Solo mostrar el modal si NO es una orden de reposición (-F)
+              // Las -F se completan silenciosamente durante "CORREGIR FALLA" para navegar a la madre.
+              const isReposition = /\-F\d+$/.test(fresh.code || '');
+
+              if (isCompleted && !wasCompleted && !isReposition) {
                 // Show Completion Modal
                 setCompletedOrderData({
                   destino: fresh.nextService || 'LOGÍSTICA',
@@ -295,8 +306,10 @@ const FilePrintControl = ({ areaCode }) => {
     };
 
     socket.on('server:order_updated', handleUpdate);
+    socket.on('server:ordersUpdated', handleUpdate);
     return () => {
       socket.off('server:order_updated', handleUpdate);
+      socket.off('server:ordersUpdated', handleUpdate);
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
     };
   }, [activeRoll, selectedOrder, searchTerm, areaCode, autoAdvance, sortOrder]);
@@ -359,7 +372,34 @@ const FilePrintControl = ({ areaCode }) => {
   const handleCorregirFalla = async () => {
     if (!originalOrderCode) return;
 
-    // Step 1: Finalizar la orden -F antes de navegar
+    // Step 1: PRIMERO buscar el lote de la orden original ANTES de finalizar la -F,
+    // porque al finalizar, la madre pasa de 'Retenido' a 'Pendiente' y puede cambiar de visibilidad.
+    let targetRolloId = null;
+    let targetRollo = null;
+
+    try {
+      // Strategy 1: use getRelatedOrders
+      const related = await fileControlService.getRelatedOrders(selectedOrder.id);
+      const original = (related || []).find(o =>
+        (o.CodigoOrden || o.code) === originalOrderCode
+      );
+      targetRolloId = original?.RolloID || original?.rolloId || null;
+
+      // Strategy 2: search active orders if related didn't give us a rollo
+      if (!targetRolloId) {
+        const activeOrders = await fileControlService.getOrdenes(originalOrderCode, '', areaCode || 'DTF');
+        const found = activeOrders.find(o => o.CodigoOrden === originalOrderCode);
+        targetRolloId = found?.RolloID || null;
+      }
+
+      if (targetRolloId) {
+        targetRollo = rollos.find(r => r.id === targetRolloId);
+      }
+    } catch (e) {
+      console.error("Error buscando orden original:", e);
+    }
+
+    // Step 2: Finalizar la orden -F
     try {
       setFinalizandoOrden(true);
       const res = await fileControlService.completarOrden(selectedOrder.id);
@@ -377,41 +417,57 @@ const FilePrintControl = ({ areaCode }) => {
       setFinalizandoOrden(false);
     }
 
-    // Step 2: Navegar al lote de la orden original
-    try {
-      // Strategy 1: use getRelatedOrders (works regardless of order status)
-      const related = await fileControlService.getRelatedOrders(selectedOrder.id);
-      const original = (related || []).find(o =>
-        (o.CodigoOrden || o.code) === originalOrderCode
-      );
+    // Step 3: Limpiar estado de la -F inmediatamente para que isFallaOrder se recalcule
+    setSelectedOrder(null);
+    setFiles([]);
+    setPedidoMetrics(null);
 
-      let rolloId = original?.RolloID || original?.rolloId || null;
+    // Step 4: Navegar al lote de la orden original
+    const targetRollId = targetRollo?.id || targetRolloId;
+    const isSameBatch = activeRoll && targetRollId && activeRoll.id === targetRollId;
 
-      // Strategy 2: search active orders if related didn't give us a rollo
-      if (!rolloId) {
-        const activeOrders = await fileControlService.getOrdenes(originalOrderCode, '', areaCode || 'DTF');
-        const found = activeOrders.find(o => o.CodigoOrden === originalOrderCode);
-        rolloId = found?.RolloID || null;
+    if (isSameBatch || targetRollo) {
+      // Re-fetch órdenes del lote (mismo o diferente) y seleccionar la original directamente.
+      // No depender de pendingSelectCode + useEffect para evitar race conditions con el socket.
+      const rollIdToFetch = targetRollId || activeRoll?.id;
+
+      if (!isSameBatch && targetRollo) {
+        setActiveRoll(targetRollo);
       }
 
-      if (rolloId) {
-        const targetRollo = rollos.find(r => r.id === rolloId);
-        if (targetRollo) {
-          setPendingSelectCode(originalOrderCode);
-          setActiveRoll(targetRollo);
-          return;
+      try {
+        const data = await fileControlService.getOrdenes('', rollIdToFetch, areaCode || 'DTF');
+        const normalized = (data || []).map(o => ({
+          id: o.OrdenID, code: o.CodigoOrden, client: o.Cliente,
+          material: o.Material, status: o.Estado, statusArea: o.EstadoenArea,
+          controlled: o.Controlada === 1, sequence: o.Secuencia || 0,
+          failures: o.CantidadFallas || 0, hasLabels: o.CantidadEtiquetas || 0,
+          rolloId: o.RolloID || null, nextService: o.ProximoServicio,
+          meters: parseFloat(o.Magnitud) || 0
+        }));
+        setOrders(normalized);
+
+        // Seleccionar la orden original
+        const toSelect = normalized.find(o => o.code === originalOrderCode);
+        if (toSelect) {
+          setSelectedOrder(toSelect);
+          setToast({ visible: true, message: `Falla corregida. Orden ${originalOrderCode} lista para finalizar.`, type: 'success' });
+        } else {
+          setToast({ visible: true, message: `Orden ${originalOrderCode} no encontrada en el lote`, type: 'warning' });
         }
-      }
 
-      // Strategy 3: no rollo found — clear filter and search by code
-      setPendingSelectCode(originalOrderCode);
-      setSearchTerm(originalOrderCode);
-      setActiveRoll(null);
-      setToast({ visible: true, message: `Buscando orden original ${originalOrderCode}...`, type: 'info' });
-    } catch (e) {
-      console.error(e);
-      setToast({ visible: true, message: 'Error buscando la orden original', type: 'error' });
+        // Refrescar métricas del lote
+        fileControlService.getRolloMetrics(rollIdToFetch).then(setActiveRollMetrics).catch(console.error);
+      } catch (e) {
+        console.error("Error refrescando órdenes:", e);
+      }
+      return;
     }
+
+    // Fallback: no rollo found — buscar por código
+    setSearchTerm(originalOrderCode);
+    setActiveRoll(null);
+    setToast({ visible: true, message: `Buscando orden original ${originalOrderCode}...`, type: 'info' });
   };
 
   const handleFinalizarOrden = async () => {
@@ -918,7 +974,7 @@ const FilePrintControl = ({ areaCode }) => {
             </div>
 
             {/* BOTTOM COMPLETION BUTTON - aparece cuando todos los archivos están listos */}
-            {orderMetrics.done === orderMetrics.total && orderMetrics.total > 0 && selectedOrder.status !== 'PRONTO' && (
+            {orderMetrics.done === orderMetrics.total && orderMetrics.total > 0 && !['PRONTO', 'FINALIZADO', 'ENTREGADO'].includes(selectedOrder.status?.toUpperCase()) && (
               <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom duration-500">
                 {isFallaOrder ? (
                   <button

@@ -68,6 +68,12 @@ class ERPSyncService {
 
         for (const sib of siblings) {
             try {
+                // Si la orden está cancelada, no suma ni cuesta nada
+                const estadoMayus = (sib.Estado || '').toString().toUpperCase();
+                if (['CANCELADO', 'ANULADO', 'RECHAZADO'].includes(estadoMayus)) {
+                    continue;
+                }
+
                 // Resolver Magnitud
                 const magStr = sib.Magnitud || '';
                 let magVal = 0;
