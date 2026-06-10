@@ -305,7 +305,7 @@ async function parsearDatosOrden(ordenString, codigoOrden) {
 
 
 const createOrden = async (req, res) => {
-  const { ordenString } = req.body;
+  const { ordenString, skipAccounting } = req.body;
   const UsuarioAlta = req.user ? req.user.id : 70;
 
   try {
@@ -580,65 +580,69 @@ const createOrden = async (req, res) => {
     }
 
     // 2. Procesar eventos contables
-    if (tienePlan) {
-      // EVENTO ENTREGA: descuenta metros del plan
-      logger.info(`[CTRL:ORDEN] Disparando evento ENTREGA para ${CodigoOrden} (tiene plan activo)`);
-      contabilidadService.procesarEventoContable('ENTREGA', {
-        OrdIdOrden: newOrderId,
-        CliIdCliente: reqClientId,
-        ProIdProducto: productoContabilidad.ProIdProducto,
-        Cantidad: cantidadDecimal,
-        CodigoOrden,
-        NombreTrabajo: trabajoFinal,
-        UsuarioAlta,
-        Importe: deudaReal, // se usa como ref, pero el asiento toma el costo del plan
-        MonIdMoneda: finalMonId
-      }).catch(e => logger.error(`[CONTABILIDAD] Error en ENTREGA para ${CodigoOrden}: ${e.message}`));
-
-      if (yaCobrado) {
-        if (deudaReal > 0) {
-          logger.info(`[CTRL:ORDEN] Disparando evento ORDEN para ${CodigoOrden} (servicios pre-calculados)`);
-          contabilidadService.procesarEventoContable('ORDEN', {
-            OrdIdOrden: newOrderId,
-            CliIdCliente: reqClientId,
-            Importe: deudaReal,
-            MonIdMoneda: finalMonId,
-            CodigoOrden,
-            NombreTrabajo: `${trabajoFinal} [Servicios]`,
-            UsuarioAlta
-          }).catch(e => logger.error(`[CONTABILIDAD] Error en ORDEN-SERVICIOS (ya cobrado) para ${CodigoOrden}: ${e.message}`));
-        }
-      } else {
-        if (serviciosUSD > 0) {
-          logger.info(`[CTRL:ORDEN] Disparando evento ORDEN para ${CodigoOrden} (solo servicios USD=${serviciosUSD})`);
-          contabilidadService.procesarEventoContable('ORDEN', {
-            OrdIdOrden: newOrderId,
-            CliIdCliente: reqClientId,
-            Importe: serviciosUSD,
-            MonIdMoneda: 2,   // USD
-            CodigoOrden,
-            NombreTrabajo: `${trabajoFinal} [Servicios]`,
-            UsuarioAlta
-          }).catch(e => logger.error(`[CONTABILIDAD] Error en ORDEN-SERVICIOS para ${CodigoOrden}: ${e.message}`));
-        }
-      }
-
-    } else {
-      // Sin plan → el cliente paga el costo del QR (producto).
-      // ATENCIÓN: El costo del QR (deudaReal) YA INCLUYE el total de servicios extra cobrados en la orden (XSB).
-      const importeTotal = deudaReal;
-      if (importeTotal > 0) {
-        logger.info(`[CTRL:ORDEN] Disparando evento ORDEN para ${CodigoOrden} (sin plan, importeTotal=${importeTotal})`);
-        contabilidadService.procesarEventoContable('ORDEN', {
+    if (!skipAccounting) {
+      if (tienePlan) {
+        // EVENTO ENTREGA: descuenta metros del plan
+        logger.info(`[CTRL:ORDEN] Disparando evento ENTREGA para ${CodigoOrden} (tiene plan activo)`);
+        contabilidadService.procesarEventoContable('ENTREGA', {
           OrdIdOrden: newOrderId,
           CliIdCliente: reqClientId,
-          Importe: importeTotal,
-          MonIdMoneda: finalMonId, // Si es pistoleo nuevo sin cobrar, finalMonId es la moneda del QR. Ojo si el QR es en pesos! Asumimos USD para simplificar.
+          ProIdProducto: productoContabilidad.ProIdProducto,
+          Cantidad: cantidadDecimal,
           CodigoOrden,
           NombreTrabajo: trabajoFinal,
-          UsuarioAlta
-        }).catch(e => logger.error(`[CONTABILIDAD] Error en ORDEN para ${CodigoOrden}: ${e.message}`));
+          UsuarioAlta,
+          Importe: deudaReal, // se usa como ref, pero el asiento toma el costo del plan
+          MonIdMoneda: finalMonId
+        }).catch(e => logger.error(`[CONTABILIDAD] Error en ENTREGA para ${CodigoOrden}: ${e.message}`));
+
+        if (yaCobrado) {
+          if (deudaReal > 0) {
+            logger.info(`[CTRL:ORDEN] Disparando evento ORDEN para ${CodigoOrden} (servicios pre-calculados)`);
+            contabilidadService.procesarEventoContable('ORDEN', {
+              OrdIdOrden: newOrderId,
+              CliIdCliente: reqClientId,
+              Importe: deudaReal,
+              MonIdMoneda: finalMonId,
+              CodigoOrden,
+              NombreTrabajo: `${trabajoFinal} [Servicios]`,
+              UsuarioAlta
+            }).catch(e => logger.error(`[CONTABILIDAD] Error en ORDEN-SERVICIOS (ya cobrado) para ${CodigoOrden}: ${e.message}`));
+          }
+        } else {
+          if (serviciosUSD > 0) {
+            logger.info(`[CTRL:ORDEN] Disparando evento ORDEN para ${CodigoOrden} (solo servicios USD=${serviciosUSD})`);
+            contabilidadService.procesarEventoContable('ORDEN', {
+              OrdIdOrden: newOrderId,
+              CliIdCliente: reqClientId,
+              Importe: serviciosUSD,
+              MonIdMoneda: 2,   // USD
+              CodigoOrden,
+              NombreTrabajo: `${trabajoFinal} [Servicios]`,
+              UsuarioAlta
+            }).catch(e => logger.error(`[CONTABILIDAD] Error en ORDEN-SERVICIOS para ${CodigoOrden}: ${e.message}`));
+          }
+        }
+
+      } else {
+        // Sin plan → el cliente paga el costo del QR (producto).
+        // ATENCIÓN: El costo del QR (deudaReal) YA INCLUYE el total de servicios extra cobrados en la orden (XSB).
+        const importeTotal = deudaReal;
+        if (importeTotal > 0) {
+          logger.info(`[CTRL:ORDEN] Disparando evento ORDEN para ${CodigoOrden} (sin plan, importeTotal=${importeTotal})`);
+          contabilidadService.procesarEventoContable('ORDEN', {
+            OrdIdOrden: newOrderId,
+            CliIdCliente: reqClientId,
+            Importe: importeTotal,
+            MonIdMoneda: finalMonId, // Si es pistoleo nuevo sin cobrar, finalMonId es la moneda del QR. Ojo si el QR es en pesos! Asumimos USD para simplificar.
+            CodigoOrden,
+            NombreTrabajo: trabajoFinal,
+            UsuarioAlta
+          }).catch(e => logger.error(`[CONTABILIDAD] Error en ORDEN para ${CodigoOrden}: ${e.message}`));
+        }
       }
+    } else {
+      logger.info(`[CTRL:ORDEN] skipAccounting=true para ${CodigoOrden}, saltando contabilidad nativa para delegar a Logistica.`);
     }
 
     // --- NUEVO: BACKUP EN TABLAS DE COBRANZA ---

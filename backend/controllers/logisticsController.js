@@ -614,14 +614,14 @@ exports.getIncomingRemitos = async (req, res) => {
             SELECT e.*, 
                    (SELECT COUNT(*) FROM Logistica_EnvioItems WHERE EnvioID = e.EnvioID) as TotalItems
             FROM Logistica_Envios e
-            WHERE e.Estado IN ('ESPERANDO_RETIRO', 'EN_TRANSITO', 'EN_TRANSITO_PARCIAL', 'DESPACHADO')
+            WHERE e.Estado IN ('ESPERANDO_RETIRO', 'EN_TRANSITO', 'EN_TRANSITO_PARCIAL', 'DESPACHADO', 'RECIBIDO_PARCIAL')
             ORDER BY e.FechaSalida DESC
         ` : `
             SELECT e.*, 
                    (SELECT COUNT(*) FROM Logistica_EnvioItems WHERE EnvioID = e.EnvioID) as TotalItems
             FROM Logistica_Envios e
             WHERE e.AreaDestinoID = @A
-            AND e.Estado IN ('ESPERANDO_RETIRO', 'EN_TRANSITO', 'EN_TRANSITO_PARCIAL', 'DESPACHADO')
+            AND e.Estado IN ('ESPERANDO_RETIRO', 'EN_TRANSITO', 'EN_TRANSITO_PARCIAL', 'DESPACHADO', 'RECIBIDO_PARCIAL')
             ORDER BY e.FechaSalida DESC
         `;
         
@@ -1026,7 +1026,7 @@ exports.receiveDispatch = async (req, res) => {
 
                         // 2. Buscar en PedidosCobranza
                         const pcReq = await poolLocal.request().input('OID', require('mssql').Int, L_OrdenID)
-                            .query("SELECT ID, MontoTotal, NoDocERP, MontoContabilizado, MetrosContabilizados, Moneda FROM PedidosCobranza WITH(NOLOCK) WHERE NoDocERP = (SELECT TOP 1 CAST(NoDocERP AS VARCHAR) FROM Ordenes WITH(NOLOCK) WHERE OrdenID = @OID)");
+                            .query("SELECT ID, MontoTotal, NoDocERP, MontoContabilizado, MetrosContabilizados, Moneda FROM PedidosCobranza WITH(NOLOCK) WHERE NoDocERP = (SELECT TOP 1 LTRIM(RTRIM(CAST(NoDocERP AS VARCHAR))) FROM Ordenes WITH(NOLOCK) WHERE OrdenID = @OID)");
 
                         console.log(`${logPrefix} -> Encontrado PedidoCobranza =`, pcReq.recordset.length > 0);
 if (pcReq.recordset.length > 0) {

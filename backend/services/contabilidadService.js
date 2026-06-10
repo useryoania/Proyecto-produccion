@@ -1124,12 +1124,14 @@ async function getMovimientos(CueIdCuenta, FechaDesde = null, FechaHasta = null,
     } else if (m.MovTipo === 'CIERRE_CICLO') {
       isVisible = true;
       const realImporte = Number(m.MovImporte);
-      if (realImporte !== 0) {
-        importeVirtual = realImporte;
-      } else {
-        // En CIERRE_CICLO, la deuda real se generó en las ORDENes previas.
-        // Visualmente, agrupamos el total usando DocTotal (en negativo por ser cargo)
-        importeVirtual = -(Math.abs(Number(m.DocTotal || 0)));
+      importeVirtual = realImporte;
+      
+      // Si el importe es 0, es un movimiento de sólo lectura / trazabilidad
+      // (ej: cierre de ciclo cross-moneda en la cuenta origen). 
+      // Ya no forzamos DocTotal aquí para evitar duplicar el consumo visualmente,
+      // porque el débito real se registra en el otro movimiento (VTA_CAJA o CIERRE_CICLO con importe < 0).
+      if (realImporte === 0) {
+        isVisible = false; // Lo ocultamos para no mostrar una fila en 0 duplicada
       }
     } else if (['PAGO', 'VTA_CAJA', 'SALDO_INICIAL', 'SALDO_A_FAVOR', 'COBRO', 'ANTICIPO', 'AJUSTE', 'AJUSTE_POS', 'AJUSTE_NEG', 'PAGO_CRUZADO', 'NOTA_DEBITO'].includes(m.MovTipo)) {
       isVisible = true;
@@ -2130,27 +2132,25 @@ async function cerrarCicloCompleto({
 
 
   // 5. Registrar movimiento de cierre en libro mayor (cuenta de ORIGEN del ciclo)
-  // Si es cross-moneda: el movimiento COMPENSA las órdenes en la cuenta original
-  //   → las órdenes debitaron -22 en USD, el cierre acredita +22 para dejar la cuenta en 0
-  //   → la deuda real queda en la cuenta UYU (registrada en paso anterior)
-  // Si es misma moneda: el movimiento es neutro (0), la deuda queda en DeudaDocumento
-  const cierreImporteOrigen = esCrossMoneda ? saldoFacturar : 0;
-  const cierreConcepto = esCrossMoneda
-    ? `Cierre ciclo → Factura ${docLabel} traspasada a ${targetMonId === 2 ? 'USD' : 'UYU'} (${docTotal.toFixed(2)} @ cot. ${cotDolar})`
-    : `Cierre ciclo ${ciclo.CicFechaInicio ? new Date(ciclo.CicFechaInicio).toLocaleDateString('es-UY') : ''} → ${fCierre} | ${docLabel}`;
+  // Como las órdenes ya NO debitan la cuenta origen, NO necesitamos compensar nada.
+  // El importe de este movimiento de trazabilidad es siempre 0.
+  // Solo se necesita si es cross-moneda (para vincular el ciclo origen con la factura en la cuenta destino).
+  // Si es misma moneda, el movimiento de la factura ya está en la cuenta origen y es suficiente.
+  if (esCrossMoneda) {
+    const cierreImporteOrigen = 0;
+    const cierreConcepto = `Cierre ciclo → Factura ${docLabel} traspasada a ${targetMonId === 2 ? 'USD' : 'UYU'} (${docTotal.toFixed(2)} @ cot. ${cotDolar})`;
 
-  await registrarMovimiento({
-    CueIdCuenta:   ciclo.CueIdCuenta,
-    MovTipo:       'CIERRE_CICLO',
-    MovConcepto:   cierreConcepto,
-    MovImporte:    cierreImporteOrigen,
-    MovUsuarioAlta: UsuarioAlta,
-    DocIdDocumento,
-    CicIdCiclo,
-    MovObservaciones: esCrossMoneda
-      ? `Cross-moneda: Ordenes ${totalOrdenesFacturadas} ${accountMonId === 2 ? 'USD' : 'UYU'} → Factura ${docTotal.toFixed(2)} ${targetMonId === 2 ? 'USD' : 'UYU'} @ ${cotDolar}`
-      : `Ordenes: ${totalOrdenesFacturadas} | Pagos: 0 (gestionados via DeudaDocumento) | Saldo: ${importePendiente}`,
-  });
+    await registrarMovimiento({
+      CueIdCuenta:   ciclo.CueIdCuenta,
+      MovTipo:       'CIERRE_CICLO',
+      MovConcepto:   cierreConcepto,
+      MovImporte:    cierreImporteOrigen,
+      MovUsuarioAlta: UsuarioAlta,
+      DocIdDocumento,
+      CicIdCiclo,
+      MovObservaciones: `Cross-moneda: Ordenes ${totalOrdenesFacturadas} ${accountMonId === 2 ? 'USD' : 'UYU'} → Factura ${docTotal.toFixed(2)} ${targetMonId === 2 ? 'USD' : 'UYU'} @ ${cotDolar}`
+    });
+  }
 
   // 6. Cerrar el ciclo actual (actualizando con los montos ajustados)
   const pagosCicloRes = await pool.request()

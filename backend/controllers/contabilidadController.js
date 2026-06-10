@@ -2135,7 +2135,9 @@ exports.getOrdenesAnticipo = async (req, res) => {
           ) AS NombreTrabajo
         ) oa
         LEFT JOIN dbo.Ordenes erp WITH(NOLOCK) ON erp.OrdenID = m.OrdIdOrden
-        LEFT JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON od.OrdCodigoOrden = oa.CodigoOrdenStr
+        OUTER APPLY (
+          SELECT TOP 1 * FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OrdCodigoOrden = oa.CodigoOrdenStr
+        ) od
         LEFT JOIN dbo.Articulos p WITH(NOLOCK) ON od.ProIdProducto = p.ProIdProducto
         LEFT JOIN dbo.StockArt s WITH(NOLOCK) ON p.CodStock = s.CodStock
         WHERE m.CueIdCuenta IN (SELECT CueIdCuenta FROM dbo.CuentasCliente WHERE CliIdCliente = @Cli)
@@ -2161,7 +2163,7 @@ exports.emitirFacturaAnticipo = async (req, res) => {
     const pool = await getPool();
 
     const { 
-      ordenesIds, 
+      ordenesIds, excluidos,
       monedaFactura, cotDolar, descuentoTipo, descuentoValorBase, montoDescuentoCalculado,
       detallesEditados, detallesParaPDF, tipoDocumento, observaciones,
       cliDgiNombre, cliDgiDocumento, cliDgiDireccion, cliDgiCiudad, actualizarCliente 
@@ -2216,6 +2218,7 @@ exports.emitirFacturaAnticipo = async (req, res) => {
     const result = await svc.cerrarCicloCompleto({ 
       CicIdCiclo, 
       UsuarioAlta,
+      excluidos: Array.isArray(excluidos) ? excluidos : [],
       monedaFactura, cotDolar, descuentoTipo, descuentoValorBase, montoDescuentoCalculado,
       detallesEditados, detallesParaPDF, tipoDocumento, observaciones,
       cliDgiNombre, cliDgiDocumento, cliDgiDireccion, cliDgiCiudad, actualizarCliente

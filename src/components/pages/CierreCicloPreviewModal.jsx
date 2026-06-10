@@ -545,9 +545,9 @@ export default function CierreCicloPreviewModal({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 overflow-hidden bg-white shadow-sm">
+          <div className="rounded-xl border border-slate-200 overflow-y-auto bg-white shadow-sm max-h-[45vh] scrollbar-thin scrollbar-thumb-slate-200">
             <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-slate-50 text-[10px] uppercase font-black tracking-widest text-slate-500 border-b border-slate-200">
+              <thead className="bg-slate-50 text-[10px] uppercase font-black tracking-widest text-slate-500 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                 <tr>
                   <th className="px-4 py-3 w-12 text-center">Inc</th>
                   <th className="px-4 py-3">Descripción del Item</th>

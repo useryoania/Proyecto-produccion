@@ -97,7 +97,7 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
     };
 
     // --- UNIVERSAL SCAN (AUTO INGRESO) ---
-    const processUniversalScan = async (code) => {
+    const processUniversalScan = async (code, skipAccounting = false) => {
         const scanId = Date.now();
         const isDuplicateMsg = recentScans.some(c => c.value === code && !['wsp_error', 'error'].includes(c.status));
         if (isDuplicateMsg) {
@@ -112,7 +112,7 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
             let qrString = code;
             let resolvedOrdId = null;
             if (!code.includes('$*')) {
-                const resQr = await api.post('/api/logistics/bultos/resolve-qr', { code });
+                const resQr = await api.post('/logistics/bultos/resolve-qr', { code });
                 qrString = resQr.data.qrString;
                 resolvedOrdId = resQr.data.ordenId;
             }
@@ -133,7 +133,11 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
             }
 
             // 3. Ejecutar Ingreso Nativo (Sheets/Whatsapp)
-            const resData = await api.post('/apiordenes/data', { ordenString: qrString, estado: 'Ingresado' });
+            const resData = await api.post('/apiordenes/data', { 
+                ordenString: qrString, 
+                estado: 'Ingresado',
+                skipAccounting: skipAccounting
+            });
             
             // 4. Update the card
             setRecentScans(prev => prev.map(c => c.id === scanId ? { 
@@ -271,7 +275,7 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
     });
 
     // --- STEP 2: SCANNER LOGIC ---
-    const handleScanItem = (e) => {
+    const handleScanItem = async (e) => {
         e.preventDefault();
         const code = scanInput.trim();
         if (!code) return;
@@ -280,13 +284,15 @@ const ReceptionView = ({ onClose, areaContext, areaFilter }) => {
             if (itemMap[code].scanned) {
                 setLastScanMsg({ type: 'warning', text: `YA INGRESADO: ${code}` });
             } else {
+                // RUN IN SERIES: First create the order in DB, skipping its own accounting.
+                // Then let WMS Logistics process the check-in and do the accounting to avoid race conditions.
+                await processUniversalScan(code, true);
+                
                 receiveItemMutation.mutate({
                     envioId: loadedRemito.EnvioID,
                     codigoEtiqueta: code,
                     usuarioId: user?.id || 1
                 });
-                // SILENTLY ALSO DO UNIVERSAL SCAN
-                processUniversalScan(code);
             }
         } else {
             setLastScanMsg({ type: 'error', text: `NO PERTENECE: ${code}` });
