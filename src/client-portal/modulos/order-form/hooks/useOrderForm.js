@@ -306,7 +306,7 @@ export const useOrderForm = (serviceId, overrides = {}) => {
                     updates.visibleConfig = {};
                 }
 
-                if (prioRes.success && prioRes.data.length > 0) {
+                if (prioRes?.success && prioRes.data?.length > 0) {
                     updates.prioritiesList = prioRes.data;
                     updates.urgency = prioRes.data[0].Nombre;
                 } else {
@@ -319,7 +319,14 @@ export const useOrderForm = (serviceId, overrides = {}) => {
             } catch (err) {
                 console.error("Error loading initial data", err);
                 // Set defaults on error
-                dispatch({ type: actionTypes.SET_DATA, data: { visibleConfig: {}, urgency: 'Normal' } });
+                dispatch({ 
+                    type: actionTypes.SET_DATA, 
+                    data: { 
+                        visibleConfig: {}, 
+                        urgency: 'Normal',
+                        prioritiesList: [{ IdPrioridad: 0, Nombre: 'Normal', Color: '#fff' }, { IdPrioridad: 1, Nombre: 'Urgente', Color: '#fbbf24' }]
+                    } 
+                });
             }
         };
 

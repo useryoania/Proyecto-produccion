@@ -130,9 +130,9 @@ const ReceiveDispatchModal = ({ isOpen, onClose, onSuccess }) => {
 
         // 2. Si no, buscamos por ID de Orden (modo legacy o manual)
         if (!targetItem) {
-            // Si el código es "ORD-123", extraemos 123
+            // Si el código tiene prefijo (ej: "DTF-123"), extraemos 123
             let searchId = code;
-            if (code.startsWith('ORD-') || code.startsWith('PED-')) {
+            if (/^[a-zA-Z]{3}-/i.test(code) || code.startsWith('PED-')) {
                 searchId = code.split('-')[1];
             }
             // Buscamos el PRIMER item no recibido de esa orden

@@ -217,12 +217,21 @@ exports.createPlanillaOrder = async (req, res) => {
                 nuevoNroPedido = (maxOrder.recordset[0].MaxID || 100000) + 1;
             }
             erpDocNumber = `${nuevoNroPedido}`;
-            codigoOrdenFinal = `ORD-${erpDocNumber}`;
+            codigoOrdenFinal = null; // Se generará dinámicamente por área
 
             if (rowNumber) {
                 erpDocNumber = `Fila: ${rowNumber} - Orden: ${nuevoNroPedido}`;
             }
         }
+
+        // --- CARGAR MAPEO DE PREFIJOS ---
+        const configRes = await pool.request().query("SELECT AreaID_Interno, CodOrden FROM ConfigMapeoERP");
+        const areaPrefixMap = {};
+        configRes.recordset.forEach(r => {
+            if (r.AreaID_Interno && r.CodOrden) {
+                areaPrefixMap[r.AreaID_Interno.trim().toUpperCase()] = r.CodOrden.trim().toUpperCase();
+            }
+        });
 
         if (!idClienteReact && codCliente) {
             const parsedCod = parseInt(codCliente);
@@ -544,11 +553,17 @@ exports.createPlanillaOrder = async (req, res) => {
                 // Filtrar solo las ejecuciones físicas del área SB para numerar correctamente
                 const fisicasSB = fisicasEjecuciones.filter(e => e.areaID === 'SB');
 
+                let baseCode = codigoOrdenFinal;
+                if (!baseCode) {
+                    const areaPrefix = areaPrefixMap[exec.areaID.toUpperCase()] || 'ORD';
+                    baseCode = `${areaPrefix}-${erpDocNumber}`;
+                }
+
                 if (exec.areaID === 'SB' && fisicasSB.length > 1) {
                     const indexSB = fisicasSB.findIndex(e => e === exec) + 1;
-                    codigoParaEstaOrden = `${codigoOrdenFinal} (${indexSB}/${fisicasSB.length})`;
+                    codigoParaEstaOrden = `${baseCode} (${indexSB}/${fisicasSB.length})`;
                 } else {
-                    codigoParaEstaOrden = codigoOrdenFinal;
+                    codigoParaEstaOrden = baseCode;
                 }
 
                 const estadoInicial = 'Pendiente';

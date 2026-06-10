@@ -676,6 +676,14 @@ exports.createWebOrder = async (req, res) => {
             }
         }
 
+        // --- CARGAR MAPEO DE PREFIJOS ---
+        const configRes = await pool.request().query("SELECT AreaID_Interno, CodOrden FROM ConfigMapeoERP");
+        const areaPrefixMap = {};
+        configRes.recordset.forEach(r => {
+            if (r.AreaID_Interno && r.CodOrden) {
+                areaPrefixMap[r.AreaID_Interno.trim().toUpperCase()] = r.CodOrden.trim().toUpperCase();
+            }
+        });
 
         // --- 6. TRANSACCIÓN DB ---
         const transaction = new sql.Transaction(pool);
@@ -697,7 +705,9 @@ exports.createWebOrder = async (req, res) => {
                     const indexSB = fisicasSB.findIndex(e => e === exec) + 1;
                     docNumber = `${erpDocNumber} (${indexSB}/${fisicasSB.length})`;
                 }
-                exec.codigoOrden = `ORD-${docNumber}`;
+
+                const areaPrefix = areaPrefixMap[exec.areaID.toUpperCase()] || 'ORD';
+                exec.codigoOrden = `${areaPrefix}-${docNumber}`;
 
                 // helper sanitize ya está en scope global si lo moví bien, si no lo redefino por seguridad
                 const sanitize = (str) => (str || '').replace(/[<>:"/\\|?*]/g, '_').trim();

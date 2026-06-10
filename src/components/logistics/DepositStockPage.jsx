@@ -332,8 +332,31 @@ const DepositStockPage = () => {
 
     const getNiceOrderNumber = (code) => {
         if (!code) return 'N/A';
-        return code.toString().startsWith('ORD-') ? code : `ORD-${code}`;
+        // Ya no forzamos ORD- porque los prefijos ahora son dinámicos
+        return code;
     };
+
+    const filteredStock = useMemo(() => {
+        if (!search.trim()) return stock;
+        const term = search.toLowerCase().trim();
+        const isOnlyNumbers = /^\d+$/.test(term);
+
+        return stock.filter(item => {
+            const codeStr = String(item.CodigoOrden || '').toLowerCase();
+            const clientStr = String(item.Cliente || '').toLowerCase();
+            const descStr = String(item.Descripcion || '').toLowerCase();
+
+            if (isOnlyNumbers) {
+                // Si la búsqueda es solo números, ignoramos el prefijo en el código
+                const codeNumberMatch = codeStr.match(/\d+$/);
+                if (codeNumberMatch && codeNumberMatch[0].includes(term)) {
+                    return true;
+                }
+            }
+
+            return codeStr.includes(term) || clientStr.includes(term) || descStr.includes(term);
+        });
+    }, [stock, search]);
 
     const getPreviewString = (item, target) => {
         const isReact = target === 'REACT';
@@ -493,7 +516,7 @@ const DepositStockPage = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-50">
-                                    {stock.map((item, idx) => {
+                                    {filteredStock.map((item, idx) => {
                                         const isSelected = selectedQRs.has(item.V3String);
                                         const niceOrder = getNiceOrderNumber(item.CodigoOrden);
 

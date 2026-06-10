@@ -37,7 +37,7 @@ class ERPSyncService {
                 ) A
                 LEFT JOIN Clientes C ON (O.CliIdCliente = C.CliIdCliente OR (O.CodCliente IS NOT NULL AND LTRIM(RTRIM(O.CodCliente)) = LTRIM(RTRIM(C.CodCliente))))
                 WHERE LTRIM(RTRIM(O.NoDocERP)) = LTRIM(RTRIM(@Doc)) 
-                   OR LTRIM(RTRIM(O.NoDocERP)) = LTRIM(RTRIM(REPLACE(@Doc, 'ORD-', '')))
+                   OR LTRIM(RTRIM(O.NoDocERP)) = CASE WHEN LTRIM(RTRIM(@Doc)) LIKE '[A-Z][A-Z][A-Z]-%' THEN SUBSTRING(LTRIM(RTRIM(@Doc)), 5, LEN(@Doc)) ELSE LTRIM(RTRIM(@Doc)) END
             `);
 
         const siblings = orderRes.recordset;

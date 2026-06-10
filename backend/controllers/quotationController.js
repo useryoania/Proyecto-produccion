@@ -68,10 +68,10 @@ exports.getQuotation = async (req, res) => {
             .input('Doc', sql.NVarChar, noDocERP)
             .query(`SELECT * FROM PedidosCobranza WHERE LTRIM(RTRIM(NoDocERP)) = LTRIM(RTRIM(@Doc))`);
 
-        // Fallback 1: strip 'ORD-' prefix (portal orders saved as plain number e.g. '194')
+        // Fallback 1: strip 3-letter prefix (portal orders saved as plain number e.g. '194')
         if (cabRes.recordset.length === 0) {
-            const stripped = noDocERP.replace(/^ORD-/i, '').trim();
-            if (stripped !== noDocERP) {
+            const stripped = noDocERP.replace(/^[a-zA-Z]{3}-/i, '').trim();
+            if (stripped && stripped !== noDocERP.trim()) {
                 cabRes = await pool.request()
                     .input('Doc2', sql.NVarChar, stripped)
                     .query(`SELECT * FROM PedidosCobranza WHERE LTRIM(RTRIM(NoDocERP)) = LTRIM(RTRIM(@Doc2))`);

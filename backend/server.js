@@ -33,7 +33,8 @@ const rateLimit = require('express-rate-limit');
 
 app.use(helmet({
     contentSecurityPolicy: false, // Disable CSP for simplicity in this dev environment to allow iframe and inline scripts for QR
-    frameguard: false // Allow framing
+    frameguard: false, // Allow framing
+    hsts: false // Disable HSTS to prevent Chrome from forcing HTTPS on localhost
 }));
 
 const WHITELISTED_IPS = (process.env.RATE_LIMIT_WHITELIST || '').split(',').map(ip => ip.trim()).filter(Boolean);
