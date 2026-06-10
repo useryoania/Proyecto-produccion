@@ -2402,9 +2402,14 @@ export default function ContabilidadCuentasView() {
     try {
       // Usamos el payload completo que nos da CierreCicloPreviewModal (que incluye monedaFactura, detallesEditados, descuentoValorBase, etc)
       // Agregamos las ordenes al payload usando movsOriginales o lo que haya en la vista (ordenesAnticipo)
+      const excluidosSet = new Set(payload.excluidos || []);
+      const ordenesParaFacturar = ordenesFiltradas
+        .filter(o => !excluidosSet.has(o.MovIdMovimiento))
+        .map(o => o.OrdIdOrden || o.MovIdMovimiento);
+
       const payloadCompleto = {
         ...payload,
-        ordenesIds: ordenesFiltradas.map(o => o.OrdIdOrden || o.MovIdMovimiento), // dependiendo de cómo devolvió la tabla
+        ordenesIds: ordenesParaFacturar,
       };
 
       await api.post(`/contabilidad/clientes/${clienteSel.CliIdCliente}/emitir-factura-anticipo`, payloadCompleto);
