@@ -422,7 +422,11 @@ export default function AreaView({ areaKey, areaConfig, onSwitchTab }) {
         }
 
         if (activeFilters.variants && activeFilters.variants.length > 0) {
-            result = result.filter(o => activeFilters.variants.includes((o.variantCode || '').trim().toUpperCase()));
+            if (isDTF) {
+                result = result.filter(o => activeFilters.variants.includes((o.material || '').trim()));
+            } else {
+                result = result.filter(o => activeFilters.variants.includes((o.variantCode || '').trim().toUpperCase()));
+            }
         }
         if (activeFilters.statuses && activeFilters.statuses.length > 0) {
             result = result.filter(o => activeFilters.statuses.some(s => s.toLowerCase() === (o.status || 'Pendiente').toLowerCase()));

@@ -2312,6 +2312,7 @@ const CuentaCard = ({ cuenta, CliIdCliente, panelActivo, onToggle, onCicloChange
 
 export default function ContabilidadCuentasView() {
   const [busqueda, setBusqueda]               = useState('');
+  const [filtroTipoCliente, setFiltroTipoCliente] = useState('');
   const [clientesActivos, setClientesActivos] = useState([]);
   const [clienteSel, setClienteSel]           = useState(null);
   const [cuentas, setCuentas]                 = useState([]);
@@ -2331,12 +2332,15 @@ export default function ContabilidadCuentasView() {
   const location = useLocation();
   const [hasAutoSelected, setHasAutoSelected] = useState(false);
 
-  const cargarClientesActivos = useCallback(async (q = '') => {
+  const cargarClientesActivos = useCallback(async (q = '', tipo = '') => {
     setLoadingLista(true);
     try {
       const qp = new URLSearchParams();
       if (q.trim()) {
          qp.append('q', q.trim());
+      }
+      if (tipo) {
+         qp.append('tipoCliente', tipo);
       }
       qp.append('todos', 'true');
       const data = await fetchAPI(`/api/contabilidad/clientes-activos?${qp.toString()}`);
@@ -2347,10 +2351,10 @@ export default function ContabilidadCuentasView() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      cargarClientesActivos(busqueda);
+      cargarClientesActivos(busqueda, filtroTipoCliente);
     }, 400);
     return () => clearTimeout(timer);
-  }, [busqueda, cargarClientesActivos]);
+  }, [busqueda, filtroTipoCliente, cargarClientesActivos]);
 
   const seleccionarCliente = async (cli) => {
     if (clienteSel?.CliIdCliente === cli.CliIdCliente) { setClienteSel(null); return; }
@@ -2507,36 +2511,49 @@ export default function ContabilidadCuentasView() {
 
         {/* ── Columna izquierda: lista ────────────────────────────────────── */}
         <div className="w-full md:w-80 shrink-0 flex flex-col bg-[#f1f5f9] rounded-xl border border-slate-200 shadow-sm">
-          <div className="px-4 py-4 border-b border-slate-200">
-            <div className="flex items-center justify-between mb-3">
+          <div className="px-4 py-4 border-b border-slate-200 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
               <h1 className="text-base font-bold text-slate-800 flex items-center gap-2">
                 <Users size={16} className="text-indigo-400" />Clientes con Saldo
               </h1>
-              <button onClick={() => cargarClientesActivos(busqueda)} title="Actualizar"
+              <button onClick={() => cargarClientesActivos(busqueda, filtroTipoCliente)} title="Actualizar"
                 className="p-1.5 hover:bg-slate-700/50 rounded-lg transition-colors text-slate-500 hover:text-slate-600">
                 <RefreshCw size={13} className={loadingLista ? 'animate-spin' : ''} />
               </button>
             </div>
-            <div className="relative flex items-center mt-1">
-              <div className="absolute left-3 text-slate-400">
-                <Search size={14} />
-              </div>
-              <input 
-                type="text" 
-                placeholder="Buscar por Nombre, RUT/CI, Tel..." 
-                value={busqueda}
-                onChange={e => setBusqueda(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-xl pl-9 pr-8 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 outline-none transition-all" 
-              />
-              {loadingLista && (
-                <div className="absolute right-3">
-                  <RefreshCw size={12} className="text-indigo-500 animate-spin" />
+            
+            <div className="flex gap-2">
+              <div className="relative flex-1 flex items-center">
+                <div className="absolute left-3 text-slate-400">
+                  <Search size={14} />
                 </div>
-              )}
+                <input 
+                  type="text" 
+                  placeholder="Buscar..." 
+                  value={busqueda}
+                  onChange={e => setBusqueda(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 focus:bg-white rounded-xl pl-9 pr-8 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 outline-none transition-all" 
+                />
+                {loadingLista && (
+                  <div className="absolute right-3">
+                    <RefreshCw size={12} className="text-indigo-500 animate-spin" />
+                  </div>
+                )}
+              </div>
+              <select
+                value={filtroTipoCliente}
+                onChange={e => setFiltroTipoCliente(e.target.value)}
+                className="bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-500 rounded-xl px-2 py-2 text-xs font-bold text-slate-700 outline-none transition-all w-[100px]"
+              >
+                <option value="">Todos</option>
+                <option value="1">Común</option>
+                <option value="2">Semanal</option>
+                <option value="3">Rollo</option>
+              </select>
             </div>
           </div>
 
-          <div className="flex-1">
+          <div className="flex-1 overflow-y-auto">
             {loadingLista ? (
               <div className="flex justify-center py-12"><div className="animate-spin h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full" /></div>
             ) : clientesActivos.length === 0 ? (

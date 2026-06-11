@@ -17,10 +17,12 @@ const getLocalArticles = async (req, res) => {
                 LTRIM(RTRIM(a.Descripcion)) AS Descripcion,
                 a.IDProdReact, a.Mostrar, a.anchoimprimible, a.LLEVAPAPEL, a.MonIdMoneda,
                 map.NombreReferencia AS DescripcionGrupo,
-                LTRIM(RTRIM(sa.Articulo)) AS DescripcionStock
+                LTRIM(RTRIM(sa.Articulo)) AS DescripcionStock,
+                pb.Precio AS PrecioBase
             FROM Articulos a
             LEFT JOIN ConfigMapeoERP map ON LTRIM(RTRIM(map.CodigoERP)) = LTRIM(RTRIM(a.Grupo)) COLLATE Database_Default
             LEFT JOIN StockArt sa ON LTRIM(RTRIM(sa.CodStock)) = LTRIM(RTRIM(a.CodStock))
+            LEFT JOIN PreciosBase pb WITH(NOLOCK) ON pb.ProIdProducto = a.ProIdProducto
             ORDER BY a.SupFlia, a.Grupo, a.CodStock, a.Descripcion
         `);
         res.json(result.recordset);

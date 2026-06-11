@@ -5,11 +5,19 @@ import OrderDetailModal from '../production/components/OrderDetailModal'; // NEW
 import IntegralOrderView from './IntegralOrderView';
 
 const OrdersQueryView = () => {
+    const getTodayStr = () => {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    };
+
     // ... (state remains same)
     const [viewMode, setViewMode] = useState('list');
     const [filters, setFilters] = useState({
-        fechaDesde: '',
-        fechaHasta: '',
+        fechaDesde: getTodayStr(),
+        fechaHasta: getTodayStr(),
         areas: [],
         mode: 'all',
         search: ''
@@ -29,8 +37,7 @@ const OrdersQueryView = () => {
         try {
             const payload = {
                 filters: {
-                    client: filters.search,
-                    code: filters.search,
+                    search: filters.search,
                     status: filters.mode === 'all' ? null : filters.mode.toUpperCase(),
                     area: filters.areas.length > 0 ? filters.areas : null,
                     dateFrom: filters.fechaDesde,

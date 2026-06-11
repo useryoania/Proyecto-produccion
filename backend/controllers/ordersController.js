@@ -954,14 +954,19 @@ exports.advancedSearchOrders = async (req, res) => {
             WHERE 1=1
         `;
 
-        if (params.client) {
-            query += " AND o.Cliente LIKE @Client";
-            request.input('Client', sql.NVarChar, `%${params.client}%`);
-        }
+        if (params.search) {
+            query += " AND (o.Cliente LIKE @Search OR o.CodigoOrden LIKE @Search OR CAST(o.OrdenID AS VARCHAR) LIKE @Search OR o.NoDocERP LIKE @Search)";
+            request.input('Search', sql.VarChar, `%${params.search}%`);
+        } else {
+            if (params.client) {
+                query += " AND o.Cliente LIKE @Client";
+                request.input('Client', sql.NVarChar, `%${params.client}%`);
+            }
 
-        if (params.code) {
-            query += " AND (o.CodigoOrden LIKE @Code OR CAST(o.OrdenID AS VARCHAR) LIKE @Code OR o.NoDocERP LIKE @Code)";
-            request.input('Code', sql.VarChar, `%${params.code}%`);
+            if (params.code) {
+                query += " AND (o.CodigoOrden LIKE @Code OR CAST(o.OrdenID AS VARCHAR) LIKE @Code OR o.NoDocERP LIKE @Code)";
+                request.input('Code', sql.VarChar, `%${params.code}%`);
+            }
         }
 
         if (params.status && params.status !== 'ALL') {
@@ -1216,6 +1221,23 @@ exports.getIntegralPedidoDetailsV2 = async (req, res) => {
                 });
             }
             areaSteps.get(o.AreaID).orders.push(o);
+        });
+
+        // Inyectar pasos futuros basados en ProximoServicio
+        orders.forEach(o => {
+            if (o.ProximoServicio && typeof o.ProximoServicio === 'string' && o.ProximoServicio.trim() !== '') {
+                const ps = o.ProximoServicio.trim();
+                const psUpper = ps.toUpperCase();
+                const existingKey = Array.from(areaSteps.keys()).find(k => k.toUpperCase() === psUpper);
+                if (!existingKey) {
+                    areaSteps.set(ps, {
+                        id: ps,
+                        label: ps,
+                        orders: [],
+                        date: new Date()
+                    });
+                }
+            }
         });
 
         // WMS Logic Flags (Without Injection)
