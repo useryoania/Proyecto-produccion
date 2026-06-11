@@ -1335,9 +1335,15 @@ exports.generarEstadosManual = async (req, res) => {
  */
 exports.getClientesActivos = async (req, res) => {
   try {
-    const { q = '', tipo = '', todos = 'false' } = req.query;
+    const { q = '', tipo = '', todos = 'false', tipoCliente = '' } = req.query;
     const pool = await getPool();
     const request = pool.request();
+
+    if (tipoCliente) {
+      request.input('TipoCliente', sql.Int, parseInt(tipoCliente, 10));
+    }
+
+    const filtroTipoCliente = tipoCliente ? 'AND c.TClIdTipoCliente = @TipoCliente' : '';
 
     const filtroNombre = q.trim()
       ? `AND (
@@ -1378,6 +1384,7 @@ exports.getClientesActivos = async (req, res) => {
         WHERE cc.CueActiva = 1
           AND cc.CueTipo NOT IN ('USD','UYU','ARS','EUR','PYG','BRL')
           ${filtroNombre}
+          ${filtroTipoCliente}
         GROUP BY c.CliIdCliente, c.Nombre, c.NombreFantasia, c.Email, c.CodCliente, c.IDCliente, c.TClIdTipoCliente, tc.TClDescripcion, c.CioRuc, c.DireccionTrabajo, c.DepartamentoID, c.TelefonoTrabajo
         ORDER BY RTRIM(LTRIM(c.Nombre))
       `);
@@ -1402,7 +1409,7 @@ exports.getClientesActivos = async (req, res) => {
           RTRIM(LTRIM(c.TelefonoTrabajo)) AS TelefonoTrabajo
         FROM dbo.Clientes c WITH(NOLOCK)
         LEFT JOIN dbo.TiposClientes tc WITH(NOLOCK) ON c.TClIdTipoCliente = tc.TClIdTipoCliente
-        WHERE 1=1 ${filtroNombre}
+        WHERE 1=1 ${filtroNombre} ${filtroTipoCliente}
         ORDER BY RTRIM(LTRIM(c.Nombre))
       `);
       return res.json({ success: true, data: result.recordset });
@@ -1447,6 +1454,7 @@ exports.getClientesActivos = async (req, res) => {
             ${(q.trim() || todos === 'true') ? "OR 1=1" : ""}
         )
         ${filtroNombre}
+        ${filtroTipoCliente}
       GROUP BY c.CliIdCliente, c.Nombre, c.NombreFantasia, c.Email, c.CodCliente, c.IDCliente, c.TClIdTipoCliente, tc.TClDescripcion, c.CioRuc, c.DireccionTrabajo, c.DepartamentoID, c.TelefonoTrabajo
       ORDER BY ABS(SUM(cc.CueSaldoActual)) DESC, RTRIM(LTRIM(c.Nombre))
     `);

@@ -1382,28 +1382,55 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
                                           )}
                                         </div>
 
-                                        {/* Adjustments row */}
-                                        {/* <div className="grid grid-cols-2 gap-2 bg-white p-2.5 rounded-xl border border-slate-200/60">
+                                        {/* Adjustments row (Unhidden and Improved) */}
+                                        <div className="grid grid-cols-2 gap-2 bg-white p-2.5 rounded-xl border border-slate-200/60 mt-2">
                                           <div>
                                             <p className="text-[9px] text-slate-400 font-black uppercase tracking-wider mb-1">Ajuste Manual</p>
-                                            <input
-                                              type="number"
-                                              value={ajustes[s.retiroId]?.ajuste || ''}
-                                              onChange={e => setAjustes(p => ({ ...p, [s.retiroId]: { ...p[s.retiroId], ajuste: e.target.value } }))}
-                                              className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 w-full text-brand-cyan font-black text-xs outline-none focus:border-brand-cyan/50 shadow-inner"
-                                              placeholder="0.0"
-                                            />
+                                            <div className="flex bg-slate-50 border border-slate-200 rounded-lg overflow-hidden shadow-inner">
+                                              <button 
+                                                className={`px-2 font-bold text-xs ${(!ajustes[s.retiroId]?.isRecargo) ? 'bg-red-500 text-white' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'} transition-colors`}
+                                                onClick={() => {
+                                                  const val = Math.abs(parseFloat(ajustes[s.retiroId]?.rawMonto || 0));
+                                                  setAjustes(p => ({ ...p, [s.retiroId]: { ...p[s.retiroId], isRecargo: false, rawMonto: val, ajuste: -val, tipoAjuste: 'DESCUENTO' } }));
+                                                }}
+                                                title="Descuento (Restar)"
+                                              >
+                                                -
+                                              </button>
+                                              <input
+                                                type="number"
+                                                min="0"
+                                                value={ajustes[s.retiroId]?.rawMonto || ''}
+                                                onChange={e => {
+                                                  const val = Math.abs(parseFloat(e.target.value || 0));
+                                                  const isRecargo = ajustes[s.retiroId]?.isRecargo || false;
+                                                  setAjustes(p => ({ ...p, [s.retiroId]: { ...p[s.retiroId], rawMonto: e.target.value, ajuste: isRecargo ? val : -val, tipoAjuste: isRecargo ? 'RECARGO' : 'DESCUENTO' } }));
+                                                }}
+                                                className="w-full px-2 py-1.5 text-brand-cyan font-black text-xs outline-none bg-transparent text-center"
+                                                placeholder="Monto"
+                                              />
+                                              <button 
+                                                className={`px-2 font-bold text-xs ${(ajustes[s.retiroId]?.isRecargo) ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'} transition-colors`}
+                                                onClick={() => {
+                                                  const val = Math.abs(parseFloat(ajustes[s.retiroId]?.rawMonto || 0));
+                                                  setAjustes(p => ({ ...p, [s.retiroId]: { ...p[s.retiroId], isRecargo: true, rawMonto: val, ajuste: val, tipoAjuste: 'RECARGO' } }));
+                                                }}
+                                                title="Recargo (Sumar)"
+                                              >
+                                                +
+                                              </button>
+                                            </div>
                                           </div>
                                           <div>
                                             <p className="text-[9px] text-slate-400 font-black uppercase tracking-wider mb-1">Motivo Ajuste</p>
                                             <LightSelect
-                                              value={ajustes[s.retiroId]?.tipoAjuste || ''}
+                                              value={ajustes[s.retiroId]?.tipoAjuste || (ajustes[s.retiroId]?.isRecargo ? 'RECARGO' : 'DESCUENTO')}
                                               onChange={val => setAjustes(p => ({ ...p, [s.retiroId]: { ...p[s.retiroId], tipoAjuste: val } }))}
                                               options={TIPOS_AJUSTE.map(t => ({ value: t.value, label: t.label }))}
-                                              placeholder="Sin ajuste"
+                                              placeholder="Motivo"
                                             />
                                           </div>
-                                        </div> */}
+                                        </div>
 
                                         {/* Retiro totals info */}
                                         <div className="flex justify-between items-center text-xs px-1 text-slate-500">
