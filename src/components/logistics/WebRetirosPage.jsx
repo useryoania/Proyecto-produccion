@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Swal from 'sweetalert2';
+import { toast } from 'react-toastify';
 import { printRetiroStation } from './webPrintHelper';
 import {
   Package, Search, Check, AlertCircle, ArrowLeft, CheckCircle,
@@ -1015,16 +1016,7 @@ const WebRetirosPage = () => {
           return next;
         });
         // Notificación visual al operario
-        Swal.fire({
-          toast: true,
-          position: 'top-end',
-          icon: 'info',
-          title: `📢 ${data.cliente} se anunció con Retiro #${numId}`,
-          showConfirmButton: false,
-          timer: 8000,
-          background: '#fdf2f8',
-          color: '#831843',
-        });
+        toast.info(`📢 ${data.cliente} se anunció con Retiro #${numId}`, { autoClose: 8000 });
         // Auto-limpiar después de 30 minutos
         setTimeout(() => {
           setAnnouncedOrders(prev => {
@@ -1195,7 +1187,7 @@ const WebRetirosPage = () => {
       const isAutorizado = retiroFull?.estadoNumerico === 9 || estadoStr === 'autorizado' || item.estadoNumerico === 9;
 
       if (!isPagado && !isAutorizado) {
-        Swal.fire({ toast: true, position: 'top', icon: 'warning', title: `${ordenStr} no está pagada ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000 });
+        toast.warning(`${ordenStr} no está pagada ni autorizada. Debe pasar por Caja.`, { autoClose: 2500 });
         return;
       }
     }
@@ -1287,10 +1279,7 @@ const WebRetirosPage = () => {
       const isPagado = retiroFull?.pagorealizado === 1 || item.Pagado;
       const isAutorizado = retiroFull?.estadoNumerico === 9 || (retiroFull?.estado || '').toLowerCase() === 'autorizado' || item.estadoNumerico === 9;
       if (!isPagado && !isAutorizado) {
-        Swal.fire({
-          toast: true, position: 'top-end', icon: 'warning', title: `${ordenStr} no está pagada ni autorizada. Debe pasar por Caja.`, showConfirmButton: false, timer: 4000,
-          showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' }, hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
-        });
+        toast.warning(`${ordenStr} no está pagada ni autorizada. Debe pasar por Caja.`, { autoClose: 2500 });
         return;
       }
     }
@@ -1310,10 +1299,7 @@ const WebRetirosPage = () => {
 
     try {
       await api.post('/web-retiros/estantes/liberar-multiple', { ubicacionId, ordenesParaEntregar });
-      Swal.fire({
-        toast: true, position: 'top-end', icon: 'success', title: 'Entregado correctamente.', showConfirmButton: false, timer: 2500,
-        showClass: { popup: 'animate-[slideInRight_0.3s_ease-out]' }, hideClass: { popup: 'animate-[slideOutRight_0.3s_ease-in]' }
-      });
+      toast.success('Entregado correctamente.', { autoClose: 2500 });
     } catch (err) {
       setError(err.response?.data?.error || err.message || 'Error al entregar');
       fetchAllData(false);
@@ -1395,10 +1381,7 @@ const WebRetirosPage = () => {
       const idLimpio = String(idRetiro).replace(/^[A-Za-z]+-/, '');
       await api.post(`/web-retiros/anular/${idLimpio}`, { motivo });
       
-      Swal.fire({ 
-        toast: true, position: 'top-end', icon: 'success', 
-        title: 'Retiro anulado correctamente', showConfirmButton: false, timer: 3000 
-      });
+      toast.success('Retiro anulado correctamente', { autoClose: 3000 });
 
       setSelectedRetiro(null);
       fetchAllData(false);

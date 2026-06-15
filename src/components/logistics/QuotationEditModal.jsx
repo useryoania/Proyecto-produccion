@@ -136,7 +136,7 @@ function ProductSearchPanel({ onSelect, onCancel, isAdmin, userArea, forceArea }
 }
 
 // ─── Fila de datos existente ────────────────────────────────────────────────
-function LineRow({ line, userArea, isAdmin, areaFilter, cotizacion, monedaFinal, onChange, onDelete, onRecalculate, allProducts, onProductChange, showTechnicalData, showOrderColumn }) {
+function LineRow({ line, userArea, isAdmin, areaFilter, cotizacion, monedaFinal, onChange, onDelete, onRecalculate, allProducts, onProductChange, showTechnicalData, showOrderColumn, readOnly }) {
     const isFiltered = areaFilter && areaFilter !== 'TODOS';
     const areaTag = line.AreaIDInterna || line.AreaID || '';
     const currentCod = line.CodArticulo ? String(line.CodArticulo).trim() : '';
@@ -146,7 +146,7 @@ function LineRow({ line, userArea, isAdmin, areaFilter, cotizacion, monedaFinal,
     const hasPermission = isAdmin || !userArea || areaTag.toUpperCase() === userArea.toUpperCase();
     // Context rule (UX filter override)
     // ONLY allow edit if it's the target area (or no filter) AND user has permission
-    const puedoEditar = hasPermission && (!isFiltered || isLineTargetArea);
+    const puedoEditar = !readOnly && hasPermission && (!isFiltered || isLineTargetArea);
     const subtotal = (parseFloat(line.Cantidad) || 0) * (parseFloat(line.PrecioUnitario) || 0);
     const nombreVisible = line.NombreArticulo || line.DescripcionArticulo || line.CodArticulo;
     const timeoutRef = useRef(null);
@@ -316,7 +316,7 @@ function LineRow({ line, userArea, isAdmin, areaFilter, cotizacion, monedaFinal,
 }
 
 // ─── Modal Principal ────────────────────────────────────────────────────────
-export default function QuotationEditModal({ noDocERP, onClose, onSaved, currentUser, areaFilter, embedded = false }) {
+export default function QuotationEditModal({ noDocERP, onClose, onSaved, currentUser, areaFilter, embedded = false, readOnly = false }) {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [cabecera, setCabecera] = useState(null);
@@ -625,11 +625,12 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
                                             onProductChange={handlePickProductInline}
                                             showTechnicalData={showTechnicalData}
                                             showOrderColumn={true}
+                                            readOnly={readOnly}
                                         />
                                     ))}
 
                                     {/* Botón + Agregar Línea */}
-                                    {activeProductSearch === null && (
+                                    {!readOnly && activeProductSearch === null && (
                                         <tr>
                                             <td colSpan={showTechnicalData ? 9 : 8} className="px-3 py-2 border-t border-dashed border-slate-200">
                                                 <button
@@ -674,13 +675,15 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
 
                 {/* Footer */}
                 <div className="px-6 py-4 border-t bg-slate-50 flex items-center justify-end shrink-0 gap-3">
-                    <button onClick={handleSave} disabled={saving || loading}
-                        className={`px-8 py-2.5 rounded-lg font-bold text-white text-sm transition-all shadow-md flex items-center gap-2
-                            ${saving ? 'bg-indigo-400 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-200 hover:scale-105 active:scale-95'}`}>
-                        {saving
-                            ? <><i className="fa-solid fa-spinner fa-spin" /> Guardando...</>
-                            : <><i className="fa-solid fa-floppy-disk" /> Guardar Cotización</>}
-                    </button>
+                    {!readOnly && (
+                        <button onClick={handleSave} disabled={saving || loading}
+                            className={`px-8 py-2.5 rounded-lg font-bold text-white text-sm transition-all shadow-md flex items-center gap-2
+                                ${saving ? 'bg-indigo-400 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-200 hover:scale-105 active:scale-95'}`}>
+                            {saving
+                                ? <><i className="fa-solid fa-spinner fa-spin" /> Guardando...</>
+                                : <><i className="fa-solid fa-floppy-disk" /> Guardar Cotización</>}
+                        </button>
+                    )}
                 </div>
             </div>
         );
@@ -787,11 +790,12 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
                                             onProductChange={handlePickProductInline}
                                             showTechnicalData={showTechnicalData}
                                             showOrderColumn={false}
+                                            readOnly={readOnly}
                                         />
                                     ))}
 
                                     {/* Botón + Agregar Línea */}
-                                    {activeProductSearch === null && (
+                                    {!readOnly && activeProductSearch === null && (
                                         <tr>
                                             <td colSpan={showTechnicalData ? 9 : 8} className="px-3 py-2 border-t border-dashed border-slate-200">
                                                 <button
@@ -838,15 +842,17 @@ export default function QuotationEditModal({ noDocERP, onClose, onSaved, current
                 <div className="px-6 py-4 border-t bg-slate-50 flex items-center justify-between shrink-0">
                     <button onClick={onClose}
                         className="px-5 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-300 hover:border-slate-400 rounded-lg transition-all shadow-sm">
-                        Cancelar
+                        {readOnly ? 'Cerrar' : 'Cancelar'}
                     </button>
-                    <button onClick={handleSave} disabled={saving || loading}
-                        className={`px-8 py-2.5 rounded-lg font-bold text-white text-sm transition-all shadow-md flex items-center gap-2
-                            ${saving ? 'bg-indigo-400 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-200 hover:scale-105 active:scale-95'}`}>
-                        {saving
-                            ? <><i className="fa-solid fa-spinner fa-spin" /> Guardando...</>
-                            : <><i className="fa-solid fa-floppy-disk" /> Guardar Confirmación</>}
-                    </button>
+                    {!readOnly && (
+                        <button onClick={handleSave} disabled={saving || loading}
+                            className={`px-8 py-2.5 rounded-lg font-bold text-white text-sm transition-all shadow-md flex items-center gap-2
+                                ${saving ? 'bg-indigo-400 cursor-wait' : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-200 hover:scale-105 active:scale-95'}`}>
+                            {saving
+                                ? <><i className="fa-solid fa-spinner fa-spin" /> Guardando...</>
+                                : <><i className="fa-solid fa-floppy-disk" /> Guardar Confirmación</>}
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

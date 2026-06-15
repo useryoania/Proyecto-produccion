@@ -13,6 +13,7 @@ import { Listbox, Transition } from '@headlessui/react';
 import { Check, ChevronDown } from 'lucide-react';
 import ModalConfirmacionFalla from './ModalConfirmacionFalla';
 import ModalLiberacionFalla from './ModalLiberacionFalla';
+import Swal from 'sweetalert2';
 
 
 const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) => {
@@ -269,7 +270,27 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
         const magVal = parseFloat(magClean.replace(/[^\d.]/g, '')) || 0;
         if (magVal > 0) defaultQty = Math.max(1, Math.ceil(magVal / 50));
 
-        const qtyS = prompt(`¿Cuántas etiquetas (bultos) desea generar?\n(Sug: ${defaultQty} para ${currentOrder.magnitude || '0'})\n\nIMPORTANTE: Esto BORRARÁ las etiquetas existentes.`, defaultQty);
+        const { value: qtyS } = await Swal.fire({
+            title: 'Regenerar Etiquetas',
+            html: `¿Cuántas etiquetas (bultos) desea generar?<br><span class="text-sm text-gray-500">(Sug: <b>${defaultQty}</b> para ${currentOrder.magnitude || '0'})</span><br><br><span class="text-red-500 font-bold">IMPORTANTE: Esto BORRARÁ las etiquetas existentes.</span>`,
+            input: 'number',
+            inputValue: defaultQty,
+            showCancelButton: true,
+            confirmButtonText: '<i class="fa-solid fa-rotate"></i> Generar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#4f46e5',
+            inputAttributes: {
+                min: 1,
+                step: 1
+            },
+            inputValidator: (value) => {
+                if (!value || parseInt(value) < 1) {
+                    return 'Debes ingresar un número válido mayor a 0';
+                }
+            },
+            customClass: { container: '!z-[99999]' },
+        });
+
         if (!qtyS) return;
 
         const qty = parseInt(qtyS);
@@ -538,6 +559,45 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                 return msg;
             },
             error: (e) => `Error al cancelar: ${e.response?.data?.error || e.message}`
+        });
+    };
+
+    // ── REACTIVACIÓN ───────────────────────────────────────────────
+    const handleReactivate = (type) => {
+        const safeUser = user?.id || user?.UsuarioID || 'Sistema';
+        const payload = { orderId: currentOrder.id, usuario: safeUser };
+
+        const messages = {
+            ORDER: { loading: 'Reactivando orden...', success: '✅ Orden reactivada correctamente', label: 'esta orden' },
+            REQUEST: { loading: 'Reactivando pedido completo...', success: '✅ Pedido reactivado correctamente', label: 'todo el pedido' },
+        };
+        const { loading, success, label } = messages[type];
+
+        Swal.fire({
+            title: `¿Reactivar ${label}?`,
+            html: `Se restaurarán los archivos al estado previo a la cancelación<br>y se limpiará la nota de cancelación.`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: '✅ Sí, reactivar',
+            cancelButtonText: 'No, cancelar',
+            confirmButtonColor: '#16a34a',
+            cancelButtonColor: '#64748b',
+            customClass: { container: '!z-[99999]' },
+        }).then(({ isConfirmed }) => {
+            if (!isConfirmed) return;
+            const serviceCall = type === 'REQUEST'
+                ? ordersService.reactivateRequest(payload)
+                : ordersService.reactivateOrder(payload);
+
+            toast.promise(serviceCall, {
+                loading,
+                success: () => {
+                    reloadFiles();
+                    if (onOrderUpdated) onOrderUpdated();
+                    return success;
+                },
+                error: (e) => `Error al reactivar: ${e.response?.data?.error || e.message}`
+            });
         });
     };
 
@@ -1159,13 +1219,12 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                 {/* FOOTER ACCIONES CONSOLIDADO */}
                 <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex justify-between items-center gap-3 shrink-0">
                     <div className="flex items-center gap-2">
-                        {/* Grupo de Botones Peligrosos */}
-                        {!readOnly && (
+                        {/* Grupo de Botones Peligrosos — solo visible si NO está cancelada */}
+                        {!readOnly && !['CANCELADO','Cancelado'].includes(currentOrder?.status) && (
                         <div className="flex bg-white rounded-lg border border-zinc-200 p-1 shadow-sm">
                             <button
                                 onClick={() => { setCancelType('ORDER'); setCancelModalOpen(true); }}
                                 className={`px-3 py-1.5 rounded text-xs font-bold transition flex items-center gap-2 hover:bg-brand-magenta/10 text-zinc-500 hover:text-brand-magenta`}
-                                disabled={currentOrder.status === 'CANCELADO'}
                                 title="Cancelar solo esta orden del área"
                             >
                                 <i className="fa-solid fa-ban"></i> Cancelar Orden
@@ -1174,10 +1233,30 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                             <button
                                 onClick={() => { setCancelType('REQUEST'); setCancelModalOpen(true); }}
                                 className={`px-3 py-1.5 rounded text-xs font-bold transition flex items-center gap-2 hover:bg-brand-magenta/10 text-zinc-500 hover:text-brand-magenta`}
-                                disabled={currentOrder.status === 'CANCELADO'}
                                 title="Cancelar todo el pedido (todas las áreas)"
                             >
                                 <i className="fa-solid fa-dumpster-fire"></i> Cancelar Pedido
+                            </button>
+                        </div>
+                        )}
+
+                        {/* Grupo de Botones de Reactivación — visible solo si la orden está cancelada */}
+                        {!readOnly && ['CANCELADO','Cancelado'].includes(currentOrder?.status) && (
+                        <div className="flex bg-white rounded-lg border border-emerald-200 p-1 shadow-sm">
+                            <button
+                                onClick={() => handleReactivate('ORDER')}
+                                className="px-3 py-1.5 rounded text-xs font-bold transition flex items-center gap-2 hover:bg-emerald-50 text-zinc-500 hover:text-emerald-700"
+                                title="Reactivar solo esta orden"
+                            >
+                                <i className="fa-solid fa-rotate-left"></i> Reactivar Orden
+                            </button>
+                            <div className="w-px bg-zinc-200 my-1"></div>
+                            <button
+                                onClick={() => handleReactivate('REQUEST')}
+                                className="px-3 py-1.5 rounded text-xs font-bold transition flex items-center gap-2 hover:bg-emerald-50 text-zinc-500 hover:text-emerald-700"
+                                title="Reactivar todo el pedido (todas las áreas)"
+                            >
+                                <i className="fa-solid fa-rotate"></i> Reactivar Pedido
                             </button>
                         </div>
                         )}

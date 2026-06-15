@@ -525,12 +525,12 @@ const postControlArchivo = async (req, res) => {
                     .input('FallaOrderID2', sql.Int, newOrderId)
                     .query(`
                         UPDATE dbo.Ordenes
-                        SET Magnitud = ISNULL(
+                        SET Magnitud = CAST(ISNULL(
                             (SELECT SUM(ISNULL(Metros, 0)) FROM dbo.ArchivosOrden WHERE OrdenID = @FallaOrderID2),
-                            Magnitud
-                        )
+                            TRY_CAST(Magnitud AS DECIMAL(10,2))
+                        ) AS NVARCHAR(50))
                         WHERE OrdenID = @FallaOrderID2
-                          AND (Magnitud IS NULL OR Magnitud = 0)
+                          AND (Magnitud IS NULL OR TRY_CAST(Magnitud AS DECIMAL(10,2)) = 0 OR Magnitud = '' OR Magnitud = '0')
                     `);
             }
 

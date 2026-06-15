@@ -120,6 +120,18 @@ export const ordersService = {
         const response = await api.post('/orders/file/cancel', payload);
         return response.data;
     },
+    reactivateOrder: async (payload) => {
+        const response = await api.post('/orders/reactivate', payload);
+        return response.data;
+    },
+    reactivateRequest: async (payload) => {
+        const response = await api.post('/orders/reactivate-request', payload);
+        return response.data;
+    },
+    reactivateFile: async (payload) => {
+        const response = await api.post('/orders/file/reactivate', payload);
+        return response.data;
+    },
     advancedSearch: async (filters) => {
         const response = await api.post('/orders/search/advanced', filters);
         return response.data;

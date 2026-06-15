@@ -7,7 +7,7 @@ import {
     CreditCard, TrendingUp, AlertCircle, CheckCircle, Activity,
     Terminal as TerminalIcon, BarChart3, Loader2, XCircle,
     Users, Shield, Play, Power, Lock, Table2, Globe, Save,
-    Bug, ChevronRight, ClipboardList
+    Bug, ChevronRight, ClipboardList, Trash2
 } from 'lucide-react';
 
 // ─── HELPERS ─────────────────────────────────────────────
@@ -101,8 +101,10 @@ const SysAdminPage = () => {
     const [clientErrors, setClientErrors] = useState({ errors: [], total: 0, recentCount: 0 });
     const [backupRunning, setBackupRunning] = useState(false);
     const [syncRunning, setSyncRunning] = useState(false);
+    const [clearLogsRunning, setClearLogsRunning] = useState(false);
     const [auditEntries, setAuditEntries] = useState([]);
     const [auditFilter, setAuditFilter] = useState('');
+    const [slowQueries, setSlowQueries] = useState([]);
     const logEndRef = useRef(null);
     const intervalRef = useRef(null);
 
@@ -112,12 +114,39 @@ const SysAdminPage = () => {
     }, []);
 
     const fetchMetrics = useCallback(async () => {
-        try { const { data } = await api.get('/sysadmin/metrics'); setMetrics(data); } catch (e) { console.error(e); }
+        try { 
+            const [metricsRes, slowRes] = await Promise.all([
+                api.get('/sysadmin/metrics'),
+                api.get('/sysadmin/slow-queries')
+            ]);
+            setMetrics(metricsRes.data); 
+            setSlowQueries(slowRes.data.queries);
+        } catch (e) { console.error(e); }
     }, []);
 
     const fetchSessions = useCallback(async () => {
-        try { const { data } = await api.get('/sysadmin/sessions'); setSessions(data); } catch (e) { console.error(e); }
+        try { const { data } = await api.get('/sysadmin/sessions?limit=100'); setSessions(data); } catch (e) { console.error(e); }
     }, []);
+
+    const handleKickSession = async (userId, username) => {
+        const result = await Swal.fire({
+            title: 'Expulsar Usuario',
+            text: `¿Estás seguro de que querés cerrar la sesión de ${username}?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, expulsar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#ef4444',
+        });
+        if (!result.isConfirmed) return;
+        try {
+            await api.delete(`/sysadmin/sessions/${userId}`);
+            Swal.fire('Expulsado', 'La sesión fue cerrada y el usuario fue desconectado.', 'success');
+            fetchSessions();
+        } catch (e) {
+            Swal.fire('Error', e.response?.data?.error || e.message, 'error');
+        }
+    };
 
     const fetchServices = async () => {
         setServicesLoading(true);
@@ -159,6 +188,28 @@ const SysAdminPage = () => {
         } catch (e) {
             Swal.fire('Error', e.response?.data?.error || e.message, 'error');
         } finally { setBackupRunning(false); }
+    };
+
+    const handleClearLogs = async () => {
+        const result = await Swal.fire({
+            title: 'Limpiar Logs',
+            text: '¿Seguro que querés vaciar los archivos de log? Esto liberará espacio en disco.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, limpiar',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#eab308',
+        });
+        if (!result.isConfirmed) return;
+        setClearLogsRunning(true);
+        try {
+            const { data } = await api.post('/sysadmin/clear-logs');
+            Swal.fire('Logs Limpiados', data.message || 'Archivos vaciados correctamente', 'success');
+            fetchStatus(); // Refrescar el disco
+            if (tab === 'logs') fetchLogFiles();
+        } catch (e) {
+            Swal.fire('Error', e.response?.data?.error || e.message, 'error');
+        } finally { setClearLogsRunning(false); }
     };
 
     const handleSyncPrices = async () => {
@@ -342,6 +393,11 @@ const SysAdminPage = () => {
                         title="Backup">
                         {backupRunning ? <Loader2 size={24} className="animate-spin" style={{ color: '#00B4D8' }} /> : <Save size={24} style={{ color: '#00B4D8' }} />}
                     </button>
+                    <button onClick={handleClearLogs} disabled={clearLogsRunning}
+                        className="p-2 disabled:opacity-50 transition-all hover:bg-zinc-100 rounded-xl"
+                        title="Limpiar Logs">
+                        {clearLogsRunning ? <Loader2 size={24} className="animate-spin" style={{ color: '#eab308' }} /> : <Trash2 size={24} style={{ color: '#eab308' }} />}
+                    </button>
                     <button onClick={handleRestart}
                         className="p-2 transition-all hover:bg-zinc-100 rounded-xl"
                         title="Reiniciar">
@@ -353,10 +409,11 @@ const SysAdminPage = () => {
             {/* ═══ STATUS ═══ */}
             {tab === 'status' && status && (
                 <div className="flex flex-col gap-4">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                         <Gauge label="RAM" value={parseFloat(status.memory.percentUsed)} icon={HardDrive} color="#00B4D8" />
                         <Gauge label="CPU" value={parseFloat(status.cpu.percentUsed)} icon={Cpu} color="#BD0C7E" />
-                        <Gauge label="Sockets" value={status.sockets} max={100} unit="conn" icon={Wifi} color="#DCB308" />
+                        <Gauge label="Disco" value={status.disk && status.disk.total > 0 ? ((status.disk.total - status.disk.free) / status.disk.total * 100) : 0} max={100} unit="%" icon={HardDrive} color="#eab308" />
+                        <Gauge label="Sockets" value={status.sockets} max={500} unit="conn" icon={Wifi} color="#DCB308" />
                         <div className="bg-zinc-900 rounded-2xl p-5 border border-zinc-800 flex flex-col items-center justify-center gap-2">
                             <Database size={20} className={status.db.ok ? 'text-emerald-400' : 'text-red-400'} />
                             <span className="text-xs font-bold text-zinc-400 uppercase">Base de Datos</span>
@@ -365,11 +422,12 @@ const SysAdminPage = () => {
                             </span>
                         </div>
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                         <StatCard label="Uptime" value={formatUptime(status.uptime)} icon={Clock} />
+                        <StatCard label="Reinicios PM2" value={status.pm2Restarts !== undefined ? status.pm2Restarts : '-'} icon={Activity} color="text-yellow-400" />
                         <StatCard label="Node.js" value={status.nodeVersion} icon={Server} color="text-emerald-400" />
                         <StatCard label="RAM Usada" value={formatBytes(status.memory.used)} sub={`de ${formatBytes(status.memory.total)}`} icon={HardDrive} color="text-cyan-400" />
-                        <StatCard label="CPU" value={`${status.cpu.cores} cores`} sub={status.cpu.model.substring(0, 30)} icon={Cpu} color="text-purple-400" />
+                        <StatCard label="Tamaño DB" value={status.db.sizeMB ? `${status.db.sizeMB} MB` : '-'} icon={Database} color="text-purple-400" />
                     </div>
                     <button onClick={fetchStatus} className="self-start flex items-center gap-2 px-4 py-2 bg-zinc-200 hover:bg-zinc-300 rounded-xl text-xs font-bold text-zinc-600 transition-all">
                         <RefreshCw size={14} /> Actualizar
@@ -464,7 +522,9 @@ const SysAdminPage = () => {
                                                     <p className="text-sm font-bold text-zinc-800 truncate">{s.username}</p>
                                                     <p className="text-[10px] text-zinc-400">{s.ip} · {s.userType} · {timeAgo(s.loginAt)}</p>
                                                 </div>
-                                                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                                <button onClick={() => handleKickSession(s.userId, s.username)} className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors" title="Expulsar">
+                                                    <XCircle size={16} />
+                                                </button>
                                             </div>
                                         ))}
                                     </div>
@@ -484,7 +544,9 @@ const SysAdminPage = () => {
                                                     <p className="text-sm font-bold text-zinc-800 truncate">{s.username}</p>
                                                     <p className="text-[10px] text-zinc-400">{s.ip} · {s.userType} · {timeAgo(s.loginAt)}</p>
                                                 </div>
-                                                <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                                                <button onClick={() => handleKickSession(s.userId, s.username)} className="p-1.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors" title="Expulsar">
+                                                    <XCircle size={16} />
+                                                </button>
                                             </div>
                                         ))}
                                     </div>
@@ -535,6 +597,19 @@ const SysAdminPage = () => {
             {/* ═══ SQL CONSOLE ═══ */}
             {tab === 'sql' && (
                 <div className="flex flex-col gap-3">
+                    <div className="flex items-center gap-2">
+                        <select 
+                            onChange={(e) => { if(e.target.value) setSqlQuery(e.target.value); }} 
+                            className="bg-zinc-100 border border-zinc-200 text-zinc-600 rounded-lg px-3 py-1.5 text-xs font-bold outline-none"
+                            defaultValue=""
+                        >
+                            <option value="" disabled>Seleccionar Snippet Rápido...</option>
+                            <option value="SELECT TOP 50 * FROM OrdenesDeposito ORDER BY OrdFechaIngreso DESC">Últimas 50 Órdenes</option>
+                            <option value="SELECT TOP 50 * FROM Pagos ORDER BY PagFechaPago DESC">Últimos Pagos</option>
+                            <option value="SELECT UsuTipoUsuario, COUNT(*) as Total FROM Usuarios GROUP BY UsuTipoUsuario">Tipos de Usuarios</option>
+                            <option value="SELECT * FROM OrdenesDeposito WHERE OrdEstado = 'Ingresada' AND OrdFechaIngreso < DATEADD(day, -3, GETDATE())">Órdenes trancadas (>3 días)</option>
+                        </select>
+                    </div>
                     <div className="flex items-center gap-2">
                         <div className="flex-1 relative">
                             <textarea value={sqlQuery} onChange={e => setSqlQuery(e.target.value)}
@@ -616,6 +691,33 @@ const SysAdminPage = () => {
                             <StatCard label="Total USD" value={`US$ ${Number(metrics.payments.totalUSD || 0).toLocaleString('es-UY', { minimumFractionDigits: 2 })}`} icon={CreditCard} color="text-purple-400" />
                         </div>
                     </div>
+                    {slowQueries && slowQueries.length > 0 && (
+                        <div>
+                            <h3 className="text-xs font-black text-zinc-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Activity size={14} /> Consultas SQL más Lentas</h3>
+                            <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                        <thead className="bg-zinc-50 text-zinc-500 uppercase border-b border-zinc-200">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left font-bold">Query</th>
+                                                <th className="px-4 py-3 text-left font-bold">Ejecuciones</th>
+                                                <th className="px-4 py-3 text-left font-bold">Promedio (ms)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {slowQueries.map((sq, i) => (
+                                                <tr key={i} className="border-t border-zinc-100 hover:bg-red-50/50">
+                                                    <td className="px-4 py-2 font-mono text-[10px] text-zinc-600 max-w-[800px] truncate" title={sq.query_text}>{sq.query_text}</td>
+                                                    <td className="px-4 py-2 text-zinc-600 font-bold">{sq.execution_count}</td>
+                                                    <td className="px-4 py-2 text-red-500 font-black">{sq.avg_duration_ms}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                     <button onClick={fetchMetrics} className="self-start flex items-center gap-2 px-4 py-2 bg-zinc-200 hover:bg-zinc-300 rounded-xl text-xs font-bold text-zinc-600 transition-all">
                         <RefreshCw size={14} /> Actualizar
                     </button>

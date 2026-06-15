@@ -122,7 +122,15 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
         { field: 'desc', headerName: 'Trabajo', width: 180 },
         { field: 'variantCode', headerName: 'Variante', width: 110 },
         { field: 'material', headerName: 'Material', minWidth: 250 },
-        { field: 'magnitude', headerName: 'Cantidad', width: 100 },
+        { field: 'magnitude', headerName: 'Cantidad', width: 100, cellRenderer: ({ row }) => {
+            const mag = row.original?.magnitude ?? '';
+            const unit = row.original?.unit ?? '';
+            // Extraer solo la parte numérica (para registros legacy con '2 u' en Magnitud)
+            const numStr = String(mag).replace(/[^\d.]/g, '');
+            const display = numStr || mag;
+            const unitDisplay = unit || (String(mag).replace(/[\d. ]/g, '') || '');
+            return `${display}${unitDisplay ? ' ' + unitDisplay : ''}`;
+        }},
         { field: 'status', headerName: 'Estado', width: 100, cellRenderer: StatusRenderer },
         { field: 'areaStatus', headerName: 'Estado Área', width: 120 },
         { field: 'filesCount', headerName: 'Archivos', width: 80, cellRenderer: FilesRenderer },

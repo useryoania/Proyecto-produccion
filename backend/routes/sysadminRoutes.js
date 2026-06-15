@@ -19,10 +19,13 @@ router.use(verifyToken, requireAdmin);
 router.get('/status', ctrl.getSystemStatus);
 router.get('/logs', ctrl.getLogFiles);
 router.get('/logs/:filename', ctrl.getLogContent);
+router.post('/clear-logs', ctrl.clearLogs);
 router.get('/metrics', ctrl.getDailyMetrics);
+router.get('/slow-queries', ctrl.getSlowQueries);
 
 // Phase 2
 router.get('/sessions', ctrl.getSessions);
+router.delete('/sessions/:userId', ctrl.killSession);
 router.post('/sql', ctrl.executeSql);
 router.post('/restart', ctrl.restartServer);
 

@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Fix for sonner toasts appearing under navbar */
+[data-sonner-toaster] {
+  z-index: 99999 !important;
+}
+
 /* Utility: hide scrollbars while keeping scroll functionality */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

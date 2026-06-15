@@ -90,6 +90,7 @@ const getOrdenesRetiroQueryBase = `
     ) AS lugarRetiro,
     er.EORNombreEstado AS estado,
     o.OrdIdOrden AS orderId,
+    o.PagIdPago AS subOrderPagIdPago,
     o.OrdCodigoOrden AS orderNumber,
     o.OrdEstadoActual AS orderEstado,
     eo.EOrNombreEstado AS orderEstadoNombre,
@@ -180,6 +181,7 @@ const processRetirosRows = (rows) => {
       map[row.OReIdOrdenRetiro].orders.push({
         orderNumber: row.orderNumber,
         orderId: row.orderId,
+        subOrderPagIdPago: row.subOrderPagIdPago,
         orderNombreTrabajo: row.orderNombreTrabajo || null,
         orderMaterial: row.articuloDescripcion ? row.articuloDescripcion.trim() : null,
         orderEstado: row.orderEstadoNombre || row.orderEstado,
@@ -195,7 +197,20 @@ const processRetirosRows = (rows) => {
       });
     }
   }
-  return Object.values(map);
+
+  const result = Object.values(map);
+
+  // Verificamos si todos los pedidos individuales están pagos
+  for (const retiro of result) {
+    if (!retiro.pagorealizado && retiro.orders.length > 0) {
+      const allOrdersPaid = retiro.orders.every(o => o.subOrderPagIdPago != null);
+      if (allOrdersPaid) {
+        retiro.pagorealizado = 1;
+      }
+    }
+  }
+
+  return result;
 };
 
 const getOrdenesRetiroPorEstados = async (req, res) => {

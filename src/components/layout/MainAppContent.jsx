@@ -3,7 +3,7 @@ import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUse
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
-import { ToastContainer } from 'react-toastify';
+import { ToastContainer, Slide } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../client-portal/api/apiClient';
@@ -493,14 +493,23 @@ const MainAppContent = ({ menuItems = [] }) => {
 
         const onTicketNew = (data) => handleUpdate(data, true);
         const onTicketUpdated = (data) => handleUpdate(data, false);
+        const onForceLogout = (payload) => {
+            // Convert to string for safe comparison
+            if (String(payload.userId) === String(user?.id)) {
+                logout();
+                window.location.href = '/login'; // Hard redirect for safety
+            }
+        };
 
         socket.on('ticket:new', onTicketNew);
         socket.on('ticket:updated', onTicketUpdated);
+        socket.on('force_logout_user', onForceLogout);
 
         return () => {
             socket.emit('leave:helpdesk_admin');
             socket.off('ticket:new', onTicketNew);
             socket.off('ticket:updated', onTicketUpdated);
+            socket.off('force_logout_user', onForceLogout);
         };
     }, [user]);
 
@@ -652,6 +661,7 @@ const MainAppContent = ({ menuItems = [] }) => {
             <Toaster
                 position="top-right"
                 expand
+                style={{ zIndex: 99999 }}
                 gap={8}
                 theme="light"
                 toastOptions={{
@@ -673,7 +683,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                     }
                 }}
             />
-            <ToastContainer limit={1} position="top-right" autoClose={5000} />
+            <ToastContainer limit={1} position="top-right" autoClose={5000} transition={Slide} />
             <Navbar 
                 onToggleMobileMenu={() => setIsMobileMenuOpen(prev => !prev)} 
                 isMobileMenuOpen={isMobileMenuOpen} 
@@ -800,7 +810,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                 </aside>
 
                 <main className="flex-1 overflow-hidden relative bg-slate-100 w-full">
-                    <div className={`absolute inset-0 overflow-y-auto scroll-smooth ${['/caja/transaccion', '/contabilidad/caja-admin', '/admin/helpdesk', '/atencion-cliente/helpdesk'].includes(location.pathname) || location.pathname.startsWith('/production/machine') ? 'p-0' : 'p-0 md:p-6'}`}>
+                    <div className={`absolute inset-0 overflow-y-auto scroll-smooth ${['/caja/transaccion', '/contabilidad/caja-admin', '/admin/helpdesk', '/atencion-cliente/helpdesk', '/consultas/ordenes'].includes(location.pathname) || location.pathname.startsWith('/production/machine') ? 'p-0' : 'p-0 md:p-6'}`}>
                         <AnimatePresence mode="wait">
                             <motion.div
                                 key={location.pathname}

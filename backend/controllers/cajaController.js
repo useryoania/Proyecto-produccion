@@ -28,13 +28,13 @@ const procesarTransaccion = async (req, res) => {
         .input('d', sql.VarChar(10), header.tipoDocumento)
         .query('SELECT AfectaCtaCte FROM Config_TiposDocumento WHERE CodDocumento = @d');
       if (!rTipo.recordset.length)
-        return res.status(400).json({ success:false, error:'tipoDocumento invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.' });
+        return res.status(400).json({ success:false, error:'tipoDocumento inválido.' });
       esCredito = rTipo.recordset[0].AfectaCtaCte === true;
     }
 
     // ─────────────────────────────────────────────
     if (!esCredito && (!pagos || pagos.length === 0))
-      return res.status(400).json({ success:false, error:'Debe incluir al menos un mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©todo de pago para documentos de contado.' });
+      return res.status(400).json({ success:false, error:'Debe incluir al menos un método de pago para documentos de contado.' });
 
     const resultado = await cajaService.procesarTransaccion({ header, aplicaciones, pagos: pagos || [], usuarioId });
     const s = io(req); if (s) { s.emit('actualizado',{type:'actualizacion'}); s.emit('retiros:update',{type:'pago'}); }
@@ -81,7 +81,7 @@ const getProductosVenta = async (req, res) => {
 const anularTransaccion = async (req, res) => {
   const usuarioId = req.user?.id || 70;
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ success:false, error:'ID invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.' });
+  if (isNaN(id)) return res.status(400).json({ success:false, error:'ID inválido.' });
   try {
     const r = await cajaService.anularTransaccion({ tcaIdTransaccion:id, usuarioId, motivo:req.body.motivo });
     const s = io(req); if (s) s.emit('retiros:update',{type:'anulacion'});
@@ -94,17 +94,17 @@ const anularTransaccion = async (req, res) => {
 
 const getTransaccion = async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ success:false, error:'ID invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.' });
+  if (isNaN(id)) return res.status(400).json({ success:false, error:'ID inválido.' });
   try {
     const data = await cajaService.getTransaccion(id);
-    if (!data) return res.status(404).json({ success:false, error:'TransacciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n no encontrada.' });
+    if (!data) return res.status(404).json({ success:false, error:'Transacción no encontrada.' });
     return res.json({ success:true, data });
   } catch (err) { return res.status(500).json({ success:false, error:err.message }); }
 };
 
 const getHistorialCliente = async (req, res) => {
   const clienteId = parseInt(req.params.clienteId, 10);
-  if (isNaN(clienteId)) return res.status(400).json({ success:false, error:'clienteId invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.' });
+  if (isNaN(clienteId)) return res.status(400).json({ success:false, error:'clienteId inválido.' });
   const { desde, hasta, limit } = req.query;
   try {
     const data = await cajaService.getTransaccionesByCliente({ clienteId, desde:desde||null, hasta:hasta||null, limit:parseInt(limit||50) });
@@ -114,7 +114,7 @@ const getHistorialCliente = async (req, res) => {
 
 // ─────────────────────────────────────────────
 
-/** GET /api/contabilidad/caja/sesion/actual ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â sesiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n activa de hoy */
+/** GET /api/contabilidad/caja/sesion/actual ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â sesión activa de hoy */
 const getSesionActual = async (req, res) => {
   try {
     const pool = await getPool();
@@ -148,7 +148,7 @@ const abrirSesion = async (req, res) => {
       WHERE StuEstado = 'ABIERTA'
     `);
     if (chk.recordset.length > 0) {
-      return res.status(409).json({ success: false, error: 'Ya existe una sesiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n de caja ABIERTA en el sistema. CiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©rrela antes de abrir una nueva.' });
+      return res.status(409).json({ success: false, error: 'Ya existe una sesión de caja ABIERTA en el sistema. Ciérrela antes de abrir una nueva.' });
     }
 
     const result = await pool.request()
@@ -161,7 +161,7 @@ const abrirSesion = async (req, res) => {
         SELECT SCOPE_IDENTITY() AS StuIdSesion, GETDATE() AS FechaApertura;
       `);
 
-    logger.info(`[CAJA] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ Caja abierta por usuario ${usuarioId}. SesiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n: ${result.recordset[0]?.StuIdSesion}`);
+    logger.info(`[CAJA] 💰 Caja abierta por usuario ${usuarioId}. Sesión: ${result.recordset[0]?.StuIdSesion}`);
     return res.status(201).json({ success:true, sesion:result.recordset[0] });
   } catch (err) {
     logger.error('[CAJA] abrirSesion:', err.message);
@@ -175,7 +175,7 @@ const cerrarSesion = async (req, res) => {
   const usuarioId  = req.user?.id || 70;
   const id         = parseInt(req.params.id, 10);
   const { montoFinal, montoFinalUSD = 0, observaciones } = req.body;
-  if (isNaN(id))      return res.status(400).json({ success:false, error:'ID de sesiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.' });
+  if (isNaN(id))      return res.status(400).json({ success:false, error:'ID de sesión inválido.' });
   if (!montoFinal && montoFinal !== 0) return res.status(400).json({ success:false, error:'montoFinal es requerido.' });
   try {
     const pool = await getPool();
@@ -186,7 +186,7 @@ const cerrarSesion = async (req, res) => {
       .input('MontoFinalUSD', sql.Decimal(18,2), parseFloat(montoFinalUSD))
       .input('Observaciones', sql.NVarChar(500), observaciones || null)
       .execute('SP_CerrarSesionCaja');
-    logger.info(`[CAJA] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´ Caja cerrada. SesiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n: ${id}. Diferencia: ${result.recordset[0]?.Diferencia}`);
+    logger.info(`[CAJA] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´ Caja cerrada. Sesión: ${id}. Diferencia: ${result.recordset[0]?.Diferencia}`);
     return res.json({ success:true, resumen:result.recordset[0] });
   } catch (err) {
     logger.error('[CAJA] cerrarSesion:', err.message);
@@ -194,10 +194,10 @@ const cerrarSesion = async (req, res) => {
   }
 };
 
-/** GET /api/contabilidad/caja/sesion/:id/resumen ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â totales de una sesiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n */
+/** GET /api/contabilidad/caja/sesion/:id/resumen ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â totales de una sesión */
 const getResumenSesion = async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ success:false, error:'ID invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.' });
+  if (isNaN(id)) return res.status(400).json({ success:false, error:'ID inválido.' });
   try {
     const pool = await getPool();
     const [sesRes, cobRes, egrRes] = await Promise.all([
@@ -210,7 +210,7 @@ const getResumenSesion = async (req, res) => {
         SELECT COUNT(*) AS CantEgresos, ISNULL(SUM(EgrMontoConvertido),0) AS TotalEgresos
         FROM dbo.EgresosCaja WITH(NOLOCK) WHERE StuIdSesion=@Id AND EgrEstado='REGISTRADO'`),
     ]);
-    if (!sesRes.recordset.length) return res.status(404).json({ success:false, error:'SesiÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n no encontrada.' });
+    if (!sesRes.recordset.length) return res.status(404).json({ success:false, error:'Sesión no encontrada.' });
     return res.json({
       success: true,
       sesion:  sesRes.recordset[0],
@@ -220,7 +220,7 @@ const getResumenSesion = async (req, res) => {
   } catch (err) { return res.status(500).json({ success:false, error:err.message }); }
 };
 
-/** GET /api/contabilidad/caja/resumen-diario ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â totales del dÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­a actual para administrador */
+/** GET /api/contabilidad/caja/resumen-diario ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â totales del día actual para administrador */
 const getResumenDiario = async (req, res) => {
   try {
     const pool = await getPool();
@@ -665,7 +665,7 @@ const registrarEgreso = async (req, res) => {
 /** GET /api/contabilidad/caja/egreso/:id/voucher */
 const getVoucherEgreso = async (req, res) => {
   const id = parseInt(req.params.id, 10);
-  if (isNaN(id)) return res.status(400).json({ success: false, error: 'ID invÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡lido.' });
+  if (isNaN(id)) return res.status(400).json({ success: false, error: 'ID inválido.' });
   try {
     const pool = await getPool();
     const r = await pool.request()
@@ -724,7 +724,7 @@ const registrarIngresoGenerico = async (req, res) => {
   const usuarioId = req.user?.id || 70;
   let { stuIdSesion, concepto, monto, moneda='UYU', monedaId=1,
           cotizacion, metodoPagoId, tipoDocumento, serieDoc, numeroDoc, observaciones, admin } = req.body;
-  if (!concepto || !monto || !metodoPagoId) return res.status(400).json({ success:false, error:'Concepto, monto y mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©todo son obligatorios.' });
+  if (!concepto || !monto || !metodoPagoId) return res.status(400).json({ success:false, error:'Concepto, monto y método son obligatorios.' });
   
   const montoNum  = parseFloat(monto);
   const cotNum    = parseFloat(cotizacion) || null;
@@ -818,7 +818,7 @@ const registrarIngresoGenerico = async (req, res) => {
 
     // Asiento contable
     const lineasContables = [];
-    // 1. DÃ©bito a Caja
+    // 1. Débito a Caja
     lineasContables.push({
       codigoCuenta: moneda === 'USD' ? contabilidadCore.CUENTAS.CAJA_USD : contabilidadCore.CUENTAS.CAJA_UYU,
       debeBase: montoNum,
@@ -827,7 +827,7 @@ const registrarIngresoGenerico = async (req, res) => {
       cotizacion: cotNum || 1
     });
 
-    // 2. CrÃ©dito a Ingresos Varios (usamos la default de ingresos)
+    // 2. Crédito a Ingresos Varios (usamos la default de ingresos)
     lineasContables.push({
       codigoCuenta: contabilidadCore.CUENTAS.VENTA_SERV,
       debeBase: 0,
@@ -838,7 +838,7 @@ const registrarIngresoGenerico = async (req, res) => {
     });
 
     await contabilidadCore.generarAsientoCompleto({
-      concepto: `Ingreso GenÃ©rico: ${concepto}`,
+      concepto: `Ingreso Genérico: ${concepto}`,
       usuarioId,
       tcaIdTransaccion: tcaId,
       origen: 'CAJA_INGRESOS',
@@ -847,7 +847,7 @@ const registrarIngresoGenerico = async (req, res) => {
 
     await transaction.commit();
 
-    logger.info(`[CAJA-ERP] Ingreso GenÃ©rico Registrado ID=${tcaId} Monto=${montoNum} ${moneda}`);
+    logger.info(`[CAJA-ERP] Ingreso Genérico Registrado ID=${tcaId} Monto=${montoNum} ${moneda}`);
     const s = io(req); if (s) s.emit('actualizado', { type: 'caja-ingreso' });
     return res.status(201).json({ success:true, tcaId, numeroDoc:numeroDocFinal });
   } catch (err) {
@@ -902,7 +902,7 @@ const autorizarSinPago = async (req, res) => {
         `);
       await transaction.commit();
       const s = io(req); if (s) { s.emit('retiros:update',{type:'autorizacion'}); }
-      logger.info(`[CAJA] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦ AutorizaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n sin pago: OrdenRetiro=${oreIdOrdenRetiro}`);
+      logger.info(`[CAJA] ✅ Autorización sin pago: OrdenRetiro=${oreIdOrdenRetiro}`);
       return res.status(201).json({ success:true, auzIdAutorizacion:auzRes.recordset[0].AuzIdAutorizacion });
     } catch (e) { await transaction.rollback(); throw e; }
   } catch (err) {
@@ -918,7 +918,7 @@ const autorizarSinPago = async (req, res) => {
  *
  * El cajero elige una operacion del Motor (EvtCodigo) y el sistema:
  *  1. Carga las reglas de Cont_ReglasAsiento para ese evento
- *  2. Registra MovimientosCuenta segÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âºn EvtAfectaSaldo del evento
+ *  2. Registra MovimientosCuenta según EvtAfectaSaldo del evento
  *  3. Genera el asiento en Libro Mayor via contabilidadCore
  *  4. Crea el documento en DocumentosContables si EvtGeneraDeuda
  *
@@ -941,7 +941,7 @@ const registrarOperacionManual = async (req, res) => {
   // Cargar el evento del motor
   const evento = await motorContable.getEvento(evtCodigo);
   if (!evento) return res.status(404).json({ success: false, error: `Evento '${evtCodigo}' no encontrado en el Motor.` });
-  if (!evento.EvtActivo) return res.status(400).json({ success: false, error: `Evento '${evtCodigo}' estÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ inactivo.` });
+  if (!evento.EvtActivo) return res.status(400).json({ success: false, error: `Evento '${evtCodigo}' está inactivo.` });
   if (evento.EvtUsaEntidad && !clienteId) return res.status(400).json({ success: false, error: `El evento '${evento.EvtNombre}' requiere un cliente.` });
 
   const montoNum = parseFloat(importe);
@@ -1102,7 +1102,7 @@ const procesarPagoDeuda = async (req, res) => {
     const { header, aplicaciones, pagos } = req.body;
     if (!header?.clienteId) return res.status(400).json({ error: 'clienteId es requerido.' });
     if (!aplicaciones?.length) return res.status(400).json({ error: 'Debe seleccionar al menos una deuda.' });
-    if (!pagos?.length) return res.status(400).json({ error: 'Debe incluir al menos un mÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©todo de pago.' });
+    if (!pagos?.length) return res.status(400).json({ error: 'Debe incluir al menos un método de pago.' });
 
     // ─────────────────────────────────────────────
     const sumDeudas = aplicaciones.reduce((s, a) => s + (Number(a.montoOriginal) || 0), 0);
@@ -1264,7 +1264,7 @@ const procesarPagoDeuda = async (req, res) => {
           tipoTransaccion  = pedidoCajaR.recordset[0].CodDocumento;
           serieTransaccion = pedidoCajaR.recordset[0].SecSerie;
           docTipoStr       = pedidoCajaR.recordset[0].Detalle || 'Pedido Caja';
-          logger.info(`[PAGO-DEUDA] Orden sin factura detectada ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ PEDIDO CAJA tipo=${tipoTransaccion} serie=${serieTransaccion}`);
+          logger.info(`[PAGO-DEUDA] Orden sin factura detectada -> PEDIDO CAJA tipo=${tipoTransaccion} serie=${serieTransaccion}`);
           // Avanzar secuencia
           const seqR = await new sql.Request(transaction)
             .input('SecId', sql.Int, pedidoCajaR.recordset[0].SecIdSecuencia)
@@ -1294,7 +1294,7 @@ const procesarPagoDeuda = async (req, res) => {
           `);
         if (autoDocR.recordset.length) {
           tipoTransaccion = autoDocR.recordset[0].CodDocumento;
-          logger.info(`[PAGO-DEUDA] tipoDocumento no especificado ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ usando tipo auto-detectado: ${tipoTransaccion} (${autoDocR.recordset[0].Detalle})`);
+          logger.info(`[PAGO-DEUDA] tipoDocumento no especificado -> usando tipo auto-detectado: ${tipoTransaccion} (${autoDocR.recordset[0].Detalle})`);
         }
       }
 
@@ -1668,7 +1668,7 @@ const procesarPagoDeuda = async (req, res) => {
                 (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
               VALUES (@RID, @Estado, GETDATE(), ${usuarioId});
             `);
-          logger.info(`[PAGO-DEUDA] OrdenRetiro ${oreId} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ estado ${nuevoEst}, PagId=${primerPagoId}`);
+          logger.info(`[PAGO-DEUDA] OrdenRetiro ${oreId} -> estado ${nuevoEst}, PagId=${primerPagoId}`);
         }
 
 
@@ -1708,7 +1708,7 @@ const generarNotaCredito = async (req, res) => {
   try {
     const { docIdOrigen, monto, motivo, clienteId, cuentaId, monedaId, Lineas, Totales } = req.body;
     if (!docIdOrigen || !clienteId || !cuentaId)
-      return res.status(400).json({ error: 'Faltan parÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡metros: docIdOrigen, clienteId, cuentaId' });
+      return res.status(400).json({ error: 'Faltan parámetros: docIdOrigen, clienteId, cuentaId' });
 
     const pool = await getPool();
     const transaction = pool.transaction();
@@ -1729,7 +1729,7 @@ const generarNotaCredito = async (req, res) => {
       }
 
       if (montoNum > Number(docOrigen.DocTotal)) {
-        throw new Error(`El total de la Nota de CrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dito (${montoNum}) no puede superar al total del documento original (${docOrigen.DocTotal})`);
+        throw new Error(`El total de la Nota de Crédito (${montoNum}) no puede superar al total del documento original (${docOrigen.DocTotal})`);
       }
 
       // '10' = E-Ticket Nota De Credito, '04' = E-Factura Nota De Credito
@@ -1791,7 +1791,7 @@ const generarNotaCredito = async (req, res) => {
         .input('MonId', sql.Int,           monId)
         .input('Usr',   sql.Int,           usuarioId)
         .input('DocRef',sql.Int,           parseInt(docIdOrigen))
-        .input('Motivo',sql.NVarChar(300), motivo || 'Nota de crÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dito')
+        .input('Motivo',sql.NVarChar(300), motivo || 'Nota de crédito')
         .input('Subtotal', sql.Decimal(18,2), subtotalVal)
         .input('TotalDescuentos', sql.Decimal(18,2), totalDescVal)
         .input('TotalRecargos', sql.Decimal(18,2), totalRecVal)
@@ -2119,7 +2119,7 @@ const reversarDocumento = async (req, res) => {
   try {
     const { docId, clienteId, cuentaId, motivo } = req.body;
     if (!docId || !clienteId || !cuentaId)
-      return res.status(400).json({ error: 'Faltan parÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡metros: docId, clienteId, cuentaId' });
+      return res.status(400).json({ error: 'Faltan parámetros: docId, clienteId, cuentaId' });
 
     const pool = await getPool();
     const docR = await pool.request()
@@ -2128,12 +2128,12 @@ const reversarDocumento = async (req, res) => {
               FROM dbo.DocumentosContables WHERE DocIdDocumento=@DocId`);
     if (!docR.recordset.length) return res.status(404).json({ error: 'Documento no encontrado' });
     const doc = docR.recordset[0];
-    if (doc.DocEstado === 'ANULADO') return res.status(400).json({ error: 'El documento ya estÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ anulado' });
+    if (doc.DocEstado === 'ANULADO') return res.status(400).json({ error: 'El documento ya está anulado' });
 
     // ─────────────────────────────────────────────
     if (doc.CfeEstado === 'ACEPTADO_DGI') {
       return res.status(400).json({
-        error: 'Este documento ya fue aceptado por la DGI y no puede anularse directamente. Debe emitir una Nota de CrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dito correctiva.'
+        error: 'Este documento ya fue aceptado por la DGI y no puede anularse directamente. Debe emitir una Nota de Crédito correctiva.'
       });
     }
 
@@ -2144,7 +2144,7 @@ const reversarDocumento = async (req, res) => {
     // Determinar si el documento es una NC (en cuyo caso se resta en lugar de sumar)
     const esNotaCredito = (doc.DocTipo || '').toUpperCase().includes('NOTA DE CRE') ||
                           (doc.DocTipo || '').toUpperCase().includes('NOTA_CREDITO') ||
-                          (doc.DocTipo || '').toUpperCase().includes('NOTA DE CRÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°');
+                          (doc.DocTipo || '').toUpperCase().includes('NOTA DE ÉDITO');
     const ajusteImporte = esNotaCredito ? -monto : monto;
 
     await pool.request()
@@ -2178,7 +2178,7 @@ const registrarPagoAnticipo = async (req, res) => {
   try {
     const { clienteId, cuentaId, importe, metodoPagoId, monedaId, concepto, admin } = req.body;
     if (!clienteId || !importe)
-      return res.status(400).json({ error: 'Faltan parÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡metros: clienteId, importe' });
+      return res.status(400).json({ error: 'Faltan parámetros: clienteId, importe' });
     const montoNum = Number(importe);
     if (montoNum <= 0) return res.status(400).json({ error: 'El importe debe ser mayor a 0' });
 
@@ -2215,7 +2215,7 @@ const registrarPagoAnticipo = async (req, res) => {
                     OUTPUT INSERTED.CueIdCuenta
                     VALUES(@Cli, 1, @Tipo, @MonId, 0, 0, 0, 0, 1, GETDATE(), @Usr)`);
           cueId = newCue.recordset[0].CueIdCuenta;
-          logger.info(`[ANTICIPO] Cuenta ${tipoCuenta} creada automÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ticamente (CueId=${cueId}) para Cli=${cliId}`);
+          logger.info(`[ANTICIPO] Cuenta ${tipoCuenta} creada automáticamente (CueId=${cueId}) para Cli=${cliId}`);
         }
       }
 
@@ -2399,7 +2399,7 @@ const registrarPagoAnticipo = async (req, res) => {
           saldoDisponible -= aplicar;
           montoImputado += aplicar;
           deudasImputadas++;
-          logger.info(`[ANTICIPO] Imputado ${aplicar.toFixed(2)} a deuda #${d.DDeIdDocumento} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ pendiente: ${nuevoPend.toFixed(2)} (${nuevoEstado})`);
+          logger.info(`[ANTICIPO] Imputado ${aplicar.toFixed(2)} a deuda #${d.DDeIdDocumento} -> pendiente: ${nuevoPend.toFixed(2)} (${nuevoEstado})`);
         }
       } catch (eDeu) {
         logger.warn(`[ANTICIPO] Error al imputar deudas: ${eDeu.message}`);
@@ -2407,7 +2407,7 @@ const registrarPagoAnticipo = async (req, res) => {
 
       await transaction.commit();
       const msgImputado = deudasImputadas > 0
-        ? ` Se imputÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ ${monStr} ${montoImputado.toFixed(2)} contra ${deudasImputadas} deuda(s) pendiente(s).`
+        ? ` Se imputó ${monStr} ${montoImputado.toFixed(2)} contra ${deudasImputadas} deuda(s) pendiente(s).`
         : '';
       logger.info(`[ANTICIPO] Cli=${cliId} Cue=${cueId} Monto=${montoNum} DocId=${docId} TcaId=${tcaId}${msgImputado}`);
       const s = io(req); if (s) s.emit('actualizado', { type: 'anticipo' });
@@ -2434,7 +2434,7 @@ const anularFactura = async (req, res) => {
   try {
     const { docId, clienteId, cuentaId, motivo } = req.body;
     if (!docId || !cuentaId)
-      return res.status(400).json({ error: 'Faltan parÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡metros: docId, cuentaId' });
+      return res.status(400).json({ error: 'Faltan parámetros: docId, cuentaId' });
 
     const pool = await getPool();
 
@@ -2448,15 +2448,15 @@ const anularFactura = async (req, res) => {
     const doc = docR.recordset[0];
 
     if (doc.DocEstado === 'ANULADO')
-      return res.status(400).json({ error: 'El documento ya estÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ anulado' });
+      return res.status(400).json({ error: 'El documento ya está anulado' });
     if (doc.CfeEstado === 'ACEPTADO_DGI')
-      return res.status(400).json({ error: 'No se puede anular: el documento ya fue aceptado por DGI. Use Nota de CrÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â©dito.' });
+      return res.status(400).json({ error: 'No se puede anular: el documento ya fue aceptado por DGI. Use Nota de Crédito.' });
 
     const docRef  = parseInt(docId);
     const cueId   = parseInt(cuentaId);
     const monto   = Number(doc.DocTotal || 0);
     const cicId   = doc.CicIdCiclo;
-    const motivoFull = `AnulaciÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³n ${doc.DocTipo} ${doc.DocSerie}-${doc.DocNumero}: ${motivo || 'Sin motivo'}`;
+    const motivoFull = `Anulación ${doc.DocTipo} ${doc.DocSerie}-${doc.DocNumero}: ${motivo || 'Sin motivo'}`;
 
     const transaction = pool.transaction();
     await transaction.begin();
@@ -2545,9 +2545,9 @@ const anularFactura = async (req, res) => {
                       c.CicTotalPagos   = ISNULL((SELECT SUM(ABS(MovImporte)) FROM dbo.MovimientosCuenta WHERE CicIdCiclo=c.CicIdCiclo AND MovTipo IN ('PAGO', 'PAGO_CRUZADO', 'ANTICIPO', 'COBRO', 'SALDO_A_FAVOR') AND (MovAnulado IS NULL OR MovAnulado=0)), 0)
                     FROM dbo.CiclosCredito c WHERE c.CicIdCiclo=@CicId`);
 
-          logger.info(`[ANULAR-FACTURA] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œrdenes reasignadas al ciclo activo #${nuevoCicId}. Totales recalculados.`);
+          logger.info(`[ANULAR-FACTURA] Órdenes reasignadas al ciclo activo #${nuevoCicId}. Totales recalculados.`);
         } else {
-          logger.info(`[ANULAR-FACTURA] Ciclo #${cicId} marcado ANULADO. ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œrdenes liberadas (sin ciclo activo para reasignar).`);
+          logger.info(`[ANULAR-FACTURA] Ciclo #${cicId} marcado ANULADO. Órdenes liberadas (sin ciclo activo para reasignar).`);
         }
       }
 
@@ -2556,7 +2556,7 @@ const anularFactura = async (req, res) => {
       const s = io(req); if (s) s.emit('actualizado', { type: 'anular-factura', cicId });
       return res.json({
         success: true,
-        message: `Factura ${doc.DocSerie}-${doc.DocNumero} anulada correctamente. Las ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³rdenes quedan libres para ser tomadas por un nuevo ciclo.`,
+        message: `Factura ${doc.DocSerie}-${doc.DocNumero} anulada correctamente. Las órdenes quedan libres para ser tomadas por un nuevo ciclo.`,
         cicloAnulado: !!cicId,
       });
     } catch (errTx) { await transaction.rollback(); throw errTx; }
@@ -2607,7 +2607,7 @@ module.exports = {
 // ─────────────────────────────────────────────
 /**
  * POST /contabilidad/caja/imputar-anticipo-deuda
- * Usa el saldo a favor que ya tiene el cliente para cancelar una deuda especÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â­fica.
+ * Usa el saldo a favor que ya tiene el cliente para cancelar una deuda específica.
  * NO ingresa plata nueva ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â solo mueve el saldo existente.
  */
 async function imputarAnticipoADeuda(req, res) {
@@ -2632,7 +2632,7 @@ async function imputarAnticipoADeuda(req, res) {
       .query('SELECT DDeImportePendiente, DDeEstado, DocIdDocumento FROM dbo.DeudaDocumento WITH(UPDLOCK) WHERE DDeIdDocumento=@DdeId AND CueIdCuenta=@CueId');
     if (!deudaR.recordset.length) throw new Error('Deuda no encontrada para esta cuenta.');
     const deuda = deudaR.recordset[0];
-    if (!['PENDIENTE','PARCIAL'].includes(deuda.DDeEstado)) throw new Error(`La deuda ya estÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ en estado: ${deuda.DDeEstado}`);
+    if (!['PENDIENTE','PARCIAL'].includes(deuda.DDeEstado)) throw new Error(`La deuda ya está en estado: ${deuda.DDeEstado}`);
 
     const pendiente = Number(deuda.DDeImportePendiente);
     const montoAplicar = monto ? Math.min(Number(monto), pendiente, saldoActual) : Math.min(pendiente, saldoActual);

@@ -46,6 +46,9 @@ router.get('/history/:id', verifyToken, ordersController.getOrderHistory);
 router.put('/file/update', verifyToken, ordersController.updateFile);
 router.post('/file/add', verifyToken, ordersController.addFile);
 router.post('/file/cancel', verifyToken, ordersController.cancelFile);
+router.post('/reactivate', verifyToken, ordersController.reactivateOrder);
+router.post('/reactivate-request', verifyToken, ordersController.reactivateRequest);
+router.post('/file/reactivate', verifyToken, ordersController.reactivateFile);
 router.put('/service/update', verifyToken, ordersController.updateService);
 router.delete('/file/:id', verifyToken, ordersController.deleteFile);
 

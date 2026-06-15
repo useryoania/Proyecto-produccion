@@ -10,20 +10,33 @@ const recalculateOrderMagnitude = async (transaction, ordenId) => {
         await new sql.Request(transaction)
             .input('OID', sql.Int, ordenId)
             .query(`
+                DECLARE @UM NVARCHAR(20);
+                SELECT @UM = LTRIM(RTRIM(ISNULL(UM, 'u'))) FROM dbo.Ordenes WHERE OrdenID = @OID;
+
                 DECLARE @Total FLOAT = 0;
-                
-                -- Suma de Copias en ArchivosOrden (ignorando cancelados)
-                SELECT @Total = @Total + ISNULL(SUM(CAST(ISNULL(Copias, 0) AS FLOAT)), 0)
-                FROM dbo.ArchivosOrden 
-                WHERE OrdenID = @OID AND ISNULL(EstadoArchivo, '') != 'CANCELADO';
-                
-                -- Suma de Cantidad en ServiciosExtraOrden
+
+                -- Si la unidad es metros (m, m2, ml, etc.) sumamos Metros; si no, sumamos Copias
+                IF LEFT(LOWER(@UM), 1) = 'm'
+                BEGIN
+                    SELECT @Total = @Total + ISNULL(SUM(CAST(ISNULL(Metros, 0) AS FLOAT)), 0)
+                    FROM dbo.ArchivosOrden
+                    WHERE OrdenID = @OID AND ISNULL(EstadoArchivo, '') != 'CANCELADO';
+                END
+                ELSE
+                BEGIN
+                    SELECT @Total = @Total + ISNULL(SUM(CAST(ISNULL(Copias, 0) AS FLOAT)), 0)
+                    FROM dbo.ArchivosOrden
+                    WHERE OrdenID = @OID AND ISNULL(EstadoArchivo, '') != 'CANCELADO';
+                END
+
+                -- Suma de Cantidad en ServiciosExtraOrden (siempre en unidades)
                 SELECT @Total = @Total + ISNULL(SUM(CAST(ISNULL(Cantidad, 0) AS FLOAT)), 0)
-                FROM dbo.ServiciosExtraOrden 
+                FROM dbo.ServiciosExtraOrden
                 WHERE OrdenID = @OID;
-                
-                UPDATE dbo.Ordenes 
-                SET Magnitud = CAST(FORMAT(@Total, '0.##') AS NVARCHAR(20)) + ' u'
+
+                -- Guardar solo el número, sin sufijo de unidad (la columna UM ya tiene la unidad)
+                UPDATE dbo.Ordenes
+                SET Magnitud = CAST(FORMAT(@Total, '0.##') AS NVARCHAR(20))
                 WHERE OrdenID = @OID;
             `);
     } catch (e) {
@@ -1599,12 +1612,22 @@ exports.cancelOrder = async (req, res) => {
         await transaction.begin();
 
         try {
-            // 1. Obtener NoDocERP y RolloID antes de cancelar
+            // 1. Obtener NoDocERP, RolloID y estados actuales antes de cancelar
             const docRes = await new sql.Request(transaction)
                 .input('ID', sql.Int, orderId)
-                .query("SELECT NoDocERP, RolloID FROM Ordenes WHERE OrdenID = @ID");
+                .query("SELECT NoDocERP, RolloID, Estado, EstadoenArea FROM Ordenes WHERE OrdenID = @ID");
             const noDocERP = docRes.recordset[0]?.NoDocERP;
             const rollId = docRes.recordset[0]?.RolloID;
+            const estadoAnterior = docRes.recordset[0]?.Estado || 'En Proceso';
+            const estadoAreaAnterior = docRes.recordset[0]?.EstadoenArea || 'En Proceso';
+
+            // 1a. Guardar snapshot del estado anterior en HistorialOrdenes (para poder reactivar)
+            await new sql.Request(transaction)
+                .input('OID', sql.Int, orderId)
+                .input('User', sql.VarChar(100), safeUser)
+                .input('Det', sql.NVarChar, JSON.stringify({ __snapshot__: true, Estado: estadoAnterior, EstadoenArea: estadoAreaAnterior }))
+                .query(`INSERT INTO HistorialOrdenes (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                        VALUES (@OID, 'SNAPSHOT_PRE_CANCEL', GETDATE(), GETDATE(), @User, @Det)`);
 
             // 1b. Cancelar la Orden y desasignar del lote
             await new sql.Request(transaction)
@@ -1926,6 +1949,21 @@ exports.cancelRequest = async (req, res) => {
             let rowsAffected = 0;
 
             if (noDoc) {
+                // Obtener todas las órdenes activas del pedido con sus estados actuales
+                const ordenesActivas = await new sql.Request(transaction)
+                    .input('NoDoc', sql.VarChar(50), noDoc)
+                    .query(`SELECT OrdenID, Estado, EstadoenArea FROM Ordenes WHERE NoDocERP = @NoDoc AND Estado != 'CANCELADO'`);
+
+                // Guardar snapshot de estado anterior por cada orden
+                for (const ord of ordenesActivas.recordset) {
+                    await new sql.Request(transaction)
+                        .input('OID', sql.Int, ord.OrdenID)
+                        .input('User', sql.VarChar(100), safeUser)
+                        .input('Det', sql.NVarChar, JSON.stringify({ __snapshot__: true, Estado: ord.Estado || 'En Proceso', EstadoenArea: ord.EstadoenArea || 'En Proceso' }))
+                        .query(`INSERT INTO HistorialOrdenes (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                                VALUES (@OID, 'SNAPSHOT_PRE_CANCEL', GETDATE(), GETDATE(), @User, @Det)`);
+                }
+
                 // Cancelar TODAS las órdenes con ese NoDocERP
                 const r1 = await new sql.Request(transaction)
                     .input('NoDoc', sql.VarChar(50), noDoc)
@@ -2175,3 +2213,465 @@ exports.cancelFile = async (req, res) => {
     }
 };
 exports.assignFabricBobbin = async (req, res) => { res.json({ success: true }); };
+
+// ============================================================
+// REACTIVACIÓN (reversa de cancelación) — 3 niveles
+// ============================================================
+
+/**
+ * Helper: obtiene el último EstadoArchivo registrado en HistorialOrdenes
+ * ANTES del evento de cancelación, para cada archivo de una orden.
+ * Si no hay historial, devuelve 'Pendiente' como fallback.
+ */
+const getLastFileStatesBeforeCancel = async (transaction, ordenId) => {
+    const res = await new sql.Request(transaction)
+        .input('OID', sql.Int, ordenId)
+        .query(`
+            SELECT 
+                AO.ArchivoID,
+                AO.NombreArchivo,
+                ISNULL(
+                    (
+                        SELECT TOP 1 H.Estado
+                        FROM HistorialOrdenes H
+                        WHERE H.OrdenID = @OID
+                          AND H.Estado NOT IN ('Cancelado','CANCELADO','Archivo Cancelado')
+                          AND H.FechaInicio < (
+                              SELECT MIN(H2.FechaInicio) FROM HistorialOrdenes H2
+                              WHERE H2.OrdenID = @OID AND H2.Estado IN ('Cancelado','CANCELADO','Archivo Cancelado')
+                          )
+                        ORDER BY H.FechaInicio DESC
+                    ),
+                    'Pendiente'
+                ) AS EstadoRestaurar
+            FROM ArchivosOrden AO
+            WHERE AO.OrdenID = @OID AND AO.EstadoArchivo = 'CANCELADO'
+        `);
+    return res.recordset; // [{ ArchivoID, NombreArchivo, EstadoRestaurar }]
+};
+
+/**
+ * Reactivar UN ARCHIVO individual.
+ * - Restaura el EstadoArchivo al estado previo a la cancelación.
+ * - Si la orden fue auto-cancelada por ese archivo (todos cancelados), reactiva la orden también.
+ * - Nunca toca otras órdenes del pedido.
+ */
+exports.reactivateFile = async (req, res) => {
+    const { fileId, usuario } = req.body;
+    if (!fileId) return res.status(400).json({ error: 'fileId requerido' });
+
+    const rawUser = (usuario && typeof usuario === 'object') ? (usuario.UsuarioID || usuario.id || 'Sistema') : usuario;
+    const safeUser = String(rawUser || 'Sistema').substring(0, 99);
+
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. Obtener OrdenID + EstadoOrden actual
+            const infoRes = await new sql.Request(transaction)
+                .input('FID', sql.Int, fileId)
+                .query(`
+                    SELECT AO.OrdenID, AO.NombreArchivo, O.Estado as EstadoOrden, O.Nota, O.Observaciones,
+                           O.NoDocERP, O.MotivoCancelacionID, O.DetallesCancelacion
+                    FROM ArchivosOrden AO
+                    INNER JOIN Ordenes O ON AO.OrdenID = O.OrdenID
+                    WHERE AO.ArchivoID = @FID
+                `);
+            if (!infoRes.recordset.length) throw new Error('Archivo no encontrado');
+
+            const { OrdenID, EstadoOrden, Nota, Observaciones, NoDocERP } = infoRes.recordset[0];
+
+            // 2. Determinar estado a restaurar para ESTE archivo
+            const histRes = await new sql.Request(transaction)
+                .input('OID', sql.Int, OrdenID)
+                .query(`
+                    SELECT TOP 1 Estado FROM HistorialOrdenes
+                    WHERE OrdenID = @OID
+                      AND Estado NOT IN ('Cancelado','CANCELADO','Archivo Cancelado')
+                    ORDER BY FechaInicio DESC
+                `);
+            const estadoRestaurar = histRes.recordset[0]?.Estado || 'Pendiente';
+
+            // 3. Restaurar el archivo
+            await new sql.Request(transaction)
+                .input('FID', sql.Int, fileId)
+                .input('Estado', sql.VarChar(50), estadoRestaurar)
+                .input('User', sql.VarChar(100), safeUser)
+                .query(`
+                    UPDATE ArchivosOrden
+                    SET EstadoArchivo = @Estado,
+                        MotivoCancelacionID = NULL,
+                        DetallesCancelacion = NULL,
+                        Observaciones = TRIM(
+                            REPLACE(REPLACE(REPLACE(
+                                ISNULL(Observaciones,''),
+                                ' [CANCELADO]', ''), ' [ORDEN CANCELADA]', ''), ' [PEDIDO CANCELADO]', '')
+                        ),
+                        UsuarioControl = @User,
+                        FechaControl = GETDATE()
+                    WHERE ArchivoID = @FID
+                `);
+
+            // 4. ¿La orden fue auto-cancelada porque todos los archivos estaban cancelados?
+            let orderReactivated = false;
+            const esOrdenCancelada = (EstadoOrden || '').toUpperCase().includes('CANCELAD');
+            if (esOrdenCancelada) {
+                // Verificar si había otros archivos no cancelados ANTES de este (es decir, si auto-canceló)
+                const otrosRes = await new sql.Request(transaction)
+                    .input('OID', sql.Int, OrdenID)
+                    .input('FID', sql.Int, fileId)
+                    .query(`
+                        SELECT COUNT(*) as Cnt FROM ArchivosOrden
+                        WHERE OrdenID = @OID AND ArchivoID != @FID AND EstadoArchivo != 'CANCELADO'
+                    `);
+                // Si no hay otros activos aún => la orden estaba auto-cancelada, la reactivamos
+                if (otrosRes.recordset[0].Cnt === 0) {
+                    const notaLimpia = (Nota || '')
+                        .replace(/ \[CANCELADO:[^\]]*\]/g, '')
+                        .replace(/ \[AUTO-CANCEL:[^\]]*\]/g, '')
+                        .trim();
+                    const obsLimpia = (Observaciones || '')
+                        .replace(/ \[CANCELADO:[^\]]*\]/g, '')
+                        .replace(/ \[PEDIDO CANCELADO:[^\]]*\]/g, '')
+                        .replace(/ \[AUTO-CANCEL:[^\]]*\]/g, '')
+                        .trim();
+
+                    await new sql.Request(transaction)
+                        .input('OID', sql.Int, OrdenID)
+                        .input('Nota', sql.NVarChar, notaLimpia)
+                        .input('Obs', sql.NVarChar, obsLimpia)
+                        .query(`
+                            UPDATE Ordenes
+                            SET Estado = 'En Proceso',
+                                EstadoenArea = 'En Proceso',
+                                Nota = @Nota,
+                                Observaciones = @Obs,
+                                MotivoCancelacionID = NULL,
+                                DetallesCancelacion = NULL
+                            WHERE OrdenID = @OID
+                        `);
+                    orderReactivated = true;
+                }
+            }
+
+            // 5. Recalcular magnitud
+            await recalculateOrderMagnitude(transaction, OrdenID);
+
+            // 6. Log en historial
+            await new sql.Request(transaction)
+                .input('OID', sql.Int, OrdenID)
+                .input('User', sql.VarChar(100), safeUser)
+                .query(`
+                    INSERT INTO HistorialOrdenes (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                    VALUES (@OID, 'EN PROCESO', GETDATE(), GETDATE(), @User, 'Archivo reactivado manualmente')
+                `);
+
+            await transaction.commit();
+
+            // 7. Socket
+            try {
+                const io = req.app.get('socketio');
+                if (io) io.emit('server:order_updated', { orderId: OrdenID });
+            } catch (_) {}
+
+            // 8. Sync ERP si corresponde
+            if (NoDocERP) {
+                try {
+                    const ERPSyncService = require('../services/erpSyncService');
+                    const userIdInt = typeof usuario === 'object' ? parseInt(usuario.UsuarioID || 1) : (parseInt(usuario) || 1);
+                    await ERPSyncService.syncFinalOrderIntegration(NoDocERP, userIdInt, safeUser, null, { skipDeposito: true });
+                } catch (e) { logger.error('ERP sync error on reactivateFile:', e); }
+            }
+
+            res.json({ success: true, estadoRestaurado: estadoRestaurar, orderReactivated });
+
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
+    } catch (e) {
+        logger.error('❌ Error reactivateFile:', e);
+        res.status(500).json({ error: e.message });
+    }
+};
+
+/**
+ * Reactivar UNA ORDEN completa.
+ * - Restaura el estado de todos sus archivos cancelados al estado previo.
+ * - Limpia Nota, Observaciones, MotivoCancelacionID, DetallesCancelacion de la orden.
+ * - No toca otras órdenes del pedido.
+ */
+exports.reactivateOrder = async (req, res) => {
+    const { orderId, usuario } = req.body;
+    if (!orderId) return res.status(400).json({ error: 'orderId requerido' });
+
+    const rawUser = (usuario && typeof usuario === 'object') ? (usuario.UsuarioID || usuario.id || 'Sistema') : usuario;
+    const safeUser = String(rawUser || 'Sistema').substring(0, 99);
+
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. Datos de la orden
+            const orderRes = await new sql.Request(transaction)
+                .input('OID', sql.Int, orderId)
+                .query(`SELECT Nota, Observaciones, NoDocERP FROM Ordenes WHERE OrdenID = @OID`);
+            if (!orderRes.recordset.length) throw new Error('Orden no encontrada');
+
+            const { Nota, Observaciones, NoDocERP } = orderRes.recordset[0];
+
+            // 2. Leer snapshot de estado guardado antes de la cancelación
+            const snapRes = await new sql.Request(transaction)
+                .input('OID', sql.Int, orderId)
+                .query(`
+                    SELECT TOP 1 Detalle FROM HistorialOrdenes
+                    WHERE OrdenID = @OID AND Estado = 'SNAPSHOT_PRE_CANCEL'
+                    ORDER BY FechaInicio DESC
+                `);
+            let estadoRestaurar = 'Pendiente';
+            let estadoAreaRestaurar = 'Pendiente';
+            if (snapRes.recordset.length) {
+                try {
+                    const snap = JSON.parse(snapRes.recordset[0].Detalle);
+                    if (snap.__snapshot__) {
+                        estadoRestaurar = snap.Estado || 'Pendiente';
+                        estadoAreaRestaurar = snap.EstadoenArea || 'Pendiente';
+                    }
+                } catch (_) {}
+            }
+
+            // 3. Restaurar archivos cancelados
+            await new sql.Request(transaction)
+                .input('OID', sql.Int, orderId)
+                .input('Estado', sql.VarChar(50), estadoRestaurar)
+                .input('User', sql.VarChar(100), safeUser)
+                .query(`
+                    UPDATE ArchivosOrden
+                    SET EstadoArchivo = @Estado,
+                        MotivoCancelacionID = NULL,
+                        DetallesCancelacion = NULL,
+                        Observaciones = TRIM(
+                            REPLACE(REPLACE(REPLACE(
+                                ISNULL(Observaciones,''),
+                                ' [CANCELADO]', ''), ' [ORDEN CANCELADA]', ''), ' [PEDIDO CANCELADO]', '')
+                        ),
+                        UsuarioControl = @User,
+                        FechaControl = GETDATE()
+                    WHERE OrdenID = @OID AND EstadoArchivo = 'CANCELADO'
+                `);
+
+            // 4. Limpiar nota de cancelación en la orden
+            const notaLimpia = (Nota || '')
+                .replace(/ \[CANCELADO:[^\]]*\]/g, '')
+                .replace(/ \[AUTO-CANCEL:[^\]]*\]/g, '')
+                .trim();
+            const obsLimpia = (Observaciones || '')
+                .replace(/ \[CANCELADO:[^\]]*\]/g, '')
+                .replace(/ \[PEDIDO CANCELADO:[^\]]*\]/g, '')
+                .replace(/ \[AUTO-CANCEL:[^\]]*\]/g, '')
+                .trim();
+
+            // 5. Restaurar la orden con los estados reales previos
+            await new sql.Request(transaction)
+                .input('OID', sql.Int, orderId)
+                .input('EstadoRest', sql.VarChar(100), estadoRestaurar)
+                .input('EstadoAreaRest', sql.VarChar(100), estadoAreaRestaurar)
+                .input('Nota', sql.NVarChar, notaLimpia)
+                .input('Obs', sql.NVarChar, obsLimpia)
+                .query(`
+                    UPDATE Ordenes
+                    SET Estado = @EstadoRest,
+                        EstadoenArea = @EstadoAreaRest,
+                        Nota = @Nota,
+                        Observaciones = @Obs,
+                        MotivoCancelacionID = NULL,
+                        DetallesCancelacion = NULL
+                    WHERE OrdenID = @OID
+                `);
+
+            // 6. Recalcular magnitud
+            await recalculateOrderMagnitude(transaction, orderId);
+
+            // 7. Log
+            await new sql.Request(transaction)
+                .input('OID', sql.Int, orderId)
+                .input('User', sql.VarChar(100), safeUser)
+                .query(`
+                    INSERT INTO HistorialOrdenes (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                    VALUES (@OID, 'EN PROCESO', GETDATE(), GETDATE(), @User, 'Orden reactivada manualmente')
+                `);
+
+            await transaction.commit();
+
+            try {
+                const io = req.app.get('socketio');
+                if (io) io.emit('server:order_updated', { orderId });
+            } catch (_) {}
+
+            if (NoDocERP) {
+                try {
+                    const ERPSyncService = require('../services/erpSyncService');
+                    const userIdInt = typeof usuario === 'object' ? parseInt(usuario.UsuarioID || 1) : (parseInt(usuario) || 1);
+                    await ERPSyncService.syncFinalOrderIntegration(NoDocERP, userIdInt, safeUser, null, { skipDeposito: true });
+                } catch (e) { logger.error('ERP sync error on reactivateOrder:', e); }
+            }
+
+            res.json({ success: true, estadoRestaurado: estadoRestaurar });
+
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
+    } catch (e) {
+        logger.error('❌ Error reactivateOrder:', e);
+        res.status(500).json({ error: e.message });
+    }
+};
+
+/**
+ * Reactivar TODO EL PEDIDO (todas las órdenes con el mismo NoDocERP).
+ * - Restaura estado de todas las órdenes canceladas y sus archivos.
+ * - Limpia los campos de cancelación en todas las órdenes del pedido.
+ */
+exports.reactivateRequest = async (req, res) => {
+    const { orderId, usuario } = req.body; // orderId para obtener NoDocERP
+    if (!orderId) return res.status(400).json({ error: 'orderId requerido' });
+
+    const rawUser = (usuario && typeof usuario === 'object') ? (usuario.UsuarioID || usuario.id || 'Sistema') : usuario;
+    const safeUser = String(rawUser || 'Sistema').substring(0, 99);
+
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            // 1. Obtener NoDocERP
+            const docRes = await new sql.Request(transaction)
+                .input('OID', sql.Int, orderId)
+                .query(`SELECT NoDocERP FROM Ordenes WHERE OrdenID = @OID`);
+            const noDoc = docRes.recordset[0]?.NoDocERP;
+            if (!noDoc) throw new Error('No se encontró NoDocERP para esta orden');
+
+            // 2. Obtener todas las órdenes canceladas del pedido
+            const ordenesRes = await new sql.Request(transaction)
+                .input('NoDoc', sql.VarChar(50), noDoc)
+                .query(`
+                    SELECT OrdenID, Nota, Observaciones
+                    FROM Ordenes
+                    WHERE NoDocERP = @NoDoc AND Estado IN ('Cancelado','CANCELADO')
+                `);
+            const ordenes = ordenesRes.recordset;
+
+            for (const orden of ordenes) {
+                // 3a. Leer snapshot de estado guardado antes de la cancelación
+                const snapRes = await new sql.Request(transaction)
+                    .input('OID', sql.Int, orden.OrdenID)
+                    .query(`
+                        SELECT TOP 1 Detalle FROM HistorialOrdenes
+                        WHERE OrdenID = @OID AND Estado = 'SNAPSHOT_PRE_CANCEL'
+                        ORDER BY FechaInicio DESC
+                    `);
+                let estadoRestaurar = 'Pendiente';
+                let estadoAreaRestaurar = 'Pendiente';
+                if (snapRes.recordset.length) {
+                    try {
+                        const snap = JSON.parse(snapRes.recordset[0].Detalle);
+                        if (snap.__snapshot__) {
+                            estadoRestaurar = snap.Estado || 'Pendiente';
+                            estadoAreaRestaurar = snap.EstadoenArea || 'Pendiente';
+                        }
+                    } catch (_) {}
+                }
+
+                // 3b. Restaurar archivos de esta orden
+                await new sql.Request(transaction)
+                    .input('OID', sql.Int, orden.OrdenID)
+                    .input('Estado', sql.VarChar(50), estadoRestaurar)
+                    .input('User', sql.VarChar(100), safeUser)
+                    .query(`
+                        UPDATE ArchivosOrden
+                        SET EstadoArchivo = @Estado,
+                            MotivoCancelacionID = NULL,
+                            DetallesCancelacion = NULL,
+                            Observaciones = TRIM(
+                                REPLACE(REPLACE(REPLACE(
+                                    ISNULL(Observaciones,''),
+                                    ' [CANCELADO]', ''), ' [ORDEN CANCELADA]', ''), ' [PEDIDO CANCELADO]', '')
+                            ),
+                            UsuarioControl = @User,
+                            FechaControl = GETDATE()
+                        WHERE OrdenID = @OID AND EstadoArchivo = 'CANCELADO'
+                    `);
+
+                // 3c. Limpiar y restaurar la orden
+                const notaLimpia = (orden.Nota || '')
+                    .replace(/ \[CANCELADO:[^\]]*\]/g, '')
+                    .replace(/ \[PEDIDO CANCELADO:[^\]]*\]/g, '')
+                    .replace(/ \[AUTO-CANCEL:[^\]]*\]/g, '')
+                    .trim();
+                const obsLimpia = (orden.Observaciones || '')
+                    .replace(/ \[CANCELADO:[^\]]*\]/g, '')
+                    .replace(/ \[PEDIDO CANCELADO:[^\]]*\]/g, '')
+                    .replace(/ \[AUTO-CANCEL:[^\]]*\]/g, '')
+                    .trim();
+
+                await new sql.Request(transaction)
+                    .input('OID', sql.Int, orden.OrdenID)
+                    .input('EstadoRest', sql.VarChar(100), estadoRestaurar)
+                    .input('EstadoAreaRest', sql.VarChar(100), estadoAreaRestaurar)
+                    .input('Nota', sql.NVarChar, notaLimpia)
+                    .input('Obs', sql.NVarChar, obsLimpia)
+                    .query(`
+                        UPDATE Ordenes
+                        SET Estado = @EstadoRest,
+                            EstadoenArea = @EstadoAreaRest,
+                            Nota = @Nota,
+                            Observaciones = @Obs,
+                            MotivoCancelacionID = NULL,
+                            DetallesCancelacion = NULL
+                        WHERE OrdenID = @OID
+                    `);
+
+                // 3d. Recalcular magnitud
+                await recalculateOrderMagnitude(transaction, orden.OrdenID);
+
+                // 3e. Log
+                await new sql.Request(transaction)
+                    .input('OID', sql.Int, orden.OrdenID)
+                    .input('User', sql.VarChar(100), safeUser)
+                    .query(`
+                        INSERT INTO HistorialOrdenes (OrdenID, Estado, FechaInicio, FechaFin, Usuario, Detalle)
+                        VALUES (@OID, 'EN PROCESO', GETDATE(), GETDATE(), @User, 'Pedido reactivado manualmente')
+                    `);
+            }
+
+            await transaction.commit();
+
+            // Socket + ERP sync
+            try {
+                const io = req.app.get('socketio');
+                if (io) ordenes.forEach(o => io.emit('server:order_updated', { orderId: o.OrdenID }));
+            } catch (_) {}
+
+            try {
+                const ERPSyncService = require('../services/erpSyncService');
+                const userIdInt = typeof usuario === 'object' ? parseInt(usuario.UsuarioID || 1) : (parseInt(usuario) || 1);
+                await ERPSyncService.syncFinalOrderIntegration(noDoc, userIdInt, safeUser, null, { skipDeposito: true });
+            } catch (e) { logger.error('ERP sync error on reactivateRequest:', e); }
+
+            res.json({ success: true, ordenesReactivadas: ordenes.length });
+
+        } catch (inner) {
+            await transaction.rollback();
+            throw inner;
+        }
+    } catch (e) {
+        logger.error('❌ Error reactivateRequest:', e);
+        res.status(500).json({ error: e.message });
+    }
+};

@@ -78,7 +78,7 @@ const OrdersQueryView = () => {
         return `${yyyy}-${mm}-${dd}`;
     };
 
-    const [viewMode, setViewMode] = useState('list');
+    const [viewMode, setViewMode] = useState('grid');
     const [filters, setFilters] = useState({
         fechaDesde: getTodayStr(),
         fechaHasta: getTodayStr(),

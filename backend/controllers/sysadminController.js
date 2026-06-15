@@ -1,6 +1,7 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const logger = require('../utils/logger');
 
 const logsDir = process.env.LOGS_PATH || path.join(__dirname, '..', 'logs');
@@ -41,6 +42,40 @@ exports.getSystemStatus = async (req, res) => {
             if (io) socketClients = io.engine?.clientsCount || 0;
         } catch (e) { /* ignore */ }
 
+        // 1. Database Size
+        let dbSizeMB = 0;
+        try {
+            if (dbStatus.ok) {
+                const { getPool } = require('../config/db');
+                const pool = await getPool();
+                const result = await pool.request().query('SELECT CAST(ROUND(SUM(size)*8.0/1024, 2) AS FLOAT) AS sizeMB FROM sys.database_files');
+                if (result.recordset && result.recordset.length > 0) {
+                    dbSizeMB = result.recordset[0].sizeMB;
+                }
+            }
+        } catch (e) { /* ignore */ }
+
+        // 2. PM2 Restarts
+        let pm2Restarts = 0;
+        try {
+            const jlist = execSync('pm2 jlist', { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+            const processes = JSON.parse(jlist);
+            pm2Restarts = processes.reduce((acc, p) => acc + (p.pm2_env?.restart_time || 0), 0);
+        } catch (e) { /* ignore */ }
+
+        // 3. Disk Space (Windows)
+        let disk = { total: 0, free: 0 };
+        try {
+            const driveLetter = path.parse(__dirname).root.substring(0, 2); // e.g., 'C:'
+            const psCommand = `powershell -NoProfile -Command "Get-CimInstance Win32_LogicalDisk | Where-Object DeviceID -eq '${driveLetter}' | Select-Object Size, FreeSpace | ConvertTo-Json"`;
+            const output = execSync(psCommand, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+            const parsed = JSON.parse(output);
+            if (parsed && parsed.Size && parsed.FreeSpace) {
+                disk.total = parsed.Size;
+                disk.free = parsed.FreeSpace;
+            }
+        } catch (e) { /* ignore */ }
+
         res.json({
             uptime: process.uptime(),
             nodeVersion: process.version,
@@ -57,13 +92,33 @@ exports.getSystemStatus = async (req, res) => {
                 model: cpus[0]?.model || 'Unknown',
                 percentUsed: cpuAvg.toFixed(1),
             },
-            db: dbStatus,
+            db: { ...dbStatus, sizeMB: dbSizeMB },
             sockets: socketClients,
+            disk,
+            pm2Restarts,
             serverTime: new Date().toISOString(),
         });
     } catch (err) {
         logger.error('[SysAdmin] Error getting system status:', err);
         res.status(500).json({ error: 'Error obteniendo estado del sistema' });
+    }
+};
+
+// ─── POST /api/sysadmin/clear-logs ────────────────────────
+exports.clearLogs = async (req, res) => {
+    try {
+        if (fs.existsSync(logsDir)) {
+            const files = fs.readdirSync(logsDir);
+            for (const file of files) {
+                if (file.endsWith('.log')) {
+                    fs.writeFileSync(path.join(logsDir, file), ''); // Vacía el contenido
+                }
+            }
+        }
+        res.json({ message: 'Logs limpiados con éxito' });
+    } catch (err) {
+        logger.error('[SysAdmin] Error clearing logs:', err);
+        res.status(500).json({ error: 'Error al limpiar logs' });
     }
 };
 
@@ -196,6 +251,31 @@ exports.getSessions = async (req, res) => {
     }
 };
 
+// ─── DELETE /api/sysadmin/sessions/:userId ────────────────
+exports.killSession = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { removeSession } = require('../utils/sessionTracker');
+        
+        // Remover de la memoria del servidor
+        removeSession(userId);
+
+        // Emitir evento por WebSockets para desconectar la interfaz cliente
+        const io = req.app.get('socketio');
+        if (io) {
+            io.emit('force_logout_user', { userId });
+        }
+
+        const { audit } = require('../utils/auditLogger');
+        audit('KICK_USER', { user: req.user?.username, adminId: req.user?.id, kickedUserId: userId });
+
+        res.json({ message: 'Sesión terminada exitosamente. El usuario será desconectado.' });
+    } catch (err) {
+        logger.error('[SysAdmin] Error killing session:', err);
+        res.status(500).json({ error: 'Error al desconectar usuario' });
+    }
+};
+
 // ─── POST /api/sysadmin/sql ───────────────────────────────
 exports.executeSql = async (req, res) => {
     try {
@@ -223,14 +303,36 @@ exports.executeSql = async (req, res) => {
         const duration = Date.now() - start;
 
         res.json({
+            columns: Object.keys(result.recordset?.[0] || {}),
             rows: result.recordset || [],
-            rowCount: result.recordset?.length || 0,
-            duration,
-            columns: result.recordset?.length > 0 ? Object.keys(result.recordset[0]) : [],
+            rowCount: result.rowsAffected?.[0] || result.recordset?.length || 0,
+            duration
         });
     } catch (err) {
-        logger.error('[SysAdmin] SQL Console error:', err);
-        res.status(400).json({ error: err.message });
+        logger.error('[SysAdmin] Error executing SQL:', err);
+        res.status(500).json({ error: err.message || 'Error ejecutando SQL' });
+    }
+};
+
+// ─── GET /api/sysadmin/slow-queries ───────────────────────
+exports.getSlowQueries = async (req, res) => {
+    try {
+        const { getPool } = require('../config/db');
+        const pool = await getPool();
+        const result = await pool.request().query(`
+            SELECT TOP 10 
+                execution_count,
+                (total_worker_time / execution_count) / 1000 AS avg_duration_ms,
+                SUBSTRING(st.text, (qs.statement_start_offset/2)+1, 
+                    ((CASE qs.statement_end_offset WHEN -1 THEN DATALENGTH(st.text) ELSE qs.statement_end_offset END - qs.statement_start_offset)/2) + 1) AS query_text
+            FROM sys.dm_exec_query_stats AS qs 
+            CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) AS st 
+            ORDER BY avg_duration_ms DESC
+        `);
+        res.json({ queries: result.recordset || [] });
+    } catch (err) {
+        logger.error('[SysAdmin] Error getting slow queries:', err);
+        res.status(500).json({ error: 'Error obteniendo consultas lentas' });
     }
 };
 
