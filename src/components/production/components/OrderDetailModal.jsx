@@ -15,7 +15,7 @@ import ModalConfirmacionFalla from './ModalConfirmacionFalla';
 import ModalLiberacionFalla from './ModalLiberacionFalla';
 
 
-const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
+const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) => {
     // Estado Pestañas
     const [activeTab, setActiveTab] = useState('files');
     const { user } = useAuth();
@@ -683,13 +683,13 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                     {rawStatus}
                 </div>
 
-                {isEditing && !f.readonly ? (
+                {isEditing && !f.readonly && !readOnly ? (
                     <div className="flex gap-1 animate-in zoom-in-95 duration-200">
                         <ActionButton icon="fa-check" color="emerald" onClick={saveEditing} title="Guardar Cambios" />
                         <ActionButton icon="fa-xmark" color="zinc" onClick={() => setEditingFileId(null)} title="Cancelar" />
                     </div>
                 ) : (
-                    !isCancelled && !isOrderCancelled && !f.readonly && (
+                    !isCancelled && !isOrderCancelled && !f.readonly && !readOnly && (
                         <div className='flex gap-1'>
                             <ActionButton
                                 icon="fa-pen"
@@ -765,6 +765,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                 <div className="p-6 bg-white flex-1 overflow-y-auto custom-scrollbar">
 
                     {/* Campos de Estado Editables */}
+                    {!readOnly && (
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3 bg-brand-cyan/5 p-4 rounded-xl border border-brand-cyan/20 shadow-sm">
                         {(() => {
                             const areaId = currentOrder?.area || '';
@@ -908,6 +909,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                             );
                         })()}
                     </div>
+                    )}
 
                     {/* Header Grid: Datos Clave */}
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6 bg-zinc-50 p-4 rounded-xl border border-zinc-100 shadow-sm">
@@ -1107,6 +1109,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                         currentUser={user}
                                         areaFilter={currentOrder.area}
                                         onSaved={reloadFiles}
+                                        readOnly={readOnly}
                                     />
                                 </div>
                             )}
@@ -1120,8 +1123,12 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                             <h3 className="font-bold text-sm">Gestión de Bultos</h3>
                                         </div>
                                         <div className="flex gap-2">
-                                            <button onClick={handleAddLabel} className="px-3 py-1.5 bg-white text-brand-cyan border border-brand-cyan/30 rounded text-xs font-bold hover:bg-brand-cyan/10 transition shadow-sm"><i className="fa-solid fa-plus mr-1"></i> Extra</button>
-                                            <button onClick={handleRegenerate} className="px-3 py-1.5 bg-white text-amber-600 border border-brand-cyan/20 rounded text-xs font-bold hover:bg-amber-50 transition shadow-sm" title="Regenerar todo"><i className="fa-solid fa-arrows-rotate mr-1"></i> Regenerar</button>
+                                            {!readOnly && (
+                                                <>
+                                                    <button onClick={handleAddLabel} className="px-3 py-1.5 bg-white text-brand-cyan border border-brand-cyan/30 rounded text-xs font-bold hover:bg-brand-cyan/10 transition shadow-sm"><i className="fa-solid fa-plus mr-1"></i> Extra</button>
+                                                    <button onClick={handleRegenerate} className="px-3 py-1.5 bg-white text-amber-600 border border-brand-cyan/20 rounded text-xs font-bold hover:bg-amber-50 transition shadow-sm" title="Regenerar todo"><i className="fa-solid fa-arrows-rotate mr-1"></i> Regenerar</button>
+                                                </>
+                                            )}
                                             <button onClick={handlePrintLabels} className="px-3 py-1.5 bg-brand-cyan text-white rounded text-xs font-bold hover:bg-brand-cyan/80 transition shadow-sm"><i className="fa-solid fa-print mr-1"></i> Imprimir</button>
                                         </div>
                                     </div>
@@ -1134,7 +1141,9 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                                         <div className="w-10 h-10 bg-zinc-100 rounded flex items-center justify-center text-zinc-500 font-bold text-lg border border-zinc-200">{l.NumeroBulto}</div>
                                                         <div><div className="font-bold text-zinc-700 text-sm">Bulto {l.NumeroBulto}/{l.TotalBultos}</div><div className="text-[10px] text-zinc-400 font-mono tracking-widest">{l.CodigoEtiqueta || '---'}</div></div>
                                                     </div>
+                                                    {!readOnly && (
                                                     <button onClick={() => handleDeleteLabel(l.EtiquetaID)} className="w-7 h-7 rounded bg-white text-zinc-300 hover:text-brand-magenta hover:bg-brand-magenta/10 border border-transparent hover:border-brand-magenta/20 transition"><i className="fa-solid fa-trash-can text-xs"></i></button>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
@@ -1151,6 +1160,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                 <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex justify-between items-center gap-3 shrink-0">
                     <div className="flex items-center gap-2">
                         {/* Grupo de Botones Peligrosos */}
+                        {!readOnly && (
                         <div className="flex bg-white rounded-lg border border-zinc-200 p-1 shadow-sm">
                             <button
                                 onClick={() => { setCancelType('ORDER'); setCancelModalOpen(true); }}
@@ -1170,6 +1180,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated }) => {
                                 <i className="fa-solid fa-dumpster-fire"></i> Cancelar Pedido
                             </button>
                         </div>
+                        )}
                     </div>
 
                     <button
