@@ -949,13 +949,15 @@ exports.advancedSearchOrders = async (req, res) => {
             SELECT 
                 o.OrdenID, o.CodigoOrden, o.Cliente, o.DescripcionTrabajo, o.AreaID, 
                 o.Estado, o.Prioridad, o.FechaIngreso, o.FechaEstimadaEntrega,
-                o.Material, o.Variante, o.Tinta, o.ModoRetiro, o.ArchivosCount, o.ProximoServicio
+                o.Material, o.Variante, o.Tinta, o.ModoRetiro, o.ArchivosCount, o.ProximoServicio,
+                c.IDCliente, c.NombreFantasia, c.TelefonoTrabajo, c.Email, c.DireccionTrabajo
             FROM dbo.Ordenes o
+            LEFT JOIN dbo.Clientes c WITH(NOLOCK) ON o.CliIdCliente = c.CliIdCliente
             WHERE 1=1
         `;
 
         if (params.search) {
-            query += " AND (o.Cliente LIKE @Search OR o.CodigoOrden LIKE @Search OR CAST(o.OrdenID AS VARCHAR) LIKE @Search OR o.NoDocERP LIKE @Search)";
+            query += " AND (o.Cliente LIKE @Search OR o.CodigoOrden LIKE @Search OR CAST(o.OrdenID AS VARCHAR) LIKE @Search OR o.NoDocERP LIKE @Search OR c.IDCliente LIKE @Search OR c.TelefonoTrabajo LIKE @Search OR c.NombreFantasia LIKE @Search)";
             request.input('Search', sql.VarChar, `%${params.search}%`);
         } else {
             if (params.client) {
@@ -1021,7 +1023,14 @@ exports.advancedSearchOrders = async (req, res) => {
             ink: o.Tinta || '',
             retiro: o.ModoRetiro || '',
             filesCount: o.ArchivosCount || 0,
-            nextService: o.ProximoServicio || '-'
+            nextService: o.ProximoServicio || '-',
+
+            // Información extendida del Cliente
+            idCliente: o.IDCliente || '',
+            nombreFantasia: o.NombreFantasia || '',
+            telefono: o.TelefonoTrabajo || '',
+            email: o.Email || '',
+            direccion: o.DireccionTrabajo || ''
         }));
 
         logger.info(`🔍 Búsqueda Avanzada: ${orders.length} resultados encontrados.`);
