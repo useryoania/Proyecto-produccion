@@ -867,19 +867,6 @@ const getOrdenesRetiroPorRemito = async (req, res) => {
   }
 };
 
-<<<<<<< HEAD
-// TODO: Implementar lógica completa
-const editarCostoOrden = async (req, res) => {
-    res.status(501).json({ error: 'editarCostoOrden: No implementado aún' });
-};
-
-const desvincularOrdenRetiro = async (req, res) => {
-    res.status(501).json({ error: 'desvincularOrdenRetiro: No implementado aún' });
-};
-
-const cancelarOrdenCaja = async (req, res) => {
-    res.status(501).json({ error: 'cancelarOrdenCaja: No implementado aún' });
-=======
 const { registrarHistorialOrden } = require('../services/trackingService');
 const contabilidadSvc = require('../services/contabilidadService');
 
@@ -1237,7 +1224,6 @@ const cancelarOrdenCaja = async (req, res) => {
     logger.error('[CANCELAR ORDEN CAJA ERROR]', err);
     res.status(500).json({ error: err.message });
   }
->>>>>>> 36cec21bc66f27074ac902a7e40ad970cd665f97
 };
 
 module.exports = {
