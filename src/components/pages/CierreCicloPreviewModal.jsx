@@ -655,9 +655,9 @@ export default function CierreCicloPreviewModal({
                 <div className={`flex rounded-xl p-1 border gap-1 select-none w-full ${pageMode ? 'bg-white/10 border-white/20' : 'bg-slate-100 border-slate-200'}`}>
                   {[
                     { val: 'CONTADO', label: 'Contado', activeClass: 'bg-emerald-500 text-white shadow-md' },
-                    { val: 'CREDITO', label: 'Crédito', activeClass: 'bg-amber-500 text-white shadow-md', disabled: isAnticipo || docType === 'PEDIDO_CAJA' }
+                    { val: 'CREDITO', label: 'Crédito', activeClass: 'bg-amber-500 text-white shadow-md' }
                   ].map(opt => {
-                    const isActive = docType === 'PEDIDO_CAJA' ? opt.val === 'CONTADO' : docCond === opt.val;
+                    const isActive = docCond === opt.val;
                     return (
                       <button
                         key={opt.val}
