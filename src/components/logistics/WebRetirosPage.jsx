@@ -704,6 +704,9 @@ const WebRetirosPage = () => {
   const searchInputRef = React.useRef(null);
   const knownApiOrdersRef = React.useRef(new Set()); // Ref para delta detection sin closure stale
   const lastComputedWeightsRef = React.useRef({}); // Ref para capturar pesos al hacer lock
+  const inFlightOrdersRef = React.useRef(new Set()); // Órdenes en proceso de asignación a estante (protege contra re-fetch prematuro)
+  const allAssignedOrdersRef = React.useRef(new Set()); // TODAS las órdenes en OcupacionEstantes (fuente de verdad del backend)
+  const dbEstantesConfigRef = React.useRef({}); // Config REAL de estantes desde la BD (sin inflar con defaults)
 
   // Scanner redirect for ConfirmDelivery
   useEffect(() => {
@@ -789,7 +792,14 @@ const WebRetirosPage = () => {
       let estantesData = [];
       try {
         const res = await api.get('/web-retiros/estantes');
-        estantesData = res.data || [];
+        // Nuevo formato: { estantes: [...], allAssignedOrders: [...] }
+        // Backward compatible: si es array, formato viejo
+        const resData = res.data || {};
+        estantesData = Array.isArray(resData) ? resData : (resData.estantes || []);
+        // Actualizar ref con TODAS las órdenes asignadas (fuente de verdad)
+        if (resData.allAssignedOrders) {
+          allAssignedOrdersRef.current = new Set(resData.allAssignedOrders);
+        }
       } catch (e) {
         console.warn('[WebRetiros] /web-retiros/estantes no disponible:', e.message);
       }
@@ -816,6 +826,9 @@ const WebRetirosPage = () => {
         if (item.Posicion > configMap[cleanEstanteId].posiciones) configMap[cleanEstanteId].posiciones = item.Posicion;
       });
 
+      // Guardar config REAL de la BD (sin inflar) para que el auto-assign use posiciones reales
+      dbEstantesConfigRef.current = configMap;
+
       // Garantizar que los 4 estantes siempre aparezcan (aunque D esté vacío)
       const ESTANTES_DEFAULT = [
         { id: 'A', secciones: 4, posiciones: 20 },
@@ -825,7 +838,14 @@ const WebRetirosPage = () => {
       ];
       const mergedEstantes = ESTANTES_DEFAULT.map(def => {
         const fromDB = Object.values(configMap).find(c => c.id.trim() === def.id);
-        return fromDB || def;
+        if (fromDB) {
+          return {
+            id: def.id,
+            secciones: Math.max(def.secciones, fromDB.secciones),
+            posiciones: Math.max(def.posiciones, fromDB.posiciones)
+          };
+        }
+        return def;
       });
       setEstantesConfigArr(mergedEstantes);
       setOcupacionEstantes(estantesMap);
@@ -858,6 +878,8 @@ const WebRetirosPage = () => {
           
           if (numId && enEstanteNums.has(numId)) return false;
           if (numId && apiOrderIds.has(numId)) return false;
+          // Excluir órdenes que están en OcupacionEstantes (fuente de verdad del backend)
+          if (allAssignedOrdersRef.current.has(o.ordenDeRetiro)) return false;
           return true;
         });
         setOtrosRetiros(sinEstante);
@@ -872,6 +894,7 @@ const WebRetirosPage = () => {
           api.get('/web-retiros/locales').then(res => {
             const refreshed = res.data
               .filter(r => r.Estado === 1 || r.Estado === 3)
+              .filter(r => !inFlightOrdersRef.current.has(r.OrdIdRetiro))
               .map(r => ({
                 ordenDeRetiro: r.OrdIdRetiro,
                 idcliente: r.NombreCliente || r.CodCliente || 'Ecommerce',
@@ -917,6 +940,8 @@ const WebRetirosPage = () => {
       const { data } = await api.get('/web-retiros/locales');
       const newOrders = (data || [])
         .filter(r => r.Estado === 1 || r.Estado === 3)
+        // No re-agregar órdenes que están siendo asignadas ahora mismo (evita flash)
+        .filter(r => !inFlightOrdersRef.current.has(r.OrdIdRetiro))
         .map(r => ({
           ordenDeRetiro: r.OrdIdRetiro,
           idcliente: r.NombreCliente || r.CodCliente || 'Ecommerce',
@@ -952,9 +977,14 @@ const WebRetirosPage = () => {
         // (ej. cancelaciones que cambian estado 1â†’5 y deben desaparecer de empaques)
         if (data?.type === 'asignado_estante' || data?.type === 'desasignado' || data?.type === 'entregado' || data?.type === 'estado' || data?.type === 'pago_web' || !data?.type) {
           api.get('/web-retiros/estantes').then(async res => {
-            const estantesData = res.data || [];
+            // Nuevo formato: { estantes: [...], allAssignedOrders: [...] }
+            const resData = res.data || {};
+            const estantesRaw = Array.isArray(resData) ? resData : (resData.estantes || []);
+            if (resData.allAssignedOrders) {
+              allAssignedOrdersRef.current = new Set(resData.allAssignedOrders);
+            }
             const estantesMap = {};
-            estantesData.forEach(item => {
+            estantesRaw.forEach(item => {
               const cleanKey = (item.UbicacionID || '').trim();
               if (item.OrdenRetiro) {
                 if (!estantesMap[cleanKey]) estantesMap[cleanKey] = [];
@@ -997,6 +1027,10 @@ const WebRetirosPage = () => {
                 const numId = match ? parseInt(match[1], 10) : null;
                 if (numId && enEstanteNums.has(numId)) return false;
                 if (numId && apiOrderIds.has(numId)) return false;
+                // No re-agregar órdenes en vuelo
+                if (inFlightOrdersRef.current.has(o.ordenDeRetiro)) return false;
+                // Excluir órdenes que están en OcupacionEstantes (fuente de verdad del backend)
+                if (allAssignedOrdersRef.current.has(o.ordenDeRetiro)) return false;
                 return true;
               });
               setOtrosRetiros(sinEstanteActualizado);
@@ -1063,6 +1097,11 @@ const WebRetirosPage = () => {
 
     const ubicacionId = `${estanteId}-${sec}-${pos}`;
     const retiroParaAsignar = selectedRetiro; // Capturamos para optimismo
+
+    // Marcar como "en vuelo" para proteger de race condition con el socket
+    inFlightOrdersRef.current.add(retiroParaAsignar.ordenDeRetiro);
+    // Marcar como asignada inmediatamente (optimismo para el filtro de otrosRetiros)
+    allAssignedOrdersRef.current.add(retiroParaAsignar.ordenDeRetiro);
 
     // === VALIDACIÓN DE CLIENTE ===
     const dataList = ocupacionEstantes[ubicacionId] || [];
@@ -1134,13 +1173,25 @@ const WebRetirosPage = () => {
           };
         });
       }
-      // Refrescar estantes desde BDD para asegurar estado correcto
-      setTimeout(() => fetchAllData(false), 600);
-      // Data se refresca por Socket o en background
+      // El socket (retiros:update) ya hace un refresh completo y coordinado.
+      // No necesitamos un setTimeout redundante que genere race conditions.
     } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Error al asignar');
-      // Revertir en caso de que ocurra al estallar
-      fetchAllData(false);
+      const errorMsg = err.response?.data?.error || '';
+      // Si el backend dice "ya está asignada", la orden YA está en el estante.
+      // El optimismo UI fue correcto — no revertir ni recargar.
+      if (err.response?.status === 400 && errorMsg.includes('ya está asignada')) {
+        console.info(`[asignar] ${retiroParaAsignar.ordenDeRetiro} ya estaba en estante — manteniendo estado actual.`);
+        // No hacemos nada: el update optimista ya la sacó de empaques, que es correcto.
+      } else {
+        // Error real: revertir el optimismo
+        console.error('[asignar] Error real:', errorMsg || err.message);
+        setError(errorMsg || err.message || 'Error al asignar');
+        inFlightOrdersRef.current.delete(retiroParaAsignar.ordenDeRetiro);
+        fetchAllData(false);
+      }
+    } finally {
+      // Limpiar la protección después de 8s (margen amplio para cubrir sync de fondo + socket)
+      setTimeout(() => inFlightOrdersRef.current.delete(retiroParaAsignar.ordenDeRetiro), 8000);
     }
   };
 
@@ -1491,8 +1542,11 @@ const WebRetirosPage = () => {
       if (!allChecked || !selectedRetiro.orders?.length) return;
       const timer = setTimeout(() => {
         const targetEstanteId = getEstanteForRetiro(selectedRetiro.ordenDeRetiro);
+        // Usar config REAL de la BD para auto-assign (no la inflada con defaults visuales)
+        // Esto evita asignar a posiciones que no existen en ConfiguracionEstantes
+        const dbConfig = Object.values(dbEstantesConfigRef.current).find(c => c.id.trim() === targetEstanteId);
         const defaultConfig = { id: targetEstanteId, secciones: 4, posiciones: 20 };
-        const estConfig = estantesConfigArr.find(e => e.id.trim() === targetEstanteId) || defaultConfig;
+        const estConfig = dbConfig || defaultConfig;
 
         const tryAssignIn = (config) => {
           if (!config) return false;
@@ -1955,10 +2009,24 @@ const WebRetirosPage = () => {
                 }));
 
                 // 2. Unificar, deduplicar y filtrar
+                // Última línea de defensa: IDs numéricos ya en estantes (por si el estado React está desfasado)
+                const enEstanteNumsUI = new Set();
+                Object.values(ocupacionEstantes).forEach(items =>
+                  items.forEach(item => {
+                    if (item.OrdenRetiro) {
+                      const m = String(item.OrdenRetiro).match(/(\d+)$/);
+                      if (m) enEstanteNumsUI.add(parseInt(m[1], 10));
+                    }
+                  })
+                );
+
                 const seenOrders = new Set();
                 const deduped = [];
                 // Web orders first (they have richer data like payment info)
                 for (const item of [...webNorm, ...localNorm]) {
+                  const numId = (item.ordenDeRetiro || '').match(/(\d+)$/);
+                  // Excluir órdenes que ya están asignadas a un estante (defensa final)
+                  if (numId && enEstanteNumsUI.has(parseInt(numId[1], 10))) continue;
                   if (!seenOrders.has(item.ordenDeRetiro)) {
                     seenOrders.add(item.ordenDeRetiro);
                     deduped.push(item);

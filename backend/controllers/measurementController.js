@@ -486,7 +486,7 @@ exports.saveMeasurements = async (req, res) => {
 
 // --- 5. NUEVA FUNCIÓN: DESCARGAR ZIP AL CLIENTE (STREAMING OPTIMIZED) ---
 exports.downloadOrdersZip = async (req, res) => {
-    const { orderIds } = req.body;
+    const { orderIds, clientId } = req.body;
 
     if (!orderIds || orderIds.length === 0) return res.status(400).send("No se recibieron IDs de órdenes");
 
@@ -509,6 +509,14 @@ exports.downloadOrdersZip = async (req, res) => {
 
         // Configurar Respuesta Zip
         res.attachment('ordenes_descarga.zip');
+        
+        // Deshabilitar el timeout del socket para esta conexión de larga duración.
+        // Sin esto, Node.js puede cortar la conexión silenciosa si el primer archivo
+        // demora más que el keep-alive timeout por defecto (~5s).
+        req.socket.setTimeout(0);
+        req.socket.setNoDelay(true);
+        req.socket.setKeepAlive(true);
+
         const archive = archiver('zip', { zlib: { level: 9 } });
 
         archive.on('error', function (err) {
@@ -517,6 +525,9 @@ exports.downloadOrdersZip = async (req, res) => {
         });
 
         archive.pipe(res);
+        // Enviar los headers HTTP inmediatamente para que el cliente sepa que la
+        // descarga comenzó y no corte por timeout antes de recibir el primer byte.
+        res.flushHeaders();
 
         // Helper sanitizar
         const sanitize = (str) => (str || '').replace(/\//g, '-').replace(/[<>:"\\|?*]/g, ' ').trim();
@@ -538,8 +549,19 @@ exports.downloadOrdersZip = async (req, res) => {
             });
         }
 
+        const io = req.app.get('socketio');
+        let processedCount = 0;
+
         for (const file of filesToProcess) {
             try {
+                processedCount++;
+                if (io && clientId) {
+                    io.to(clientId).emit('zip:progress', {
+                        currentFile: processedCount,
+                        totalFiles: filesToProcess.length,
+                        fileName: file.NombreArchivo
+                    });
+                }
                 // Determine Extension (Optimistic)
                 const sourcePath = file.RutaAlmacenamiento || '';
                 let ext = path.extname(file.NombreArchivo || '').toLowerCase();
@@ -554,13 +576,25 @@ exports.downloadOrdersZip = async (req, res) => {
                 }
                 if (!finalName.toLowerCase().endsWith(ext)) finalName += ext;
 
+                // Helper function to append a stream and wait for it to finish
+                const appendStreamAndWait = (stream, name) => {
+                    return new Promise((resolve, reject) => {
+                        archive.append(stream, { name });
+                        stream.on('end', resolve);
+                        stream.on('error', reject);
+                        
+                        // Also resolve if the stream is aborted/closed prematurely
+                        stream.on('close', resolve);
+                    });
+                };
+
                 // Streaming Download
                 if (sourcePath.includes('drive.google.com')) {
                     const driveId = getDriveId(sourcePath);
                     if (driveId) {
                         try {
                             const { stream } = await driveService.getFileStream(driveId);
-                            archive.append(stream, { name: finalName });
+                            await appendStreamAndWait(stream, finalName);
                         } catch (e) {
                             archive.append(`Error: ${e.message}`, { name: `ERRORES/${file.ArchivoID}_err.txt` });
                         }
@@ -572,7 +606,7 @@ exports.downloadOrdersZip = async (req, res) => {
                         responseType: 'stream',
                         timeout: 600000
                     });
-                    archive.append(response.data, { name: finalName });
+                    await appendStreamAndWait(response.data, finalName);
                 } else if (fs.existsSync(sourcePath)) {
                     archive.file(sourcePath, { name: finalName });
                 }

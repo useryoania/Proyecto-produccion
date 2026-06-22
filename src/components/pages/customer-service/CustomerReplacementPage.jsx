@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { fileControlService } from '../../../services/modules/fileControlService';
 import { useAuth } from '../../../context/AuthContext';
 import Toast from '../../ui/Toast';
+import { socket } from '../../../services/socketService';
 
 const CustomerReplacementPage = () => {
     const { user } = useAuth();
@@ -29,7 +30,7 @@ const CustomerReplacementPage = () => {
     const [successData, setSuccessData] = useState(null);
 
     // --- Search Orders ---
-    const handleSearch = async (e) => {
+    const handleSearch = useCallback(async (e) => {
         e?.preventDefault();
         if (query.length < 3) return;
 
@@ -45,7 +46,19 @@ const CustomerReplacementPage = () => {
         } finally {
             setLoadingSearch(false);
         }
-    };
+    }, [query]);
+
+    // --- Tiempo real: re-buscar cuando cambia el estado de alguna orden ---
+    useEffect(() => {
+        if (query.length < 3) return;
+        const handleUpdate = () => handleSearch();
+        socket.on('server:order_updated', handleUpdate);
+        socket.on('server:ordersUpdated', handleUpdate);
+        return () => {
+            socket.off('server:order_updated', handleUpdate);
+            socket.off('server:ordersUpdated', handleUpdate);
+        };
+    }, [query, handleSearch]);
 
     // --- Select Order ---
     const handleSelectOrder = async (order) => {
@@ -261,12 +274,14 @@ const CustomerReplacementPage = () => {
                                         `}
                                     >
                                         <div className="flex justify-between items-start mb-1">
-                                            <span className="font-black text-slate-700 text-lg">#{order.OrdenID}</span>
+                                            <span className="font-black text-slate-700 text-lg">
+                                                #{order.NoDocERP || order.CodigoOrden}
+                                            </span>
                                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${order.Estado === 'ENTREGADO' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
                                                 {order.Estado}
                                             </span>
                                         </div>
-                                        <div className="font-bold text-slate-600 text-sm mb-1">{order.Cliente}</div>
+                                        <div className="font-bold text-slate-600 text-sm mb-1">{order.IDCliente}</div>
                                         <div className="text-xs text-slate-400 truncate">{order.Material}</div>
                                         <div className="text-[10px] text-slate-300 mt-2 font-mono">{order.CodigoOrden}</div>
                                     </div>

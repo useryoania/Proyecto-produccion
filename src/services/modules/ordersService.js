@@ -78,6 +78,7 @@ export const ordersService = {
                 id: o.OrdenID || o.id,
                 code: o.CodigoOrden || o.code || `ORD-${o.OrdenID}`,
                 client: o.Cliente || o.client || '',
+                idCliente: o.IDCliente || o.idCliente || '',
                 desc: o.DescripcionTrabajo || o.desc || '',
                 area: o.AreaID || o.area || area || '',
                 status: o.Estado || o.status || 'Pendiente',

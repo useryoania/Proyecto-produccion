@@ -147,6 +147,25 @@ exports.getFileStream = async (fileId) => {
     }
 };
 
+/**
+ * Obtiene la URL de thumbnail de un archivo en Drive usando la API autenticada.
+ * Funciona para PDFs grandes, imágenes, y cualquier tipo soportado por Drive.
+ * Returns null si Drive no puede generar thumbnail para ese archivo.
+ */
+exports.getThumbnailUrl = async (fileId) => {
+    try {
+        const res = await drive.files.get({
+            fileId: fileId,
+            fields: 'thumbnailLink, mimeType',
+            supportsAllDrives: true
+        });
+        return res.data.thumbnailLink || null;
+    } catch (error) {
+        logger.warn(`[DriveService] No se pudo obtener thumbnail para ${fileId}:`, error.message);
+        return null;
+    }
+};
+
 exports.uploadToDrive = async (fileInput, fileName, areaName, retries = 2) => {
 
     // Validar autorización

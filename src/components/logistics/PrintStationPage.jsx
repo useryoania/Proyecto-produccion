@@ -42,7 +42,7 @@ const PrintStationPage = () => {
     useEffect(() => {
         const hoy = new Date().toISOString().split('T')[0];
         setLoadingHistorial(true);
-        api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5')
+        api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5,9')
             .then(res => {
                 const data = (res.data || [])
                     .filter(r => r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy)
@@ -91,33 +91,39 @@ const PrintStationPage = () => {
 
     // Generar HTML importado desde webPrintHelper
 
-    // Imprimir ticket
+    // Imprimir ticket — resuelve la Promise recién cuando terminó de imprimir todas las copias
     const printTicket = useCallback((retiro) => {
-        if (!iframeRef.current) return;
+        if (!iframeRef.current) return Promise.resolve();
         const html = generateTicketHTML(retiro);
 
         const printOnce = (copyNum) => {
             return new Promise((resolve) => {
                 const iframe = iframeRef.current;
-                const doc = iframe.contentDocument || iframe.contentWindow.document;
-                doc.open();
-                doc.write(html);
-                doc.close();
-                // Esperar a que renderice
-                setTimeout(() => {
+                let done = false;
+                const fire = () => {
+                    if (done) return; // evita doble disparo (onload + fallback)
+                    done = true;
                     try {
+                        iframe.contentWindow.focus();
                         iframe.contentWindow.print();
                         addLog(`Copia ${copyNum} impresa: ${retiro.ordenDeRetiro}`, 'success');
                     } catch (err) {
                         addLog(`Error imprimiendo copia ${copyNum}: ${err.message}`, 'error');
                     }
                     resolve();
-                }, 300);
+                };
+                // Disparar al terminar de renderizar el iframe; fallback por si onload no llega
+                iframe.onload = () => setTimeout(fire, 50);
+                const doc = iframe.contentDocument || iframe.contentWindow.document;
+                doc.open();
+                doc.write(html);
+                doc.close();
+                setTimeout(fire, 1500); // fallback: algunos navegadores no emiten load tras document.write
             });
         };
 
-        // Imprimir copias secuencialmente
-        (async () => {
+        // Imprimir copias secuencialmente; devolver la Promise para que el caller pueda await
+        return (async () => {
             for (let i = 1; i <= copies; i++) {
                 await printOnce(i);
                 if (i < copies) await new Promise(r => setTimeout(r, 1000)); // delay entre copias
@@ -125,6 +131,15 @@ const PrintStationPage = () => {
             setPrintCount(prev => prev + 1);
         })();
     }, [copies, generateTicketHTML, addLog]);
+
+    // Cola global: serializa TODAS las impresiones (automáticas y manuales) para que
+    // nunca dos trabajos escriban en el mismo iframe a la vez.
+    const printQueueRef = useRef(Promise.resolve());
+    const queuePrint = useCallback((retiro) => {
+        const run = () => printTicket(retiro);
+        printQueueRef.current = printQueueRef.current.then(run, run); // sigue aunque uno falle
+        return printQueueRef.current;
+    }, [printTicket]);
     // Escuchar eventos de nuevo retiro (con deduplicación)
     useEffect(() => {
         const handleRetiroUpdate = async (data) => {
@@ -134,7 +149,7 @@ const PrintStationPage = () => {
 
 
             try {
-                const res = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4');
+                const res = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4,9');
                 const retiros = res.data;
                 if (retiros && retiros.length > 0) {
                     const sorted = retiros.sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta));
@@ -144,13 +159,20 @@ const PrintStationPage = () => {
                         // El backend nos dice exactamente qué retiro imprimir
                         const targetId = `${data.formaRetiro}-${data.ordenId}`;
                         const target = sorted.find(r => r.ordenDeRetiro === targetId);
-                        if (target && !printedIdsRef.current.has(targetId)) {
+                        if (target) {
+                            // Encontrado: imprimir solo si no se imprimió antes
+                            if (printedIdsRef.current.has(targetId)) {
+                                addLog(`Retiro ${targetId} ya fue impreso — omitido`, 'info', null, 'package');
+                                return;
+                            }
                             nuevos = [target];
                         } else {
-                            nuevos = [];
+                            // No encontrado (FormaRetiro legado o demora de la BD): fallback al más nuevo no impreso
+                            addLog(`Retiro ${targetId} no está en la lista — usando fallback`, 'info', null, 'warning');
+                            nuevos = sorted.filter(r => !printedIdsRef.current.has(r.ordenDeRetiro));
                         }
                     } else {
-                        // Fallback: imprimir el más nuevo no registrado
+                        // Sin datos específicos: imprimir el más nuevo no registrado
                         nuevos = sorted.filter(r => !printedIdsRef.current.has(r.ordenDeRetiro));
                     }
 
@@ -166,9 +188,7 @@ const PrintStationPage = () => {
                         const retiroId = retiro.ordenDeRetiro;
                         printedIdsRef.current.add(retiroId);
                         addLog(`Imprimiendo retiro ${retiroId} (${copies} copias)...`, 'info', retiro, 'printer');
-                        printTicket(retiro);
-                        // Small delay between prints to avoid overlapping
-                        if (nuevos.length > 1) await new Promise(r => setTimeout(r, 1500));
+                        await queuePrint(retiro); // serializado: espera a que termine antes del siguiente
                     }
 
                     // Mantener solo los últimos 200 IDs para no crecer indefinidamente
@@ -181,7 +201,7 @@ const PrintStationPage = () => {
                     // Refrescar historial en tiempo real (filtrando por fechaAlta = hoy)
                     try {
                         const hoy = new Date().toISOString().split('T')[0];
-                        const histRes = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5');
+                        const histRes = await api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5,9');
                         const data = (histRes.data || [])
                             .filter(r => r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy)
                             .sort((a, b) => new Date(b.fechaAlta) - new Date(a.fechaAlta));
@@ -197,7 +217,7 @@ const PrintStationPage = () => {
 
         socket.on('retiros:update', handleRetiroUpdate);
         return () => socket.off('retiros:update', handleRetiroUpdate);
-    }, [soundEnabled, copies, printTicket, addLog]);
+    }, [soundEnabled, copies, queuePrint, addLog]);
 
     return (
         <div style={{
@@ -362,7 +382,7 @@ const PrintStationPage = () => {
                             }}>{log.message}</span>
                             {log.retiro && (
                                 <button
-                                    onClick={() => { addLog(`Reimprimiendo ${log.retiro.ordenDeRetiro}...`, 'info', log.retiro, 'printer'); printTicket(log.retiro); }}
+                                    onClick={() => { addLog(`Reimprimiendo ${log.retiro.ordenDeRetiro}...`, 'info', log.retiro, 'printer'); queuePrint(log.retiro); }}
                                     style={{
                                         background: 'rgba(255,215,0,0.1)',
                                         border: '1px solid rgba(255,215,0,0.3)',
@@ -400,7 +420,7 @@ const PrintStationPage = () => {
                         if (opening && historialHoy.length === 0) {
                             setLoadingHistorial(true);
                             const hoy = new Date().toISOString().split('T')[0];
-                            api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5')
+                            api.get('/apiordenesRetiro/estados?estados=1,2,3,4,5,9')
                                 .then(res => {
                                     const data = (res.data || [])
                                         .filter(r => r.fechaAlta && new Date(r.fechaAlta).toISOString().split('T')[0] === hoy)
@@ -448,8 +468,7 @@ const PrintStationPage = () => {
                                     addLog(`Reimprimiendo ${sel.length} hojas...`, 'info', null, 'printer');
                                     (async () => {
                                         for (const retiro of sel) {
-                                            printTicket(retiro);
-                                            if (sel.length > 1) await new Promise(r => setTimeout(r, 1500));
+                                            await queuePrint(retiro);
                                         }
                                     })();
                                 }}
@@ -512,7 +531,7 @@ const PrintStationPage = () => {
                                                 {retiro.lugarRetiro || ''}
                                             </span>
                                             <button
-                                                onClick={(e) => { e.stopPropagation(); addLog(`Reimprimiendo ${retiro.ordenDeRetiro}...`, 'info', retiro, 'printer'); printTicket(retiro); }}
+                                                onClick={(e) => { e.stopPropagation(); addLog(`Reimprimiendo ${retiro.ordenDeRetiro}...`, 'info', retiro, 'printer'); queuePrint(retiro); }}
                                                 style={{
                                                     background: 'rgba(255,215,0,0.1)', border: '1px solid rgba(255,215,0,0.3)',
                                                     borderRadius: '6px', padding: '3px 8px', cursor: 'pointer',

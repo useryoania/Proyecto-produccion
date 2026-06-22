@@ -13,6 +13,7 @@ import '@fontsource/archivo/700.css';
 import './index.css';
 import './styles/design-system.css'; // <-- IMPORTAR AQUÍ
 import App from './App.jsx';
+import ChunkErrorBoundary from './components/common/ChunkErrorBoundary.jsx';
 import { AuthProvider } from './context/AuthContext.jsx'; // 👈 Importamos el proveedor
 import { BrowserRouter } from 'react-router-dom';      // 👈 Importamos el enrutador
 
@@ -37,7 +38,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <AuthProvider>
-          <App />
+          <ChunkErrorBoundary>
+            <App />
+          </ChunkErrorBoundary>
         </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>

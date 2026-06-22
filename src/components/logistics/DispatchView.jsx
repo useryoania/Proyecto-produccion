@@ -716,14 +716,14 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
                                 position: fixed;
                                 left: 0;
                                 top: 0;
-                                width: 100%;
+                                width: 100mm;
                                 margin: 0;
                                 padding: 0;
                                 background: white;
                             }
                             @page {
-                                size: auto;
-                                margin: 0mm;
+                                size: 100mm 150mm;
+                                margin: 2mm;
                             }
                         }
                     `}</style>
@@ -733,32 +733,30 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
                         <button onClick={handlePrint} className="px-6 py-2 bg-slate-800 text-white rounded-lg font-bold hover:bg-slate-700 transition-colors"><i className="fa-solid fa-print mr-2"></i> Imprimir</button>
                     </div>
 
-                    <div id="printable-area" className="p-8 flex flex-col items-center gap-8 print:p-0 print:block">
+                    <div id="printable-area" className="p-4 flex flex-col items-center gap-4 print:p-0 print:block">
                         {results.map((res, i) => (
-                            <div key={i} className="w-full max-w-2xl bg-white p-8 rounded-xl border-dashed border-2 border-slate-300 print:border-4 print:border-black print:w-full print:shadow-none shadow-sm relative mx-auto my-4 break-after-page print:m-0">
-                                <div className="text-center mb-6 border-b-2 border-black pb-4">
-                                    <h1 className="text-4xl font-black uppercase tracking-tight text-slate-900">Remito</h1>
-                                    <div className="flex justify-between mt-4 font-bold text-sm">
+                            <div key={i} className="w-full max-w-xs bg-white p-4 rounded-xl border-dashed border-2 border-slate-300 print:border-2 print:border-black print:w-full print:shadow-none shadow-sm relative mx-auto my-2 break-after-page print:m-0">
+                                <div className="text-center mb-3 border-b-2 border-black pb-2">
+                                    <h1 className="text-2xl font-black uppercase tracking-tight text-slate-900">Remito</h1>
+                                    <div className="flex justify-between mt-2 font-bold text-xs">
                                         <span>ORIGEN: {currentArea || user?.areaKey}</span>
                                         <span>DESTINO: {res.destArea}</span>
                                     </div>
                                 </div>
-                                <div className="flex justify-center mb-6">
-                                    <QRCode value={res.dispatchCode} size={150} />
+                                <div className="flex justify-center mb-3">
+                                    <QRCode value={res.dispatchCode} size={90} />
                                 </div>
-                                <div className="text-center font-mono text-2xl font-black mb-6 text-slate-900">{res.dispatchCode}</div>
+                                <div className="text-center font-mono text-base font-black mb-3 text-slate-900">{res.dispatchCode}</div>
 
-                                <div className="text-center text-xs text-slate-500 mb-6">Emisión: {new Date().toLocaleString('es-AR')}</div>
+                                <div className="text-center text-[9px] text-slate-500 mb-3">Emisión: {new Date().toLocaleString('es-AR')}</div>
 
-                                {/* Item List */}
-                                {/* Item List replaced by Total Count */}
-                                <div className="text-center border-t-2 border-slate-200 pt-6 mt-4">
-                                    <h3 className="text-xs font-bold uppercase mb-2 text-slate-400">Cantidad Total</h3>
-                                    <div className="text-6xl font-black text-slate-900">{res.itemCount}</div>
-                                    <div className="text-sm font-bold uppercase text-slate-500 mt-1">Bultos</div>
+                                <div className="text-center border-t-2 border-slate-200 pt-3 mt-2">
+                                    <h3 className="text-[9px] font-bold uppercase mb-1 text-slate-400">Cantidad Total</h3>
+                                    <div className="text-4xl font-black text-slate-900">{res.itemCount}</div>
+                                    <div className="text-xs font-bold uppercase text-slate-500 mt-1">Bultos</div>
                                 </div>
 
-                                <div className="mt-4 text-center text-[10px] text-slate-400">
+                                <div className="mt-3 text-center text-[9px] text-slate-400">
                                     Transportista: {credentials.username || 'Sistema'}
                                 </div>
                             </div>

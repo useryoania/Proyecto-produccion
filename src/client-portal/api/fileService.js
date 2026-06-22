@@ -415,7 +415,12 @@ export const fileService = {
             formData.append('dbId', metadata.dbId);
             formData.append('type', metadata.type);
             formData.append('finalName', metadata.finalName);
-            formData.append('area', metadata.area);
+            formData.append('area', metadata.area || '');
+            // Extraer codigoOrden del finalName (ej: 'DTF-1072_CLIENTE_arch.pdf' → 'DTF-1072')
+            if (metadata.finalName) {
+                const m = metadata.finalName.match(/^([A-Z]+-\d+)/i);
+                if (m) formData.append('codigoOrden', m[1]);
+            }
 
             const token = localStorage.getItem('auth_token'); // CORREGIDO: key 'auth_token'
             const apiUrl = import.meta.env.VITE_API_URL || '/api';

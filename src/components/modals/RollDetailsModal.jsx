@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { jsPDF } from "jspdf";
 import "jspdf-autotable";
-import { saveDirectoryHandle, getDirectoryHandle, verifyPermission } from '../../utils/fsStorage';
+import { saveDirectoryHandle, getDirectoryHandle, verifyPermission, deleteDirectoryHandle } from '../../utils/fsStorage';
 import { toast } from 'react-toastify';
 import api, { ordersService, rollsService, insumosService, productionService } from '../../services/api';
+import { downloadManager } from '../../utils/downloadManager';
 import { printLabelsHelper } from '../../utils/printHelper';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import Swal from 'sweetalert2';
@@ -448,13 +449,26 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
             
             if (handle) {
                 const hasPermission = await verifyPermission(handle);
-                if (hasPermission) return handle;
+                if (hasPermission) {
+                    // Verificar que la carpeta realmente existe antes de usarla
+                    try {
+                        // queryPermission no garantiza existencia; intentamos listar entries
+                        // Si la carpeta fue borrada, esto lanza NotFoundError
+                        // eslint-disable-next-line no-unused-vars
+                        for await (const _ of handle.values()) { break; }
+                        return handle;
+                    } catch (existErr) {
+                        // La carpeta fue borrada o movida — limpiar el handle guardado
+                        console.warn('[getBaseDirectory] La carpeta guardada ya no existe, limpiando...', existErr);
+                        await deleteDirectoryHandle('defaultRollsDownloadDir');
+                        // Cae al showDirectoryPicker más abajo
+                    }
+                }
             }
             
-            // Si no teníamos guardado o perdimos acceso, pedimos al usuario que elija la carpeta
+            // Si no teníamos guardado, perdimos acceso, o fue borrada: pedimos al usuario que elija
             handle = await window.showDirectoryPicker({ mode: 'readwrite', id: 'rollsDownloadDir' });
             if (handle) {
-                // Lo guardamos para la próxima vez
                 await saveDirectoryHandle('defaultRollsDownloadDir', handle);
                 return handle;
             }
@@ -538,9 +552,13 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
         try {
             setLoading(true);
 
+            downloadManager.start(`Medición de Lote ${freshRoll?.id || 'Nuevo'}`);
+
             const measureTask = async () => {
                 // 1. DESCARGA ZIP
-                const blob = await rollsService.downloadZip(selectedOrderIds);
+                const blob = await rollsService.downloadZip(selectedOrderIds, (loaded, total) => {
+                    downloadManager.updateDownloadProgress(loaded, total);
+                });
 
                 if (supportsFileSystem && dirHandle) {
                     const JSZip = (await import("jszip")).default;
@@ -556,9 +574,19 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                         rollHandle = dirHandle;
                     }
 
+                    const zipEntries = Object.entries(zip.files).filter(([_, entry]) => !entry.dir);
+                    
+                    if (zipEntries.length === 0) {
+                        downloadManager.error('El ZIP recibido está vacío. Revisa que las órdenes tengan archivos subidos.');
+                        toast.error('El ZIP del servidor llegó vacío.');
+                        return;
+                    }
+                    
+                    downloadManager.startProcessing(zipEntries.length);
+
                     let fileCount = 0;
-                    for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-                        if (zipEntry.dir) continue;
+                    const writeErrors = [];
+                    for (const [relativePath, zipEntry] of zipEntries) {
                         const fileName = relativePath.split('/').pop();
                         try {
                             const fileHandle = await rollHandle.getFileHandle(fileName, { create: true });
@@ -567,9 +595,15 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                             await writable.write(content);
                             await writable.close();
                             fileCount++;
+                            downloadManager.updateProcessingProgress(fileCount);
                         } catch (writeErr) {
                             console.error("❌ Error escribiendo:", fileName, writeErr);
+                            writeErrors.push(`${fileName}: ${writeErr.message}`);
                         }
+                    }
+                    
+                    if (fileCount === 0) {
+                        throw new Error(`No se pudo escribir ningún archivo. Primer error: ${writeErrors[0] || 'desconocido'}`);
                     }
                 } else {
                     saveAsZip(blob);
@@ -579,25 +613,18 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                 const res = await api.post('/measurements/process-server-orders', { orderIds: selectedOrderIds });
                 if (res.data.success) {
                     setSelectedOrderIds([]);
-                    return "Medición iniciada en el servidor.";
+                    downloadManager.finish();
+                    toast.success("Medición iniciada en el servidor.");
+                } else {
+                    throw new Error("Error iniciando medición");
                 }
-                throw new Error("Error iniciando medición");
             };
 
-            await toast.promise(measureTask(), {
-                pending: 'Descargando y preparando medición...',
-                success: {
-                    render({ data }) {
-                        return data;
-                    }
-                },
-                error: 'Error al procesar medición'
-            }, {
-                toastId: 'measure-toast'
-            });
+            await measureTask();
 
         } catch (error) {
             console.error("Error process server:", error);
+            downloadManager.error(error.response?.data?.error || error.message);
             toast.error("Error: " + (error.response?.data?.error || error.message));
         } finally {
             setLoading(false);
@@ -627,8 +654,12 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
         try {
             setLoading(true);
 
+            downloadManager.start(`Descarga Lote ${freshRoll?.id || 'Nuevo'}`);
+
             const downloadTask = async () => {
-                const blob = await rollsService.downloadZip(selectedOrderIds);
+                const blob = await rollsService.downloadZip(selectedOrderIds, (loaded, total) => {
+                    downloadManager.updateDownloadProgress(loaded, total);
+                });
 
                 if (supportsFileSystem && dirHandle) {
                     const JSZip = (await import("jszip")).default;
@@ -644,9 +675,19 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                         rollHandle = dirHandle;
                     }
 
+                    const zipEntries = Object.entries(zip.files).filter(([_, entry]) => !entry.dir);
+                    
+                    if (zipEntries.length === 0) {
+                        downloadManager.error('El ZIP recibido está vacío. Revisa que las órdenes tengan archivos subidos.');
+                        toast.error('El ZIP del servidor llegó vacío.');
+                        return;
+                    }
+                    
+                    downloadManager.startProcessing(zipEntries.length);
+
                     let fileCount = 0;
-                    for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-                        if (zipEntry.dir) continue;
+                    const writeErrors = [];
+                    for (const [relativePath, zipEntry] of zipEntries) {
                         const fileName = relativePath.split('/').pop();
                         try {
                             const fileHandle = await rollHandle.getFileHandle(fileName, { create: true });
@@ -655,37 +696,50 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                             await writable.write(content);
                             await writable.close();
                             fileCount++;
+                            downloadManager.updateProcessingProgress(fileCount);
                         } catch (writeErr) {
                             console.error("❌ Error escribiendo:", fileName, writeErr);
+                            writeErrors.push(`${fileName}: ${writeErr.message}`);
                         }
                     }
-                    return `${fileCount} archivos descargados en "${safeFolderName}"`;
+                    
+                    if (fileCount === 0) {
+                        throw new Error(`No se pudo escribir ningún archivo en la carpeta. Primer error: ${writeErrors[0] || 'permiso denegado o carpeta inaccesible'}`);
+                    }
+                    
+                    downloadManager.finish();
+                    if (writeErrors.length > 0) {
+                        toast.warning(`${fileCount} archivos descargados en "${safeFolderName}" (${writeErrors.length} fallaron).`);
+                    } else {
+                        toast.success(`${fileCount} archivos descargados en "${safeFolderName}"`);
+                    }
                 } else {
                     saveAsZip(blob);
-                    return "ZIP descargado";
+                    downloadManager.finish();
+                    toast.success("ZIP descargado");
                 }
             };
 
-            await toast.promise(downloadTask(), {
-                pending: 'Descargando y procesando archivos...',
-                success: {
-                    render({ data }) {
-                        return data;
-                    }
-                },
-                error: 'Error al procesar descarga'
-            }, {
-                toastId: 'download-toast'
-            });
+            await downloadTask();
 
         } catch (error) {
             console.error("Download Error:", error);
+            let errorMsg;
             if (error.response && error.response.data instanceof Blob) {
-                const text = await error.response.data.text();
-                toast.error("Error: " + text);
+                errorMsg = "Error del servidor: " + await error.response.data.text();
+            } else if (error.name === 'NotFoundError') {
+                // La carpeta guardada fue borrada o movida — limpiarla para el próximo intento
+                await deleteDirectoryHandle('defaultRollsDownloadDir');
+                errorMsg = "La carpeta de destino ya no existe. Probá de nuevo — se te pedirá elegir una nueva carpeta.";
+            } else if (error.name === 'NotAllowedError' || (error.message && error.message.includes('permission'))) {
+                errorMsg = "Sin permiso para escribir en la carpeta. Probá descargar de nuevo y reelegí la carpeta.";
+            } else if (error.message) {
+                errorMsg = error.message;
             } else {
-                toast.error("Error al procesar descarga.");
+                errorMsg = "Error al procesar descarga.";
             }
+            downloadManager.error(errorMsg);
+            toast.error(errorMsg, { autoClose: 8000 });
         } finally {
             setLoading(false);
         }

@@ -61,6 +61,8 @@ app.use(requestLogger);
 
 // --- STATIC FILES ---
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Thumbnails generados localmente de PDFs/archivos de pedidos
+app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
 // Comprobantes de entrega de encomiendas (logística transporte)
 const encomiendasFolder = process.env.COMPROBANTES_ENCOMIENDAS_PATH || path.join(__dirname, 'comprobantesEncomiendas');
 app.use('/comprobantesEncomiendas', express.static(encomiendasFolder));
@@ -148,6 +150,11 @@ app.use('/api/machine-control', require('./routes/machineControlRoutes')); // CO
 try {
     app.use('/api/finishing', require('./routes/ecoUvFinishingRoutes'));
 } catch (e) { logger.error("❌ Error loading finishing routes:", e); }
+
+try {
+    app.use('/api/color', require('./routes/colorRoutes'));
+    logger.info('✅ [MÓDULO] Igualador de Color activado en /api/color');
+} catch (e) { logger.error('❌ Error loading color routes:', e.message); }
 
 try {
     app.use('/api/products-integration', require('./routes/productsIntegrationRoutes'));

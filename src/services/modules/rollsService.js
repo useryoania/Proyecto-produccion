@@ -1,4 +1,5 @@
 import api from '../apiClient';
+import { socket } from '../socketService';
 
 export const rollsService = {
     getBoard: async (areaCode) => {
@@ -69,8 +70,16 @@ export const rollsService = {
         const response = await api.post('/measurements/process-batch-by-orders', { orderIds });
         return response.data;
     },
-    downloadZip: async (orderIds) => {
-        const response = await api.post('/measurements/download-zip', { orderIds }, { responseType: 'blob' });
+    downloadZip: async (orderIds, onProgress) => {
+        const response = await api.post('/measurements/download-zip', { 
+            orderIds,
+            clientId: socket?.id
+        }, { 
+            responseType: 'blob',
+            onDownloadProgress: (progressEvent) => {
+                if (onProgress) onProgress(progressEvent.loaded, progressEvent.total);
+            }
+        });
         return response.data;
     },
     reorderPendingOrders: async (areaId, orderIds, movedId) => {

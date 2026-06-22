@@ -9,6 +9,8 @@ import ResetPasswordPage from './components/pages/ResetPasswordPage';
 import PaymentResult from './components/pages/PaymentResult';
 import PrintStationPage from './components/logistics/PrintStationPage';
 import EncomiendaPrintStation from './components/logistics/EncomiendaPrintStation';
+import { FloatingDownloadPanel } from './components/common/FloatingDownloadPanel';
+import { FallbackSpinner } from './components/common/ChunkErrorBoundary';
 
 // ⚡ CODE SPLITTING: Se independiza la descarga para no atorar celulares. Solo se bajará el JS que se esté mirando.
 const LandingPage = lazy(() => import('./components/pages/LandingPage'));
@@ -23,7 +25,7 @@ const ClientPortalApp = lazy(() => import('./client-portal/ClientPortalApp').the
 const MainAppContent = lazy(() => import('./components/layout/MainAppContent')); 
 const TotemApp = lazy(() => import('./client-portal/modulos/totem/TotemApp').then(m => ({ default: m.TotemApp })));
 
-const PageFallback = () => <div style={{ minHeight: '100vh', background: '#0d0d0d' }} />;
+const PageFallback = () => <FallbackSpinner />;
 import { menuService } from './services/api';
 
 function ClientLoginRedirect() {
@@ -120,6 +122,7 @@ function App() {
             <Route path="*" element={<Navigate to="/portal/profile" replace />} />
           </Routes>
         </Suspense>
+        <FloatingDownloadPanel />
       </main>
     );
   }
@@ -137,6 +140,7 @@ function App() {
           <Route path="*" element={<MainAppContent menuItems={menuItems} />} />
         </Routes>
       </Suspense>
+      <FloatingDownloadPanel />
     </main>
   );
 }

@@ -785,7 +785,8 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                                 <span className="text-xs font-bold text-white bg-brand-magenta px-2 py-0.5 rounded uppercase tracking-wider">CANCELADA</span>
                             )}
                         </div>
-                        <h2 className="text-xl font-bold text-zinc-800 leading-tight">{currentOrder.client}</h2>
+                        <h2 className="text-xl font-bold text-zinc-800 leading-tight">{currentOrder.idCliente || currentOrder.client}</h2>
+                        <p className="text-sm text-zinc-500 mt-0.5">{currentOrder.idCliente ? currentOrder.client : ''}</p>
                         <p className="text-sm text-zinc-500 mt-1 max-w-2xl truncate">{currentOrder.desc}</p>
                     </div>
 
@@ -983,9 +984,22 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                     {currentOrder.note && (
                         <div className="mb-8 bg-amber-50 border-l-4 border-amber-400 p-3 flex gap-3 shadow-sm rounded-r-lg">
                             <i className="fa-solid fa-note-sticky text-amber-500 text-lg mt-0.5"></i>
-                            <div>
-                                <h4 className="font-bold text-amber-900 text-xs uppercase mb-0.5">Nota de Producción</h4>
-                                <p className="text-amber-800 text-sm italic leading-snug">"{currentOrder.note}"</p>
+                            <div className="w-full">
+                                <h4 className="font-bold text-amber-900 text-xs uppercase mb-1">Notas de Producción / Fallas</h4>
+                                <div className="space-y-1.5">
+                                    {currentOrder.note.split('||').map((nota, index) => {
+                                        const cleanNota = nota.replace('FALLA:', '').trim();
+                                        if (!cleanNota) return null;
+                                        return (
+                                            <div key={index} className="flex gap-2 items-start bg-amber-100/50 p-2 rounded border border-amber-200/50">
+                                                <i className="fa-solid fa-circle-exclamation text-amber-500 mt-1 text-[10px]"></i>
+                                                <p className="text-amber-800 text-sm italic leading-snug font-medium">
+                                                    {cleanNota}
+                                                </p>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
                     )}

@@ -155,13 +155,14 @@ export const MainLayout = ({ children }) => {
 
     const getErpCode = (serviceId) => {
         const map = {
-            'DF': 'DF',
-            'sublimacion': 'SB',
-            'ecouv': 'ECOUV',
-            'directa_320': 'DIRECTA',
-            'directa_algodon': 'DIRECTA',
-            'bordado': 'EMB',
-            'corte-confeccion': 'TWT',
+            'DF': 'DTF',
+            'sublimacion': 'SUB',
+            'ecouv': 'EUV',
+            'directa_320': 'DIR',
+            'directa_algodon': 'DIR',
+            'bordado': 'BOR',
+            'corte': 'COR',
+            'corte-confeccion': 'COS',
             'tpu': 'TPU'
         };
         return map[serviceId] || serviceId.toUpperCase();

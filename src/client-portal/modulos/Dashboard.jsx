@@ -1,17 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { GlassCard } from '../pautas/GlassCard';
-import { CustomButton } from '../pautas/CustomButton';
 import { SERVICES_LIST } from '../constants/services';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { apiClient } from '../api/apiClient';
-import { Loader2, Package } from 'lucide-react';
+import { Loader2, Package, ShieldX } from 'lucide-react';
 
 export const Dashboard = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
-    const [visibleConfig, setVisibleConfig] = useState(null); // null = cargando/desconocido
+    const [visibleConfig, setVisibleConfig] = useState(null);
     const [loading, setLoading] = useState(true);
+
+    const isBloqueado = user?.estado === 'BLOQUEADO';
 
     useEffect(() => {
         const fetchConfig = async () => {
@@ -20,7 +21,7 @@ export const Dashboard = () => {
                 if (res.success && res.data?.visibility) {
                     setVisibleConfig(res.data.visibility);
                 } else {
-                    setVisibleConfig({}); // Empty config means show all by default
+                    setVisibleConfig({});
                 }
             } catch (error) {
                 console.error("Error fetching visibility config:", error);
@@ -33,15 +34,15 @@ export const Dashboard = () => {
     }, []);
 
     const getErpCode = (serviceId) => {
-        // Mapeo manual de ID Web a CodigoERP
         const map = {
-            'DF': 'DF', // ID en SERVICES_LIST es 'DF' igual
-            'sublimacion': 'SB',
-            'ecouv': 'ECOUV',
-            'directa_320': 'DIRECTA',
-            'directa_algodon': 'DIRECTA',
-            'bordado': 'EMB',
-            'corte-confeccion': 'TWT',
+            'DF': 'DTF',
+            'sublimacion': 'SUB',
+            'ecouv': 'EUV',
+            'directa_320': 'DIR',
+            'directa_algodon': 'DIR',
+            'bordado': 'BOR',
+            'corte': 'COR',
+            'corte-confeccion': 'COS',
             'tpu': 'TPU'
         };
         return map[serviceId] || serviceId.toUpperCase();
@@ -53,6 +54,21 @@ export const Dashboard = () => {
 
     return (
         <div className="animate-fade-in space-y-6">
+
+            {/* Banner de cuenta bloqueada */}
+            {isBloqueado && (
+                <div className="flex items-start gap-4 bg-red-950/40 border border-red-700/60 rounded-2xl px-5 py-4">
+                    <ShieldX size={36} strokeWidth={1.5} className="text-red-400 shrink-0 mt-0.5" />
+                    <div>
+                        <p className="text-red-300 font-bold text-sm uppercase tracking-wide">Cuenta bloqueada</p>
+                        <p className="text-red-400/80 text-xs mt-1 leading-relaxed">
+                            Tu cuenta está actualmente bloqueada y no podés crear nuevos pedidos.
+                            Por favor, contactanos para regularizar tu situación.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             <div className="flex items-center gap-3 mb-2">
                 <Package size={48} strokeWidth={1} className="text-brand-gold" />
                 <div>
@@ -61,12 +77,9 @@ export const Dashboard = () => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 ${isBloqueado ? 'opacity-40 pointer-events-none select-none' : ''}`}>
                 {SERVICES_LIST.map((service) => {
-                    // Lógica de Visibilidad
                     const erpCode = getErpCode(service.id);
-                    // Si existe configuración y es false (0), ocultar.
-                    // Si es undefined o true, mostrar.
                     if (visibleConfig && visibleConfig[erpCode]?.visible === false) {
                         return null;
                     }
@@ -77,6 +90,7 @@ export const Dashboard = () => {
                             key={service.id}
                             className="cursor-pointer transition-all duration-300 h-full md:aspect-square flex flex-col justify-center"
                             onClick={() => {
+                                if (isBloqueado) return;
                                 if (service.isTicketSystem) {
                                     navigate('/portal/soporte');
                                 } else if (service.externalUrl) {

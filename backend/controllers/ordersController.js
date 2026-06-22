@@ -1035,9 +1035,13 @@ exports.advancedSearchOrders = async (req, res) => {
 
 exports.getOrderFullDetails = async (req, res) => {
     try {
-        // Simple fetch fallback
         const pool = await getPool();
-        const r = await pool.request().input('ID', sql.Int, req.params.id).query("SELECT * FROM Ordenes WHERE OrdenID = @ID");
+        const r = await pool.request().input('ID', sql.Int, req.params.id).query(`
+            SELECT O.*, C.IDCliente
+            FROM Ordenes O
+            LEFT JOIN Clientes C ON C.CliIdCliente = O.CliIdCliente
+            WHERE O.OrdenID = @ID
+        `);
         res.json(r.recordset[0]);
     } catch (e) { res.status(500).json({ error: e.message }); }
 };

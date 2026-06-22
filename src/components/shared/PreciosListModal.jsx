@@ -204,7 +204,7 @@ export default function PreciosListModal({ isOpen, onClose }) {
                                                             {/* Botón de WhatsApp */}
                                                             <div className="px-2 pt-1 pb-3 sm:px-4 flex justify-center sm:justify-end">
                                                                 <a
-                                                                    href={`https://wa.me/59898284114?text=${encodeURIComponent(`Hola, quiero saber mas sobre ${family.toLowerCase()}`)}`}
+                                                                    href={`https://wa.me/59899956476?text=${encodeURIComponent(`Hola, quiero saber mas sobre ${family.toLowerCase()}`)}`}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
                                                                     onClick={() => { trackAnalyticsEvent('CTA_CLICK', { categoria: family }); onClose(); }}

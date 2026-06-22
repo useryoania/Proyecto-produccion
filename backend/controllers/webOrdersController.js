@@ -7,6 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const contabilidadService = require('../services/contabilidadService');
 const ERPSyncService = require('../services/erpSyncService');
+const { generateThumbnail } = require('../utils/thumbnailGenerator');
 
 
 // ──────────────────────────────────────────────────
@@ -256,10 +257,20 @@ exports.createWebOrder = async (req, res) => {
         const erpDocNumber = `${nuevoNroPedido}`;
 
         if (codCliente) {
-            const clientRes = await pool.request().input('cod', sql.Int, codCliente).query("SELECT CliIdCliente, IDReact FROM Clientes WHERE CodCliente = @cod");
+            const clientRes = await pool.request().input('cod', sql.Int, codCliente).query("SELECT CliIdCliente, IDReact, ESTADO FROM Clientes WHERE CodCliente = @cod");
             if (clientRes.recordset.length > 0) {
-                idClienteReact = clientRes.recordset[0].IDReact;
-                cliIdCliente = clientRes.recordset[0].CliIdCliente;
+                const clientData = clientRes.recordset[0];
+                idClienteReact = clientData.IDReact;
+                cliIdCliente = clientData.CliIdCliente;
+
+                // Bloquear creación de pedidos si el cliente está BLOQUEADO
+                if (clientData.ESTADO === 'BLOQUEADO') {
+                    logger.warn(`⛔ [WebOrder] Cliente CodCliente=${codCliente} está BLOQUEADO. Pedido rechazado.`);
+                    return res.status(403).json({
+                        error: 'Tu cuenta está bloqueada. No podés crear nuevos pedidos. Contactá con nosotros para regularizar tu situación.',
+                        blocked: true
+                    });
+                }
             }
         }
 
@@ -1169,7 +1180,7 @@ exports.createWebOrder = async (req, res) => {
 
 // --- SUBIDA DE ARCHIVOS POR STREAMING (UNO A UNO) ---
 exports.uploadOrderFile = async (req, res) => {
-    const { dbId, type, finalName, area } = req.body;
+    const { dbId, type, finalName, area, codigoOrden } = req.body;
     const file = req.file;
 
     if (!file || !dbId || !type || !finalName) {
@@ -1190,6 +1201,20 @@ exports.uploadOrderFile = async (req, res) => {
         }
 
         const driveUrl = await driveService.uploadToDrive(fileInput, finalName, area || 'GENERAL');
+
+        // Generar thumbnail en background si es PDF o PNG y tenemos el buffer
+        if (file.buffer && codigoOrden && dbId) {
+            const mimeType = (file.mimetype || '').toLowerCase();
+            const ext = (finalName || '').toLowerCase();
+            const isSupported = mimeType.includes('pdf') || ext.endsWith('.pdf')
+                             || mimeType.includes('png') || ext.endsWith('.png')
+                             || mimeType.includes('jpeg') || ext.endsWith('.jpg');
+            if (isSupported) {
+                generateThumbnail(file.buffer, codigoOrden, dbId, finalName).catch(e =>
+                    logger.warn('[Thumbnail] Error async generando thumbnail:', e.message)
+                );
+            }
+        }
 
         const pool = await getPool();
         let orderID = null;
@@ -1309,11 +1334,11 @@ exports.getClientOrders = async (req, res) => {
             const countsQuery = await pool.request()
                 .input('cod', sql.Int, codCliente)
                 .query(`
-                    SELECT ISNULL(o.NoDocERP, o.CodigoOrden) AS DocID, o.Estado
+                    SELECT ISNULL(o.NoDocERP, o.CodigoOrden) AS DocID, o.Estado, 'WEB' AS Origen
                     FROM Ordenes o WITH(NOLOCK)
                     WHERE o.CodCliente = @cod
                     UNION ALL
-                    SELECT o.OrdCodigoOrden AS DocID, e.EOrNombreEstado AS Estado
+                    SELECT o.OrdCodigoOrden AS DocID, e.EOrNombreEstado AS Estado, 'ERP' AS Origen
                     FROM OrdenesDeposito o WITH(NOLOCK)
                     INNER JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                     LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
@@ -1368,7 +1393,6 @@ exports.getClientOrders = async (req, res) => {
             .input('Limit', sql.Int, limit)
             .query(`
                 SELECT * FROM (
-                    -- Órdenes web (tabla interna Ordenes)
                     SELECT
                         o.OrdenID       AS OrdenID,
                         o.CodigoOrden   AS CodigoOrden,
@@ -1378,19 +1402,26 @@ exports.getClientOrders = async (req, res) => {
                         o.FechaIngreso  AS FechaIngreso,
                         o.Estado        AS Estado,
                         COALESCE(ar.Nombre, o.AreaID) AS AreaID,
-                        NULL            AS Total,
-                        NULL            AS Moneda,
                         'WEB'           AS Origen,
                         mc.Titulo       AS MotivoCancelacion,
-                        o.DetallesCancelacion AS DetallesCancelacion
+                        o.DetallesCancelacion AS DetallesCancelacion,
+                        m.Nombre        AS NombreMaquina,
+                        o.Magnitud      AS Magnitud,
+                        o.UM            AS UM,
+                        (SELECT TOP 1 ArchivoID FROM ArchivosOrden WITH(NOLOCK)
+                         WHERE OrdenID = o.OrdenID AND RutaAlmacenamiento IS NOT NULL
+                         ORDER BY ArchivoID ASC) AS PrimerArchivoID,
+                        (SELECT TOP 1 RutaAlmacenamiento FROM ArchivosOrden WITH(NOLOCK)
+                         WHERE OrdenID = o.OrdenID AND RutaAlmacenamiento IS NOT NULL
+                         ORDER BY ArchivoID ASC) AS DriveFileId
                     FROM Ordenes o WITH(NOLOCK)
                     LEFT JOIN MotivosCancelacion mc ON mc.MotivoID = o.MotivoCancelacionID
                     LEFT JOIN Areas ar WITH(NOLOCK) ON ar.AreaID = o.AreaID
+                    LEFT JOIN ConfigEquipos m WITH(NOLOCK) ON m.EquipoID = o.MaquinaID
                     WHERE o.CodCliente = @cod
 
                     UNION ALL
 
-                    -- Órdenes ERP (tabla OrdenesDeposito)
                     SELECT
                         o.OrdIdOrden        AS OrdenID,
                         o.OrdCodigoOrden    AS CodigoOrden,
@@ -1400,15 +1431,18 @@ exports.getClientOrders = async (req, res) => {
                         o.OrdFechaEstadoActual AS FechaIngreso,
                         e.EOrNombreEstado   AS Estado,
                         NULL                AS AreaID,
-                        o.OrdCostoFinal     AS Total,
-                        m.MonSimbolo        AS Moneda,
                         'ERP'               AS Origen,
                         NULL                AS MotivoCancelacion,
-                        NULL                AS DetallesCancelacion
+                        NULL                AS DetallesCancelacion,
+                        NULL                AS NombreMaquina,
+                        NULL                AS Magnitud,
+                        NULL                AS UM,
+                        NULL                AS PrimerArchivoID,
+                        NULL                AS DriveFileId
                     FROM OrdenesDeposito o WITH(NOLOCK)
                     INNER JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                     LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
-                    LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
+                    LEFT JOIN Monedas mo WITH(NOLOCK) ON mo.MonIdMoneda = o.MonIdMoneda
                     LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = o.ProIdProducto
                     WHERE c.CodCliente = @cod
                 ) combined
@@ -1427,8 +1461,10 @@ exports.getClientOrders = async (req, res) => {
 exports.deleteIncompleteOrder = async (req, res) => {
     const codCliente = req.user?.codCliente;
     const { id } = req.params;
+    const { razon } = req.body || {};
 
     if (!codCliente || !id) return res.status(400).json({ error: "Datos inválidos" });
+    if (!razon || !razon.trim()) return res.status(400).json({ error: "Debe indicar una razón para cancelar el pedido." });
 
     try {
         const pool = await getPool();
@@ -1525,12 +1561,28 @@ exports.deleteOrderBundle = async (req, res) => {
             });
         }
 
-        // 3. Borrar Todo
+        // 3. Cancelar / Borrar
+        const razon = req.body?.razon;
         const transaction = new sql.Transaction(pool);
         await transaction.begin();
 
         try {
             const reqTx = new sql.Request(transaction);
+
+            // Si todas son Pendiente → soft cancel con razón
+            const allPendiente = orders.every(o => o.Estado === 'Pendiente');
+            if (allPendiente && razon?.trim()) {
+                for (const oid of ids) {
+                    if (typeof oid !== 'number') continue;
+                    await reqTx.query(
+                        `UPDATE Ordenes 
+                         SET Estado = 'Cancelado', EstadoenArea = 'Cancelado', DetallesCancelacion = '${razon.trim().replace(/'/g, "''")}' 
+                         WHERE OrdenID = ${oid}`
+                    );
+                }
+                await transaction.commit();
+                return res.json({ success: true, message: `Proyecto ${docId} cancelado (${ids.length} órdenes).` });
+            }
 
             for (const oid of ids) {
                 // Safety check
@@ -2747,31 +2799,48 @@ exports.handyWebhook = async (req, res) => {
                         // usuarioId=999 identifica pagos online automáticos;
                         // esAdministrativa=true fuerza StuIdSesion=NULL (sin sesión de cajero).
                         // cajaService resuelve solo las órdenes hijas y cruza DeudaDocumento exacto.
+                        // Retry con backoff para resistir deadlocks con operaciones concurrentes.
                         const { procesarTransaccion } = require('../services/cajaService');
-                        const result = await procesarTransaccion({
-                            usuarioId: 999,
-                            header: {
-                                clienteId:        CliIdCliente,
-                                esAdministrativa:  true,
-                                tipoDocumento:     '07',   // E-Ticket Contado
-                                moneda,
-                                observaciones:     `Cobro Handy (Tx: ${transactionId})`,
-                            },
-                            aplicaciones: [{
-                                tipo:           'ORDEN_RETIRO',
-                                referenciaId:   ordenRetiroId,
-                                montoOriginal:  tx.TotalAmount,
-                                descripcion:    `Retiro diferido RW-${ordenRetiroId}`,
-                                // orderNumbers vacío → cajaService los descubre solo en BD
-                            }],
-                            pagos: [{
-                                metodoPagoId:  9,   // Handy
-                                monedaId,
-                                moneda,
-                                montoOriginal: tx.TotalAmount,
-                                cotizacion:    1,
-                            }],
-                        });
+                        const MAX_RETRIES = 3;
+                        let result = null;
+                        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                            try {
+                                result = await procesarTransaccion({
+                                    usuarioId: 999,
+                                    header: {
+                                        clienteId:        CliIdCliente,
+                                        esAdministrativa:  true,
+                                        tipoDocumento:     '07',   // E-Ticket Contado
+                                        moneda,
+                                        observaciones:     `Cobro Handy (Tx: ${transactionId})`,
+                                    },
+                                    aplicaciones: [{
+                                        tipo:           'ORDEN_RETIRO',
+                                        referenciaId:   ordenRetiroId,
+                                        montoOriginal:  tx.TotalAmount,
+                                        descripcion:    `Retiro diferido RW-${ordenRetiroId}`,
+                                        // orderNumbers vacío → cajaService los descubre solo en BD
+                                    }],
+                                    pagos: [{
+                                        metodoPagoId:  9,   // Handy
+                                        monedaId,
+                                        moneda,
+                                        montoOriginal: tx.TotalAmount,
+                                        cotizacion:    1,
+                                    }],
+                                });
+                                break; // Éxito → salir del loop
+                            } catch (retryErr) {
+                                const isDeadlock = retryErr.number === 1205 || (retryErr.message && retryErr.message.includes('deadlock'));
+                                if (isDeadlock && attempt < MAX_RETRIES) {
+                                    const waitMs = attempt * 2000; // 2s, 4s
+                                    logger.warn(`[HANDY WEBHOOK] ⚠️ Deadlock en intento ${attempt}/${MAX_RETRIES}. Reintentando en ${waitMs}ms...`);
+                                    await new Promise(r => setTimeout(r, waitMs));
+                                } else {
+                                    throw retryErr; // No es deadlock o se agotaron reintentos
+                                }
+                            }
+                        }
 
                         const pagoId = result.pagosCreados[0]?.pagIdPago;
                         logger.info(`[HANDY WEBHOOK] ✅ Pago procesado vía Caja: PagoId=${pagoId} TcaId=${result.tcaIdTransaccion} Retiro=${ordenRetiroId}`);

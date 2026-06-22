@@ -408,19 +408,27 @@ const postControlArchivo = async (req, res) => {
                 newOrderId = existingFallaOrder.OrdenID;
                 logger.info(`[postControlArchivo] Reutilizando orden falla existente ${existingFallaOrder.CodigoOrden} (ID: ${newOrderId}) para archivo ${archivoId}`);
 
-                // Actualizar nota de la orden existente
+                // Actualizar nota de la orden original y de la orden de falla existente
                 await new sql.Request(transaction)
                     .input('OldID',      sql.Int,               ordenId)
+                    .input('NewFallaID', sql.Int,               newOrderId)
                     .input('TipoFallaID',sql.Int,               fallaIDClean)
                     .input('SafeMotivo', sql.NVarChar(sql.MAX),  obsFalla)
                     .input('EquipoID',   sql.Int,               equipoId)
                     .input('CantidadFalla', sql.Decimal(10, 2), metrosReponer)
                     .input('ArchivoID',  sql.Int,               archivoId)
                     .input('AreaID',     sql.NVarChar,          areaId)
+                    .input('NotaAdd',    sql.NVarChar(sql.MAX), ` || FALLA: ${notaFallaDetalle}`)
                     .query(`
+                        -- Actualizamos la orden original
                         UPDATE dbo.Ordenes
                         SET Observaciones = CONCAT(ISNULL(Observaciones,''), ' [Esperando Reposición]')
                         WHERE OrdenID = @OldID;
+
+                        -- Actualizamos la orden de falla para concatenar la nueva nota
+                        UPDATE dbo.Ordenes
+                        SET Nota = CONCAT(ISNULL(Nota,''), @NotaAdd)
+                        WHERE OrdenID = @NewFallaID;
 
                         INSERT INTO FallasProduccion(OrdenID, ArchivoID, AreaID, FechaFalla, TipoFalla, CantidadFalla, EquipoID, Observaciones)
                         VALUES(@OldID, @ArchivoID, @AreaID, GETDATE(), @TipoFallaID, @CantidadFalla, @EquipoID, @SafeMotivo);
@@ -888,6 +896,26 @@ const postControlArchivo = async (req, res) => {
             }
         }
 
+        // --- RE-AVISO WSP: Si una reposición cliente (-R) se completó, resetear aviso de la madre ---
+        if (orderCompleted && /-R\d+$/i.test(codigoOrden)) {
+            try {
+                const codigoMadreR = codigoOrden.replace(/-R\d+$/i, '');
+                const resetRes = await pool.request()
+                    .input('CodigoMadre', sql.NVarChar, codigoMadreR)
+                    .query(`
+                        UPDATE OrdenesDeposito
+                        SET OrdAvisoWsp = 0, OrdFechaAvisoWsp = NULL
+                        WHERE OrdCodigoOrden = @CodigoMadre
+                          AND ISNULL(OrdAvisoWsp, 0) = 1
+                    `);
+                if (resetRes.rowsAffected[0] > 0) {
+                    logger.info(`[postControlArchivo] ✅ Reposición ${codigoOrden} pronta → re-aviso WSP programado para orden madre ${codigoMadreR}`);
+                }
+            } catch (eReaviso) {
+                logger.error(`[postControlArchivo] Error reseteando aviso WSP para madre de ${codigoOrden}: ${eReaviso.message}`);
+            }
+        }
+
         // --- GENERACIÓN DE ETIQUETAS POST-COMMIT (SI CORRESPONDE) ---
         if (orderCompleted) {
             try {
@@ -1305,21 +1333,20 @@ const getCompletedOrdersForReplacement = async (req, res) => {
 
         let sqlQuery = `
             SELECT TOP 20 
-                OrdenID, CodigoOrden, Cliente, FechaIngreso, FechaEstimadaEntrega, 
-                Estado, Material, DescripcionTrabajo, NoDocERP
-            FROM Ordenes WITH (NOLOCK)
-            WHERE (Estado IN ('ENTREGADO', 'FINALIZADO', 'DESPACHADO') OR ISNULL(EstadoenArea,'') IN ('Pronto', 'PRONTO'))
+                O.OrdenID, O.CodigoOrden, C.IDCliente, O.Cliente, O.FechaIngreso, O.FechaEstimadaEntrega, 
+                O.Estado, O.Material, O.DescripcionTrabajo, O.NoDocERP
+            FROM Ordenes O WITH (NOLOCK)
+            LEFT JOIN Clientes C WITH (NOLOCK) ON C.CliIdCliente = O.CliIdCliente
+            WHERE O.Estado IN ('ENTREGADO', 'FINALIZADO', 'DESPACHADO', 'PRONTO')
             AND (
-                CodigoOrden LIKE @Search 
-                OR Cliente LIKE @Search 
-                OR CAST(OrdenID AS VARCHAR) = @Exact
-                OR NoDocERP LIKE @Search
+                O.CodigoOrden LIKE @Search 
+                OR O.NoDocERP LIKE @Search
+                OR C.IDCliente LIKE @Search
             )
-            ORDER BY OrdenID DESC
+            ORDER BY O.OrdenID DESC
         `;
 
         request.input('Search', sql.NVarChar, `%${q}%`);
-        request.input('Exact', sql.NVarChar, q);
 
         const result = await request.query(sqlQuery);
         res.json(result.recordset);
@@ -1766,6 +1793,26 @@ async function completarOrden(req, res) {
                 }
             } catch (eMadre) {
                 logger.error(`[completarOrden] Error desbloqueando madre: ${eMadre.message}`);
+            }
+        }
+
+        // --- RE-AVISO WSP: Si una reposición cliente (-R) se completó, resetear aviso de la madre ---
+        if (!tieneFallas && /-R\d+$/i.test(codigoOrden)) {
+            try {
+                const codigoMadreR = codigoOrden.replace(/-R\d+$/i, '');
+                const resetRes = await pool.request()
+                    .input('CodigoMadre', sql.NVarChar, codigoMadreR)
+                    .query(`
+                        UPDATE OrdenesDeposito
+                        SET OrdAvisoWsp = 0, OrdFechaAvisoWsp = NULL
+                        WHERE OrdCodigoOrden = @CodigoMadre
+                          AND ISNULL(OrdAvisoWsp, 0) = 1
+                    `);
+                if (resetRes.rowsAffected[0] > 0) {
+                    logger.info(`[completarOrden] ✅ Reposición ${codigoOrden} pronta → re-aviso WSP programado para orden madre ${codigoMadreR}`);
+                }
+            } catch (eReaviso) {
+                logger.error(`[completarOrden] Error reseteando aviso WSP para madre de ${codigoOrden}: ${eReaviso.message}`);
             }
         }
 

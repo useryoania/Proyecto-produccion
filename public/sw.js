@@ -1,10 +1,11 @@
 // Service Worker — PWA + Web Push Notifications
-const CACHE_NAME = 'user-pwa-v4';
+const CACHE_NAME = 'user-pwa-v5';
 const OFFLINE_URL = '/offline.html';
 
 // Assets to pre-cache on install
 const PRECACHE_ASSETS = [
-    '/',
+    // OJO: NO precachear '/' — serviría un index.html viejo que apunta a chunks
+    // que ya no existen tras un deploy. La navegación va siempre a la red.
     '/offline.html',
     '/assets/images/pwa.svg',
     '/assets/images/pwa.png',
@@ -43,17 +44,12 @@ self.addEventListener('fetch', (event) => {
     if (request.method !== 'GET') return;
     if (request.url.includes('/api/') || request.url.includes('/socket.io')) return;
 
-    // Navigation requests → network-first, fallback to offline page
+    // Navigation requests → network-first SIEMPRE. Nunca servir un index.html
+    // cacheado (apuntaría a chunks muertos tras un deploy). Solo si no hay red
+    // (el fetch lanza excepción) caemos a la página offline.
     if (request.mode === 'navigate') {
         event.respondWith(
-            fetch(request)
-                .then((response) => {
-                    // Si el servidor responde OK, devolver directamente
-                    if (response.ok) return response;
-                    // Para rutas SPA (HTML), intentar servir desde cache root
-                    return caches.match('/') || caches.match(OFFLINE_URL);
-                })
-                .catch(() => caches.match(OFFLINE_URL))
+            fetch(request).catch(() => caches.match(OFFLINE_URL))
         );
         return;
     }

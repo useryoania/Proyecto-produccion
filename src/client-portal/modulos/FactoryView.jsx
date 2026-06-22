@@ -128,6 +128,10 @@ export const FactoryView = () => {
         confirmText: 'Confirmar'
     });
 
+    // Modal de cancelación con razón obligatoria
+    const [cancelModal, setCancelModal] = useState({ isOpen: false, onConfirm: null, titulo: '', mensaje: '' });
+    const [cancelRazon, setCancelRazon] = useState('');
+
     const fetchOrders = async (pageNum = 1, shouldAppend = false) => {
         if (pageNum === 1) setLoading(true);
         else setLoadingMore(true);
@@ -157,20 +161,19 @@ export const FactoryView = () => {
 
     const handleDeleteBundle = (docId, e) => {
         e?.stopPropagation();
-        setModal({
+        setCancelRazon('');
+        setCancelModal({
             isOpen: true,
-            title: "Eliminar Proyecto Incompleto",
-            message: "Esta acción eliminará permanentemente todos los registros fallidos de este proyecto. \nEsta acción no se puede deshacer.",
-            type: 'danger',
-            confirmText: 'Eliminar Todo',
-            onConfirm: async () => {
+            titulo: 'Eliminar Proyecto Incompleto',
+            mensaje: 'Esta acción eliminará permanentemente todos los registros fallidos de este proyecto.',
+            onConfirm: async (razon) => {
                 setLoading(true);
                 try {
-                    await apiClient.delete(`/web-orders/bundle/${docId}`);
+                    await apiClient.delete(`/web-orders/bundle/${docId}`, { data: { razon } });
                     setPage(1);
                     if (page === 1) await fetchOrders(1, false);
                 } catch (err) {
-                    alert("Error: " + err.message);
+                    alert('Error: ' + err.message);
                     setLoading(false);
                 }
             }
@@ -179,24 +182,23 @@ export const FactoryView = () => {
 
     const handleCancelProject = (subOrders, e) => {
         e?.stopPropagation();
-        setModal({
+        setCancelRazon('');
+        setCancelModal({
             isOpen: true,
-            title: "Cancelar Pedido Completo",
-            message: "Todas las órdenes pendientes de este proyecto pasarán a estado 'Cancelado'. \n¿Estás seguro de cancelar todo el pedido?",
-            type: 'warning',
-            confirmText: 'Sí, Cancelar Pedido',
-            onConfirm: async () => {
+            titulo: 'Cancelar Pedido Completo',
+            mensaje: "Todas las órdenes pendientes pasarán a estado 'Cancelado'. Indicá el motivo de la cancelación.",
+            onConfirm: async (razon) => {
                 setLoading(true);
                 try {
                     for (const so of subOrders) {
                         if (['Pendiente', 'Cargando...'].includes(so.Estado)) {
-                            await apiClient.delete(`/web-orders/incomplete/${so.OrdenID}`);
+                            await apiClient.delete(`/web-orders/incomplete/${so.OrdenID}`, { data: { razon } });
                         }
                     }
                     setPage(1);
                     if (page === 1) await fetchOrders(1, false);
                 } catch (err) {
-                    alert("Error al cancelar proyecto: " + err.message);
+                    alert('Error al cancelar proyecto: ' + err.message);
                     setLoading(false);
                 }
             }
@@ -231,23 +233,67 @@ export const FactoryView = () => {
     }, []);
 
     // Agrupación por Proyecto
+    // Normaliza el docId a su parte numérica para que "DTF-416" y "416" agrupen igual.
+    const normalizeDocId = (raw) => {
+        if (!raw) return null;
+        const m = String(raw).match(/(\d+)$/);
+        return m ? m[1] : String(raw);
+    };
+
+    // Extrae el File ID de una URL completa de Drive o lo devuelve tal cual si ya es solo un ID
+    const extractDriveId = (raw) => {
+        if (!raw) return null;
+        // Formato: https://drive.google.com/file/d/FILE_ID/view...
+        const m = String(raw).match(/\/file\/d\/([^/?&]+)/);
+        return m ? m[1] : raw;
+    };
+
     const projects = {};
-    orders.forEach(order => {
-        const docId = order.NoDocERP || order.CodigoOrden;
-        if (!projects[docId]) {
-            projects[docId] = {
-                id: docId,
+    orders.filter(order => {
+        const code = (order.CodigoOrden || '').toUpperCase();
+        return !/-[RF]\d*$/i.test(code) && !code.includes('-F') && !code.includes('-R');
+    }).forEach(order => {
+        // Agrupar por el número extraído del CodigoOrden (no NoDocERP que puede ser otro valor)
+        const groupKey = normalizeDocId(order.CodigoOrden) || order.CodigoOrden;
+        if (!projects[groupKey]) {
+            projects[groupKey] = {
+                id: order.CodigoOrden,
                 title: order.DescripcionTrabajo,
                 date: order.FechaIngreso,
                 materials: new Set(),
-                subOrders: []
+                subOrders: [],
+                maquina: null,
+                magnitud: null,
+                um: null,
+                driveFileId: null,
+                primerArchivoId: null,
             };
         }
-        projects[docId].subOrders.push(order);
-        if (order.Material) projects[docId].materials.add(order.Material);
+        // Preferir la info de la orden WEB (más completa: tiene área, descripción, etc.)
+        if (order.Origen === 'WEB') {
+            projects[groupKey].id = order.CodigoOrden;
+            projects[groupKey].title = order.DescripcionTrabajo || projects[groupKey].title;
+            projects[groupKey].date = order.FechaIngreso || projects[groupKey].date;
+            // Tomar el primer valor disponible de máquina/metros/archivo
+            if (!projects[groupKey].maquina && order.NombreMaquina) projects[groupKey].maquina = order.NombreMaquina;
+            if (!projects[groupKey].magnitud && order.Magnitud) projects[groupKey].magnitud = order.Magnitud;
+            if (!projects[groupKey].um && order.UM) projects[groupKey].um = order.UM;
+            if (!projects[groupKey].driveFileId && order.DriveFileId) projects[groupKey].driveFileId = extractDriveId(order.DriveFileId);
+            if (!projects[groupKey].primerArchivoId && order.PrimerArchivoID) projects[groupKey].primerArchivoId = order.PrimerArchivoID;
+        }
+        projects[groupKey].subOrders.push(order);
+        if (order.Material) projects[groupKey].materials.add(order.Material);
     });
 
-    // Filtrado
+    // Deduplicar: si un proyecto tiene órdenes WEB y ERP con el mismo código numérico, quitar la ERP duplicada
+    Object.values(projects).forEach(p => {
+        const webCodes = new Set(p.subOrders.filter(o => o.Origen === 'WEB').map(o => normalizeDocId(o.CodigoOrden)));
+        if (webCodes.size > 0) {
+            p.subOrders = p.subOrders.filter(o => o.Origen === 'WEB' || !webCodes.has(normalizeDocId(o.CodigoOrden)));
+        }
+    });
+
+    // Filtrado + orden por fecha desc (más nuevo primero)
     const filteredProjects = Object.values(projects).filter(p => {
         const searchLower = searchTerm.toLowerCase();
         const matchesSearch = !searchTerm ||
@@ -262,7 +308,7 @@ export const FactoryView = () => {
         if (statusFilter === 'PENDING') return projectStatus === 'pendiente' || projectStatus === 'zombie';
         if (statusFilter === 'ACTIVE') return projectStatus === 'activo';
         return true;
-    });
+    }).sort((a, b) => new Date(b.date) - new Date(a.date));
 
     // Count badges replaced by globalCounts
     const statusCounts = globalCounts;
@@ -441,6 +487,69 @@ export const FactoryView = () => {
                                         </span>
                                     </div>
 
+                                    {/* Fila 3: máquina + metros + preview archivo */}
+                                    {(project.maquina || project.magnitud || project.driveFileId) && (
+                                        <div className="flex items-center gap-3 mt-0.5">
+                                            {/* Preview miniatura Drive */}
+                                            {project.driveFileId && (
+                                                <a
+                                                    href={`https://drive.google.com/file/d/${project.driveFileId}/view`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    onClick={e => e.stopPropagation()}
+                                                    className="shrink-0 group relative"
+                                                    title="Ver archivo"
+                                                >
+                                                    <div className="w-12 h-12 rounded-lg overflow-hidden border border-zinc-700/60 bg-zinc-800 group-hover:border-brand-cyan/40 transition-colors">
+                                                        <img
+                                                            src={
+                                                                project.primerArchivoId
+                                                                    ? `/thumbnails/${project.id}/${project.primerArchivoId}.jpg`
+                                                                    : `/api/web-orders/file-thumbnail/${project.driveFileId}`
+                                                            }
+                                                            alt="preview"
+                                                            className="w-full h-full object-cover"
+                                                            onError={e => {
+                                                                // Fallback 1: proxy de Drive
+                                                                if (e.target.dataset.fallback !== '1' && project.driveFileId) {
+                                                                    e.target.dataset.fallback = '1';
+                                                                    e.target.src = `/api/web-orders/file-thumbnail/${project.driveFileId}`;
+                                                                    return;
+                                                                }
+                                                                // Fallback 2: ícono de documento
+                                                                e.target.style.display = 'none';
+                                                                e.target.parentNode.innerHTML = '<div class="w-full h-full flex items-center justify-center"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" class="text-zinc-600"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg></div>';
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </a>
+                                            )}
+
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                {/* Metros */}
+                                                {project.magnitud != null && (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-300 bg-zinc-800/80 border border-zinc-700/50 px-2 py-0.5 rounded">
+                                                        <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" className="text-zinc-500">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10M7 5v14M11 7v10M15 5v14M19 7v10" />
+                                                        </svg>
+                                                        {Number(project.magnitud).toLocaleString('es-UY', { maximumFractionDigits: 2 })} {project.um || 'm'}
+                                                    </span>
+                                                )}
+
+                                                {/* Máquina */}
+                                                {project.maquina && (
+                                                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-zinc-400 bg-zinc-800/80 border border-zinc-700/50 px-2 py-0.5 rounded">
+                                                        <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" className="text-zinc-500">
+                                                            <rect x="2" y="7" width="20" height="14" rx="2" />
+                                                            <path strokeLinecap="round" d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" />
+                                                        </svg>
+                                                        {project.maquina}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {/* Motivo de cancelación */}
                                     {projectStatus === 'cancelado' && (() => {
                                         const cancelledOrder = project.subOrders.find(so => so.MotivoCancelacion || so.DetallesCancelacion);
@@ -542,7 +651,7 @@ export const FactoryView = () => {
                 </div>
             )}
 
-            {/* Modal de Confirmación */}
+            {/* Modal de Confirmación genérico */}
             <ConfirmationModal
                 isOpen={modal.isOpen}
                 title={modal.title}
@@ -552,6 +661,61 @@ export const FactoryView = () => {
                 onClose={() => setModal({ ...modal, isOpen: false })}
                 onConfirm={modal.onConfirm}
             />
+
+            {/* Modal de Cancelación con razón obligatoria */}
+            {cancelModal.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+                    <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+                        <div className="flex items-start gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-full bg-amber-500/15 flex items-center justify-center flex-shrink-0">
+                                <svg className="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 className="text-white font-semibold text-base">{cancelModal.titulo}</h3>
+                                <p className="text-zinc-400 text-sm mt-1">{cancelModal.mensaje}</p>
+                            </div>
+                        </div>
+
+                        <div className="mb-5">
+                            <label className="block text-zinc-400 text-xs font-semibold uppercase tracking-wider mb-2">
+                                Motivo de cancelación <span className="text-red-400">*</span>
+                            </label>
+                            <textarea
+                                className="w-full bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2.5 text-white text-sm placeholder-zinc-500 resize-none focus:outline-none focus:border-amber-500/60 transition-colors"
+                                rows={3}
+                                placeholder="Ej: Ya no necesito el producto, cambié de pedido..."
+                                value={cancelRazon}
+                                onChange={e => setCancelRazon(e.target.value)}
+                                maxLength={500}
+                                autoFocus
+                            />
+                            <div className="text-right text-zinc-600 text-[10px] mt-1">{cancelRazon.length}/500</div>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setCancelModal({ ...cancelModal, isOpen: false })}
+                                className="flex-1 px-4 py-2.5 rounded-lg border border-zinc-700 text-zinc-300 text-sm font-medium hover:bg-zinc-800 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                disabled={!cancelRazon.trim()}
+                                onClick={async () => {
+                                    const razon = cancelRazon.trim();
+                                    setCancelModal({ ...cancelModal, isOpen: false });
+                                    await cancelModal.onConfirm(razon);
+                                }}
+                                className="flex-1 px-4 py-2.5 rounded-lg bg-amber-500 text-black text-sm font-semibold hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            >
+                                Confirmar cancelación
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

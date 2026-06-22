@@ -227,7 +227,13 @@ const FilePrintControl = ({ areaCode }) => {
     fetchDetails();
   }, [selectedOrder]);
 
-  // 4. Socket Listeners & Auto-Advance Logic
+  // Ref that always holds the latest selectedOrder — lets the socket handler
+  // read it without adding selectedOrder to the effect dependencies (which
+  // would cancel the auto-advance timer on every order-state update).
+  const selectedOrderRef = useRef(selectedOrder);
+  useEffect(() => { selectedOrderRef.current = selectedOrder; }, [selectedOrder]);
+
+  // 4. Socket Listeners
   useEffect(() => {
     const handleUpdate = (data) => {
       if (activeRoll) {
@@ -242,6 +248,7 @@ const FilePrintControl = ({ areaCode }) => {
             status: o.Estado,
             statusArea: o.EstadoenArea,
             controlled: o.Controlada === 1,
+
             sequence: o.Secuencia || 0,
             failures: o.CantidadFallas || 0,
             hasLabels: o.CantidadEtiquetas || 0,
@@ -251,12 +258,13 @@ const FilePrintControl = ({ areaCode }) => {
           }));
           setOrders(normalized);
 
-          if (selectedOrder) {
-            const fresh = normalized.find(o => o.id === selectedOrder.id);
+          const currentSelected = selectedOrderRef.current;
+          if (currentSelected) {
+            const fresh = normalized.find(o => o.id === currentSelected.id);
             if (fresh) {
-              // Updarte current selection
+              // Update current selection
               setSelectedOrder(prev => {
-                if (!prev) return null; // Prevent resurrecting a cleared order
+                if (!prev) return null;
                 if (prev.id !== fresh.id) return prev;
                 return { ...prev, ...fresh };
               });
@@ -268,55 +276,34 @@ const FilePrintControl = ({ areaCode }) => {
 
               // Solo mostrar el modal si NO es una orden de reposición (-F)
               // Las -F se completan silenciosamente durante "CORREGIR FALLA" para navegar a la madre.
+
               const isReposition = /\-F\d+$/.test(fresh.code || '');
 
               if (isCompleted && !wasCompleted && !isReposition) {
-                // Show Completion Modal
+                // Determinar si es la última orden válida del lote
+                const currentSorted = [...normalized].sort((a, b) => {
+                  const seqA = a.sequence || 999999;
+                  const seqB = b.sequence || 999999;
+                  return sortOrder === 'asc' ? seqA - seqB : seqB - seqA;
+                });
+                const idx = currentSorted.findIndex(o => o.id === fresh.id);
+                let hasNext = false;
+                for (let i = idx + 1; i < currentSorted.length; i++) {
+                  if ((currentSorted[i].meters || 0) > 0) { hasNext = true; break; }
+                }
+
                 setCompletedOrderData({
-                  destino: fresh.nextService || 'LOGÍSTICA',
+                  ordenId: fresh.id,
+                  isLastInRoll: !hasNext,
+                  destino: fresh.nextService || 'LOG\u00cdSTICA',
                   proximoServicio: fresh.nextService
                 });
-
-                // If Auto-Advance enabled, switch after delay
-                if (autoAdvance) {
-                  if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
-
-                  autoAdvanceTimerRef.current = setTimeout(() => {
-                    setOrders(prevOrders => {
-                      // Re-sort current orders to find next index
-                      const currentSorted = [...prevOrders].sort((a, b) => {
-                        const seqA = a.sequence || 999999;
-                        const seqB = b.sequence || 999999;
-                        return sortOrder === 'asc' ? seqA - seqB : seqB - seqA;
-                      });
-
-                      const idx = currentSorted.findIndex(o => o.id === fresh.id);
-                      if (idx !== -1 && idx < currentSorted.length - 1) {
-                        // Find next VALID order (not blocked)
-                        let nextOrder = null;
-                        for (let i = idx + 1; i < currentSorted.length; i++) {
-                          if ((currentSorted[i].meters || 0) > 0) {
-                            nextOrder = currentSorted[i];
-                            break;
-                          }
-                        }
-
-                        if (nextOrder) {
-                          setSelectedOrder(nextOrder);
-                          setCompletedOrderData(null); // Auto-close modal
-                          setToast({ visible: true, message: `Auto-avanzando a orden #${nextOrder.code || nextOrder.id}...`, type: 'info' });
-                        }
-                      }
-                      return prevOrders;
-                    });
-                  }, 2000);
-                }
               }
             }
           }
         });
       }
-      if (data.orderId && selectedOrder && data.orderId == selectedOrder.id) {
+      if (data.orderId && selectedOrderRef.current && data.orderId == selectedOrderRef.current.id) {
         refreshCurrentOrder();
       }
     };
@@ -326,9 +313,60 @@ const FilePrintControl = ({ areaCode }) => {
     return () => {
       socket.off('server:order_updated', handleUpdate);
       socket.off('server:ordersUpdated', handleUpdate);
+      // NO cancelamos autoAdvanceTimerRef aquí — eso se maneja en su propio efecto
+    };
+  }, [activeRoll, searchTerm, areaCode, sortOrder]);
+
+  // 5. Auto-Advance: efecto separado para no cancelar el timer al cambiar selectedOrder
+  useEffect(() => {
+    // Solo actuar cuando aparece el modal (completedOrderData pasa de null a algo)
+    if (!completedOrderData || !autoAdvance) return;
+
+    if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
+
+    autoAdvanceTimerRef.current = setTimeout(() => {
+      if (completedOrderData.isLastInRoll) {
+        // Última orden del lote — cerrar modal y avisar
+        setCompletedOrderData(null);
+        setToast({ visible: true, message: '✓ Lote completado. Todas las órdenes finalizadas.', type: 'success' });
+        return;
+      }
+
+      // Buscar la siguiente orden válida
+      setOrders(prevOrders => {
+        const currentSorted = [...prevOrders].sort((a, b) => {
+          const seqA = a.sequence || 999999;
+          const seqB = b.sequence || 999999;
+          return sortOrder === 'asc' ? seqA - seqB : seqB - seqA;
+        });
+
+        const idx = currentSorted.findIndex(o => o.id === completedOrderData.ordenId);
+        let nextOrder = null;
+        const startIdx = idx !== -1 ? idx + 1 : 0;
+        for (let i = startIdx; i < currentSorted.length; i++) {
+          if ((currentSorted[i].meters || 0) > 0) {
+            nextOrder = currentSorted[i];
+            break;
+          }
+        }
+
+        if (nextOrder) {
+          setSelectedOrder(nextOrder);
+          setCompletedOrderData(null);
+          setToast({ visible: true, message: `Auto-avanzando a orden #${nextOrder.code || nextOrder.id}...`, type: 'info' });
+        } else {
+          // Sin más órdenes válidas
+          setCompletedOrderData(null);
+          setToast({ visible: true, message: '✓ Lote completado. Todas las órdenes finalizadas.', type: 'success' });
+        }
+        return prevOrders;
+      });
+    }, 5000);
+
+    return () => {
       if (autoAdvanceTimerRef.current) clearTimeout(autoAdvanceTimerRef.current);
     };
-  }, [activeRoll, selectedOrder, searchTerm, areaCode, autoAdvance, sortOrder]);
+  }, [completedOrderData, autoAdvance, sortOrder]);
 
 
   // --- HELPERS ---
@@ -632,8 +670,6 @@ const FilePrintControl = ({ areaCode }) => {
   };
 
   const printFailureLabel = ({ order, file, tipoFalla, observacion }) => {
-    const printWindow = window.open('', '_blank', 'width=600,height=800');
-    if (!printWindow) return;
     const orderCode = order?.code || order?.CodigoOrden || '---';
     const client = order?.client || order?.Cliente || '---';
     const material = file?.Material || file?.material || order?.material || '';
@@ -641,7 +677,7 @@ const FilePrintControl = ({ areaCode }) => {
     const alto = parseFloat(file?.Alto || 0).toFixed(2);
     const fecha = new Date().toLocaleDateString('es-ES');
 
-    printWindow.document.write(`<!DOCTYPE html>
+    const html = `<!DOCTYPE html>
 <html>
 <head>
   <title>Etiqueta de Falla</title>
@@ -676,17 +712,10 @@ const FilePrintControl = ({ areaCode }) => {
     .footer { border-top: 3px solid #000; padding-top: 8px; margin-top: 8px; text-align: center; }
     .order-num { font-size: 38px; font-weight: 900; display: inline-block; white-space: nowrap; color: #000; }
     .dim-text { font-size: 12px; color: #000; margin-top: 2px; }
-    @media screen {
-      .label-page { border: 1px dashed #999; margin: 20px auto; width: 380px; }
-      body { background: #e0e0e0; padding-bottom: 40px; }
-    }
     @media print { .no-print { display: none !important; } body { background: #fff; } }
   </style>
 </head>
 <body>
-  <div class="no-print" style="position:sticky;top:0;z-index:100;padding:12px;text-align:center;background:#222;color:white;">
-    <button onclick="window.print()" style="padding:8px 24px;font-size:15px;cursor:pointer;background:#000;color:white;border:none;border-radius:6px;font-weight:bold;">🖨️ IMPRIMIR</button>
-  </div>
   <div class="label-page">
     <div class="header">
       <div class="header-left">
@@ -713,19 +742,41 @@ const FilePrintControl = ({ areaCode }) => {
       <div class="dim-text">${material}</div>
     </div>
   </div>
-  <script>window.addEventListener('load', function() {
-    var el = document.querySelector('.order-num');
-    if (!el) return;
-    var maxW = el.parentElement.offsetWidth * 0.8;
-    var fs = 10;
-    el.style.fontSize = fs + 'px';
-    while (el.offsetWidth < maxW && fs < 200) { fs++; el.style.fontSize = fs + 'px'; }
-    while (el.offsetWidth > maxW && fs > 8) { fs--; el.style.fontSize = fs + 'px'; }
-    setTimeout(function() { window.print(); }, 800);
-  });</script>
+  <script>
+    window.addEventListener('load', function() {
+      var el = document.querySelector('.order-num');
+      if (el) {
+        var maxW = el.parentElement.offsetWidth * 0.8;
+        var fs = 10;
+        el.style.fontSize = fs + 'px';
+        while (el.offsetWidth < maxW && fs < 200) { fs++; el.style.fontSize = fs + 'px'; }
+        while (el.offsetWidth > maxW && fs > 8) { fs--; el.style.fontSize = fs + 'px'; }
+      }
+    });
+  </script>
 </body>
-</html>`);
-    printWindow.document.close();
+</html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.top = '-9999px';
+    iframe.style.left = '-9999px';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    // Give iframe a moment to render and execute its resize script before printing
+    setTimeout(() => {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+      setTimeout(() => document.body.removeChild(iframe), 3000);
+    }, 250);
   };
 
   const handleSubmitModal = async () => {
@@ -1258,8 +1309,15 @@ const FilePrintControl = ({ areaCode }) => {
               </div>
 
               <div className="space-y-3 w-full">
-                <button onClick={() => {
-                  const id = completedOrderData?.ordenId;
+                <button onClick={() => { 
+                  // Cancelar el timer de auto-avance para que el operador pueda imprimir
+                  // sin que el modal se cierre antes de que la impresión arranque
+                  if (autoAdvanceTimerRef.current) {
+                    clearTimeout(autoAdvanceTimerRef.current);
+                    autoAdvanceTimerRef.current = null;
+                  }
+                  const id = completedOrderData?.ordenId; 
+
                   const wasLast = completedOrderData?.isLastInRoll;
                   setCompletedOrderData(null);
                   if (wasLast) setActiveRoll(null);
@@ -1272,6 +1330,11 @@ const FilePrintControl = ({ areaCode }) => {
                 </button>
                 <div className="flex gap-2">
                   <button onClick={() => {
+                    // Cerrar manual: cancelar timer y avanzar inmediato
+                    if (autoAdvanceTimerRef.current) {
+                      clearTimeout(autoAdvanceTimerRef.current);
+                      autoAdvanceTimerRef.current = null;
+                    }
                     const wasLast = completedOrderData?.isLastInRoll;
                     setCompletedOrderData(null);
                     if (wasLast) setActiveRoll(null);

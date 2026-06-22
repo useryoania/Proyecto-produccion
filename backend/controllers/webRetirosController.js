@@ -164,8 +164,8 @@ exports.getAllLocalRetiros = async (req, res) => {
             LEFT JOIN TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
             LEFT JOIN FormasEnvio fe WITH(NOLOCK) ON fe.ID = r.LReIdLugarRetiro
             LEFT JOIN Agencias ag WITH(NOLOCK) ON ag.ID = r.AgenciaEnvio
-            -- Excluir retiros entregados o cancelados
-            WHERE r.OReEstadoActual NOT IN (5, 6, 8)
+            -- Excluir retiros entregados, cancelados o ya empaquetados
+            WHERE r.OReEstadoActual NOT IN (5, 6, 7, 8)
             -- Excluir retiros que ya estan asignados a un estante fisico
             AND NOT EXISTS (
                 SELECT 1 FROM OcupacionEstantes oe WITH(NOLOCK)
@@ -454,7 +454,18 @@ exports.obtenerMapaEstantes = async (req, res) => {
               AND (orr.OReEstadoActual IS NULL OR orr.OReEstadoActual NOT IN (5, 6))
             ORDER BY c.EstanteID, c.Seccion, c.Posicion
         `);
-        res.json(result.recordset);
+        
+        // Traer TODAS las órdenes asignadas a estantes (independiente de ConfiguracionEstantes)
+        // para que el frontend pueda excluirlas de empaques incluso si la posición no está configurada
+        const allAssigned = await pool.request().query(`
+            SELECT OrdenRetiro FROM OcupacionEstantes WITH(NOLOCK) WHERE OrdenRetiro IS NOT NULL
+        `);
+        const assignedList = allAssigned.recordset.map(r => r.OrdenRetiro);
+        
+        res.json({ 
+            estantes: result.recordset, 
+            allAssignedOrders: assignedList 
+        });
     } catch (err) {
         logger.error('[obtenerMapaEstantes] Error:', err.message);
         res.status(500).json({ error: 'Error al obtener mapa estantes', details: err.message });

@@ -11,13 +11,31 @@ export const printLabelsHelper = (labels, orderInfo) => {
 
   const orderId = orderInfo.id || orderInfo.OrdenID;
   const apiUrl = import.meta.env.VITE_API_URL || '/api';
-
-  // Usamos el endpoint del backend para centralizar el diseño y la lógica
   const printUrl = `${apiUrl}/production-file-control/orden/${orderId}/etiquetas/print`;
 
-  const printWindow = window.open(printUrl, '_blank', 'width=1000,height=800');
+  // Impresión silenciosa: iframe oculto en lugar de ventana nueva.
+  // El diálogo de impresión del sistema sigue apareciendo (requerimiento del browser),
+  // pero el operador no pierde el foco de la pantalla actual.
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;opacity:0;border:none;';
+  iframe.src = printUrl;
 
-  if (!printWindow) {
-    alert("El navegador bloqueó la ventana emergente. Por favor permite popups.");
-  }
+  iframe.onload = () => {
+    try {
+      iframe.contentWindow.focus();
+      iframe.contentWindow.print();
+    } catch (e) {
+      // Si el iframe falla (ej: bloqueado por CORS), abrir ventana como fallback
+      console.warn('[printLabelsHelper] iframe print falló, usando window.open:', e);
+      window.open(printUrl, '_blank', 'width=1000,height=800');
+    }
+  };
+
+  document.body.appendChild(iframe);
+
+  // Limpiar el iframe después de 30s (tiempo suficiente para que la impresión termine)
+  setTimeout(() => {
+    if (document.body.contains(iframe)) document.body.removeChild(iframe);
+  }, 30000);
 };
+

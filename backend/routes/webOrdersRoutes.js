@@ -8,6 +8,20 @@ const driveService = require('../services/driveService');
 const fs = require('fs');
 const path = require('path');
 
+// GET /api/web-orders/file-thumbnail/:fileId — proxy de thumbnail autenticado desde Drive (sin auth: fileId es GUID no enumerable)
+router.get('/file-thumbnail/:fileId', async (req, res) => {
+    const { fileId } = req.params;
+    if (!fileId) return res.status(400).json({ error: 'fileId requerido' });
+    try {
+        const url = await driveService.getThumbnailUrl(fileId);
+        if (!url) return res.status(404).end();
+        // Redirigir al cliente a la URL de thumbnail firmada por Google
+        res.redirect(url);
+    } catch (err) {
+        res.status(500).end();
+    }
+});
+
 // GET /api/web-orders/my-orders
 router.get('/my-orders', verifyToken, webOrdersController.getClientOrders);
 

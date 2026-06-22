@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback, Suspense, lazy } from 'react';
-import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket, ScanLine, FileText, Cpu, FileDown, Inbox, Receipt, ShoppingCart } from 'lucide-react';
+import { LayoutDashboard, Warehouse, Printer, ClipboardList, Terminal, CircleUserRound, Tags, Headset, Calculator, Landmark, Shirt, Sun, Sparkles, Flame, Scissors, Pen, Shapes, PenLine, QrCode, ShieldBan, PrinterCheck, History, LayoutGrid, PackagePlus, PackageCheck, Truck, FileSearch, Boxes, Waypoints, Send, Package, Bus, ClipboardCheck, Menu, Users, Shield, Eye, Settings, Database, UserX, RefreshCw, BadgeDollarSign, Layers, BookOpen, Banknote, CreditCard, ShieldCheck, Calendar, CalendarCheck, MapPin, Store, LifeBuoy, Ticket, ScanLine, FileText, Cpu, FileDown, Inbox, Receipt, ShoppingCart, Palette } from 'lucide-react';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
@@ -88,6 +88,7 @@ const ContabilidadBandejaCFE       = lazyWithRetry(() => import('../pages/Contab
 const BandejaDocumentosInternos    = lazyWithRetry(() => import('../pages/BandejaDocumentosInternos'));
 const CronAdminView                = lazyWithRetry(() => import('../pages/CronAdminView'));
 const CoordinacionView             = lazyWithRetry(() => import('../pages/CoordinacionView'));
+const ColorMatcherPage             = lazyWithRetry(() => import('../pages/ColorMatcherPage'));
 
 // ============================================
 // 1. LUCIDE ICON MAP (override FA icons)
@@ -246,6 +247,10 @@ const lucideIconMapRaw = {
     'recibos':              Receipt,
     'recibos y egresos':    Receipt,
     'cron':                 Terminal,
+    // Color
+    'color':               Palette,
+    'igualador de color':  Palette,
+    'igualador color':     Palette,
     // Administración sub-items
     'caja': Banknote,
     'pagos': CreditCard,
@@ -653,6 +658,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <Route path="/contabilidad/caja-admin"        element={<CajaTransaccionView isAdminCaja={true} />} />
                 <Route path="/admin/cron"                     element={<CronAdminView />} />
                 <Route path="/coordinacion"                   element={<CoordinacionView />} />
+                <Route path="/color"                          element={<ColorMatcherPage />} />
                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
             </Routes>
         </Suspense>
@@ -915,6 +921,7 @@ const DynamicRouter = ({ menuItems }) => {
     if (menuItem.Ruta === '/contabilidad/tesoreria')             return <ContabilidadTesoreriaView />;
     if (menuItem.Ruta === '/contabilidad/caja-admin')            return <CajaTransaccionView isAdminCaja={true} />;
     if (menuItem.Ruta === '/admin/cron')                         return <CronAdminView />;
+    if (menuItem.Ruta === '/color')                              return <ColorMatcherPage />;
 
     // NEW: Historial de Lotes
     if (menuItem.Ruta === '/consultas/rollos') return <RollHistory />;

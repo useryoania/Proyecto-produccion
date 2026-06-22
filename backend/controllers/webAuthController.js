@@ -339,7 +339,8 @@ exports.me = asyncHandler(async (req, res) => {
                 vendedorTelefono: u.VendedorTelefono || null,
                 role: 'WEB_CLIENT',
                 codCliente: u.CodCliente,
-                requireReset: u.WebResetPassword || (u.WebPasswordHash == null) || (u.WebPasswordHash === '')
+                requireReset: u.WebResetPassword || (u.WebPasswordHash == null) || (u.WebPasswordHash === ''),
+                estado: u.ESTADO || 'ACTIVO'
             }
         });
     } else {
