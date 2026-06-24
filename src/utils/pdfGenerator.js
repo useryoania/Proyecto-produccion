@@ -284,13 +284,15 @@ export const generarPdfFacturaDGI = async (doc, detalles) => {
             }
 
             const lineCantidad = Number(d.DcdCantidad) || 1;
-            const pUnitario = lineCantidad > 0 ? (lineTotal / lineCantidad) : 0;
             const descBruto = Number(d.DcdTotalDescuentos || 0);
-            const originalSub = pUnitario * lineCantidad;
+            // lineTotal es el total de la línea YA con el descuento aplicado.
+            // El bruto original (antes del descuento) = neto facturado + descuento.
+            const originalSub = lineTotal + descBruto;
+            const pUnitario = lineCantidad > 0 ? (originalSub / lineCantidad) : 0;
 
             let descuentoStr = d.DcdDescuentoStr || '';
             if (!descuentoStr && descBruto > 0.01) {
-                const pct = (descBruto / originalSub) * 100;
+                const pct = originalSub > 0 ? (descBruto / originalSub) * 100 : 0;
                 descuentoStr = `${fmtNum(descBruto)} (${fmtNum(pct)}%)`;
             }
 

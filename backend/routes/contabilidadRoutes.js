@@ -38,6 +38,9 @@ router.post('/ciclos/:CicIdCiclo/guardar-precios', ctrl.guardarPreciosCiclo);
 router.post('/guardar-precios', ctrl.guardarPrecios); // General: sin ciclo requerido
 router.get('/clientes/:CliIdCliente/ordenes-anticipo', ctrl.getOrdenesAnticipo);
 router.post('/clientes/:CliIdCliente/emitir-factura-anticipo', ctrl.emitirFacturaAnticipo);
+router.get('/clientes/:CliIdCliente/ordenes-sin-factura', ctrl.getOrdenesPendientesCliente);
+router.get('/ordenes/:OrdIdOrden/detalle', ctrl.getOrdenDetalle);
+router.post('/ordenes/reasignar-cliente', ctrl.reasignarOrdenesCliente);
 router.get('/planes/:CliIdCliente', ctrl.getPlanesCliente);
 router.post('/planes', ctrl.crearPlan);
 router.post('/planes/:PlaIdPlan/recargar', ctrl.recargarPlan);

@@ -577,7 +577,9 @@ const MenuAccionesDoc = ({ m, cuenta, cliente, onRefresh, onPrint, onCobrar, hid
   // ── Consumir desde Recurso Adelantado ────────────────────────────────────
   // Cond: ORDEN no anulada y sin facturar. EsPendientePago puede ser 0
   // en clientes semanales (ciclo abierto, sin DeudaDocumento aun).
-  if (!anulado && !m.DocIdDocumento && ['ORDEN','ORDEN_ANTICIPO'].includes(m.MovTipo)) {
+  // Excluir si ya fue marcada como CUBIERTO (total) o MATERIAL_CUBIERTO (material ya consumido del plan).
+  const yaConsumida = m.MovObservaciones && (m.MovObservaciones.startsWith('CUBIERTO') || m.MovObservaciones.startsWith('MATERIAL_CUBIERTO'));
+  if (!anulado && !m.DocIdDocumento && ['ORDEN','ORDEN_ANTICIPO'].includes(m.MovTipo) && !yaConsumida) {
     acciones.push({id:'consumir-recurso', label:'Consumir desde Recurso', icon:<Layers size={13}/>, cls:'text-violet-700 hover:bg-violet-50 font-bold'});
   };
 
@@ -1068,15 +1070,23 @@ const OrdenesEstadoCuenta = ({ movs, simbolo }) => {
         </thead>
         <tbody className="divide-y divide-orange-100">
           {pendientes.map(m => {
-            const codigo  = m.CodigoOrdenStr || m.OrdCodigoOrden || '—';
-            const trabajo = m.OrdNombreTrabajo || m.MovConcepto || '—';
-            const imp     = Math.abs(Number(m.MovImporte || 0));
-            const fecha   = m.MovFecha ? new Date(m.MovFecha).toLocaleDateString('es-UY') : '—';
+            const codigo          = m.CodigoOrdenStr || m.OrdCodigoOrden || '—';
+            const trabajo         = m.OrdNombreTrabajo || m.MovConcepto || '—';
+            const imp             = Math.abs(Number(m.MovImporte || 0));
+            const fecha           = m.MovFecha ? new Date(m.MovFecha).toLocaleDateString('es-UY') : '—';
+            const materialCubierto = m.MovObservaciones?.startsWith('MATERIAL_CUBIERTO');
             return (
               <tr key={m.MovIdMovimiento} className="hover:bg-orange-50/60 transition-colors">
                 <td className="px-4 py-2 text-slate-400">{fecha}</td>
                 <td className="px-4 py-2 font-semibold text-slate-700">{codigo}</td>
-                <td className="px-4 py-2 text-slate-500">{trabajo}</td>
+                <td className="px-4 py-2 text-slate-500">
+                  {trabajo}
+                  {materialCubierto && (
+                    <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-bold bg-violet-100 text-violet-700 uppercase tracking-wide">
+                      Material cubierto por plan
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-2 text-right font-bold text-orange-700">
                   {simbolo} {imp.toLocaleString('es-UY', {minimumFractionDigits:2})}
                 </td>
@@ -1869,147 +1879,197 @@ const PlanesPanel = ({ cuenta, CliIdCliente, cliente, desde, hasta, onClose, onC
         {loading ? (
         <div className="flex justify-center py-5 bg-[#f1f5f9]"><div className="animate-spin h-5 w-5 border-2 border-violet-400 border-t-transparent rounded-full" /></div>
       ) : (
-        <div className="divide-y divide-slate-100 bg-[#f1f5f9]">
-          {planes.map(p => {
-            const pct     = Number(p.PorcentajeUsado);
-            const agotado = pct >= 100;
-            const alerta  = pct >= 80 && !agotado;
-            const movsDelPlan = movsPlan[p.PlaIdPlan] || [];
+        <div className="bg-[#f1f5f9]">
 
-            return (
-              <div key={p.PlaIdPlan} className="px-4 py-3">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-slate-700">{p.NombreArticulo || `Producto #${p.ProIdProducto}`}</span>
-                      <span className="text-[10px] text-slate-500">Plan #{p.PlaIdPlan}</span>
-                    </div>
-                    {p.PlaObservacion && <p className="text-[11px] text-slate-400 mt-0.5">{p.PlaObservacion}</p>}
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold text-slate-800">{fmtNum(p.PlaCantidadRestante)} / {fmtNum(p.PlaCantidadTotal)} {p.PlaUnidad}</p>
-                    {p.PlaImportePagado && <p className="text-[11px] text-slate-500">Pagó: {fmt(p.PlaImportePagado, cuenta.MonSimbolo)}</p>}
-                    {p.DiasParaVencer !== null && <p className={`text-[11px] font-semibold ${p.DiasParaVencer <= 7 ? 'text-red-600' : 'text-slate-500'}`}>Vence en {p.DiasParaVencer}d</p>}
-                  </div>
-                </div>
-
-                <div className="h-2 bg-slate-100 rounded-full overflow-hidden mb-2">
-                  <div className={`h-full rounded-full transition-all ${
-                    agotado ? 'bg-rose-600' : alerta ? 'bg-amber-400' : 'bg-emerald-500'
-                  }`} style={{ width: `${Math.min(pct, 100)}%` }} />
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-slate-500">
-                  <span>Usado: {fmtNum(p.PlaCantidadUsada)} {p.PlaUnidad} ({pct}%)</span>
-                  <span>Inicio: {fmtFecha(p.PlaFechaInicio)}</span>
-                </div>
-
-                <div className="mt-3 rounded-lg border border-slate-200 overflow-hidden">
-                  <div className="px-3 py-2 bg-slate-50/50 border-b border-slate-200 flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-slate-600">Entregas del Plan #{p.PlaIdPlan}</span>
-                    <span className="text-[10px] text-slate-500">{movsDelPlan.length} movimientos</span>
-                  </div>
-                  {movsDelPlan.length === 0 ? (
-                    <p className="text-xs text-slate-500 text-center py-4">Sin entregas registradas en este plan</p>
-                  ) : (
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="text-[10px] text-slate-500 uppercase">
-                          <th className="px-3 py-1.5 text-left">Fecha</th>
-                          <th className="px-3 py-1.5 text-left">Orden / Trabajo</th>
-                          <th className="px-3 py-1.5 text-right">Saldo In.</th>
-                          <th className="px-3 py-1.5 text-right">Movimiento</th>
-                          <th className="px-3 py-1.5 text-right">Saldo Fn.</th>
-                          <th className="px-3 py-1.5 text-center w-8"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50">
-                        {[...movsDelPlan].reverse().reduce((acc, m) => {
-                          const importe = Number(m.MovImporte);
-                          const isNeg = importe < 0;
-                          
-                          const hasEntrada = movsDelPlan.some(x => Number(x.MovImporte) > 0);
-                          const baseSaldo = acc.saldoRunning === undefined
-                            ? (hasEntrada ? 0 : Number(p.PlaCantidadTotal || 0))
-                            : acc.saldoRunning;
-
-                          const currentSaldo = baseSaldo + importe;
-
-                          acc.push({
-                            ...m,
-                            _movImporteAbs: Math.abs(importe),
-                            _quedan: currentSaldo,
-                            _saldoIn: baseSaldo,
-                            _isNeg: isNeg
-                          });
-                          acc.saldoRunning = currentSaldo;
-                          return acc;
-                        }, []).reverse().map(m => {
-                          // Extraer código de orden del concepto para mostrarlo en bold
-                          const match = m.MovConcepto?.match(/(?:DF|SB|RM)-?\d+/i) || m.MovConcepto?.match(/#\d+/);
-                          const cod = match ? match[0] : '';
-                          let obs = m.MovConcepto || '—';
-                          if (cod) obs = obs.replace(cod, '').replace(/^[ :\-.]+|[ :\-.]+$/g, '').trim();
-
-                          return (
-                          <tr key={m.MovIdMovimiento} className="hover:bg-slate-50/50">
-                            <td className="px-3 py-2 text-slate-500">{fmtFecha(m.MovFecha)}</td>
-                            <td className="px-3 py-2 max-w-xs" title={m.MovConcepto}>
-                              <span className="block truncate text-xs text-slate-700">
-                                {cod ? <><span className="font-bold">{cod.toUpperCase()}</span> {obs}</> : obs}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-right text-slate-500 font-medium">{fmtNum(m._saldoIn)} {p.PlaUnidad}</td>
-                            <td className={`px-3 py-2 text-right font-semibold ${m._isNeg ? 'text-rose-600' : 'text-emerald-600'}`}>
-                              {m._isNeg ? '-' : '+'}{fmtNum(m._movImporteAbs)} {p.PlaUnidad}
-                            </td>
-                            <td className={`px-3 py-2 text-right font-bold ${m._quedan < (p.PlaCantidadTotal || 0) * 0.1 ? 'text-amber-600' : 'text-violet-700'}`}>
-                              {fmtNum(m._quedan)} {p.PlaUnidad}
-                            </td>
-                            <td className="px-3 py-2 text-center">
-                              <div className="flex items-center justify-center gap-1">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditMovId(m.MovIdMovimiento);
-                                    setEditCodigoOrden(m.MovConcepto);
-                                    setEditMetros(m._movImporteAbs.toString());
-                                    setModalEditarMetros(true);
-                                  }}
-                                  className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-amber-600 transition-colors"
-                                  title="Editar metros de esta orden"
-                                >
-                                  <Edit2 size={12} />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setModalConfirmar({
-                                      movId:   m.MovIdMovimiento,
-                                      concepto: m.MovConcepto,
-                                      consumo:  m._movImporteAbs,
-                                      unidad:   p.PlaUnidad
-                                    });
-                                  }}
-                                  className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-rose-600 transition-colors"
-                                  title="Eliminar este movimiento"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                          );
-                        })}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-              </div>
-            );
-          })}
           {planes.length === 0 && (
-            <div className="text-center py-6 text-slate-500 text-xs"><Package size={22} className="mx-auto mb-1 opacity-30" />Sin planes de recursos</div>
+            <div className="text-center py-6 text-slate-500 text-xs">
+              <Package size={22} className="mx-auto mb-1 opacity-30" />Sin planes de recursos
+            </div>
           )}
+
+          {/* ── Una sección por material; dentro: resúmenes de planes + tabla unificada ── */}
+          {(() => {
+            // Agrupar planes por ProIdProducto (mismo material = mismo estado de cuenta)
+            const materialesMap = new Map();
+            planes.forEach(p => {
+              const key = p.ProIdProducto != null ? String(p.ProIdProducto) : `__sin_${p.PlaIdPlan}`;
+              if (!materialesMap.has(key)) {
+                materialesMap.set(key, {
+                  nombre:  p.NombreArticulo || `Producto #${p.ProIdProducto}`,
+                  unidad:  p.PlaUnidad || unidadLabel,
+                  planes:  [],
+                });
+              }
+              materialesMap.get(key).planes.push(p);
+            });
+
+            return Array.from(materialesMap.values()).map(({ nombre: nomMat, unidad: unidadMat, planes: planesDelMat }, matIdx) => {
+              // Juntar movimientos de todos los planes de este material (deduplicar por ID)
+              const allMovsMap = new Map();
+              planesDelMat.forEach(p => {
+                (movsPlan[p.PlaIdPlan] || []).forEach(m => allMovsMap.set(m.MovIdMovimiento, m));
+              });
+              const todosOrdenados = [...allMovsMap.values()].sort(
+                (a, b) => new Date(a.MovFecha) - new Date(b.MovFecha)
+              );
+
+              // Calcular saldo corrido para este material
+              let saldoRunning = 0;
+              const movsConSaldo = todosOrdenados.map(m => {
+                const importe  = Number(m.MovImporte);
+                const saldoAnt = saldoRunning;
+                saldoRunning   = Math.round((saldoRunning + importe) * 10000) / 10000;
+                const match    = m.MovConcepto?.match(/[A-Z]{2,5}-\d+/i);
+                const cod      = match ? match[0].toUpperCase() : '';
+                let   desc     = m.MovConcepto || '—';
+                if (cod) desc  = desc.replace(match[0], '').replace(/^[\s:\-.]+|[\s:\-.]+$/g, '').trim();
+                return {
+                  ...m,
+                  _saldoIn: saldoAnt,
+                  _saldoFn: saldoRunning,
+                  _debe:    importe < 0 ? Math.abs(importe) : 0,
+                  _haber:   importe > 0 ? importe : 0,
+                  _cod:     cod,
+                  _desc:    desc,
+                  _tipo:    importe >= 0 ? 'ENTRADA' : 'ENTREGA',
+                };
+              });
+
+              return (
+                <div key={nomMat} className={matIdx > 0 ? 'border-t-4 border-slate-300' : ''}>
+
+                  {/* Resúmenes compactos de cada plan de este material */}
+                  <div className="px-4 pt-3 pb-2 flex flex-wrap gap-2">
+                    {planesDelMat.map(p => {
+                      const pct      = Number(p.PorcentajeUsado);
+                      const agotado  = pct >= 100;
+                      const alerta   = pct >= 80 && !agotado;
+                      const restante = Number(p.PlaCantidadRestante ?? 0);
+                      return (
+                        <div key={p.PlaIdPlan} className={`flex-1 min-w-[220px] rounded-lg border px-3 py-2 bg-white ${agotado ? 'border-rose-200' : alerta ? 'border-amber-200' : 'border-slate-200'}`}>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-bold text-slate-700">{nomMat}</span>
+                              <span className="text-[10px] text-slate-400">Plan #{p.PlaIdPlan}</span>
+                              {!p.PlaActivo && <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">CERRADO</span>}
+                              {p.PlaImportePagado > 0 && <span className="text-[10px] text-slate-400">· Pagó: {fmt(p.PlaImportePagado, cuenta.MonSimbolo)}</span>}
+                            </div>
+                            <span className={`text-xs font-bold ${restante < 0 ? 'text-rose-600' : agotado ? 'text-rose-500' : 'text-violet-700'}`}>
+                              {fmtNum(restante)} / {fmtNum(p.PlaCantidadTotal)} {p.PlaUnidad}
+                            </span>
+                          </div>
+                          <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${agotado ? 'bg-rose-500' : alerta ? 'bg-amber-400' : 'bg-emerald-500'}`}
+                              style={{ width: `${Math.min(pct, 100)}%` }} />
+                          </div>
+                          <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                            <span>Usado: {fmtNum(p.PlaCantidadUsada)} ({pct}%)</span>
+                            {p.DiasParaVencer !== null && <span className={p.DiasParaVencer <= 7 ? 'text-rose-500 font-semibold' : ''}>Vence en {p.DiasParaVencer}d</span>}
+                            <span>Inicio: {fmtFecha(p.PlaFechaInicio)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Tabla unificada de movimientos de este material */}
+                  {todosOrdenados.length === 0 ? (
+                    <div className="text-center py-4 text-slate-400 text-xs border-t border-slate-100">
+                      <Package size={18} className="mx-auto mb-1 opacity-30" />Sin movimientos registrados
+                    </div>
+                  ) : (
+                    <div className="border-t border-slate-200">
+                      <div className="px-4 py-2 flex items-center justify-between bg-slate-50/50">
+                        <span className="text-[11px] font-semibold text-slate-600">Estado de cuenta — {nomMat}</span>
+                        <span className="text-[10px] text-slate-400">
+                          {todosOrdenados.length} mov. · Saldo:{' '}
+                          <strong className={saldoRunning < 0 ? 'text-rose-600' : 'text-violet-700'}>
+                            {fmtNum(saldoRunning)} {unidadMat}
+                          </strong>
+                        </span>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-[10px] text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+                              <th className="px-3 py-2 text-left font-semibold">Fecha</th>
+                              <th className="px-3 py-2 text-left font-semibold">Tipo</th>
+                              <th className="px-3 py-2 text-left font-semibold">Documento</th>
+                              <th className="px-3 py-2 text-left font-semibold">Concepto</th>
+                              <th className="px-3 py-2 text-right font-semibold">Saldo Ini.</th>
+                              <th className="px-3 py-2 text-right font-semibold">Debe</th>
+                              <th className="px-3 py-2 text-right font-semibold">Haber</th>
+                              <th className="px-3 py-2 text-right font-semibold">Saldo Fn.</th>
+                              <th className="px-3 py-2 w-14"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                            {[...movsConSaldo].reverse().map(m => (
+                              <tr key={m.MovIdMovimiento} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{fmtFecha(m.MovFecha)}</td>
+                                <td className="px-3 py-2">
+                                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${m._tipo === 'ENTRADA' ? 'bg-emerald-50 text-emerald-700' : 'bg-violet-50 text-violet-700'}`}>
+                                    {m._tipo}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 font-bold text-slate-700 whitespace-nowrap">{m._cod || '—'}</td>
+                                <td className="px-3 py-2 text-slate-600 max-w-[200px] truncate" title={m.MovConcepto}>{m._desc || '—'}</td>
+                                <td className="px-3 py-2 text-right text-slate-500 whitespace-nowrap">{fmtNum(m._saldoIn)} {unidadMat}</td>
+                                <td className={`px-3 py-2 text-right whitespace-nowrap font-semibold ${m._debe > 0 ? 'text-rose-600' : 'text-slate-300'}`}>
+                                  {m._debe > 0 ? `${fmtNum(m._debe)} ${unidadMat}` : '—'}
+                                </td>
+                                <td className={`px-3 py-2 text-right whitespace-nowrap font-semibold ${m._haber > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>
+                                  {m._haber > 0 ? `${fmtNum(m._haber)} ${unidadMat}` : '—'}
+                                </td>
+                                <td className={`px-3 py-2 text-right font-bold whitespace-nowrap ${m._saldoFn < 0 ? 'text-rose-600' : m._saldoFn < (planesDelMat[0]?.PlaCantidadTotal || 0) * 0.1 ? 'text-amber-600' : 'text-violet-700'}`}>
+                                  {fmtNum(m._saldoFn)} {unidadMat}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="flex items-center justify-end gap-1">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditMovId(m.MovIdMovimiento);
+                                        setEditCodigoOrden(m.MovConcepto);
+                                        setEditMetros(Math.abs(Number(m.MovImporte)).toString());
+                                        setModalEditarMetros(true);
+                                      }}
+                                      className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-amber-600 transition-colors"
+                                      title="Editar metros"
+                                    >
+                                      <Edit2 size={12} />
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const planDeEste = planesDelMat.find(p =>
+                                          (movsPlan[p.PlaIdPlan] || []).some(x => x.MovIdMovimiento === m.MovIdMovimiento)
+                                        );
+                                        setModalConfirmar({
+                                          movId:    m.MovIdMovimiento,
+                                          concepto: m.MovConcepto,
+                                          consumo:  Math.abs(Number(m.MovImporte)),
+                                          unidad:   planDeEste?.PlaUnidad || unidadMat,
+                                        });
+                                      }}
+                                      className="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-rose-600 transition-colors"
+                                      title="Eliminar movimiento"
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
         </div>
       )}
       </div>

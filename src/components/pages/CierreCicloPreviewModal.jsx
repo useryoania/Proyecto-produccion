@@ -96,12 +96,17 @@ export default function CierreCicloPreviewModal({
     const list = movsOriginales.filter(m => m.MovImporte < 0).map(m => {
       let detalles = [];
       if (m.DetallesJSON) {
-        try { 
-          detalles = JSON.parse(m.DetallesJSON); 
+        try {
+          detalles = JSON.parse(m.DetallesJSON);
           if (!primeraMoneda && detalles.length > 0 && detalles[0].Moneda) {
             primeraMoneda = detalles[0].Moneda;
           }
         } catch(e) {}
+      }
+      // Para movimientos MATERIAL_CUBIERTO_PLAN_X: excluir la línea del material cubierto
+      // para que el total y el PDF solo reflejen los servicios pendientes (costura, corte, etc.)
+      if (m.ProIdMaterialCubierto && detalles.length > 0) {
+        detalles = detalles.filter(d => d.ProIdProducto !== m.ProIdMaterialCubierto);
       }
       return { ...m, detalles };
     });
@@ -236,6 +241,9 @@ export default function CierreCicloPreviewModal({
             let detalles = [];
             if (m.DetallesJSON) {
               try { detalles = JSON.parse(m.DetallesJSON); } catch(e) {}
+            }
+            if (m.ProIdMaterialCubierto && detalles.length > 0) {
+              detalles = detalles.filter(d => d.ProIdProducto !== m.ProIdMaterialCubierto);
             }
             return { ...m, detalles };
           });
@@ -390,9 +398,16 @@ export default function CierreCicloPreviewModal({
     movs.forEach(m => {
       if (excluidos.has(m.MovIdMovimiento)) return;
       if (m.detalles && m.detalles.length > 0) {
+        // Para movimientos MATERIAL_CUBIERTO_PLAN_X: omitir la línea del material
+        // ya cubierta por el plan — solo facturar los servicios (costura, corte, etc.)
+        const proIdMaterialCubierto = m.ProIdMaterialCubierto ?? null;
+        const detallesFiltrados = proIdMaterialCubierto
+          ? m.detalles.filter(d => d.ProIdProducto !== proIdMaterialCubierto)
+          : m.detalles;
+
         if (agruparFactura) {
           let orderSubtotal = 0;
-          m.detalles.forEach(d => {
+          detallesFiltrados.forEach(d => {
             const ed = detallesEditados[d.DetalleID];
             const sub = ed ? ed.Subtotal : d.Subtotal;
             const monBase = Number(cuenta?.MonIdMoneda) === 1 ? 'UYU' : 'USD';
@@ -407,8 +422,8 @@ export default function CierreCicloPreviewModal({
           });
         } else {
           let orderSubtotal = 0;
-          
-          m.detalles.forEach(d => {
+
+          detallesFiltrados.forEach(d => {
             const ed = detallesEditados[d.DetalleID];
             const sub = ed ? ed.Subtotal : d.Subtotal;
             

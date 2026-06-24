@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 /**
  * contabilidadController.js
@@ -1113,6 +1113,211 @@ exports.guardarPrecios = async (req, res) => {
   } catch (err) {
     logger.error('[CONTABILIDAD] guardarPrecios:', err);
     res.status(500).json({ success: false, error: err.message || err.toString() });
+  }
+};
+
+/**
+ * GET /api/contabilidad/ordenes/:OrdIdOrden/detalle
+ * Devuelve los campos editables de una OrdenDeposito: importe, cantidad, moneda.
+ */
+exports.getOrdenDetalle = async (req, res) => {
+  try {
+    const { OrdIdOrden } = req.params;
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('OrdId', sql.Int, parseInt(OrdIdOrden))
+      .query(`
+        SELECT
+          od.OrdIdOrden,
+          od.OrdCodigoOrden,
+          od.OrdNombreTrabajo,
+          CAST(od.OrdCostoFinal AS DECIMAL(18,2)) AS OrdCostoFinal,
+          od.OrdCantidad,
+          od.MonIdMoneda,
+          mon.MonSimbolo,
+          mon.MonDescripcionMoneda,
+          od.OReIdOrdenRetiro,
+          ore.OReEstadoActual AS RetiroEstado,
+          eore.EORNombreEstado AS RetiroEstadoNombre
+        FROM dbo.OrdenesDeposito od WITH(NOLOCK)
+        LEFT JOIN dbo.Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = od.MonIdMoneda
+        LEFT JOIN dbo.OrdenesRetiro ore WITH(NOLOCK) ON ore.OReIdOrdenRetiro = od.OReIdOrdenRetiro
+        LEFT JOIN dbo.EstadosOrdenesRetiro eore WITH(NOLOCK) ON eore.EORIdEstadoOrden = ore.OReEstadoActual
+        WHERE od.OrdIdOrden = @OrdId
+      `);
+    if (!r.recordset.length) return res.status(404).json({ success: false, error: 'Orden no encontrada.' });
+    res.json({ success: true, data: r.recordset[0] });
+  } catch (err) {
+    logger.error('[CONTABILIDAD] getOrdenDetalle:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/**
+ * POST /api/contabilidad/ordenes/reasignar-cliente
+ * Reasigna una o varias OrdenesDeposito de un cliente a otro,
+ * moviendo también los movimientos contables correspondientes.
+ * Body: { fromCliId, toCliId, orderIds: [OrdIdOrden, ...] }
+ */
+exports.reasignarOrdenesCliente = async (req, res) => {
+  const { fromCliId, toCliId, orderIds } = req.body;
+  if (!fromCliId || !toCliId || !Array.isArray(orderIds) || !orderIds.length) {
+    return res.status(400).json({ success: false, error: 'fromCliId, toCliId y orderIds[] son requeridos.' });
+  }
+  if (fromCliId === toCliId) {
+    return res.status(400).json({ success: false, error: 'fromCliId y toCliId deben ser distintos.' });
+  }
+
+  let transaction;
+  try {
+    const pool = await getPool();
+    transaction = await pool.transaction();
+    await transaction.begin();
+
+    // Verificar que el cliente destino existe
+    const cliRes = await transaction.request()
+      .input('ToId', sql.Int, toCliId)
+      .query(`SELECT CliIdCliente, Nombre FROM dbo.Clientes WHERE CliIdCliente = @ToId`);
+    if (!cliRes.recordset.length) throw new Error(`Cliente destino ID=${toCliId} no encontrado.`);
+
+    const inClause = orderIds.map((_, i) => `@id${i}`).join(',');
+    const ordReq = transaction.request().input('FromCli', sql.Int, fromCliId);
+    orderIds.forEach((id, i) => ordReq.input(`id${i}`, sql.Int, id));
+
+    // Verificar que todas las órdenes pertenecen al cliente origen
+    const ordRes = await ordReq.query(`
+      SELECT OrdIdOrden, OrdCodigoOrden, MonIdMoneda FROM dbo.OrdenesDeposito
+      WHERE OrdIdOrden IN (${inClause}) AND CliIdCliente = @FromCli
+    `);
+    if (ordRes.recordset.length !== orderIds.length) {
+      throw new Error('Algunas órdenes no pertenecen al cliente origen o no existen.');
+    }
+
+    // Actualizar CliIdCliente en OrdenesDeposito
+    const updOrdReq = transaction.request().input('ToCli', sql.Int, toCliId);
+    orderIds.forEach((id, i) => updOrdReq.input(`id${i}`, sql.Int, id));
+    await updOrdReq.query(`UPDATE dbo.OrdenesDeposito SET CliIdCliente = @ToCli WHERE OrdIdOrden IN (${inClause})`);
+
+    // Para cada orden, mover el MovimientoCuenta al account del cliente destino
+    for (const ordId of orderIds) {
+      const movRes = await transaction.request()
+        .input('OrdId', sql.Int, ordId)
+        .query(`
+          SELECT m.MovIdMovimiento, m.MovImporte, m.CueIdCuenta, c.MonIdMoneda, c.CueTipo
+          FROM dbo.MovimientosCuenta m
+          JOIN dbo.CuentasCliente c ON c.CueIdCuenta = m.CueIdCuenta
+          WHERE m.OrdIdOrden = @OrdId AND m.MovTipo IN ('ORDEN','ORDEN_ANTICIPO')
+            AND (m.MovAnulado IS NULL OR m.MovAnulado = 0)
+        `);
+      if (!movRes.recordset.length) continue;
+
+      const mov = movRes.recordset[0];
+      const importe = parseFloat(mov.MovImporte);
+
+      // Buscar o crear la cuenta equivalente en el cliente destino
+      const cuentaDestRes = await transaction.request()
+        .input('ToCli',  sql.Int,       toCliId)
+        .input('Tipo',   sql.VarChar(20), mov.CueTipo)
+        .input('MonId',  sql.Int,       mov.MonIdMoneda)
+        .query(`
+          SELECT CueIdCuenta, CueSaldoActual FROM dbo.CuentasCliente
+          WHERE CliIdCliente = @ToCli AND CueTipo = @Tipo AND MonIdMoneda = @MonId AND CueActiva = 1
+        `);
+
+      let cuentaDestinoId;
+      if (cuentaDestRes.recordset.length) {
+        cuentaDestinoId = cuentaDestRes.recordset[0].CueIdCuenta;
+      } else {
+        // Crear la cuenta en el cliente destino con mismas condiciones
+        const cuentaOrigenRes = await transaction.request()
+          .input('OldCue', sql.Int, mov.CueIdCuenta)
+          .query(`SELECT CPaIdCondicion, CueLimiteCredito FROM dbo.CuentasCliente WHERE CueIdCuenta = @OldCue`);
+        const cOrigen = cuentaOrigenRes.recordset[0] || {};
+        const insRes = await transaction.request()
+          .input('ToCli', sql.Int,     toCliId)
+          .input('Tipo',  sql.VarChar(20), mov.CueTipo)
+          .input('MonId', sql.Int,     mov.MonIdMoneda)
+          .input('CPa',   sql.Int,     cOrigen.CPaIdCondicion || 1)
+          .input('Lim',   sql.Decimal(18,4), cOrigen.CueLimiteCredito || 0)
+          .query(`
+            INSERT INTO dbo.CuentasCliente (CliIdCliente, CueTipo, MonIdMoneda, CPaIdCondicion, CueSaldoActual, CueLimiteCredito, CuePuedeNegativo, CueCicloActivo, CueActiva, FechaAlta)
+            OUTPUT INSERTED.CueIdCuenta
+            VALUES (@ToCli, @Tipo, @MonId, @CPa, 0, @Lim, 0, 0, 1, GETDATE())
+          `);
+        cuentaDestinoId = insRes.recordset[0].CueIdCuenta;
+      }
+
+      // Mover el movimiento a la nueva cuenta
+      await transaction.request()
+        .input('MovId',   sql.Int, mov.MovIdMovimiento)
+        .input('NewCueId', sql.Int, cuentaDestinoId)
+        .query(`UPDATE dbo.MovimientosCuenta SET CueIdCuenta = @NewCueId WHERE MovIdMovimiento = @MovId`);
+
+      // Ajustar saldos: restar del origen, sumar al destino
+      await transaction.request()
+        .input('OldCue',  sql.Int,          mov.CueIdCuenta)
+        .input('Importe', sql.Decimal(18,4), importe)
+        .query(`UPDATE dbo.CuentasCliente SET CueSaldoActual = CueSaldoActual - @Importe WHERE CueIdCuenta = @OldCue`);
+
+      await transaction.request()
+        .input('NewCue',  sql.Int,          cuentaDestinoId)
+        .input('Importe', sql.Decimal(18,4), importe)
+        .query(`UPDATE dbo.CuentasCliente SET CueSaldoActual = CueSaldoActual + @Importe WHERE CueIdCuenta = @NewCue`);
+
+      // Actualizar DeudaDocumento si existe
+      await transaction.request()
+        .input('OrdId',  sql.Int, ordId)
+        .input('NewCue', sql.Int, cuentaDestinoId)
+        .query(`UPDATE dbo.DeudaDocumento SET CueIdCuenta = @NewCue WHERE OrdIdOrden = @OrdId AND DDeEstado = 'PENDIENTE'`);
+    }
+
+    await transaction.commit();
+
+    logger.info(`[REASIGNAR] ${orderIds.length} orden(es) movidas de cliente ${fromCliId} → ${toCliId}`);
+    res.json({ success: true, movidas: orderIds.length, clienteDestino: cliRes.recordset[0].Nombre });
+  } catch (err) {
+    if (transaction) try { await transaction.rollback(); } catch (e) {}
+    logger.error('[REASIGNAR ORDENES CLIENTE]', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+/**
+ * GET /api/contabilidad/clientes/:CliIdCliente/ordenes-sin-factura
+ * Devuelve las OrdenesDeposito pendientes de un cliente (para la UI de reasignación).
+ */
+exports.getOrdenesPendientesCliente = async (req, res) => {
+  try {
+    const { CliIdCliente } = req.params;
+    const pool = await getPool();
+    const r = await pool.request()
+      .input('CliId', sql.Int, parseInt(CliIdCliente))
+      .query(`
+        SELECT
+          od.OrdIdOrden,
+          od.OrdCodigoOrden,
+          od.OrdNombreTrabajo,
+          CAST(od.OrdCostoFinal AS DECIMAL(18,2)) AS OrdCostoFinal,
+          od.OrdCantidad,
+          mon.MonSimbolo,
+          od.OReIdOrdenRetiro,
+          eo.EOrNombreEstado AS EstadoOrden,
+          od.OrdFechaIngresoOrden
+        FROM dbo.OrdenesDeposito od WITH(NOLOCK)
+        LEFT JOIN dbo.Monedas mon WITH(NOLOCK) ON mon.MonIdMoneda = od.MonIdMoneda
+        LEFT JOIN dbo.EstadosOrdenes eo WITH(NOLOCK) ON eo.EOrIdEstadoOrden = od.OrdEstadoActual
+        WHERE od.CliIdCliente = @CliId
+          AND NOT EXISTS (
+            SELECT 1 FROM dbo.DocumentosContables dc WITH(NOLOCK)
+            JOIN dbo.MovimientosCuenta m WITH(NOLOCK) ON m.DocIdDocumento = dc.DocIdDocumento
+            WHERE m.OrdIdOrden = od.OrdIdOrden AND dc.DocEstado NOT IN ('ANULADO')
+          )
+        ORDER BY od.OrdFechaIngresoOrden DESC
+      `);
+    res.json({ success: true, data: r.recordset });
+  } catch (err) {
+    logger.error('[CONTABILIDAD] getOrdenesPendientesCliente:', err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
@@ -2271,8 +2476,14 @@ exports.getOrdenesAnticipo = async (req, res) => {
                p.Descripcion AS ProNombre,
                s.Articulo AS ProSubFamilia,
                s.CodStock AS ProCodStock,
+               -- Para movimientos MATERIAL_CUBIERTO_PLAN_X: ProId del material cubierto por plan
+               -- El frontend lo usa para excluir esa línea del PDF de la factura de servicios.
+               CASE WHEN m.MovObservaciones LIKE 'MATERIAL_CUBIERTO_PLAN_%'
+               THEN COALESCE(od.ProIdProducto, erp.ProIdProducto)
+               ELSE NULL END AS ProIdMaterialCubierto,
                 (
                    SELECT d.ID AS DetalleID,
+                          d.ProIdProducto,
                           ISNULL(a.CodArticulo, aod.CodArticulo) AS CodArticulo,
                           d.Cantidad, d.PrecioUnitario, d.Subtotal, d.LogPrecioAplicado,
                           COALESCE(
@@ -2522,7 +2733,7 @@ exports.consumirRecursoAdelantado = async (req, res) => {
       return res.status(400).json({ success: false, error: 'La orden no tiene producto asociado. No se puede aplicar recurso.' });
 
     // Evitar doble cobertura: verificar si la ORDEN ya fue marcada como cubierta
-    if (mov.MovObservaciones && /^CUBIERTO/.test(mov.MovObservaciones))
+    if (mov.MovObservaciones && (/^CUBIERTO/.test(mov.MovObservaciones) || /^MATERIAL_CUBIERTO/.test(mov.MovObservaciones)))
       return res.status(400).json({ success: false, error: 'Esta orden ya fue cubierta por el plan (' + mov.MovObservaciones + ').' });
 
     const importeOrden     = Math.abs(Number(mov.MovImporte));
@@ -2743,20 +2954,89 @@ exports.consumirRecursoAdelantado = async (req, res) => {
                   CONCAT('Cobertura retroactiva Ref#',@Ref, ' \u2014 Plan #',@PlaIdPlan))
         `);
 
-      // 4d. Marcar la ORDEN original como cubierta por el plan
-      //     (sin líneas monetarias — el pago fue el plan mismo)
+      // 4d. Detectar servicios complementarios (costura, corte, etc.) en PedidosCobranzaDetalle.
+      //     Si el plan cubre el material pero quedan servicios, se ajusta el MovImporte en lugar
+      //     de marcar la orden como CUBIERTO, para que los servicios sigan visibles como pendientes.
+      let totalServicios = 0;
+      if (esTotalFinal && mov.OrdIdOrden) {
+        const serviciosRes = await new sql.Request(transaction)
+          .input('OrdId',         sql.Int,          mov.OrdIdOrden)
+          .input('ProIdMaterial', sql.Int,          ProIdProducto)
+          .input('CodOrden',      sql.NVarChar(50), CodigoOrden)
+          .query(`
+            SELECT ISNULL(SUM(CAST(d.Subtotal AS DECIMAL(18,4))), 0) AS TotalServicios
+            FROM dbo.PedidosCobranza pc WITH(NOLOCK)
+            JOIN dbo.PedidosCobranzaDetalle d WITH(NOLOCK) ON pc.ID = d.PedidoCobranzaID
+            WHERE (d.OrdenID = @OrdId OR LTRIM(RTRIM(pc.NoDocERP)) = LTRIM(RTRIM(@CodOrden)))
+              AND (d.ProIdProducto IS NULL OR d.ProIdProducto <> @ProIdMaterial)
+              AND d.Subtotal > 0
+          `);
+        totalServicios = Math.round(Number(serviciosRes.recordset[0]?.TotalServicios || 0) * 100) / 100;
+      }
+      const hayServicios = totalServicios > 0 && esTotalFinal;
+
+      // 4e. Marcar / ajustar la ORDEN original
       const cicloIdInsertar = (esClienteSemanal && mov.CicIdCiclo) ? mov.CicIdCiclo : null;
-      await new sql.Request(transaction)
-        .input('Mid', sql.Int,           movId)
-        .input('Obs', sql.NVarChar(300), esTotalFinal
-          ? 'CUBIERTO_POR_PLAN_' + planTx.PlaIdPlan
-          : 'CUBIERTO_PARCIAL_' + metrosFinal.toFixed(2) + '/' + cantidadMetros.toFixed(2) + '_PLAN_' + planTx.PlaIdPlan)
-        .query('UPDATE dbo.MovimientosCuenta SET MovObservaciones = @Obs WHERE MovIdMovimiento = @Mid');
+      if (hayServicios) {
+        // Material cubierto por plan; reducir el importe de la ORDEN a solo los servicios
+        const importeMaterial = Math.round((importeOrden - totalServicios) * 100) / 100;
 
+        await new sql.Request(transaction)
+          .input('Mid', sql.Int,           movId)
+          .input('Imp', sql.Decimal(18,4), -totalServicios)
+          .input('Obs', sql.NVarChar(300), 'MATERIAL_CUBIERTO_PLAN_' + planTx.PlaIdPlan)
+          .query(`UPDATE dbo.MovimientosCuenta
+                  SET MovImporte = @Imp, MovObservaciones = @Obs
+                  WHERE MovIdMovimiento = @Mid`);
 
-      // 4f. Cancelar DeudaDocumento — total o parcial
+        // Acreditar el costo del material en la cuenta monetaria del cliente
+        const saldoMonRes = await new sql.Request(transaction)
+          .input('C', sql.Int, mov.CueIdCuenta)
+          .query('SELECT CueSaldoActual FROM dbo.CuentasCliente WITH(UPDLOCK) WHERE CueIdCuenta = @C');
+        const saldoMonActual = Number(saldoMonRes.recordset[0].CueSaldoActual);
+        const nuevoSaldoMon  = Math.round((saldoMonActual + importeMaterial) * 100) / 100;
+
+        await new sql.Request(transaction)
+          .input('C', sql.Int, mov.CueIdCuenta)
+          .input('S', sql.Decimal(18,4), nuevoSaldoMon)
+          .query('UPDATE dbo.CuentasCliente SET CueSaldoActual = @S WHERE CueIdCuenta = @C');
+
+        await new sql.Request(transaction)
+          .input('C',     sql.Int,           mov.CueIdCuenta)
+          .input('Imp',   sql.Decimal(18,4), importeMaterial)
+          .input('SP',    sql.Decimal(18,4), nuevoSaldoMon)
+          .input('Usr',   sql.Int,           UsuarioAlta)
+          .input('Con',   sql.NVarChar(300), 'Cobertura material Plan #' + planTx.PlaIdPlan + ': ' + CodigoOrden)
+          .input('Ord',   sql.Int,           mov.OrdIdOrden || null)
+          .input('PlaId', sql.Int,           planTx.PlaIdPlan)
+          .query(`
+            INSERT INTO dbo.MovimientosCuenta
+              (CueIdCuenta, MovTipo, MovImporte, MovConcepto, MovSaldoPosterior,
+               MovFecha, MovUsuarioAlta, OrdIdOrden, MovObservaciones)
+            VALUES (@C, 'CREDITO_PLAN', @Imp, @Con, @SP, GETDATE(), @Usr, @Ord,
+                    CONCAT('Material cubierto Plan #', @PlaId, ' — servicios pendientes'))
+          `);
+      } else {
+        await new sql.Request(transaction)
+          .input('Mid', sql.Int,           movId)
+          .input('Obs', sql.NVarChar(300), esTotalFinal
+            ? 'CUBIERTO_POR_PLAN_' + planTx.PlaIdPlan
+            : 'CUBIERTO_PARCIAL_' + metrosFinal.toFixed(2) + '/' + cantidadMetros.toFixed(2) + '_PLAN_' + planTx.PlaIdPlan)
+          .query('UPDATE dbo.MovimientosCuenta SET MovObservaciones = @Obs WHERE MovIdMovimiento = @Mid');
+      }
+
+      // 4f. Cancelar/ajustar DeudaDocumento
       if (deudaDoc) {
-        if (esTotalFinal) {
+        if (hayServicios) {
+          // El material está cubierto por el plan; solo queda la deuda de servicios
+          await new sql.Request(transaction)
+            .input('DdeId',     sql.Int,          deudaDoc.DDeIdDocumento)
+            .input('Servicios', sql.Decimal(18,4), totalServicios)
+            .query(`UPDATE dbo.DeudaDocumento
+                    SET DDeImportePendiente = @Servicios,
+                        DDeEstado = CASE WHEN @Servicios <= 0 THEN 'CANCELADO' ELSE 'PENDIENTE' END
+                    WHERE DDeIdDocumento = @DdeId`);
+        } else if (esTotalFinal) {
           await svc.cancelarDeuda({ ddeId: deudaDoc.DDeIdDocumento }, transaction);
         } else {
           await new sql.Request(transaction)
@@ -2771,9 +3051,12 @@ exports.consumirRecursoAdelantado = async (req, res) => {
 
       // 4g. Ciclo abierto (semanal)
       if (cicloAbierto) {
+        const impReducirCiclo = hayServicios
+          ? Math.round((importeOrden - totalServicios) * 100) / 100
+          : impCancelar;
         await new sql.Request(transaction)
           .input('CicId', sql.Int,          cicloAbierto.CicIdCiclo)
-          .input('Imp',   sql.Decimal(18,4), impCancelar)
+          .input('Imp',   sql.Decimal(18,4), impReducirCiclo)
           .query(`
             UPDATE dbo.CiclosCredito
             SET CicTotalPagos    = CicTotalPagos + @Imp,
@@ -2784,24 +3067,39 @@ exports.consumirRecursoAdelantado = async (req, res) => {
 
       await transaction.commit();
 
+      const mensajeFinal = hayServicios
+        ? 'Material de ' + CodigoOrden + ' cubierto por Plan #' + planTx.PlaIdPlan + ' — ' + metrosFinal.toFixed(2) +
+          ' mts consumidos. Servicios complementarios ($' + totalServicios.toFixed(2) + ') quedan pendientes de facturar.'
+        : esTotalFinal
+          ? 'Orden ' + CodigoOrden + ' cubierta totalmente por Plan #' + planTx.PlaIdPlan + ' — ' + metrosFinal.toFixed(2) + ' mts consumidos.'
+          : 'Cobertura parcial: ' + metrosFinal.toFixed(2) + ' de ' + cantidadMetros.toFixed(2) + ' mts cubiertos. ' +
+            impRestante.toFixed(2) + ' acumulados como deuda.';
+
       logger.info(
         '[COBERTURA_RETROACTIVA] MovId=' + movId + ' Orden=' + CodigoOrden +
         ' Plan#' + planTx.PlaIdPlan + ' -> ' + metrosFinal + ' mts / $' + impCancelar +
+        (hayServicios ? ' SERVICIOS_PENDIENTES=$' + totalServicios : '') +
         (esTotalFinal ? ' TOTAL' : ' PARCIAL (' + metrosDeuda.toFixed(2) + ' mts en deuda)')
       );
 
       return res.json({
-        success:          true,
-        esCoberturaTotal: esTotalFinal,
-        metrosConsumidos: metrosFinal,
-        metrosEnDeuda:    esTotalFinal ? 0 : metrosDeuda,
-        importeCancelado: impCancelar,
-        importeRestante:  esTotalFinal ? 0 : impRestante,
-        deudaRestante:    esTotalFinal ? 0 : impRestante,
-        planRestante:     Math.max(0, saldoReal - metrosFinal),
-        escenario:        deudaDoc ? 'DEUDA_DOCUMENTO' : 'CICLO_ABIERTO',
-        tipoCliente:      esClienteSemanal ? 'SEMANAL' : 'COMUN',
-        mensaje: esTotalFinal
+        success:            true,
+        esCoberturaTotal:   esTotalFinal,
+        metrosConsumidos:   metrosFinal,
+        metrosEnDeuda:      esTotalFinal ? 0 : metrosDeuda,
+        importeCancelado:   hayServicios ? Math.round((importeOrden - totalServicios) * 100) / 100 : impCancelar,
+        importeRestante:    hayServicios ? totalServicios : (esTotalFinal ? 0 : impRestante),
+        deudaRestante:      hayServicios ? totalServicios : (esTotalFinal ? 0 : impRestante),
+        serviciosRestantes: totalServicios,
+        hayServicios,
+        planRestante:       Math.max(0, saldoReal - metrosFinal),
+        escenario:          deudaDoc ? 'DEUDA_DOCUMENTO' : 'CICLO_ABIERTO',
+        tipoCliente:        esClienteSemanal ? 'SEMANAL' : 'COMUN',
+        mensaje:            mensajeFinal,
+      });
+
+      // (legacy placeholder — unreachable, kept for diff clarity)
+      if (false) return res.json({ mensaje: esTotalFinal
           ? 'Orden ' + CodigoOrden + ' cubierta totalmente por Plan #' + planTx.PlaIdPlan + ' \u2014 ' + metrosFinal.toFixed(2) + ' mts consumidos.'
           : 'Cobertura parcial: ' + metrosFinal.toFixed(2) + ' de ' + cantidadMetros.toFixed(2) + ' mts cubiertos. ' +
             impRestante.toFixed(2) + ' acumulados como deuda.'

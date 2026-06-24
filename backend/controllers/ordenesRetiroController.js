@@ -921,7 +921,7 @@ async function buscarMovContable(transaction, orderId) {
 }
 
 const editarCostoOrden = async (req, res) => {
-  const { orderId, nuevoCosto, OReIdOrdenRetiro } = req.body;
+  const { orderId, nuevoCosto, nuevaCantidad, nuevaMoneda, OReIdOrdenRetiro } = req.body;
   const UsuarioModif = req.user?.id || 70;
 
   if (!orderId || nuevoCosto === undefined) {
@@ -933,7 +933,10 @@ const editarCostoOrden = async (req, res) => {
     cleanRetiroId = parseInt(String(OReIdOrdenRetiro).replace(/[^0-9]/g, ''), 10);
   }
 
-  const nuevoCostoNum = parseFloat(nuevoCosto);
+  const nuevoCostoNum    = parseFloat(nuevoCosto);
+  const nuevaCantidadNum = (nuevaCantidad !== undefined && nuevaCantidad !== null) ? parseFloat(nuevaCantidad) : null;
+  const nuevaMonedaId    = (nuevaMoneda   !== undefined && nuevaMoneda   !== null) ? parseInt(nuevaMoneda, 10)  : null;
+
   let transaction;
   try {
     const pool = await getPool();
@@ -942,32 +945,38 @@ const editarCostoOrden = async (req, res) => {
 
     const ordenRes = await transaction.request()
       .input('OrderId', sql.Int, orderId)
-      .query('SELECT OrdCostoFinal, OrdCodigoOrden FROM dbo.OrdenesDeposito WHERE OrdIdOrden = @OrderId');
-    const costoAnterior = parseFloat(ordenRes.recordset[0]?.OrdCostoFinal || 0);
-    const codigoOrden = ordenRes.recordset[0]?.OrdCodigoOrden || '';
+      .query('SELECT OrdCostoFinal, OrdCantidad, MonIdMoneda, OrdCodigoOrden FROM dbo.OrdenesDeposito WHERE OrdIdOrden = @OrderId');
+    if (!ordenRes.recordset.length) throw new Error('Orden no encontrada.');
+    const costoAnterior    = parseFloat(ordenRes.recordset[0].OrdCostoFinal || 0);
+    const codigoOrden      = ordenRes.recordset[0].OrdCodigoOrden || '';
 
-    await transaction.request()
-      .input('OrderId', sql.Int, orderId)
-      .input('Costo', sql.Decimal(18, 2), nuevoCostoNum)
-      .query('UPDATE dbo.OrdenesDeposito SET OrdCostoFinal = @Costo WHERE OrdIdOrden = @OrderId');
+    // Actualizar OrdenesDeposito con los campos que cambiaron
+    const req1 = transaction.request()
+      .input('OrderId', sql.Int,          orderId)
+      .input('Costo',   sql.Decimal(18,2), nuevoCostoNum);
+    let setClause = 'OrdCostoFinal = @Costo';
+    if (nuevaCantidadNum !== null) { req1.input('Cantidad', sql.Decimal(18,4), nuevaCantidadNum); setClause += ', OrdCantidad = @Cantidad'; }
+    if (nuevaMonedaId   !== null) { req1.input('Moneda',   sql.Int,            nuevaMonedaId);   setClause += ', MonIdMoneda = @Moneda'; }
+    await req1.query(`UPDATE dbo.OrdenesDeposito SET ${setClause} WHERE OrdIdOrden = @OrderId`);
 
+    // Ajuste contable: MovimientosCuenta, CuentasCliente, DeudaDocumento, CiclosCredito
     const mov = await buscarMovContable(transaction, orderId);
     if (mov) {
       const delta = nuevoCostoNum - costoAnterior;
 
       await transaction.request()
-        .input('MovId', sql.Int, mov.MovIdMovimiento)
-        .input('NuevoImporte', sql.Decimal(18, 4), -nuevoCostoNum)
+        .input('MovId',       sql.Int,          mov.MovIdMovimiento)
+        .input('NuevoImporte',sql.Decimal(18,4), -nuevoCostoNum)
         .query('UPDATE dbo.MovimientosCuenta SET MovImporte = @NuevoImporte WHERE MovIdMovimiento = @MovId');
 
       await transaction.request()
-        .input('CueId', sql.Int, mov.CueIdCuenta)
-        .input('Delta', sql.Decimal(18, 4), delta)
+        .input('CueId', sql.Int,          mov.CueIdCuenta)
+        .input('Delta', sql.Decimal(18,4), delta)
         .query('UPDATE dbo.CuentasCliente SET CueSaldoActual = CueSaldoActual - @Delta WHERE CueIdCuenta = @CueId');
 
       await transaction.request()
-        .input('OrdId', sql.Int, orderId)
-        .input('Delta', sql.Decimal(18, 4), delta)
+        .input('OrdId', sql.Int,          orderId)
+        .input('Delta', sql.Decimal(18,4), delta)
         .query(`
           UPDATE dbo.DeudaDocumento
           SET DDeImportePendiente = CASE
@@ -997,15 +1006,72 @@ const editarCostoOrden = async (req, res) => {
       logger.info(`[CAJA] Ajuste contable orden ${codigoOrden}: $${costoAnterior} -> $${nuevoCostoNum}`);
     }
 
+    // Actualizar total del retiro si corresponde
     if (cleanRetiroId) {
       const sumRes = await transaction.request()
         .input('RetiroId', sql.Int, cleanRetiroId)
         .query('SELECT SUM(OrdCostoFinal) AS Total FROM dbo.OrdenesDeposito WHERE OReIdOrdenRetiro = @RetiroId');
       const nuevoTotal = sumRes.recordset[0].Total || 0;
       await transaction.request()
-        .input('RetiroId', sql.Int, cleanRetiroId)
-        .input('Total', sql.Decimal(18, 2), nuevoTotal)
+        .input('RetiroId', sql.Int,          cleanRetiroId)
+        .input('Total',    sql.Decimal(18,2), nuevoTotal)
         .query('UPDATE dbo.OrdenesRetiro SET OReCostoTotalOrden = @Total WHERE OReIdOrdenRetiro = @RetiroId');
+    }
+
+    // Actualizar PedidosCobranza / PedidosCobranzaDetalle si hay registros vinculados
+    if (codigoOrden) {
+      const pcRes = await transaction.request()
+        .input('Cod', sql.NVarChar(100), codigoOrden.trim())
+        .query(`SELECT TOP 1 ID, MontoTotal FROM dbo.PedidosCobranza WHERE LTRIM(RTRIM(NoDocERP)) = @Cod`);
+      if (pcRes.recordset.length) {
+        const pcId      = pcRes.recordset[0].ID;
+        const oldPCTotal = parseFloat(pcRes.recordset[0].MontoTotal || 0);
+
+        if (nuevaMonedaId !== null) {
+          const monNomRes = await transaction.request()
+            .input('Mid', sql.Int, nuevaMonedaId)
+            .query(`SELECT MonDescripcionMoneda FROM dbo.Monedas WHERE MonIdMoneda = @Mid`);
+          const monNom = monNomRes.recordset[0]?.MonDescripcionMoneda || '';
+          await transaction.request()
+            .input('PID', sql.Int, pcId)
+            .input('Mon', sql.NVarChar(10), monNom)
+            .query(`UPDATE dbo.PedidosCobranza SET Moneda = @Mon WHERE ID = @PID`);
+        }
+
+        // Escalar subtotales de los detalles proporcionalmente al nuevo costo
+        if (oldPCTotal > 0 && Math.abs(nuevoCostoNum - oldPCTotal) > 0.001) {
+          const ratio = nuevoCostoNum / oldPCTotal;
+          await transaction.request()
+            .input('PID',   sql.Int,          pcId)
+            .input('Ratio', sql.Decimal(18,6), ratio)
+            .query(`
+              UPDATE dbo.PedidosCobranzaDetalle
+              SET Subtotal = ROUND(Subtotal * @Ratio, 4)
+              WHERE PedidoCobranzaID = @PID
+            `);
+        }
+
+        // Actualizar cantidad en PedidosCobranzaDetalle si se proporcionó nueva cantidad
+        if (nuevaCantidadNum !== null) {
+          await transaction.request()
+            .input('PID', sql.Int,          pcId)
+            .input('Qty', sql.Decimal(18,4), nuevaCantidadNum)
+            .query(`
+              UPDATE dbo.PedidosCobranzaDetalle
+              SET Cantidad = @Qty
+              WHERE PedidoCobranzaID = @PID
+            `);
+        }
+
+        // Recalcular MontoTotal del pedido
+        await transaction.request()
+          .input('PID', sql.Int, pcId)
+          .query(`
+            UPDATE dbo.PedidosCobranza
+            SET MontoTotal = (SELECT ISNULL(SUM(Subtotal),0) FROM dbo.PedidosCobranzaDetalle WHERE PedidoCobranzaID = @PID)
+            WHERE ID = @PID
+          `);
+      }
     }
 
     await transaction.commit();
@@ -1013,14 +1079,18 @@ const editarCostoOrden = async (req, res) => {
     try {
       const erpId = await buscarOrdenErpId(pool, orderId);
       if (erpId) {
-        await registrarHistorialOrden(pool, erpId, 'Ajuste de Costo', UsuarioModif,
-          `Ajuste de costo en Caja. Anterior: $${costoAnterior.toFixed(2)} -> Nuevo: $${nuevoCostoNum.toFixed(2)}${mov ? ' (billetera actualizada)' : ''}`);
+        const detalleLog = [
+          `Importe: $${costoAnterior.toFixed(2)} → $${nuevoCostoNum.toFixed(2)}`,
+          nuevaCantidadNum !== null ? `Cantidad: ${nuevaCantidadNum}` : null,
+          nuevaMonedaId   !== null ? `Moneda ID: ${nuevaMonedaId}` : null,
+        ].filter(Boolean).join(' | ');
+        await registrarHistorialOrden(pool, erpId, 'Ajuste Administrativo', UsuarioModif, detalleLog);
       }
     } catch (hErr) {
-      logger.warn('[CAJA] No se pudo registrar HistorialOrdenes para editar costo:', hErr.message);
+      logger.warn('[CAJA] No se pudo registrar HistorialOrdenes para editar orden:', hErr.message);
     }
 
-    res.status(200).json({ success: true, message: 'Costo de la orden actualizado correctamente.' });
+    res.status(200).json({ success: true, message: 'Orden actualizada correctamente.' });
   } catch (err) {
     if (transaction) try { await transaction.rollback(); } catch (e) {}
     logger.error('[EDITAR COSTO ORDEN ERROR]', err);

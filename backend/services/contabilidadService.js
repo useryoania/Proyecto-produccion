@@ -387,6 +387,74 @@ async function hookOrdenCreada(params, transaction = null) {
         }
         return; // Sin deuda monetaria
       }
+
+      // Sin plan activo — verificar si el cliente es ROLLO POR ADELANTADO.
+      // Si lo es, NO generar deuda monetaria; los metros se regularizarán al asignar el próximo plan.
+      const rolloCheckReq = transaction ? new sql.Request(transaction) : pool.request();
+      const rolloCheckRes = await rolloCheckReq
+        .input('CliIdCliente', sql.Int, CliIdCliente)
+        .query(`SELECT UPPER(RTRIM(LTRIM(ISNULL(tc.TClDescripcion,'')))) AS TipoDesc
+                FROM dbo.Clientes c WITH(NOLOCK)
+                LEFT JOIN dbo.TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+                WHERE c.CliIdCliente = @CliIdCliente`);
+      const esRolloSinPlan = (rolloCheckRes.recordset[0]?.TipoDesc || '').includes('ROLLO');
+      if (esRolloSinPlan) {
+        // ROLLO sin plan activo: buscar la cuenta de recursos del último plan (aunque esté cerrado)
+        // y registrar el consumo en negativo. Así el "debe metros" queda visible en el estado de
+        // cuenta y se compensa cuando llegue el próximo rollo y se cree un nuevo plan.
+        if (Cantidad && Cantidad > 0) {
+          const ultimoPlanReq = transaction ? new sql.Request(transaction) : pool.request();
+          const ultimoPlanRes = await ultimoPlanReq
+            .input('CliIdCliente',  sql.Int, CliIdCliente)
+            .input('ProIdProducto', sql.Int, ProIdProducto)
+            .query(`
+              SELECT TOP 1 pm.CueIdCuenta, pm.PlaIdPlan
+              FROM   dbo.PlanesMetros pm WITH(NOLOCK)
+              WHERE  pm.CliIdCliente = @CliIdCliente
+                AND  (
+                  pm.ProIdProducto = @ProIdProducto
+                  OR EXISTS (
+                    SELECT 1 FROM dbo.PlanesMetrosArticulosPermitidos pap WITH(NOLOCK)
+                    WHERE pap.PlaIdPlan = pm.PlaIdPlan AND pap.ProIdProducto = @ProIdProducto
+                  )
+                )
+              ORDER BY pm.PlaFechaAlta DESC
+            `);
+
+          if (ultimoPlanRes.recordset.length > 0) {
+            const { CueIdCuenta: cueRecurso, PlaIdPlan } = ultimoPlanRes.recordset[0];
+            logger.warn(`[HOOK:ORDEN] ROLLO_ADELANTADO sin plan activo — registrando ${Cantidad} mts en negativo sobre cuenta ${cueRecurso} (último plan #${PlaIdPlan}). Orden=${CodigoOrden}`);
+            await registrarMovimiento({
+              CueIdCuenta:      cueRecurso,
+              MovTipo:          'ENTREGA',
+              MovConcepto:      `${CodigoOrden}${NombreTrabajo ? ' — ' + NombreTrabajo : ''}`,
+              MovImporte:       -Math.abs(Cantidad),
+              MovUsuarioAlta:   UsuarioAlta,
+              OrdIdOrden,
+              MovObservaciones: `Exceso s/ Plan #${PlaIdPlan} (sin plan activo)`,
+            }, transaction);
+          } else {
+            // No hay ningún plan histórico para este producto y cliente.
+            // Último recurso: deuda monetaria como placeholder hasta que se asigne un plan.
+            logger.warn(`[HOOK:ORDEN] ROLLO_ADELANTADO sin plan histórico para ProId=${ProIdProducto} — generando deuda monetaria como placeholder. Orden=${CodigoOrden}`);
+            const CueTipoRollo = MonIdMoneda === 2 ? 'DINERO_USD' : 'DINERO_UYU';
+            const CueIdPlaceholder = await obtenerOCrearCuenta(CliIdCliente, CueTipoRollo, { MonIdMoneda, UsuarioAlta }, transaction);
+            await registrarMovimiento({
+              CueIdCuenta:      CueIdPlaceholder,
+              MovTipo:          'ORDEN',
+              MovConcepto:      `[ROLLO SIN PLAN] ${CodigoOrden}${NombreTrabajo ? ' — ' + NombreTrabajo : ''}`,
+              MovImporte:       -Math.abs(Importe),
+              MovUsuarioAlta:   UsuarioAlta,
+              OrdIdOrden,
+              MovObservaciones: 'ROLLO_SIN_PLAN_HISTORICO — cancelar al asignar plan de metros',
+            }, transaction);
+            await crearDeudaDocumento({ CueIdCuenta: CueIdPlaceholder, OrdIdOrden, Importe: Math.abs(Importe), ImportePendiente: Math.abs(Importe) }, transaction);
+          }
+        } else {
+          logger.warn(`[HOOK:ORDEN] ROLLO_ADELANTADO sin plan activo y sin Cantidad — no se registra nada. Orden=${CodigoOrden}`);
+        }
+        return;
+      }
     } else {
       logger.info(`[HOOK:ORDEN] Orden ${CodigoOrden} sin ProIdProducto — NO se verifica plan. Se generará deuda monetaria directamente.`);
     }
@@ -731,6 +799,17 @@ async function hookEntregaMetros(params) {
       return;
     }
 
+    // Detectar si el cliente es "ROLLO POR ADELANTADO"
+    // → permite saldo negativo en cuenta de recursos; no genera deuda monetaria por exceso
+    const cliTipoRes = await mkReq()
+      .input('CliIdCliente', sql.Int, CliIdCliente)
+      .query(`SELECT UPPER(RTRIM(LTRIM(ISNULL(tc.TClDescripcion,'')))) AS TipoDesc
+              FROM dbo.Clientes c WITH(NOLOCK)
+              LEFT JOIN dbo.TiposClientes tc WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
+              WHERE c.CliIdCliente = @CliIdCliente`);
+    const esRolloAdelantado = (cliTipoRes.recordset[0]?.TipoDesc || '').includes('ROLLO');
+    logger.info(`[HOOK:METROS] CliId=${CliIdCliente} esRolloAdelantado=${esRolloAdelantado}`);
+
     // 2. Descontar en cascada de los planes activos (FIFO)
     const planRes = await mkReq()
       .input('CliIdCliente',  sql.Int, CliIdCliente)
@@ -755,8 +834,15 @@ async function hookEntregaMetros(params) {
     logger.info(`[HOOK:METROS] Planes activos para CliId=${CliIdCliente} ProId=${ProIdProducto}: ${planRes.recordset.length}. Detalle=${JSON.stringify(planRes.recordset)}`);
 
     if (planRes.recordset.length === 0) {
+      if (esRolloAdelantado) {
+        // ROLLO POR ADELANTADO sin plan activo → NO genera deuda monetaria.
+        // El cliente paga con rollos físicos; sin plan abierto aún no hay metros para descontar.
+        logger.warn(`[HOOK:METROS] ROLLO_ADELANTADO sin plan activo — sin deuda monetaria. CliId=${CliIdCliente} Orden=${CodigoOrden}`);
+        await transaction.commit();
+        return;
+      }
       logger.warn(`[HOOK:METROS] ⚠️ Sin plan activo para CliId=${CliIdCliente} ProId=${ProIdProducto} — Generando deuda monetaria por ${params.Importe}`);
-      // Llama a generar deuda por el 100%
+      // Solo para clientes NO-ROLLO: llama a generar deuda por el 100%
       if (params.Importe > 0) {
         await hookOrdenCreada({
           OrdIdOrden, CliIdCliente, Importe: params.Importe, MonIdMoneda: params.MonIdMoneda,
@@ -832,36 +918,50 @@ async function hookEntregaMetros(params) {
       }
     }
 
-    // 3. Generar cargo monetario si no se cubrió todo con planes o si corresponde
-    if (params.Importe > 0) {
-      let deudaACobrar = params.Importe;
+    // 3a. ROLLO POR ADELANTADO: el exceso se registra como saldo negativo en la cuenta de recursos
+    //     No se genera deuda monetaria; el cliente "debe" metros que se cubren con el próximo rollo.
+    if (esRolloAdelantado && cantidadPendiente > 0 && planRes.recordset.length > 0) {
+      const lastPlan = planRes.recordset[planRes.recordset.length - 1];
+      logger.info(`[HOOK:METROS] ROLLO_ADELANTADO — registrando exceso negativo de ${cantidadPendiente} uds en cuenta ${lastPlan.CueIdCuenta}`);
+      await registrarMovimiento({
+        CueIdCuenta:     lastPlan.CueIdCuenta,
+        MovTipo:         'ENTREGA',
+        MovConcepto:     `${CodigoOrden} ${NombreTrabajo || ''}`.trim() || `Exceso`,
+        MovImporte:      -Math.abs(cantidadPendiente),
+        MovUsuarioAlta:  UsuarioAlta,
+        OrdIdOrden,
+        MovObservaciones: `Exceso s/ Plan #${lastPlan.PlaIdPlan}`,
+      }, transaction);
+      cantidadPendiente = 0;
+    }
+
+    // 3b. Clientes normales: generar cargo monetario por los metros no cubiertos por planes
+    if (!esRolloAdelantado && params.Importe > 0) {
+      let deudaACobrar = 0;
 
       if (cantidadPendiente > 0) {
         if (valorCubiertoPorPlanes > 0) {
-           deudaACobrar = params.Importe - valorCubiertoPorPlanes;
-           if (deudaACobrar < 0) deudaACobrar = 0; 
+          deudaACobrar = params.Importe - valorCubiertoPorPlanes;
+          if (deudaACobrar < 0) deudaACobrar = 0;
         } else {
-           const porcentajeFaltante = cantidadPendiente / Cantidad;
-           deudaACobrar = params.Importe * porcentajeFaltante;
+          const porcentajeFaltante = cantidadPendiente / Cantidad;
+          deudaACobrar = params.Importe * porcentajeFaltante;
         }
-      } else {
-         deudaACobrar = 0;
       }
 
       const deudaRedondeada = Math.round(deudaACobrar * 100) / 100;
 
       if (deudaRedondeada > 0) {
-        logger.info(`[CONTABILIDAD] Planes consumidos. Faltaban ${cantidadPendiente} uds. Deuda original: ${params.Importe}, Valor cubierto: ${valorCubiertoPorPlanes}. Generando deuda por ${deudaRedondeada}.`);
-
+        logger.info(`[CONTABILIDAD] Planes consumidos. Faltaban ${cantidadPendiente} uds. Deuda: ${params.Importe}, Cubierto: ${valorCubiertoPorPlanes}. Generando cargo monetario: ${deudaRedondeada}.`);
         await hookOrdenCreada({
           OrdIdOrden,
           CliIdCliente,
-          Importe: deudaRedondeada,
-          MonIdMoneda: params.MonIdMoneda,
+          Importe:       deudaRedondeada,
+          MonIdMoneda:   params.MonIdMoneda,
           CodigoOrden,
           NombreTrabajo: params.NombreTrabajo ? `${params.NombreTrabajo} (Saldo Faltante)` : 'Exceso de Plan (Saldo Faltante)',
           UsuarioAlta,
-          ProIdProducto: null // evitamos loops
+          ProIdProducto: null,
         }, transaction);
       }
     }
@@ -1949,29 +2049,43 @@ async function cerrarCicloCompleto({
       }
 
       // Refactored to use crearDocumentoContable
+      // Factor de conversión de moneda para las LÍNEAS: debe ser el mismo
+      // criterio que se aplicó al header (docTotal) más arriba, si no las
+      // líneas quedan en la moneda de la cuenta y el total en la de la factura.
+      let factorLinea = 1;
+      if (targetMonId === 1 && accountMonId === 2) {
+        factorLinea = cotDolar;        // cuenta USD → factura UYU
+      } else if (targetMonId === 2 && accountMonId === 1) {
+        factorLinea = 1 / cotDolar;    // cuenta UYU → factura USD
+      }
+
       const mappedLineas = [];
       if (detallesParaPDF && detallesParaPDF.length > 0) {
         for (const d of detallesParaPDF) {
-          const bruto = d.DcdSubtotal != null ? Number(d.DcdSubtotal) : 0;
+          const bruto = (d.DcdSubtotal != null ? Number(d.DcdSubtotal) : 0) * factorLinea;
           const ivaRate = d.DcdIvaRate != null ? Number(d.DcdIvaRate) : 22;
           const divisor = 1 + ivaRate / 100;
           let dcdSubtotal  = bruto / divisor;
           let dcdImpuestos = bruto - dcdSubtotal;
           let dcdTotal     = bruto;
-          
+
           dcdSubtotal  = Math.round(dcdSubtotal  * 10000) / 10000;
           dcdImpuestos = Math.round(dcdImpuestos * 10000) / 10000;
           dcdTotal     = Math.round(dcdTotal     * 10000) / 10000;
-          
+
+          const precioUnitario = d.DcdPrecioUnitario != null
+            ? Number(d.DcdPrecioUnitario) * factorLinea
+            : dcdSubtotal;
+
           mappedLineas.push({
             nomItem: (d.DcdNomItem || '').substring(0, 255),
             dscItem: (d.DcdDscItem || '').substring(0, 1000),
             cantidad: d.DcdCantidad != null ? Number(d.DcdCantidad) : 1,
-            precioUnitario: d.DcdPrecioUnitario != null ? Number(d.DcdPrecioUnitario) : dcdSubtotal,
+            precioUnitario: Math.round(precioUnitario * 10000) / 10000,
             subtotal: dcdSubtotal,
             impuestos: dcdImpuestos,
             total: dcdTotal,
-            totalDescuentos: d.DcdTotalDescuentos || 0,
+            totalDescuentos: (d.DcdTotalDescuentos || 0) * factorLinea,
             descuentoStr: d.DcdDescuentoStr || null
           });
         }
