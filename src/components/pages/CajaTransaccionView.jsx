@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import { io } from 'socket.io-client';
 import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import api, { SOCKET_URL } from '../../services/apiClient';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
@@ -600,6 +601,93 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
     setTimeout(() => { win.print(); }, 1000);
   };
 
+  // Genera el PDF del arqueo/cierre y lo guarda en el servidor (carpeta comprobantesPagos/cierres)
+  const saveCierreOnServer = async (sesionId) => {
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const fechaStr = new Date().toLocaleString('es-UY');
+      const nombreCaja = isAdminCaja ? 'Caja Administrativa' : 'Caja Central';
+      const nombreDoc = `CIERRE-${sesionId || 'ADMIN'}-${new Date().toISOString().split('T')[0]}`;
+
+      doc.setFontSize(16); doc.setFont('helvetica', 'bold');
+      doc.text('Arqueo / Cierre de Caja', 14, 18);
+      doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+      doc.text(`Caja: ${nombreCaja}`, 14, 26);
+      doc.text(`Sesión: ${sesionId || '-'}`, 14, 31);
+      doc.text(`Fecha: ${fechaStr}`, 14, 36);
+
+      // 1. Resumen por medio de pago
+      const sumBody = Object.entries(agrupado.porForma).map(([k, v]) => [
+        k,
+        `UYU ${fmt(v.UYU_in)}`, `UYU ${fmt(v.UYU_out)}`, `UYU ${fmt(v.UYU_in - v.UYU_out)}`,
+        `USD ${fmt(v.USD_in)}`, `USD ${fmt(v.USD_out)}`, `USD ${fmt(v.USD_in - v.USD_out)}`,
+      ]);
+      autoTable(doc, {
+        startY: 42,
+        head: [['Medio de Pago', 'Ing UYU', 'Egr UYU', 'Neto UYU', 'Ing USD', 'Egr USD', 'Neto USD']],
+        body: sumBody.length ? sumBody : [['Sin movimientos', '', '', '', '', '', '']],
+        styles: { fontSize: 7 }, headStyles: { fillColor: [30, 41, 59] },
+      });
+
+      // 2A. Desglose físico UYU
+      const desgUyu = Object.entries(denominaciones || {})
+        .filter(([, c]) => c && parseInt(c) > 0)
+        .map(([den, c]) => [
+          `${den.startsWith('b') ? 'Billete' : 'Moneda'} $ ${den.replace(/\D/g, '')}`,
+          String(c),
+          `$ ${fmt(parseFloat(den.replace(/\D/g, '')) * parseInt(c))}`,
+        ]);
+      autoTable(doc, {
+        startY: doc.lastAutoTable.finalY + 6,
+        head: [['Desglose físico UYU', 'Cant', 'Subtotal']],
+        body: desgUyu.length ? desgUyu : [['Sin desglose', '', '']],
+        foot: [['TOTAL FÍSICO UYU', '', `$ ${fmt(totalDenominaciones)}`]],
+        styles: { fontSize: 7 }, headStyles: { fillColor: [30, 41, 59] }, footStyles: { fillColor: [226, 232, 240], textColor: [15, 23, 42] },
+      });
+
+      // 2B. Desglose físico USD
+      const desgUsd = Object.entries(denominacionesUSD || {})
+        .filter(([, c]) => c && parseInt(c) > 0)
+        .map(([den, c]) => [
+          `Billete U$S ${den.replace(/\D/g, '')}`,
+          String(c),
+          `U$S ${fmt(parseFloat(den.replace(/\D/g, '')) * parseInt(c))}`,
+        ]);
+      autoTable(doc, {
+        startY: doc.lastAutoTable.finalY + 6,
+        head: [['Desglose físico USD', 'Cant', 'Subtotal']],
+        body: desgUsd.length ? desgUsd : [['Sin desglose', '', '']],
+        foot: [['TOTAL FÍSICO USD', '', `U$S ${fmt(totalDenominacionesUSD)}`]],
+        styles: { fontSize: 7 }, headStyles: { fillColor: [30, 41, 59] }, footStyles: { fillColor: [226, 232, 240], textColor: [15, 23, 42] },
+      });
+
+      // 3. Detalle analítico de movimientos del turno
+      const movBody = (movimientosTurno || [])
+        .slice()
+        .sort((a, b) => new Date(a.Fecha) - new Date(b.Fecha))
+        .map(m => [
+          new Date(m.Fecha).toLocaleString('es-UY', { dateStyle: 'short', timeStyle: 'short' }),
+          m.TipoOperacion,
+          `${m.TipoComprobante || ''} ${m.Comprobante || ''}`.trim(),
+          m.Concepto || '',
+          m.Usuario || 'Sistema',
+          m.Entrada > 0 ? `${m.Moneda} ${fmt(m.Entrada)}` : '-',
+          m.Salida > 0 ? `${m.Moneda} ${fmt(m.Salida)}` : '-',
+        ]);
+      autoTable(doc, {
+        startY: doc.lastAutoTable.finalY + 6,
+        head: [['Fecha', 'Tipo', 'Comprobante', 'Concepto', 'Usuario', 'Entrada', 'Salida']],
+        body: movBody.length ? movBody : [['Sin movimientos', '', '', '', '', '', '']],
+        styles: { fontSize: 6 }, headStyles: { fillColor: [30, 41, 59] },
+      });
+
+      const pdfBase64 = doc.output('datauristring').split(',')[1];
+      await api.post('/contabilidad/caja/guardar-comprobante', { nombreDocumento: nombreDoc, pdfBase64 });
+    } catch (err) {
+      console.error('Error al guardar el cierre en el servidor:', err);
+    }
+  };
+
   useEffect(() => {
     if (totalDenominaciones > 0) {
       setCierreMontoFisico(totalDenominaciones.toString());
@@ -856,8 +944,9 @@ export default function CajaTransaccionView({ isAdminCaja = false }) {
         observaciones: finalObs
       });
       toast.success('Sesión de caja cerrada.');
-      handlePrint(); // Imprimir y guardar el reporte automáticamente
-      
+      await saveCierreOnServer(sesion.StuIdSesion); // Guardar PDF del arqueo en el servidor (antes de limpiar denominaciones)
+      handlePrint(); // Imprimir el reporte
+
       setSesion(null); setModalApertura(true); setActiveTab('COBRO');
       
       handleLimpiarDenominaciones();

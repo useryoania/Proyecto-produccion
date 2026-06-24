@@ -2591,6 +2591,7 @@ const guardarComprobante = async (req, res) => {
     if (nom.startsWith('EG-') || nom.startsWith('VC-'))      subcarpeta = 'egresos';
     else if (nom.startsWith('RC-') || nom.startsWith('REC-')) subcarpeta = 'recibos';
     else if (nom.startsWith('IG-'))                           subcarpeta = 'ingresos';
+    else if (nom.startsWith('CIERRE-') || nom.startsWith('CC-')) subcarpeta = 'cierres';
     const filePath = pdfService.guardarDesdeBase64(nombreDocumento, pdfBase64, subcarpeta);
     logger.info("[COMPROBANTE] Guardado en servidor: " + filePath);
     return res.json({ success: true, path: filePath });
