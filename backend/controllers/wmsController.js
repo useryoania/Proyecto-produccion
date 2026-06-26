@@ -48,6 +48,10 @@ exports.syncCatalog = async (req, res) => {
                         SELECT TOP 1 ProIdProducto 
                         FROM Articulos 
                         WHERE Descripcion = @ProdNombre OR Descripcion LIKE '%' + @ProdNombre + '%'
+                        ORDER BY 
+                            CASE WHEN SupFlia = '2' THEN 0 ELSE 1 END, 
+                            CASE WHEN Descripcion = @ProdNombre THEN 0 ELSE 1 END,
+                            ProIdProducto ASC
                     `);
 
                 let localId = null;
@@ -132,8 +136,40 @@ exports.getCatalog = async (req, res) => {
             WHERE a.SupFlia = '2'
         `);
 
-        // 2. Fetch live stock from WMS (REMOVED as requested by user)
-        // No we don't connect to WMS for live stock anymore.
+        // 2. Fetch live stock from WMS
+        const stockMap = {};
+        try {
+            const wmsUrl = process.env.WMS_API_URL;
+            if (wmsUrl) {
+                const wmsQuery = `
+                    USE Ventas_Dev;
+                    SELECT 
+                        variante_id, 
+                        ISNULL(SUM(cantidad_actual), 0) as total_stock
+                    FROM Stock_Etiquetas
+                    WHERE estado = 'activo' AND cantidad_actual > 0
+                    GROUP BY variante_id
+                `;
+                const response = await fetch(`${wmsUrl}/sql`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query: wmsQuery })
+                });
+                
+                if (response.ok) {
+                    const stockData = await response.json();
+                    if (stockData.success && stockData.data) {
+                        stockData.data.forEach(item => {
+                            stockMap[item.variante_id] = item.total_stock;
+                        });
+                    }
+                } else {
+                    logger.warn(`WMS API returned status ${response.status} for stock`);
+                }
+            }
+        } catch (e) {
+            logger.warn(`Could not fetch live stock from WMS: ${e.message}`);
+        }
 
         // 3. Group by Product
         const productsMap = {};
@@ -154,8 +190,8 @@ exports.getCatalog = async (req, res) => {
                 };
             }
             
-            // As no WMS is queried, we set arbitrary high stock so frontend can sell it
-            const variantStock = 9999;
+            // Get actual stock from WMS mapped data, fallback to 0
+            const variantStock = stockMap[row.wms_variante_id] || 0;
             productsMap[row.ProIdProducto].total_stock += variantStock;
             
             productsMap[row.ProIdProducto].variantes.push({

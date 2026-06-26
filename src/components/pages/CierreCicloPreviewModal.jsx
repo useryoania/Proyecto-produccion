@@ -410,8 +410,10 @@ export default function CierreCicloPreviewModal({
           detallesFiltrados.forEach(d => {
             const ed = detallesEditados[d.DetalleID];
             const sub = ed ? ed.Subtotal : d.Subtotal;
-            const monBase = Number(cuenta?.MonIdMoneda) === 1 ? 'UYU' : 'USD';
-            const rate = (monedaFactura === 'UYU' && monBase === 'USD') ? cotDolar : (monedaFactura === 'USD' && monBase === 'UYU' ? (1/cotDolar) : 1);
+            // d.Moneda viene de PedidosCobranza.Moneda, que puede ser NULL en registros viejos.
+            // Fallback: si la cuenta es USD (MonIdMoneda=2), todas sus órdenes son USD.
+            const orderCurrency = (d.Moneda === 'USD' || Number(cuenta?.MonIdMoneda) === 2) ? 'USD' : 'UYU';
+            const rate = (monedaFactura === 'UYU' && orderCurrency === 'USD') ? cotDolar : (monedaFactura === 'USD' && orderCurrency === 'UYU' ? (1/cotDolar) : 1);
             orderSubtotal += sub * rate;
           });
           detallesParaPDF.push({
@@ -426,18 +428,20 @@ export default function CierreCicloPreviewModal({
           detallesFiltrados.forEach(d => {
             const ed = detallesEditados[d.DetalleID];
             const sub = ed ? ed.Subtotal : d.Subtotal;
-            
-            const monBase = Number(cuenta?.MonIdMoneda) === 1 ? 'UYU' : 'USD';
-            const rate = (monedaFactura === 'UYU' && monBase === 'USD') ? cotDolar : (monedaFactura === 'USD' && monBase === 'UYU' ? (1/cotDolar) : 1);
+
+            // d.Moneda puede ser NULL en registros viejos de PedidosCobranza.
+            // Fallback: si la cuenta es USD (MonIdMoneda=2), todas sus órdenes son USD.
+            const orderCurrency = (d.Moneda === 'USD' || Number(cuenta?.MonIdMoneda) === 2) ? 'USD' : 'UYU';
+            const rate = (monedaFactura === 'UYU' && orderCurrency === 'USD') ? cotDolar : (monedaFactura === 'USD' && orderCurrency === 'UYU' ? (1/cotDolar) : 1);
             const finalSub = sub * rate;
             const unitario = (d.PrecioUnitario || (d.Subtotal / d.Cantidad)) * rate;
             const originalSub = (d.Subtotal) * rate;
             const descItem = originalSub - finalSub;
             orderSubtotal += finalSub;
-            
+
             const descArticulo = `${d.ArticuloNombre ? d.ArticuloNombre.trim() + ' - ' : ''}${(d.Descripcion || d.LogPrecioAplicado || 'Servicio').trim()}`;
             const descOrden = `${m.OrdCodigoOrden || m.MovConcepto}${m.OrdNombreTrabajo ? ` - ${m.OrdNombreTrabajo}` : ''}`;
-            
+
             detallesParaPDF.push({
               DcdNomItem: descArticulo,
               DcdDscItem: descOrden,
@@ -449,6 +453,7 @@ export default function CierreCicloPreviewModal({
           });
         }
       } else {
+        // Sin detalles de orden: usar MovImporte que ya está en la moneda de la cuenta
         const importe = Math.abs(Number(m.MovImporte));
         const monBase = Number(cuenta?.MonIdMoneda) === 1 ? 'UYU' : 'USD';
         const rate = (monedaFactura === 'UYU' && monBase === 'USD') ? cotDolar : (monedaFactura === 'USD' && monBase === 'UYU' ? (1/cotDolar) : 1);

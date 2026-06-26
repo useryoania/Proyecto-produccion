@@ -51,13 +51,7 @@ const ManageBobinaModal = ({ bobina, insumoName, onClose, onSuccess }) => {
         try {
             let cant = parseFloat(amount);
             let finalConcept = customConcept || concept;
-
-            // Logic: 
-            // If subtract -> send negative amount.
-            // If correction -> we calculate the delta. (Adjust endpoint currently expects delta? Let's check logic)
-            // Backend inventoryController.adjustBobina adds 'cantidad' to MetrosRestantes.
-            // So if type is 'subtract', we send -amount.
-            // If type is 'correction', we need to calculate difference: target - current.
+            const esDevolucion = finalConcept === 'Devolución al Cliente';
 
             let delta = 0;
             if (adjustType === 'subtract') {
@@ -66,22 +60,35 @@ const ManageBobinaModal = ({ bobina, insumoName, onClose, onSuccess }) => {
                 delta = cant - bobina.MetrosRestantes;
             }
 
-            if (Math.abs(delta) < 0.01) return toast.info("No hay cambio en el stock");
+            if (Math.abs(delta) < 0.01 && !esDevolucion) return toast.info("No hay cambio en el stock");
 
-            const res = await inventoryService.adjustBobina({
-                bobinaId: bobina.BobinaID,
-                cantidad: delta,
-                motivo: finalConcept
-            });
-
-            if (res.success) {
-                toast.success("Stock ajustado correctamente");
-                onSuccess();
-                onClose();
+            // 1. Ajustar metros si hay diferencia
+            if (Math.abs(delta) >= 0.01) {
+                await inventoryService.adjustBobina({
+                    bobinaId: bobina.BobinaID,
+                    cantidad: delta,
+                    motivo: finalConcept
+                });
             }
+
+            // 2. Si es devolución, cerrar la bobina automáticamente
+            if (esDevolucion) {
+                await inventoryService.closeBobina({
+                    bobinaId: bobina.BobinaID,
+                    metrosFinales: 0,
+                    motivo: 'Devolución al Cliente',
+                    finish: true
+                });
+                toast.success('Devolución registrada. Bobina cerrada.');
+            } else {
+                toast.success('Stock ajustado correctamente');
+            }
+
+            onSuccess?.();
+            onClose();
         } catch (error) {
             console.error(error);
-            toast.error("Error al ajustar stock");
+            toast.error('Error al ajustar stock');
         } finally {
             setLoading(false);
         }
@@ -125,6 +132,7 @@ const ManageBobinaModal = ({ bobina, insumoName, onClose, onSuccess }) => {
         "Mermas Operativas",
         "Ajuste de Inventario",
         "Venta / Salida Externa",
+        "Devolución al Cliente",
         "Otro"
     ];
 
@@ -157,12 +165,6 @@ const ManageBobinaModal = ({ bobina, insumoName, onClose, onSuccess }) => {
                         className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'close' ? 'border-red-600 text-red-600 bg-red-50/50' : 'border-transparent text-zinc-500 hover:text-zinc-700'}`}
                     >
                         Cerrar / Terminar
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('history')}
-                        className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'history' ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50' : 'border-transparent text-zinc-500 hover:text-zinc-700'}`}
-                    >
-                        Historial
                     </button>
                 </div>
 

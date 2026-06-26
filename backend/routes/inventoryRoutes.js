@@ -10,6 +10,10 @@ router.post('/stock/add', verifyToken, inventoryController.addStock);
 router.post('/stock/close', verifyToken, inventoryController.closeBobina);
 router.post('/stock/adjust', verifyToken, inventoryController.adjustBobina); // Nueva ruta ajuste
 router.get('/stock/history', verifyToken, inventoryController.getBobinaHistory); // Nueva ruta historial
+router.post('/stock/confirmar-medida', verifyToken, inventoryController.confirmarMedida); // Confirmar medida tela de cliente
+router.get('/stock/estado-tela',       verifyToken, inventoryController.getEstadoTela);   // Estado de cuenta por bobina
+router.get('/tela-cliente/disponible', verifyToken, inventoryController.getBovinasDisponibles); // Bobinas disponibles para pedido tela cliente
+
 
 // CRUD Insumos (Catálogo)
 router.get('/insumos', verifyToken, inventoryController.getInsumos);

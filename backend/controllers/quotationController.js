@@ -170,10 +170,12 @@ exports.saveQuotation = async (req, res) => {
                 .input('Doc', sql.NVarChar, noDocERP)
                 .query(`SELECT TOP 1 CliIdCliente FROM Ordenes WITH(NOLOCK) WHERE LTRIM(RTRIM(CAST(NoDocERP AS VARCHAR))) = LTRIM(RTRIM(@Doc))`);
             const clienteId = ordCabRes.recordset[0]?.CliIdCliente || null;
+            const initialMoneda = lineas.some(l => (l.Moneda || '').toUpperCase() === 'USD') ? 'USD' : 'UYU';
             await new sql.Request(transaction)
                 .input('Doc', sql.NVarChar, noDocERP)
                 .input('Cli', sql.Int, clienteId)
-                .query(`INSERT INTO PedidosCobranza (NoDocERP, ClienteID, MontoTotal, Moneda, FechaGeneracion, EstadoCobro) VALUES (LTRIM(RTRIM(@Doc)), @Cli, 0, 'UYU', GETDATE(), 'PENDIENTE')`);
+                .input('Mon', sql.VarChar(10), initialMoneda)
+                .query(`INSERT INTO PedidosCobranza (NoDocERP, ClienteID, MontoTotal, Moneda, FechaGeneracion, EstadoCobro) VALUES (LTRIM(RTRIM(@Doc)), @Cli, 0, @Mon, GETDATE(), 'PENDIENTE')`);
             cabRes = await new sql.Request(transaction)
                 .input('Doc', sql.NVarChar, noDocERP)
                 .query(`SELECT * FROM PedidosCobranza WHERE LTRIM(RTRIM(NoDocERP)) = LTRIM(RTRIM(@Doc))`);
@@ -315,6 +317,40 @@ exports.saveQuotation = async (req, res) => {
                 WHERE ID = @ID`);
 
         await transaction.commit();
+
+        // Sincronizar MovImporte con el nuevo total para órdenes ya contabilizadas
+        try {
+            await pool.request()
+                .input('NoDoc', sql.NVarChar, noDocERP)
+                .input('NewTotal', sql.Decimal(18, 2), nuevoTotal)
+                .input('MFinal', sql.VarChar(10), monedaFinal)
+                .query(`
+                    UPDATE mc
+                    SET mc.MovImporte = -@NewTotal
+                    FROM dbo.MovimientosCuenta mc
+                    INNER JOIN dbo.Ordenes o ON mc.OrdIdOrden = o.OrdenID
+                    INNER JOIN dbo.CuentasCliente cc ON mc.CueIdCuenta = cc.CueIdCuenta
+                    WHERE LTRIM(RTRIM(CAST(o.NoDocERP AS VARCHAR))) = LTRIM(RTRIM(@NoDoc))
+                      AND mc.MovTipo IN ('ORDEN', 'ORDEN_ANTICIPO')
+                      AND mc.DocIdDocumento IS NULL
+                      AND (
+                          (cc.MonIdMoneda = 1 AND @MFinal = 'UYU')
+                          OR (cc.MonIdMoneda = 2 AND @MFinal = 'USD')
+                      )
+                `);
+            await pool.request()
+                .input('NoDoc', sql.NVarChar, noDocERP)
+                .input('NewTotal', sql.Decimal(18, 2), nuevoTotal)
+                .query(`
+                    UPDATE dbo.PedidosCobranza
+                    SET MontoContabilizado = @NewTotal
+                    WHERE LTRIM(RTRIM(NoDocERP)) = LTRIM(RTRIM(@NoDoc))
+                      AND MontoContabilizado IS NOT NULL
+                      AND MontoContabilizado > 0
+                `);
+        } catch (syncErr) {
+            logger.warn(`[Quotation] No se pudo sincronizar movimiento contable para ${noDocERP}: ${syncErr.message}`);
+        }
 
         logger.info(`[Quotation] ✅ Cotización guardada para ${noDocERP} | Total: ${nuevoTotal} | QR: ${nuevoQrString}`);
 

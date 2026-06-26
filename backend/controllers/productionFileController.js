@@ -46,6 +46,7 @@ const getOrdenes = async (req, res) => {
             O.AreaID,
             O.CodigoOrden,
             O.Cliente AS Cliente,
+                c.IDCliente AS IDCliente,
                 O.Material,
                 O.Estado,
                 O.Prioridad,
@@ -60,6 +61,7 @@ const getOrdenes = async (req, res) => {
                                 O.Magnitud,
                                 O.EstadoenArea
             FROM Ordenes O WITH(NOLOCK)
+            LEFT JOIN dbo.Clientes c WITH(NOLOCK) ON O.CliIdCliente = c.CliIdCliente
         WHERE
             (@RolloID = '' OR CAST(O.RolloID AS NVARCHAR(50)) = @RolloID OR @RolloID IS NULL)
 

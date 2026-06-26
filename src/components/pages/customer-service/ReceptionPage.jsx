@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
+import { jsPDF } from 'jspdf';
 import { receptionService } from '../../../services/api';
+import ClienteTelaMetros from '../../common/ClienteTelaMetros';
 
 import ActiveStockPage from './ActiveStockPage';
 
@@ -17,12 +19,14 @@ const ReceptionPage = () => {
     const [nextCode, setNextCode] = useState('PRE-#');
     const [formData, setFormData] = useState({
         clienteId: '',
-        tipo: 'PAQUETE DE PRENDAS', // Default
+        tipo: 'PAQUETE DE PRENDAS',
         bultos: 1,
-        servicios: [], // Array of strings
+        servicios: [],
         telaCliente: '',
-        referencias: [''], // Array of strings
-        // New Fields for TELA
+        referencias: [''],
+        // Campos para TELA DE CLIENTE: tabla de bobinas
+        bobinas: [{ largo: '', ancho: '', peso: '' }],
+        // Campos legacy para otros tipos
         insumoId: '',
         metros: '',
         loteProv: '',
@@ -43,9 +47,30 @@ const ReceptionPage = () => {
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
 
-    // Filter Suggestions
+    // Usuario logueado (operario de producción)
+    // AuthContext guarda: { id, nombre, usuario, rol, areaKey, token }
+    const currentUser    = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
+    const operarioNombre = currentUser?.nombre || currentUser?.usuario || currentUser?.name || 'Operario';
+
+    // ── Búsqueda de cliente estilo CAJA ──────────────────────────────
+    const [clienteObj,       setClienteObj]       = useState(null);   // objeto completo del cliente
+    const [qCliente,         setQCliente]         = useState('');
+    const [clienteResultados,setClienteResultados]= useState([]);
+    const [buscandoCli,      setBuscandoCli]      = useState(false);
+    const searchTimeoutRef   = useRef(null);
+
+    // Refs para impresión
+    const iframeRef       = useRef(null);
+    const iframeTicketRef = useRef(null);
+
+    // Filter Suggestions (legacy para otros usos)
     const [clientSuggestions, setClientSuggestions] = useState([]);
-    const [possibleOrders, setPossibleOrders] = useState([]); // NEW for Fabric Orders
+    const [possibleOrders,    setPossibleOrders]     = useState([]);
+
+    // ── Stock de tela del cliente (para "sumar a tela existente") ─────
+    const [saldosTela,       setSaldosTela]       = useState([]);
+    const [telaSeleccionada, setTelaSeleccionada] = useState(null);  // { InsumoID, TipoTela, MetrosLibres }
+    const [sumarAExistente,  setSumarAExistente]  = useState(null);  // null=sin responder | true=sí | false=no
 
     useEffect(() => {
         loadInitData();
@@ -82,6 +107,57 @@ const ReceptionPage = () => {
             setPossibleOrders([]);
         }
     }, [formData.clienteId, formData.areaDestino, formData.tipo, formData.servicios, areasList]);
+
+    // ── Búsqueda de clientes full (estilo caja) ──────────────────────
+    useEffect(() => {
+        if (!qCliente.trim() || qCliente.length < 2) { setClienteResultados([]); return; }
+        if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = setTimeout(async () => {
+            setBuscandoCli(true);
+            try {
+                // Usamos el endpoint unificado de búsqueda de clientes
+                const res = await receptionService.searchClientes(qCliente);
+                setClienteResultados(Array.isArray(res) ? res.slice(0, 8) : []);
+            } catch { setClienteResultados([]); }
+            finally { setBuscandoCli(false); }
+        }, 350);
+    }, [qCliente]);
+
+    const seleccionarClienteCompleto = (c) => {
+        setClienteObj(c);
+        // Guardar el ID numérico del cliente (CliIdCliente) para InventarioBobinas.ClienteID
+        const idCliente = String(c.CliIdCliente || c.IDCliente || c.Nombre?.trim() || '');
+        setFormData(prev => ({ ...prev, clienteId: idCliente }));
+        setQCliente('');
+        setClienteResultados([]);
+        fetchClientOrders(idCliente);
+    };
+
+    // ── Cargar saldo de telas cuando tipo=TELA y hay cliente ──────────
+    useEffect(() => {
+        if (formData.tipo === 'TELA DE CLIENTE' && formData.clienteId?.trim()) {
+            receptionService.getSaldoTelas(formData.clienteId.trim())
+                .then(data => setSaldosTela(data || []))
+                .catch(() => setSaldosTela([]));
+        } else {
+            setSaldosTela([]);
+            setTelaSeleccionada(null);
+        }
+    }, [formData.clienteId, formData.tipo]);
+
+    const limpiarCliente = () => {
+        setClienteObj(null);
+        setFormData(prev => ({ ...prev, clienteId: '', telaCliente: '' }));
+        setQCliente('');
+        setClienteResultados([]);
+        setClientOrders([]);
+        setPossibleOrders([]);
+        setSaldosTela([]);
+        setTelaSeleccionada(null);
+        setSumarAExistente(null);
+    };
+
+
 
     // NEW: Auto-select TELA CLIENTE insumo if exists and type is TELA
     useEffect(() => {
@@ -129,28 +205,19 @@ const ReceptionPage = () => {
     const handleClientChange = async (e) => {
         const val = e.target.value;
         setFormData(prev => ({ ...prev, clienteId: val }));
-
-        // Autocomplete logic
+        // legacy fallback — usado sólo si clienteObj es null
         if (val.length > 1) {
             const matches = clients.filter(c => c.toLowerCase().includes(val.toLowerCase())).slice(0, 10);
             setClientSuggestions(matches);
-
-            // If exact match, fetch orders
-            if (clients.includes(val)) {
-                fetchClientOrders(val);
-            }
+            if (clients.includes(val)) fetchClientOrders(val);
         } else {
             setClientSuggestions([]);
             setClientOrders([]);
         }
     };
 
-    // Explicit fetch when selecting from datalist (browser handles change, but checking exact match above covers it mostly. 
-    // We can also add onBlur check)
     const handleClientBlur = () => {
-        if (clients.includes(formData.clienteId)) {
-            fetchClientOrders(formData.clienteId);
-        }
+        if (clients.includes(formData.clienteId)) fetchClientOrders(formData.clienteId);
     };
 
     const fetchClientOrders = async (clientName) => {
@@ -196,8 +263,10 @@ const ReceptionPage = () => {
         if (formData.tipo === 'TELA DE CLIENTE') {
             if (!formData.areaDestino) errs.areaDestino = 'Requerido';
             if (!formData.insumoId) errs.insumoId = 'Requerido';
-            if (!formData.metros || parseFloat(formData.metros) <= 0) errs.metros = 'Requerido (>0)';
-            // Descr. Tela (telaCliente) auto-filled by Insumo Name usually, but check just in case
+            // Validar que al menos 1 bobina tenga largo > 0
+            const tieneMetros = formData.bobinas.some(b => parseFloat(b.largo) > 0);
+            if (!tieneMetros) errs.metros = 'Ingresá el largo de al menos una bobina (>0)';
+            // Descr. Tela
             if (!formData.telaCliente.trim()) errs.telaCliente = 'Requerido';
         }
 
@@ -214,6 +283,7 @@ const ReceptionPage = () => {
             servicios: [],
             telaCliente: '',
             referencias: [''],
+            bobinas: [{ largo: '', ancho: '', peso: '' }],
             insumoId: '',
             metros: '',
             loteProv: '',
@@ -231,21 +301,42 @@ const ReceptionPage = () => {
 
         try {
             // 1. Save
+            const esTelaPago = formData.tipo === 'TELA DE CLIENTE';
+            const metrosTotal = esTelaPago
+                ? formData.bobinas.reduce((s, b) => s + (parseFloat(b.largo) || 0), 0)
+                : parseFloat(formData.metros) || 0;
             const payload = {
                 ...formData,
-                referencias: formData.referencias.filter(r => r.trim())
+                referencias: formData.referencias.filter(r => r.trim()),
+                // Para TELA DE CLIENTE: total de metros calculado y cantidad de bobinas
+                metros: metrosTotal,
+                bultos: esTelaPago ? formData.bobinas.length : formData.bultos,
+                // Pasar si está sumando a tela existente
+                sumaTelaExistente: sumarAExistente === true && telaSeleccionada ? telaSeleccionada.TipoTela : null,
             };
             const res = await receptionService.createReception(payload);
 
             if (res.success) {
-                setMessage({ type: 'success', text: `Orden ${res.ordenAsignada} guardada.` });
-                // 2. Print
-                await printLabel({
-                    orden: res.ordenAsignada,
+                // Nombre del operario: usar el que devuelve el backend, o el local
+                const operadorFinal = res.operario || operarioNombre;
+                setMessage({ type: 'success', text: `Orden ${res.ordenAsignada} guardada. Operario: ${operadorFinal}` });
+                const printData = {
+                    orden:             res.ordenAsignada,
                     ...payload,
-                    fechaHora: new Date().toLocaleString()
-                });
-                // 3. Reset & Reload
+                    fechaHora:         new Date().toLocaleString(),
+                    operario:          operadorFinal,
+                    // Nombre del cliente para mostrar en ticket (no el ID)
+                    clienteNombre:     clienteObj?.Nombre || clienteObj?.RazonSocial || payload.clienteId,
+                };
+                // 2. Print etiqueta de bodega
+                await printLabel(printData);
+                // 3. Si es TELA DE CLIENTE, imprimir también el ticket para el cliente
+                //    Esperamos 1.2 s para que el diálogo de impresión de la etiqueta no colisione
+                if (payload.tipo === 'TELA DE CLIENTE') {
+                    await new Promise(resolve => setTimeout(resolve, 1200));
+                    await printClientTicket(printData);
+                }
+                // 4. Reset & Reload
                 handleReset();
                 loadHistory();
             }
@@ -258,8 +349,80 @@ const ReceptionPage = () => {
         }
     };
 
-    // PRINT LOGIC
-    const iframeRef = useRef(null);
+    // Ticket para entregar al CLIENTE — idéntico al ticket de caja
+    // El PDF se guarda automáticamente en el BACKEND al crear la recepción (generarComprobanteRecepcion)
+    const printClientTicket = async (data) => {
+        const { orden, clienteId, clienteNombre, bultos, metros, telaCliente,
+                bobinas,
+                areaDestino, loteProv, observaciones, fechaHora, operario, sumaTelaExistente } = data;
+
+        const areaLabel      = areasList.find(a => a.AreaID === areaDestino)?.Nombre || areaDestino || '-';
+        // Nombre real del operario desde AuthContext (key: "nombre")
+        const localUser      = (() => { try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; } })();
+        const operadorFinal  = operario
+            || localUser?.nombre || localUser?.usuario || localUser?.name
+            || 'Operario';
+        const clienteFinal   = clienteNombre || clienteId;
+
+        // Línea opcional: "SUMA A: Seda Americana"
+        const sumaLine = sumaTelaExistente
+            ? `<p><strong>SUMA A   :</strong> ${sumaTelaExistente}</p>`
+            : '';
+
+        // ── 1. IMPRIMIR en ventana nueva — mismo patrón exacto que caja ──────────
+        const win = window.open('', '_blank', 'width=340,height=600');
+        if (win) {
+            win.document.write(`<html><head><title>Comprobante ${orden}</title>
+            <style>
+              *{margin:0;padding:0;box-sizing:border-box}
+              body{font-family:'Courier New',Courier,monospace;font-size:12px;line-height:1.2;padding:5mm;width:80mm;background:#fff;color:#000}
+              h2{font-size:18px;font-weight:bold;text-align:center;margin:0 0 3px}
+              .sub{text-align:center;font-size:10px;color:#444;margin-bottom:8px}
+              .sep{border-bottom:1px dashed #000;margin:8px 0}
+              p{margin:2px 0}
+              .pie{text-align:center;font-size:10px;color:#999;margin-top:16px}
+              @page{size:80mm auto;margin:0}
+            </style></head><body>
+            <h2>USER</h2>
+            <div class="sub">Atencion al Cliente<br>Comprobante de Recepcion de Tela</div>
+            <div class="sep"></div>
+            <p><strong>FECHA  :</strong> ${fechaHora}</p>
+            <p><strong>TICKET :</strong> ${orden}</p>
+            <p><strong>AREA   :</strong> ${areaLabel}</p>
+            <p><strong>RECIBIO:</strong> ${operadorFinal}</p>
+            <p><strong>CLIENTE:</strong> ${clienteFinal}</p>
+            <div class="sep"></div>
+            <p><strong>TIPO TELA  :</strong> ${telaCliente || '-'}</p>
+            ${sumaLine}
+            ${(() => {
+                // Si hay bobinas con medidas individuales, mostramos tabla por bobina
+                if (Array.isArray(bobinas) && bobinas.length > 0 && bobinas.some(b => b.largo)) {
+                    const totalMts = bobinas.reduce((s,b) => s + (parseFloat(b.largo)||0), 0);
+                    const rows = bobinas.map((b,i) => {
+                        const partes = [`L:${parseFloat(b.largo||0).toFixed(2)}m`];
+                        if (b.ancho) partes.push(`A:${parseFloat(b.ancho).toFixed(2)}m`);
+                        if (b.peso)  partes.push(`P:${parseFloat(b.peso).toFixed(2)}kg`);
+                        return `<p><strong>BOB. ${i+1}  :</strong> ${partes.join(' · ')}</p>`;
+                    }).join('');
+                    return `<p><strong>MTS TOTAL  :</strong> ${totalMts.toFixed(2)} m</p>${rows}`;
+                }
+                return `<p><strong>MTS DECL.  :</strong> ${metros ? parseFloat(metros).toFixed(2) + ' m' : '-'}</p>`;
+            })()}
+            <p><strong>BULTOS     :</strong> ${Array.isArray(bobinas) && bobinas.length > 0 ? bobinas.length : bultos}</p>
+            ${loteProv      ? `<p><strong>LOTE PROV. :</strong> ${loteProv}</p>` : ''}
+            ${observaciones ? `<p><strong>OBS        :</strong> ${observaciones}</p>` : ''}
+            <div class="sep"></div>
+            <div class="pie"><p>Conserve este comprobante</p><p>Servicio brindado por USER ERP</p></div>
+            <div style="height:10mm"></div>
+            </body></html>`);
+            win.document.close();
+            win.focus();
+            win.addEventListener('afterprint', () => win.close());
+            setTimeout(() => win.print(), 800);
+        }
+        // NOTA: El PDF se guardó automáticamente en el BACKEND (comprobantesPagos/recepciones/PRE-XX.pdf)
+        // No es necesario volver a guardar desde el frontend.
+    };
 
     const printLabel = async (data) => {
         const { orden, tipo, clienteId, bultos, servicios, telaCliente, referencias, fechaHora } = data;
@@ -280,8 +443,15 @@ const ReceptionPage = () => {
             // Better: Generate N data URLs in JSLoop.
 
             const pages = [];
-            for (let i = 0; i < parseInt(bultos); i++) {
-                const bultoStr = `${i + 1}/${bultos}`;
+            // Para TELA DE CLIENTE con bobinas individuales, iteramos el array
+            const bobinasList = (tipo === 'TELA DE CLIENTE' && Array.isArray(data.bobinas) && data.bobinas.length > 0)
+                ? data.bobinas
+                : null;
+            const totalBultos = bobinasList ? bobinasList.length : parseInt(bultos);
+
+            for (let i = 0; i < totalBultos; i++) {
+                const bultoStr = `${i + 1}/${totalBultos}`;
+                const bDatos  = bobinasList ? bobinasList[i] : null;
 
                 // --- MODIFICATION FOR USER REQUEST ---
                 // "necesito que me dejes solo el codigo del bulto"
@@ -327,7 +497,7 @@ const ReceptionPage = () => {
                 // QR Content: JUST THE CODE
                 const qrTxt = dbCode;
                 const qrUrl = await QRCode.toDataURL(qrTxt, { width: 300, margin: 2 });
-                pages.push({ i, qrUrl, bultoStr, dbCode });
+                pages.push({ i, qrUrl, bultoStr, dbCode, bDatos });
             }
 
             const htmlContent = `
@@ -366,6 +536,9 @@ const ReceptionPage = () => {
                         <b>Refs:</b>    <span>${(refsText || '-')}</span>
                         ${data.cantidadPrendas ? `<b>Prendas:</b> <span>${data.cantidadPrendas}</span>` : ''}
                         ${data.observaciones ? `<b>Obs:</b> <span>${data.observaciones}</span>` : ''}
+                        ${p.bDatos && p.bDatos.largo  ? `<b>Largo:</b>  <span>${parseFloat(p.bDatos.largo).toFixed(2)} m</span>` : ''}
+                        ${p.bDatos && p.bDatos.ancho  ? `<b>Ancho:</b>  <span>${parseFloat(p.bDatos.ancho).toFixed(2)} m</span>` : ''}
+                        ${p.bDatos && p.bDatos.peso   ? `<b>Peso:</b>   <span>${parseFloat(p.bDatos.peso).toFixed(2)} kg</span>` : ''}
                     </div>
                     
                     <div class="bultoInfo">Bulto ${p.bultoStr}</div>
@@ -399,6 +572,7 @@ const ReceptionPage = () => {
     return (
         <div className="p-6 bg-slate-50 min-h-screen">
             <iframe ref={iframeRef} className="hidden" title="PrintFrame" />
+            <iframe ref={iframeTicketRef} className="hidden" title="TicketFrame" />
 
             <div className="max-w-6xl mx-auto space-y-6">
 
@@ -427,37 +601,156 @@ const ReceptionPage = () => {
                         {/* MAIN FORM CARD */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-6">
 
-                            {/* 1. Cliente & Tipo */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="relative">
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cliente *</label>
-                                    <input
-                                        type="text"
-                                        className={`w-full p-2.5 border rounded-lg font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none ${errors.clienteId ? 'border-red-500' : 'border-slate-300'}`}
-                                        placeholder="Buscar Cliente..."
-                                        value={formData.clienteId}
-                                        onChange={handleClientChange}
-                                        list="clientOptions"
-                                    />
-                                    <datalist id="clientOptions">
-                                        {clients.map(c => <option key={c} value={c} />)}
-                                    </datalist>
-                                    {errors.clienteId && <p className="text-xs text-red-500 mt-1">{errors.clienteId}</p>}
+                            {/* ── 1. Selector de cliente estilo CAJA ── */}
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">1. Seleccionar Cliente *</label>
+                                    {clienteObj && (
+                                        <span className="flex items-center gap-1 text-emerald-600 text-[9px] font-black bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                            VERIFICADO ✓
+                                        </span>
+                                    )}
                                 </div>
 
+                                {/* ── Tipo de Ingreso (siempre visible) ── */}
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de Ingreso *</label>
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Tipo de Ingreso *</label>
                                     <select
-                                        className="w-full p-2.5 border border-slate-300 rounded-lg font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                                        className="w-full p-2.5 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-indigo-400 outline-none bg-white shadow-sm"
                                         value={formData.tipo}
-                                        onChange={(e) => {
-                                            setFormData({ ...formData, tipo: e.target.value, servicios: [] }); // Reset services on type change
-                                        }}
+                                        onChange={(e) => setFormData({ ...formData, tipo: e.target.value, servicios: [] })}
                                     >
                                         <option value="PAQUETE DE PRENDAS">📦 Paquete de Prendas</option>
                                         <option value="TELA DE CLIENTE">🧵 Tela de Cliente</option>
                                     </select>
                                 </div>
+
+                                {/* ── Buscador (solo si no hay cliente seleccionado) ── */}
+                                {!clienteObj ? (
+                                    <div className="space-y-2">
+                                        <div className="relative flex items-center group/search">
+                                            <div className="absolute left-3.5 text-slate-400 group-focus-within/search:text-indigo-500 transition-colors">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                                            </div>
+                                            <input
+                                                value={qCliente}
+                                                onChange={e => setQCliente(e.target.value)}
+                                                placeholder="Buscar por nombre, ID, teléfono..."
+                                                className={`w-full bg-slate-50 border ${errors.clienteId ? 'border-red-400' : 'border-slate-200'} hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded-xl pl-10 pr-10 py-2.5 text-sm font-bold text-slate-700 placeholder-slate-400 outline-none transition-all shadow-sm`}
+                                            />
+                                            {buscandoCli && (
+                                                <div className="absolute right-3.5">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400 animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {errors.clienteId && <p className="text-xs text-red-500 font-bold">{errors.clienteId}</p>}
+
+                                        {/* Resultados de búsqueda */}
+                                        {clienteResultados.length > 0 && (
+                                            <div className="flex flex-col gap-1.5 mt-1 max-h-64 overflow-y-auto">
+                                                {clienteResultados.map((c, i) => {
+                                                    const nombre = c.Nombre?.trim() || c.NombreFantasia?.trim() || c.IDCliente;
+                                                    const fantasia = c.NombreFantasia?.trim();
+                                                    return (
+                                                        <button
+                                                            key={c.CliIdCliente || c.IDCliente || i}
+                                                            type="button"
+                                                            onClick={() => seleccionarClienteCompleto(c)}
+                                                            className="w-full text-left p-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-xl cursor-pointer transition-all flex flex-col gap-1 group"
+                                                        >
+                                                            <div className="flex items-start justify-between">
+                                                                <span className="text-slate-800 font-extrabold text-sm group-hover:text-indigo-600 transition-colors leading-tight">{nombre}</span>
+                                                                {(c.IDCliente || c.CliIdCliente) && (
+                                                                    <span className="text-[9px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-mono font-black shrink-0 ml-2">{c.IDCliente || c.CliIdCliente}</span>
+                                                                )}
+                                                            </div>
+                                                            {fantasia && nombre !== fantasia && (
+                                                                <span className="text-[10px] text-slate-500 italic">"{fantasia}"</span>
+                                                            )}
+                                                            <div className="flex flex-wrap gap-x-3 text-[10px] text-slate-400 font-medium border-t border-slate-200/60 pt-1 mt-0.5">
+                                                                {c.Email && <span>✉ {c.Email}</span>}
+                                                                {c.Telefono && <span>📞 {c.Telefono}</span>}
+                                                            </div>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                        {qCliente.trim().length >= 2 && !buscandoCli && clienteResultados.length === 0 && (
+                                            <p className="text-center py-4 text-slate-400 text-xs font-semibold">No se encontraron clientes</p>
+                                        )}
+                                        {!qCliente.trim() && (
+                                            <p className="text-center py-4 text-slate-300 text-xs font-semibold">Use el buscador para encontrar un cliente...</p>
+                                        )}
+                                    </div>
+                                ) : (
+                                    /* ── Tarjeta cliente seleccionado ── */
+                                    <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-4 shadow-sm space-y-3">
+                                        <div className="flex items-start justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-indigo-500 border border-indigo-200/60 shadow-sm">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                                </div>
+                                                <div>
+                                                    <p className="text-slate-800 text-sm font-extrabold leading-tight tracking-tight">
+                                                        {clienteObj.Nombre?.trim() || clienteObj.NombreFantasia?.trim()}
+                                                    </p>
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 font-mono">
+                                                        IDCLIENTE: {clienteObj.IDCliente || clienteObj.CliIdCliente || '—'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={limpiarCliente}
+                                                className="bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 p-1.5 rounded-lg transition-all border border-slate-200 hover:border-rose-200 shadow-sm"
+                                                title="Cambiar cliente"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                                            </button>
+                                        </div>
+
+                                        {/* Datos del cliente */}
+                                        <div className="flex flex-col gap-1 text-[11px] text-slate-500 font-medium border-t border-slate-200/60 pt-2.5">
+                                            {clienteObj.Email && <div>Email: <span className="font-mono text-slate-700">{clienteObj.Email}</span></div>}
+                                            {(clienteObj.Telefono || clienteObj.TelefonoTrabajo) && <div>Teléfono: <span className="font-mono text-slate-700">{clienteObj.Telefono || clienteObj.TelefonoTrabajo}</span></div>}
+                                            {(clienteObj.Direccion || clienteObj.DireccionTrabajo) && <div>Dirección: <span className="text-slate-700">{clienteObj.Direccion || clienteObj.DireccionTrabajo}</span></div>}
+                                        </div>
+
+                                        {/* ── Badges informativos de tela (solo display) ── */}
+                                        {formData.tipo === 'TELA DE CLIENTE' && saldosTela.length > 0 && (
+                                            <div className="border-t border-slate-200/60 pt-2.5">
+                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">Stock de tela actual</p>
+                                                <div className="space-y-1">
+                                                    {saldosTela.map(s => {
+                                                        const libre = parseFloat(s.MetrosLibres || s.MetrosDisponibles || 0);
+                                                        const pct   = parseFloat(s.PorcentajeConsumido || 0);
+                                                        const barColor = pct >= 80 ? 'bg-rose-400' : pct >= 50 ? 'bg-amber-400' : 'bg-cyan-400';
+                                                        return (
+                                                            <div key={s.InsumoID}
+                                                                className="flex items-center gap-3 px-3 py-2 rounded-xl bg-slate-800 border border-slate-700">
+                                                                <div className="shrink-0 text-cyan-500">
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4.09 12.97 12 12 11 22l8.91-10.97L12 12l1-10z"/></svg>
+                                                                </div>
+                                                                <span className="text-slate-300 font-black text-[10px] uppercase tracking-tight truncate flex-1">{s.TipoTela}</span>
+                                                                <span className="text-white font-black font-mono text-xs shrink-0">
+                                                                    {Number(libre).toLocaleString('es-UY', { minimumFractionDigits: 2 })}
+                                                                    <span className="text-cyan-400 text-[8px] ml-1 uppercase">mts</span>
+                                                                </span>
+                                                                <div className="w-10 shrink-0">
+                                                                    <div className="w-full h-1 bg-slate-600 rounded-full overflow-hidden">
+                                                                        <div className={`h-full ${barColor}`} style={{ width: `${Math.min(pct,100)}%` }} />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             {/* 2. Dynamic Content (Services or Tela) */}
@@ -469,7 +762,7 @@ const ReceptionPage = () => {
                                         {formData.tipo === 'TELA DE CLIENTE' && (
                                             <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
 
-                                                {/* Area Destino */}
+                                                {/* ── 1. Área Destino ── */}
                                                 <div>
                                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Área Destino *</label>
                                                     <select
@@ -478,12 +771,10 @@ const ReceptionPage = () => {
                                                         onChange={(e) => setFormData({ ...formData, areaDestino: e.target.value })}
                                                     >
                                                         <option value="">-- Seleccionar --</option>
-                                                        {/* SOLO SUBLIMACION Y CORTE */}
                                                         {areasList.filter(a => {
-                                                            const id = a.AreaID;
-                                                            const name = a.Nombre.toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                                                            // Filter by Specific IDs (SB, TWC) OR Name match (Sublimacion, Corte)
-                                                            return ['SB', 'TWC'].includes(id) || name.includes('SUBLIMA') || name.includes('CORTE');
+                                                            const id   = a.AreaID;
+                                                            const name = a.Nombre.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                                                            return ['SB','TWC'].includes(id) || name.includes('SUBLIMA') || name.includes('CORTE');
                                                         }).map(a => (
                                                             <option key={a.AreaID} value={a.AreaID}>{a.Nombre}</option>
                                                         ))}
@@ -491,19 +782,15 @@ const ReceptionPage = () => {
                                                     {errors.areaDestino && <p className="text-xs text-red-500 mt-1">{errors.areaDestino}</p>}
                                                 </div>
 
-                                                {/* Insumo Selector (FIXED to TELA CLIENTE) */}
+                                                {/* ── Insumo fijo TELA CLIENTE ── */}
                                                 <div>
                                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Insumo / Material</label>
                                                     {insumosList.find(i => i.Nombre.toUpperCase().includes('TELA CLIENTE')) ? (
-                                                        // Si existe TELA CLIENTE, lo mostramos fijo
                                                         <div className="w-full p-2.5 border border-slate-200 bg-slate-100 rounded-lg text-slate-600 font-bold select-none flex items-center justify-between">
-                                                            <span>
-                                                                {insumosList.find(i => i.Nombre.toUpperCase().includes('TELA CLIENTE')).Nombre}
-                                                            </span>
+                                                            <span>{insumosList.find(i => i.Nombre.toUpperCase().includes('TELA CLIENTE')).Nombre}</span>
                                                             <i className="fa-solid fa-lock text-slate-400 text-xs"></i>
                                                         </div>
                                                     ) : (
-                                                        // Fallback si no existe (deberia existir)
                                                         <select
                                                             className={`w-full p-2.5 border rounded-lg font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 ${errors.insumoId ? 'border-red-500 bg-red-50' : 'border-slate-300'}`}
                                                             value={formData.insumoId}
@@ -518,44 +805,213 @@ const ReceptionPage = () => {
                                                     {errors.insumoId && <p className="text-xs text-red-500 mt-1">{errors.insumoId}</p>}
                                                 </div>
 
-                                                {/* Metros & Lote */}
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div>
-                                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Metros por Bobina *</label>
-                                                        <input
-                                                            type="number"
-                                                            step="0.01"
-                                                            className={`w-full p-2.5 border rounded-lg font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 ${errors.metros ? 'border-red-500 bg-red-50' : 'border-slate-300'}`}
-                                                            placeholder="0.00"
-                                                            value={formData.metros}
-                                                            onChange={(e) => setFormData({ ...formData, metros: e.target.value })}
-                                                        />
-                                                        {errors.metros && <p className="text-xs text-red-500 mt-1">{errors.metros}</p>}
+                                                {/* ── 2. Pregunta: ¿Sumar a tela existente? (aparece apenas hay telas previas) ── */}
+                                                {saldosTela.length > 0 && (
+                                                    <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-3">
+                                                        <div className="flex items-start gap-2">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500 mt-0.5 shrink-0"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                                                            <p className="text-xs font-bold text-slate-700">
+                                                                Este cliente tiene <span className="text-indigo-600">{saldosTela.length} tipo{saldosTela.length > 1 ? 's' : ''} de tela</span> registrada. ¿Desea sumar los metros a una tela existente?
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <button type="button"
+                                                                onClick={() => { setSumarAExistente(true); setTelaSeleccionada(null); setFormData(p => ({ ...p, telaCliente: '' })); }}
+                                                                className={`flex-1 py-2 px-3 rounded-xl text-xs font-black border transition-all ${
+                                                                    sumarAExistente === true
+                                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-md'
+                                                                        : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'
+                                                                }`}>
+                                                                ✦ SÍ, sumar a existente
+                                                            </button>
+                                                            <button type="button"
+                                                                onClick={() => { setSumarAExistente(false); setTelaSeleccionada(null); setFormData(p => ({ ...p, telaCliente: '' })); }}
+                                                                className={`flex-1 py-2 px-3 rounded-xl text-xs font-black border transition-all ${
+                                                                    sumarAExistente === false
+                                                                        ? 'bg-slate-700 text-white border-slate-700 shadow-md'
+                                                                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400 hover:bg-slate-50'
+                                                                }`}>
+                                                                + NO, tipo nuevo
+                                                            </button>
+                                                        </div>
                                                     </div>
+                                                )}
+
+                                                {/* ── 3. Selector de tela existente (solo si sumarAExistente=true) ── */}
+                                                {sumarAExistente === true && saldosTela.length > 0 && (
+                                                    <div className="space-y-2">
+                                                        <label className="block text-xs font-bold text-slate-500 uppercase">Seleccionar tela a sumar *</label>
+                                                        <div className="space-y-1.5">
+                                                            {saldosTela.map(s => {
+                                                                const libre = parseFloat(s.MetrosLibres || s.MetrosDisponibles || 0);
+                                                                const pct   = parseFloat(s.PorcentajeConsumido || 0);
+                                                                const isSel = telaSeleccionada?.InsumoID === s.InsumoID && telaSeleccionada?.TipoTela === s.TipoTela;
+                                                                const barColor = pct >= 80 ? 'bg-rose-400' : pct >= 50 ? 'bg-amber-400' : 'bg-cyan-400';
+                                                                return (
+                                                                    <button key={`${s.InsumoID}-${s.TipoTela}`} type="button"
+                                                                        onClick={() => {
+                                                                            setTelaSeleccionada(isSel ? null : s);
+                                                                            setFormData(p => ({ ...p, telaCliente: isSel ? '' : s.TipoTela }));
+                                                                        }}
+                                                                        className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all ${
+                                                                            isSel
+                                                                                ? 'bg-indigo-700 border-indigo-400 ring-2 ring-indigo-400 shadow-md'
+                                                                                : 'bg-slate-800 border-slate-700 hover:border-indigo-400'
+                                                                        }`}
+                                                                    >
+                                                                        <div className={`shrink-0 ${isSel ? 'text-indigo-200' : 'text-cyan-500'}`}>
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4.09 12.97 12 12 11 22l8.91-10.97L12 12l1-10z"/></svg>
+                                                                        </div>
+                                                                        <span className={`text-[11px] font-black uppercase tracking-tight truncate flex-1 text-left ${isSel ? 'text-white' : 'text-slate-300'}`}>
+                                                                            {s.TipoTela}
+                                                                        </span>
+                                                                        <span className={`font-black font-mono text-sm shrink-0 ${isSel ? 'text-indigo-200' : 'text-white'}`}>
+                                                                            {Number(libre).toLocaleString('es-UY', { minimumFractionDigits: 2 })}
+                                                                            <span className="text-[9px] ml-1 uppercase text-cyan-400">mts</span>
+                                                                        </span>
+                                                                        <div className="w-12 shrink-0">
+                                                                            <div className="w-full h-1 bg-slate-600 rounded-full overflow-hidden">
+                                                                                <div className={`h-full ${barColor}`} style={{ width: `${Math.min(pct,100)}%` }} />
+                                                                            </div>
+                                                                        </div>
+                                                                        {isSel && (
+                                                                            <div className="shrink-0 w-5 h-5 rounded-full bg-indigo-400 flex items-center justify-center">
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                                                            </div>
+                                                                        )}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* ── 4. Tabla de Bobinas (Largo × Ancho × Peso) — solo TELA DE CLIENTE ── */}
+                                                {(saldosTela.length === 0 || sumarAExistente !== null) && (
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <label className="block text-xs font-bold text-slate-500 uppercase">Medidas por Bobina *</label>
+                                                            <span className="text-xs text-slate-400">
+                                                                Total: <strong>{formData.bobinas.reduce((s,b) => s + (parseFloat(b.largo)||0), 0).toFixed(2)} m</strong>
+                                                                {' · '}{formData.bobinas.length} bobina{formData.bobinas.length !== 1 ? 's' : ''}
+                                                            </span>
+                                                        </div>
+
+                                                        {/* Cabecera tabla */}
+                                                        <div className="grid gap-1" style={{gridTemplateColumns:'28px 1fr 1fr 1fr 28px'}}>
+                                                            <div />
+                                                            <div className="text-[10px] font-bold text-slate-400 uppercase text-center">Largo (m)</div>
+                                                            <div className="text-[10px] font-bold text-slate-400 uppercase text-center">Ancho (m)</div>
+                                                            <div className="text-[10px] font-bold text-slate-400 uppercase text-center">Peso (kg)</div>
+                                                            <div />
+                                                        </div>
+
+                                                        {/* Filas de bobinas */}
+                                                        {formData.bobinas.map((bob, idx) => (
+                                                            <div key={idx} className="grid gap-1 items-center" style={{gridTemplateColumns:'28px 1fr 1fr 1fr 28px'}}>
+                                                                <span className="text-xs font-bold text-slate-400 text-center">{idx+1}</span>
+                                                                <input
+                                                                    type="number" step="0.01" placeholder="0.00"
+                                                                    className={`w-full p-2 border rounded-lg text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 text-center ${
+                                                                        errors.metros ? 'border-red-500 bg-red-50' : 'border-slate-300'
+                                                                    }`}
+                                                                    value={bob.largo}
+                                                                    onChange={e => {
+                                                                        const nb = [...formData.bobinas];
+                                                                        nb[idx] = { ...nb[idx], largo: e.target.value };
+                                                                        setFormData({ ...formData, bobinas: nb });
+                                                                    }}
+                                                                />
+                                                                <input
+                                                                    type="number" step="0.01" placeholder="0.00"
+                                                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 text-center"
+                                                                    value={bob.ancho}
+                                                                    onChange={e => {
+                                                                        const nb = [...formData.bobinas];
+                                                                        nb[idx] = { ...nb[idx], ancho: e.target.value };
+                                                                        setFormData({ ...formData, bobinas: nb });
+                                                                    }}
+                                                                />
+                                                                <input
+                                                                    type="number" step="0.01" placeholder="0.00"
+                                                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500 text-center"
+                                                                    value={bob.peso}
+                                                                    onChange={e => {
+                                                                        const nb = [...formData.bobinas];
+                                                                        nb[idx] = { ...nb[idx], peso: e.target.value };
+                                                                        setFormData({ ...formData, bobinas: nb });
+                                                                    }}
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        if (formData.bobinas.length === 1) return;
+                                                                        setFormData({ ...formData, bobinas: formData.bobinas.filter((_,i) => i !== idx) });
+                                                                    }}
+                                                                    className="flex items-center justify-center w-6 h-6 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-30"
+                                                                    disabled={formData.bobinas.length === 1}
+                                                                    title="Eliminar bobina"
+                                                                >✕</button>
+                                                            </div>
+                                                        ))}
+
+                                                        {/* Botón agregar */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setFormData({ ...formData, bobinas: [...formData.bobinas, { largo: '', ancho: '', peso: '' }] })}
+                                                            className="w-full py-2 border-2 border-dashed border-slate-300 rounded-lg text-xs font-bold text-slate-500 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+                                                        >
+                                                            + Agregar bobina
+                                                        </button>
+
+                                                        {/* Lote Proveedor (general) */}
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Lote Proveedor</label>
+                                                            <input
+                                                                type="text"
+                                                                className="w-full p-2.5 border border-slate-300 rounded-lg font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
+                                                                placeholder="Opcional..."
+                                                                value={formData.loteProv}
+                                                                onChange={(e) => setFormData({ ...formData, loteProv: e.target.value })}
+                                                            />
+                                                        </div>
+
+                                                        {errors.metros && <p className="text-xs text-red-500">{errors.metros}</p>}
+                                                    </div>
+                                                )}
+
+                                                {/* ── 5. Tipo de Tela / Descripción ── */}
+                                                {(saldosTela.length === 0 || sumarAExistente === false || (sumarAExistente === true && telaSeleccionada)) && (
                                                     <div>
-                                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Lote Proveedor</label>
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <label className="text-xs font-bold text-slate-500 uppercase">Tipo de Tela / Descripción *</label>
+                                                            {telaSeleccionada && (
+                                                                <span className="flex items-center gap-1 text-[9px] font-black text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                                                                    🔒 Sumando a tela existente
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                         <input
                                                             type="text"
-                                                            className="w-full p-2.5 border border-slate-300 rounded-lg font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
-                                                            placeholder="Opcional..."
-                                                            value={formData.loteProv}
-                                                            onChange={(e) => setFormData({ ...formData, loteProv: e.target.value })}
+                                                            readOnly={!!telaSeleccionada}
+                                                            className={`w-full p-3 border rounded-lg font-bold focus:ring-2 outline-none transition-all ${
+                                                                errors.telaCliente
+                                                                    ? 'border-red-500 bg-red-50'
+                                                                    : telaSeleccionada
+                                                                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700 cursor-not-allowed focus:ring-0'
+                                                                        : 'border-slate-300 focus:ring-blue-500'
+                                                            }`}
+                                                            placeholder="Ej: Algodón Jersey Negro..."
+                                                            value={formData.telaCliente}
+                                                            onChange={(e) => !telaSeleccionada && setFormData({ ...formData, telaCliente: e.target.value })}
                                                         />
+                                                        {telaSeleccionada && (
+                                                            <p className="text-[9px] text-indigo-500 font-bold mt-1">Descripción bloqueada — corresponde a la tela seleccionada</p>
+                                                        )}
+                                                        {errors.telaCliente && <p className="text-xs text-red-500 mt-1">{errors.telaCliente}</p>}
                                                     </div>
-                                                </div>
+                                                )}
 
-                                                {/* Descripcion Extra -> AHORA OBLIGATORIO Y PRINCIPAL */}
-                                                <div>
-                                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Tipo de Tela / Descripción *</label>
-                                                    <input
-                                                        type="text"
-                                                        className={`w-full p-3 border rounded-lg font-bold focus:ring-2 focus:ring-blue-500 outline-none ${errors.telaCliente ? 'border-red-500 bg-red-50' : 'border-slate-300'}`}
-                                                        placeholder="Ej: Algodón Jersey Negro..."
-                                                        value={formData.telaCliente}
-                                                        onChange={(e) => setFormData({ ...formData, telaCliente: e.target.value })}
-                                                    />
-                                                    {errors.telaCliente && <p className="text-xs text-red-500 mt-1">{errors.telaCliente}</p>}
-                                                </div>
                                             </div>
                                         )}
 
@@ -596,7 +1052,7 @@ const ReceptionPage = () => {
                                 <div className="grid grid-cols-2 gap-2">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">
-                                            {formData.tipo === 'TELA DE CLIENTE' ? 'Bobinas' : 'Bultos'}
+                                            Bultos
                                         </label>
                                         <input
                                             type="number"
@@ -623,6 +1079,8 @@ const ReceptionPage = () => {
                                     )}
                                 </div>
 
+                                {/* Referencias: solo visible para PAQUETE DE PRENDAS */}
+                                {formData.tipo !== 'TELA DE CLIENTE' && (
                                 <div className="md:col-span-2">
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex justify-between">
                                         <span>Referencias (OC / Pedido Pendiente)</span>
@@ -631,7 +1089,6 @@ const ReceptionPage = () => {
                                     <div className="space-y-2">
                                         {formData.referencias.map((ref, idx) => (
                                             <div key={idx} className="flex gap-2 relative">
-                                                {/* Si tenemos ordenes (TELA o PAQUETE), mostramos SELECT. Si no, Input libre */}
                                                 {possibleOrders.length > 0 ? (
                                                     <select
                                                         className="flex-1 p-2 border border-slate-300 rounded-lg text-sm bg-white"
@@ -657,11 +1114,9 @@ const ReceptionPage = () => {
                                                             list={`ordersList-${idx}`}
                                                         />
                                                         <datalist id={`ordersList-${idx}`}>
-                                                            {/* No usamos clientOrders aqui sino sugerencias generales si hubieran, o nada */}
                                                         </datalist>
                                                     </>
                                                 )}
-
                                                 {formData.referencias.length > 1 && (
                                                     <button onClick={() => removeRef(idx)} className="text-slate-400 hover:text-red-500 px-2">
                                                         <i className="fa-solid fa-trash"></i>
@@ -669,9 +1124,9 @@ const ReceptionPage = () => {
                                                 )}
                                             </div>
                                         ))}
-                                        {possibleOrders.length === 0 && formData.tipo === 'TELA DE CLIENTE' && formData.clienteId && <p className="text-[10px] text-slate-400 italic">No se encontraron órdenes pendientes para tela.</p>}
                                     </div>
                                 </div>
+                                )}
 
 
                                 {/* Observaciones */}

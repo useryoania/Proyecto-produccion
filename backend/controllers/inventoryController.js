@@ -33,12 +33,43 @@ exports.getInventoryByArea = async (req, res) => {
                 (SELECT COUNT(*) FROM InventarioBobinas WHERE InsumoID = i.InsumoID AND Estado = 'Disponible' AND AreaID IN (${areaParams})) as BobinasDisponibles,
                 (SELECT ISNULL(SUM(MetrosRestantes),0) FROM InventarioBobinas WHERE InsumoID = i.InsumoID AND Estado = 'Disponible' AND AreaID IN (${areaParams})) as MetrosTotales,
                 
-                -- Detalle de Bobinas Activas
+                 -- Detalle de Bobinas Activas (incluye Pendiente para tela de cliente)
                 (
-                    SELECT BobinaID, CodigoEtiqueta, MetrosIniciales, MetrosRestantes, Estado, FechaIngreso, AreaID, LoteProveedor
-                    FROM InventarioBobinas 
-                    WHERE InsumoID = i.InsumoID AND AreaID IN (${areaParams}) AND Estado IN ('Disponible', 'En Uso')
-                    ORDER BY FechaIngreso ASC
+                    SELECT BobinaID, CodigoEtiqueta, MetrosIniciales, MetrosRestantes,
+                           Estado, FechaIngreso, AreaID, LoteProveedor, ClienteID, Referencia,
+                           Ancho, AnchoReal, Peso, PesoReal,
+                           -- IdCliente (PK local) desde tabla Clientes
+                           (SELECT TOP 1 c2.IdCliente FROM Clientes c2 WITH(NOLOCK)
+                            WHERE c2.CliIdCliente = TRY_CAST(ib2.ClienteID AS INT)) AS IdCliente,
+                           -- Nombre real del cliente desde tabla local Clientes
+                           COALESCE(
+                               (SELECT TOP 1
+                                    CASE WHEN NULLIF(LTRIM(RTRIM(c2.NombreFantasia)), '') IS NOT NULL
+                                         THEN LTRIM(RTRIM(c2.NombreFantasia))
+                                         ELSE LTRIM(RTRIM(c2.Nombre)) END
+                                FROM Clientes c2 WITH(NOLOCK)
+                                WHERE c2.CliIdCliente = TRY_CAST(ib2.ClienteID AS INT)
+                               ),
+                               ib2.ClienteID
+                           ) AS NombreCliente,
+                           -- DescripcionTela: directo de la columna, fallback al detalle de recepcion
+                           COALESCE(
+                               NULLIF(ib2.DescripcionTela, ''),
+                               NULLIF(
+                                   (SELECT TOP 1
+                                       CASE WHEN r.Detalle LIKE 'TELA:%'
+                                            THEN LTRIM(SUBSTRING(r.Detalle, 7, 500))
+                                            ELSE r.Detalle END
+                                    FROM Recepciones r
+                                    WHERE r.Codigo = ib2.Referencia
+                                       OR r.Codigo = LEFT(ib2.Referencia, LEN(ib2.Referencia) - 2)
+                                   ), ''),
+                               NULL
+                           ) AS DescripcionTela
+                    FROM InventarioBobinas ib2
+                    WHERE ib2.InsumoID = i.InsumoID AND ib2.AreaID IN (${areaParams})
+                      AND ib2.Estado IN ('Disponible', 'En Uso', 'Pendiente')
+                    ORDER BY ib2.FechaIngreso ASC
                     FOR JSON PATH
                 ) as ActiveBatches
                 
@@ -560,6 +591,7 @@ exports.getInventoryReport = async (req, res) => {
 
         const result = await request.query(reportQuery);
 
+        
         const data = result.recordset.map(row => {
             const bruto = row.ConsumoBruto || 0;
             const wasteCierre = row.DesperdicioCierre || 0;
@@ -598,6 +630,447 @@ exports.deleteInsumo = async (req, res) => {
         if (err.number === 547) {
             return res.status(400).json({ error: "No se puede eliminar: El insumo tiene historial de movimientos." });
         }
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.updateInsumo = async (req, res) => {
+    const { id } = req.params;
+    const { nombre, codProd, unidad, categoria, stockMinimo, esProductivo, areas } = req.body;
+    try {
+        const pool = await getPool();
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        try {
+            await new sql.Request(transaction)
+                .input('ID', sql.Int, id)
+                .input('Nom', sql.NVarChar(100), nombre)
+                .input('Ref', sql.NVarChar(50), codProd)
+                .input('Uni', sql.VarChar(20), unidad || 'M')
+                .input('Cat', sql.NVarChar(50), categoria || null)
+                .input('Min', sql.Decimal(10, 2), stockMinimo || 0)
+                .input('Prod', sql.Bit, esProductivo ? 1 : 0)
+                .query(`
+                    UPDATE Insumos 
+                    SET Nombre=@Nom, CodigoReferencia=@Ref, UnidadDefault=@Uni, Categoria=@Cat, StockMinimo=@Min, EsProductivo=@Prod 
+                    WHERE InsumoID=@ID
+                `);
+
+            if (areas && Array.isArray(areas)) {
+                // Sincronizar Áreas
+                await new sql.Request(transaction)
+                    .input('ID', sql.Int, id)
+                    .query("DELETE FROM InsumosPorArea WHERE InsumoID = @ID");
+
+                for (const areaId of areas) {
+                    await new sql.Request(transaction)
+                        .input('AreaID', sql.VarChar(20), areaId)
+                        .input('InsumoID', sql.Int, id)
+                        .query("INSERT INTO InsumosPorArea (InsumoID, AreaID) VALUES (@InsumoID, @AreaID)");
+                }
+            }
+
+            await transaction.commit();
+            res.json({ success: true });
+        } catch (innerErr) {
+            await transaction.rollback();
+            throw innerErr;
+        }
+    } catch (err) { res.status(500).json({ error: err.message }); }
+};
+
+exports.getInventoryReport = async (req, res) => {
+    const { startDate, endDate, areaId } = req.query;
+
+    try {
+        const pool = await getPool();
+        const request = pool.request();
+
+        // Config fechas
+        if (startDate && endDate) {
+            request.input('Start', sql.DateTime, startDate + ' 00:00:00');
+            request.input('End', sql.DateTime, endDate + ' 23:59:59');
+        } else {
+            const d = new Date(); d.setDate(d.getDate() - 30);
+            request.input('Start', sql.DateTime, d);
+            request.input('End', sql.DateTime, new Date());
+        }
+
+        let dateFilter = '';
+        if (startDate && endDate) {
+            dateFilter = `AND ib.FechaAgotado BETWEEN @Start AND @End`;
+        }
+
+        // Config Areas Multiples
+        let areaFilter = '';
+        let areaSubQueryFilter = ''; // Para subqueries de Ordenes
+        let areas = [];
+        let areaIdsParam = '';
+
+        if (areaId) {
+            areas = areaId.split(',').map(a => a.trim()).filter(a => a);
+            areaIdsParam = areas.map((_, i) => `@R${i}`).join(',');
+            areas.forEach((a, i) => request.input(`R${i}`, sql.VarChar(20), a));
+
+            areaFilter = `AND (ib.AreaID IN (${areaIdsParam}) OR ib.AreaID IS NULL)`;
+            areaSubQueryFilter = `AND o.AreaID IN (${areaIdsParam})`;
+        }
+
+        const reportQuery = `
+            SELECT 
+                i.Nombre as Insumo,
+                i.UnidadDefault,
+                
+                -- Cantidad de Bobinas terminadas
+                COUNT(ib.BobinaID) as BobinasCerradas,
+                
+                -- Metros Brutos Consumidos (Salida de Inventario)
+                SUM(ISNULL(ib.MetrosIniciales,0) - ISNULL(ib.MetrosRestantes,0)) as ConsumoBruto,
+                
+                -- Desperdicio 1: Sobrantes al cerrar bobina
+                (
+                    SELECT ISNULL(ABS(SUM(mi.Cantidad)), 0)
+                    FROM MovimientosInsumos mi
+                    WHERE mi.InsumoID = i.InsumoID
+                    AND mi.TipoMovimiento = 'AJUSTE_DESECHO'
+                    AND mi.FechaMovimiento BETWEEN @Start AND @End
+                ) as DesperdicioCierre,
+
+                -- Desperdicio 2: Órdenes Fallidas (Producción Defectuosa - Ordenes 'F')
+                (
+                    SELECT ISNULL(SUM(ao.Metros * ISNULL(ao.Copias,1)), 0)
+                    FROM dbo.ArchivosOrden ao
+                    INNER JOIN dbo.Ordenes o ON ao.OrdenID = o.OrdenID
+                    WHERE o.Material LIKE '%' + i.Nombre + '%' 
+                    AND (
+                        o.CodigoOrden LIKE 'F%'       -- Empieza con F (ej: FX123)
+                        OR o.CodigoOrden LIKE '%-F%'  -- Contiene -F (ej: 44-F123)
+                        OR o.CodigoOrden LIKE '% F%'  -- Contiene espacio F (ej: 44 F123)
+                        OR o.Estado IN ('Falla', 'FALLA') 
+                        OR ao.EstadoArchivo IN ('Falla', 'FALLA')
+                        OR o.falla = 1 
+                    )
+                    AND o.FechaIngreso BETWEEN @Start AND @End
+                    ${areaId ? areaSubQueryFilter : ""}
+                ) as DesperdicioProduccion,
+
+                -- Desperdicio 3: Mermas declaradas en cambios de bobina (Reimpresiones)
+                (
+                    SELECT ISNULL(ABS(SUM(mi.Cantidad)), 0)
+                    FROM MovimientosInsumos mi
+                    WHERE mi.InsumoID = i.InsumoID
+                    AND mi.TipoMovimiento = 'MERMA_REIMPRESION'
+                    AND mi.FechaMovimiento BETWEEN @Start AND @End
+                ) as DesperdicioReimpresion,
+
+                -- Ingresos
+                (
+                    SELECT ISNULL(SUM(Cantidad), 0)
+                    FROM MovimientosInsumos mi
+                    WHERE mi.InsumoID = i.InsumoID
+                    AND mi.TipoMovimiento = 'INGRESO'
+                    AND mi.FechaMovimiento BETWEEN @Start AND @End
+                ) as Ingresos
+
+            FROM Insumos i
+            LEFT JOIN InventarioBobinas ib ON i.InsumoID = ib.InsumoID AND ib.Estado IN ('Agotado', 'Cerrado') ${dateFilter.replace('ib.', 'ib.')}
+            WHERE 1=1
+            ${areaId ? `AND i.InsumoID IN (SELECT InsumoID FROM InventarioBobinas WHERE AreaID IN (${areaIdsParam}) UNION SELECT InsumoID FROM InsumosPorArea WHERE AreaID IN (${areaIdsParam}))` : ""}
+            GROUP BY i.InsumoID, i.Nombre, i.UnidadDefault
+            HAVING (SUM(ISNULL(ib.MetrosIniciales,0)) > 0 OR (SELECT COUNT(*) FROM MovimientosInsumos WHERE InsumoID=i.InsumoID) > 0)
+        `;
+
+        const result = await request.query(reportQuery);
+
+        const data = result.recordset.map(row => {
+            const bruto = row.ConsumoBruto || 0;
+            const wasteCierre = row.DesperdicioCierre || 0;
+            const wasteProd = row.DesperdicioProduccion || 0;
+            const wasteReimp = row.DesperdicioReimpresion || 0;
+
+            const totalWaste = wasteCierre + wasteProd + wasteReimp;
+            const neto = bruto - totalWaste;
+
+            return {
+                ...row,
+                DesperdicioReimpresion: wasteReimp,
+                DesperdicioTotal: totalWaste,
+                ConsumoNeto: neto > 0 ? neto : 0,
+                PorcentajeDesperdicio: bruto > 0 ? ((totalWaste / bruto) * 100).toFixed(1) : (totalWaste > 0 ? '100.0' : '0.0')
+            };
+        });
+
+        res.json(data);
+
+    } catch (err) {
+        logger.error("Error getInventoryReport:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+exports.deleteInsumo = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const pool = await getPool();
+        await pool.request()
+            .input('ID', sql.Int, id)
+            .query("DELETE FROM Insumos WHERE InsumoID = @ID");
+        res.json({ success: true });
+    } catch (err) {
+        if (err.number === 547) {
+            return res.status(400).json({ error: "No se puede eliminar: El insumo tiene historial de movimientos." });
+        }
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ==========================================
+// 9. CONFIRMAR MEDIDA (Tela de Cliente)
+// ==========================================
+exports.confirmarMedida = async (req, res) => {
+    const { bobinaId, metrosReales, ancho, peso } = req.body;
+    if (!bobinaId || metrosReales == null) {
+        return res.status(400).json({ error: 'Faltan parámetros: bobinaId y metrosReales son requeridos.' });
+    }
+    const metrosRealesNum = parseFloat(metrosReales);
+    if (isNaN(metrosRealesNum) || metrosRealesNum <= 0) {
+        return res.status(400).json({ error: 'metrosReales debe ser un número mayor a 0.' });
+    }
+
+    // Operario desde JWT
+    const operarioId  = req.user?.id || 1;
+    const operarioNom = req.user?.name || req.user?.username || 'Operario';
+    const userAreaKey = (req.user?.areaKey || '').trim().toUpperCase();
+    const userRol     = (req.user?.role || req.user?.rol || '').toUpperCase();
+    const esAdmin     = userRol === 'ADMIN' || userRol === 'ADMINISTRADOR';
+
+    try {
+        const pool = await getPool();
+
+        // 1. Buscar la bobina
+        const bobRes = await pool.request()
+            .input('BID', sql.Int, bobinaId)
+            .query(`
+                SELECT BobinaID, InsumoID, AreaID, Estado, MetrosIniciales, MetrosRestantes, ClienteID, CodigoEtiqueta, Ancho, Peso
+                FROM InventarioBobinas
+                WHERE BobinaID = @BID
+            `);
+
+        if (!bobRes.recordset.length) {
+            return res.status(404).json({ error: 'Bobina no encontrada.' });
+        }
+
+        const bobina = bobRes.recordset[0];
+
+        // 2. Solo bobinas de tela de cliente (ClienteID != null)
+        if (!bobina.ClienteID) {
+            return res.status(400).json({ error: 'Esta bobina no es de tela de cliente.' });
+        }
+
+        // 3. Solo estado Pendiente
+        if (bobina.Estado !== 'Pendiente') {
+            return res.status(400).json({ error: `La bobina ya fue confirmada (Estado actual: ${bobina.Estado}).` });
+        }
+
+        // 4. Restricción de área: solo el área dueña (o ADMIN)
+        const bobinaArea = (bobina.AreaID || '').trim().toUpperCase();
+        if (!esAdmin && userAreaKey && userAreaKey !== bobinaArea) {
+            return res.status(403).json({
+                error: `Solo el área ${bobina.AreaID} puede confirmar esta tela. Tu área: ${req.user?.areaKey || 'N/A'}`
+            });
+        }
+
+        // 5. Calcular diferencia y construir observación
+        const declarados = parseFloat(bobina.MetrosIniciales) || 0;
+        const diferencia = metrosRealesNum - declarados;
+        const pctDif     = declarados > 0 ? Math.abs(diferencia / declarados) * 100 : 0;
+        const alertaDif  = pctDif > 10;
+
+        const anchoNum = ancho != null ? (parseFloat(ancho) || null) : null;
+        const pesoNum  = peso  != null ? (parseFloat(peso)  || null) : null;
+
+        const dimStr = [
+            anchoNum !== null ? `A:${anchoNum.toFixed(2)}m` : '',
+            pesoNum  !== null ? `P:${pesoNum.toFixed(2)}kg` : ''
+        ].filter(Boolean).join(' ');
+
+        const descripcion = `Declarados: ${declarados.toFixed(2)}m → Medidos: ${metrosRealesNum.toFixed(2)}m` +
+            (dimStr ? ` [${dimStr}]` : '') +
+            (alertaDif ? ` ⚠️ Diferencia ${diferencia > 0 ? '+' : ''}${diferencia.toFixed(2)}m (${pctDif.toFixed(1)}%)` : '');
+
+        // 6. Actualizar bobina: MetrosRestantes = real, Estado = Disponible
+        //    Ancho y Peso se actualizan si se enviaron valores
+        const updateReq = pool.request()
+            .input('BID', sql.Int,          bobinaId)
+            .input('Mts', sql.Decimal(10,2), metrosRealesNum);
+
+        // Ancho/Peso: los valores REALES confirmados van a AnchoReal/PesoReal
+        // Los declarados (Ancho/Peso) quedan intactos para comparar
+        let setMedidas = '';
+        if (anchoNum !== null) { updateReq.input('AnchoReal', sql.Decimal(10,2), anchoNum); setMedidas += ', AnchoReal = @AnchoReal'; }
+        if (pesoNum  !== null) { updateReq.input('PesoReal',  sql.Decimal(10,2), pesoNum);  setMedidas += ', PesoReal  = @PesoReal';  }
+
+        await updateReq.query(`
+            UPDATE InventarioBobinas
+            SET MetrosRestantes = @Mts,
+                Estado          = 'Disponible'
+                ${setMedidas}
+            WHERE BobinaID = @BID AND Estado = 'Pendiente'
+        `);
+
+        // 7. Registrar en MovimientosInsumos
+        await pool.request()
+            .input('IID',  sql.Int,          bobina.InsumoID)
+            .input('BID',  sql.Int,          bobinaId)
+            .input('Dif',  sql.Decimal(10,2), diferencia)
+            .input('UID',  sql.Int,           operarioId)
+            .input('Desc', sql.NVarChar(500), descripcion)
+            .query(`
+                INSERT INTO MovimientosInsumos (InsumoID, BobinaID, TipoMovimiento, Cantidad, Referencia, UsuarioID, FechaMovimiento)
+                VALUES (@IID, @BID, 'CONFIRMACION_MEDIDA', @Dif, @Desc, @UID, GETDATE())
+            `);
+
+        logger.info(`[CONFIRMAR-MEDIDA] BobinaID=${bobinaId} | ${descripcion} | Por: ${operarioNom}`);
+
+        res.json({
+            success:   true,
+            alerta:    alertaDif,
+            alertaMsg: alertaDif ? `⚠️ La diferencia es ${pctDif.toFixed(1)}% (${diferencia > 0 ? '+' : ''}${diferencia.toFixed(2)} m)` : null,
+            declarados,
+            medidos:   metrosRealesNum,
+            diferencia,
+        });
+
+    } catch (err) {
+        logger.error('[CONFIRMAR-MEDIDA] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ==========================================
+// 10. ESTADO DE TELA CLIENTE (Estado de cuenta por bobina)
+// ==========================================
+exports.getEstadoTela = async (req, res) => {
+    const { bobinaId } = req.query;
+    if (!bobinaId) return res.status(400).json({ error: 'bobinaId requerido' });
+
+    try {
+        const pool = await getPool();
+
+        // 1. Datos de la bobina — ClienteID ya contiene el nombre del cliente (texto)
+        const bobRes = await pool.request()
+            .input('BID', sql.Int, bobinaId)
+            .query(`
+                SELECT
+                    ib.BobinaID,
+                    ib.CodigoEtiqueta,
+                    ib.MetrosIniciales  AS Declarados,
+                    ib.MetrosRestantes  AS SaldoActual,
+                    ib.Estado,
+                    ib.FechaIngreso,
+                    ib.LoteProveedor,
+                    ib.ClienteID,
+                    ib.AreaID,
+                    ib.Referencia,
+                    ib.Ancho,        ib.AnchoReal,
+                    ib.Peso,         ib.PesoReal,
+                    ins.Nombre          AS TipoTela,
+                    -- Nombre del cliente desde tabla local Clientes (ClienteID guarda CliIdCliente)
+                    COALESCE(
+                        NULLIF(c.NombreFantasia, ''),
+                        c.Nombre,
+                        ib.ClienteID
+                    )                   AS NombreCliente,
+                    -- DescripcionTela: directo de la columna, fallback al detalle de recepcion
+                    COALESCE(
+                        NULLIF(ib.DescripcionTela, ''),
+                        NULLIF(
+                            CASE WHEN r.Detalle LIKE 'TELA:%'
+                                 THEN LTRIM(SUBSTRING(r.Detalle, 7, 500))
+                                 ELSE r.Detalle END, ''),
+                        lb.Descripcion,
+                        ins.Nombre
+                    )                   AS DescripcionTela
+                FROM InventarioBobinas ib
+                JOIN Insumos ins ON ins.InsumoID = ib.InsumoID
+                LEFT JOIN Clientes c WITH(NOLOCK)
+                    ON c.CliIdCliente = TRY_CAST(ib.ClienteID AS INT)
+                LEFT JOIN Logistica_Bultos lb ON lb.CodigoEtiqueta = ib.Referencia
+                LEFT JOIN Recepciones r
+                    ON r.Codigo = ib.Referencia
+                    OR r.Codigo = LEFT(ib.Referencia, LEN(ib.Referencia) - 2)
+                WHERE ib.BobinaID = @BID
+            `);
+
+        if (!bobRes.recordset.length) {
+            return res.status(404).json({ error: 'Bobina no encontrada' });
+        }
+        const bobina = bobRes.recordset[0];
+
+        // 2. Movimientos ordenados por fecha
+        const movRes = await pool.request()
+            .input('BID', sql.Int, bobinaId)
+            .query(`
+                SELECT
+                    m.MovimientoID,
+                    m.FechaMovimiento   AS Fecha,
+                    m.TipoMovimiento,
+                    m.Cantidad,
+                    m.Referencia                                          AS Detalle,
+                    COALESCE(u.Nombre, CAST(m.UsuarioID AS NVARCHAR))    AS Usuario
+                FROM MovimientosInsumos m
+                LEFT JOIN Usuarios u ON u.IdUsuario = m.UsuarioID
+                WHERE m.BobinaID = @BID
+                ORDER BY m.FechaMovimiento ASC
+            `);
+
+        // 3. Calcular saldo corrido — empieza en 0, el movimiento INGRESO establece la base
+        let saldoCorrido = 0;
+        const movimientos = movRes.recordset.map(m => {
+            const cant = parseFloat(m.Cantidad) || 0;
+            saldoCorrido += cant;
+            return { ...m, SaldoCorrido: Math.round(saldoCorrido * 100) / 100 };
+        });
+
+        res.json({ bobina, movimientos });
+
+    } catch (err) {
+        logger.error('[ESTADO-TELA] Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// ==========================================
+// BOBINAS DISPONIBLES PARA TELA DE CLIENTE
+// GET /inventory/tela-cliente/disponible?clienteId=2930
+// ==========================================
+exports.getBovinasDisponibles = async (req, res) => {
+    const { clienteId } = req.query;
+    if (!clienteId) return res.status(400).json({ error: 'clienteId requerido' });
+    try {
+        const pool = await getPool();
+        const result = await pool.request()
+            .input('CID', sql.VarChar(50), String(clienteId))
+            .query(`
+                SELECT
+                    ib.BobinaID,
+                    ib.CodigoEtiqueta,
+                    ib.MetrosRestantes,
+                    ib.Ancho,
+                    ib.FechaIngreso,
+                    ib.Referencia,
+                    COALESCE(NULLIF(ib.DescripcionTela, ''), ins.Nombre) AS DescripcionTela
+                FROM InventarioBobinas ib
+                JOIN Insumos ins ON ins.InsumoID = ib.InsumoID
+                WHERE TRY_CAST(ib.ClienteID AS INT) = TRY_CAST(@CID AS INT)
+                  AND ib.Estado = 'Disponible'
+                  AND ib.MetrosRestantes > 0.5
+                ORDER BY ib.FechaIngreso ASC
+            `);
+        res.json({ data: result.recordset });
+    } catch (err) {
+        logger.error('[BOBINAS-DISPONIBLES] Error:', err.message);
         res.status(500).json({ error: err.message });
     }
 };

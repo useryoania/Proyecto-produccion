@@ -87,6 +87,7 @@ app.use('/api/audit', require('./routes/auditRoutes'));
 app.use('/api/audit-deposito', require('./routes/auditDepositoRoutes'));
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));
+app.use('/api/reportes',  require('./routes/reportesRoutes'));
 app.use('/api/google', require('./routes/googleAuthRoutes'));
 
 
@@ -107,6 +108,7 @@ app.use('/api/delivery-times', require('./routes/deliveryTimesRoutes'));
 app.get('/api/debug/reprocess/:id', require('./controllers/debugController').reprocessOrder);
 app.use('/api/insumos', require('./routes/insumosRoutes'));
 app.use('/api/reception', require('./routes/receptionRoutes'));
+app.use('/api/tela-cliente', require('./routes/telaClienteRoutes')); // Módulo Tela de Cliente
 app.use('/api/inventory', require('./routes/inventoryRoutes'));
 app.use('/api/configuraciones', require('./routes/configuracionesRoutes'));
 app.use('/api/sincro', require('./routes/sincroRoutes'));

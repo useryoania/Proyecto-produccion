@@ -1,13 +1,34 @@
 const { getPool, sql } = require('../config/db');
 const logger = require('../utils/logger');
+const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+const pdfService = require('../services/pdfService');
+const fs   = require('fs');
+const path = require('path');
 
 // ==========================================
 // 1. GUARDAR RECEPCIÓN
 // ==========================================
 
 exports.createReception = async (req, res) => {
-    const { clienteId, tipo, servicios, telaCliente, bultos, referencias, usuario, observaciones,
-        insumoId, metros, loteProv, areaDestino } = req.body;
+    const { clienteId, tipo, servicios, telaCliente, bultos, referencias, observaciones,
+        insumoId, metros, loteProv, areaDestino, sumaTelaExistente,
+        // Para TELA DE CLIENTE: array de bobinas con medidas individuales
+        bobinas } = req.body;
+
+    // Para TELA DE CLIENTE usamos el array; para otros tipos el campo metros/bultos clásico
+    const esTela = tipo === 'TELA DE CLIENTE';
+    const bobinasList = esTela && Array.isArray(bobinas) && bobinas.length > 0
+        ? bobinas
+        : null;
+    // Total metros para referencias y comprobante (suma de largos si es tela con array)
+    const metrosTotal = bobinasList
+        ? bobinasList.reduce((s, b) => s + (parseFloat(b.largo) || 0), 0)
+        : (parseFloat(metros) || 0);
+    const cantBultos  = bobinasList ? bobinasList.length : (parseInt(bultos) || 1);
+
+    // Operario desde el JWT — el token lleva: { id, username, name (=Nombre), role, ... }
+    const operarioNombre = req.user?.name || req.user?.username || 'Operario';
+    const operarioId     = req.user?.id || 1;
 
     try {
         const pool = await getPool();
@@ -46,10 +67,10 @@ exports.createReception = async (req, res) => {
                 .input('Cliente', sql.VarChar(255), clienteId)
                 .input('Tipo', sql.VarChar(50), tipo)
                 .input('Detalle', sql.NVarChar(sql.MAX), detalle)
-                .input('Bultos', sql.Int, bultos || 1)
-                .input('Ref', sql.NVarChar(sql.MAX), [...(referencias || []), metros ? `Mts:${metros}` : ''].filter(Boolean).join(' | '))
+                .input('Bultos', sql.Int, cantBultos)
+                .input('Ref', sql.NVarChar(sql.MAX), [...(referencias || []), metrosTotal ? `Mts:${metrosTotal.toFixed(2)}` : ''].filter(Boolean).join(' | '))
                 .input('Obs', sql.NVarChar(sql.MAX), finalObs)
-                .input('UID', sql.Int, usuario ? usuario.id : 1) // Default to 1
+                .input('UID', sql.Int, operarioId)
                 .input('Ubi', sql.VarChar(50), 'Recepcion') // Default
                 .input('Next', sql.VarChar(50), nextSrv || null)
                 .query(`
@@ -66,60 +87,74 @@ exports.createReception = async (req, res) => {
                 .input('Cod', sql.VarChar(50), codigoBase)
                 .query("UPDATE Recepciones SET Codigo = @Cod WHERE RecepcionID = @ID");
 
-            // Loop Bultos
-            const qty = parseInt(bultos) || 1;
-            const isTelaInventory = (tipo === 'TELA DE CLIENTE' && insumoId && metros);
+            // ── Loop Bultos / Bobinas ──────────────────────────────────────
+            const qty = cantBultos;
+            const isTelaInventory = (esTela && insumoId && (bobinasList || metros));
 
             for (let i = 0; i < qty; i++) {
                 const uniqueCode = qty > 1 ? `${codigoBase}-${i + 1}` : codigoBase;
 
-                // 1. Logistica (SIN ProximoServicio, que falló)
+                // Medidas de esta bobina (array o campos clásicos)
+                const bDatos = bobinasList ? bobinasList[i] : null;
+                const bLargo = bDatos ? (parseFloat(bDatos.largo) || 0) : (parseFloat(metros) || 0);
+                const bAncho = bDatos ? (parseFloat(bDatos.ancho) || null) : null;
+                const bPeso  = bDatos ? (parseFloat(bDatos.peso)  || null) : null;
+
+                // 1. Logistica
                 await new sql.Request(transaction)
                     .input('Cod', sql.VarChar, uniqueCode)
                     .input('Det', sql.NVarChar, detalle)
-                    .input('Tipo', sql.VarChar, tipo) // Use actual type
-                    .input('UID', sql.Int, usuario ? usuario.id : 1)
-                    .input('RID', sql.Int, newId) // Link to Recepcion Table
+                    .input('Tipo', sql.VarChar, tipo)
+                    .input('UID', sql.Int, operarioId)
+                    .input('RID', sql.Int, newId)
                     .query(`
                         INSERT INTO Logistica_Bultos (CodigoEtiqueta, Tipocontenido, OrdenID, RecepcionID, Descripcion, UbicacionActual, Estado, UsuarioCreador)
                         VALUES (@Cod, @Tipo, NULL, @RID, @Det, 'RECEPCION', 'EN_STOCK', @UID);
                     `);
 
-                // 2. Inventario (Si aplica)
+                // 2. Inventario (Tela de Cliente)
                 if (isTelaInventory) {
-                    // Generar código de bobina estilo BOB (Timestamp) para consistencia si se prefiere, 
-                    // pero para mantener simpleza ahora usaremos PRE como base o lo que el sistema permita.
-                    // El usuario mostró BOB-... en las filas buenas. Vamos a intentar emular eso o dejar PRE pero con datos correctos.
-                    // Si el usuario quiere BOB, deberiamos cambiar uniqueCode. 
-                    // PERO, lo crítico es AREA y CLIENTE.
-
-                    // Generar código BOB real (Timestamp + Random)
                     const bobinaCode = `BOB-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-                    const areaFinal = areaDestino || 'RECEPCION';
+                    const areaFinal  = areaDestino || 'RECEPCION';
 
-                    const invRes = await new sql.Request(transaction)
-                        .input('IID', sql.Int, insumoId)
-                        .input('Area', sql.VarChar(50), areaFinal)
-                        .input('Met', sql.Decimal(10, 2), metros)
-                        .input('Lote', sql.NVarChar(100), loteProv || 'S/L')
-                        .input('Code', sql.NVarChar(100), bobinaCode) // BOB-XXX
-                        .input('Ref', sql.NVarChar(100), uniqueCode)  // REFERENCIA: PRE-XXX
-                        .input('Cli', sql.VarChar(255), clienteId)    // ClienteID
-                        .query(`
-                            INSERT INTO InventarioBobinas (InsumoID, AreaID, MetrosIniciales, MetrosRestantes, Estado, LoteProveedor, CodigoEtiqueta, Referencia, ClienteID)
-                            OUTPUT INSERTED.BobinaID
-                            VALUES (@IID, @Area, @Met, @Met, 'Disponible', @Lote, @Code, @Ref, @Cli);
-                        `);
+                    const req2 = new sql.Request(transaction)
+                        .input('IID',   sql.Int,            insumoId)
+                        .input('Area',  sql.VarChar(50),    areaFinal)
+                        .input('Met',   sql.Decimal(10,2),  bLargo)
+                        .input('Lote',  sql.NVarChar(100),  loteProv || 'S/L')
+                        .input('Code',  sql.NVarChar(100),  bobinaCode)
+                        .input('Ref',   sql.NVarChar(100),  uniqueCode)
+                        .input('Cli',   sql.VarChar(255),   clienteId)
+                        .input('Desc',  sql.NVarChar(200),  telaCliente || null);  // Nombre de la tela
+
+                    if (bAncho !== null) req2.input('Ancho', sql.Decimal(10,2), bAncho);
+                    if (bPeso  !== null) req2.input('Peso',  sql.Decimal(10,2), bPeso);
+
+                    const invRes = await req2.query(`
+                        INSERT INTO InventarioBobinas
+                            (InsumoID, AreaID, MetrosIniciales, MetrosRestantes, Estado, LoteProveedor,
+                             CodigoEtiqueta, Referencia, ClienteID, DescripcionTela
+                             ${bAncho !== null ? ', Ancho' : ''}
+                             ${bPeso  !== null ? ', Peso'  : ''})
+                        OUTPUT INSERTED.BobinaID
+                        VALUES (@IID, @Area, @Met, @Met, 'Pendiente', @Lote, @Code, @Ref, @Cli, @Desc
+                            ${bAncho !== null ? ', @Ancho' : ''}
+                            ${bPeso  !== null ? ', @Peso'  : ''});
+                    `);
 
                     const bobinaId = invRes.recordset[0].BobinaID;
 
-                    // Registro Movimiento
+                    // Descripción del movimiento incluyendo dimensiones
+                    const dimStr = [bAncho !== null ? `A:${bAncho.toFixed(2)}m` : '', bPeso !== null ? `P:${bPeso.toFixed(2)}kg` : '']
+                        .filter(Boolean).join(' ');
+                    const refStr = `Ingreso T.Cliente ${uniqueCode}${dimStr ? ` [${dimStr}]` : ''}`;
+
                     await new sql.Request(transaction)
-                        .input('IID', sql.Int, insumoId)
-                        .input('BID', sql.Int, bobinaId)
-                        .input('Cant', sql.Decimal(10, 2), metros)
-                        .input('Ref', sql.NVarChar(200), `Ingreso T.Cliente ${uniqueCode}`)
-                        .input('UID', sql.Int, usuario ? usuario.id : null)
+                        .input('IID',  sql.Int,           insumoId)
+                        .input('BID',  sql.Int,           bobinaId)
+                        .input('Cant', sql.Decimal(10,2), bLargo)
+                        .input('Ref',  sql.NVarChar(200), refStr)
+                        .input('UID',  sql.Int,           operarioId)
                         .query(`
                             INSERT INTO MovimientosInsumos (InsumoID, BobinaID, TipoMovimiento, Cantidad, Referencia, UsuarioID)
                             VALUES (@IID, @BID, 'INGRESO', @Cant, @Ref, @UID)
@@ -179,7 +214,40 @@ exports.createReception = async (req, res) => {
             }
 
             await transaction.commit();
-            res.json({ success: true, ordenAsignada: codigoBase, message: `Orden ${codigoBase} guardada correctamente.` });
+
+            // ============================================================
+            // GENERAR Y GUARDAR COMPROBANTE PDF (para TELA DE CLIENTE)
+            // ============================================================
+            let comprobantePath = null;
+            if (tipo === 'TELA DE CLIENTE') {
+                try {
+                    comprobantePath = await generarComprobanteRecepcion({
+                        codigo:              codigoBase,
+                        clienteId,
+                        tipo,
+                        telaCliente,
+                        metros:              metrosTotal,
+                        bultos:              qty,
+                        bobinas:             bobinasList,
+                        areaDestino,
+                        loteProv,
+                        observaciones:       finalObs,
+                        operario:            operarioNombre,
+                        fecha:               new Date(),
+                        sumaTelaExistente:   sumaTelaExistente || null,
+                    });
+                } catch (pdfErr) {
+                    logger.warn('[RECEPCION] Error generando comprobante PDF (no bloquea):', pdfErr.message);
+                }
+            }
+
+            res.json({
+                success:         true,
+                ordenAsignada:   codigoBase,
+                comprobantePath: comprobantePath || null,
+                operario:        operarioNombre,
+                message:         `Orden ${codigoBase} guardada correctamente.`
+            });
 
         } catch (inner) {
             await transaction.rollback();
@@ -402,5 +470,112 @@ exports.getPotentialOrdersForFabric = async (req, res) => {
     } catch (err) {
         logger.error("Error getPotentialOrdersForFabric:", err);
         res.status(500).json({ error: err.message });
+    }
+};
+
+// ============================================================
+// HELPER: Generar comprobante PDF estilo Macrosoft
+// ============================================================
+const generarComprobanteRecepcion = async ({ codigo, clienteId, tipo, telaCliente, metros, bultos,
+    bobinas, areaDestino, loteProv, observaciones, operario, fecha, sumaTelaExistente }) => {
+
+    const doc      = await PDFDocument.create();
+    // ~80mm x 160mm en puntos  (1mm ≈ 2.835 pt)
+    const page     = doc.addPage([226.77, 453.54]);
+    const { width, height } = page.getSize();
+    const font     = await doc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
+
+    // ── CABECERA OSCURA (idéntica a pdfService) ────────────────────────
+    page.drawRectangle({ x: 0, y: height - 70, width, height: 70, color: rgb(0.08, 0.08, 0.12) });
+    page.drawText('USER', { x: 10, y: height - 28, size: 18, font: fontBold, color: rgb(1, 1, 1) });
+    page.drawText('Atención al Cliente', { x: 10, y: height - 44, size: 7.5, font, color: rgb(0.65, 0.65, 0.75) });
+    page.drawText('Recepción de Tela', { x: 10, y: height - 56, size: 7, font, color: rgb(0.5, 0.7, 1) });
+
+    // Código en la cabecera (alineado a la derecha)
+    const codLen   = codigo.length * 6.5;
+    const codeX    = Math.max(width - 12 - codLen, 80);
+    page.drawText(codigo, { x: codeX, y: height - 44, size: 12, font: fontBold, color: rgb(1, 0.4, 0.4) });
+
+    // ── FILAS DE DATOS ─────────────────────────────────────────────────
+    const fmtDate = (d) => {
+        try {
+            return new Date(d).toLocaleString('es-UY', {
+                day: '2-digit', month: '2-digit', year: 'numeric',
+                hour: '2-digit', minute: '2-digit',
+            });
+        } catch { return String(d); }
+    };
+
+    // Filas de detalle por bobina (si se enviaron con medidas individuales)
+    const bobinaRows = Array.isArray(bobinas) && bobinas.length > 0
+        ? bobinas.map((b, idx) => {
+            const partes = [`${parseFloat(b.largo||0).toFixed(2)}m`];
+            if (b.ancho) partes.push(`A:${parseFloat(b.ancho).toFixed(2)}m`);
+            if (b.peso)  partes.push(`P:${parseFloat(b.peso).toFixed(2)}kg`);
+            return [`Bob.${idx+1}`, partes.join(' · ')];
+          })
+        : [];
+
+    const filas = [
+        ['Fecha',              fmtDate(fecha)],
+        ['Cliente',            clienteId],
+        ['Recibido por',       operario],
+        ['Tipo de Tela',       telaCliente || '-'],
+        ...(sumaTelaExistente ? [['Suma a tela',      sumaTelaExistente]] : []),
+        ['Mts Total / Bultos', `${metros ? parseFloat(metros).toFixed(2) + ' m' : '-'} / ${bultos}`],
+        ...bobinaRows,
+        ['Area Destino',       areaDestino || '-'],
+        ...(loteProv         ? [['Lote Proveedor',  loteProv]] : []),
+        ...(observaciones    ? [['Observaciones',   observaciones.substring(0, 45)]] : []),
+    ];
+
+    let y = height - 84;
+    filas.forEach(([label, value], i) => {
+        if (i % 2 === 0) {
+            page.drawRectangle({ x: 0, y: y - 4, width, height: 16, color: rgb(0.96, 0.96, 0.96) });
+        }
+        page.drawText(`${label}:`, { x: 8,            y, size: 7.5, font,     color: rgb(0.4, 0.4, 0.4) });
+        const val = (value || '—').substring(0, 30);
+        page.drawText(val,          { x: width / 2 - 5, y, size: 8,   font: fontBold, color: rgb(0.08, 0.08, 0.08) });
+        y -= 18;
+    });
+
+    // ── PIE ────────────────────────────────────────────────────────────
+    page.drawLine({ start: { x: 8, y: 30 }, end: { x: width - 8, y: 30 }, thickness: 0.5, color: rgb(0.7, 0.7, 0.7) });
+    page.drawText('Conserve este comprobante · USER ERP', { x: 10, y: 18, size: 6.5, font, color: rgb(0.5, 0.5, 0.5) });
+    page.drawText(`Generado: ${fmtDate(new Date())}`,     { x: 10, y: 8,  size: 5.5, font, color: rgb(0.7, 0.7, 0.7) });
+
+    const pdfBytes = await doc.save();
+
+    // Guardar en comprobantesPagos/recepciones/
+    const baseDir  = process.env.COMPROBANTES_PATH || path.join(__dirname, '..', 'comprobantesPagos');
+    const dir      = path.join(baseDir, 'recepciones');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+    const fileName = `${codigo.replace(/[<>:"/\\|?*]/g, '_')}.pdf`;
+    const filePath = path.join(dir, fileName);
+    fs.writeFileSync(filePath, Buffer.from(pdfBytes));
+    logger.info(`[RECEPCION-PDF] Comprobante guardado: ${filePath}`);
+
+    return `/recepciones/${fileName}`; // ruta relativa para servir desde el backend
+};
+
+// ==========================================
+// 7. GUARDAR COMPROBANTE (base64 → disco)
+//    Mismo mecanismo que /contabilidad/caja/guardar-comprobante
+// ==========================================
+exports.guardarComprobante = async (req, res) => {
+    const { nombreDocumento, pdfBase64 } = req.body;
+    if (!nombreDocumento || !pdfBase64) {
+        return res.status(400).json({ error: 'Faltan parámetros nombreDocumento o pdfBase64' });
+    }
+    try {
+        const filePath = pdfService.guardarDesdeBase64(nombreDocumento, pdfBase64, 'recepciones');
+        logger.info('[RECEPCION-COMPROBANTE] Guardado: ' + filePath);
+        return res.json({ success: true, path: filePath });
+    } catch (err) {
+        logger.error('[RECEPCION-COMPROBANTE] Error al guardar: ' + err.message);
+        return res.status(500).json({ error: err.message });
     }
 };

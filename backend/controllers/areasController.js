@@ -12,7 +12,7 @@ exports.getAllAreas = async (req, res) => {
         const pool = await getPool();
 
         // 🛑 CONSULTA MODIFICADA: Devuelve nombres de columna estándar para consistencia
-        const { productive, withStock } = req.query;
+        const { productive, withStock, withTelaCliente } = req.query;
         let query = "SELECT DISTINCT a.AreaID, a.Nombre, a.Categoria, a.RenderKey, a.ui_config, a.TieneLogisticaBultos, a.Productiva FROM dbo.Areas a";
 
         const conditions = [];
@@ -27,6 +27,18 @@ exports.getAllAreas = async (req, res) => {
                 EXISTS (SELECT 1 FROM InsumosPorArea ipa WHERE ipa.AreaID = a.AreaID) 
                 OR EXISTS (SELECT 1 FROM ConfigMapeoERP map WHERE map.AreaID_Interno = a.AreaID)
                 OR EXISTS (SELECT 1 FROM InventarioBobinas ib WHERE ib.AreaID = a.AreaID)
+            )`);
+        }
+
+        if (withTelaCliente === 'true') {
+            // Solo áreas que tengan al menos una bobina de tela de cliente activa
+            conditions.push(`EXISTS (
+                SELECT 1 FROM InventarioBobinas ib
+                WHERE ib.AreaID = a.AreaID
+                  AND ib.ClienteID IS NOT NULL
+                  AND ib.ClienteID <> ''
+                  AND ib.Estado IN ('Disponible', 'Pendiente', 'En Uso')
+                  AND ib.MetrosRestantes > 0
             )`);
         }
 

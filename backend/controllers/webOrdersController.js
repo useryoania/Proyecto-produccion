@@ -208,7 +208,8 @@ exports.createWebOrder = async (req, res) => {
     // --- 1. DATOS BÁSICOS ---
     const {
         idServicio, nombreTrabajo, prioridad, notasGenerales, configuracion,
-        especificacionesCorte, lineas, archivosReferencia, archivosTecnicos, serviciosExtras
+        especificacionesCorte, lineas, archivosReferencia, archivosTecnicos, serviciosExtras,
+        bobinaId   // TELA CLIENTE: BobinaID seleccionada por el usuario
     } = req.body;
 
     // Mapeo inverso para compatibilidad
@@ -791,25 +792,77 @@ exports.createWebOrder = async (req, res) => {
                     .input('ProIdProducto', sql.Int, exec.proIdProducto || null)
                     .input('CliIdCliente', sql.Int, cliIdCliente)
                     .input('F_EntSec', sql.DateTime, fechaEntradaSector)
+                    .input('BobID', sql.Int, bobinaId ? parseInt(bobinaId) : null) // TELA CLIENTE
                     .query(`
                         INSERT INTO Ordenes (
                             AreaID, Cliente, CodCliente, IdClienteReact, DescripcionTrabajo, Prioridad, 
                             FechaIngreso, FechaEstimadaEntrega, Material, Variante, 
                             CodigoOrden, NoDocERP, Nota, Magnitud, ProximoServicio, UM, Estado, EstadoenArea,
-                            CodArticulo, IdProductoReact, ProIdProducto, CliIdCliente, FechaEntradaSector
+                            CodArticulo, IdProductoReact, ProIdProducto, CliIdCliente, FechaEntradaSector,
+                            BobinaTelaID
                         )
                         OUTPUT INSERTED.OrdenID
                         VALUES (
                             @AreaID, @Cliente, @CodCliente, @IdClienteReact, @Desc, @Prio, 
                             GETDATE(), DATEADD(day, 3, GETDATE()), @Mat, @Var, 
                             @Cod, @ERP, @Nota, @Mag, @Prox, @UM, @Estado, @Estado,
-                            @CodArt, @IdProdReact, @ProIdProducto, @CliIdCliente, @F_EntSec
+                            @CodArt, @IdProdReact, @ProIdProducto, @CliIdCliente, @F_EntSec,
+                            @BobID
                         )
                     `);
 
                 const newOID = resOrder.recordset[0].OrdenID;
                 generatedOrders.push(exec.codigoOrden);
                 generatedIDs.push(newOID);
+
+                // --- TELA CLIENTE: Descontar metros de la bobina ---
+                // Solo se ejecuta en la orden principal (esPrincipal) que tenga bobinaId
+                if (bobinaId && !exec.isExtra) {
+                    const bid = parseInt(bobinaId);
+                    const checkBob = await new sql.Request(transaction)
+                        .input('BID', sql.Int, bid)
+                        .query(`SELECT MetrosRestantes, InsumoID FROM InventarioBobinas WHERE BobinaID = @BID`);
+
+                    if (checkBob.recordset.length > 0) {
+                        const { MetrosRestantes, InsumoID } = checkBob.recordset[0];
+                        const mag = parseFloat(exec.magnitudInicial) || 0;
+
+                        if (mag > 0 && mag <= MetrosRestantes) {
+                            // Descontar metros y marcar Agotado si quedan ≤ 0.5m
+                            await new sql.Request(transaction)
+                                .input('BID', sql.Int, bid)
+                                .input('Mts', sql.Decimal(10, 2), mag)
+                                .query(`
+                                    UPDATE InventarioBobinas
+                                    SET MetrosRestantes = MetrosRestantes - @Mts,
+                                        Estado = CASE
+                                            WHEN (MetrosRestantes - @Mts) <= 0.5 THEN 'Agotado'
+                                            ELSE Estado
+                                        END
+                                    WHERE BobinaID = @BID
+                                `);
+
+                            // Registrar movimiento CONSUMO_ORDEN
+                            await new sql.Request(transaction)
+                                .input('IID', sql.Int, InsumoID)
+                                .input('BID', sql.Int, bid)
+                                .input('OID', sql.Int, newOID)
+                                .input('Mts', sql.Decimal(10, 2), mag)
+                                .input('UID', sql.Int, req.user?.id || 1)
+                                .input('Ref', sql.NVarChar(300), `Consumo Orden ${newOID} - ${jobName}`)
+                                .query(`
+                                    INSERT INTO MovimientosInsumos
+                                        (InsumoID, BobinaID, TipoMovimiento, Cantidad, Referencia, UsuarioID, OrdenID, FechaMovimiento)
+                                    VALUES (@IID, @BID, 'CONSUMO_ORDEN', -@Mts, @Ref, @UID, @OID, GETDATE())
+                                `);
+
+                            logger.info(`[TELA-CLIENTE] Orden ${newOID}: descontados ${mag}m de bobina ${bid}. Restantes: ${MetrosRestantes - mag}m`);
+                        } else if (mag > MetrosRestantes) {
+                            throw new Error(`La bobina solo tiene ${MetrosRestantes}m disponibles. El pedido requiere ${mag}m.`);
+                        }
+                    }
+                }
+
 
                 // --- REGISTRAR ARCHIVOS ESPERADOS (PLACEHOLDERS) ---
                 let totalMagnitud = 0;
