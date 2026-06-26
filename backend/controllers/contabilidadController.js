@@ -2605,13 +2605,54 @@ exports.emitirFacturaAnticipo = async (req, res) => {
       CicIdCiclo = nuevoCiclo.CicIdCiclo;
     }
 
+    // Sincronizar MovImporte con MontoTotal actual antes de facturar
+    const accCurRes = await pool.request()
+      .input('CueId', sql.Int, CueIdCuenta)
+      .query('SELECT MonIdMoneda FROM dbo.CuentasCliente WHERE CueIdCuenta = @CueId');
+    const accMon = (accCurRes.recordset[0]?.MonIdMoneda || 1) === 2 ? 'USD' : 'UYU';
+
+    for (const rawId of ordenesIds) {
+      const ordId = parseInt(rawId, 10);
+      try {
+        const pcRes = await pool.request()
+          .input('OrdId', sql.Int, ordId)
+          .query(`
+            SELECT pc.MontoTotal, pc.Moneda
+            FROM dbo.PedidosCobranza pc
+            INNER JOIN dbo.Ordenes o ON LTRIM(RTRIM(CAST(o.NoDocERP AS VARCHAR))) = LTRIM(RTRIM(pc.NoDocERP))
+            WHERE o.OrdenID = @OrdId
+          `);
+        if (pcRes.recordset.length > 0) {
+          const { MontoTotal, Moneda } = pcRes.recordset[0];
+          if (Moneda === accMon) {
+            await pool.request()
+              .input('Imp', sql.Decimal(18, 2), -Math.abs(parseFloat(MontoTotal)))
+              .input('OrdId', sql.Int, ordId)
+              .input('CueId', sql.Int, CueIdCuenta)
+              .query(`
+                UPDATE dbo.MovimientosCuenta
+                SET MovImporte = @Imp
+                WHERE OrdIdOrden = @OrdId
+                  AND CueIdCuenta = @CueId
+                  AND MovTipo IN ('ORDEN', 'ORDEN_ANTICIPO')
+                  AND DocIdDocumento IS NULL
+              `);
+          }
+        }
+      } catch (syncErr) {
+        logger.warn(`[Contabilidad] No se pudo sincronizar movimiento para orden ${ordId}: ${syncErr.message}`);
+      }
+    }
+
     const inClause = ordenesIds.map(id => parseInt(id, 10)).join(',');
     await pool.request()
       .input('Cic', sql.Int, CicIdCiclo)
+      .input('CueId', sql.Int, CueIdCuenta)
       .query(`
         UPDATE dbo.MovimientosCuenta
         SET CicIdCiclo = @Cic
         WHERE OrdIdOrden IN (${inClause})
+          AND CueIdCuenta = @CueId
           AND MovTipo IN ('ORDEN', 'ORDEN_ANTICIPO')
           AND DocIdDocumento IS NULL
       `);

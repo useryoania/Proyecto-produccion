@@ -28,6 +28,7 @@ const lazyWithRetry = (importFn) => lazy(() =>
 
 const MachineDetailView = lazyWithRetry(() => import('../pages/MachineDetailView'));
 const Dashboard = lazyWithRetry(() => import('../pages/Dashboard'));
+const ProductionDashboard = lazyWithRetry(() => import('../pages/ProductionDashboard'));
 const AreaView = lazyWithRetry(() => import('../production/areas/AreaView'));
 const ConfigPage = lazyWithRetry(() => import('../pages/ConfigPage'));
 const LogisticsDashboard = lazyWithRetry(() => import('../logistics/LogisticsDashboard'));
@@ -70,6 +71,8 @@ const EntregaPedidosView = lazyWithRetry(() => import('../pages/customer-service
 const DepositoDashboard = lazyWithRetry(() => import('../logistics/DepositoDashboard'));
 const WmsOrderPage = lazyWithRetry(() => import('../pages/customer-service/WmsOrderPage'));
 const WmsLogisticsPage = lazyWithRetry(() => import('../pages/customer-service/WmsLogisticsPage'));
+const TelaClienteEstadoCuenta = lazyWithRetry(() => import('../pages/customer-service/TelaClienteEstadoCuenta'));
+const TelaClienteInventarioPage = lazyWithRetry(() => import('../pages/TelaClienteInventarioPage'));
 const NomenclatorsABM = lazyWithRetry(() => import('../pages/admin/NomenclatorsABM')); // <-- ADDED
 const SysAdminPage = lazyWithRetry(() => import('../pages/admin/SysAdminPage'));
 const LeadsCRMView = lazyWithRetry(() => import('../pages/ventas/LeadsCRMView'));
@@ -90,6 +93,7 @@ const BandejaDocumentosInternos    = lazyWithRetry(() => import('../pages/Bandej
 const CronAdminView                = lazyWithRetry(() => import('../pages/CronAdminView'));
 const CoordinacionView             = lazyWithRetry(() => import('../pages/CoordinacionView'));
 const ColorMatcherPage             = lazyWithRetry(() => import('../pages/ColorMatcherPage'));
+const ReportesPage                 = lazyWithRetry(() => import('../pages/ReportesPage'));
 
 // ============================================
 // 1. LUCIDE ICON MAP (override FA icons)
@@ -252,6 +256,10 @@ const lucideIconMapRaw = {
     'color':               Palette,
     'igualador de color':  Palette,
     'igualador color':     Palette,
+    // Reportes
+    'reportes':            FileText,
+    'reporte':             FileText,
+    'reportes dtf':        FileText,
     // Administración sub-items
     'caja': Banknote,
     'pagos': CreditCard,
@@ -606,6 +614,7 @@ const MainAppContent = ({ menuItems = [] }) => {
         }>
             <Routes location={location}>
                 <Route path="/" element={<Dashboard />} />
+                <Route path="/produccion/analytics" element={<ProductionDashboard />} />
                 <Route path="/consultas/ordenes" element={<OrdersQueryView />} />
                 <Route path="/consultas/integral" element={<IntegralOrderView />} />
                 <Route path="/consultas/rollos" element={<RollHistory />} />
@@ -623,6 +632,8 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <Route path="/logistica/dashboard-deposito" element={<DepositoDashboard />} />
                 <Route path="/atencion-cliente/entrega-pedidos" element={<EntregaPedidosView />} />
                 <Route path="/atencion-cliente/pedidos-wms" element={<WmsOrderPage />} />
+                <Route path="/atencion-cliente/tela-cuenta" element={<TelaClienteEstadoCuenta />} />
+<Route path="/atencion-cliente/inventario-tela" element={<TelaClienteInventarioPage />} />
                 <Route path="/logistica/pedidos-wms" element={<WmsLogisticsPage />} />
                 <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
                 <Route path="/admin/duplicate-clients" element={<DuplicateClientsPage />} />
@@ -660,6 +671,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <Route path="/admin/cron"                     element={<CronAdminView />} />
                 <Route path="/coordinacion"                   element={<CoordinacionView />} />
                 <Route path="/color"                          element={<ColorMatcherPage />} />
+                <Route path="/reportes"                      element={<ReportesPage />} />
                 <Route path="/*" element={<DynamicRouter menuItems={menuItems} />} />
             </Routes>
         </Suspense>

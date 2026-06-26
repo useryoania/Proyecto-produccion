@@ -2049,20 +2049,12 @@ async function cerrarCicloCompleto({
       }
 
       // Refactored to use crearDocumentoContable
-      // Factor de conversión de moneda para las LÍNEAS: debe ser el mismo
-      // criterio que se aplicó al header (docTotal) más arriba, si no las
-      // líneas quedan en la moneda de la cuenta y el total en la de la factura.
-      let factorLinea = 1;
-      if (targetMonId === 1 && accountMonId === 2) {
-        factorLinea = cotDolar;        // cuenta USD → factura UYU
-      } else if (targetMonId === 2 && accountMonId === 1) {
-        factorLinea = 1 / cotDolar;    // cuenta UYU → factura USD
-      }
-
+      // El frontend ya envía DcdSubtotal en la moneda de factura (hace la
+      // conversión usando d.Moneda). El backend solo mapea los valores.
       const mappedLineas = [];
       if (detallesParaPDF && detallesParaPDF.length > 0) {
         for (const d of detallesParaPDF) {
-          const bruto = (d.DcdSubtotal != null ? Number(d.DcdSubtotal) : 0) * factorLinea;
+          const bruto = d.DcdSubtotal != null ? Number(d.DcdSubtotal) : 0;
           const ivaRate = d.DcdIvaRate != null ? Number(d.DcdIvaRate) : 22;
           const divisor = 1 + ivaRate / 100;
           let dcdSubtotal  = bruto / divisor;
@@ -2073,19 +2065,15 @@ async function cerrarCicloCompleto({
           dcdImpuestos = Math.round(dcdImpuestos * 10000) / 10000;
           dcdTotal     = Math.round(dcdTotal     * 10000) / 10000;
 
-          const precioUnitario = d.DcdPrecioUnitario != null
-            ? Number(d.DcdPrecioUnitario) * factorLinea
-            : dcdSubtotal;
-
           mappedLineas.push({
             nomItem: (d.DcdNomItem || '').substring(0, 255),
             dscItem: (d.DcdDscItem || '').substring(0, 1000),
             cantidad: d.DcdCantidad != null ? Number(d.DcdCantidad) : 1,
-            precioUnitario: Math.round(precioUnitario * 10000) / 10000,
+            precioUnitario: d.DcdPrecioUnitario != null ? Number(d.DcdPrecioUnitario) : dcdSubtotal,
             subtotal: dcdSubtotal,
             impuestos: dcdImpuestos,
             total: dcdTotal,
-            totalDescuentos: (d.DcdTotalDescuentos || 0) * factorLinea,
+            totalDescuentos: d.DcdTotalDescuentos || 0,
             descuentoStr: d.DcdDescuentoStr || null
           });
         }

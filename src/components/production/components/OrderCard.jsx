@@ -96,9 +96,16 @@ const OrderCard = ({ order, onViewDetails, isSelected, onToggleSelect, minimal =
 
                     </div>
                     <div className="flex flex-col min-w-0">
-                        <span className="text-[10px] font-black text-zinc-700 uppercase leading-tight block break-words" title={order.client}>
-                            {order.client || 'Sin Cliente'}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-black text-zinc-700 uppercase leading-tight break-words" title={order.client}>
+                                {order.client || 'Sin Cliente'}
+                            </span>
+                            {order.clienteId && (
+                                <span className="text-[9px] font-black text-brand-cyan bg-brand-cyan/10 border border-brand-cyan/20 px-1 py-0.5 rounded leading-none uppercase tracking-wide shrink-0">
+                                    {order.clienteId}
+                                </span>
+                            )}
+                        </div>
                         <span className="text-[9px] font-bold text-zinc-500 uppercase leading-tight mt-0.5 block break-words whitespace-normal" title={order.material}>
                             {order.material || 'Sin material'}
                         </span>

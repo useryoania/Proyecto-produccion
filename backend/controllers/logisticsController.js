@@ -599,10 +599,11 @@ exports.getRemitoByCode = async (req, res) => {
             .query(`
                 SELECT i.*, b.Estado as BultoEstado, b.CodigoEtiqueta, b.Descripcion, b.OrdenID, b.ComprobantePath,
                        b.Tipocontenido, o.Cliente, o.DescripcionTrabajo, o.CodigoOrden, o.NoDocERP,
-                       CASE 
-                           WHEN b.Tipocontenido = 'ENCOMIENDA' AND ret.OReIdOrdenRetiro IS NOT NULL 
+                       cliord.IDCliente AS IDCliente,
+                       CASE
+                           WHEN b.Tipocontenido = 'ENCOMIENDA' AND ret.OReIdOrdenRetiro IS NOT NULL
                            THEN ISNULL(ret.FormaRetiro, 'R') + '-' + CAST(ret.OReIdOrdenRetiro AS VARCHAR)
-                           ELSE NULL 
+                           ELSE NULL
                        END AS RetiroAsociado,
                        ret.OReIdOrdenRetiro AS RetiroID,
                        ret.ReceptorNombre,
@@ -610,6 +611,7 @@ exports.getRemitoByCode = async (req, res) => {
                 FROM Logistica_EnvioItems i
                 INNER JOIN Logistica_Bultos b ON i.BultoID = b.BultoID
                 LEFT JOIN Ordenes o ON b.OrdenID = o.OrdenID
+                LEFT JOIN dbo.Clientes cliord WITH(NOLOCK) ON o.CliIdCliente = cliord.CliIdCliente
                 LEFT JOIN OrdenesRetiro ret ON b.OrdenID = ret.OReIdOrdenRetiro
                 LEFT JOIN Clientes cli ON ret.CodCliente = cli.CodCliente
                 WHERE i.EnvioID = @EID

@@ -174,6 +174,9 @@ async function changeOrderState(transaction, opts) {
         const upd = new sql.Request(transaction).input('TID', tidType, tidVal);
         if (estadoGeneral) { setParts.push('Estado = @EG'); upd.input('EG', sql.VarChar(50), estadoGeneral); }
         setParts.push('EstadoenArea = @EA'); upd.input('EA', sql.VarChar(50), estado);
+        if (estado && estado.trim().toUpperCase() === 'PRONTO') {
+            setParts.push('FechaPronto = GETDATE()');
+        }
         if (extraSet && typeof extraSet === 'object') {
             let i = 0;
             for (const [col, val] of Object.entries(extraSet)) {

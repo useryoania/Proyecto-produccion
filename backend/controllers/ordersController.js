@@ -1694,6 +1694,58 @@ exports.cancelOrder = async (req, res) => {
                 .input('IP', sql.VarChar, req.ip || '::1')
                 .query(`INSERT INTO Auditoria (IdUsuario, Accion, Detalles, DireccionIP, FechaHora) VALUES (@IdUser, @Accion, @Detalle, @IP, GETDATE())`);
 
+            // TELA CLIENTE: Devolver metros a la bobina si la orden tenía una asignada
+            const bobRes = await new sql.Request(transaction)
+                .input('OID', sql.Int, orderId)
+                .query(`SELECT BobinaTelaID, Magnitud FROM Ordenes WHERE OrdenID = @OID`);
+
+            if (bobRes.recordset.length > 0) {
+                const { BobinaTelaID, Magnitud } = bobRes.recordset[0];
+                const mag = parseFloat(Magnitud) || 0;
+
+                if (BobinaTelaID && mag > 0) {
+                    const bobInfoRes = await new sql.Request(transaction)
+                        .input('BID', sql.Int, BobinaTelaID)
+                        .query(`SELECT InsumoID, Estado FROM InventarioBobinas WHERE BobinaID = @BID`);
+
+                    if (bobInfoRes.recordset.length > 0) {
+                        const { InsumoID, Estado: estadoBob } = bobInfoRes.recordset[0];
+
+                        // Devolver metros; si estaba Agotado y ahora quedan > 0.5m → Disponible
+                        await new sql.Request(transaction)
+                            .input('BID', sql.Int, BobinaTelaID)
+                            .input('Mts', sql.Decimal(10, 2), mag)
+                            .query(`
+                                UPDATE InventarioBobinas
+                                SET MetrosRestantes = MetrosRestantes + @Mts,
+                                    Estado = CASE
+                                        WHEN Estado = 'Agotado' AND (MetrosRestantes + @Mts) > 0.5
+                                        THEN 'Disponible'
+                                        ELSE Estado
+                                    END
+                                WHERE BobinaID = @BID
+                            `);
+
+                        // Registrar DEVOLUCION_CANCELACION
+                        const userIdInt2 = parseInt(req.user?.id || req.user?.UsuarioID || 1) || 1;
+                        await new sql.Request(transaction)
+                            .input('IID', sql.Int, InsumoID)
+                            .input('BID', sql.Int, BobinaTelaID)
+                            .input('OID', sql.Int, orderId)
+                            .input('Mts', sql.Decimal(10, 2), mag)
+                            .input('UID', sql.Int, userIdInt2)
+                            .input('Ref', sql.NVarChar(300), `Devolución por cancelación Orden ${orderId}`)
+                            .query(`
+                                INSERT INTO MovimientosInsumos
+                                    (InsumoID, BobinaID, TipoMovimiento, Cantidad, Referencia, UsuarioID, OrdenID, FechaMovimiento)
+                                VALUES (@IID, @BID, 'DEVOLUCION_CANCELACION', @Mts, @Ref, @UID, @OID, GETDATE())
+                            `);
+
+                        logger.info(`[CANCEL-TELA] Orden ${orderId}: devueltos ${mag}m a bobina ${BobinaTelaID}`);
+                    }
+                }
+            }
+
             // Historial via servicio central
             await changeOrderState(transaction, {
                 target  : { type: 'ORDER', id: orderId },

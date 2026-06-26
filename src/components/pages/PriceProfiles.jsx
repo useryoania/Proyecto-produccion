@@ -1535,9 +1535,21 @@ const PriceProfiles = () => {
     const navigate = useNavigate();
 
     // VIEW STATE
-    const [activeTab, setActiveTab] = useState('base'); // 'base', 'profiles', 'assignments', 'simulator', 'reports'
+    const [activeTab, setActiveTab] = useState('base'); // 'base', 'profiles', 'assignments', 'simulator', 'reports', 'urgencia-excepciones'
     const [profiles, setProfiles] = useState([]);
     const [loading, setLoading] = useState(false);
+
+    // Excepciones Urgencia
+    const [urgExc, setUrgExc] = useState([]);
+    const [urgExcLoading, setUrgExcLoading] = useState(false);
+    const [urgExcCliSearch, setUrgExcCliSearch] = useState('');
+    const [urgExcCliResults, setUrgExcCliResults] = useState([]);
+    const [urgExcSelectedCli, setUrgExcSelectedCli] = useState(null);
+    const [urgExcProdSearch, setUrgExcProdSearch] = useState('');
+    const [urgExcProdResults, setUrgExcProdResults] = useState([]);
+    const [urgExcSelectedProd, setUrgExcSelectedProd] = useState(null); // null = cliente completo
+    const [urgExcCliDropOpen, setUrgExcCliDropOpen] = useState(false);
+    const [urgExcProdDropOpen, setUrgExcProdDropOpen] = useState(false);
 
     // Asignaciones
     const [customers, setCustomers] = useState([]); // Lista filtrada desde el servidor
@@ -1562,10 +1574,79 @@ const PriceProfiles = () => {
             loadAssignments();
             searchCustomers(debouncedFilter);
         }
+        if (activeTab === 'urgencia-excepciones') {
+            loadUrgExc();
+        }
     }, [activeTab, debouncedFilter]);
 
     const loadProfiles = () => {
         api.get('/profiles').then(res => setProfiles(res.data)).catch(console.error);
+    };
+
+    // --- Excepciones Urgencia ---
+    const loadUrgExc = async () => {
+        setUrgExcLoading(true);
+        try {
+            const res = await api.get('/profiles/urgencia-excepciones');
+            setUrgExc(res.data.data || []);
+        } catch (e) {
+            toast.error('Error cargando excepciones de urgencia');
+        } finally {
+            setUrgExcLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!urgExcCliSearch.trim()) { setUrgExcCliResults([]); setUrgExcCliDropOpen(false); return; }
+        const t = setTimeout(async () => {
+            try {
+                const res = await api.get('/clients/search', { params: { q: urgExcCliSearch, limit: 15 } });
+                setUrgExcCliResults(res.data?.data || res.data || []);
+                setUrgExcCliDropOpen(true);
+            } catch { setUrgExcCliResults([]); }
+        }, 300);
+        return () => clearTimeout(t);
+    }, [urgExcCliSearch]);
+
+    useEffect(() => {
+        if (!urgExcProdSearch.trim()) { setUrgExcProdResults([]); setUrgExcProdDropOpen(false); return; }
+        const t = setTimeout(async () => {
+            try {
+                const res = await api.get('/quotation/search-products', { params: { q: urgExcProdSearch } });
+                setUrgExcProdResults(res.data || []);
+                setUrgExcProdDropOpen(true);
+            } catch { setUrgExcProdResults([]); }
+        }, 300);
+        return () => clearTimeout(t);
+    }, [urgExcProdSearch]);
+
+    const handleAddUrgExc = async () => {
+        if (!urgExcSelectedCli) return toast.error('Seleccioná un cliente.');
+        try {
+            await api.post('/profiles/urgencia-excepciones', {
+                CliIdCliente:  urgExcSelectedCli.CliIdCliente,
+                ProIdProducto: urgExcSelectedProd?.ProIdProducto ?? null,
+            });
+            toast.success('Excepción guardada.');
+            setUrgExcSelectedCli(null);
+            setUrgExcSelectedProd(null);
+            setUrgExcCliSearch('');
+            setUrgExcProdSearch('');
+            loadUrgExc();
+        } catch (e) {
+            toast.error(e.response?.data?.error || 'Error al guardar excepción.');
+        }
+    };
+
+    const handleDeleteUrgExc = async (id) => {
+        if (!window.confirm('¿Eliminar esta excepción?')) return;
+        try {
+            await api.delete(`/profiles/urgencia-excepciones/${id}`);
+            toast.success('Excepción eliminada.');
+            loadUrgExc();
+        } catch (e) {
+            toast.error('Error al eliminar.');
+        }
     };
 
     const handleSelectProfile = async (p) => {
@@ -1713,6 +1794,12 @@ const PriceProfiles = () => {
                     className={`pb-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'reports' ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     <i className="fa-solid fa-microscope mr-2"></i> Inteligencia de Precios
+                </button>
+                <button
+                    onClick={() => setActiveTab('urgencia-excepciones')}
+                    className={`pb-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'urgencia-excepciones' ? 'border-orange-500 text-orange-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                >
+                    <i className="fa-solid fa-ban mr-2"></i> Excepciones Urgencia
                 </button>
             </div>
 
@@ -2100,6 +2187,160 @@ const PriceProfiles = () => {
                 {activeTab === 'reports' && (
                     <div className="h-full overflow-hidden">
                         <PriceReports customers={customers} onSearch={searchCustomers} />
+                    </div>
+                )}
+
+                {activeTab === 'urgencia-excepciones' && (
+                    <div className="h-full overflow-y-auto">
+                        <div className="max-w-3xl mx-auto space-y-6">
+
+                            {/* Formulario nueva excepción */}
+                            <div className="bg-white rounded-xl border border-orange-200 shadow-sm p-5">
+                                <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+                                    <i className="fa-solid fa-circle-plus text-orange-500"></i>
+                                    Nueva excepción
+                                </h3>
+                                <p className="text-xs text-slate-500 mb-4">
+                                    Si dejás el servicio vacío, el cliente queda exento de urgencia en <strong>todos</strong> los servicios.
+                                </p>
+
+                                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                    {/* Búsqueda cliente */}
+                                    <div className="relative">
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Cliente <span className="text-red-500">*</span></label>
+                                        {urgExcSelectedCli ? (
+                                            <div className="flex items-center gap-2 bg-orange-50 border border-orange-300 rounded-lg px-3 py-2 text-sm">
+                                                <span className="flex-1 font-medium text-slate-700">{urgExcSelectedCli.Nombre}</span>
+                                                <button onClick={() => { setUrgExcSelectedCli(null); setUrgExcCliSearch(''); }} className="text-slate-400 hover:text-red-500">
+                                                    <i className="fa-solid fa-xmark"></i>
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Buscar cliente..."
+                                                    value={urgExcCliSearch}
+                                                    onChange={e => setUrgExcCliSearch(e.target.value)}
+                                                    onFocus={() => urgExcCliResults.length > 0 && setUrgExcCliDropOpen(true)}
+                                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                                                />
+                                                {urgExcCliDropOpen && urgExcCliResults.length > 0 && (
+                                                    <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                                        {urgExcCliResults.map(c => (
+                                                            <button key={c.CliIdCliente} onClick={() => { setUrgExcSelectedCli(c); setUrgExcCliSearch(''); setUrgExcCliDropOpen(false); }}
+                                                                className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 border-b border-slate-100 last:border-0">
+                                                                <span className="font-medium">{c.Nombre}</span>
+                                                                <span className="text-slate-400 ml-2 text-xs">#{c.CliIdCliente}</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {/* Búsqueda servicio/material (opcional) */}
+                                    <div className="relative">
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1">Servicio / Material <span className="text-slate-400">(opcional)</span></label>
+                                        {urgExcSelectedProd ? (
+                                            <div className="flex items-center gap-2 bg-orange-50 border border-orange-300 rounded-lg px-3 py-2 text-sm">
+                                                <span className="flex-1 font-medium text-slate-700 truncate">{urgExcSelectedProd.Descripcion}</span>
+                                                <button onClick={() => { setUrgExcSelectedProd(null); setUrgExcProdSearch(''); }} className="text-slate-400 hover:text-red-500">
+                                                    <i className="fa-solid fa-xmark"></i>
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <input
+                                                    type="text"
+                                                    placeholder="Buscar servicio... (vacío = todos)"
+                                                    value={urgExcProdSearch}
+                                                    onChange={e => setUrgExcProdSearch(e.target.value)}
+                                                    onFocus={() => urgExcProdResults.length > 0 && setUrgExcProdDropOpen(true)}
+                                                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                                                />
+                                                {urgExcProdDropOpen && urgExcProdResults.length > 0 && (
+                                                    <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                                        {urgExcProdResults.slice(0, 30).map(p => (
+                                                            <button key={p.ProIdProducto} onClick={() => { setUrgExcSelectedProd(p); setUrgExcProdSearch(''); setUrgExcProdDropOpen(false); }}
+                                                                className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 border-b border-slate-100 last:border-0">
+                                                                <span className="font-medium">{p.Descripcion}</span>
+                                                                <span className="text-slate-400 ml-2 text-xs">{p.CodArticulo}</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="mt-4 flex justify-end">
+                                    <button onClick={handleAddUrgExc}
+                                        className="bg-orange-500 hover:bg-orange-600 text-white text-sm font-bold px-5 py-2 rounded-lg shadow transition">
+                                        <i className="fa-solid fa-plus mr-2"></i> Agregar excepción
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Tabla de excepciones */}
+                            <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+                                <div className="px-5 py-3 border-b bg-slate-50 flex justify-between items-center rounded-t-xl">
+                                    <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+                                        <i className="fa-solid fa-list text-orange-500"></i>
+                                        Excepciones activas
+                                    </h3>
+                                    <span className="text-xs text-slate-400">{urgExc.length} registro(s)</span>
+                                </div>
+
+                                {urgExcLoading ? (
+                                    <div className="p-8 text-center text-slate-400 text-sm">Cargando...</div>
+                                ) : urgExc.length === 0 ? (
+                                    <div className="p-8 text-center text-slate-400 text-sm">No hay excepciones configuradas.</div>
+                                ) : (
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="text-xs text-slate-500 uppercase border-b bg-slate-50">
+                                                <th className="text-left px-4 py-2">Cliente</th>
+                                                <th className="text-left px-4 py-2">Servicio / Material</th>
+                                                <th className="text-left px-4 py-2">Desde</th>
+                                                <th className="px-4 py-2"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {urgExc.map(ex => (
+                                                <tr key={ex.ID} className="border-b last:border-0 hover:bg-slate-50">
+                                                    <td className="px-4 py-2.5">
+                                                        <span className="font-medium text-slate-700">{ex.ClienteNombre}</span>
+                                                        <span className="text-slate-400 text-xs ml-1.5">#{ex.CliIdCliente}</span>
+                                                    </td>
+                                                    <td className="px-4 py-2.5">
+                                                        {ex.ProIdProducto ? (
+                                                            <span className="text-slate-700">{ex.ArticuloNombre || ex.CodArticulo}</span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 text-xs bg-orange-100 text-orange-700 font-semibold px-2 py-0.5 rounded-full">
+                                                                <i className="fa-solid fa-asterisk text-[10px]"></i> Todos los servicios
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-slate-400 text-xs">
+                                                        {new Date(ex.FechaAlta).toLocaleDateString('es-UY')}
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-right">
+                                                        <button onClick={() => handleDeleteUrgExc(ex.ID)}
+                                                            className="text-red-400 hover:text-red-600 transition p-1 rounded" title="Eliminar excepción">
+                                                            <i className="fa-solid fa-trash-can text-xs"></i>
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+
+                        </div>
                     </div>
                 )}
             </div>

@@ -58,5 +58,17 @@ export const inventoryService = {
     deleteInsumo: async (id) => {
         const response = await api.delete(`/inventory/insumos/${id}`);
         return response.data;
+    },
+
+    // Confirmar medida real — Tela de Cliente
+    confirmarMedida: async (bobinaId, metrosReales, ancho = null, peso = null) => {
+        const response = await api.post('/inventory/stock/confirmar-medida', { bobinaId, metrosReales, ancho, peso });
+        return response.data;
+    },
+
+    // Estado de cuenta por bobina de tela de cliente
+    getEstadoTela: async (bobinaId) => {
+        const response = await api.get(`/inventory/stock/estado-tela?bobinaId=${bobinaId}`);
+        return response.data;
     }
 };

@@ -459,7 +459,10 @@ const DispatchView = ({ selectedOrders: initialOrders = [], areaFilter, originAr
                                                     <div className="text-[10px] text-slate-400 font-normal">ID: {item.OrdenID || item.RetiroID || '-'}</div>
                                                 </td>
                                                 <td className="px-4 py-3 font-bold text-slate-800 whitespace-nowrap">
-                                                    {item.Cliente || item.ClienteRetiro || item.ReceptorNombre || 'S/D'}
+                                                    <div>{item.Cliente || item.ClienteRetiro || item.ReceptorNombre || 'S/D'}</div>
+                                                    {item.IDCliente && (
+                                                        <div className="text-[10px] font-black text-brand-cyan uppercase tracking-wide mt-0.5">{item.IDCliente}</div>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 text-xs text-slate-500 max-w-xs truncate" title={item.DescripcionTrabajo || item.Descripcion}>
                                                     {item.DescripcionTrabajo || item.Descripcion || '-'}

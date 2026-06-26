@@ -167,6 +167,7 @@ const FilePrintControl = ({ areaCode }) => {
           id: o.OrdenID,
           code: o.CodigoOrden,
           client: o.Cliente,
+          clienteId: o.IDCliente || '',
           material: o.Material,
           status: o.Estado,
           statusArea: o.EstadoenArea,
@@ -985,8 +986,15 @@ const FilePrintControl = ({ areaCode }) => {
                     <h1 className="text-[22px] font-black text-slate-800 tracking-tight leading-none">
                       {selectedOrder.code || selectedOrder.id}
                     </h1>
-                    <div className="text-sm font-bold text-slate-400 truncate max-w-[200px]">
-                      {selectedOrder.client}
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-bold text-slate-400 truncate max-w-[200px]">
+                        {selectedOrder.client}
+                      </div>
+                      {selectedOrder.clienteId && (
+                        <span className="text-[10px] font-black text-brand-cyan bg-brand-cyan/10 border border-brand-cyan/20 px-1.5 py-0.5 rounded uppercase tracking-wide shrink-0">
+                          {selectedOrder.clienteId}
+                        </span>
+                      )}
                     </div>
                     <span className="px-2 py-0.5 rounded bg-brand-cyan/10 text-brand-cyan text-[10px] font-black uppercase tracking-widest border border-brand-cyan/20">
                       SEC: {selectedOrder.sequence || '-'}

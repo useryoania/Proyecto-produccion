@@ -405,6 +405,27 @@ class PricingService {
             surchargeRules = surchargeRules.filter(r => r.PerfilID !== idUrgencia && r.NombrePerfil?.toLowerCase() !== 'urgente');
         }
 
+        // Excepción por cliente o cliente+servicio: si el cliente está en UrgenciaExcepciones, no aplica recargo urgente
+        if (numericCliId && surchargeRules.some(r => r.PerfilID === idUrgencia || r.NombrePerfil?.toLowerCase() === 'urgente')) {
+            try {
+                const excRes = await pool.request()
+                    .input('CliId', sql.Int, numericCliId)
+                    .input('ProId', sql.Int, resolvedProId || -1)
+                    .query(`
+                        SELECT TOP 1 ID FROM dbo.UrgenciaExcepciones
+                        WHERE CliIdCliente = @CliId
+                          AND Activo = 1
+                          AND (ProIdProducto IS NULL OR ProIdProducto = @ProId)
+                    `);
+                if (excRes.recordset.length > 0) {
+                    surchargeRules = surchargeRules.filter(r => r.PerfilID !== idUrgencia && r.NombrePerfil?.toLowerCase() !== 'urgente');
+                    traceDecision += `  [EXCEPCIÓN URGENCIA] Cliente ${numericCliId} exento del recargo urgente (tabla UrgenciaExcepciones).\n`;
+                }
+            } catch (excErr) {
+                logger.warn('[PricingService] No se pudo consultar UrgenciaExcepciones:', excErr.message);
+            }
+        }
+
         let totalRecargos = 0;
         if (precioFinalBase <= 0) {
             traceDecision += `  Recargos omitidos: precio ya es 0 (descuento total aplicado).\n`;
