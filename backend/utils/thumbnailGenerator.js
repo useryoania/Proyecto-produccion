@@ -7,7 +7,10 @@ const logger = require('./logger');
 
 const execFileAsync = promisify(execFile);
 
-const THUMBNAILS_DIR = path.join(__dirname, '..', 'thumbnails');
+// Carpeta donde se guardan los thumbnails en disco. Configurable por entorno (THUMBNAILS_PATH)
+// para poder ubicarla fuera del dir de la app (p. ej. /home/thumbnails y que sobreviva a deploys).
+// La URL pública sigue siendo /thumbnails/... (server.js la sirve desde esta misma carpeta).
+const THUMBNAILS_DIR = process.env.THUMBNAILS_PATH || path.join(__dirname, '..', 'thumbnails');
 
 /**
  * Genera un thumbnail JPG de la primera página de un PDF.
@@ -88,6 +91,8 @@ exports.generateImageThumbnail = async (buffer, codigoOrden, archivoId) => {
  * PNG/JPG → Sharp directo
  */
 exports.generateThumbnail = async (buffer, codigoOrden, archivoId, mimeOrExt = '') => {
+    // Las -F (fallas internas) no se muestran al cliente → no se genera su thumbnail.
+    if (String(codigoOrden || '').toUpperCase().includes('-F')) return null;
     const hint = String(mimeOrExt).toLowerCase();
     if (hint.includes('pdf')) {
         return exports.generatePdfThumbnail(buffer, codigoOrden, archivoId);

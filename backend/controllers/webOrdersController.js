@@ -1216,6 +1216,23 @@ exports.uploadOrderFile = async (req, res) => {
             }
         }
 
+        // Leer y guardar el perfil de color ICC incrustado (solo archivos de producción).
+        // Fire-and-forget como el thumbnail: no bloquea la respuesta de subida.
+        if (file.buffer && type === 'ORDEN' && dbId) {
+            const { extractColorProfile } = require('../utils/colorProfile');
+            extractColorProfile(file.buffer, finalName)
+                .then(async (perfil) => {
+                    if (!perfil) return;
+                    const p = await getPool();
+                    await p.request()
+                        .input('ID', sql.Int, dbId)
+                        .input('Perfil', sql.NVarChar(200), perfil)
+                        .query('UPDATE ArchivosOrden SET PerfilColor = @Perfil WHERE ArchivoID = @ID');
+                    logger.info(`🎨 [ColorProfile] ArchivoID=${dbId}: ${perfil}`);
+                })
+                .catch(e => logger.warn('[ColorProfile] Error guardando perfil:', e.message));
+        }
+
         const pool = await getPool();
         let orderID = null;
 

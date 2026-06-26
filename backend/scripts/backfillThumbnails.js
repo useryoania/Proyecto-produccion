@@ -32,7 +32,7 @@ function extractDriveId(raw) {
     return m ? m[1] : raw;
 }
 
-const THUMBNAILS_DIR = path.join(__dirname, '..', 'thumbnails');
+const THUMBNAILS_DIR = process.env.THUMBNAILS_PATH || path.join(__dirname, '..', 'thumbnails');
 
 function thumbnailExists(codigoOrden, archivoId) {
     return fs.existsSync(path.join(THUMBNAILS_DIR, String(codigoOrden), `${archivoId}.jpg`));

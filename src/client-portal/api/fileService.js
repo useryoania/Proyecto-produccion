@@ -8,7 +8,7 @@ export const STORAGE_TYPE = 'BASE64';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB
 const ALLOWED_FORMATS = [
-    'image/png', 'image/jpeg', 'image/jpg', 'application/pdf',
+    'image/png', 'application/pdf',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'application/vnd.ms-excel',
     'text/csv'
@@ -17,6 +17,12 @@ const ALLOWED_FORMATS = [
 export const validateFile = (file) => {
     if (!file) return { valid: false, error: 'No file selected' };
     if (file.size > MAX_FILE_SIZE) return { valid: false, error: 'Excede 500MB' };
+    // JPEG no se permite en producción: el arte va en PNG (fondo transparente) o PDF.
+    const ext = (file.name?.split('.').pop() || '').toLowerCase();
+    const mime = (file.type || '').toLowerCase();
+    if (mime === 'image/jpeg' || mime === 'image/jpg' || ext === 'jpg' || ext === 'jpeg') {
+        return { valid: false, error: 'No se permiten archivos JPEG. Subí el arte en PNG o PDF.' };
+    }
     return { valid: true };
 };
 
@@ -37,6 +43,33 @@ const getImageDimensions = (base64) => {
         };
         img.onerror = () => resolve(null);
         img.src = base64;
+    });
+};
+
+// Lee ancho/alto de un PNG desde su header (chunk IHDR), SIN decodificar la imagen.
+// Necesario en mobile: iOS Safari no puede decodificar PNG grandes (>~16,7 MP) con <img>,
+// pero el header son solo los primeros bytes, así que la medida sale igual.
+const getPngDimensionsFromHeader = (file) => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const buf = new Uint8Array(e.target.result);
+                // Firma PNG (89 50 4E 47) + IHDR como primer chunk (bytes 12-15 = "IHDR")
+                const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47;
+                const isIHDR = buf[12] === 0x49 && buf[13] === 0x48 && buf[14] === 0x44 && buf[15] === 0x52;
+                if (!isPng || !isIHDR) return resolve(null);
+                // Width: bytes 16-19, Height: bytes 20-23 (uint32 big-endian)
+                const u32 = (o) => (buf[o] * 0x1000000) + (buf[o + 1] << 16) + (buf[o + 2] << 8) + buf[o + 3];
+                const width = u32(16);
+                const height = u32(20);
+                resolve(width > 0 && height > 0 ? { width, height } : null);
+            } catch (_) {
+                resolve(null);
+            }
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsArrayBuffer(file.slice(0, 24)); // solo el header
     });
 };
 
@@ -249,9 +282,11 @@ export const fileService = {
             let hasDPI = true; // Por defecto true (para pdfs o si no aplica)
 
             if (detectedType.startsWith('image/')) {
-                // Para imágenes grandes, crear object URL temporal para getImageDimensions
-                const imgSrc = isLarge ? previewData : previewData;
-                const dims = await getImageDimensions(imgSrc);
+                // 1) Intentar leer dimensiones del HEADER (PNG IHDR), sin decodificar la imagen.
+                //    En mobile iOS Safari no decodifica PNG grandes (>~16,7 MP) con <img>.
+                // 2) Fallback a <img> para otros formatos o si el header no se pudo leer.
+                let dims = await getPngDimensionsFromHeader(file);
+                if (!dims) dims = await getImageDimensions(previewData);
                 if (dims) {
                     // Leer DPI real del archivo (no asumir 300)
                     const dpiResult = await getImageDPI(file);

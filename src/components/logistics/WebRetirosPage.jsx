@@ -1687,15 +1687,17 @@ const WebRetirosPage = () => {
                     animate={duplicateWarn === g.orderNumber ? { rotate: [0, -3, 3, -3, 3, 0] } : {}}
                     transition={duplicateWarn === g.orderNumber ? { duration: 0.2 } : { duration: 0 }}
                     onClick={() => {
-                      // Click manual: si está completo, resetea a 0; si no, suma uno.
+                      // El click NO marca (los bultos se confirman ESCANEANDO). Solo corrige: baja
+                      // un escaneo, por si se escaneó de más. Si no hay nada escaneado, no hace nada.
                       setScannedBultos(prev => {
                         const actual = prev[g.orderNumber] || 0;
-                        return { ...prev, [g.orderNumber]: actual >= g.total ? 0 : actual + 1 };
+                        if (actual <= 0) return prev;
+                        return { ...prev, [g.orderNumber]: actual - 1 };
                       });
                     }}
-                    className={`flex flex-row items-center justify-center gap-2 p-3 rounded-xl border-2 transition-colors cursor-pointer ${completo ? 'bg-green-100 border-green-500 shadow-sm hover:opacity-80' : 'bg-white border-slate-200 hover:border-slate-300'
+                    className={`flex flex-row items-center justify-center gap-2 p-3 rounded-xl border-2 transition-colors ${completo ? 'bg-green-100 border-green-500 shadow-sm cursor-pointer hover:opacity-80' : escaneados > 0 ? 'bg-amber-50 border-amber-300 cursor-pointer hover:opacity-80' : 'bg-white border-slate-200'
                       }`}>
-                    <div className={`shrink-0 ${completo ? 'text-green-700' : 'text-slate-400'}`}>
+                    <div className={`shrink-0 ${completo ? 'text-green-700' : escaneados > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
                       {completo ? <PackageCheck size={24} /> : <Package size={24} />}
                     </div>
                     <div className="text-base font-black text-slate-800 truncate">{g.orderNumber}</div>

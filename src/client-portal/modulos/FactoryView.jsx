@@ -227,8 +227,10 @@ export const FactoryView = () => {
     // Normaliza el docId a su parte numérica para que "DTF-416" y "416" agrupen igual.
     const normalizeDocId = (raw) => {
         if (!raw) return null;
-        const m = String(raw).match(/(\d+)$/);
-        return m ? m[1] : String(raw);
+        // Quitar el sufijo de parte "(1/2)" de las sub-órdenes multi-material antes de extraer el número.
+        const base = String(raw).replace(/\s*\(\d+\/\d+\)\s*$/, '');
+        const m = base.match(/(\d+)$/);
+        return m ? m[1] : base;
     };
 
     // Extrae el File ID de una URL completa de Drive o lo devuelve tal cual si ya es solo un ID
@@ -245,12 +247,14 @@ export const FactoryView = () => {
         // Ocultar solo las FALLAS (-F, internas/efímeras). Las REPOSICIONES (-R) el cliente SÍ las ve.
         return !code.includes('-F');
     }).forEach(order => {
-        // Agrupar por el número del CodigoOrden. Las reposiciones (DTF-571-R1) usan su código completo
-        // como grupo propio: son una orden nueva, no se mezclan con la madre.
+        // Agrupar por NoDocERP: las sub-órdenes de un mismo pedido (multi-material, p. ej. SUB-1082
+        // "(1/2)" y "(2/2)") comparten NoDocERP → se ven como UNA sola card (igual que el conteo del
+        // backend, que agrupa por ISNULL(NoDocERP, CodigoOrden)). Las reposiciones (-R) son órdenes
+        // nuevas → grupo propio aunque compartan NoDocERP con la madre.
         const isRepoOrder = /-R\d+$/i.test(order.CodigoOrden || '');
         const groupKey = isRepoOrder
             ? order.CodigoOrden
-            : (normalizeDocId(order.CodigoOrden) || order.CodigoOrden);
+            : (order.NoDocERP || normalizeDocId(order.CodigoOrden) || order.CodigoOrden);
         if (!projects[groupKey]) {
             projects[groupKey] = {
                 id: order.CodigoOrden,
@@ -264,6 +268,7 @@ export const FactoryView = () => {
                 um: null,
                 driveFileId: null,
                 primerArchivoId: null,
+                thumbCodigo: null,    // CodigoOrden de la sub-orden cuyo thumbnail se muestra (para el path)
                 fechaEntrega: null,   // fecha real de entrega (tomada de la fila ERP entregada)
             };
         }
@@ -277,7 +282,10 @@ export const FactoryView = () => {
             if (!projects[groupKey].magnitud && order.Magnitud) projects[groupKey].magnitud = order.Magnitud;
             if (!projects[groupKey].um && order.UM) projects[groupKey].um = order.UM;
             if (!projects[groupKey].driveFileId && order.DriveFileId) projects[groupKey].driveFileId = extractDriveId(order.DriveFileId);
-            if (!projects[groupKey].primerArchivoId && order.PrimerArchivoID) projects[groupKey].primerArchivoId = order.PrimerArchivoID;
+            if (!projects[groupKey].primerArchivoId && order.PrimerArchivoID) {
+                projects[groupKey].primerArchivoId = order.PrimerArchivoID;
+                projects[groupKey].thumbCodigo = order.CodigoOrden; // misma sub-orden que el archivo → path correcto
+            }
         }
         projects[groupKey].subOrders.push(order);
         if (order.Material) projects[groupKey].materials.add(order.Material);
@@ -458,7 +466,7 @@ export const FactoryView = () => {
                                     <div className="flex items-center gap-2">
                                         <div className={`w-2 h-2 rounded-full ${statusConf.dot} shrink-0 ${projectStatus === 'activo' ? 'animate-pulse' : ''}`} />
                                         <span className="text-lg font-black text-zinc-100 tracking-tight font-barlow shrink-0">
-                                            {project.id}
+                                            {(project.id || '').replace(/\s*\(\d+\/\d+\)\s*$/, '')}
                                         </span>
 
                                         {/* Material en el medio */}
@@ -533,7 +541,7 @@ export const FactoryView = () => {
                                                         <img
                                                             src={
                                                                 project.primerArchivoId
-                                                                    ? `/thumbnails/${project.id}/${project.primerArchivoId}.jpg`
+                                                                    ? `/thumbnails/${project.thumbCodigo || project.id}/${project.primerArchivoId}.jpg`
                                                                     : `/api/web-orders/file-thumbnail/${project.driveFileId}`
                                                             }
                                                             alt="preview"

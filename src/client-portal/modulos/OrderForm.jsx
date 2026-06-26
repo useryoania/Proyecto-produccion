@@ -233,11 +233,11 @@ const OrderForm = ({ serviceId: propServiceId }) => {
         if (!file) return false;
 
         // Validation
-        const allowed = ['image/png', 'image/jpeg', 'application/pdf'];
-        const isAllowed = allowed.includes(file.type) || file.name.toLowerCase().match(/\.(jpg|jpeg|png|pdf)$/);
+        const allowed = ['image/png', 'application/pdf'];
+        const isAllowed = allowed.includes(file.type) || file.name.toLowerCase().match(/\.(png|pdf)$/);
 
         if (!isAllowed) {
-            addToast('Formato de archivo inválido, debe ajustarse a los formatos establecidos.', 'error');
+            addToast('Formato inválido. Solo se permite PNG o PDF.', 'error');
             return false;
         }
 
@@ -421,6 +421,12 @@ const OrderForm = ({ serviceId: propServiceId }) => {
             if (isTpuEtiquetaOficial && !tpuForma) {
                 return addToast('Debe seleccionar una Forma para la Etiqueta de Producto Oficial.', 'error');
             }
+        }
+
+        // Material obligatorio: en modo "multiple" (material por archivo) cada archivo debe tener
+        // su material elegido — no se autocompleta, así que validamos antes de confirmar.
+        if (config.materialMode === 'multiple' && items.some(it => !it.material || !String(it.material).trim())) {
+            return addToast('Seleccioná el material de cada archivo antes de confirmar el pedido.', 'error');
         }
 
         actions.setLoading(true);
@@ -1241,7 +1247,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                             type="file"
                                             id="add-item-file-input"
                                             className="hidden"
-                                            accept="image/png, image/jpeg, application/pdf, .jpg, .jpeg, .png, .pdf"
+                                            accept="image/png, application/pdf, .png, .pdf"
                                             onChange={async (e) => {
                                                 const file = e.target.files[0];
                                                 if (!file) return;

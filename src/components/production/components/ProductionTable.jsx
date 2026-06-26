@@ -43,9 +43,22 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
         }
     }, [selectedRowIds]);
 
-    // Limpiar selección cuando cambian los datos drásticamente (opcional)
+    // Al cambiar los datos (p. ej. refetch por un pedido nuevo entrante), PRESERVAR la selección
+    // del usuario; sólo descartar los ids que ya no estén en la lista. Antes se limpiaba todo
+    // (setRowSelection({})), por eso un pedido nuevo deseleccionaba lo que estabas por asignar.
     useEffect(() => {
-        setRowSelection({});
+        setRowSelection(prev => {
+            const validIds = new Set(rowData.map(r => String(r.id)));
+            const next = {};
+            Object.keys(prev).forEach(k => {
+                if (prev[k] && validIds.has(k)) next[k] = true;
+            });
+            const prevSel = Object.keys(prev).filter(k => prev[k]);
+            const nextSel = Object.keys(next);
+            // Sin cambios reales → mantener la referencia (evita re-render y el sync innecesario).
+            if (prevSel.length === nextSel.length && prevSel.every(k => next[k])) return prev;
+            return next;
+        });
     }, [rowData]);
 
     // Renderizadores internos para cuando no hay propColumnDefs
@@ -403,7 +416,7 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
 
             {/* Paginación Moderna */}
             {rowData.length > 0 && <div className="px-6 py-3.5 bg-white border-t border-zinc-200 flex items-center justify-between shrink-0">
-                <span className="text-xs font-bold text-zinc-500 flex items-center gap-2">
+            <span className="text-xs font-bold text-zinc-500 flex items-center gap-2">
                     <span className="bg-zinc-100 text-zinc-600 px-2 py-1 rounded-md">
                         Página {table.getState().pagination.pageIndex + 1} de {table.getPageCount() || 1}
                     </span>
@@ -411,6 +424,11 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
                     <span className="bg-brand-cyan/10 text-brand-cyan px-2 py-1 rounded-md font-bold">
                         {rowData.reduce((sum, o) => sum + (parseFloat(o.magnitude) || 0), 0).toFixed(2)} m
                     </span>
+                    {table.getSelectedRowModel().rows.length > 0 && (
+                        <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded-md font-bold">
+                            {table.getSelectedRowModel().rows.length} sel. · {table.getSelectedRowModel().rows.reduce((sum, r) => sum + (parseFloat(r.original.magnitude) || 0), 0).toFixed(2)} m
+                        </span>
+                    )}
                 </span>
                 
                 <div className="flex items-center gap-2">

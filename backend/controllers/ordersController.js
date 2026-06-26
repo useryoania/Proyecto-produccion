@@ -1517,20 +1517,25 @@ exports.unassignOrder = async (req, res) => {
             const estadoActual = current.recordset[0]?.Estado || '';
             const estadoAreaActual = current.recordset[0]?.EstadoenArea || '';
 
-            // Solo volver a Pendiente si la orden no está terminada o cancelada
-            const isProtectedState = estadoActual === 'CANCELADO' || estadoActual === 'Terminado';
+            // Solo volver a Pendiente si la orden no está en un estado terminal.
+            // Comparación case-insensitive y sobre AMBOS campos: una orden cancelada guarda
+            // 'Cancelado' (no 'CANCELADO'), por lo que el === exacto la dejaba pasar a Pendiente,
+            // resucitando una orden ya cancelada.
+            const TERMINALES = ['CANCELADO', 'ANULADO', 'RECHAZADO', 'TERMINADO', 'FINALIZADO', 'ENTREGADO'];
+            const normEstado = (s) => (s || '').toUpperCase().trim();
+            const isProtectedState = TERMINALES.includes(normEstado(estadoActual)) || TERMINALES.includes(normEstado(estadoAreaActual));
             const nuevoEstado = isProtectedState ? estadoActual : 'Pendiente';
             const nuevoEstadoArea = isProtectedState ? estadoAreaActual : 'Pendiente';
             const estadoLog = isProtectedState ? estadoActual : 'PREPARACION';
 
             // 2. Desasignar Orden (Volver a pendiente solo si corresponde)
+            // MaquinaID se conserva — se actualiza al reasignar a otro rollo/máquina
             await new sql.Request(transaction)
                 .input('OID', sql.Int, orderId)
                 .query(`
                     UPDATE Ordenes 
                     SET RolloID = NULL, 
-                        Secuencia = NULL, 
-                        MaquinaID = NULL
+                        Secuencia = NULL
                     WHERE OrdenID = @OID
                 `);
 

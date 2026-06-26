@@ -189,10 +189,7 @@ exports.toggleRollStatus = async (req, res) => {
                     await new sql.Request(transaction).input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
                         .query("UPDATE dbo.BitacoraProduccion SET FechaFin = GETDATE() WHERE CAST(RolloID AS VARCHAR(50)) = @RID AND FechaFin IS NULL");
 
-                    // Limpiar MaquinaID (gestion de equipo)
-                    await new sql.Request(transaction)
-                        .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
-                        .query('UPDATE dbo.Ordenes SET MaquinaID = NULL WHERE CAST(RolloID AS VARCHAR(50)) = @RID');
+                    // MaquinaID se conserva en Ordenes — se actualiza al reasignar el rollo a otra máquina
 
                     // Estado + historial via servicio central
                     await changeOrderState(transaction, {
@@ -204,6 +201,64 @@ exports.toggleRollStatus = async (req, res) => {
                 io       : req.app.get('socketio'),
                 io       : req.app.get('socketio')
             });
+
+                } else if (destination === 'calender') {
+                    // Opción C: finalizó en una IMPRESORA → el lote continúa en una CALANDRA
+                    // (la de menos cola), en vez de ir a Control de Calidad.
+                    const calRes = await new sql.Request(transaction)
+                        .input('Area', sql.VarChar, currentRoll.AreaID)
+                        .query(`
+                            SELECT TOP 1 e.EquipoID
+                            FROM dbo.ConfigEquipos e
+                            WHERE e.AreaID = @Area AND e.Activo = 1 AND (e.SeparacionImpresion IS NULL OR e.SeparacionImpresion = 0)
+                            ORDER BY (
+                                SELECT COUNT(*) FROM dbo.Rollos r
+                                WHERE r.MaquinaID = e.EquipoID AND r.Estado NOT IN ('Finalizado','Cerrado','Cancelado')
+                            ) ASC, e.EquipoID ASC
+                        `);
+                    const calenderId = calRes.recordset[0]?.EquipoID || null;
+
+                    // Cierre de la bitácora de impresión (en ambos casos).
+                    await new sql.Request(transaction).input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
+                        .query("UPDATE dbo.BitacoraProduccion SET FechaFin = GETDATE() WHERE CAST(RolloID AS VARCHAR(50)) = @RID AND FechaFin IS NULL");
+
+                    if (calenderId) {
+                        // Reasignar el rollo a la calandra: queda En Cola, listo para arrancar ahí.
+                        await new sql.Request(transaction)
+                            .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
+                            .input('MID', sql.Int, calenderId)
+                            .query("UPDATE dbo.Rollos SET Estado = 'En Cola', MaquinaID = @MID WHERE CAST(RolloID AS VARCHAR(50)) = @RID");
+                        await new sql.Request(transaction)
+                            .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
+                            .input('MID', sql.Int, calenderId)
+                            .query('UPDATE dbo.Ordenes SET MaquinaID = @MID WHERE CAST(RolloID AS VARCHAR(50)) = @RID');
+                        await changeOrderState(transaction, {
+                            target   : { type: 'ROLL', id: currentRoll.RolloID },
+                            estado   : 'En Lote',
+                            userObj  : req.user,
+                            detalle  : 'Fin Impresion - Pasa a Calandra {rollo} - Maquina {maquina}',
+                            rolloId  : currentRoll.RolloID,
+                            maquinaId: calenderId,
+                            io       : req.app.get('socketio')
+                        });
+                        await registrarAuditoria(transaction, userId, 'FIN_IMPRESION_A_CALANDRA', `Rollo ${rollId} pasó a calandra ${calenderId}`, ip);
+                    } else {
+                        // Sin calandra disponible → vuelve a la cola (Mesa de Armado) para no perder el rollo.
+                        await new sql.Request(transaction)
+                            .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
+                            .query("UPDATE dbo.Rollos SET Estado = 'En Cola', MaquinaID = NULL WHERE CAST(RolloID AS VARCHAR(50)) = @RID");
+                        await new sql.Request(transaction)
+                            .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
+                            .query('UPDATE dbo.Ordenes SET MaquinaID = NULL WHERE CAST(RolloID AS VARCHAR(50)) = @RID');
+                        await changeOrderState(transaction, {
+                            target  : { type: 'ROLL', id: currentRoll.RolloID },
+                            estado  : 'En Lote',
+                            userObj : req.user,
+                            detalle : 'Fin Impresion - Sin calandra disponible, vuelve a la cola {rollo}',
+                            rolloId : currentRoll.RolloID,
+                            io      : req.app.get('socketio')
+                        });
+                    }
 
                 } else {
                     // Opción B: FINALIZAR COMPLETAMENTE (ENVIAR A CALIDAD) - Default

@@ -7,6 +7,7 @@ import { toast } from 'react-toastify';
 import api, { ordersService, rollsService, insumosService, productionService } from '../../services/api';
 import { downloadManager } from '../../utils/downloadManager';
 import { printLabelsHelper } from '../../utils/printHelper';
+import { socket } from '../../services/socketService';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import Swal from 'sweetalert2';
 
@@ -349,6 +350,8 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
 
     // Obtener el area code real de la URL o del roll
     const currentAreaCode = roll?.areaId || roll?.AreaID || (typeof window !== 'undefined' ? window.location.pathname.split('/')[2] : 'ECOUV');
+    // SB: las órdenes del lote se ordenan por defecto por material/variante (A-Z), no por secuencia manual.
+    const isSB = (currentAreaCode || '').toUpperCase() === 'SB';
 
     // Estado local para datos frescos
     const [freshRoll, setFreshRoll] = React.useState(roll);
@@ -387,9 +390,9 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
     };
 
     // Función auxiliar para cargar datos frescos
-    const loadFreshData = () => {
+    const loadFreshData = (silent = false) => {
         if (roll?.id) {
-            setLoading(true);
+            if (!silent) setLoading(true);
             rollsService.getDetails(roll.id)
                 .then(data => setFreshRoll(data))
                 .catch(err => {
@@ -401,7 +404,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                         if (onUpdate) onUpdate();
                     }
                 })
-                .finally(() => setLoading(false));
+                .finally(() => { if (!silent) setLoading(false); });
         }
     };
 
@@ -410,11 +413,47 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
         loadFreshData();
     }, [roll?.id]);
 
+    // Ref al lote vigente para que el handler de socket vea siempre las órdenes actuales (sin re-suscribir).
+    const freshRollRef = useRef(freshRoll);
+    useEffect(() => { freshRollRef.current = freshRoll; }, [freshRoll]);
+
+    // TIEMPO REAL: si se cancela / cambia de estado una orden que está en ESTE lote (p.ej. una
+    // cancelación hecha desde otra vista), refrescamos en silencio para que la orden desaparezca
+    // del lote sin tener que apretar F5. Así el operario no puede "sacar" una orden ya cancelada
+    // (lo que la resucitaba a Pendiente).
+    useEffect(() => {
+        if (!roll?.id) return;
+        const handleOrderUpdate = (payload) => {
+            const updatedId = payload?.orderId != null ? String(payload.orderId) : null;
+            const currentIds = (freshRollRef.current?.orders || []).map(o => String(o.id || o.OrdenID));
+            if (!updatedId || currentIds.includes(updatedId)) {
+                loadFreshData(true);
+            }
+        };
+        socket.on('server:order_updated', handleOrderUpdate);
+        socket.on('lotes:updated', handleOrderUpdate);
+        return () => {
+            socket.off('server:order_updated', handleOrderUpdate);
+            socket.off('lotes:updated', handleOrderUpdate);
+        };
+    }, [roll?.id]);
+
     // Si no hay roll, no mostramos nada
     if (!freshRoll) return null;
 
     // Calcular Totales (Y Ordenar por Secuencia)
-    const orders = (freshRoll.orders || []).sort((a, b) => (a.sequence || a.Secuencia || 0) - (b.sequence || b.Secuencia || 0));
+    const orders = (() => {
+        const list = [...(freshRoll.orders || [])];
+        if (isSB) {
+            // Orden por defecto en SB: Material A-Z, luego Variante A-Z, luego código (numérico).
+            return list.sort((a, b) =>
+                (a.material || a.Material || '').trim().localeCompare((b.material || b.Material || '').trim(), 'es', { sensitivity: 'base' })
+                || (a.variantCode || a.Variante || '').trim().localeCompare((b.variantCode || b.Variante || '').trim(), 'es', { sensitivity: 'base' })
+                || (a.code || a.CodigoOrden || '').trim().localeCompare((b.code || b.CodigoOrden || '').trim(), 'es', { numeric: true, sensitivity: 'base' })
+            );
+        }
+        return list.sort((a, b) => (a.sequence || a.Secuencia || 0) - (b.sequence || b.Secuencia || 0));
+    })();
     const totalOrders = orders.length;
     const totalMeters = orders.reduce((sum, o) => sum + (o.magnitude || 0), 0);
     const totalFiles = orders.reduce((sum, o) => sum + (o.fileCount || 0), 0);
@@ -422,6 +461,13 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
 
     // State for Checkboxes
     const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+
+    // Marcas "Impreso" (puramente visual, no se persiste en backend)
+    const [printedOrderIds, setPrintedOrderIds] = useState([]);
+    const printedMeters = orders.reduce((sum, o) => sum + (printedOrderIds.includes(o.id) ? (o.magnitude || 0) : 0), 0);
+    const printedCount = orders.filter(o => printedOrderIds.includes(o.id)).length;
+    const printedPercent = totalMeters > 0 ? Math.min((printedMeters / totalMeters) * 100, 100) : 0;
+    const allPrinted = totalOrders > 0 && printedCount === totalOrders;
 
     // Checkbox Handlers
     const handleToggleAll = () => {
@@ -434,6 +480,13 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
 
     const handleToggleOne = (id) => {
         setSelectedOrderIds(prev =>
+            prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+        );
+    };
+
+    // Toggle "Impreso" (visual): marca/desmarca una orden como impresa
+    const handleTogglePrinted = (id) => {
+        setPrintedOrderIds(prev =>
             prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
         );
     };
@@ -481,18 +534,47 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
 
     // Acción de Desasignar (Undo)
     const handleUnassign = async (order) => {
+        // Confirmaciones con modal (Swal) en vez de window.confirm nativo. Mismo estilo que handleCancelRoll.
+        const confirmModal = (opts) => Swal.fire({
+            showCancelButton: true,
+            cancelButtonColor: '#3f3f46',
+            cancelButtonText: 'Cancelar',
+            background: '#18181b',
+            color: '#f4f4f5',
+            ...opts
+        });
+
         const isBusy = freshRoll.status === 'Producción' || freshRoll.status === 'Imprimiendo' || (freshRoll.maquinaId && freshRoll.maquinaId !== null);
         if (isBusy) {
-            if (!window.confirm(`⚠️ EL ROLLO ESTÁ EN MÁQUINA (${freshRoll.maquinaId || 'Producción'}).\n\n¿Estás seguro de sacar esta orden? Esto podría afectar la secuencia.`)) { return; }
+            const r = await confirmModal({
+                title: 'El rollo está en máquina',
+                html: `Está en <b>${freshRoll.maquinaId || 'Producción'}</b>. Sacar esta orden podría afectar la secuencia.`,
+                icon: 'warning',
+                confirmButtonColor: '#06b6d4',
+                confirmButtonText: 'Sí, sacar orden'
+            });
+            if (!r.isConfirmed) return;
         }
 
         // Check if it's the last order
         if (orders.length === 1) {
-            if (!window.confirm(`⚠️ ESTA ES LA ÚLTIMA ORDEN.\n\nSi retiras esta orden, el rollo quedará vacío y se cancelará (cerrará) automáticamente, liberando la máquina.\n\n¿Confirmas quitar la orden y cerrar el lote?`)) {
-                return;
-            }
+            const r = await confirmModal({
+                title: 'Es la última orden del lote',
+                html: 'Si la retirás, el lote quedará <b>vacío y se cancelará (cerrará) automáticamente</b>, liberando la máquina.',
+                icon: 'warning',
+                confirmButtonColor: '#ef4444',
+                confirmButtonText: 'Quitar y cerrar lote'
+            });
+            if (!r.isConfirmed) return;
         } else {
-            if (!window.confirm(`¿Quitar la orden ${order.code || order.CodigoOrden} del rollo? Volverá a Pendientes.`)) { return; }
+            const r = await confirmModal({
+                title: '¿Quitar orden del lote?',
+                html: `La orden <b>${order.code || order.CodigoOrden}</b> volverá a Pendientes.`,
+                icon: 'question',
+                confirmButtonColor: '#06b6d4',
+                confirmButtonText: 'Sí, quitar'
+            });
+            if (!r.isConfirmed) return;
         }
         try {
             await ordersService.unassignRoll(order.id || order.OrdenID);
@@ -1043,8 +1125,36 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                             </div>
                         </div>
 
-                        {/* Capacidad - push to right */}
-                        <div className="ml-auto flex flex-col justify-center bg-white border border-zinc-200 rounded-xl px-4 py-3 shadow-sm min-w-[180px]">
+                        {/* Total Impreso (visual) - push to right, junto a Capacidad */}
+                        <div className={`ml-auto flex flex-col justify-center border rounded-xl px-4 py-3 shadow-sm min-w-[180px] transition-all duration-500 ${allPrinted ? 'border-emerald-300 bg-emerald-50/50 shadow-md shadow-emerald-200/60' : 'border-zinc-200 bg-white'}`}>
+                            <div className="flex justify-between items-center mb-2">
+                                <span className={`text-[9px] font-black uppercase tracking-widest flex items-center gap-1 ${allPrinted ? 'text-emerald-600' : 'text-zinc-400'}`}>
+                                    {allPrinted && <i className="fa-solid fa-circle-check" />}
+                                    Total Impreso
+                                </span>
+                                <span className="text-xs font-bold text-zinc-600">
+                                    <span className={`text-emerald-600 ${allPrinted ? 'font-black' : ''}`}>{printedMeters.toFixed(1)}</span>
+                                    <span className="text-zinc-400"> / {totalMeters.toFixed(1)}m</span>
+                                </span>
+                            </div>
+                            <div className={`w-full h-2.5 rounded-full overflow-hidden ${allPrinted ? 'bg-emerald-100' : 'bg-zinc-100'}`}>
+                                <div
+                                    className={`h-full rounded-full transition-all duration-700 ease-out relative overflow-hidden ${allPrinted ? 'bg-gradient-to-r from-emerald-400 via-green-500 to-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.7)]' : 'bg-emerald-500'}`}
+                                    style={{ width: `${printedPercent}%` }}
+                                >
+                                    <div className="absolute inset-0 bg-white/20" />
+                                    {allPrinted && (
+                                        <div className="absolute inset-0 animate-shine bg-gradient-to-r from-transparent via-white/60 to-transparent" />
+                                    )}
+                                </div>
+                            </div>
+                            <div className={`text-[9px] mt-1 text-right ${allPrinted ? 'text-emerald-600 font-black' : 'text-zinc-400 font-bold'}`}>
+                                {allPrinted ? '✓ ¡Todo impreso!' : `${printedCount}/${totalOrders} impresas`}
+                            </div>
+                        </div>
+
+                        {/* Capacidad */}
+                        <div className="flex flex-col justify-center bg-white border border-zinc-200 rounded-xl px-4 py-3 shadow-sm min-w-[180px]">
                             <div className="flex justify-between items-center mb-2">
                                 <span className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">Capacidad</span>
                                 <span className="text-xs font-bold text-zinc-600">
@@ -1087,7 +1197,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                                         <th className="px-4 py-3 w-20 text-center">Metros</th>
                                         <th className="px-4 py-3 w-28 text-center">Prioridad</th>
                                         <th className="px-4 py-3 w-10 text-center"><i className="fa-regular fa-comment-dots" /></th>
-                                        <th className="px-4 py-3 w-20 text-center">Acciones</th>
+                                        <th className="px-4 py-3 w-32 text-center">Acciones</th>
                                     </tr>
                                 </thead>
                                 <Droppable droppableId={`roll-${freshRoll.id}`}>
@@ -1107,7 +1217,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                                                                 ...provided.draggableProps.style,
                                                                 ...(snapshot.isDragging ? { display: 'table', tableLayout: 'fixed' } : {})
                                                             }}
-                                                            className={`transition-colors group ${selectedOrderIds.includes(o.id) ? 'bg-brand-cyan/10' : 'hover:bg-slate-50'} ${snapshot.isDragging ? 'bg-white shadow-xl ring-1 ring-brand-cyan/50 opacity-90' : ''}`}
+                                                            className={`transition-colors group ${selectedOrderIds.includes(o.id) ? 'bg-brand-cyan/10' : printedOrderIds.includes(o.id) ? 'bg-emerald-50/60' : 'hover:bg-slate-50'} ${snapshot.isDragging ? 'bg-white shadow-xl ring-1 ring-brand-cyan/50 opacity-90' : ''}`}
                                                         >
                                                             <td className="px-2 py-0 align-middle w-10">
                                                                 <div className="flex items-center justify-center gap-1.5 h-full">
@@ -1172,7 +1282,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                                                     </div>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 text-center w-20">
+                                            <td className="px-4 py-3 text-center w-32">
                                                 <div className="flex items-center justify-center gap-1">
                                                     <button
                                                         onClick={() => onViewOrder && onViewOrder(o)}
@@ -1195,6 +1305,19 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                                                     >
                                                         <i className="fa-solid fa-rotate-left text-sm" />
                                                     </button>
+                                                    {/* 4ta acción: marcar impreso (visual) */}
+                                                    <label
+                                                        className={`w-7 h-7 flex items-center justify-center rounded-lg cursor-pointer transition-all ${printedOrderIds.includes(o.id) ? 'text-emerald-600 bg-emerald-50' : 'text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
+                                                        title={printedOrderIds.includes(o.id) ? 'Marcar como NO impreso' : 'Marcar impreso'}
+                                                        onClick={e => e.stopPropagation()}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            className="w-4 h-4 rounded border-zinc-300 cursor-pointer accent-emerald-500"
+                                                            checked={printedOrderIds.includes(o.id)}
+                                                            onChange={() => handleTogglePrinted(o.id)}
+                                                        />
+                                                    </label>
                                                 </div>
                                             </td>
                                                         </tr>
@@ -1224,6 +1347,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                     <div className="px-6 py-3.5 border-t border-zinc-100 bg-white flex items-center gap-2 z-10 shrink-0">
                         {/* Left group */}
                         <div className="flex items-center gap-2 mr-auto flex-wrap">
+                            {/* Botones comentados en TODAS las áreas (Generar Etiquetas / Reporte Excel):
                             <button
                                 className={`px-3 py-2 ${freshRoll.labelsCount > 0 ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/20' : 'bg-brand-cyan hover:bg-brand-cyan/90 shadow-brand-cyan/20'} text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-md active:scale-95`}
                                 onClick={handleGenerateLabels}
@@ -1238,6 +1362,18 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { } }) 
                             >
                                 <i className="fa-solid fa-file-excel" /> Reporte Excel
                             </button>
+                            */}
+
+                            {/* Agrupar: solo SB, sin función por ahora (a definir) */}
+                            {isSB && (
+                                <button
+                                    type="button"
+                                    onClick={() => {}}
+                                    className="px-3 py-2 bg-brand-cyan hover:bg-brand-cyan/90 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-md shadow-brand-cyan/20 active:scale-95"
+                                >
+                                    <i className="fa-solid fa-layer-group" /> Agrupar
+                                </button>
+                            )}
                         </div>
 
                         {/* Right group */}

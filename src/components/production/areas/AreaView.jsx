@@ -121,12 +121,14 @@ export default function AreaView({ areaKey: rawAreaKey, areaConfig, onSwitchTab 
     const [sidebarMode, setSidebarMode] = useState("rolls");
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [clientFilter, setClientFilter] = useState("");
-    const [globalSearch, setGlobalSearch] = useState("");
-    const [activeFilters, setActiveFilters] = useState({
-        priorities: [],
-        statuses: [],
-        areaStatuses: [],
-        variants: []
+    const [globalSearch, setGlobalSearch] = useState(() => {
+        try { return sessionStorage.getItem(`areaSearch_${areaKey}`) || ""; } catch { return ""; }
+    });
+    const [activeFilters, setActiveFilters] = useState(() => {
+        try {
+            const saved = sessionStorage.getItem(`areaFilters_${areaKey}`);
+            return saved ? JSON.parse(saved) : { priorities: [], statuses: [], areaStatuses: [], variants: [] };
+        } catch { return { priorities: [], statuses: [], areaStatuses: [], variants: [] }; }
     });
     const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
     const filterDropdownRef = React.useRef(null);
@@ -152,15 +154,18 @@ export default function AreaView({ areaKey: rawAreaKey, areaConfig, onSwitchTab 
         }
         setActiveFilters(prev => {
             const current = prev[category] || [];
-            if (current.includes(value)) {
-                return { ...prev, [category]: current.filter(v => v !== value) };
-            }
-            return { ...prev, [category]: [...current, value] };
+            const next = current.includes(value)
+                ? { ...prev, [category]: current.filter(v => v !== value) }
+                : { ...prev, [category]: [...current, value] };
+            try { sessionStorage.setItem(`areaFilters_${areaKey}`, JSON.stringify(next)); } catch {}
+            return next;
         });
     };
 
     const clearFilters = () => {
-        setActiveFilters({ priorities: [], statuses: [], areaStatuses: [], variants: [] });
+        const empty = { priorities: [], statuses: [], areaStatuses: [], variants: [] };
+        setActiveFilters(empty);
+        try { sessionStorage.removeItem(`areaFilters_${areaKey}`); } catch {}
     };
 
     const activeFilterCount = (activeFilters.priorities?.length || 0) + (activeFilters.statuses?.length || 0) + (activeFilters.areaStatuses?.length || 0) + (activeFilters.variants?.length || 0);
@@ -429,6 +434,7 @@ export default function AreaView({ areaKey: rawAreaKey, areaConfig, onSwitchTab 
     }, [dbOrders]);
 
     const isDTF = ['DF', 'DTF'].includes((areaKey || '').toUpperCase());
+    const isSB = (areaKey || '').toUpperCase() === 'SB';
 
     // 5. FILTRADO
     const displayOrders = showCancelled ? cancelledOrders : (showPronto ? prontoOrders : dbOrders);
@@ -497,11 +503,31 @@ export default function AreaView({ areaKey: rawAreaKey, areaConfig, onSwitchTab 
         const allReposiciones = result.filter(o => !isFalla(o) && isReposicion(o));
         const resultWithoutFallas = result.filter(o => !isFalla(o) && !isReposicion(o));
 
+        // SB: respetando la prioridad, ordenar por defecto alfabéticamente por material dentro de
+        // cada grupo (Falla → Reposición → Urgente → Normal). Agrupa misma tela para reducir
+        // cambios de bobina en la calandra.
+        if (isSB) {
+            const byMaterial = (a, b) =>
+                (a.material || '').trim().localeCompare((b.material || '').trim(), 'es', { sensitivity: 'base' });
+            // Dentro del "resto", Urgente va antes que Normal/otras; cada subgrupo alfabético por material.
+            const sortRest = (arr) => [...arr].sort((a, b) => {
+                const aUrg = (a.priority || 'Normal').toLowerCase() === 'urgente' ? 0 : 1;
+                const bUrg = (b.priority || 'Normal').toLowerCase() === 'urgente' ? 0 : 1;
+                if (aUrg !== bUrg) return aUrg - bUrg;
+                return byMaterial(a, b);
+            });
+            return [
+                ...[...allFallas].sort(byMaterial),
+                ...[...allReposiciones].sort(byMaterial),
+                ...sortRest(resultWithoutFallas),
+            ];
+        }
+
         // Ordenar por defecto: Las de estado "Pendiente" primero (solo en el grupo normal)
         resultWithoutFallas.sort((a, b) => {
             const isAPendiente = (a.status || 'Pendiente').toLowerCase() === 'pendiente';
             const isBPendiente = (b.status || 'Pendiente').toLowerCase() === 'pendiente';
-            
+
             if (isAPendiente && !isBPendiente) return -1;
             if (!isAPendiente && isBPendiente) return 1;
             return 0;
@@ -694,12 +720,12 @@ export default function AreaView({ areaKey: rawAreaKey, areaConfig, onSwitchTab 
                     type="text"
                     placeholder="Buscar orden, cliente o ID cliente..."
                     value={globalSearch}
-                    onChange={(e) => setGlobalSearch(e.target.value)}
-                    className="pl-8 pr-8 py-1.5 h-[30px] w-56 text-xs font-medium border border-zinc-200 rounded-lg bg-white focus:outline-none focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan transition-all shadow-sm placeholder:text-zinc-400"
+                    onChange={(e) => { setGlobalSearch(e.target.value); try { sessionStorage.setItem(`areaSearch_${areaKey}`, e.target.value); } catch {} }}
+                    className={`pl-8 ${globalSearch ? 'pr-8' : 'pr-3'} py-1.5 h-[30px] w-64 shrink-0 text-xs font-medium border border-zinc-200 rounded-lg bg-white focus:outline-none focus:border-brand-cyan focus:ring-1 focus:ring-brand-cyan transition-all shadow-sm placeholder:text-zinc-400`}
                 />
                 {globalSearch && (
                     <button 
-                        onClick={() => setGlobalSearch("")}
+                        onClick={() => { setGlobalSearch(""); try { sessionStorage.removeItem(`areaSearch_${areaKey}`); } catch {} }}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 p-1"
                         title="Limpiar búsqueda"
                     >

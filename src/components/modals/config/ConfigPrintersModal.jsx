@@ -3,7 +3,7 @@ import { areasService } from '../../../services/api';
 
 const ConfigPrintersModal = ({ isOpen, onClose, areaCode, equipos }) => {
     // Estado para nuevo equipo
-    const [newPrinter, setNewPrinter] = useState({ nombre: '', cap: 100, vel: 10, estado: 'DISPONIBLE', estadoProceso: 'DETENIDO' });
+    const [newPrinter, setNewPrinter] = useState({ nombre: '', cap: 100, vel: 10, estado: 'DISPONIBLE', estadoProceso: 'DETENIDO', separacionImpresion: false });
     const [loading, setLoading] = useState(false);
 
     // Lista local
@@ -11,7 +11,7 @@ const ConfigPrintersModal = ({ isOpen, onClose, areaCode, equipos }) => {
 
     // Estado de Edición
     const [editingId, setEditingId] = useState(null);
-    const [editForm, setEditForm] = useState({ nombre: '', cap: 0, vel: 0, estado: 'DISPONIBLE', estadoProceso: 'DETENIDO', activo: true });
+    const [editForm, setEditForm] = useState({ nombre: '', cap: 0, vel: 0, estado: 'DISPONIBLE', estadoProceso: 'DETENIDO', activo: true, separacionImpresion: false });
 
     useEffect(() => {
         if (equipos) setLocalList(equipos);
@@ -30,7 +30,8 @@ const ConfigPrintersModal = ({ isOpen, onClose, areaCode, equipos }) => {
                 capacidad: newPrinter.cap,
                 velocidad: newPrinter.vel,
                 estado: newPrinter.estado,
-                estadoProceso: newPrinter.estadoProceso
+                estadoProceso: newPrinter.estadoProceso,
+                separacionImpresion: newPrinter.separacionImpresion
             });
 
             alert('Equipo agregado. La lista se actualizará al cerrar.');
@@ -42,10 +43,11 @@ const ConfigPrintersModal = ({ isOpen, onClose, areaCode, equipos }) => {
                 Velocidad: newPrinter.vel,
                 Estado: newPrinter.estado,
                 EstadoProceso: newPrinter.estadoProceso,
+                SeparacionImpresion: newPrinter.separacionImpresion ? 1 : 0,
                 Activo: true,
                 Temp: true
             }]);
-            setNewPrinter({ nombre: '', cap: 100, vel: 10, estado: 'DISPONIBLE', estadoProceso: 'DETENIDO' });
+            setNewPrinter({ nombre: '', cap: 100, vel: 10, estado: 'DISPONIBLE', estadoProceso: 'DETENIDO', separacionImpresion: false });
         } catch (error) {
             alert('Error al agregar equipo');
         } finally {
@@ -62,7 +64,8 @@ const ConfigPrintersModal = ({ isOpen, onClose, areaCode, equipos }) => {
             vel: eq.Velocidad || 10,
             estado: eq.Estado || 'DISPONIBLE',
             estadoProceso: eq.EstadoProceso || 'DETENIDO',
-            activo: eq.Activo !== false
+            activo: eq.Activo !== false,
+            separacionImpresion: !!(eq.SeparacionImpresion ?? eq.separacionImpresion ?? eq.separacionimpresion)
         });
     };
 
@@ -74,7 +77,8 @@ const ConfigPrintersModal = ({ isOpen, onClose, areaCode, equipos }) => {
                 velocidad: editForm.vel,
                 estado: editForm.estado,
                 estadoProceso: editForm.estadoProceso,
-                activo: editForm.activo
+                activo: editForm.activo,
+                separacionImpresion: editForm.separacionImpresion
             });
 
             // Actualizar lista local visualmente
@@ -87,7 +91,8 @@ const ConfigPrintersModal = ({ isOpen, onClose, areaCode, equipos }) => {
                         Velocidad: editForm.vel,
                         Estado: editForm.estado,
                         EstadoProceso: editForm.estadoProceso,
-                        Activo: editForm.activo
+                        Activo: editForm.activo,
+                        SeparacionImpresion: editForm.separacionImpresion ? 1 : 0
                     }
                     : eq
             ));
@@ -183,6 +188,15 @@ const ConfigPrintersModal = ({ isOpen, onClose, areaCode, equipos }) => {
                                 Crear
                             </button>
                         </div>
+                        <label className="flex items-center gap-2 mt-3 cursor-pointer select-none w-fit">
+                            <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded border-zinc-300 accent-blue-600 cursor-pointer"
+                                checked={newPrinter.separacionImpresion}
+                                onChange={(e) => setNewPrinter({ ...newPrinter, separacionImpresion: e.target.checked })}
+                            />
+                            <span className="text-xs font-semibold text-zinc-600">Es impresora (al finalizar, el lote pasa a una calandra)</span>
+                        </label>
                     </div>
 
                     {/* TABLA DE EQUIPOS */}
@@ -194,6 +208,7 @@ const ConfigPrintersModal = ({ isOpen, onClose, areaCode, equipos }) => {
                                     <th className="px-4 py-3 font-bold">Nombre Equipo</th>
                                     <th className="px-4 py-3 font-bold text-center w-32">Est. Config</th>
                                     <th className="px-4 py-3 font-bold text-center w-32">Est. Proceso</th>
+                                    <th className="px-4 py-3 font-bold text-center w-28">Impresora</th>
                                     <th className="px-4 py-3 font-bold text-center w-24">Vel <span className="normal-case text-[9px] text-zinc-400 block font-normal">(u/h)</span></th>
                                     <th className="px-4 py-3 font-bold text-center w-24">Cap <span className="normal-case text-[9px] text-zinc-400 block font-normal">(u/día)</span></th>
                                     <th className="px-4 py-3 font-bold text-center w-28">Acción</th>
@@ -201,9 +216,9 @@ const ConfigPrintersModal = ({ isOpen, onClose, areaCode, equipos }) => {
                             </thead>
                             <tbody className="divide-y divide-zinc-100">
                                 {localList.length === 0 ? (
-                                    <tr><td colSpan="6" className="py-8 text-center text-zinc-400 italic text-xs">No hay equipos configurados.</td></tr>
+                                    <tr><td colSpan="8" className="py-8 text-center text-zinc-400 italic text-xs">No hay equipos configurados.</td></tr>
                                 ) : (
-                                    localList.map((eq) => {
+                                    [...localList].sort((a, b) => (Number(a.EquipoID) || 0) - (Number(b.EquipoID) || 0)).map((eq) => {
                                         const isEditing = editingId === eq.EquipoID;
 
                                         return (
@@ -272,6 +287,23 @@ const ConfigPrintersModal = ({ isOpen, onClose, areaCode, equipos }) => {
                                                         <span className="text-[10px] font-mono font-bold text-zinc-500 uppercase">
                                                             {eq.EstadoProceso || 'DETENIDO'}
                                                         </span>
+                                                    )}
+                                                </td>
+
+                                                {/* IMPRESORA (SeparacionImpresion) → al finalizar, el lote pasa a una calandra */}
+                                                <td className="px-4 py-3 align-middle text-center">
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={editForm.separacionImpresion}
+                                                            onChange={e => setEditForm({ ...editForm, separacionImpresion: e.target.checked })}
+                                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                                                            title="Es impresora (al finalizar, el lote pasa a una calandra)"
+                                                        />
+                                                    ) : (
+                                                        (eq.SeparacionImpresion ?? eq.separacionImpresion ?? eq.separacionimpresion)
+                                                            ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase bg-blue-100 text-blue-600">Impresora</span>
+                                                            : <span className="text-zinc-300">—</span>
                                                     )}
                                                 </td>
 

@@ -56,7 +56,7 @@ exports.getAreaDetails = async (req, res) => {
         const reqSql = pool.request().input('id', sql.VarChar(20), code);
 
         // A. Equipos
-        const equipos = await reqSql.query("SELECT * FROM dbo.ConfigEquipos WHERE AreaID = @id AND Activo = 1");
+        const equipos = await reqSql.query("SELECT * FROM dbo.ConfigEquipos WHERE AreaID = @id AND Activo = 1 ORDER BY EquipoID");
 
         // B. Insumos (Marcando asignados)
         const insumos = await reqSql.query(`
@@ -99,7 +99,7 @@ exports.getAreaDetails = async (req, res) => {
 // 3. GESTIÓN DE EQUIPOS
 // =====================================================================
 exports.addPrinter = async (req, res) => {
-    const { areaId, nombre, capacidad, velocidad, estado, estadoProceso } = req.body;
+    const { areaId, nombre, capacidad, velocidad, estado, estadoProceso, separacionImpresion } = req.body;
     if (!areaId || !nombre) return res.status(400).json({ error: "Faltan datos" });
 
     try {
@@ -111,7 +111,8 @@ exports.addPrinter = async (req, res) => {
             .input('Velocidad', sql.Int, velocidad === '' ? 10 : (velocidad || 10))
             .input('Estado', sql.NVarChar(50), estado || 'DISPONIBLE')
             .input('EstadoProceso', sql.NVarChar(50), estadoProceso || 'DETENIDO')
-            .query("INSERT INTO dbo.ConfigEquipos (AreaID, Nombre, Activo, Capacidad, Velocidad, Estado, EstadoProceso) VALUES (@AreaID, @Nombre, 1, @Capacidad, @Velocidad, @Estado, @EstadoProceso)");
+            .input('SepImp', sql.Bit, separacionImpresion ? 1 : 0)
+            .query("INSERT INTO dbo.ConfigEquipos (AreaID, Nombre, Activo, Capacidad, Velocidad, Estado, EstadoProceso, SeparacionImpresion) VALUES (@AreaID, @Nombre, 1, @Capacidad, @Velocidad, @Estado, @EstadoProceso, @SepImp)");
         res.json({ success: true, message: 'Equipo agregado' });
     } catch (err) {
         logger.error("❌ ERROR CRÍTICO AL AGREGAR EQUIPO:");
@@ -323,7 +324,7 @@ exports.deletePrinter = async (req, res) => {
 // EDITAR EQUIPO EXISTENTE (Nombre, Capacidad, Velocidad, Estado, EstadoProceso, Activo)
 exports.updatePrinter = async (req, res) => {
     const { id } = req.params; // EquipoID
-    const { nombre, capacidad, velocidad, estado, estadoProceso, activo } = req.body;
+    const { nombre, capacidad, velocidad, estado, estadoProceso, activo, separacionImpresion } = req.body;
 
     try {
         const pool = await getPool();
@@ -333,14 +334,16 @@ exports.updatePrinter = async (req, res) => {
             .input('Capacidad', sql.Int, capacidad === '' ? 0 : (capacidad || 0))
             .input('Velocidad', sql.Int, velocidad === '' ? 0 : (velocidad || 0))
             .input('Estado', sql.NVarChar(50), estado || null)
-            .input('EstadoProceso', sql.NVarChar(50), estadoProceso || null);
+            .input('EstadoProceso', sql.NVarChar(50), estadoProceso || null)
+            .input('SepImp', sql.Bit, separacionImpresion === undefined ? null : (separacionImpresion ? 1 : 0));
 
         // Solo actualizar Activo si viene en el body explicitly (puede ser boolean o bit)
         let query = `
-            UPDATE dbo.ConfigEquipos 
-            SET Nombre = @Nombre, Capacidad = @Capacidad, Velocidad = @Velocidad, 
+            UPDATE dbo.ConfigEquipos
+            SET Nombre = @Nombre, Capacidad = @Capacidad, Velocidad = @Velocidad,
                 Estado = ISNULL(@Estado, Estado),
-                EstadoProceso = ISNULL(@EstadoProceso, EstadoProceso)
+                EstadoProceso = ISNULL(@EstadoProceso, EstadoProceso),
+                SeparacionImpresion = ISNULL(@SepImp, SeparacionImpresion)
         `;
 
         if (activo !== undefined) {

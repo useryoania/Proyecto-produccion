@@ -7,14 +7,8 @@ import { CustomSelect } from './CustomSelect';
 // TABLA DE ESCALAS SEGÚN REQUERIMIENTO
 const SCALE_TABLE = [
     { scale: 10, factor: 1000, label: "1:10" },
-    { scale: 20, factor: 500, label: "1:5" },
-    { scale: 30, factor: 333.33, label: "1:3.33" },
-    { scale: 40, factor: 250, label: "1:2.5" },
-    { scale: 50, factor: 200, label: "1:2" },
-    { scale: 60, factor: 166.67, label: "1:1.66" },
-    { scale: 70, factor: 142.86, label: "1:1.42" },
-    { scale: 80, factor: 125, label: "1:1.25" },
-    { scale: 90, factor: 111.11, label: "1:1.11" }
+    { scale: 25, factor: 400, label: "1:4" },
+    { scale: 50, factor: 200, label: "1:2" }
 ];
 
 export const PrintSettingsPanel = ({

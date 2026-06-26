@@ -315,43 +315,52 @@ const PlaneacionTrabajo = ({ AreaID }) => {
             queryClient.setQueryData(['productionBoard', areaCode], newData);
         });
 
+        // Persiste el orden (Secuencia) de los lotes de una máquina según el estado local ya actualizado.
+        // Reutiliza el mismo endpoint que Coordinación: rollIds[0] = arriba (Secuencia más alta).
+        const persistMachineOrder = (machineId, movedId) => {
+            const mach = newData.machines.find(m => String(m.id) === String(machineId));
+            if (!mach || !mach.rolls.length) return Promise.resolve();
+            const rollIds = mach.rolls.map(r => Number(r.id)).filter(n => !Number.isNaN(n));
+            if (!rollIds.length) return Promise.resolve();
+            return rollsService.reorderRolls(areaCode, rollIds, movedId != null ? Number(movedId) : undefined);
+        };
+
+        const swalToast = (title, icon = 'success') => Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: icon === 'error' ? 4000 : 3000, timerProgressBar: true, icon, title, customClass: { container: 'z-[9999]' } });
+
         // Async API calls
         const executeApiCall = async () => {
-            if (source.droppableId === 'mesa-armado' && destination.droppableId !== 'mesa-armado') {
-                const machineId = destination.droppableId;
-                try {
-                    await productionService.assignRolls([pureRollId], machineId);
-                    setTimeout(() => refreshBoard(), 1000);
-                    Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, timerProgressBar: true, icon: 'success', title: 'Lote asignado por arrastre', customClass: { container: 'z-[9999]' } });
-                } catch (error) {
-                    refreshBoard();
-                    console.error("Error asignando lote:", error);
-                    const msg = error.response?.data?.error || error.message || "Error desconocido";
-                    Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 4000, timerProgressBar: true, icon: 'error', title: `Error al asignar: ${msg}`, customClass: { container: 'z-[9999]' } });
-                }
-            } else if (source.droppableId !== 'mesa-armado' && destination.droppableId === 'mesa-armado') {
-                try {
+            const srcIsMachine = source.droppableId !== 'mesa-armado';
+            const destIsMachine = destination.droppableId !== 'mesa-armado';
+
+            // Reordenar dentro de Mesa de Armado: solo visual, no aplica Secuencia de cola de máquina.
+            if (!srcIsMachine && !destIsMachine) return;
+
+            try {
+                if (!srcIsMachine && destIsMachine) {
+                    // Mesa de Armado -> Máquina: asignar y fijar posición en la cola
+                    await productionService.assignRolls([pureRollId], destination.droppableId);
+                    await persistMachineOrder(destination.droppableId, pureRollId);
+                    swalToast('Lote asignado por arrastre');
+                } else if (srcIsMachine && !destIsMachine) {
+                    // Máquina -> Mesa de Armado: desmontar
                     await productionService.unassignRoll(pureRollId);
-                    setTimeout(() => refreshBoard(), 1000);
-                    Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, timerProgressBar: true, icon: 'success', title: 'Lote desmontado por arrastre', customClass: { container: 'z-[9999]' } });
-                } catch (error) {
-                    refreshBoard();
-                    console.error("Error desmontando lote:", error);
-                    const msg = error.response?.data?.error || error.message || "Error desconocido";
-                    Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 4000, timerProgressBar: true, icon: 'error', title: `Error al desmontar: ${msg}`, customClass: { container: 'z-[9999]' } });
+                    swalToast('Lote desmontado por arrastre');
+                } else if (source.droppableId === destination.droppableId) {
+                    // Reordenar dentro de la MISMA máquina (esto antes no se persistía y revertía al refrescar)
+                    await persistMachineOrder(destination.droppableId, pureRollId);
+                    swalToast('Orden de lotes actualizado');
+                } else {
+                    // Mover entre máquinas distintas + fijar posición en la máquina destino
+                    await productionService.assignRolls([pureRollId], destination.droppableId);
+                    await persistMachineOrder(destination.droppableId, pureRollId);
+                    swalToast('Lote movido entre máquinas');
                 }
-            } else if (source.droppableId !== 'mesa-armado' && destination.droppableId !== 'mesa-armado') {
-                const machineId = destination.droppableId;
-                try {
-                    await productionService.assignRolls([pureRollId], machineId);
-                    setTimeout(() => refreshBoard(), 1000);
-                    Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, timerProgressBar: true, icon: 'success', title: 'Lote movido entre máquinas', customClass: { container: 'z-[9999]' } });
-                } catch (error) {
-                    refreshBoard();
-                    console.error("Error moviendo lote:", error);
-                    const msg = error.response?.data?.error || error.message || "Error desconocido";
-                    Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 4000, timerProgressBar: true, icon: 'error', title: `Error al mover: ${msg}`, customClass: { container: 'z-[9999]' } });
-                }
+                setTimeout(() => refreshBoard(), 1000);
+            } catch (error) {
+                refreshBoard();
+                console.error("Error en drag & drop de lotes:", error);
+                const msg = error.response?.data?.error || error.message || "Error desconocido";
+                swalToast(`Error: ${msg}`, 'error');
             }
         };
 
@@ -368,8 +377,11 @@ const PlaneacionTrabajo = ({ AreaID }) => {
     };
 
     const visibleMachines = useMemo(() => {
-        if (filterMachineIds.length === 0) return machines;
-        return machines.filter(m => filterMachineIds.includes(String(m.id)));
+        const base = filterMachineIds.length === 0
+            ? machines
+            : machines.filter(m => filterMachineIds.includes(String(m.id)));
+        // Orden de creación (EquipoID): respeta cómo se cargaron los equipos en el modal de gestión.
+        return [...base].sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
     }, [machines, filterMachineIds]);
 
     const availablePriorities = useMemo(() => {

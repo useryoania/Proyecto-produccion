@@ -13,17 +13,25 @@ exports.getBoard = async (req, res) => {
         const machinesRes = await POOL.request()
             .input('Area', sql.VarChar, area)
             .query(`
-                SELECT 
-                    EquipoID as id, 
-                    Nombre as name, 
-                    Estado as status, 
-                    EstadoProceso as processStatus
-                FROM [dbo].[ConfigEquipos] 
+                SELECT
+                    EquipoID as id,
+                    Nombre as name,
+                    Estado as status,
+                    EstadoProceso as processStatus,
+                    SeparacionImpresion as separacionImpresion
+                FROM [dbo].[ConfigEquipos]
                 WHERE AreaID = @Area AND Activo = 1
                 ORDER BY Nombre ASC
             `);
 
         const machines = machinesRes.recordset;
+
+        // Garantizar que exista la columna de orden de cola (la crea reorderRolls la 1ª vez).
+        // Sin esto, agregar r.Secuencia al SELECT rompería el tablero en BDs donde aún no existe.
+        await POOL.request().query(`
+            IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'Secuencia' AND Object_ID = Object_ID('dbo.Rollos'))
+                ALTER TABLE dbo.Rollos ADD Secuencia INT NULL;
+        `);
 
         const rollsRes = await POOL.request()
             .input('Area', sql.VarChar, area)
@@ -38,7 +46,8 @@ exports.getBoard = async (req, res) => {
                     ISNULL(r.CapacidadMaxima, 0) as capacity,
                     r.ColorHex as color,
                     ISNULL(r.TotalOrdenes, 0) as ordersCount,
-                    u.Nombre AS CreadorNombre, 
+                    r.Secuencia as secuencia,
+                    u.Nombre AS CreadorNombre,
                     u.IdUsuario AS CreadorId
                 FROM dbo.[Rollos] r
                 LEFT JOIN dbo.Usuarios u ON r.UsuarioID = u.IdUsuario
@@ -94,6 +103,15 @@ exports.getBoard = async (req, res) => {
             if (uniqueMaterials.length === 0) r.material = '-';
             else if (uniqueMaterials.length === 1) r.material = uniqueMaterials[0];
             else r.material = 'Varios Materiales';
+        });
+
+        // Ordenar por Secuencia DESC (primero arriba), igual que el Drag&Drop de Coordinación.
+        // Los lotes nunca reordenados (Secuencia NULL) quedan al final, por id ascendente.
+        allRolls.sort((a, b) => {
+            const sa = a.secuencia ?? 0;
+            const sb = b.secuencia ?? 0;
+            if (sb !== sa) return sb - sa;
+            return Number(a.id) - Number(b.id);
         });
 
         const finalMachines = machines.map(m => {

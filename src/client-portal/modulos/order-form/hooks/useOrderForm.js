@@ -420,7 +420,9 @@ export const useOrderForm = (serviceId, overrides = {}) => {
             if (!variantName) return;
             apiClient.get(`/nomenclators/materials/${dbAreaId}/${encodeURIComponent(variantName)}`).then(mRes => {
                 if (mRes.success && mRes.data.length > 0) {
-                    const firstMat = findDefaultMaterial(mRes.data);
+                    // En modo "multiple" (material por archivo, p. ej. Sublimación) NO autocompletamos:
+                    // el cliente debe elegir el material de cada archivo (se valida al confirmar).
+                    const firstMat = config.materialMode === 'multiple' ? '' : findDefaultMaterial(mRes.data);
                     dispatch({
                         type: actionTypes.SET_DATA,
                         data: { dynamicMaterials: mRes.data, globalMaterial: firstMat }
@@ -519,7 +521,7 @@ export const useOrderForm = (serviceId, overrides = {}) => {
             apiClient.get(`/nomenclators/materials/${dbAreaId}/${encodeURIComponent(newSubType)}`).then(res => {
                 if (res.success && res.data.length > 0) {
                     dispatch({ type: actionTypes.SET_DATA, data: { dynamicMaterials: res.data } });
-                    const firstMat = findDefaultMaterial(res.data);
+                    const firstMat = config.materialMode === 'multiple' ? '' : findDefaultMaterial(res.data);
                     setGlobalMaterial(firstMat);
                 } else {
                     dispatch({ type: actionTypes.SET_DATA, data: { dynamicMaterials: [] } });

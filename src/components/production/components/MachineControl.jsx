@@ -59,13 +59,16 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
     };
 
     const isFalla = (machine.status || '').toLowerCase().includes('falla');
+    // Impresora = flag SeparacionImpresion de ConfigEquipos (columna dedicada, se marca en el modal de
+    // equipos). En impresoras la banderita continúa el lote en una calandra en vez de ir a Calidad.
+    const isPrinter = !!machine.separacionImpresion;
 
     return (
         <div className={`min-w-0 bg-white rounded-2xl shadow-lg border-t-4 flex flex-col max-h-full transition-colors
             ${isFalla ? 'border-brand-magenta' : isRunning ? 'border-brand-cyan' : 'border-zinc-400'}`}>
 
             {/* ENCABEZADO DE CONTROL */}
-            <div className="p-3 border-b border-zinc-100 bg-zinc-50 rounded-t-xl flex flex-col gap-2 relative z-10 shadow-sm">
+            <div className="p-3 border-b border-zinc-100 bg-zinc-50 rounded-t-xl flex flex-col gap-2 relative z-20 shadow-sm">
 
                 {/* 1. Nombre y Estado */}
                 <div className="flex justify-between items-center">
@@ -155,7 +158,7 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
                                             leaveFrom="opacity-100"
                                             leaveTo="opacity-0"
                                         >
-                                            <Listbox.Options className="absolute mt-1 max-h-60 w-full overflow-auto rounded-xl bg-white py-1 text-xs shadow-xl border border-zinc-100 focus:outline-none z-[60] font-sans">
+                                            <Listbox.Options className="absolute mt-1 max-h-60 w-full overflow-auto rounded-xl bg-white py-1 text-xs shadow-xl border border-zinc-100 focus:outline-none z-[9999] font-sans">
                                                 {/* SECTION: EN MAQUINA */}
                                                 {machine.rolls.length > 0 && (
                                                     <>
@@ -254,7 +257,7 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
                     <div 
                         ref={provided.innerRef} 
                         {...provided.droppableProps}
-                        className={`p-2 flex-1 flex flex-col gap-2 overflow-y-auto custom-scrollbar transition-colors ${snapshot.isDraggingOver ? 'bg-brand-cyan/5 rounded-b-xl' : 'bg-zinc-50/50'}`}
+                        className={`p-2 flex-1 flex flex-col gap-2 overflow-y-auto custom-scrollbar transition-colors relative z-0 ${snapshot.isDraggingOver ? 'bg-brand-cyan/5 rounded-b-xl' : 'bg-zinc-50/50'}`}
                     >
                         {machine.rolls.map((roll, index) => (
                             <Draggable key={roll.id} draggableId={String(roll.id)} index={index}>
@@ -310,31 +313,46 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
                                 <FlagTriangleRight size={26} className="ml-1" />
                             </div>
                             <div className="text-center">
-                                <h3 className="text-xl font-black text-zinc-800 tracking-tight mb-1">Finalizar Producción</h3>
+                                <h3 className="text-xl font-black text-zinc-800 tracking-tight mb-1">{isPrinter ? 'Finalizar Impresión' : 'Finalizar Producción'}</h3>
                                 <p className="text-sm text-zinc-500 font-medium leading-tight">
-                                    ¿El lote ha terminado completamente o debe continuar en otro equipo?
+                                    {isPrinter
+                                        ? 'La impresión terminó → el lote pasa a una calandra (la de menos cola).'
+                                        : '¿El lote ha terminado completamente o debe continuar en otro equipo?'}
                                 </p>
                             </div>
                         </div>
                         <div className="px-6 pb-6 bg-white">
                             <div className="flex flex-col gap-2.5">
-                                {/* OPCIÓN: FINALIZAR Y ENVIAR A CALIDAD */}
-                                <button
-                                    onClick={() => confirmFinish('quality')}
-                                    className="group relative w-full py-3 px-4 bg-brand-cyan hover:bg-cyan-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-md shadow-brand-cyan/30 active:scale-[0.98] overflow-hidden"
-                                >
-                                    <i className="fa-solid fa-clipboard-check relative z-10"></i>
-                                    <span className="relative z-10">Enviar a Control de Calidad</span>
-                                </button>
+                                {isPrinter ? (
+                                    /* IMPRESORA: el lote continúa en una calandra (no va a Calidad). */
+                                    <button
+                                        onClick={() => confirmFinish('calender')}
+                                        className="group relative w-full py-3 px-4 bg-brand-cyan hover:bg-cyan-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-md shadow-brand-cyan/30 active:scale-[0.98] overflow-hidden"
+                                    >
+                                        <i className="fa-solid fa-arrow-right-long relative z-10"></i>
+                                        <span className="relative z-10">Enviar a Calandra</span>
+                                    </button>
+                                ) : (
+                                    <>
+                                        {/* OPCIÓN: FINALIZAR Y ENVIAR A CALIDAD */}
+                                        <button
+                                            onClick={() => confirmFinish('quality')}
+                                            className="group relative w-full py-3 px-4 bg-brand-cyan hover:bg-cyan-500 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-md shadow-brand-cyan/30 active:scale-[0.98] overflow-hidden"
+                                        >
+                                            <i className="fa-solid fa-clipboard-check relative z-10"></i>
+                                            <span className="relative z-10">Enviar a Control de Calidad</span>
+                                        </button>
 
-                                {/* OPCIÓN: SEGUIR EN PROD */}
-                                <button
-                                    onClick={() => confirmFinish('production')}
-                                    className="w-full py-3 px-4 bg-white border-2 border-zinc-200 hover:border-brand-cyan/50 text-zinc-700 hover:text-brand-cyan hover:bg-brand-cyan/5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
-                                >
-                                    <i className="fa-solid fa-arrow-rotate-right"></i>
-                                    Mantener en Producción
-                                </button>
+                                        {/* OPCIÓN: SEGUIR EN PROD */}
+                                        <button
+                                            onClick={() => confirmFinish('production')}
+                                            className="w-full py-3 px-4 bg-white border-2 border-zinc-200 hover:border-brand-cyan/50 text-zinc-700 hover:text-brand-cyan hover:bg-brand-cyan/5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98]"
+                                        >
+                                            <i className="fa-solid fa-arrow-rotate-right"></i>
+                                            Mantener en Producción
+                                        </button>
+                                    </>
+                                )}
 
                                 <button
                                     onClick={() => setShowFinishModal(false)}

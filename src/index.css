@@ -155,6 +155,16 @@ body {
   animation: gradient-x 3s ease infinite;
 }
 
+/* Brillo que recorre la barra cuando el lote está 100% impreso */
+@keyframes shine {
+  0% { transform: translateX(-150%); }
+  60%, 100% { transform: translateX(150%); }
+}
+
+.animate-shine {
+  animation: shine 2.2s ease-in-out infinite;
+}
+
 /* ============================================================
    IMPRESIÓN — Ticket de Caja
    Oculta toda la app y solo muestra el .ticket-imprimible
