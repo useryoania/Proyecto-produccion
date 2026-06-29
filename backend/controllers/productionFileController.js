@@ -773,6 +773,7 @@ const postControlArchivo = async (req, res) => {
                         .input('OID', sql.Int, ordenId)
                         .query(`UPDATE Ordenes SET EstadoLogistica = '${destinoLogistica}' WHERE OrdenID = @OID`);
                     await changeOrderState(transaction, { target: { type: 'ORDER', id: ordenId }, estado: nuevoEstadoArea, userObj: req.user || 'Sistema', detalle: 'Control finalizado (Reposición)',
+                guard    : "Estado NOT IN ('Finalizado', 'Ingresado', 'Avisado', 'Entregado', 'Cancelado')",
                 io       : req.app.get('socketio')
             });
                 } else {
@@ -788,6 +789,7 @@ const postControlArchivo = async (req, res) => {
                             .query(`UPDATE Ordenes SET EstadoLogistica = '${destinoLogistica}' WHERE NoDocERP = @NoDoc AND AreaID = @AreaID AND Estado != 'CANCELADO' AND ISNULL(EstadoenArea,'') != 'Retenido'`);
                         for (const o of grp.recordset) {
                             await changeOrderState(transaction, { target: { type: 'ORDER', id: o.OrdenID }, estado: nuevoEstadoArea, userObj: req.user || 'Sistema', detalle: 'Control finalizado en Área',
+                guard    : "Estado NOT IN ('Finalizado', 'Ingresado', 'Avisado', 'Entregado', 'Cancelado')",
                 io       : req.app.get('socketio')
             });
                         }
@@ -795,6 +797,7 @@ const postControlArchivo = async (req, res) => {
                         await new sql.Request(transaction).input('OID', sql.Int, ordenId)
                             .query(`UPDATE Ordenes SET EstadoLogistica = '${destinoLogistica}' WHERE OrdenID = @OID`);
                         await changeOrderState(transaction, { target: { type: 'ORDER', id: ordenId }, estado: nuevoEstadoArea, userObj: req.user || 'Sistema', detalle: 'Control finalizado en Área',
+                guard    : "Estado NOT IN ('Finalizado', 'Ingresado', 'Avisado', 'Entregado', 'Cancelado')",
                 io       : req.app.get('socketio')
             });
                     }
