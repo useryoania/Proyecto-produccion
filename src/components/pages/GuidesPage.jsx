@@ -5,18 +5,6 @@ import ParticlesCanvas from '../ui/ParticlesCanvas';
 
 const GUIDES = [
   {
-    id: 'cenco',
-    label: 'CENCO',
-    description: 'Guía de preparación de archivos para sublimación CENCO.',
-    accent: '#00AEEF',
-    file: '/guias/guia-cenco.pdf',
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
-      </svg>
-    ),
-  },
-  {
     id: 'dtf',
     label: 'DTF',
     description: 'Guía técnica de preparación de archivos para impresión DTF.',
@@ -37,18 +25,6 @@ const GUIDES = [
     icon: (
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
-      </svg>
-    ),
-  },
-  {
-    id: 'emblemas',
-    label: 'Emblemas',
-    description: 'Guía para la preparación de emblemas y parches sublimados.',
-    accent: '#a78bfa',
-    file: '/guias/guia-emblemas.pdf',
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
       </svg>
     ),
   },

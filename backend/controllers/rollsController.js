@@ -342,6 +342,19 @@ exports.moveOrder = async (req, res) => {
 
         try {
             const { changeOrderState } = require('../services/stateManagerService');
+
+            // Si el lote destino YA está en máquina (sus órdenes están en 'En Maquina'), la orden que
+            // se agrega debe heredar ese estado en vez de quedar 'En Lote'. Se calcula una sola vez:
+            // las órdenes que se están moviendo todavía no tienen el RolloID asignado, así que esto
+            // mira únicamente las órdenes que YA estaban en el lote.
+            let loteEstado = 'En Lote';
+            if (targetRollId) {
+                const loteSt = await new sql.Request(transaction)
+                    .input('RID', sql.VarChar(50), String(targetRollId))
+                    .query(`SELECT TOP 1 1 AS x FROM dbo.Ordenes WHERE CAST(RolloID AS VARCHAR(50)) = @RID AND EstadoenArea = 'En Maquina'`);
+                if (loteSt.recordset.length > 0) loteEstado = 'En Maquina';
+            }
+
             for (const id of idsToMove) {
                 // Columnas estructurales (rollo/secuencia/máquina) en UPDATE directo (no son "estado")
                 await new sql.Request(transaction)
@@ -357,9 +370,11 @@ exports.moveOrder = async (req, res) => {
                 // Estado/EstadoenArea vía servicio central ('En Lote' deriva a Produccion)
                 await changeOrderState(transaction, {
                     target : { type: 'ORDER', id },
-                    estado : targetRollId ? 'En Lote' : 'Pendiente',
+                    estado : targetRollId ? loteEstado : 'Pendiente',
                     userObj: req.user || 'Sistema',
-                    detalle: targetRollId ? 'Movida a lote' : 'Movida a Pendientes',
+                    detalle: targetRollId
+                        ? (loteEstado === 'En Maquina' ? 'Agregada a lote en máquina' : 'Movida a lote')
+                        : 'Movida a Pendientes',
                     io     : req.app.get('socketio'),
                 });
             }
@@ -1656,7 +1671,11 @@ exports.reorderRolls = async (req, res) => {
                     .input('AREA', sql.VarChar(20), areaId)
                     .query(`UPDATE dbo.Rollos SET Secuencia = @SEQ
                             WHERE RolloID = @RID AND AreaID = @AREA
-                            AND Estado IN ('Abierto', 'En Cola')`);
+                            -- Incluir TODOS los lotes activos (también 'En Maquina'/'Pausado'). Antes el
+                            -- filtro era IN ('Abierto','En Cola') → el lote en máquina no se reordenaba y
+                            -- al refrescar el board (sort por Secuencia) volvía a su lugar. Mismo criterio
+                            -- de exclusión que la query del board.
+                            AND Estado NOT IN ('Cerrado', 'Finalizado', 'Cancelado')`);
             }
             await transaction.commit();
             if (req.app.get('socketio')) {
