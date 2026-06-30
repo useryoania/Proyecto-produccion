@@ -1373,9 +1373,9 @@ if (triggerReversal || triggerForward) {
             for (const oid of receivedOrdersSet) {
                 await changeOrderState(transaction, {
                     target   : { type: 'ORDER', id: oid },
-                    estado   : 'Finalizado',
+                    estado   : 'Ingresado',
                     userObj  : req.user || req.body.usuario || usuarioId || 'Sistema',
-                    detalle  : `Orden Finalizada (Recepción en ${areaReceptora})`,
+                    detalle  : `Orden Ingresada (Recepción en ${areaReceptora})`,
                     io       : req.app.get('socketio')
                 });
             }

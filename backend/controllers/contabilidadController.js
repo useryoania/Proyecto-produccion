@@ -1467,6 +1467,8 @@ exports.getPlanesMetros = async (req, res) => {
           p.PlaCantidadTotal,
           p.PlaCantidadUsada,
           p.PlaCantidadTotal - p.PlaCantidadUsada AS PlaCantidadPendiente,
+          -- Saldo real de la cuenta (puede ser negativo para ROLLO/SEMANAL con recursos)
+          ISNULL(cc.CueSaldoActual, p.PlaCantidadTotal - p.PlaCantidadUsada) AS PlaCantidadRestante,
           CASE WHEN p.PlaCantidadTotal > 0
                THEN CAST(p.PlaCantidadUsada * 100.0 / p.PlaCantidadTotal AS DECIMAL(5,2))
                ELSE 0
@@ -1475,8 +1477,9 @@ exports.getPlanesMetros = async (req, res) => {
           p.PlaFechaInicio, p.PlaFechaVencimiento,
           p.PlaActivo
         FROM      dbo.PlanesMetros p
-        LEFT JOIN dbo.Articulos a   ON a.ProIdProducto = p.ProIdProducto
-        LEFT JOIN dbo.Monedas   mon ON mon.MonIdMoneda  = p.MonIdMoneda
+        LEFT JOIN dbo.CuentasCliente cc ON cc.CueIdCuenta = p.CueIdCuenta
+        LEFT JOIN dbo.Articulos a       ON a.ProIdProducto = p.ProIdProducto
+        LEFT JOIN dbo.Monedas   mon     ON mon.MonIdMoneda  = p.MonIdMoneda
         CROSS APPLY (SELECT LTRIM(RTRIM(a.Descripcion)) AS Descripcion) art
         WHERE p.CliIdCliente = @CliIdCliente
         ORDER BY p.PlaActivo DESC, p.PlaFechaInicio DESC

@@ -1,4 +1,5 @@
 const { getPool, sql } = require("../config/db");
+const { changeOrderState } = require('../services/stateManagerService');
 const axios = require("axios");
 const logger = require('../utils/logger');
 
@@ -158,6 +159,34 @@ async function procesarUnaOrdenWsp(io, r, pool, throttle) {
         else sendResp = await fnSend();
 
         await marcarOrdenEnviada(pool, r.OrdIdOrden);
+
+        // Marcar EstadoenArea = 'Avisado' en dbo.Ordenes para que quede visible en producción
+        try {
+            const tran = new sql.Transaction(pool);
+            await tran.begin();
+            try {
+                const ordRes = await new sql.Request(tran)
+                    .input('Cod', sql.NVarChar(50), r.OrdCodigoOrden)
+                    .query('SELECT OrdenID FROM dbo.Ordenes WHERE CodigoOrden = @Cod');
+                for (const ord of ordRes.recordset) {
+                    await changeOrderState(tran, {
+                        target  : { type: 'ORDER', id: ord.OrdenID },
+                        estado  : 'Avisado',
+                        userObj : 'Sistema (WSP)',
+                        detalle : `WhatsApp de aviso enviado`,
+                        guard   : "Estado NOT IN ('Entregado', 'Cancelado')",
+                        io
+                    });
+                }
+                await tran.commit();
+            } catch (e) {
+                await tran.rollback();
+                logger.warn(`[WHATSAPP JOB] No se pudo marcar Avisado para ${codigoOrden}:`, e.message);
+            }
+        } catch (e) {
+            logger.warn(`[WHATSAPP JOB] Error iniciando transacción para Avisado (${codigoOrden}):`, e.message);
+        }
+
         if (io) io.emit("actualizado_wsp", { codigoOrden: r.OrdCodigoOrden, ordId: r.OrdIdOrden, status: 'success' });
         logger.info(`[WHATSAPP JOB] Enviado OK ${codigoOrden}`);
     } catch (err) {

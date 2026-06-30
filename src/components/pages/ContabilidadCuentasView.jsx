@@ -1964,7 +1964,7 @@ const PlanesPanel = ({ cuenta, CliIdCliente, cliente, desde, hasta, onClose, onC
                       const pct      = Number(p.PorcentajeUsado);
                       const agotado  = pct >= 100;
                       const alerta   = pct >= 80 && !agotado;
-                      const restante = Number(p.PlaCantidadRestante ?? 0);
+                      const restante = Number(p.PlaCantidadRestante ?? (p.PlaCantidadTotal - p.PlaCantidadUsada));
                       return (
                         <div key={p.PlaIdPlan} className={`flex-1 min-w-[220px] rounded-lg border px-3 py-2 bg-white ${agotado ? 'border-rose-200' : alerta ? 'border-amber-200' : 'border-slate-200'}`}>
                           <div className="flex items-center justify-between mb-1">
