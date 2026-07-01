@@ -9,6 +9,10 @@ async function ensureOrderColumns(pool) {
     await pool.request().query(`
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'Impreso' AND Object_ID = Object_ID('dbo.Ordenes'))
             ALTER TABLE dbo.Ordenes ADD Impreso BIT NOT NULL CONSTRAINT DF_Ordenes_Impreso DEFAULT 0;
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'Calandrado' AND Object_ID = Object_ID('dbo.Ordenes'))
+            ALTER TABLE dbo.Ordenes ADD Calandrado BIT NOT NULL CONSTRAINT DF_Ordenes_Calandrado DEFAULT 0;
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'MetrosGrupoFalla' AND Object_ID = Object_ID('dbo.Ordenes'))
+            ALTER TABLE dbo.Ordenes ADD MetrosGrupoFalla DECIMAL(10,2) NULL;
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'GrupoManual' AND Object_ID = Object_ID('dbo.Ordenes'))
             ALTER TABLE dbo.Ordenes ADD GrupoManual INT NULL;
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'OrdenadoSB' AND Object_ID = Object_ID('dbo.Rollos'))
@@ -110,10 +114,15 @@ exports.getBoardData = async (req, res) => {
                     -- ✅ SUBCONSULTA PARA CONTAR ARCHIVOS (Usando tu tabla dbo.ArchivosOrden)
                     (SELECT COUNT(*) FROM dbo.ArchivosOrden WHERE OrdenID = o.OrdenID) AS CantidadArchivos
 
-                FROM dbo.Ordenes o 
+                FROM dbo.Ordenes o
                 WHERE o.AreaID = @AreaID
-                AND o.Estado NOT IN ('Entregado', 'Finalizado', 'Cancelado') AND ISNULL(o.EstadoenArea,'') NOT IN ('Pronto', 'PRONTO')
-                
+                AND (
+                    -- Órdenes dentro de un lote ACTIVO: se cuentan TODAS (total del lote, igual que el detalle)
+                    o.RolloID IN (SELECT RolloID FROM dbo.Rollos WHERE AreaID = @AreaID AND Estado IN ('Abierto', 'En Cola', 'En maquina', 'Producción', 'Pausado'))
+                    -- Órdenes sin lote (pendientes en la mesa): solo las activas
+                    OR (o.RolloID IS NULL AND o.Estado NOT IN ('Entregado', 'Finalizado', 'Cancelado') AND ISNULL(o.EstadoenArea,'') NOT IN ('Pronto', 'PRONTO'))
+                )
+
                 -- Ordenamos por Secuencia para mantener el orden del Drag & Drop
                 ORDER BY ISNULL(o.Secuencia, 999999), o.OrdenID ASC
             `);
@@ -343,16 +352,15 @@ exports.moveOrder = async (req, res) => {
         try {
             const { changeOrderState } = require('../services/stateManagerService');
 
-            // Si el lote destino YA está en máquina (sus órdenes están en 'En Maquina'), la orden que
-            // se agrega debe heredar ese estado en vez de quedar 'En Lote'. Se calcula una sola vez:
-            // las órdenes que se están moviendo todavía no tienen el RolloID asignado, así que esto
-            // mira únicamente las órdenes que YA estaban en el lote.
+            // Principio: si el LOTE destino está en una máquina (tiene MaquinaID, sea impresora o
+            // calandra) sus órdenes van 'En Maquina'; si no está en ninguna máquina → 'En Lote'. La
+            // orden que se agrega hereda el estado según el MaquinaID del lote (fuente de verdad).
             let loteEstado = 'En Lote';
             if (targetRollId) {
                 const loteSt = await new sql.Request(transaction)
                     .input('RID', sql.VarChar(50), String(targetRollId))
-                    .query(`SELECT TOP 1 1 AS x FROM dbo.Ordenes WHERE CAST(RolloID AS VARCHAR(50)) = @RID AND EstadoenArea = 'En Maquina'`);
-                if (loteSt.recordset.length > 0) loteEstado = 'En Maquina';
+                    .query(`SELECT MaquinaID FROM dbo.Rollos WHERE CAST(RolloID AS VARCHAR(50)) = @RID`);
+                if (loteSt.recordset[0]?.MaquinaID != null) loteEstado = 'En Maquina';
             }
 
             for (const id of idsToMove) {
@@ -420,6 +428,23 @@ exports.createRoll = async (req, res) => {
 
     try {
         const pool = await getPool();
+
+        // Validación: no permitir dos lotes ABIERTOS con el mismo nombre en la misma área.
+        if (name && name.trim()) {
+            const dup = await pool.request()
+                .input('Nombre', sql.NVarChar(100), name.trim())
+                .input('AreaID', sql.VarChar(20), areaId)
+                .query(`
+                    SELECT TOP 1 RolloID FROM dbo.Rollos
+                    WHERE AreaID = @AreaID
+                      AND LTRIM(RTRIM(Nombre)) = @Nombre
+                      AND Estado IN ('Abierto', 'En Cola', 'En maquina', 'Producción', 'Pausado')
+                `);
+            if (dup.recordset.length > 0) {
+                return res.status(409).json({ error: `Ya existe un lote abierto con el nombre "${name.trim()}" en esta área.` });
+            }
+        }
+
         const transaction = new sql.Transaction(pool);
         await transaction.begin();
 
@@ -556,6 +581,25 @@ exports.updateRollGeneral = async (req, res) => {
 
     try {
         const pool = await getPool();
+
+        // Validación: no permitir renombrar a un nombre ya usado por OTRO lote abierto de la misma área.
+        if (name !== undefined && name && name.trim()) {
+            const dup = await pool.request()
+                .input('RID', sql.VarChar(50), String(rollId))
+                .input('Nombre', sql.NVarChar(100), name.trim())
+                .query(`
+                    SELECT TOP 1 r2.RolloID
+                    FROM dbo.Rollos r2
+                    WHERE LTRIM(RTRIM(r2.Nombre)) = @Nombre
+                      AND r2.AreaID = (SELECT AreaID FROM dbo.Rollos WHERE CAST(RolloID AS VARCHAR(50)) = @RID)
+                      AND CAST(r2.RolloID AS VARCHAR(50)) <> @RID
+                      AND r2.Estado IN ('Abierto', 'En Cola', 'En maquina', 'Producción', 'Pausado')
+                `);
+            if (dup.recordset.length > 0) {
+                return res.status(409).json({ error: `Ya existe un lote abierto con el nombre "${name.trim()}" en esta área.` });
+            }
+        }
+
         const transaction = new sql.Transaction(pool);
         await transaction.begin();
 
@@ -1101,7 +1145,8 @@ exports.getRollDetails = async (req, res) => {
                 SELECT 
                     o.OrdenID, o.CodigoOrden, o.Cliente, o.DescripcionTrabajo, 
                     o.Magnitud, o.Material, o.Variante, o.RolloID, 
-                    o.Prioridad, o.Estado, o.FechaIngreso, o.Secuencia, o.Tinta, o.NoDocERP, o.IdCabezalERP, o.Nota, o.Impreso, o.GrupoManual,
+                    o.Prioridad, o.Estado, o.FechaIngreso, o.Secuencia, o.Tinta, o.NoDocERP, o.IdCabezalERP, o.Nota, o.Impreso, o.Calandrado, o.MetrosGrupoFalla, o.GrupoManual,
+                    c.IDCliente AS ClienteIdStr,
                     (SELECT COUNT(*) FROM dbo.ArchivosOrden WHERE OrdenID = o.OrdenID) AS CantidadArchivos,
                     (SELECT COUNT(*) FROM dbo.ArchivosOrden WHERE OrdenID = o.OrdenID) AS fileCount,
                     -- ✅ SUBQUERY FOR GLOBAL STATUS (Sibling Orders via Root Match)
@@ -1119,7 +1164,8 @@ exports.getRollDetails = async (req, res) => {
                             )
                         FOR JSON PATH
                     ) as RelatedStatus
-                FROM dbo.Ordenes o 
+                FROM dbo.Ordenes o
+                LEFT JOIN dbo.Clientes c ON c.CliIdCliente = o.CliIdCliente
                 WHERE CAST(o.RolloID AS VARCHAR(50)) = @RolloID
                 ORDER BY ISNULL(o.Secuencia, 999999), o.OrdenID ASC
             `);
@@ -1132,8 +1178,10 @@ exports.getRollDetails = async (req, res) => {
                 id: o.OrdenID,
                 code: o.CodigoOrden,
                 client: o.Cliente,
+                clientId: o.ClienteIdStr || '',
                 desc: o.DescripcionTrabajo,
                 magnitude: magVal,
+                groupFallaMeters: (o.MetrosGrupoFalla !== null && o.MetrosGrupoFalla !== undefined) ? parseFloat(o.MetrosGrupoFalla) : null,
                 material: o.Material,
                 variantCode: o.Variante,
                 entryDate: o.FechaIngreso,
@@ -1142,6 +1190,7 @@ exports.getRollDetails = async (req, res) => {
                 rollId: o.RolloID,
                 sequence: o.Secuencia,
                 printed: !!o.Impreso,
+                calandered: !!o.Calandrado,
                 groupId: o.GrupoManual,
                 ink: o.Tinta,
                 fileCount: o.CantidadArchivos || o.fileCount || 0,
@@ -1176,6 +1225,65 @@ exports.setOrderPrinted = async (req, res) => {
         res.json({ ok: true });
     } catch (err) {
         logger.error('Error seteando Impreso:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// Marcar/desmarcar una orden como CALANDRADA (SB, lote en calandra). Espeja setOrderPrinted.
+exports.setOrderCalandered = async (req, res) => {
+    const { orderId, calandered } = req.body;
+    if (!orderId) return res.status(400).json({ error: 'orderId requerido' });
+    try {
+        const pool = await getPool();
+        await ensureOrderColumns(pool);
+        await pool.request()
+            .input('OID', sql.Int, Number(orderId))
+            .input('C', sql.Bit, calandered ? 1 : 0)
+            .query('UPDATE dbo.Ordenes SET Calandrado = @C WHERE OrdenID = @OID');
+        res.json({ ok: true });
+    } catch (err) {
+        logger.error('Error seteando Calandrado:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// Setear la Magnitud (metros) de UNA orden — se usa para editar los metros de las órdenes -F.
+exports.setOrderMagnitud = async (req, res) => {
+    const { orderId, magnitud } = req.body;
+    if (!orderId) return res.status(400).json({ error: 'orderId requerido' });
+    try {
+        const pool = await getPool();
+        const val = (magnitud === '' || magnitud === null || magnitud === undefined) ? null : Number(magnitud);
+        if (val !== null && Number.isNaN(val)) return res.status(400).json({ error: 'magnitud inválida' });
+        await pool.request()
+            .input('OID', sql.Int, Number(orderId))
+            .input('M', sql.Decimal(10, 2), val)
+            .query('UPDATE dbo.Ordenes SET Magnitud = @M WHERE OrdenID = @OID');
+        res.json({ ok: true });
+    } catch (err) {
+        logger.error('Error seteando Magnitud:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// Setear el total de metros de un GRUPO de falla (independiente de la Magnitud por orden).
+// Guarda el mismo valor en MetrosGrupoFalla de TODAS las órdenes del grupo (orderIds).
+exports.setFallaGroupMeters = async (req, res) => {
+    const { orderIds, metros } = req.body;
+    if (!Array.isArray(orderIds) || orderIds.length === 0) return res.status(400).json({ error: 'orderIds requerido' });
+    try {
+        const pool = await getPool();
+        await ensureOrderColumns(pool);
+        const val = (metros === '' || metros === null || metros === undefined) ? null : Number(metros);
+        if (val !== null && Number.isNaN(val)) return res.status(400).json({ error: 'metros inválido' });
+        const ids = orderIds.map(Number).filter(n => Number.isFinite(n));
+        if (ids.length === 0) return res.status(400).json({ error: 'orderIds inválidos' });
+        await pool.request()
+            .input('M', sql.Decimal(10, 2), val)
+            .query(`UPDATE dbo.Ordenes SET MetrosGrupoFalla = @M WHERE OrdenID IN (${ids.join(',')})`);
+        res.json({ ok: true });
+    } catch (err) {
+        logger.error('Error seteando MetrosGrupoFalla:', err);
         res.status(500).json({ error: err.message });
     }
 };

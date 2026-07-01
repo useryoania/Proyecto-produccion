@@ -661,6 +661,7 @@ const PlaneacionTrabajo = ({ AreaID }) => {
                                     <MachineControl
                                         key={machine.id}
                                         machine={machine}
+                                        areaCode={areaCode}
                                         pendingRolls={pendingRolls}
                                         onAssign={async (rollId) => {
                                             // Optimistic update
@@ -850,6 +851,11 @@ const PlaneacionTrabajo = ({ AreaID }) => {
                         onClose={() => setInspectingRollId(null)}
                         onViewOrder={handleViewOrder}
                         onUpdate={refreshBoard}
+                        lockReorder={(() => {
+                            // En SB, si el lote está en una máquina que NO es impresora (calandra), no se reordena dentro del modal.
+                            const mach = (localBoardData.machines || []).find(m => (m.rolls || []).some(r => String(r.id) === String(inspectingRollId)));
+                            return String(areaCode || '').toUpperCase() === 'SB' && !!mach && !mach.separacionImpresion;
+                        })()}
                     />
                 )
             }

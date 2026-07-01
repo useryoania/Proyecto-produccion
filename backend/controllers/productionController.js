@@ -189,6 +189,53 @@ exports.toggleRollStatus = async (req, res) => {
             } else if (action === 'finish') {
                 // === FINISH ===
 
+                // === VALIDACIÓN: metros del grupo de falla OBLIGATORIOS al finalizar en una máquina ===
+                // Si el lote tiene órdenes -F, no se puede finalizar (pasar a calandra o enviar a calidad)
+                // hasta que: (1) el grupo de falla tenga su total de metros (MetrosGrupoFalla > 0) y
+                // (2) cada orden -F tenga su metraje (Magnitud > 0).
+                // No aplica a 'production' (devolver a la cola es una corrección, no una finalización).
+                if (destination !== 'production') {
+                    const fRes = await new sql.Request(transaction)
+                        .input('RID_F', sql.VarChar(50), currentRoll.RolloID.toString())
+                        .query(`
+                            SELECT CodigoOrden, ISNULL(TRY_CONVERT(DECIMAL(10,2), Magnitud), 0) AS Mag
+                            FROM dbo.Ordenes
+                            WHERE CAST(RolloID AS VARCHAR(50)) = @RID_F
+                              AND CodigoOrden LIKE '%-F%'
+                              AND Estado NOT IN ('Cancelado','Cancelada')
+                        `);
+                    const fallaRows = fRes.recordset || [];
+                    if (fallaRows.length > 0) {
+                        // ¿Existe la columna del total de grupo? (se auto-crea al abrir el detalle del lote)
+                        const colRes = await new sql.Request(transaction)
+                            .query("SELECT COL_LENGTH('dbo.Ordenes','MetrosGrupoFalla') AS L");
+                        let grpFalta = colRes.recordset[0].L === null; // sin columna → el total nunca se cargó
+                        if (!grpFalta) {
+                            const gRes = await new sql.Request(transaction)
+                                .input('RID_G', sql.VarChar(50), currentRoll.RolloID.toString())
+                                .query(`
+                                    SELECT COUNT(*) AS Faltan
+                                    FROM dbo.Ordenes
+                                    WHERE CAST(RolloID AS VARCHAR(50)) = @RID_G
+                                      AND CodigoOrden LIKE '%-F%'
+                                      AND Estado NOT IN ('Cancelado','Cancelada')
+                                      AND ISNULL(MetrosGrupoFalla, 0) <= 0
+                                `);
+                            grpFalta = (gRes.recordset[0].Faltan || 0) > 0;
+                        }
+                        const sinMetros = fallaRows.filter(r => Number(r.Mag) <= 0).map(r => r.CodigoOrden);
+                        if (grpFalta || sinMetros.length > 0) {
+                            await transaction.rollback();
+                            const partes = [];
+                            if (grpFalta) partes.push('el metraje del grupo de falla');
+                            if (sinMetros.length > 0) partes.push('el metraje de cada orden de falla');
+                            return res.status(400).json({
+                                error: `No se puede finalizar el lote: falta cargar ${partes.join(' y ')}.`
+                            });
+                        }
+                    }
+                }
+
                 // Opción A: Devolver a Producción (No Calidad)
                 if (destination === 'production') {
                     await new sql.Request(transaction)
@@ -243,7 +290,7 @@ exports.toggleRollStatus = async (req, res) => {
                             .query('UPDATE dbo.Ordenes SET MaquinaID = @MID WHERE CAST(RolloID AS VARCHAR(50)) = @RID');
                         await changeOrderState(transaction, {
                             target   : { type: 'ROLL', id: currentRoll.RolloID },
-                            estado   : 'En Lote',
+                            estado   : 'En Maquina', // el lote ya está en la calandra (una máquina) → En Maquina, no En Lote
                             userObj  : req.user,
                             detalle  : 'Fin Impresion - Pasa a Calandra {rollo} - Maquina {maquina}',
                             rolloId  : currentRoll.RolloID,

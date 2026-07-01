@@ -1535,6 +1535,35 @@ exports.getClientOrders = async (req, res) => {
     }
 };
 
+// GET /api/web-orders/order/:ordenId/files — archivos de una orden del cliente, con COPIAS.
+// Scopeado al cliente logueado (solo ve archivos de sus propias órdenes).
+exports.getOrderFiles = async (req, res) => {
+    const codCliente = req.user?.codCliente;
+    const { ordenId } = req.params;
+    if (!ordenId) return res.status(400).json({ error: 'ordenId requerido' });
+    try {
+        const pool = await getPool();
+        const result = await pool.request()
+            .input('OID', sql.Int, Number(ordenId))
+            .input('cod', sql.Int, codCliente || 0)
+            .query(`
+                SELECT ao.ArchivoID,
+                       ao.NombreArchivo,
+                       ISNULL(ao.Copias, 1) AS Copias,
+                       ao.RutaAlmacenamiento,
+                       o.CodigoOrden
+                FROM dbo.ArchivosOrden ao WITH(NOLOCK)
+                INNER JOIN dbo.Ordenes o WITH(NOLOCK) ON ao.OrdenID = o.OrdenID
+                WHERE ao.OrdenID = @OID AND o.CodCliente = @cod
+                ORDER BY ao.ArchivoID ASC
+            `);
+        res.json({ success: true, data: result.recordset });
+    } catch (err) {
+        logger.error("Error getOrderFiles:", err);
+        res.status(500).json({ error: "Error al obtener archivos de la orden." });
+    }
+};
+
 // --- ELIMINAR PEDIDO INCOMPLETO (ZOMBIE) ---
 exports.deleteIncompleteOrder = async (req, res) => {
     const codCliente = req.user?.codCliente;
@@ -1860,7 +1889,7 @@ exports.getPickupOrders = async (req, res) => {
                 LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
                 LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = o.ProIdProducto
                 WHERE c.IDCliente = @idCliente
-                AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar')
+                AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar', 'Pronto para entregar')
                 AND o.OReIdOrdenRetiro IS NULL
             `);
         const externalOrders = ordersResult.recordset;
@@ -2291,7 +2320,7 @@ exports.createPickupOrder = async (req, res) => {
                     LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
                     LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                     WHERE c.IDCliente = @idCliente
-                    AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar')
+                    AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar', 'Pronto para entregar')
                     AND o.OReIdOrdenRetiro IS NULL
                 `);
 

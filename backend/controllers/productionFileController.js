@@ -364,6 +364,8 @@ const postControlArchivo = async (req, res) => {
             // Metros reales a reponer (si viene del front)
             const metrosReponer = req.body.metrosReponer ? parseFloat(req.body.metrosReponer) : null;
             const equipoId = req.body.equipoId ? parseInt(req.body.equipoId) : null;
+            // En SB la -F arranca en 0m (no se piden metros a reponer); en el resto se clona la magnitud de la orden madre.
+            const esFallaSB = String(areaId || '').toUpperCase() === 'SB';
 
             // Construir Nota compuesta para la nueva orden de falla
             const row = !isService ? fileData.recordset[0] : null;
@@ -446,6 +448,7 @@ const postControlArchivo = async (req, res) => {
                     .input('CantidadFalla', sql.Decimal(10, 2), metrosReponer)
                     .input('ArchivoID',     sql.Int,            archivoId)
                     .input('AreaID',        sql.NVarChar,       areaId)
+                    .input('IsSB',          sql.Bit,            esFallaSB ? 1 : 0)
                     .input('NotaFinal',     sql.NVarChar(sql.MAX), notaFinal)
                     .query(`
                         -- Nueva Orden de Falla
@@ -462,7 +465,7 @@ const postControlArchivo = async (req, res) => {
                             @NewCode, Cliente, GETDATE(), FechaEstimadaEntrega,
                             Material, DescripcionTrabajo, 'Falla',
                             'Pendiente', 'Pendiente', AreaID,
-                            Magnitud, IdCabezalERP, ProximoServicio, @NotaFinal, NoDocERP,
+                            (CASE WHEN @IsSB = 1 THEN 0 ELSE Magnitud END), IdCabezalERP, ProximoServicio, @NotaFinal, NoDocERP,
                             GETDATE(), 1, Variante, UM,
                             IdClienteReact, CliIdCliente, CodCliente,
                             IdProductoReact, ProIdProducto, CodArticulo, 0
@@ -497,7 +500,11 @@ const postControlArchivo = async (req, res) => {
             }
 
             if (newOrderId) {
-                const metrosSQL = metrosReponer !== null ? `@MetrosReponer` : `Metros`;
+                // En SB la -F mide 0m (metros del archivo = 0). Si no, se mantiene la lógica anterior.
+                // OJO: en el UPDATE hay JOIN de dos ArchivosOrden (AO2/AO_SRC) → la columna "Metros"
+                // desnuda es ambigua, se califica con AO_SRC. En el INSERT (una sola tabla) va desnuda.
+                const metrosUpd = esFallaSB ? `0` : (metrosReponer !== null ? `@MetrosReponer` : `AO_SRC.Metros`);
+                const metrosIns = esFallaSB ? `0` : (metrosReponer !== null ? `@MetrosReponer` : `Metros`);
 
                 const insertRequest = new sql.Request(transaction)
                     .input('NewOrderID', sql.Int, newOrderId)
@@ -512,7 +519,7 @@ const postControlArchivo = async (req, res) => {
                 await insertRequest.query(`
                     -- Si ya existe el archivo, actualizar los metros
                     UPDATE AO2
-                    SET AO2.Metros = ${metrosSQL},
+                    SET AO2.Metros = ${metrosUpd},
                         AO2.Observaciones = 'Reposición por Falla (actualizado)'
                     FROM dbo.ArchivosOrden AO2
                     INNER JOIN dbo.ArchivosOrden AO_SRC ON AO_SRC.ArchivoID = @OldFileID
@@ -527,7 +534,7 @@ const postControlArchivo = async (req, res) => {
                             TipoArchivo, FechaSubida, EstadoArchivo
                         )
                         SELECT
-                            @NewOrderID, NombreArchivo, RutaAlmacenamiento, ${metrosSQL}, Copias, Ancho, Alto, 'Reposición por Falla',
+                            @NewOrderID, NombreArchivo, RutaAlmacenamiento, ${metrosIns}, Copias, Ancho, Alto, 'Reposición por Falla',
                             TipoArchivo, GETDATE(), 'Pendiente'
                         FROM dbo.ArchivosOrden
                         WHERE ArchivoID = @OldFileID

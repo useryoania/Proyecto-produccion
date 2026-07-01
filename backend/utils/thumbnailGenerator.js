@@ -41,9 +41,9 @@ exports.generatePdfThumbnail = async (buffer, codigoOrden, archivoId) => {
 
         if (!fs.existsSync(tmpJpg)) throw new Error('pdftoppm no produjo salida');
 
-        // Recortar a 300x300 con Sharp (igual que las imágenes)
+        // Escalar a máx 300x300 SIN recortar (mantiene el aspecto completo del archivo)
         await sharp(tmpJpg)
-            .resize(300, 300, { fit: 'cover', position: 'top' })
+            .resize(300, 300, { fit: 'inside' })
             .jpeg({ quality: 80 })
             .toFile(outPath);
 
@@ -73,7 +73,7 @@ exports.generateImageThumbnail = async (buffer, codigoOrden, archivoId) => {
         const outPath = path.join(orderDir, `${archivoId}.jpg`);
 
         await sharp(buffer)
-            .resize(300, 300, { fit: 'cover', position: 'top' })
+            .resize(300, 300, { fit: 'inside' })
             .jpeg({ quality: 75 })
             .toFile(outPath);
 

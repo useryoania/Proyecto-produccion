@@ -26,6 +26,18 @@ export const rollsService = {
         const { data } = await api.post('/rolls/order-printed', { orderId, printed });
         return data;
     },
+    setCalandered: async (orderId, calandered) => {
+        const { data } = await api.post('/rolls/order-calandered', { orderId, calandered });
+        return data;
+    },
+    setOrderMagnitud: async (orderId, magnitud) => {
+        const { data } = await api.post('/rolls/order-magnitud', { orderId, magnitud });
+        return data;
+    },
+    setFallaGroupMeters: async (orderIds, metros) => {
+        const { data } = await api.post('/rolls/falla-group-meters', { orderIds, metros });
+        return data;
+    },
     setOrderGroup: async (rollId, orderIds, group) => {
         const { data } = await api.post('/rolls/order-group', { rollId, orderIds, group });
         return data;

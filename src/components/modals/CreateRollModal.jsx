@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Swal from 'sweetalert2';
 import { rollsService, insumosService } from '../../services/api';
 
 const CreateRollModal = ({ isOpen, onClose, areaCode, onSuccess }) => {
@@ -23,7 +24,9 @@ const CreateRollModal = ({ isOpen, onClose, areaCode, onSuccess }) => {
     ];
 
     const handleSubmit = async () => {
-        if (!formData.name) return alert("El nombre es obligatorio");
+        if (!formData.name || !formData.name.trim()) {
+            return Swal.fire({ icon: 'warning', title: 'Falta el nombre', text: 'El nombre del lote es obligatorio.' });
+        }
 
         setLoading(true);
         try {
@@ -31,13 +34,23 @@ const CreateRollModal = ({ isOpen, onClose, areaCode, onSuccess }) => {
                 areaId: areaCode,
                 ...formData
             });
-            alert("✅ Lote creado exitosamente");
             if (onSuccess) onSuccess();
             onClose();
             // Reset
             setFormData({ name: '', capacity: 100, color: '#3b82f6', bobinaId: null });
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Lote creado', showConfirmButton: false, timer: 2500, timerProgressBar: true });
         } catch (error) {
-            alert("Error al crear el lote: " + (error.response?.data?.error || error.message));
+            // 409 = ya existe un lote abierto con ese nombre → avisar y NO cerrar (para corregir el nombre)
+            if (error.response?.status === 409) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Nombre en uso',
+                    text: error.response.data?.error || 'Ya existe un lote abierto con ese nombre en esta área. Elegí otro nombre.',
+                    confirmButtonColor: '#006E97'
+                });
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: 'No se pudo crear el lote: ' + (error.response?.data?.error || error.message) });
+            }
         } finally {
             setLoading(false);
         }

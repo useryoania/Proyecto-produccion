@@ -4,6 +4,7 @@
  * Uso: node scripts/backfillThumbnails.js
  *      node scripts/backfillThumbnails.js --concurrency=2
  *      node scripts/backfillThumbnails.js --noDocERP=DTF-1072   (solo una orden)
+ *      node scripts/backfillThumbnails.js --force               (REGENERA los que ya existen)
  */
 
 const path = require('path');
@@ -22,6 +23,7 @@ const args = Object.fromEntries(
 );
 const CONCURRENCY = parseInt(args.concurrency || '1', 10); // Puppeteer es pesado, default 1
 const FILTER_DOC  = args.noDocERP || null;
+const FORCE       = !!args.force;   // --force = regenerar aunque ya exista el thumbnail
 
 // ── Helpers ───────────────────────────────────────────────
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -88,8 +90,8 @@ async function main() {
             const fileId = extractDriveId(RutaAlmacenamiento);
             const label  = `[${CodigoOrden} / ArchivoID=${ArchivoID}] ${NombreArchivo}`;
 
-            // Saltar si ya existe
-            if (thumbnailExists(CodigoOrden, ArchivoID)) {
+            // Saltar si ya existe (salvo --force, que regenera)
+            if (!FORCE && thumbnailExists(CodigoOrden, ArchivoID)) {
                 console.log(`  ⏭️  Ya existe: ${label}`);
                 skip++;
                 return;

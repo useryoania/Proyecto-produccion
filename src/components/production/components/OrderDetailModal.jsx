@@ -981,28 +981,47 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                         </div>
                     )}
 
-                    {currentOrder.note && (
-                        <div className="mb-8 bg-amber-50 border-l-4 border-amber-400 p-3 flex gap-3 shadow-sm rounded-r-lg">
-                            <i className="fa-solid fa-note-sticky text-amber-500 text-lg mt-0.5"></i>
-                            <div className="w-full">
-                                <h4 className="font-bold text-amber-900 text-xs uppercase mb-1">Notas de Producción / Fallas</h4>
-                                <div className="space-y-1.5">
-                                    {currentOrder.note.split('||').map((nota, index) => {
-                                        const cleanNota = nota.replace('FALLA:', '').trim();
-                                        if (!cleanNota) return null;
-                                        return (
-                                            <div key={index} className="flex gap-2 items-start bg-amber-100/50 p-2 rounded border border-amber-200/50">
-                                                <i className="fa-solid fa-circle-exclamation text-amber-500 mt-1 text-[10px]"></i>
-                                                <p className="text-amber-800 text-sm italic leading-snug font-medium">
-                                                    {cleanNota}
-                                                </p>
+                    {currentOrder.note && (() => {
+                        const parts = currentOrder.note.split('||').map(n => n.trim()).filter(Boolean);
+                        const fallas = parts.filter(n => /^FALLA:/i.test(n)).map(n => n.replace(/^FALLA:\s*/i, '').trim()).filter(Boolean);
+                        const prod = parts.filter(n => !/^FALLA:/i.test(n));
+                        return (
+                            <div className="mb-8 space-y-3">
+                                {prod.length > 0 && (
+                                    <div className="bg-blue-50 border-l-4 border-blue-400 p-3 flex gap-3 shadow-sm rounded-r-lg">
+                                        <i className="fa-solid fa-note-sticky text-blue-500 text-lg mt-0.5"></i>
+                                        <div className="w-full">
+                                            <h4 className="font-bold text-blue-900 text-xs uppercase mb-1">Notas de Producción</h4>
+                                            <div className="space-y-1.5">
+                                                {prod.map((nota, index) => (
+                                                    <div key={index} className="flex gap-2 items-start bg-blue-100/50 p-2 rounded border border-blue-200/50">
+                                                        <i className="fa-solid fa-circle-info text-blue-500 mt-1 text-[10px]"></i>
+                                                        <p className="text-blue-800 text-sm italic leading-snug font-medium">{nota}</p>
+                                                    </div>
+                                                ))}
                                             </div>
-                                        );
-                                    })}
-                                </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {fallas.length > 0 && (
+                                    <div className="bg-amber-50 border-l-4 border-amber-400 p-3 flex gap-3 shadow-sm rounded-r-lg">
+                                        <i className="fa-solid fa-triangle-exclamation text-amber-500 text-lg mt-0.5"></i>
+                                        <div className="w-full">
+                                            <h4 className="font-bold text-amber-900 text-xs uppercase mb-1">Fallas</h4>
+                                            <div className="space-y-1.5">
+                                                {fallas.map((nota, index) => (
+                                                    <div key={index} className="flex gap-2 items-start bg-amber-100/50 p-2 rounded border border-amber-200/50">
+                                                        <i className="fa-solid fa-circle-exclamation text-amber-500 mt-1 text-[10px]"></i>
+                                                        <p className="text-amber-800 text-sm italic leading-snug font-medium">{nota}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                        </div>
-                    )}
+                        );
+                    })()}
 
                     {/* TABS DE NAVEGACIÓN */}
                     <div>

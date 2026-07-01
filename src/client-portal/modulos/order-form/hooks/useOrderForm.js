@@ -445,8 +445,8 @@ export const useOrderForm = (serviceId, overrides = {}) => {
             apiClient.get(`/nomenclators/variants/${dbAreaId}`).then(res => {
                 if (res.success && res.data.length > 0) {
                     const variants = res.data.map(item => item.Variante);
-                    // Use defaultVariant from config if present in list, otherwise first
-                    const initialVariant = (defaultVariant && variants.includes(defaultVariant)) ? defaultVariant : variants[0];
+                    // Use defaultVariant from config (match tolerante a mayúsculas/espacios), sino la primera
+                    const initialVariant = (defaultVariant && variants.find(v => (v || '').trim().toLowerCase() === defaultVariant.trim().toLowerCase())) || variants[0];
 
                     dispatch({ type: actionTypes.SET_DATA, data: { uniqueVariants: variants, serviceSubType: initialVariant } });
                     fetchMaterialsForVariant(initialVariant);

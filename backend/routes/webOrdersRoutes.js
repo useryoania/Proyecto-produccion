@@ -24,6 +24,8 @@ router.get('/file-thumbnail/:fileId', async (req, res) => {
 
 // GET /api/web-orders/my-orders
 router.get('/my-orders', verifyToken, webOrdersController.getClientOrders);
+// GET /api/web-orders/order/:ordenId/files — archivos + copias de una orden del cliente
+router.get('/order/:ordenId/files', verifyToken, webOrdersController.getOrderFiles);
 
 // GET /api/web-orders/active-sublimation
 router.get('/active-sublimation', verifyToken, webOrdersController.getActiveSublimationOrders);

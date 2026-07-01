@@ -105,6 +105,8 @@ const FilePrintControl = ({ areaCode }) => {
   const [metersToReprint, setMetersToReprint] = useState('');
   const [reponerCompleto, setReponerCompleto] = useState(false);
   const [actionReason, setActionReason] = useState('');
+  // En SB no se piden "metros a reponer": la falla (-F) arranca en 0m. Se oculta el campo + el check.
+  const isSB = String(areaCode || '').toUpperCase() === 'SB';
 
   // Persist selected activeRoll across tab changes
   useEffect(() => {
@@ -795,7 +797,7 @@ const FilePrintControl = ({ areaCode }) => {
       estado: controlAction,
       motivo: actionReason,
       tipoFalla: failureType,
-      metrosReponer: metersToReprint,
+      metrosReponer: isSB ? '' : metersToReprint,
       usuario: user?.usuario || user?.username || 'Sistema',
       isService: selectedFileForAction.isService
     };
@@ -1211,7 +1213,7 @@ const FilePrintControl = ({ areaCode }) => {
                 </div>
               )}
 
-              {controlAction === 'FALLA' && (() => {
+              {controlAction === 'FALLA' && !isSB && (() => {
                 const fileAlto = parseFloat(selectedFileForAction?.Alto || 0);
                 const maxReponer = fileAlto > 0 ? Math.max(0, fileAlto - 0.01) : null;
                 return (

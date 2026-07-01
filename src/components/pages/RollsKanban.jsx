@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import Swal from 'sweetalert2';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { rollsService } from '../../services/api';
 import { socket as socketService } from '../../services/socketService';
@@ -157,6 +158,14 @@ const RollsKanban = ({ areaCode }) => {
         } catch (error) {
             console.error("Error actualizando nombre:", error);
             loadBoard(); // Revertir si falla
+            if (error.response?.status === 409) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Nombre en uso',
+                    text: error.response.data?.error || 'Ya existe un lote abierto con ese nombre en esta área.',
+                    confirmButtonColor: '#006E97'
+                });
+            }
         }
     };
 

@@ -6,7 +6,7 @@ import { Droppable, Draggable } from '@hello-pangea/dnd';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
 
-const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUnassign, pendingRolls = [] }) => {
+const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUnassign, pendingRolls = [], areaCode = '' }) => {
     // machine.rolls tiene los rollos asignados
     // machine.status es el estado de la maquina
 
@@ -62,6 +62,8 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
     // Impresora = flag SeparacionImpresion de ConfigEquipos (columna dedicada, se marca en el modal de
     // equipos). En impresoras la banderita continúa el lote en una calandra en vez de ir a Calidad.
     const isPrinter = !!machine.separacionImpresion;
+    // En SB, un lote que está en una máquina que NO es impresora (ej. calandra) no se puede draggear.
+    const lockDrag = String(areaCode || '').toUpperCase() === 'SB' && !isPrinter;
 
     return (
         <div className={`min-w-0 bg-white rounded-2xl shadow-lg border-t-4 flex flex-col max-h-full transition-colors
@@ -260,7 +262,7 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
                         className={`p-2 flex-1 flex flex-col gap-2 overflow-y-auto custom-scrollbar transition-colors relative z-0 ${snapshot.isDraggingOver ? 'bg-brand-cyan/5 rounded-b-xl' : 'bg-zinc-50/50'}`}
                     >
                         {machine.rolls.map((roll, index) => (
-                            <Draggable key={roll.id} draggableId={String(roll.id)} index={index}>
+                            <Draggable key={roll.id} draggableId={String(roll.id)} index={index} isDragDisabled={lockDrag}>
                                 {(provided, snapshot) => (
                                     <div
                                         ref={provided.innerRef}

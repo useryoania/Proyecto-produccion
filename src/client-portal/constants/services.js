@@ -30,7 +30,7 @@ export const SERVICES_LIST = [
         config: {
             // Variant Config
             variantMode: 'select', // User selects from dropdown (fetched from DB: SB)
-            defaultVariant: 'Tela Sublimada', // Default selection if available
+            defaultVariant: 'Sublimacion Tela', // Default selection if available
 
             // Material Config
             materialMode: 'multiple', // multiple = per item, single = global

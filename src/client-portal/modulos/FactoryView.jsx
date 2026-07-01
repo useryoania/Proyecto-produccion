@@ -93,6 +93,7 @@ export const FactoryView = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState('ALL');
     const [expandedProject, setExpandedProject] = useState(null);
+    const [projectFiles, setProjectFiles] = useState({}); // { [projectId]: { loading, files } }
 
     // Infinite scroll states
     const [page, setPage] = useState(1);
@@ -138,6 +139,18 @@ export const FactoryView = () => {
         } finally {
             if (pageNum === 1) setLoading(false);
             setLoadingMore(false);
+        }
+    };
+
+    // Carga (lazy) los archivos + copias de una orden al expandirla.
+    const loadProjectFiles = async (projectId, ordenId) => {
+        if (!ordenId) return;
+        setProjectFiles(prev => ({ ...prev, [projectId]: { loading: true, files: [] } }));
+        try {
+            const res = await apiClient.get(`/web-orders/order/${ordenId}/files`);
+            setProjectFiles(prev => ({ ...prev, [projectId]: { loading: false, files: (res.success && res.data) ? res.data : [] } }));
+        } catch (e) {
+            setProjectFiles(prev => ({ ...prev, [projectId]: { loading: false, files: [] } }));
         }
     };
 
@@ -488,7 +501,7 @@ export const FactoryView = () => {
                                                 {statusConf.icon}
                                                 {statusConf.label}
                                             </span>
-                                            {projectStatus === 'finalizado' && (
+                                            {projectStatus === 'finalizado' && !isDelivered && (
                                                 <button onClick={(e) => { e.stopPropagation(); navigate('/portal/pickup'); }} className="p-1.5 rounded-lg text-emerald-400 border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all" title="Crear Retiro">
                                                     <Truck size={12} />
                                                 </button>
@@ -545,7 +558,7 @@ export const FactoryView = () => {
                                                                     : `/api/web-orders/file-thumbnail/${project.driveFileId}`
                                                             }
                                                             alt="preview"
-                                                            className="w-full h-full object-cover"
+                                                            className="w-full h-full object-contain"
                                                             onError={e => {
                                                                 // Fallback 1: proxy de Drive
                                                                 if (e.target.dataset.fallback !== '1' && project.driveFileId) {
@@ -607,7 +620,11 @@ export const FactoryView = () => {
 
                                 {/* Toggle pipeline */}
                                 <button
-                                    onClick={() => setExpandedProject(expandedProject === project.id ? null : project.id)}
+                                    onClick={() => {
+                                        const willExpand = expandedProject !== project.id;
+                                        setExpandedProject(willExpand ? project.id : null);
+                                        if (willExpand && !projectFiles[project.id]) loadProjectFiles(project.id, project.ordenId);
+                                    }}
                                     className="w-full flex items-center justify-center gap-1.5 py-2 border-t border-zinc-800/60 text-[10px] font-bold text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30 transition-all"
                                 >
                                     {expandedProject === project.id
@@ -625,6 +642,43 @@ export const FactoryView = () => {
                                             transition={{ duration: 0.25, ease: 'easeInOut' }}
                                             className="overflow-hidden border-t border-zinc-800/60 bg-zinc-900/20"
                                         >
+                                            {(() => {
+                                                const pf = projectFiles[project.id];
+                                                if (!pf || pf.loading) return pf ? <div className="px-4 pt-4 text-[11px] text-zinc-500">Cargando archivos…</div> : null;
+                                                if (!pf.files.length) return null;
+                                                return (
+                                                    <div className="px-4 pt-4">
+                                                        <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2">Archivos ({pf.files.length})</div>
+                                                        <div className="flex flex-wrap gap-3">
+                                                            {pf.files.map(f => {
+                                                                const driveId = extractDriveId(f.RutaAlmacenamiento);
+                                                                return (
+                                                                    <div key={f.ArchivoID} className="flex flex-col items-center gap-1 w-16">
+                                                                        <div className="w-16 h-16 rounded-lg overflow-hidden border border-zinc-700/60 bg-zinc-800 relative shrink-0">
+                                                                            <img
+                                                                                src={`/thumbnails/${f.CodigoOrden || project.id}/${f.ArchivoID}.jpg`}
+                                                                                alt={f.NombreArchivo}
+                                                                                className="w-full h-full object-contain"
+                                                                                onError={e => {
+                                                                                    if (e.target.dataset.fb !== '1' && driveId) {
+                                                                                        e.target.dataset.fb = '1';
+                                                                                        e.target.src = `/api/web-orders/file-thumbnail/${driveId}`;
+                                                                                        return;
+                                                                                    }
+                                                                                    e.target.style.display = 'none';
+                                                                                    e.target.parentNode.innerHTML = '<div class="w-full h-full flex items-center justify-center text-zinc-600"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div>';
+                                                                                }}
+                                                                            />
+                                                                            <span className="absolute top-0 right-0 bg-brand-cyan text-white text-[9px] font-black px-1 rounded-bl-md">x{f.Copias}</span>
+                                                                        </div>
+                                                                        <span className="text-[9px] text-zinc-400 text-center leading-tight w-full truncate" title={f.NombreArchivo}>{f.NombreArchivo}</span>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
                                             <div className="px-4 py-4 overflow-x-auto scrollbar-hide">
                                                 <div className="flex justify-center min-w-full">
                                                 <div className="inline-flex items-center gap-0">

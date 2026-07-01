@@ -96,9 +96,11 @@ const FileItem = ({ file, readOnly = false, onAction, extraInfo, actions, editin
         }
     };
     const statusInfo = getStatusIconInfo();
+    const obsText = file.Observaciones || file.MotivoFalla || file.observaciones || '';
 
     return (
-        <div className={`group flex items-center p-2.5 rounded-xl border transition-all mb-2 relative hover:z-20 ${styles.container}`}>
+        <div className={`rounded-xl border transition-all mb-2 ${styles.container}`}>
+        <div className="group flex items-center p-2.5 relative hover:z-20">
 
             {/* 1. Icono / Preview Inteligente */}
             <div className="relative shrink-0 mr-3 group/preview">
@@ -131,13 +133,6 @@ const FileItem = ({ file, readOnly = false, onAction, extraInfo, actions, editin
                     <div className="absolute -bottom-1 -right-1 z-30 group/status cursor-help">
                         <div className={`w-5 h-5 rounded-full bg-white shadow-sm flex items-center justify-center border ${statusInfo.border}`}>
                             <i className={`fa-solid ${statusInfo.icon} ${statusInfo.color} text-[10px]`}></i>
-                        </div>
-
-                        {/* Tooltip Observaciones */}
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 w-max max-w-[150px] px-2 py-1 bg-zinc-800 text-white text-[9px] rounded opacity-0 group-hover/status:opacity-100 pointer-events-none transition-opacity z-50 text-center shadow-lg">
-                            <span className="font-bold block uppercase mb-0.5 opacity-75">{status}</span>
-                            {file.Observaciones || file.MotivoFalla || 'Sin observaciones'}
-                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-800"></div>
                         </div>
                     </div>
                 )}
@@ -317,6 +312,16 @@ const FileItem = ({ file, readOnly = false, onAction, extraInfo, actions, editin
                     )
                 )}
             </div>
+        </div>
+        {/* Motivo SOLO de archivos con FALLA (antes era un tooltip al hover). Los demás no muestran nada. */}
+        {status === 'FALLA' && obsText && (
+            <div className="px-3 pb-2.5">
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200/70 rounded-lg px-2.5 py-1.5">
+                    <i className="fa-solid fa-circle-exclamation text-amber-500 text-[10px] mt-0.5 shrink-0"></i>
+                    <p className="text-amber-800 text-[11px] italic leading-snug font-medium break-words">{obsText}</p>
+                </div>
+            </div>
+        )}
         </div>
     );
 };

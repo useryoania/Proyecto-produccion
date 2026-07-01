@@ -9,6 +9,9 @@ router.post('/move', controller.moveOrder);
 router.post('/create', verifyToken, controller.createRoll);
 router.post('/reorder', controller.reorderOrders);
 router.post('/order-printed', controller.setOrderPrinted); // Marcar impreso (todas las áreas)
+router.post('/order-calandered', controller.setOrderCalandered); // Marcar calandrado (SB, lote en calandra)
+router.post('/order-magnitud', controller.setOrderMagnitud);   // Editar metros (Magnitud) de una orden (-F)
+router.post('/falla-group-meters', controller.setFallaGroupMeters); // Editar total de metros de un grupo de falla
 router.post('/order-group', controller.setOrderGroup);     // Agrupar/desagrupar en el lote (SB)
 
 // 👇 CORREGIDO: Debe decir "controller" (singular), igual que arriba

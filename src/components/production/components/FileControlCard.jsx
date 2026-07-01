@@ -16,6 +16,10 @@ const FileControlCard = ({ file, refreshOrder, onAction }) => {
     const isFailed = status === 'FALLA';
     const isCancelled = status === 'CANCELADO';
 
+    // Si el archivo tiene VARIAS copias, la falla solo se puede reportar en la ÚLTIMA copia
+    // (cuando ya se controlaron todas menos una). En archivos de 1 copia no hay restricción.
+    const canReportFalla = totalCopies <= 1 || controlCount === totalCopies - 1;
+
     useEffect(() => {
         setControlCount(file.Controlcopias || 0);
         setStatus(file.EstadoArchivo || 'Pendiente');
@@ -205,12 +209,14 @@ const FileControlCard = ({ file, refreshOrder, onAction }) => {
                         )}
                     </div>
 
-                    {/* Report Falla (Warning Icon) — oculto si ya está en FALLA o CANCELADO */}
+                    {/* Report Falla (Warning Icon) — oculto si ya está en FALLA o CANCELADO.
+                        En archivos de varias copias, solo habilitado en la última copia. */}
                     {!isFailed && !isCancelled && (
                         <button
-                            className="w-12 h-12 rounded-full flex items-center justify-center text-zinc-300 hover:text-brand-magenta hover:bg-brand-magenta/10 transition-colors"
-                            onClick={(e) => { e.stopPropagation(); onAction(file, 'FALLA'); }}
-                            title="Reportar Falla"
+                            disabled={!canReportFalla}
+                            className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors ${canReportFalla ? 'text-zinc-300 hover:text-brand-magenta hover:bg-brand-magenta/10' : 'text-zinc-200 opacity-40 cursor-not-allowed'}`}
+                            onClick={(e) => { e.stopPropagation(); if (canReportFalla) onAction(file, 'FALLA'); }}
+                            title={canReportFalla ? 'Reportar Falla' : 'En archivos de varias copias, la falla solo se puede reportar en la última copia: controlá primero las copias buenas'}
                         >
                             <i className="fa-solid fa-triangle-exclamation text-2xl"></i>
                         </button>
