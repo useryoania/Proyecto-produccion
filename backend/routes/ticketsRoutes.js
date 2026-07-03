@@ -53,4 +53,7 @@ router.post('/', uploadTickets.array('evidencia', 5), ticketsController.createTi
 // Actualizar estado o derivar (Resolver, Cerrar)
 router.put('/:id/estado', ticketsController.updateTicketStatus);
 
+// Eliminar un mensaje del hilo (solo staff; el controlador rechaza a clientes web)
+router.delete('/mensaje/:mensajeId', ticketsController.deleteMessage);
+
 module.exports = router;

@@ -4,6 +4,19 @@ const LabelGenerationService = require('../services/LabelGenerationService');
 const driveService = require('../services/driveService');
 const logger = require('../utils/logger');
 const { changeOrderState } = require('../services/stateManagerService');
+const { saveFallaImage } = require('../utils/thumbnailGenerator');
+const { devolverMetrosTelaCliente } = require('../utils/telaClienteDevolucion');
+
+// Asegura la columna para la imagen anotada de falla (una sola vez por proceso).
+let _fallaColEnsured = false;
+async function ensureFallaColumn(pool) {
+    if (_fallaColEnsured) return;
+    await pool.request().query(`
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'ImagenFalla' AND Object_ID = Object_ID('dbo.FallasProduccion'))
+            ALTER TABLE dbo.FallasProduccion ADD ImagenFalla NVARCHAR(300) NULL;
+    `);
+    _fallaColEnsured = true;
+}
 
 /**
  * 1. Obtiene las Órdenes de un Rollo (o todas, o filtradas)
@@ -37,8 +50,7 @@ const getOrdenes = async (req, res) => {
 
         const searchTerm = (search && search !== 'undefined' && search.trim() !== '') ? `%${search.trim()}%` : null;
 
-        // Debug Log
-        logger.info(`Getting Ordenes: Search="${searchTerm}", Rollo="${cleanRoll}", Area="${cleanArea}", CtxControl=${isControlView}, ApplyFilter=${applyControlFilter}`);
+        // Log suprimido — alta frecuencia de polling
 
         const query = `
         SELECT
@@ -165,6 +177,7 @@ const getArchivosPorOrden = async (req, res) => {
                 AO.ArchivoID, AO.OrdenID, AO.NombreArchivo, AO.RutaAlmacenamiento, AO.Metros, AO.Copias, 
                 AO.Controlcopias, AO.EstadoArchivo, AO.UsuarioControl, AO.FechaControl, AO.Observaciones, AO.TipoArchivo,
                 AO.Ancho, AO.Alto, AO.CodigoArticulo, AO.FechaSubida,
+                AO.PreflightVeredicto, AO.PreflightReporte,
                 O.Material as Material, O.Cliente as Cliente, O.AreaID as AreaActual, O.NoDocERP, 0 as isService
             FROM ArchivosOrden AO WITH (NOLOCK)
             LEFT JOIN Ordenes O WITH (NOLOCK) ON AO.OrdenID = O.OrdenID
@@ -176,6 +189,7 @@ const getArchivosPorOrden = async (req, res) => {
                 SEO.ServicioID as ArchivoID, SEO.OrdenID, SEO.Descripcion as NombreArchivo, NULL as RutaAlmacenamiento, NULL as Metros, SEO.Cantidad as Copias, 
                 ISNULL(SEO.Controlcopias, 0) as Controlcopias, SEO.Estado as EstadoArchivo, SEO.UsuarioControl, SEO.FechaControl, SEO.Observaciones as Observaciones, 'Servicio' as TipoArchivo,
                 0 as Ancho, 0 as Alto, SEO.CodArt as CodigoArticulo, SEO.FechaRegistro as FechaSubida,
+                NULL as PreflightVeredicto, NULL as PreflightReporte,
                 O.Material as Material, O.Cliente as Cliente, O.AreaID as AreaActual, O.NoDocERP, 1 as isService
             FROM ServiciosExtraOrden SEO WITH (NOLOCK)
             LEFT JOIN Ordenes O WITH (NOLOCK) ON SEO.OrdenID = O.OrdenID
@@ -202,6 +216,7 @@ const getArchivosPorOrden = async (req, res) => {
                             AO.ArchivoID, AO.OrdenID, AO.NombreArchivo, AO.RutaAlmacenamiento, AO.Metros, AO.Copias, 
                             AO.Controlcopias, AO.EstadoArchivo, AO.UsuarioControl, AO.FechaControl, AO.Observaciones, AO.TipoArchivo,
                             AO.Ancho, AO.Alto, AO.CodigoArticulo, AO.FechaSubida,
+                            AO.PreflightVeredicto, AO.PreflightReporte,
                             O.Material as Material, O.Cliente as Cliente, O.AreaID as AreaActual, O.NoDocERP, 0 as isService
                         FROM ArchivosOrden AO WITH (NOLOCK)
                         INNER JOIN Ordenes O WITH (NOLOCK) ON AO.OrdenID = O.OrdenID
@@ -215,6 +230,7 @@ const getArchivosPorOrden = async (req, res) => {
                             SEO.ServicioID as ArchivoID, SEO.OrdenID, SEO.Descripcion as NombreArchivo, NULL as RutaAlmacenamiento, NULL as Metros, SEO.Cantidad as Copias, 
                             ISNULL(SEO.Controlcopias, 0) as Controlcopias, SEO.Estado as EstadoArchivo, SEO.UsuarioControl, SEO.FechaControl, SEO.Observaciones as Observaciones, 'Servicio' as TipoArchivo,
                             0 as Ancho, 0 as Alto, SEO.CodArt as CodigoArticulo, SEO.FechaRegistro as FechaSubida,
+                            NULL as PreflightVeredicto, NULL as PreflightReporte,
                             O.Material as Material, O.Cliente as Cliente, O.AreaID as AreaActual, O.NoDocERP, 1 as isService
                         FROM ServiciosExtraOrden SEO WITH (NOLOCK)
                         INNER JOIN Ordenes O WITH (NOLOCK) ON SEO.OrdenID = O.OrdenID
@@ -256,10 +272,11 @@ const getArchivosPorOrden = async (req, res) => {
  * 3. Controlar Archivo (OK, FALLA, CANCELADO)
  */
 const postControlArchivo = async (req, res) => {
-    const { archivoId, estado, motivo, tipoFalla, usuario, isService } = req.body;
+    const { archivoId, estado, motivo, tipoFalla, usuario, isService, annotatedImage } = req.body;
     let transaction;
     try {
         const pool = await getPool();
+        await ensureFallaColumn(pool);
         transaction = new sql.Transaction(pool);
         await transaction.begin();
 
@@ -364,6 +381,9 @@ const postControlArchivo = async (req, res) => {
             // Metros reales a reponer (si viene del front)
             const metrosReponer = req.body.metrosReponer ? parseFloat(req.body.metrosReponer) : null;
             const equipoId = req.body.equipoId ? parseInt(req.body.equipoId) : null;
+
+            // Imagen anotada de la falla (recuadro dibujado en el control), si vino.
+            const fallaImgPath = annotatedImage ? await saveFallaImage(annotatedImage, codigoOrden, archivoId) : null;
             // En SB la -F arranca en 0m (no se piden metros a reponer); en el resto se clona la magnitud de la orden madre.
             const esFallaSB = String(areaId || '').toUpperCase() === 'SB';
 
@@ -423,6 +443,7 @@ const postControlArchivo = async (req, res) => {
                     .input('ArchivoID',  sql.Int,               archivoId)
                     .input('AreaID',     sql.NVarChar,          areaId)
                     .input('NotaAdd',    sql.NVarChar(sql.MAX), ` || FALLA: ${notaFallaDetalle}`)
+                    .input('ImagenFalla', sql.NVarChar(300), fallaImgPath)
                     .query(`
                         -- Actualizamos la orden original
                         UPDATE dbo.Ordenes
@@ -434,8 +455,8 @@ const postControlArchivo = async (req, res) => {
                         SET Nota = CONCAT(ISNULL(Nota,''), @NotaAdd)
                         WHERE OrdenID = @NewFallaID;
 
-                        INSERT INTO FallasProduccion(OrdenID, ArchivoID, AreaID, FechaFalla, TipoFalla, CantidadFalla, EquipoID, Observaciones)
-                        VALUES(@OldID, @ArchivoID, @AreaID, GETDATE(), @TipoFallaID, @CantidadFalla, @EquipoID, @SafeMotivo);
+                        INSERT INTO FallasProduccion(OrdenID, ArchivoID, AreaID, FechaFalla, TipoFalla, CantidadFalla, EquipoID, Observaciones, ImagenFalla)
+                        VALUES(@OldID, @ArchivoID, @AreaID, GETDATE(), @TipoFallaID, @CantidadFalla, @EquipoID, @SafeMotivo, @ImagenFalla);
                     `);
             } else {
                 // ── CREAR nueva orden -F ──
@@ -450,6 +471,7 @@ const postControlArchivo = async (req, res) => {
                     .input('AreaID',        sql.NVarChar,       areaId)
                     .input('IsSB',          sql.Bit,            esFallaSB ? 1 : 0)
                     .input('NotaFinal',     sql.NVarChar(sql.MAX), notaFinal)
+                    .input('ImagenFalla',   sql.NVarChar(300), fallaImgPath)
                     .query(`
                         -- Nueva Orden de Falla
                         INSERT INTO dbo.Ordenes(
@@ -477,8 +499,8 @@ const postControlArchivo = async (req, res) => {
                         WHERE OrdenID = @OldID;
 
                         -- Registrar Falla en tabla auxiliar
-                        INSERT INTO FallasProduccion(OrdenID, ArchivoID, AreaID, FechaFalla, TipoFalla, CantidadFalla, EquipoID, Observaciones)
-                        VALUES(@OldID, @ArchivoID, @AreaID, GETDATE(), @TipoFallaID, @CantidadFalla, @EquipoID, @SafeMotivo);
+                        INSERT INTO FallasProduccion(OrdenID, ArchivoID, AreaID, FechaFalla, TipoFalla, CantidadFalla, EquipoID, Observaciones, ImagenFalla)
+                        VALUES(@OldID, @ArchivoID, @AreaID, GETDATE(), @TipoFallaID, @CantidadFalla, @EquipoID, @SafeMotivo, @ImagenFalla);
                     `);
 
                 // Obtener el ID de la nueva orden recién insertada
@@ -690,6 +712,8 @@ const postControlArchivo = async (req, res) => {
             if (Cancelados === Total && Total > 0) {
                 await new sql.Request(transaction).input('OID', sql.Int, ordenId)
                     .query("UPDATE Ordenes SET EstadoLogistica='Cancelado', Observaciones = 'Cancelada de oficio (Todos archivos cancelados)' WHERE OrdenID = @OID");
+                // Tela cliente: devolver los metros consumidos también en la cancelación de oficio (idempotente).
+                await devolverMetrosTelaCliente(transaction, ordenId, `Devolución por cancelación de oficio Orden ${ordenId}`, req.user?.id || 1);
                 await changeOrderState(transaction, { target: { type: 'ORDER', id: ordenId }, estado: 'Cancelado', userObj: req.user || 'Sistema', detalle: 'Cancelada de oficio (Todos archivos cancelados)',
                 io       : req.app.get('socketio')
             });
@@ -1026,6 +1050,40 @@ const getTiposFalla = async (req, res) => {
     } catch (err) {
         logger.error("Error getTiposFalla:", err);
         res.status(500).json({ error: 'Error al obtener tipos de falla' });
+    }
+};
+
+// Imágenes de fallas ANOTADAS (recuadro dibujado) de una orden — para mostrar en el detalle (tab Referencias).
+const getFallasImagenes = async (req, res) => {
+    try {
+        const { ordenId } = req.params;
+        if (!ordenId) return res.status(400).json({ error: 'ordenId requerido' });
+        const pool = await getPool();
+        await ensureFallaColumn(pool);
+        const result = await pool.request()
+            .input('OID', sql.Int, Number(ordenId))
+            .query(`
+                -- La falla se registra contra la orden MADRE. Si @OID es una -F (reposición),
+                -- resolvemos el código madre para mostrar igual las imágenes de la falla.
+                DECLARE @Codigo NVARCHAR(100) = (SELECT CodigoOrden FROM Ordenes WHERE OrdenID = @OID);
+                DECLARE @Madre NVARCHAR(100) = CASE
+                    WHEN @Codigo LIKE '%-F[0-9]%' THEN LEFT(@Codigo, CHARINDEX('-F', @Codigo) - 1)
+                    ELSE @Codigo END;
+
+                SELECT fp.FallaID, fp.ArchivoID, fp.ImagenFalla, fp.FechaFalla, fp.Observaciones,
+                       tf.Titulo AS TipoFalla, ao.NombreArchivo
+                FROM FallasProduccion fp WITH(NOLOCK)
+                JOIN Ordenes om WITH(NOLOCK) ON om.OrdenID = fp.OrdenID
+                LEFT JOIN TiposFallas tf WITH(NOLOCK) ON tf.FallaID = fp.TipoFalla
+                LEFT JOIN ArchivosOrden ao WITH(NOLOCK) ON ao.ArchivoID = fp.ArchivoID
+                WHERE om.CodigoOrden = @Madre
+                  AND fp.ImagenFalla IS NOT NULL AND LTRIM(RTRIM(fp.ImagenFalla)) <> ''
+                ORDER BY fp.FechaFalla DESC
+            `);
+        res.json({ success: true, data: result.recordset });
+    } catch (err) {
+        logger.error("Error getFallasImagenes:", err);
+        res.status(500).json({ error: err.message });
     }
 };
 
@@ -1571,6 +1629,23 @@ const createCustomerReplacementOrder = async (req, res) => {
                 .query("UPDATE Ordenes SET ArchivosCount = @Total WHERE OrdenID = @ID");
         } catch (e) { logger.info('Update ArchivosCount failed (ignoring):', e.message); }
 
+        // Magnitud de la reposición = suma REAL de lo repuesto (según UM: metros o copias),
+        // NO la Magnitud completa de la orden madre (que se copió en el INSERT). Así la planilla
+        // muestra en CANTIDAD "los metros a reponer" y no el total de todos los archivos originales.
+        try {
+            await new sql.Request(transaction)
+                .input('ID', sql.Int, newOrderId)
+                .query(`
+                    DECLARE @UM NVARCHAR(20) = (SELECT LTRIM(RTRIM(ISNULL(UM,'u'))) FROM dbo.Ordenes WHERE OrdenID = @ID);
+                    DECLARE @Total FLOAT = 0;
+                    IF LEFT(LOWER(@UM),1) = 'm'
+                        SELECT @Total = ISNULL(SUM(CAST(ISNULL(Metros,0) AS FLOAT)),0) FROM dbo.ArchivosOrden WHERE OrdenID = @ID AND ISNULL(EstadoArchivo,'') <> 'CANCELADO';
+                    ELSE
+                        SELECT @Total = ISNULL(SUM(CAST(ISNULL(Copias,0) AS FLOAT)),0) FROM dbo.ArchivosOrden WHERE OrdenID = @ID AND ISNULL(EstadoArchivo,'') <> 'CANCELADO';
+                    UPDATE dbo.Ordenes SET Magnitud = CAST(FORMAT(@Total,'0.##') AS NVARCHAR(20)) WHERE OrdenID = @ID;
+                `);
+        } catch (e) { logger.info('Update Magnitud reposición failed (ignoring):', e.message); }
+
         // 4. Clonar Órdenes de Servicios Relacionados (Si existen)
         const relatedOrderIds = req.body.relatedOrderIds || [];
         if (relatedOrderIds.length > 0) {
@@ -1729,6 +1804,8 @@ async function completarOrden(req, res) {
             await new sql.Request(transaction)
                 .input('OID', sql.Int, ordenId)
                 .query("UPDATE Ordenes SET EstadoLogistica='Cancelado', Observaciones = CONCAT(ISNULL(Observaciones,''), ' [Cancelada de oficio: Todos archivos cancelados]') WHERE OrdenID = @OID");
+            // Tela cliente: devolver los metros consumidos también en la cancelación de oficio (idempotente).
+            await devolverMetrosTelaCliente(transaction, ordenId, `Devolución por cancelación de oficio Orden ${ordenId}`, req.user?.id || 1);
             await changeOrderState(transaction, { target: { type: 'ORDER', id: ordenId }, estado: 'Cancelado', userObj: req.user || 'Sistema', detalle: 'Cancelada de oficio',
                 io       : req.app.get('socketio')
             });
@@ -1985,6 +2062,7 @@ module.exports = {
     viewDriveFile,
     postControlArchivo,
     getTiposFalla,
+    getFallasImagenes,
     regenerateEtiquetas,
     updateFileCopyCount,
     getCompletedOrdersForReplacement,

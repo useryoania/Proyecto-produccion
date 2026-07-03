@@ -284,18 +284,27 @@ export default function AreaView({ areaKey: rawAreaKey, areaConfig, onSwitchTab 
         const socket = io(SOCKET_URL);
         let refetchTimer = null;
 
-        // Debounce de la parte pesada: una ráfaga de eventos (ej. entrega masiva)
-        // se coalesce en UN solo refetch en vez de uno por evento → evita saturar el backend.
+        // Throttle con trailing de la parte pesada: los eventos pueden venir en ráfaga O espaciados
+        // cada 1-2s (ej. el job de WSP avisa orden por orden; entregas múltiples) — un debounce corto
+        // NO los coalesce y termina refetcheando por cada evento en cada pantalla abierta.
+        // Regla: máximo UN refetch por ventana; el primer evento sale casi al toque (UI ágil) y el
+        // resto de la ráfaga queda cubierto por una única ejecución al cierre de la ventana.
+        const REFETCH_WINDOW_MS = 8000;
+        let lastRefetchAt = 0;
+        const doRefetch = () => {
+            lastRefetchAt = Date.now();
+            refetch(); // refrescar lista principal
+            // Refrescar también los tableros hijos (Planeación, Kanban, etc)
+            if (areaKey) {
+                queryClient.invalidateQueries(['rollsBoard', areaKey]);
+                queryClient.invalidateQueries(['productionBoard', areaKey]);
+            }
+        };
         const scheduleRefetch = () => {
-            clearTimeout(refetchTimer);
-            refetchTimer = setTimeout(() => {
-                refetch(); // refrescar lista principal
-                // Refrescar también los tableros hijos (Planeación, Kanban, etc)
-                if (areaKey) {
-                    queryClient.invalidateQueries(['rollsBoard', areaKey]);
-                    queryClient.invalidateQueries(['productionBoard', areaKey]);
-                }
-            }, 800);
+            if (refetchTimer) return; // ya hay una ejecución agendada que cubre este evento
+            const elapsed = Date.now() - lastRefetchAt;
+            const wait = elapsed >= REFETCH_WINDOW_MS ? 300 : REFETCH_WINDOW_MS - elapsed;
+            refetchTimer = setTimeout(() => { refetchTimer = null; doRefetch(); }, wait);
         };
 
         const handleSocketUpdate = (payload) => {

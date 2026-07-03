@@ -74,8 +74,7 @@ exports.getBoardData = async (req, res) => {
         }
         // if (area === 'DF') area = 'DTF'; // DISABLED: User requested no forced conversion
 
-        logger.info(`[getBoardData] Buscando rollos para Area: '${area}'`);
-        logger.info(`[getBoardData] 🔴 EJECUTANDO SQL CON @AreaID = ${area}`);
+        // Log suprimido — alta frecuencia de polling
         // Se asume que area viene limpia (AreaKey) desde el frontend
 
         const pool = await getPool();
@@ -1336,7 +1335,7 @@ exports.getRollosActivos = async (req, res) => {
         // y el usuario pidió explícitamente ver SOLO los finalizados.
         const isControlView = req.baseUrl && req.baseUrl.includes('production-file-control');
 
-        logger.info(`[getRollosActivos] Buscando rollos para AreaID: '${areaId}' (Contexto: ${isControlView ? 'CONTROL VIEW - FINALIZADOS' : 'GENERAL - ACTIVOS'})`);
+        // Log suprimido — alta frecuencia de polling
 
         const pool = await getPool();
 

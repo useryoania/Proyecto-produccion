@@ -20,7 +20,9 @@ const MachineDetailView = () => {
         queryKey: ['productionBoard', area],
         queryFn: () => productionService.getBoard(area),
         enabled: !!area,
-        refetchInterval: 10000
+        // 30s: esta vista queda abierta 24/7 en TVs de planta — a 10s era una fuente
+        // constante de carga; los cambios importantes igual llegan por socket/acciones.
+        refetchInterval: 30000
     });
 
     // --- MACHINE SLOTS DATA ---
@@ -28,7 +30,8 @@ const MachineDetailView = () => {
         queryKey: ['machineSlots', targetId],
         queryFn: () => machineControlService.getSlots(targetId),
         enabled: !!targetId,
-        refetchInterval: 5000
+        // 30s: los slots (bobina montada) cambian poco; a 5s multiplicaba requests sin valor.
+        refetchInterval: 30000
     });
 
     const machine = prodData?.machines?.find(m => String(m.id) === String(targetId));

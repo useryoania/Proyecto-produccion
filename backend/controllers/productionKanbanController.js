@@ -5,7 +5,7 @@ const logger = require('../utils/logger');
 
 exports.getBoard = async (req, res) => {
     let { area } = req.query;
-    logger.info("--- Cargando Tablero para Área:", area);
+    // Log suprimido — alta frecuencia de polling
 
     try {
         const POOL = await getPool();

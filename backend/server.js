@@ -64,6 +64,8 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // Thumbnails generados localmente de PDFs/archivos de pedidos.
 // Ruta en disco configurable por THUMBNAILS_PATH (debe coincidir con thumbnailGenerator.js).
 app.use('/thumbnails', express.static(process.env.THUMBNAILS_PATH || path.join(__dirname, 'thumbnails')));
+// Imágenes de fallas anotadas (recuadro dibujado en Control). Configurable por FALLAS_PATH.
+app.use('/fallas', express.static(process.env.FALLAS_PATH || path.join(__dirname, 'fallas')));
 // Comprobantes de entrega de encomiendas (logística transporte)
 const encomiendasFolder = process.env.COMPROBANTES_ENCOMIENDAS_PATH || path.join(__dirname, 'comprobantesEncomiendas');
 app.use('/comprobantesEncomiendas', express.static(encomiendasFolder));

@@ -196,16 +196,22 @@ export const TotemDashboard = ({ onLogout }) => {
             });
             const data = await res.json();
             if (data.success) {
-                // Print ticket before showing success
                 const selectedOrdObjects = orders.filter(o => selectedOrders.includes(o.id));
-                printTotemTicket({
-                    ordenRetiro: data.ordIdGenerada || data.ordenRetiro || 'R-' + Date.now(),
-                    client,
-                    orders: selectedOrdObjects
-                });
+                // Éxito PRIMERO, impresión DESPUÉS (diferida): window.print() es bloqueante —
+                // con la impresora offline o el diálogo de impresión abierto, congelaba la UI
+                // en "Creando..." con el retiro YA creado en el sistema.
                 setSuccess(true);
                 setSelectedOrders([]);
                 setTimeout(() => { setSuccess(false); onLogout(); }, 8000);
+                setTimeout(() => {
+                    try {
+                        printTotemTicket({
+                            ordenRetiro: data.ordIdGenerada || data.ordenRetiro || 'R-' + Date.now(),
+                            client,
+                            orders: selectedOrdObjects
+                        });
+                    } catch (e) { console.warn('No se pudo imprimir el ticket del tótem:', e); }
+                }, 150);
             } else {
                 setError(data.error || 'Error al crear retiro');
             }
@@ -242,14 +248,18 @@ export const TotemDashboard = ({ onLogout }) => {
             const data = await res.json();
             if (data.success) {
                 setAnnounceSuccess({ client: data.client, ordenRetiro: data.ordenRetiro });
-                // Print announce ticket
-                printTotemTicket({
-                    ordenRetiro: `R-${data.ordenRetiro}`,
-                    client: { name: data.client },
-                    orders: [],
-                    title: 'ANUNCIO DE RETIRO'
-                });
                 setTimeout(() => { setAnnounceSuccess(null); setAnnounceMode(false); setAnnounceNumber(''); onLogout(); }, 8000);
+                // Impresión diferida y blindada (window.print es bloqueante — ver createPickup)
+                setTimeout(() => {
+                    try {
+                        printTotemTicket({
+                            ordenRetiro: `R-${data.ordenRetiro}`,
+                            client: { name: data.client },
+                            orders: [],
+                            title: 'ANUNCIO DE RETIRO'
+                        });
+                    } catch (e) { console.warn('No se pudo imprimir el ticket del tótem:', e); }
+                }, 150);
             } else {
                 Toast.fire({ icon: 'error', title: data.message || 'Retiro no encontrado' });
             }

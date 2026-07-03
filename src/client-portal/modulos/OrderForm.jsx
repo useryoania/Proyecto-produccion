@@ -28,6 +28,7 @@ import ErrorModal from './order-form/components/ErrorModal';
 import UploadProgressModal from './order-form/components/UploadProgressModal';
 import FileUploadZone from './order-form/components/FileUploadZone';
 import CorteTechnicalUI from './order-form/components/CorteTechnicalUI';
+import BobinaSelector from './order-form/components/BobinaSelector';
 import CosturaTechnicalUI from './order-form/components/CosturaTechnicalUI';
 import BordadoTechnicalUI from './order-form/components/BordadoTechnicalUI';
 import { EstampadoTechnicalUI } from './order-form/components/EstampadoTechnicalUI';
@@ -114,6 +115,11 @@ const OrderForm = ({ serviceId: propServiceId }) => {
     const overrideConfig = location.state?.config || {};
 
     const serviceId = propServiceId || paramServiceId;
+    // La URL puede venir con otra caja (/order/SUBLIMACION desde un bookmark): serviceInfo se
+    // resuelve case-insensitive, así que las reglas por-servicio TAMBIÉN deben compararse así —
+    // si no, el form funciona pero se saltea las reglas (ej: validaba ancho contra el fallback
+    // 1.50m en vez del default 1.83m de sublimación, y rechazaba JPEG).
+    const svcId = (serviceId || '').toLowerCase();
 
     // Modal de anuncio: se muestra una sola vez por sesión para DF
     const [showDFAnnouncement, setShowDFAnnouncement] = useState(() => {
@@ -133,6 +139,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
         jobName, serviceSubType, urgency, generalNote, globalMaterial, fabricType,
         items, referenceFiles, selectedComplementary,
         moldType, fabricOrigin, clientFabricName, selectedSubOrderId, tizadaFiles,
+        selectedBobinaId, selectedBobinaAncho, selectedBobinaMetros, bobinasDisponibles,
         pedidoExcelFile, enableCorte, enableCostura, garmentQuantity,
         ponchadoFiles, bocetoFile, bordadoBocetoFile, costuraNote,
         bordadoMaterial, bordadoVariant,
@@ -156,6 +163,31 @@ const OrderForm = ({ serviceId: propServiceId }) => {
         globalMaterial === 'ETIQUETAS OFICIALES HASTA 4X4' ||
         (selectedMaterialObj && String(selectedMaterialObj.CodArticulo || '').trim() === '1568')
     );
+
+    // Sublimación con Tela de Cliente: el cliente elige su bobina (mismo flujo que Corte tela cliente:
+    // ancho/metros de la bobina validan el archivo y sus metros se descuentan al confirmar).
+    const isSubliTelaCliente = svcId === 'sublimacion' && /tela de cliente/i.test(serviceSubType || '');
+
+    // Tiempos estimados de entrega del área (tabla ConfiguracionTiemposEntrega → GET /delivery-times, público).
+    const [deliveryTimes, setDeliveryTimes] = useState([]);
+    useEffect(() => {
+        apiClient.get('/delivery-times')
+            .then(res => setDeliveryTimes(Array.isArray(res) ? res : (res?.data || [])))
+            .catch(() => {});
+    }, []);
+    const tiempoEntregaTexto = (prio) => {
+        const area = serviceInfo?.areaId;
+        const row = (deliveryTimes || []).find(t =>
+            String(t.AreaID || '').trim() === String(area || '').trim() &&
+            String(t.Prioridad || '').trim().toLowerCase() === prio
+        );
+        if (!row) return null;
+        // Por defecto se muestra el campo Texto; si es null/vacío, se cae a "{Horas} horas".
+        const txt = row.Texto != null && String(row.Texto).trim() !== '' ? String(row.Texto).trim() : null;
+        return txt || `${row.Horas} horas`;
+    };
+    const tiempoEntregaNormal = tiempoEntregaTexto('normal');
+    const tiempoEntregaUrgente = tiempoEntregaTexto('urgente');
 
     // Initial Config for Specific Services
     useEffect(() => {
@@ -232,17 +264,19 @@ const OrderForm = ({ serviceId: propServiceId }) => {
     const handleFileUpload = async (itemId, field, file) => {
         if (!file) return false;
 
-        // Validation
-        const allowed = ['image/png', 'application/pdf'];
-        const isAllowed = allowed.includes(file.type) || file.name.toLowerCase().match(/\.(png|pdf)$/);
+        // Validation — sublimación acepta también JPEG (no necesita transparencia); el resto solo PNG/PDF
+        const allowJpeg = svcId === 'sublimacion';
+        const allowed = ['image/png', 'application/pdf', ...(allowJpeg ? ['image/jpeg', 'image/jpg'] : [])];
+        const extRegex = allowJpeg ? /\.(png|pdf|jpe?g)$/ : /\.(png|pdf)$/;
+        const isAllowed = allowed.includes(file.type) || file.name.toLowerCase().match(extRegex);
 
         if (!isAllowed) {
-            addToast('Formato inválido. Solo se permite PNG o PDF.', 'error');
+            addToast(allowJpeg ? 'Formato inválido. Solo se permite PNG, JPEG o PDF.' : 'Formato inválido. Solo se permite PNG o PDF.', 'error');
             return false;
         }
 
         try {
-            const result = await fileService.uploadFile(file);
+            const result = await fileService.uploadFile(file, { allowJpeg });
 
             // Interceptar si no tiene DPI
             if (result.hasDPI === false && result.width && result.height) {
@@ -315,7 +349,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                 let selectedMatName;
                 let maxWidth;
 
-                if (serviceId === 'sublimacion') {
+                if (svcId === 'sublimacion') {
                     // For sublimación: validate against item material if selected, else default 1.83m
                     if (itemMaterial) {
                         selectedMatName = itemMaterial;
@@ -326,6 +360,11 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                         selectedMatName = null;
                         maxWidth = 1.83;
                     }
+                    // Sublimación Tela de Cliente: el ancho lo define la bobina seleccionada, no el material
+                    if (isSubliTelaCliente && selectedBobinaAncho) {
+                        selectedMatName = clientFabricName ? `bobina ${clientFabricName}` : 'la bobina seleccionada';
+                        maxWidth = parseFloat(selectedBobinaAncho);
+                    }
                 } else {
                     selectedMatName = globalMaterial;
                     if (config.materialMode === 'multiple' && itemMaterial) {
@@ -334,6 +373,12 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                     const matList = dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || []);
                     const matObj = matList.find(m => (m.Material || m.Descripcion || m) === selectedMatName) || selectedMatName;
                     maxWidth = resolveMaterialWidth(matObj);
+
+                    // TELA CLIENTE: el ancho lo define la bobina seleccionada, no el material
+                    if (fabricOrigin === 'TELA CLIENTE' && selectedBobinaAncho) {
+                        selectedMatName = clientFabricName ? `bobina ${clientFabricName}` : 'la bobina seleccionada';
+                        maxWidth = parseFloat(selectedBobinaAncho);
+                    }
                 }
 
                 const fileWidthM = result.unit === 'meters' ? result.width : (result.width / 300) * 0.0254;
@@ -346,6 +391,18 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                     );
                     actions.setErrorModalOpen(true);
                     return false;
+                }
+
+                // TELA CLIENTE: el largo del archivo no puede superar los metros restantes de la bobina
+                if ((fabricOrigin === 'TELA CLIENTE' || isSubliTelaCliente) && selectedBobinaMetros && result.height) {
+                    const fileHeightM = result.unit === 'meters' ? result.height : (result.height / 300) * 0.0254;
+                    if (fileHeightM > parseFloat(selectedBobinaMetros)) {
+                        actions.setErrorModalMessage(
+                            `El largo del archivo (${fileHeightM.toFixed(2)}m) supera los metros disponibles en la bobina (${parseFloat(selectedBobinaMetros).toFixed(2)}m). Ajuste el archivo o seleccione otra bobina.`
+                        );
+                        actions.setErrorModalOpen(true);
+                        return false;
+                    }
                 }
 
                 // Validación de alto máximo para DTF (2.50m)
@@ -361,10 +418,10 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                 }
             }
 
-            // Validación de páginas para DTF (máximo 1 página)
-            if (serviceId?.toUpperCase() === 'DF' && result.pageCount && result.pageCount > 1) {
+            // Validación de páginas: NO se permiten archivos con más de 1 página (ningún servicio).
+            if (result.pageCount && result.pageCount > 1) {
                 actions.setErrorModalMessage(
-                    `El archivo tiene ${result.pageCount} páginas. Para DTF solo se permite 1 página por archivo.`
+                    `El archivo tiene ${result.pageCount} páginas. Solo se permite 1 página por archivo.`
                 );
                 actions.setErrorModalOpen(true);
                 return false;
@@ -411,6 +468,11 @@ const OrderForm = ({ serviceId: propServiceId }) => {
 
         if (config.hasCuttingWorkflow && moldType === 'MOLDES CLIENTES' && (!tizadaFiles || tizadaFiles.length === 0)) {
             return addToast('Debe subir al menos un archivo de tizada para moldes de clientes', 'error');
+        }
+
+        // TELA CLIENTE: la bobina es obligatoria (de ahí se descuentan los metros del pedido)
+        if (((config.hasCuttingWorkflow && fabricOrigin === 'TELA CLIENTE' && moldType !== 'SUBLIMACION') || isSubliTelaCliente) && !selectedBobinaId) {
+            return addToast('Seleccioná la bobina de tela del cliente antes de confirmar el pedido.', 'error');
         }
 
         if (serviceId === 'tpu') {
@@ -873,11 +935,23 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                 if (!listaServicios[0].cabecera.codStock) listaServicios[0].cabecera.codStock = mainCodStock;
             }
 
+            // TELA CLIENTE: metros del pedido = largo total de los archivos (misma fórmula que el footer).
+            // El backend descuenta este valor de la bobina al crear la orden.
+            const usaTelaCliente = selectedBobinaId && ((fabricOrigin === 'TELA CLIENTE' && moldType !== 'SUBLIMACION') || isSubliTelaCliente);
+            const largoTotalM = Math.round(items.reduce((acc, it) => {
+                const h = it.printSettings?.finalHeightM || (it.file?.unit === 'meters' ? it.file?.height : (it.file?.height ? (it.file.height / 300) * 0.0254 : 0)) || 0;
+                return acc + (h * (it.copies || 1));
+            }, 0) * 100) / 100;
+
             const payload = {
                 idServicioBase: serviceId,
                 nombreTrabajo: jobName,
                 prioridad: urgency,
                 notasGenerales: (items.some(it => it.printSettings?.mode && it.printSettings.mode !== 'normal') ? '[CONTIENE ARCHIVOS CON ESCALA/RAPORT] ' : '') + generalNote,
+
+                // TELA CLIENTE (top-level: el backend los espera acá)
+                bobinaId: usaTelaCliente ? selectedBobinaId : null,
+                magnitud: usaTelaCliente ? largoTotalM : null,
 
                 // Nueva Estructura Unificada
                 servicios: listaServicios,
@@ -1005,11 +1079,22 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                     <button key={p.Nombre} type="button" onClick={() => actions.setUrgency(p.Nombre)}
                                         className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-all ${isSelected ? selectedClass : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'} `}
                                     >
-                                        {p.Nombre}
+                                        {p.Nombre}{p.Texto && p.Texto.trim() ? ` ${p.Texto.trim()}` : ''}
                                     </button>
                                     );
                                 })}
                             </div>
+
+                            {(tiempoEntregaNormal || tiempoEntregaUrgente) && (
+                                <div className="mt-2 space-y-0.5 text-[11px]">
+                                    {tiempoEntregaNormal && (
+                                        <p className="text-brand-cyan font-semibold">Tiempo estimado de entrega normal: <span className="font-black text-zinc-100">{tiempoEntregaNormal}</span></p>
+                                    )}
+                                    {tiempoEntregaUrgente && (
+                                        <p className="text-brand-magenta font-semibold">Tiempo estimado de entrega urgente: <span className="font-black text-zinc-100">{tiempoEntregaUrgente}</span></p>
+                                    )}
+                                </div>
+                            )}
 
                         </div>
 
@@ -1047,7 +1132,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                 )}
 
                                 {/* Global Material Selector - Hidden for Bordado and Sublimacion */}
-                                {config.materialMode === 'single' && serviceId !== 'bordado' && serviceId !== 'EMB' && serviceId !== 'sublimacion' && (
+                                {config.materialMode === 'single' && svcId !== 'bordado' && svcId !== 'emb' && svcId !== 'sublimacion' && (
                                     <div>
                                         <p className="block text-xs font-bold uppercase text-zinc-400 mb-2">{serviceInfo?.config?.materialLabel || 'Material / Soporte'} *</p>
                                         <CustomSelect
@@ -1081,6 +1166,15 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                     </div>
                                 )}
                             </div>
+
+                            {/* Sublimación Tela de Cliente: elegí tu bobina (valida ancho/largo y descuenta metros) */}
+                            {isSubliTelaCliente && (
+                                <BobinaSelector
+                                    bobinasDisponibles={bobinasDisponibles}
+                                    selectedBobinaId={selectedBobinaId}
+                                    setSelectedBobina={actions.setSelectedBobina}
+                                />
+                            )}
 
                             {/* Bordado Specific UI if Main Service is Bordado */}
                             {serviceId === 'bordado' && (
@@ -1119,6 +1213,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                         activeSubOrders={activeSubOrders} tizadaFiles={tizadaFiles} setTizadaFiles={actions.setTizadaFiles}
                                         handleMultipleSpecializedFileUpload={(files) => handleMultipleSpecializedFileUpload(actions.addTizadaFiles, files)}
                                         compact={false}
+                                        bobinasDisponibles={bobinasDisponibles} selectedBobinaId={selectedBobinaId} setSelectedBobina={actions.setSelectedBobina}
                                     />
                                     {/* Documentation for Main Corte (Always visible for Main Service) */}
                                     <div className="pt-6 border-t border-zinc-100">
@@ -1227,6 +1322,8 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                                                 materialMaxWidthM={(() => {
                                                                     const isSingleMat = config.materialMode === 'single';
                                                                     const itemMat = isSingleMat ? globalMaterial : (item.material || globalMaterial);
+                                                                    // Sin material seleccionado → null, para no validar el ancho todavía.
+                                                                    if (!itemMat || !String(itemMat).trim()) return null;
                                                                     const matList = dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || []);
                                                                     const foundMat = matList.find(m => (m.Material || m.Descripcion || m) === itemMat);
                                                                     return resolveMaterialWidth(foundMat || itemMat);
@@ -1247,7 +1344,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                             type="file"
                                             id="add-item-file-input"
                                             className="hidden"
-                                            accept="image/png, application/pdf, .png, .pdf"
+                                            accept={svcId === 'sublimacion' ? 'image/png, image/jpeg, application/pdf, .png, .jpg, .jpeg, .pdf' : 'image/png, application/pdf, .png, .pdf'}
                                             onChange={async (e) => {
                                                 const file = e.target.files[0];
                                                 if (!file) return;
@@ -1307,6 +1404,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                 activeSubOrders={activeSubOrders} tizadaFiles={tizadaFiles} setTizadaFiles={actions.setTizadaFiles}
                                 handleMultipleSpecializedFileUpload={(files) => handleMultipleSpecializedFileUpload(actions.addTizadaFiles, files)}
                                 compact={true}
+                                bobinasDisponibles={bobinasDisponibles} selectedBobinaId={selectedBobinaId} setSelectedBobina={actions.setSelectedBobina}
                             />
                             {/* Documentation Moved to Corte */}
                             {(config.templateButtons || pedidoExcelFile || bocetoFile) && (

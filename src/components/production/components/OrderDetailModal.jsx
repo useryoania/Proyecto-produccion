@@ -19,10 +19,21 @@ import Swal from 'sweetalert2';
 const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) => {
     // Estado Pestañas
     const [activeTab, setActiveTab] = useState('files');
+    const [fallaImages, setFallaImages] = useState([]); // imágenes de fallas anotadas (solo SB)
     const { user } = useAuth();
 
     // Estado local Base
     const [currentOrder, setCurrentOrder] = useState(null);
+
+    // isSB robusto: la -F puede venir con el código en otro campo (code/codigoOrden/CodigoOrden) y con el
+    // área ya distinta de 'SB' (la reposición avanza a Depósito). Chequeamos todas las variantes en el prop
+    // y en el fetch (currentOrder), así el tab de fallas marcadas también aparece en la orden -F.
+    const isSB = (() => {
+        const code = String(order?.code || order?.codigoOrden || order?.CodigoOrden
+            || currentOrder?.code || currentOrder?.codigoOrden || currentOrder?.CodigoOrden || '');
+        const area = String(order?.area || order?.AreaID || currentOrder?.area || currentOrder?.AreaID || '').toUpperCase();
+        return area === 'SB' || /^SUB-/i.test(code);
+    })();
     const [files, setFiles] = useState([]);
     const [configEstados, setConfigEstados] = useState([]);
     const [loadingFiles, setLoadingFiles] = useState(false);
@@ -619,6 +630,17 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
         }
     }, [order]);
 
+    // Imágenes de fallas marcadas (recuadro) — solo SB, para la tab Referencias.
+    useEffect(() => {
+        if (order?.id && isSB) {
+            api.get(`/production-file-control/orden/${order.id}/fallas-imagenes`)
+                .then(res => setFallaImages(res.data?.data || []))
+                .catch(() => setFallaImages([]));
+        } else {
+            setFallaImages([]);
+        }
+    }, [order, isSB]);
+
     useEffect(() => {
         ordersService.getEstados().then(data => {
             if (data && data.length > 0) {
@@ -1028,7 +1050,7 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                         <div className="flex gap-1 border-b border-zinc-200 mb-6 overflow-x-auto">
                             {[
                                 { id: 'files', label: 'Archivos de Impresión', count: productionFiles.length, icon: 'fa-layer-group' },
-                                { id: 'refs', label: 'Archivos de Referencia', count: referenceFiles.length, icon: 'fa-paperclip' },
+                                { id: 'refs', label: 'Archivos de Referencia', count: referenceFiles.length + (isSB ? fallaImages.length : 0), icon: 'fa-paperclip' },
                                 { id: 'services', label: 'Cotizar Productos', count: serviceFiles.length, icon: 'fa-box-open' },
                                 { id: 'labels', label: 'Etiquetas', count: labels.length, icon: 'fa-tags' },
                                 { id: 'reqs', label: 'Requisitos', count: 0, icon: 'fa-list-check' }
@@ -1119,7 +1141,33 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                             {/* PESTAÑA: REFERENCIAS */}
                             {activeTab === 'refs' && (
                                 <div className="space-y-2">
-                                    {referenceFiles.length === 0 ? (
+                                    {/* Fallas marcadas (recuadro dibujado en Control) — solo SB */}
+                                    {isSB && fallaImages.length > 0 && (
+                                        <div className="mb-3">
+                                            <div className="text-[11px] font-black text-[#BD0C7E] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                                <i className="fa-solid fa-triangle-exclamation"></i> Fallas marcadas ({fallaImages.length})
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {fallaImages.map(fi => (
+                                                    <a key={fi.FallaID} href={fi.ImagenFalla} target="_blank" rel="noreferrer" className="block">
+                                                        <div className="rounded-lg overflow-hidden border border-[#BD0C7E]/30 bg-slate-50">
+                                                            <img src={fi.ImagenFalla} alt="Falla" className="w-full h-auto object-contain" loading="lazy" />
+                                                        </div>
+                                                        <div className="text-[10px] font-bold text-zinc-600 mt-1 truncate">
+                                                            {fi.TipoFalla || 'Falla'}{fi.NombreArchivo ? ` · ${fi.NombreArchivo}` : ''}
+                                                        </div>
+                                                        {fi.Observaciones && (
+                                                            <div className="text-[11px] text-zinc-500 mt-0.5 whitespace-pre-wrap break-words">
+                                                                <span className="font-bold text-zinc-600">Detalle:</span> {fi.Observaciones}
+                                                            </div>
+                                                        )}
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {referenceFiles.length === 0 && !(isSB && fallaImages.length > 0) ? (
                                         <div className="py-8 text-center text-zinc-400 bg-zinc-50 rounded-lg border border-dashed border-zinc-200">
                                             <i className="fa-regular fa-image text-2xl mb-2 block opacity-50"></i>
                                             Sin imágenes de referencia o guías.

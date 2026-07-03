@@ -217,13 +217,21 @@ export const FactoryView = () => {
     useEffect(() => {
         let debounceTimer = null;
 
+        // Throttle con trailing: el job de WSP avisa órdenes de a una (eventos cada 1-2s) y un
+        // debounce corto refetchea por CADA evento. Máximo un fetch por ventana por cliente;
+        // el primero sale casi al toque y la ráfaga queda cubierta por la ejecución final.
+        const FETCH_WINDOW_MS = 8000;
+        let lastFetchAt = 0;
         const handleOrderUpdate = () => {
-            // Debounce: si llegan múltiples eventos seguidos, solo hacemos un fetch
-            clearTimeout(debounceTimer);
+            if (debounceTimer) return; // ya hay un fetch agendado que cubre este evento
+            const elapsed = Date.now() - lastFetchAt;
+            const wait = elapsed >= FETCH_WINDOW_MS ? 300 : FETCH_WINDOW_MS - elapsed;
             debounceTimer = setTimeout(() => {
+                debounceTimer = null;
+                lastFetchAt = Date.now();
                 setPage(1);
                 if (page === 1) fetchOrders(1, false);
-            }, 600);
+            }, wait);
         };
 
         socket.on('server:ordersUpdated', handleOrderUpdate);
@@ -653,8 +661,8 @@ export const FactoryView = () => {
                                                             {pf.files.map(f => {
                                                                 const driveId = extractDriveId(f.RutaAlmacenamiento);
                                                                 return (
-                                                                    <div key={f.ArchivoID} className="flex flex-col items-center gap-1 w-16">
-                                                                        <div className="w-16 h-16 rounded-lg overflow-hidden border border-zinc-700/60 bg-zinc-800 relative shrink-0">
+                                                                    <div key={f.ArchivoID} className="flex flex-col items-center gap-1.5 w-[500px] max-w-full">
+                                                                        <div className="w-[500px] h-[500px] max-w-full rounded-lg overflow-hidden border border-zinc-700/60 bg-zinc-800 relative shrink-0">
                                                                             <img
                                                                                 src={`/thumbnails/${f.CodigoOrden || project.id}/${f.ArchivoID}.jpg`}
                                                                                 alt={f.NombreArchivo}
@@ -669,9 +677,9 @@ export const FactoryView = () => {
                                                                                     e.target.parentNode.innerHTML = '<div class="w-full h-full flex items-center justify-center text-zinc-600"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg></div>';
                                                                                 }}
                                                                             />
-                                                                            <span className="absolute top-0 right-0 bg-brand-cyan text-white text-[9px] font-black px-1 rounded-bl-md">x{f.Copias}</span>
+                                                                            <span className="absolute top-2 right-2 bg-brand-cyan text-white text-xs font-black px-2 py-0.5 rounded-md shadow-lg">x{f.Copias}</span>
                                                                         </div>
-                                                                        <span className="text-[9px] text-zinc-400 text-center leading-tight w-full truncate" title={f.NombreArchivo}>{f.NombreArchivo}</span>
+                                                                        <span className="text-[11px] text-zinc-400 text-center leading-tight w-full truncate" title={f.NombreArchivo}>{f.NombreArchivo}</span>
                                                                     </div>
                                                                 );
                                                             })}

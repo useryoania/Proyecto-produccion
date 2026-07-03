@@ -158,7 +158,7 @@ exports.getTickets = async (req, res) => {
 
         let query = `
             SELECT 
-                T.TicIdTicket, T.TicAsunto, T.TicPrioridad, T.TicEstado, T.TicFechaActualizacion, T.DepIdDepartamento, T.OrdIdOrden,
+                T.TicIdTicket, T.TicAsunto, T.TicPrioridad, T.TicEstado, T.TicFechaActualizacion, T.TicFechaAlta, T.DepIdDepartamento, T.OrdIdOrden,
                 OD.OrdCodigoOrden,
                 D.DepNombre as Departamento,
                 (SELECT COUNT(*) FROM Tickets_Mensajes M WHERE M.TicIdTicket = T.TicIdTicket) as TotalMensajes
@@ -438,5 +438,37 @@ exports.updateTicketStatus = async (req, res) => {
     } catch (e) {
         logger.error('Error cerrando ticket:', e.message);
         res.status(500).json({ error: 'Fallo al modificar el estado' });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ELIMINAR MENSAJE (solo staff/admin; los clientes web no pueden borrar)
+// ─────────────────────────────────────────────────────────────────────────────
+exports.deleteMessage = async (req, res) => {
+    try {
+        if (req.user && req.user.role === 'WEB_CLIENT') {
+            return res.status(403).json({ error: 'No autorizado.' });
+        }
+        const mensajeId = parseInt(req.params.mensajeId);
+        if (!mensajeId) return res.status(400).json({ error: 'ID de mensaje inválido.' });
+
+        const pool = await getPool();
+        const info = await pool.request().input('M', sql.Int, mensajeId)
+            .query('SELECT TicIdTicket FROM Tickets_Mensajes WHERE TMenIdMensaje = @M');
+        if (info.recordset.length === 0) return res.status(404).json({ error: 'Mensaje no encontrado.' });
+        const ticketId = info.recordset[0].TicIdTicket;
+
+        // Borrar adjuntos del mensaje y luego el mensaje
+        await pool.request().input('M', sql.Int, mensajeId).query('DELETE FROM Tickets_Adjuntos WHERE TMenIdMensaje = @M');
+        await pool.request().input('M', sql.Int, mensajeId).query('DELETE FROM Tickets_Mensajes WHERE TMenIdMensaje = @M');
+        await pool.request().input('T', sql.Int, ticketId).query('UPDATE Tickets SET TicFechaActualizacion = GETDATE() WHERE TicIdTicket = @T');
+
+        const io = req.app.get('socketio');
+        if (io) io.to(`ticket:${ticketId}`).to('helpdesk:admin').emit('ticket:updated', { ticketId });
+
+        res.json({ success: true });
+    } catch (e) {
+        logger.error('Error eliminando mensaje:', e.message);
+        res.status(500).json({ error: 'Fallo al eliminar el mensaje' });
     }
 };

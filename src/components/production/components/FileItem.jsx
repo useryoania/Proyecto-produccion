@@ -200,6 +200,33 @@ const FileItem = ({ file, readOnly = false, onAction, extraInfo, actions, editin
                                     }
                                     return null;
                                 })()}
+                                {(() => {
+                                    // Preflight automático de la subida (motor Python de reglas USER)
+                                    const veredicto = file.PreflightVeredicto;
+                                    if (!veredicto) return null;
+                                    const cfg = {
+                                        'APROBADO': { txt: 'Preflight OK', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+                                        'APROBADO_CON_OBSERVACIONES': { txt: 'Preflight: observado', cls: 'bg-amber-100 text-amber-800 border-amber-300' },
+                                        'RECHAZADO': { txt: 'Preflight: rechazado', cls: 'bg-red-100 text-red-700 border-red-300' },
+                                    }[veredicto];
+                                    if (!cfg) return null;
+                                    let hallazgos = [];
+                                    try {
+                                        const rep = JSON.parse(file.PreflightReporte || '{}');
+                                        hallazgos = (rep.reporte?.hallazgos || []).map(h => `[${h.nivel}] ${h.mensaje}`);
+                                    } catch (_) { /* reporte ilegible: solo badge */ }
+                                    return (
+                                        <div className={`inline-flex items-center gap-1 ml-2 text-[9px] px-1.5 py-0.5 rounded border uppercase font-black tracking-tighter align-middle shadow-sm cursor-help group/pre relative ${cfg.cls}`}>
+                                            {cfg.txt}
+                                            {hallazgos.length > 0 && (
+                                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 bg-zinc-800 text-white text-[10px] rounded opacity-0 group-hover/pre:opacity-100 pointer-events-none z-40 shadow-lg font-medium normal-case w-72 whitespace-normal text-left">
+                                                    {hallazgos.map((h, i) => <div key={i} className="mb-0.5">• {h}</div>)}
+                                                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-800"></div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         );
                     })()}

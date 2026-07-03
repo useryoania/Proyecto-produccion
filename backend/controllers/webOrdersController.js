@@ -209,7 +209,8 @@ exports.createWebOrder = async (req, res) => {
     const {
         idServicio, nombreTrabajo, prioridad, notasGenerales, configuracion,
         especificacionesCorte, lineas, archivosReferencia, archivosTecnicos, serviciosExtras,
-        bobinaId   // TELA CLIENTE: BobinaID seleccionada por el usuario
+        bobinaId,  // TELA CLIENTE: BobinaID seleccionada por el usuario
+        magnitud   // TELA CLIENTE: metros del pedido a descontar de la bobina (top-level en el payload)
     } = req.body;
 
     // Mapeo inverso para compatibilidad
@@ -717,6 +718,7 @@ exports.createWebOrder = async (req, res) => {
             const generatedOrders = [];
             const generatedIDs = [];
             const timestamp = Date.now();
+            let telaDescontada = false; // TELA CLIENTE: garantiza UN solo descuento por pedido
 
 
             for (let idx = 0; idx < pendingOrderExecutions.length; idx++) {
@@ -798,7 +800,7 @@ exports.createWebOrder = async (req, res) => {
                     .input('ProIdProducto', sql.Int, exec.proIdProducto || null)
                     .input('CliIdCliente', sql.Int, cliIdCliente)
                     .input('F_EntSec', sql.DateTime, fechaEntradaSector)
-                    .input('BobID', sql.Int, bobinaId ? parseInt(bobinaId) : null) // TELA CLIENTE
+                    .input('BobID', sql.Int, (bobinaId && !exec.isExtra) ? parseInt(bobinaId) : null) // TELA CLIENTE: solo la orden principal (los extras no consumen tela)
                     .query(`
                         INSERT INTO Ordenes (
                             AreaID, Cliente, CodCliente, IdClienteReact, DescripcionTrabajo, Prioridad, 
@@ -822,50 +824,60 @@ exports.createWebOrder = async (req, res) => {
                 generatedIDs.push(newOID);
 
                 // --- TELA CLIENTE: Descontar metros de la bobina ---
-                // Solo se ejecuta en la orden principal (esPrincipal) que tenga bobinaId
-                if (bobinaId && !exec.isExtra) {
+                // Una sola vez por pedido, en la orden principal. Los metros vienen del body
+                // (magnitud, top-level) porque exec.magnitudInicial de la principal es 0 al crear
+                // (la Magnitud real la van sumando los archivos después).
+                if (bobinaId && !exec.isExtra && !telaDescontada) {
                     const bid = parseInt(bobinaId);
-                    const checkBob = await new sql.Request(transaction)
-                        .input('BID', sql.Int, bid)
-                        .query(`SELECT MetrosRestantes, InsumoID FROM InventarioBobinas WHERE BobinaID = @BID`);
+                    const mag = parseFloat(magnitud) || parseFloat(exec.magnitudInicial) || 0;
 
-                    if (checkBob.recordset.length > 0) {
+                    if (mag <= 0) {
+                        logger.warn(`[TELA-CLIENTE] Orden ${newOID}: bobina ${bid} indicada pero sin metros a descontar (magnitud='${magnitud}').`);
+                    } else {
+                        const checkBob = await new sql.Request(transaction)
+                            .input('BID', sql.Int, bid)
+                            .query(`SELECT MetrosRestantes, InsumoID FROM InventarioBobinas WHERE BobinaID = @BID`);
+
+                        if (!checkBob.recordset.length) throw new Error('Bobina de tela no encontrada.');
                         const { MetrosRestantes, InsumoID } = checkBob.recordset[0];
-                        const mag = parseFloat(exec.magnitudInicial) || 0;
-
-                        if (mag > 0 && mag <= MetrosRestantes) {
-                            // Descontar metros y marcar Agotado si quedan ≤ 0.5m
-                            await new sql.Request(transaction)
-                                .input('BID', sql.Int, bid)
-                                .input('Mts', sql.Decimal(10, 2), mag)
-                                .query(`
-                                    UPDATE InventarioBobinas
-                                    SET MetrosRestantes = MetrosRestantes - @Mts,
-                                        Estado = CASE
-                                            WHEN (MetrosRestantes - @Mts) <= 0.5 THEN 'Agotado'
-                                            ELSE Estado
-                                        END
-                                    WHERE BobinaID = @BID
-                                `);
-
-                            // Registrar movimiento CONSUMO_ORDEN
-                            await new sql.Request(transaction)
-                                .input('IID', sql.Int, InsumoID)
-                                .input('BID', sql.Int, bid)
-                                .input('OID', sql.Int, newOID)
-                                .input('Mts', sql.Decimal(10, 2), mag)
-                                .input('UID', sql.Int, req.user?.id || 1)
-                                .input('Ref', sql.NVarChar(300), `Consumo Orden ${newOID} - ${jobName}`)
-                                .query(`
-                                    INSERT INTO MovimientosInsumos
-                                        (InsumoID, BobinaID, TipoMovimiento, Cantidad, Referencia, UsuarioID, OrdenID, FechaMovimiento)
-                                    VALUES (@IID, @BID, 'CONSUMO_ORDEN', -@Mts, @Ref, @UID, @OID, GETDATE())
-                                `);
-
-                            logger.info(`[TELA-CLIENTE] Orden ${newOID}: descontados ${mag}m de bobina ${bid}. Restantes: ${MetrosRestantes - mag}m`);
-                        } else if (mag > MetrosRestantes) {
+                        if (mag > MetrosRestantes) {
                             throw new Error(`La bobina solo tiene ${MetrosRestantes}m disponibles. El pedido requiere ${mag}m.`);
                         }
+
+                        // Descuento CONDICIONADO (MetrosRestantes >= @Mts): dos pedidos simultáneos
+                        // no pueden dejar la bobina en negativo — el segundo no matchea y falla acá.
+                        const updRes = await new sql.Request(transaction)
+                            .input('BID', sql.Int, bid)
+                            .input('Mts', sql.Decimal(10, 2), mag)
+                            .query(`
+                                UPDATE InventarioBobinas
+                                SET MetrosRestantes = MetrosRestantes - @Mts,
+                                    Estado = CASE
+                                        WHEN (MetrosRestantes - @Mts) <= 0.5 THEN 'Agotado'
+                                        ELSE Estado
+                                    END
+                                WHERE BobinaID = @BID AND MetrosRestantes >= @Mts
+                            `);
+                        if (!updRes.rowsAffected[0]) {
+                            throw new Error('La bobina ya no tiene metros suficientes (consumidos por otro pedido).');
+                        }
+
+                        // Registrar movimiento CONSUMO_ORDEN (fuente de verdad para la devolución al cancelar)
+                        await new sql.Request(transaction)
+                            .input('IID', sql.Int, InsumoID)
+                            .input('BID', sql.Int, bid)
+                            .input('OID', sql.Int, newOID)
+                            .input('Mts', sql.Decimal(10, 2), mag)
+                            .input('UID', sql.Int, req.user?.id || 1)
+                            .input('Ref', sql.NVarChar(300), `Consumo Orden ${newOID} - ${jobName}`)
+                            .query(`
+                                INSERT INTO MovimientosInsumos
+                                    (InsumoID, BobinaID, TipoMovimiento, Cantidad, Referencia, UsuarioID, OrdenID, FechaMovimiento)
+                                VALUES (@IID, @BID, 'CONSUMO_ORDEN', -@Mts, @Ref, @UID, @OID, GETDATE())
+                            `);
+
+                        telaDescontada = true;
+                        logger.info(`[TELA-CLIENTE] Orden ${newOID}: descontados ${mag}m de bobina ${bid}. Restantes: ${MetrosRestantes - mag}m`);
                     }
                 }
 
@@ -1261,15 +1273,29 @@ exports.uploadOrderFile = async (req, res) => {
 
         const driveUrl = await driveService.uploadToDrive(fileInput, finalName, area || 'GENERAL');
 
+        // Con diskStorage NO hay file.buffer (solo file.path). Leemos el archivo del tmp a un buffer
+        // para el thumbnail + perfil ICC. El buffer queda en memoria, independiente del tmp (que se
+        // borra en el finally), así que las tareas en background funcionan aunque el tmp ya no exista.
+        let procBuffer = file.buffer || null;
+        const wantThumb   = !!(codigoOrden && dbId);
+        const wantProfile = !!(type === 'ORDEN' && dbId);
+        if (!procBuffer && file.path && (wantThumb || wantProfile)) {
+            try {
+                procBuffer = await require('fs').promises.readFile(file.path);
+            } catch (e) {
+                logger.warn('[UploadStream] No se pudo leer el tmp para thumbnail/perfil: ' + e.message);
+            }
+        }
+
         // Generar thumbnail en background si es PDF o PNG y tenemos el buffer
-        if (file.buffer && codigoOrden && dbId) {
+        if (procBuffer && wantThumb) {
             const mimeType = (file.mimetype || '').toLowerCase();
             const ext = (finalName || '').toLowerCase();
             const isSupported = mimeType.includes('pdf') || ext.endsWith('.pdf')
                              || mimeType.includes('png') || ext.endsWith('.png')
                              || mimeType.includes('jpeg') || ext.endsWith('.jpg');
             if (isSupported) {
-                generateThumbnail(file.buffer, codigoOrden, dbId, finalName).catch(e =>
+                generateThumbnail(procBuffer, codigoOrden, dbId, finalName).catch(e =>
                     logger.warn('[Thumbnail] Error async generando thumbnail:', e.message)
                 );
             }
@@ -1277,9 +1303,9 @@ exports.uploadOrderFile = async (req, res) => {
 
         // Leer y guardar el perfil de color ICC incrustado (solo archivos de producción).
         // Fire-and-forget como el thumbnail: no bloquea la respuesta de subida.
-        if (file.buffer && type === 'ORDEN' && dbId) {
+        if (procBuffer && wantProfile) {
             const { extractColorProfile } = require('../utils/colorProfile');
-            extractColorProfile(file.buffer, finalName)
+            extractColorProfile(procBuffer, finalName)
                 .then(async (perfil) => {
                     if (!perfil) return;
                     const p = await getPool();
@@ -1290,6 +1316,36 @@ exports.uploadOrderFile = async (req, res) => {
                     logger.info(`🎨 [ColorProfile] ArchivoID=${dbId}: ${perfil}`);
                 })
                 .catch(e => logger.warn('[ColorProfile] Error guardando perfil:', e.message));
+        }
+
+        // Preflight de arte (motor Python con las reglas de las guías USER): medidas vs
+        // material, DPI efectivo, fuentes no embebidas, transparencias, espacios de color.
+        // Guarda veredicto + reporte en ArchivosOrden. Fire-and-forget: nunca bloquea la subida.
+        // DESACTIVADO por defecto — se enciende con PREFLIGHT_ENABLED=1 en el .env cuando se decida usarlo.
+        if (process.env.PREFLIGHT_ENABLED === '1' && procBuffer && type === 'ORDEN' && dbId) {
+            const { runPreflight, servicioPorArea, anchoCmDesdeMaterial } = require('../utils/preflight');
+            const servicioPre = servicioPorArea(area);
+            if (servicioPre) {
+                (async () => {
+                    try {
+                        const p = await getPool();
+                        const matRes = await p.request()
+                            .input('ID', sql.Int, dbId)
+                            .query('SELECT O.Material FROM ArchivosOrden AO JOIN Ordenes O ON O.OrdenID = AO.OrdenID WHERE AO.ArchivoID = @ID');
+                        const anchoCm = anchoCmDesdeMaterial(matRes.recordset[0]?.Material);
+                        const pre = await runPreflight(procBuffer, finalName, { servicio: servicioPre, anchoTelaCm: anchoCm });
+                        if (!pre || !pre.veredicto) return;
+                        await p.request()
+                            .input('ID', sql.Int, dbId)
+                            .input('V', sql.NVarChar(40), pre.veredicto)
+                            .input('R', sql.NVarChar(sql.MAX), JSON.stringify({ reporte: pre.reporte, mensaje_cliente: pre.mensajeCliente }))
+                            .query('UPDATE ArchivosOrden SET PreflightVeredicto = @V, PreflightReporte = @R WHERE ArchivoID = @ID');
+                        logger.info(`🧪 [Preflight] ArchivoID=${dbId} (${servicioPre}): ${pre.veredicto}`);
+                    } catch (e) {
+                        logger.warn('[Preflight] Error guardando resultado:', e.message);
+                    }
+                })();
+            }
         }
 
         const pool = await getPool();
@@ -2083,83 +2139,92 @@ exports.totemCreatePickup = async (req, res) => {
         return res.status(400).json({ success: false, error: "Cliente no identificado." });
     }
 
-    try {
-        const pool = await getPool();
-
-        // 1. Buscar CodCliente a partir del IDCliente
-        const clientRes = await pool.request()
-            .input('idCliente', sql.VarChar, clientId)
-            .query("SELECT CodCliente, CliIdCliente, FormaEnvioID FROM Clientes WHERE IDCliente = @idCliente");
-
-        if (!clientRes.recordset.length) {
-            return res.status(404).json({ success: false, error: "Cliente no encontrado." });
-        }
-        const codCliente = clientRes.recordset[0].CodCliente;
-        const clientFormaEnvio = clientRes.recordset[0].FormaEnvioID || 5;
-        const lugarRetiroFinal = lugarRetiro ? parseInt(lugarRetiro, 10) : clientFormaEnvio;
-
-        // 2. Resolver IDs de OrdenesDeposito seleccionadas
-        const depositoResult = await pool.request()
-            .input('idCli', sql.VarChar, clientId)
-            .query(`
-                SELECT o.OrdIdOrden, o.OrdCodigoOrden
-                FROM OrdenesDeposito o WITH(NOLOCK)
-                LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
-                LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
-                WHERE c.IDCliente = @idCli
-                AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar', 'Pronto para entregar')
-                AND o.OReIdOrdenRetiro IS NULL
-            `);
-
-        const rawIds = [];
-        for (const o of depositoResult.recordset) {
-            const docId = o.OrdCodigoOrden || `#${o.OrdIdOrden}`;
-            if (selectedOrderIds.includes(docId) || selectedOrderIds.includes(o.OrdCodigoOrden)) {
-                rawIds.push(o.OrdIdOrden);
-            }
-        }
-
-        if (rawIds.length === 0) {
-            return res.status(400).json({ success: false, error: "Órdenes no encontradas." });
-        }
-
-        // 3. Crear retiro
-        const { crearRetiro } = require('../services/retiroService');
-        const transaction = new sql.Transaction(pool);
-        await transaction.begin();
-
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            const OReIdOrdenRetiro = await crearRetiro(transaction, {
-                ordIds: rawIds,
-                totalCost: totalCost || 0,
-                lugarRetiro: lugarRetiroFinal,
-                usuarioAlta: 70,
-                formaRetiro: formaRetiro || 'RT',
-                codCliente: parseInt(codCliente, 10) || null,
-                moneda: 'UYU'
-            });
+            const pool = await getPool();
 
-            await transaction.commit();
+            // 1. Buscar CodCliente a partir del IDCliente
+            const clientRes = await pool.request()
+                .input('idCliente', sql.VarChar, clientId)
+                .query("SELECT CodCliente, CliIdCliente, FormaEnvioID FROM Clientes WHERE IDCliente = @idCliente");
 
-            const ordIdRetiro = `RT-${OReIdOrdenRetiro}`;
+            if (!clientRes.recordset.length) {
+                return res.status(404).json({ success: false, error: "Cliente no encontrado." });
+            }
+            const codCliente = clientRes.recordset[0].CodCliente;
+            const clientFormaEnvio = clientRes.recordset[0].FormaEnvioID || 5;
+            const lugarRetiroFinal = lugarRetiro ? parseInt(lugarRetiro, 10) : clientFormaEnvio;
 
-            // Emitir socket
-            const io = req.app.get('socketio');
-            if (io) {
-                io.emit('actualizado', { type: 'actualizacion' });
-                io.emit('retiros:update', { type: 'nuevo_retiro', ordenId: OReIdOrdenRetiro, formaRetiro: 'RT' });
+            // 2. Resolver IDs de OrdenesDeposito seleccionadas
+            const depositoResult = await pool.request()
+                .input('idCli', sql.VarChar, clientId)
+                .query(`
+                    SELECT o.OrdIdOrden, o.OrdCodigoOrden
+                    FROM OrdenesDeposito o WITH(NOLOCK)
+                    LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
+                    LEFT JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
+                    WHERE c.IDCliente = @idCli
+                    AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar', 'Pronto para entregar')
+                    AND o.OReIdOrdenRetiro IS NULL
+                `);
+
+            const rawIds = [];
+            for (const o of depositoResult.recordset) {
+                const docId = o.OrdCodigoOrden || `#${o.OrdIdOrden}`;
+                if (selectedOrderIds.includes(docId) || selectedOrderIds.includes(o.OrdCodigoOrden)) {
+                    rawIds.push(o.OrdIdOrden);
+                }
             }
 
-            res.json({ success: true, data: { OReIdOrdenRetiro }, ordIdGenerada: ordIdRetiro });
+            if (rawIds.length === 0) {
+                return res.status(400).json({ success: false, error: "Órdenes no encontradas." });
+            }
 
-        } catch (txErr) {
-            try { await transaction.rollback(); } catch (e) { }
-            throw txErr;
+            // 3. Crear retiro
+            const { crearRetiro } = require('../services/retiroService');
+            const transaction = new sql.Transaction(pool);
+            await transaction.begin();
+
+            try {
+                const OReIdOrdenRetiro = await crearRetiro(transaction, {
+                    ordIds: rawIds,
+                    totalCost: totalCost || 0,
+                    lugarRetiro: lugarRetiroFinal,
+                    usuarioAlta: 70,
+                    formaRetiro: formaRetiro || 'RT',
+                    codCliente: parseInt(codCliente, 10) || null,
+                    moneda: 'UYU'
+                });
+
+                await transaction.commit();
+
+                const ordIdRetiro = `RT-${OReIdOrdenRetiro}`;
+
+                // Emitir socket
+                const io = req.app.get('socketio');
+                if (io) {
+                    io.emit('actualizado', { type: 'actualizacion' });
+                    io.emit('retiros:update', { type: 'nuevo_retiro', ordenId: OReIdOrdenRetiro, formaRetiro: 'RT' });
+                }
+
+                return res.json({ success: true, data: { OReIdOrdenRetiro }, ordIdGenerada: ordIdRetiro });
+
+            } catch (txErr) {
+                try { await transaction.rollback(); } catch (e) { }
+                throw txErr;
+            }
+
+        } catch (error) {
+            // Deadlock (error 1205): reintentar
+            if (error.number === 1205 && attempt < MAX_RETRIES) {
+                logger.warn(`[Totem] Deadlock en intento ${attempt}/${MAX_RETRIES}, reintentando en ${attempt * 300}ms...`);
+                await new Promise(r => setTimeout(r, attempt * 300));
+                continue;
+            }
+            logger.error("Error totem create pickup:", error);
+            return res.status(500).json({ success: false, error: "Error al crear retiro: " + error.message });
         }
-
-    } catch (error) {
-        logger.error("Error totem create pickup:", error);
-        res.status(500).json({ success: false, error: "Error al crear retiro: " + error.message });
     }
 };
 

@@ -474,8 +474,11 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         const list = [...(freshRoll.orders || [])];
         // Orden por Secuencia (persistida en backend). En SB el backend la inicializa por Material A-Z
         // la primera vez; luego refleja el orden manual del usuario. Las nuevas (Secuencia mayor) caen al final.
+        // Máquina NO impresora (calandra, lockReorder): se muestra en orden inverso (Z-A) por defecto,
+        // sin tocar la Secuencia guardada (que sigue siendo el orden de impresión para cuando vuelva a impresora).
+        const dir = lockReorder ? -1 : 1;
         return list.sort((a, b) =>
-            ((a.sequence ?? a.Secuencia ?? 999999) - (b.sequence ?? b.Secuencia ?? 999999)) || ((a.id || 0) - (b.id || 0))
+            dir * (((a.sequence ?? a.Secuencia ?? 999999) - (b.sequence ?? b.Secuencia ?? 999999)) || ((a.id || 0) - (b.id || 0)))
         );
     })();
     const totalOrders = orders.length;
@@ -607,10 +610,24 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     // órdenes dentro de cada grupo, y lo persiste en backend.
     const [materialDesc, setMaterialDesc] = useState(false);
     const handleReverseAll = () => {
+        if (lockReorder) return; // máquina no-impresora (calandra): orden fijo Z-A, no se reordena ni persiste
         const rev = [...renderUnits].reverse();
         const flatIds = rev.flatMap(u => [...u.orders].reverse().map(o => o.id));
         persistOrder(flatIds);
         setMaterialDesc(d => !d);
+    };
+
+    // Header "Orden" clickeable: ordena TODAS las órdenes por número de código (menor a mayor;
+    // segundo click invierte) y lo persiste como nueva Secuencia — mismo patrón que Material/Variante.
+    const [ordenAsc, setOrdenAsc] = useState(null); // null = nadie clickeó aún (orden manual)
+    const handleSortByCode = () => {
+        if (lockReorder) return; // calandra: orden fijo, no se reordena ni persiste
+        const asc = ordenAsc !== true; // primer click = menor a mayor; después alterna
+        const codeNum = (o) => { const m = String(o.code || '').match(/(\d+)/); return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER; };
+        const sorted = [...orders].sort((a, b) => (codeNum(a) - codeNum(b)) || String(a.code || '').localeCompare(String(b.code || '')));
+        if (!asc) sorted.reverse();
+        persistOrder(sorted.map(o => o.id));
+        setOrdenAsc(asc);
     };
 
     // Unidades de render: grupo manual, grupo auto (material con 1 sola orden) u orden suelta.
@@ -1428,9 +1445,9 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                 <div className="w-10 flex justify-center">
                                   <input type="checkbox" className="w-4 h-4 rounded border-zinc-300 text-brand-cyan focus:ring-brand-cyan cursor-pointer" checked={orders.length > 0 && selectedOrderIds.length === orders.length} onChange={handleToggleAll} />
                                 </div>
-                                <div className="w-28 px-2">Orden</div>
+                                <button type="button" onClick={handleSortByCode} title="Ordenar por número de orden" className="w-28 px-2 flex items-center gap-1.5 text-[10px] uppercase font-black tracking-widest text-zinc-500 hover:text-brand-cyan transition-colors cursor-pointer">Orden <i className={`fa-solid ${ordenAsc === null ? 'fa-sort text-zinc-300' : ordenAsc ? 'fa-arrow-down-1-9' : 'fa-arrow-up-9-1'}`} /></button>
                                 <div className="flex-1 min-w-[150px] px-2">Cliente / Trabajo</div>
-                                <button type="button" onClick={handleReverseAll} title="Invertir orden: Impresión (A-Z) ↔ Calandrado (Z-A)" className="flex-1 min-w-[150px] px-2 flex items-center gap-1.5 text-[10px] uppercase font-black tracking-widest text-zinc-500 hover:text-brand-cyan transition-colors cursor-pointer">Material / Variante <i className={`fa-solid ${materialDesc ? 'fa-arrow-up-z-a' : 'fa-arrow-down-a-z'}`} /><span className={`ml-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wide ${materialDesc ? 'bg-brand-magenta/10 text-brand-magenta' : 'bg-brand-cyan/10 text-brand-cyan'}`}>{materialDesc ? 'Orden calandrado' : 'Orden impresión'}</span></button>
+                                <button type="button" onClick={handleReverseAll} disabled={lockReorder} title={lockReorder ? 'Orden de calandrado (Z-A)' : 'Invertir orden: Impresión (A-Z) ↔ Calandrado (Z-A)'} className={`flex-1 min-w-[150px] px-2 flex items-center gap-1.5 text-[10px] uppercase font-black tracking-widest text-zinc-500 transition-colors ${lockReorder ? 'cursor-default' : 'hover:text-brand-cyan cursor-pointer'}`}>Material / Variante <i className={`fa-solid ${(lockReorder || materialDesc) ? 'fa-arrow-up-z-a' : 'fa-arrow-down-a-z'}`} /></button>
                                 <div className="w-14 text-center"><i className="fa-solid fa-paperclip" /></div>
                                 <div className="w-24 text-center">Metros</div>
                                 <div className="w-28 text-center">Prioridad</div>
@@ -1537,7 +1554,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                       {o.note && o.note.trim() !== '' && (
                                                         <div className="group/note relative flex justify-center">
                                                           <i className="fa-solid fa-message text-amber-400 cursor-help" />
-                                                          <div className="absolute bottom-full mb-2 hidden group-hover/note:block z-50 w-48 p-2 bg-zinc-800 text-white text-xs rounded-lg shadow-lg">{o.note}</div>
+                                                          <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 hidden group-hover/note:block z-[100] w-56 p-2 bg-zinc-800 text-white text-xs rounded-lg shadow-lg">{o.note}</div>
                                                         </div>
                                                       )}
                                                     </div>
@@ -1591,7 +1608,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                             />
                                         </th>
                                         <th className="px-4 py-3 w-10 text-center text-zinc-300">#</th>
-                                        <th className="px-4 py-3 w-28">Orden</th>
+                                        <th className="px-4 py-3 w-28"><button type="button" onClick={handleSortByCode} title="Ordenar por número de orden" className="flex items-center gap-1.5 uppercase font-black tracking-widest hover:text-brand-cyan transition-colors cursor-pointer">Orden <i className={`fa-solid ${ordenAsc === null ? 'fa-sort text-zinc-300' : ordenAsc ? 'fa-arrow-down-1-9' : 'fa-arrow-up-9-1'}`} /></button></th>
                                         <th className="px-4 py-3 w-48">Cliente / Trabajo</th>
                                         <th className="px-4 py-3 w-48">Material / Variante</th>
                                         <th className="px-4 py-3 w-16 text-center"><i className="fa-solid fa-paperclip" /></th>
@@ -1706,7 +1723,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                 {o.note && o.note.trim() !== '' && (
                                                     <div className="group/note relative flex justify-center">
                                                         <i className="fa-solid fa-message text-amber-400 cursor-help" />
-                                                        <div className="absolute bottom-full mb-2 hidden group-hover/note:block z-50 w-48 p-2 bg-zinc-800 text-white text-xs rounded-lg shadow-lg">
+                                                        <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 hidden group-hover/note:block z-[100] w-56 p-2 bg-zinc-800 text-white text-xs rounded-lg shadow-lg">
                                                             {o.note}
                                                             <div className="absolute top-full left-1/2 -ml-1 border-4 border-transparent border-t-zinc-800" />
                                                         </div>

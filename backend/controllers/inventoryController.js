@@ -1046,12 +1046,27 @@ exports.getEstadoTela = async (req, res) => {
 // GET /inventory/tela-cliente/disponible?clienteId=2930
 // ==========================================
 exports.getBovinasDisponibles = async (req, res) => {
-    const { clienteId } = req.query;
-    if (!clienteId) return res.status(400).json({ error: 'clienteId requerido' });
+    let { clienteId } = req.query;
     try {
         const pool = await getPool();
+
+        // Portal web: si no vino clienteId, resolverlo desde el token. El portal solo conoce
+        // codCliente; InventarioBobinas.ClienteID guarda CliIdCliente (ver ReceptionPage).
+        let idClienteStr = null; // fallback legacy: recepciones viejas pudieron guardar IDCliente (string)
+        if (!clienteId && req.user?.codCliente) {
+            const cliRes = await pool.request()
+                .input('Cod', sql.Int, parseInt(req.user.codCliente))
+                .query('SELECT TOP 1 CliIdCliente, IDCliente FROM Clientes WHERE CodCliente = @Cod');
+            if (cliRes.recordset.length) {
+                clienteId = cliRes.recordset[0].CliIdCliente;
+                idClienteStr = String(cliRes.recordset[0].IDCliente || '').trim() || null;
+            }
+        }
+        if (!clienteId) return res.status(400).json({ error: 'clienteId requerido' });
+
         const result = await pool.request()
             .input('CID', sql.VarChar(50), String(clienteId))
+            .input('CliStr', sql.NVarChar(255), idClienteStr)
             .query(`
                 SELECT
                     ib.BobinaID,
@@ -1063,7 +1078,10 @@ exports.getBovinasDisponibles = async (req, res) => {
                     COALESCE(NULLIF(ib.DescripcionTela, ''), ins.Nombre) AS DescripcionTela
                 FROM InventarioBobinas ib
                 JOIN Insumos ins ON ins.InsumoID = ib.InsumoID
-                WHERE TRY_CAST(ib.ClienteID AS INT) = TRY_CAST(@CID AS INT)
+                WHERE (
+                        TRY_CAST(ib.ClienteID AS INT) = TRY_CAST(@CID AS INT)
+                        OR (@CliStr IS NOT NULL AND LTRIM(RTRIM(ib.ClienteID)) = @CliStr)
+                      )
                   AND ib.Estado = 'Disponible'
                   AND ib.MetrosRestantes > 0.5
                 ORDER BY ib.FechaIngreso ASC

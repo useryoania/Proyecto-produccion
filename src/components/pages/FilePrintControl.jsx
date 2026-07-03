@@ -8,6 +8,7 @@ import OrderCard from '../production/components/OrderCard';
 import RollDetailsModal from '../modals/RollDetailsModal';
 import OrderDetailModal from '../production/components/OrderDetailModal';
 import FileControlCard from '../production/components/FileControlCard';
+import FallaAnnotator from '../production/components/FallaAnnotator';
 
 import { socket } from '../../services/socketService';
 import Toast from '../ui/Toast';
@@ -105,6 +106,7 @@ const FilePrintControl = ({ areaCode }) => {
   const [metersToReprint, setMetersToReprint] = useState('');
   const [reponerCompleto, setReponerCompleto] = useState(false);
   const [actionReason, setActionReason] = useState('');
+  const [annotatedImage, setAnnotatedImage] = useState(null); // dataURL del thumbnail con el recuadro de falla
   // En SB no se piden "metros a reponer": la falla (-F) arranca en 0m. Se oculta el campo + el check.
   const isSB = String(areaCode || '').toUpperCase() === 'SB';
 
@@ -666,12 +668,14 @@ const FilePrintControl = ({ areaCode }) => {
     setFailureType('');
     setMetersToReprint('');
     setReponerCompleto(false);
+    setAnnotatedImage(null);
   };
 
   const closeModal = () => {
     setControlAction(null);
     setSelectedFileForAction(null);
     setReponerCompleto(false);
+    setAnnotatedImage(null);
   };
 
   const printFailureLabel = ({ order, file, tipoFalla, observacion }) => {
@@ -799,7 +803,8 @@ const FilePrintControl = ({ areaCode }) => {
       tipoFalla: failureType,
       metrosReponer: isSB ? '' : metersToReprint,
       usuario: user?.usuario || user?.username || 'Sistema',
-      isService: selectedFileForAction.isService
+      isService: selectedFileForAction.isService,
+      annotatedImage: controlAction === 'FALLA' ? annotatedImage : null
     };
 
     try {
@@ -1146,14 +1151,14 @@ const FilePrintControl = ({ areaCode }) => {
       {/* 1. Action Modal (Falla/Cancel) */}
       {controlAction && (controlAction === 'FALLA' || controlAction === 'CANCELADO') && (
         <div className="fixed inset-0 z-[1400] bg-black/40  flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className={`bg-white w-full ${controlAction === 'FALLA' ? 'max-w-lg' : 'max-w-md'} rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200`}>
             <div className={`px-6 py-4 border-b flex justify-between items-center ${controlAction === 'FALLA' ? 'bg-[#BD0C7E]/10 border-[#BD0C7E]/20' : 'bg-slate-50 border-slate-200'}`}>
               <h3 className={`font-black text-lg ${controlAction === 'FALLA' ? 'text-[#BD0C7E]' : 'text-slate-600'}`}>
                 {controlAction === 'FALLA' ? 'REPORTAR FALLA DE IMPRESIÓN' : 'CANCELAR ARCHIVO'}
               </h3>
               <button onClick={closeModal} className="text-slate-400 hover:text-slate-600"><i className="fa-solid fa-xmark text-xl"></i></button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 max-h-[85vh] overflow-y-auto">
               {controlAction === 'FALLA' && (
                 <div>
                   <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Tipo de Falla</label>
@@ -1210,6 +1215,16 @@ const FilePrintControl = ({ areaCode }) => {
                       </div>
                     </Listbox>
                   </div>
+                </div>
+              )}
+
+              {controlAction === 'FALLA' && selectedFileForAction && !selectedFileForAction.isService && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Zona de la falla</label>
+                  <FallaAnnotator
+                    thumbUrl={`/thumbnails/${selectedOrder?.code}/${selectedFileForAction.ArchivoID || selectedFileForAction.id}.jpg`}
+                    onAnnotated={setAnnotatedImage}
+                  />
                 </div>
               )}
 

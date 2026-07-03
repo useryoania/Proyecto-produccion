@@ -47,7 +47,8 @@ export const PrintSettingsPanel = ({
         const w = parseFloat(wM) || 0;
         const h = parseFloat(hM) || 0;
         const maxRaw = parseFloat(maxM) || 0;
-        const max = maxRaw > 0.03 ? maxRaw - 0.03 : maxRaw;
+        // Sin material (maxRaw<=0) → max = Infinity, así no se valida el ancho hasta elegir material.
+        const max = maxRaw > 0.03 ? maxRaw - 0.03 : (maxRaw > 0 ? maxRaw : Infinity);
 
         if (currentMode === 'normal') {
             if (w > max + 0.001) {
@@ -310,7 +311,7 @@ export const PrintSettingsPanel = ({
                                         className="w-full p-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-200 focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 outline-none"
                                         value={raportWidth}
                                         onChange={(e) => handleInputChange('raportWidth', e.target.value)}
-                                        placeholder={`Máx: ${materialMaxWidthM}`}
+                                        placeholder={materialMaxWidthM ? `Máx: ${materialMaxWidthM}` : 'Ancho total (m)'}
                                     />
                                 </div>
                                 <div>

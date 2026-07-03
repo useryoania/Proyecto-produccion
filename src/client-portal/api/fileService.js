@@ -14,13 +14,14 @@ const ALLOWED_FORMATS = [
     'text/csv'
 ];
 
-export const validateFile = (file) => {
+export const validateFile = (file, { allowJpeg = false } = {}) => {
     if (!file) return { valid: false, error: 'No file selected' };
     if (file.size > MAX_FILE_SIZE) return { valid: false, error: 'Excede 500MB' };
-    // JPEG no se permite en producción: el arte va en PNG (fondo transparente) o PDF.
+    // JPEG por default no se permite en producción (el arte va en PNG con transparencia o PDF).
+    // Excepción: sublimación lo acepta (allowJpeg) — ahí no se necesita canal alpha.
     const ext = (file.name?.split('.').pop() || '').toLowerCase();
     const mime = (file.type || '').toLowerCase();
-    if (mime === 'image/jpeg' || mime === 'image/jpg' || ext === 'jpg' || ext === 'jpeg') {
+    if (!allowJpeg && (mime === 'image/jpeg' || mime === 'image/jpg' || ext === 'jpg' || ext === 'jpeg')) {
         return { valid: false, error: 'No se permiten archivos JPEG. Subí el arte en PNG o PDF.' };
     }
     return { valid: true };
@@ -256,8 +257,8 @@ const getPdfDimensionsFromFile = (file) => {
 
 export const fileService = {
     // Returns { name, data: 'data:image...', size, type, width, height, measurementError, originalFile, unit }
-    uploadFile: async (file) => {
-        const validation = validateFile(file);
+    uploadFile: async (file, opts = {}) => {
+        const validation = validateFile(file, opts);
         if (!validation.valid) throw new Error(validation.error);
 
         try {

@@ -35,6 +35,11 @@ const initialState = {
     moldType: 'SUBLIMACION',
     fabricOrigin: 'TELA SUBLIMADA EN USER',
     clientFabricName: '',
+    // Tela de Cliente: bobina seleccionada (BobinaID de InventarioBobinas) + datos para validar
+    selectedBobinaId: null,
+    selectedBobinaAncho: null,   // ancho de la bobina (m) — valida el ancho del archivo
+    selectedBobinaMetros: null,  // MetrosRestantes — valida el largo del archivo
+    bobinasDisponibles: [],
     selectedSubOrderId: '',
     tizadaFiles: [],
     pedidoExcelFile: null,
@@ -250,6 +255,19 @@ export const useOrderForm = (serviceId, overrides = {}) => {
     const setMoldType = (v) => setField('moldType', v);
     const setFabricOrigin = (v) => setField('fabricOrigin', v);
     const setClientFabricName = (v) => setField('clientFabricName', v);
+    // Tela de Cliente: setea la bobina elegida (o null para limpiar). Sincroniza clientFabricName
+    // con la descripción de la tela (compatibilidad con notas/metadata existentes).
+    const setSelectedBobina = (bobina) => {
+        dispatch({
+            type: actionTypes.SET_DATA,
+            data: {
+                selectedBobinaId: bobina?.BobinaID ?? null,
+                selectedBobinaAncho: bobina?.Ancho != null ? parseFloat(bobina.Ancho) : null,
+                selectedBobinaMetros: bobina?.MetrosRestantes != null ? parseFloat(bobina.MetrosRestantes) : null,
+                clientFabricName: bobina?.DescripcionTela || ''
+            }
+        });
+    };
     const setSelectedSubOrderId = (v) => setField('selectedSubOrderId', v);
     const setTizadaFiles = (v) => {
         // Handle functional update if passed (e.g. prev => prev.filter...)
@@ -381,6 +399,10 @@ export const useOrderForm = (serviceId, overrides = {}) => {
             moldType: 'SUBLIMACION',
             fabricOrigin: 'TELA SUBLIMADA EN USER',
             clientFabricName: '',
+            selectedBobinaId: null,
+            selectedBobinaAncho: null,
+            selectedBobinaMetros: null,
+            bobinasDisponibles: [],
             selectedSubOrderId: '',
             bocetoFile: null,
             bordadoBocetoFile: null,
@@ -491,6 +513,45 @@ export const useOrderForm = (serviceId, overrides = {}) => {
             });
         }
     }, [serviceId, serviceInfo, visibleComplementaryOptions.length]); // Added visibleComplementaryOptions dep
+
+    // 3b. Tela de Cliente: cargar bobinas disponibles del cliente al elegir ese origen.
+    // El backend resuelve el cliente desde el token del portal (no hace falta pasar clienteId).
+    useEffect(() => {
+        if (state.fabricOrigin === 'TELA CLIENTE' && state.moldType !== 'SUBLIMACION') {
+            apiClient.get('/inventory/tela-cliente/disponible').then(res => {
+                dispatch({ type: actionTypes.SET_DATA, data: { bobinasDisponibles: res?.data || [] } });
+            }).catch(e => {
+                console.warn('Error cargando bobinas de tela cliente', e);
+                dispatch({ type: actionTypes.SET_DATA, data: { bobinasDisponibles: [] } });
+            });
+        } else {
+            // Al salir de TELA CLIENTE se limpia la selección (evita mandar bobinaId colgado)
+            dispatch({
+                type: actionTypes.SET_DATA,
+                data: { bobinasDisponibles: [], selectedBobinaId: null, selectedBobinaAncho: null, selectedBobinaMetros: null }
+            });
+        }
+    }, [state.fabricOrigin, state.moldType]);
+
+    // 3c. Sublimación Tela de Cliente: cargar las bobinas del cliente al elegir esa variante.
+    // Mismo endpoint que Corte; el backend resuelve el cliente por el token del portal.
+    // OJO: comparar case-insensitive — la URL puede venir /order/SUBLIMACION (bookmark).
+    const svcIdHook = (serviceId || '').toLowerCase();
+    const isSubliTelaClienteHook = svcIdHook === 'sublimacion' && /tela de cliente/i.test(state.serviceSubType || '');
+    useEffect(() => {
+        if (isSubliTelaClienteHook) {
+            apiClient.get('/inventory/tela-cliente/disponible').then(res => {
+                dispatch({ type: actionTypes.SET_DATA, data: { bobinasDisponibles: res?.data || [] } });
+            }).catch(e => {
+                console.warn('Error cargando bobinas de tela cliente (sublimación)', e);
+                dispatch({ type: actionTypes.SET_DATA, data: { bobinasDisponibles: [] } });
+            });
+        } else if (svcIdHook === 'sublimacion') {
+            // Salir de la variante tela cliente → limpiar selección para no mandar una bobina colgada
+            dispatch({ type: actionTypes.SET_DATA, data: { bobinasDisponibles: [], selectedBobinaId: null, selectedBobinaAncho: null, selectedBobinaMetros: null } });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isSubliTelaClienteHook, serviceId]);
 
     // 4. Fetch Sublimation Active Orders
     useEffect(() => {
@@ -701,6 +762,7 @@ export const useOrderForm = (serviceId, overrides = {}) => {
             setMoldType,
             setFabricOrigin,
             setClientFabricName,
+            setSelectedBobina,
             setSelectedSubOrderId,
             setTizadaFiles,
             setPedidoExcelFile,

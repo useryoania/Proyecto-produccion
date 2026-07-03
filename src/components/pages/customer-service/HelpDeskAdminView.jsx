@@ -4,7 +4,7 @@ import { apiClient, API_BASE_URL } from '../../../client-portal/api/apiClient';
 import { socket } from '../../../services/socketService';
 import { GlassCard } from '../../../client-portal/pautas/GlassCard';
 import { CustomButton } from '../../../client-portal/pautas/CustomButton';
-import { Search, Filter, MessageSquare, Clock, AlertCircle, FileText, Send, Lock, RotateCcw, CheckCircle, Package, ChevronDown, Check, X, Download } from 'lucide-react';
+import { Search, Filter, MessageSquare, Clock, AlertCircle, FileText, Send, Lock, RotateCcw, CheckCircle, Package, ChevronDown, Check, X, Download, Trash2 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { toast } from 'sonner';
 import { Listbox, Transition } from '@headlessui/react';
@@ -249,9 +249,16 @@ export const HelpDeskAdminView = () => {
                                     : 'bg-white border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
                                 }`}
                         >
-                            {/* Fila 1: #idticket vs Area */}
-                            <div className="flex justify-between items-center text-xs text-zinc-500 font-medium mb-1.5">
-                                <span className="text-brand-cyan font-mono font-bold text-xs">#{t.TicIdTicket}</span>
+                            {/* Fila 1: #idticket + fecha/hora vs Area */}
+                            <div className="flex justify-between items-center gap-2 text-xs text-zinc-500 font-medium mb-1.5">
+                                <span className="flex items-baseline gap-2 min-w-0">
+                                    <span className="text-brand-cyan font-mono font-bold text-xs shrink-0">#{t.TicIdTicket}</span>
+                                    {t.TicFechaAlta && (
+                                        <span className="text-[10px] font-medium text-zinc-400 whitespace-nowrap">
+                                            {new Date(t.TicFechaAlta).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                    )}
+                                </span>
                                 <span className="truncate text-zinc-600 font-semibold text-[11px]">{t.Departamento}</span>
                             </div>
 
@@ -350,6 +357,10 @@ const TicketAdminInterface = ({ ticketId, onUpdate, departamentos }) => {
 
     const messagesEndRef = useRef(null);
 
+    // Eliminación de mensajes (solo staff)
+    const [msgToDelete, setMsgToDelete] = useState(null);
+    const [deleting, setDeleting] = useState(false);
+
     const fetchThread = async () => {
         try {
             const res = await apiClient.get(`/tickets/${ticketId}`);
@@ -358,6 +369,26 @@ const TicketAdminInterface = ({ ticketId, onUpdate, departamentos }) => {
                 setMensajes(res.mensajes);
             }
         } catch (e) { console.error(e); } finally { setLoading(false); }
+    };
+
+    const handleDeleteMessage = async () => {
+        if (msgToDelete === null) return;
+        setDeleting(true);
+        try {
+            const res = await apiClient.delete(`/tickets/mensaje/${msgToDelete}`);
+            if (res && res.success) {
+                toast.success('Mensaje eliminado');
+                setMsgToDelete(null);
+                fetchThread();
+                if (onUpdate) onUpdate();
+            } else {
+                toast.error((res && res.error) || 'No se pudo eliminar el mensaje');
+            }
+        } catch (e) {
+            toast.error('No se pudo eliminar el mensaje');
+        } finally {
+            setDeleting(false);
+        }
     };
 
     useEffect(() => {
@@ -581,6 +612,16 @@ const TicketAdminInterface = ({ ticketId, onUpdate, departamentos }) => {
                                 • {new Date(msg.TMenFecha).toLocaleString('es-UY', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
                                 {isSystemStaff && <Check size={12} className="text-brand-dark" strokeWidth={3} />}
                                 {isInternalNote && <span className="text-brand-gold flex items-center gap-1"><Lock size={12} /> Oculto al Cliente</span>}
+                                {isSystemStaff && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setMsgToDelete(msg.TMenIdMensaje)}
+                                        title="Eliminar mensaje"
+                                        className="text-zinc-300 hover:text-red-500 transition-colors ml-0.5"
+                                    >
+                                        <Trash2 size={13} />
+                                    </button>
+                                )}
                             </div>
 
                             {(() => {
@@ -697,6 +738,25 @@ const TicketAdminInterface = ({ ticketId, onUpdate, departamentos }) => {
                     </div>
                 )}
             </div>
+
+            {/* Modal confirmar eliminar mensaje */}
+            {msgToDelete !== null && (
+                <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/50 p-4" onClick={() => !deleting && setMsgToDelete(null)}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-150" onClick={(e) => e.stopPropagation()}>
+                        <div className="p-6 text-center">
+                            <div className="w-12 h-12 mx-auto rounded-full bg-red-50 flex items-center justify-center mb-3">
+                                <Trash2 size={22} className="text-red-500" />
+                            </div>
+                            <h3 className="text-base font-bold text-zinc-800">Eliminar mensaje</h3>
+                            <p className="text-sm text-zinc-500 mt-1">Esta acción no se puede deshacer. ¿Seguro que querés eliminar este mensaje?</p>
+                        </div>
+                        <div className="flex gap-2 px-6 pb-6">
+                            <button type="button" onClick={() => setMsgToDelete(null)} disabled={deleting} className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-100 text-zinc-600 font-bold text-sm hover:bg-zinc-200 disabled:opacity-50">Cancelar</button>
+                            <button type="button" onClick={handleDeleteMessage} disabled={deleting} className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 disabled:opacity-50">{deleting ? 'Eliminando…' : 'Eliminar'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Image Modal Lightbox for Desktop */}
             {modalImage && (

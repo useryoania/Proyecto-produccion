@@ -19,7 +19,9 @@ export const SERVICES_LIST = [
         label: 'Sublimación',
         desc: 'Estampado por calor en poliéster.',
         icon: Palette,
-        externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSemmGLC_EfGOGmj4kTfl3ciB53GY62R57EmKuJNh8nDtKvQNA/viewform',
+        // externalUrl deshabilitado: Sublimación ahora usa el form interno /portal/order/sublimacion.
+        // Se deja el link del Google Form comentado por si hay que revertir.
+        // externalUrl: 'https://docs.google.com/forms/d/e/1FAIpQLSemmGLC_EfGOGmj4kTfl3ciB53GY62R57EmKuJNh8nDtKvQNA/viewform',
         formEntries: {
             clienteId: 'entry.262281569',
             terminos: { id: 'entry.36260443', value: 'Acepto' }

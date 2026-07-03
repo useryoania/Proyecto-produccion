@@ -11,6 +11,8 @@ const execFileAsync = promisify(execFile);
 // para poder ubicarla fuera del dir de la app (p. ej. /home/thumbnails y que sobreviva a deploys).
 // La URL pública sigue siendo /thumbnails/... (server.js la sirve desde esta misma carpeta).
 const THUMBNAILS_DIR = process.env.THUMBNAILS_PATH || path.join(__dirname, '..', 'thumbnails');
+// Carpeta de imágenes de fallas anotadas (recuadro dibujado en Control). Servida en /fallas.
+const FALLAS_DIR = process.env.FALLAS_PATH || path.join(__dirname, '..', 'fallas');
 
 /**
  * Genera un thumbnail JPG de la primera página de un PDF.
@@ -34,16 +36,16 @@ exports.generatePdfThumbnail = async (buffer, codigoOrden, archivoId) => {
         fs.writeFileSync(tmpPdf, buffer);
 
         // pdftoppm (poppler-utils) rasteriza la 1ra página a JPG, escalando el lado
-        // mayor a ~600px. -singlefile escribe "<prefix>.jpg" sin sufijo de página.
+        // mayor a ~1500px (headroom para que el thumb final de 1000 quede nítido).
         const prefix = path.join(orderDir, `${archivoId}_tmp`);
         tmpJpg = `${prefix}.jpg`;
-        await execFileAsync('pdftoppm', ['-jpeg', '-singlefile', '-f', '1', '-l', '1', '-scale-to', '600', tmpPdf, prefix]);
+        await execFileAsync('pdftoppm', ['-jpeg', '-singlefile', '-f', '1', '-l', '1', '-scale-to', '1500', tmpPdf, prefix]);
 
         if (!fs.existsSync(tmpJpg)) throw new Error('pdftoppm no produjo salida');
 
-        // Escalar a máx 300x300 SIN recortar (mantiene el aspecto completo del archivo)
+        // Escalar a máx 1000x1000 SIN recortar (mantiene el aspecto completo del archivo)
         await sharp(tmpJpg)
-            .resize(300, 300, { fit: 'inside' })
+            .resize(1000, 1000, { fit: 'inside' })
             .jpeg({ quality: 80 })
             .toFile(outPath);
 
@@ -72,8 +74,10 @@ exports.generateImageThumbnail = async (buffer, codigoOrden, archivoId) => {
         fs.mkdirSync(orderDir, { recursive: true });
         const outPath = path.join(orderDir, `${archivoId}.jpg`);
 
-        await sharp(buffer)
-            .resize(300, 300, { fit: 'inside' })
+        // limitInputPixels: false → permitir PNG/JPG de gran formato (DTF/sublimación) que superan
+        // el límite por defecto de Sharp (~268 MP). Igual se downscalea a 1000, así que el pico de RAM es acotado.
+        await sharp(buffer, { limitInputPixels: false })
+            .resize(1000, 1000, { fit: 'inside' })
             .jpeg({ quality: 75 })
             .toFile(outPath);
 
@@ -108,4 +112,29 @@ exports.getThumbnailUrl = (codigoOrden, archivoId) => {
     return fs.existsSync(filePath)
         ? `/thumbnails/${codigoOrden}/${archivoId}.jpg`
         : null;
+};
+
+/**
+ * Guarda una imagen de falla ANOTADA (data URL base64, con el recuadro dibujado)
+ * en {FALLAS_DIR}/{codigoOrden}/{archivoId}_{ts}.jpg.
+ * @returns {Promise<string|null>} Ruta pública "/fallas/{codigoOrden}/{archivo}.jpg" o null si falla.
+ */
+exports.saveFallaImage = async (dataUrl, codigoOrden, archivoId) => {
+    try {
+        if (!dataUrl || typeof dataUrl !== 'string') return null;
+        const m = dataUrl.match(/^data:image\/\w+;base64,(.+)$/);
+        if (!m) return null;
+        const buffer = Buffer.from(m[1], 'base64');
+        const orderDir = path.join(FALLAS_DIR, String(codigoOrden));
+        fs.mkdirSync(orderDir, { recursive: true });
+        const fileName = `${archivoId}_${Date.now()}.jpg`;
+        const outPath = path.join(orderDir, fileName);
+        // Normalizar a JPG (por si viene PNG); conserva el recuadro dibujado.
+        await sharp(buffer).jpeg({ quality: 85 }).toFile(outPath);
+        logger.info(`🖼️  [FallaImg] Guardada: ${outPath}`);
+        return `/fallas/${codigoOrden}/${fileName}`;
+    } catch (err) {
+        logger.warn(`⚠️  [FallaImg] Error ArchivoID=${archivoId}: ${err.message}`);
+        return null;
+    }
 };
