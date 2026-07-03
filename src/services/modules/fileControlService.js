@@ -50,8 +50,9 @@ export const fileControlService = {
         return response.data;
     },
 
-    getMotivosCancelacion: async () => {
-        const response = await api.get('/production-file-control/motivos-cancelacion');
+    getMotivosCancelacion: async (area) => {
+        // area (DF/SB) filtra los motivos por los flags de MotivosCancelacion; sin área trae todos
+        const response = await api.get('/production-file-control/motivos-cancelacion', { params: area ? { area } : {} });
         return response.data;
     },
 

@@ -76,7 +76,9 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
 
     useEffect(() => {
         if (cancelModalOpen) {
-            fileControlService.getMotivosCancelacion().then(res => {
+            // Motivos filtrados por el área de la orden (flags DF/SB en MotivosCancelacion)
+            const areaMotivos = currentOrder?.area || currentOrder?.AreaID || order?.area || order?.AreaID || '';
+            fileControlService.getMotivosCancelacion(areaMotivos).then(res => {
                 if (Array.isArray(res)) {
                     setMotivosOptions([...res, { MotivoID: 'otros', Titulo: 'Otros' }]);
                 }

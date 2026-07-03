@@ -1088,13 +1088,27 @@ const getFallasImagenes = async (req, res) => {
 };
 
 const getMotivosCancelacion = async (req, res) => {
+    // Filtro por área via flags BIT de MotivosCancelacion: DF/DTF → columna DF, SB/SUB → columna SB.
+    // Sin área (u otra área sin columna propia) → lista completa (comportamiento histórico).
+    const area = String(req.query.area || '').toUpperCase();
+    const col = (area === 'DF' || area === 'DTF') ? 'DF'
+              : (area === 'SB' || area === 'SUB') ? 'SB'
+              : null; // whitelist: col solo puede ser 'DF' o 'SB' (nunca input del usuario directo)
     try {
         const pool = await getPool();
-        const result = await pool.request().query("SELECT MotivoID, Titulo, DescripcionDefault FROM MotivosCancelacion ORDER BY Titulo ASC");
+        const where = col ? `WHERE ISNULL(${col}, 1) = 1` : '';
+        const result = await pool.request().query(`SELECT MotivoID, Titulo, DescripcionDefault FROM MotivosCancelacion ${where} ORDER BY Titulo ASC`);
         res.json(result.recordset);
     } catch (err) {
-        logger.error("Error getMotivosCancelacion:", err);
-        res.status(500).json({ error: 'Error al obtener motivos de cancelación' });
+        // Si la DB aún no tiene las columnas DF/SB, degradar a la lista completa en vez de romper el modal.
+        try {
+            const pool = await getPool();
+            const result = await pool.request().query("SELECT MotivoID, Titulo, DescripcionDefault FROM MotivosCancelacion ORDER BY Titulo ASC");
+            return res.json(result.recordset);
+        } catch (e2) {
+            logger.error("Error getMotivosCancelacion:", e2);
+            res.status(500).json({ error: 'Error al obtener motivos de cancelación' });
+        }
     }
 };
 

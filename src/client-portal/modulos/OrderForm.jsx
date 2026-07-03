@@ -72,7 +72,7 @@ const ServiceAccordion = ({ title, subtitle, isActive, onToggle, children, icon:
 
 // Helper to robustly resolve material printable width from DB 'Ancho' field or fallback to regex name parsing
 const resolveMaterialWidth = (matObj) => {
-    if (!matObj) return 1.50;
+    if (!matObj) return 1.83;
     
     // 1. Try parsing from Ancho if it's a valid positive number
     if (matObj && matObj.Ancho !== undefined && matObj.Ancho !== null) {
@@ -101,8 +101,8 @@ const resolveMaterialWidth = (matObj) => {
             if (!isNaN(parsed) && parsed > 0) return parsed;
         }
     }
-    
-    return 1.50;
+
+    return 1.83;
 };
 
 const OrderForm = ({ serviceId: propServiceId }) => {
