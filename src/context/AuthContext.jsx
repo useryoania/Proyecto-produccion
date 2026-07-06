@@ -90,6 +90,9 @@ export function AuthProvider({ children }) {
 
             if (clientRes.ok && clientData.user) {
                 const receivedToken = clientData.token;
+                // El endpoint /web-auth/login también autentica DISEÑADORES (role WEB_DESIGNER):
+                // conservar el rol real y mandarlos a su home propio del portal.
+                const esDisenador = clientData.user.role === 'WEB_DESIGNER';
                 const userData = {
                     id: clientData.user.id || clientData.user.codCliente,
                     nombre: clientData.user.name,
@@ -99,10 +102,11 @@ export function AuthProvider({ children }) {
                     token: receivedToken,
                     areaKey: '',
                     userType: 'CLIENT',
-                    redirectUrl: '/portal/pickup',
+                    redirectUrl: esDisenador ? '/portal/estudio' : '/portal/pickup',
                     requireReset: clientData.user.requireReset === true || clientData.user.requireReset === 1 || clientData.user.requireReset === '1',
                     codCliente: clientData.user.codCliente,
-                    role: 'WEB_CLIENT',
+                    role: esDisenador ? 'WEB_DESIGNER' : 'WEB_CLIENT',
+                    disenadorId: clientData.user.disenadorId || null,
                 };
 
                 if (userData.requireReset) {

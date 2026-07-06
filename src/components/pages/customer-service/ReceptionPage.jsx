@@ -690,7 +690,7 @@ const ReceptionPage = () => {
                                             <input
                                                 value={qCliente}
                                                 onChange={e => setQCliente(e.target.value)}
-                                                placeholder="Buscar por nombre, ID, teléfono..."
+                                                placeholder="Buscar por nombre, IDCliente, teléfono..."
                                                 className={`w-full bg-slate-50 border ${errors.clienteId ? 'border-red-400' : 'border-slate-200'} hover:border-slate-300 focus:border-indigo-400 focus:bg-white rounded-xl pl-10 pr-10 py-2.5 text-sm font-bold text-slate-700 placeholder-slate-400 outline-none transition-all shadow-sm`}
                                             />
                                             {buscandoCli && (

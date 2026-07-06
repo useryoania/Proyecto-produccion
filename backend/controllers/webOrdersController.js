@@ -234,9 +234,11 @@ exports.createWebOrder = async (req, res) => {
     const cuttingSpecs = especificacionesCorte || req.body.cuttingSpecs;
 
     const user = req.user || {};
-    // PRIORIDAD INTEGRACIÓN: Si viene en el body, usamos eso. Si no, del token.
-    const codCliente = req.body.codCliente || user.codCliente || null;
-    let nombreCliente = req.body.nombreCliente || user.name || user.username || 'Cliente Web';
+    // SEGURIDAD: el cliente sale SIEMPRE del token (o de la impersonación validada de diseñador,
+    // que ya viene inyectada en req.user). El body NO puede elegir el cliente — antes se aceptaba
+    // req.body.codCliente y cualquier token podía crear pedidos a nombre de otro.
+    const codCliente = user.codCliente || null;
+    let nombreCliente = user.name || user.username || 'Cliente Web';
     let idClienteReact = null;
     let cliIdCliente = null;
 
@@ -801,21 +803,22 @@ exports.createWebOrder = async (req, res) => {
                     .input('CliIdCliente', sql.Int, cliIdCliente)
                     .input('F_EntSec', sql.DateTime, fechaEntradaSector)
                     .input('BobID', sql.Int, (bobinaId && !exec.isExtra) ? parseInt(bobinaId) : null) // TELA CLIENTE: solo la orden principal (los extras no consumen tela)
+                    .input('DisenadorID', sql.Int, req.disenadorId || null) // pedido creado por un DISEÑADOR en nombre del cliente
                     .query(`
                         INSERT INTO Ordenes (
-                            AreaID, Cliente, CodCliente, IdClienteReact, DescripcionTrabajo, Prioridad, 
-                            FechaIngreso, FechaEstimadaEntrega, Material, Variante, 
+                            AreaID, Cliente, CodCliente, IdClienteReact, DescripcionTrabajo, Prioridad,
+                            FechaIngreso, FechaEstimadaEntrega, Material, Variante,
                             CodigoOrden, NoDocERP, Nota, Magnitud, ProximoServicio, UM, Estado, EstadoenArea,
                             CodArticulo, IdProductoReact, ProIdProducto, CliIdCliente, FechaEntradaSector,
-                            BobinaTelaID
+                            BobinaTelaID, DisenadorID
                         )
                         OUTPUT INSERTED.OrdenID
                         VALUES (
-                            @AreaID, @Cliente, @CodCliente, @IdClienteReact, @Desc, @Prio, 
-                            GETDATE(), DATEADD(day, 3, GETDATE()), @Mat, @Var, 
+                            @AreaID, @Cliente, @CodCliente, @IdClienteReact, @Desc, @Prio,
+                            GETDATE(), DATEADD(day, 3, GETDATE()), @Mat, @Var,
                             @Cod, @ERP, @Nota, @Mag, @Prox, @UM, @Estado, @Estado,
                             @CodArt, @IdProdReact, @ProIdProducto, @CliIdCliente, @F_EntSec,
-                            @BobID
+                            @BobID, @DisenadorID
                         )
                     `);
 
@@ -1389,6 +1392,24 @@ exports.uploadOrderFile = async (req, res) => {
             const pendientes = checkRes.recordset[0].PendientesProd + checkRes.recordset[0].PendientesRef;
 
             if (pendientes === 0) {
+                // F4 — Pedido creado por un DISEÑADOR con el toggle de aprobación del cliente activado:
+                // NO se activa. Queda en 'Cargando...' (invisible para producción) con AprobacionPendiente=1
+                // hasta que el cliente lo apruebe desde el portal (aprobarPedido).
+                const holdRes = await pool.request().input('OID', sql.Int, orderID).query(`
+                    SELECT o.DisenadorID, ISNULL(c.AprobarPedidosDisenador, 0) AS Aprobar
+                    FROM Ordenes o LEFT JOIN Clientes c ON c.CodCliente = o.CodCliente
+                    WHERE o.OrdenID = @OID
+                `);
+                const hold = holdRes.recordset[0];
+                if (hold?.DisenadorID && hold.Aprobar) {
+                    await pool.request().input('OID', sql.Int, orderID)
+                        .query("UPDATE Ordenes SET AprobacionPendiente = 1 WHERE OrdenID = @OID AND Estado = 'Cargando...'");
+                    logger.info(`🎨 [Disenador] Orden ${orderID} completa pero RETENIDA: esperando aprobación del cliente.`);
+                    const ioHold = req.app.get('socketio');
+                    if (ioHold) ioHold.emit('server:ordersUpdated', { count: 1, source: 'web-upload-hold' });
+                    return res.json({ success: true, driveUrl, esperandoAprobacion: true });
+                }
+
                 logger.info(`✅ [Pedido Completo] Orden ${orderID} tiene todos sus archivos. Activando...`);
                 // Cambiar estado de 'Cargando...' a 'Pendiente' (vía servicio central, con guarda y transacción)
                 const { changeOrderState } = require('../services/stateManagerService');
@@ -1546,11 +1567,15 @@ exports.getClientOrders = async (req, res) => {
                          ORDER BY ArchivoID ASC) AS PrimerArchivoID,
                         (SELECT TOP 1 RutaAlmacenamiento FROM ArchivosOrden WITH(NOLOCK)
                          WHERE OrdenID = o.OrdenID AND RutaAlmacenamiento IS NOT NULL
-                         ORDER BY ArchivoID ASC) AS DriveFileId
+                         ORDER BY ArchivoID ASC) AS DriveFileId,
+                        ISNULL(o.AprobacionPendiente, 0) AS AprobacionPendiente,
+                        o.DisenadorID   AS DisenadorID,
+                        dis.Nombre      AS DisenadorNombre
                     FROM Ordenes o WITH(NOLOCK)
                     LEFT JOIN MotivosCancelacion mc ON mc.MotivoID = o.MotivoCancelacionID
                     LEFT JOIN Areas ar WITH(NOLOCK) ON ar.AreaID = o.AreaID
                     LEFT JOIN ConfigEquipos m WITH(NOLOCK) ON m.EquipoID = o.MaquinaID
+                    LEFT JOIN Disenadores dis WITH(NOLOCK) ON dis.DisenadorID = o.DisenadorID
                     WHERE o.CodCliente = @cod
                       AND o.CodigoOrden NOT LIKE '%-F%'   -- las fallas (-F) son internas: no se muestran al cliente
 
@@ -1572,7 +1597,10 @@ exports.getClientOrders = async (req, res) => {
                         NULL                AS Magnitud,
                         NULL                AS UM,
                         NULL                AS PrimerArchivoID,
-                        NULL                AS DriveFileId
+                        NULL                AS DriveFileId,
+                        0                   AS AprobacionPendiente,
+                        NULL                AS DisenadorID,
+                        NULL                AS DisenadorNombre
                     FROM OrdenesDeposito o WITH(NOLOCK)
                     INNER JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                     LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
@@ -1588,6 +1616,79 @@ exports.getClientOrders = async (req, res) => {
     } catch (err) {
         logger.error("❌ Error al obtener órdenes del cliente:", err);
         res.status(500).json({ error: "Error al consultar la base de datos." });
+    }
+};
+
+// POST /api/web-orders/aprobar-pedido — F4 diseñadores: el CLIENTE aprueba un pedido retenido.
+// Solo con token de cliente (la ruta NO pasa por impersonarCliente: un diseñador no puede aprobar).
+// Limpia AprobacionPendiente y ejecuta la misma activación que hace uploadOrderFile al completar archivos.
+exports.aprobarPedido = async (req, res) => {
+    try {
+        const codCliente = req.user?.codCliente;
+        const ordenId = parseInt(req.body?.ordenId);
+        if (!codCliente || req.user?.role !== 'WEB_CLIENT' || req.disenadorId) {
+            return res.status(403).json({ error: 'Solo el cliente puede aprobar sus pedidos.' });
+        }
+        if (!ordenId) return res.status(400).json({ error: 'Falta ordenId.' });
+
+        const pool = await poolPromise;
+        const check = await pool.request()
+            .input('OID', sql.Int, ordenId)
+            .input('Cod', sql.Int, codCliente)
+            .query(`
+                SELECT OrdenID FROM Ordenes
+                WHERE OrdenID = @OID AND CodCliente = @Cod
+                  AND ISNULL(AprobacionPendiente, 0) = 1 AND Estado = 'Cargando...'
+            `);
+        if (check.recordset.length === 0) {
+            return res.status(404).json({ error: 'Pedido no encontrado o ya aprobado.' });
+        }
+
+        await pool.request().input('OID', sql.Int, ordenId)
+            .query('UPDATE Ordenes SET AprobacionPendiente = 0 WHERE OrdenID = @OID');
+
+        // Activación (idéntica a la de uploadOrderFile cuando no hay retención)
+        const { changeOrderState } = require('../services/stateManagerService');
+        const txAct = new sql.Transaction(pool);
+        await txAct.begin();
+        try {
+            await changeOrderState(txAct, {
+                target : { type: 'ORDER', id: ordenId },
+                estado : 'Pendiente',
+                userObj: req.user || 'Sistema',
+                detalle: 'Pedido de diseñador aprobado por el cliente',
+                guard  : "Estado = 'Cargando...'",
+                io     : req.app.get('socketio'),
+            });
+            await txAct.commit();
+        } catch (e) { await txAct.rollback(); throw e; }
+
+        const orderDataReq = await pool.request().input('OID', sql.Int, ordenId).query(`
+            SELECT AreaID, DescripcionTrabajo, Prioridad, CodigoOrden
+            FROM Ordenes WHERE OrdenID = @OID
+        `);
+        const io = req.app.get('socketio');
+        if (io) {
+            io.emit('server:ordersUpdated', { count: 1, source: 'aprobar-pedido' });
+            if (orderDataReq.recordset.length > 0) {
+                const row = orderDataReq.recordset[0];
+                io.emit('server:new_order', {
+                    orders: [{
+                        id: ordenId,
+                        area: row.AreaID,
+                        variante: row.DescripcionTrabajo,
+                        prioridad: row.Prioridad || 'Normal',
+                        codigo: row.CodigoOrden
+                    }]
+                });
+            }
+        }
+
+        logger.info(`🎨 [Disenador] Orden ${ordenId} aprobada por el cliente ${codCliente} y activada.`);
+        res.json({ success: true });
+    } catch (err) {
+        logger.error('❌ Error aprobando pedido de diseñador:', err);
+        res.status(500).json({ error: 'No se pudo aprobar el pedido.' });
     }
 };
 
@@ -1651,6 +1752,10 @@ exports.deleteIncompleteOrder = async (req, res) => {
 
         try {
             const reqTx = new sql.Request(transaction);
+
+            // Tela de Cliente: devolver los metros consumidos antes de cancelar/borrar (idempotente, no-op si no consumió)
+            const { devolverMetrosTelaCliente } = require('../utils/telaClienteDevolucion');
+            await devolverMetrosTelaCliente(transaction, id, `Devolución por eliminación Orden ${id}`, req.user?.id || 1);
 
             if (estado === 'Pendiente') {
                 // SOFT DELETE (Cancelar) - Queda en historial, vía servicio central
@@ -1731,6 +1836,13 @@ exports.deleteOrderBundle = async (req, res) => {
 
         try {
             const reqTx = new sql.Request(transaction);
+
+            // Tela de Cliente: devolver los metros consumidos por cada orden del bundle (idempotente)
+            const { devolverMetrosTelaCliente } = require('../utils/telaClienteDevolucion');
+            for (const oid of ids) {
+                if (typeof oid !== 'number') continue;
+                await devolverMetrosTelaCliente(transaction, oid, `Devolución por eliminación Orden ${oid}`, req.user?.id || 1);
+            }
 
             // Si todas son Pendiente → soft cancel con razón
             const allPendiente = orders.every(o => o.Estado === 'Pendiente');
@@ -2147,10 +2259,15 @@ exports.totemCreatePickup = async (req, res) => {
             // 1. Buscar CodCliente a partir del IDCliente
             const clientRes = await pool.request()
                 .input('idCliente', sql.VarChar, clientId)
-                .query("SELECT CodCliente, CliIdCliente, FormaEnvioID FROM Clientes WHERE IDCliente = @idCliente");
+                .query("SELECT CodCliente, CliIdCliente, FormaEnvioID, ESTADO FROM Clientes WHERE IDCliente = @idCliente");
 
             if (!clientRes.recordset.length) {
                 return res.status(404).json({ success: false, error: "Cliente no encontrado." });
+            }
+            // Bloquear creación de retiro si el cliente está BLOQUEADO (mismo criterio que los pedidos web).
+            if (clientRes.recordset[0].ESTADO === 'BLOQUEADO') {
+                logger.warn(`⛔ [Totem Retiro] Cliente IDCliente=${clientId} está BLOQUEADO. Retiro rechazado.`);
+                return res.status(403).json({ success: false, error: 'Cuenta bloqueada. No podés crear retiros. Contactá con USER.' });
             }
             const codCliente = clientRes.recordset[0].CodCliente;
             const clientFormaEnvio = clientRes.recordset[0].FormaEnvioID || 5;
@@ -2349,6 +2466,18 @@ exports.createPickupOrder = async (req, res) => {
         if (!codCliente) return res.status(401).json({ error: "Usuario no identificado." });
 
         const pool = await getPool();
+
+        // Bloquear creación de retiro si el cliente está BLOQUEADO (mismo criterio que los pedidos web).
+        try {
+            const estRes = await pool.request()
+                .input('cod', sql.Int, parseInt(codCliente, 10) || 0)
+                .query("SELECT ESTADO FROM Clientes WHERE CodCliente = @cod");
+            if (estRes.recordset[0]?.ESTADO === 'BLOQUEADO') {
+                logger.warn(`⛔ [Retiro] Cliente CodCliente=${codCliente} está BLOQUEADO. Retiro rechazado.`);
+                return res.status(403).json({ error: 'Tu cuenta está bloqueada. No podés crear retiros. Contactá con USER.' });
+            }
+        } catch (e) { logger.warn('[Retiro] No se pudo verificar estado del cliente:', e.message); }
+
         const UsuarioAlta = user?.id || 70;
         // Resolver lugarRetiro: del body o del FormaEnvioID del cliente
         let lugarRetiro;

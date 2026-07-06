@@ -235,64 +235,59 @@ export const PrintSettingsPanel = ({
                     </div>
                 )}
 
-                {/* MODO ESCALA */}
+                {/* MODO ESCALA — mismo layout que Normal: Copias | divisor | contenido */}
                 {mode === 'scale' && (
-                    <div className="space-y-4">
-                        <div className="flex gap-4 items-start">
-                            <div className="flex-1 space-y-3">
-                                {/* Copies Input for Scale Mode */}
-                                <div className="bg-zinc-900/60 p-2 rounded-lg border border-zinc-700/50 flex items-center justify-between">
-                                    <label className="text-xs font-black text-zinc-400 uppercase tracking-wider">Copias:</label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={copies}
-                                        onFocus={(e) => e.target.select()}
-                                        onChange={(e) => onCopiesChange && onCopiesChange(parseInt(e.target.value) || 1)}
-                                        className="w-16 text-center p-1 border border-zinc-600 rounded font-bold text-zinc-100 bg-zinc-800 focus:ring-2 focus:ring-cyan-500/30 outline-none h-8"
-                                    />
-                                </div>
+                    <div className="flex flex-row items-start gap-4 py-2">
+                        {/* Copias (mismo estilo que Normal) */}
+                        <div className="flex flex-col items-center flex-shrink-0">
+                            <label className="block text-xs font-black text-zinc-400 mb-1 uppercase tracking-wider">Copias</label>
+                            <input
+                                type="number"
+                                min="1"
+                                value={copies}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) => onCopiesChange && onCopiesChange(parseInt(e.target.value) || 1)}
+                                className="w-20 text-center p-2 border border-zinc-600 rounded-lg text-lg font-bold text-zinc-100 bg-zinc-800 focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 outline-none"
+                            />
+                        </div>
 
-                                <div>
-                                    <label className="block text-xs font-bold text-zinc-400 mb-1 uppercase">Escala del Diseño</label>
-                                    <CustomSelect
-                                        value={selectedScale}
-                                        onChange={(val) => handleInputChange('scale', val)}
-                                        options={[
-                                            ...SCALE_TABLE.map(s => ({
-                                                value: s.scale.toString(),
-                                                label: `Escala ${s.label} (${s.scale}%)`
-                                            }))
-                                        ]}
-                                        placeholder="Seleccionar Escala..."
-                                        variant="dark"
-                                        size="small"
-                                    />
+                        <div className="w-px self-stretch bg-zinc-700/50"></div>
+
+                        {/* Contenido Escala */}
+                        <div className="flex-1 min-w-0">
+                            <label className="block text-xs font-bold text-zinc-400 mb-1 uppercase">Escala del Diseño</label>
+                            <CustomSelect
+                                value={selectedScale}
+                                onChange={(val) => handleInputChange('scale', val)}
+                                options={[
+                                    ...SCALE_TABLE.map(s => ({
+                                        value: s.scale.toString(),
+                                        label: `Escala ${s.label} (${s.scale}%)`
+                                    }))
+                                ]}
+                                placeholder="Seleccionar Escala..."
+                                variant="dark"
+                                size="small"
+                            />
+                            {/* Medidas del archivo + dimensiones finales (mismo estilo de chips que Normal) */}
+                            <div className="mt-2 flex flex-wrap gap-2">
+                                <div className="font-mono bg-brand-dark px-3 py-1.5 rounded text-[10px] border border-zinc-700 text-zinc-400">
+                                    Dim: {originalWidthM.toFixed(2)}m x {originalHeightM.toFixed(2)}m
                                 </div>
-                                {/* Reduced Final Width Display instead of Input */}
                                 {selectedScale && (() => {
                                     const factor = (SCALE_TABLE.find(s => s.scale == parseInt(selectedScale))?.factor || 100) / 100;
                                     const finalH = originalHeightM * factor;
                                     return (
-                                        <div className="text-[10px] text-zinc-400 bg-zinc-900/60 p-2 rounded border border-zinc-700/50 flex flex-wrap gap-3">
-                                            <span>Ancho Final: <strong className="text-cyan-300">{(originalWidthM * factor).toFixed(2)}m</strong></span>
-                                            <span>Largo total: <strong className="text-cyan-400">{(finalH * copies).toFixed(2)}m</strong></span>
-                                        </div>
+                                        <>
+                                            <div className="font-mono bg-brand-dark px-3 py-1.5 rounded text-[10px] border border-zinc-700 text-zinc-400">
+                                                Ancho final: <strong className="text-cyan-300">{(originalWidthM * factor).toFixed(2)}m</strong>
+                                            </div>
+                                            <div className="font-mono bg-brand-dark px-3 py-1.5 rounded text-[10px] border border-cyan-500/30 text-cyan-400">
+                                                Largo total: {(finalH * copies).toFixed(2)}m
+                                            </div>
+                                        </>
                                     );
                                 })()}
-                            </div>
-
-                            {/* Info Visual Escala */}
-                            <div className="w-1/3 bg-cyan-400/10 rounded-lg p-3 hidden md:block border border-cyan-500/20">
-                                <div className="flex justify-center mb-2 text-cyan-400">
-                                    <Maximize size={24} />
-                                </div>
-                                <p className="text-[10px] text-cyan-300 leading-tight text-center font-bold">
-                                    A Escala
-                                </p>
-                                <p className="text-[9px] text-cyan-400/60 text-center mt-1 leading-tight">
-                                    Diseña en pequeño, nosotros lo ampliamos automáticamente.
-                                </p>
                             </div>
                         </div>
                     </div>
@@ -300,54 +295,39 @@ export const PrintSettingsPanel = ({
 
                 {/* MODO RAPORT */}
                 {mode === 'raport' && (
-                    <div className="space-y-4">
-                        <div className="flex gap-4 items-start">
-                            <div className="flex-1 grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-bold text-zinc-400 mb-1 uppercase">Ancho Total (m)</label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        className="w-full p-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-200 focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 outline-none"
-                                        value={raportWidth}
-                                        onChange={(e) => handleInputChange('raportWidth', e.target.value)}
-                                        placeholder={materialMaxWidthM ? `Máx: ${materialMaxWidthM}` : 'Ancho total (m)'}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-zinc-400 mb-1 uppercase">Largo Total (m)</label>
-                                    <input
-                                        type="number"
-                                        step="0.01"
-                                        className="w-full p-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-200 focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 outline-none"
-                                        value={raportHeight}
-                                        onChange={(e) => handleInputChange('raportHeight', e.target.value)}
-                                        placeholder="Ej: 5.00"
-                                    />
-                                </div>
-                                <div className="col-span-2 text-xs text-zinc-500 bg-zinc-900/60 p-2 rounded border border-zinc-700/50">
-                                    {(raportWidth && raportHeight && originalWidthM > 0) ? (
-                                        <p className="text-cyan-300 font-bold text-center">
-                                            <i className="fa-solid fa-calculator mr-1"></i>
-                                            Repeticiones: {(parseFloat(raportWidth) / originalWidthM).toFixed(1)} Horiz. x {(parseFloat(raportHeight) / originalHeightM).toFixed(1)} Vert.
-                                        </p>
-                                    ) : (
-                                        <p className="text-center italic text-zinc-500">Define área para ver repeticiones</p>
-                                    )}
-                                </div>
+                    <div className="py-2">
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-bold text-zinc-400 mb-1 uppercase">Ancho Total (m)</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    className="w-full p-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-200 focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 outline-none"
+                                    value={raportWidth}
+                                    onChange={(e) => handleInputChange('raportWidth', e.target.value)}
+                                    placeholder="Ej: 1.50"
+                                />
                             </div>
-
-                            {/* Info Visual Raport */}
-                            <div className="w-1/3 bg-purple-500/10 rounded-lg p-3 hidden md:block border border-purple-500/20">
-                                <div className="flex justify-center mb-2 text-purple-400">
-                                    <Repeat size={24} />
-                                </div>
-                                <p className="text-[10px] text-purple-300 leading-tight text-center font-bold">
-                                    Raport Infinito
-                                </p>
-                                <p className="text-[9px] text-purple-400/60 text-center mt-1 leading-tight">
-                                    Tu patrón se repetirá en mosaico hasta llenar el área.
-                                </p>
+                            <div>
+                                <label className="block text-xs font-bold text-zinc-400 mb-1 uppercase">Largo Total (m)</label>
+                                <input
+                                    type="number"
+                                    step="0.01"
+                                    className="w-full p-2 border border-zinc-600 rounded-lg text-sm bg-zinc-800 text-zinc-200 focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500 outline-none"
+                                    value={raportHeight}
+                                    onChange={(e) => handleInputChange('raportHeight', e.target.value)}
+                                    placeholder="Ej: 5.00"
+                                />
+                            </div>
+                            <div className="col-span-2 text-xs text-zinc-500 bg-zinc-900/60 p-2 rounded border border-zinc-700/50">
+                                {(raportWidth && raportHeight && originalWidthM > 0) ? (
+                                    <p className="text-cyan-300 font-bold text-center">
+                                        <i className="fa-solid fa-calculator mr-1"></i>
+                                        Repeticiones: {(parseFloat(raportWidth) / originalWidthM).toFixed(1)} Horiz. x {(parseFloat(raportHeight) / originalHeightM).toFixed(1)} Vert.
+                                    </p>
+                                ) : (
+                                    <p className="text-center italic text-zinc-500">Define área para ver repeticiones</p>
+                                )}
                             </div>
                         </div>
                     </div>

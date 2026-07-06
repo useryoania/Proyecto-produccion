@@ -97,6 +97,20 @@ const FileItem = ({ file, readOnly = false, onAction, extraInfo, actions, editin
     };
     const statusInfo = getStatusIconInfo();
     const obsText = file.Observaciones || file.MotivoFalla || file.observaciones || '';
+    // Modo de impresión (escala elegida / raport) detectado desde la observación técnica
+    // que se guarda al crear la orden ("[ESCALA] ... Escala 1:2 (50%) ..." o "[RAPORT] ...").
+    const printMode = (() => {
+        const o = String(file.Observaciones || file.observaciones || '');
+        if (/\[ESCALA\]/i.test(o) || /Modo:\s*scale/i.test(o)) {
+            const m = o.match(/Escala\s+([0-9:]+)\s*\((\d+)\s*%\)/i);
+            return { type: 'escala', label: m ? `Escala ${m[1]} (${m[2]}%)` : 'A Escala' };
+        }
+        if (/\[RAPORT\]/i.test(o) || /Modo:\s*raport/i.test(o)) {
+            const m = o.match(/Repetici[oó]n\s+([\d.]+)\s*H\s*x\s*([\d.]+)\s*V/i);
+            return { type: 'raport', label: m ? `Raport ${m[1]}H × ${m[2]}V` : 'Raport' };
+        }
+        return null;
+    })();
 
     return (
         <div className={`rounded-xl border transition-all mb-2 ${styles.container}`}>
@@ -268,6 +282,14 @@ const FileItem = ({ file, readOnly = false, onAction, extraInfo, actions, editin
                                 {metrosTotal} {extraInfo?.um || 'm'}
                             </span>
                         </div>
+
+                        {/* Modo de impresión: escala elegida o raport (si aplica) */}
+                        {printMode && (
+                            <div className={`flex items-center gap-1 px-2 py-0.5 rounded border font-bold ${printMode.type === 'raport' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-cyan-50 text-cyan-700 border-cyan-200'}`}>
+                                <i className={`fa-solid ${printMode.type === 'raport' ? 'fa-repeat' : 'fa-expand'} text-[9px]`}></i>
+                                {printMode.label}
+                            </div>
+                        )}
 
                         {file.Material && (
                             <>

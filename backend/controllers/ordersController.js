@@ -551,56 +551,72 @@ exports.assignRoll = async (req, res) => {
             });
             }
 
-            // 3. RECALCULAR SECUENCIA INTELIGENTE (Priority Rules)
-            // Obtenemos TODAS las órdenes del rollo para reordenarlas completas
+            // 3. RECALCULAR SECUENCIA
+            // - Lote NUEVO: se ordena el conjunto completo (SB por material A-Z; resto por prioridad).
+            // - Lote EXISTENTE: NO se pisa el orden que el usuario ya armó (drags/sorts del modal
+            //   quedaban destruidos por el resort completo) — las órdenes nuevas se APPENDEAN al
+            //   final, ordenadas entre sí por las mismas reglas de prioridad.
             const allOrdersInRoll = await new sql.Request(transaction)
                 .input('RID_ALL', typeof rollId === 'number' ? sql.Int : sql.VarChar(20), rollId)
                 .query(`
-                    SELECT OrdenID, Prioridad, falla, FechaEntradaSector, FechaIngreso, Material
-                    FROM Ordenes 
+                    SELECT OrdenID, Prioridad, falla, FechaEntradaSector, FechaIngreso, Material, Secuencia
+                    FROM Ordenes
                     WHERE RolloID = @RID_ALL
                 `);
 
-            let ordersToSort = allOrdersInRoll.recordset;
+            // Sorting Logic general:
+            // 1. Fallas / Reposiciones (falla = 1) -> TOP
+            // 2. Prioridad = 'Urgente' -> SECOND
+            // 3. Fecha (FIFO) -> LAST
+            const prioritySort = (arr) => arr.sort((a, b) => {
+                const isFallaA = a.falla ? 1 : 0;
+                const isFallaB = b.falla ? 1 : 0;
+                if (isFallaA !== isFallaB) return isFallaB - isFallaA; // 1 goes first
 
-            // REGLA ESPECIAL SB: Si es un lote NUEVO en Sublimación, ordenar por Material
-            if (isNew && areaCode === 'SB') {
-                ordersToSort.sort((a, b) => {
-                    const matA = (a.Material || '').trim().toLowerCase();
-                    const matB = (b.Material || '').trim().toLowerCase();
-                    return matA.localeCompare(matB);
-                });
+                const isUrgenteA = (a.Prioridad === 'Urgente');
+                const isUrgenteB = (b.Prioridad === 'Urgente');
+                if (isUrgenteA !== isUrgenteB) return isUrgenteB - isUrgenteA; // True goes first
+
+                // FIFO: FechaEntradaSector o FechaIngreso como fallback
+                const dateA = new Date(a.FechaEntradaSector || a.FechaIngreso).getTime();
+                const dateB = new Date(b.FechaEntradaSector || b.FechaIngreso).getTime();
+                return dateA - dateB; // Ascending (older first)
+            });
+
+            if (isNew) {
+                let ordersToSort = allOrdersInRoll.recordset;
+                // REGLA ESPECIAL SB: lote NUEVO en Sublimación se ordena por Material A-Z
+                if (areaCode === 'SB') {
+                    ordersToSort.sort((a, b) => {
+                        const matA = (a.Material || '').trim().toLowerCase();
+                        const matB = (b.Material || '').trim().toLowerCase();
+                        return matA.localeCompare(matB);
+                    });
+                } else {
+                    prioritySort(ordersToSort);
+                }
+
+                for (let i = 0; i < ordersToSort.length; i++) {
+                    await new sql.Request(transaction)
+                        .input('OID_SEQ', sql.Int, ordersToSort[i].OrdenID)
+                        .input('SEQ_VAL', sql.Int, i + 1)
+                        .query("UPDATE Ordenes SET Secuencia = @SEQ_VAL WHERE OrdenID = @OID_SEQ");
+                }
             } else {
-                // Sorting Logic general:
-                // 1. Fallas / Reposiciones (falla = 1) -> TOP
-                // 2. Prioridad = 'Urgente' -> SECOND
-                // 3. Fecha (FIFO) -> LAST
-                ordersToSort.sort((a, b) => {
-                    // 1. Falla Check (Assume bit 1/0)
-                    const isFallaA = a.falla ? 1 : 0;
-                    const isFallaB = b.falla ? 1 : 0;
-                    if (isFallaA !== isFallaB) return isFallaB - isFallaA; // 1 goes first
+                // Lote EXISTENTE: append de las órdenes nuevas después de la última secuencia
+                const newIdsSet = new Set(targetOrderIds.map(Number));
+                const existentes = allOrdersInRoll.recordset.filter(o => !newIdsSet.has(o.OrdenID));
+                const nuevas = allOrdersInRoll.recordset.filter(o => newIdsSet.has(o.OrdenID));
+                const maxSeq = existentes.reduce((m, o) => Math.max(m, o.Secuencia || 0), 0);
 
-                    // 2. Priority Check
-                    const isUrgenteA = (a.Prioridad === 'Urgente');
-                    const isUrgenteB = (b.Prioridad === 'Urgente');
-                    if (isUrgenteA !== isUrgenteB) return isUrgenteB - isUrgenteA; // True goes first
-
-                    // 3. Date Check (FIFO)
-                    // Usamos FechaEntradaSector (que arreglamos hace poco) o FechaIngreso como fallback
-                    const dateA = new Date(a.FechaEntradaSector || a.FechaIngreso).getTime();
-                    const dateB = new Date(b.FechaEntradaSector || b.FechaIngreso).getTime();
-                    return dateA - dateB; // Ascending (older first)
-                });
-            }
-
-            // 4. Update Secuencia
-            for (let i = 0; i < ordersToSort.length; i++) {
-                const o = ordersToSort[i];
-                await new sql.Request(transaction)
-                    .input('OID_SEQ', sql.Int, o.OrdenID)
-                    .input('SEQ_VAL', sql.Int, i + 1)
-                    .query("UPDATE Ordenes SET Secuencia = @SEQ_VAL WHERE OrdenID = @OID_SEQ");
+                prioritySort(nuevas);
+                let seq = maxSeq + 1;
+                for (const o of nuevas) {
+                    await new sql.Request(transaction)
+                        .input('OID_SEQ', sql.Int, o.OrdenID)
+                        .input('SEQ_VAL', sql.Int, seq++)
+                        .query("UPDATE Ordenes SET Secuencia = @SEQ_VAL WHERE OrdenID = @OID_SEQ");
+                }
             }
 
             await transaction.commit();

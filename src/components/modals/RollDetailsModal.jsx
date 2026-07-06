@@ -475,13 +475,12 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     // Calcular Totales (Y Ordenar por Secuencia)
     const orders = (() => {
         const list = [...(freshRoll.orders || [])];
-        // Orden por Secuencia (persistida en backend). En SB el backend la inicializa por Material A-Z
-        // la primera vez; luego refleja el orden manual del usuario. Las nuevas (Secuencia mayor) caen al final.
-        // Máquina NO impresora (calandra, lockReorder): se muestra en orden inverso (Z-A) por defecto,
-        // sin tocar la Secuencia guardada (que sigue siendo el orden de impresión para cuando vuelva a impresora).
-        const dir = lockReorder ? -1 : 1;
+        // Orden por Secuencia (persistida en backend = orden de IMPRESIÓN). El inverso para la calandra
+        // (lockReorder) NO se aplica acá: se aplica en renderUnits dando vuelta grupos+órdenes YA agrupados,
+        // así el inverso es EXACTO al orden que se ve en la impresora (agrupar por material reordena, y por
+        // eso invertir el input crudo daba un orden distinto al inverso real).
         return list.sort((a, b) =>
-            dir * (((a.sequence ?? a.Secuencia ?? 999999) - (b.sequence ?? b.Secuencia ?? 999999)) || ((a.id || 0) - (b.id || 0)))
+            ((a.sequence ?? a.Secuencia ?? 999999) - (b.sequence ?? b.Secuencia ?? 999999)) || ((a.id || 0) - (b.id || 0))
         );
     })();
     const totalOrders = orders.length;
@@ -660,6 +659,12 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         // por Secuencia). Solo forzamos que las NUEVAS queden siempre al final (sort estable).
         const rank = (u) => (u.kind === 'new' ? 1 : 0);
         list.sort((a, b) => rank(a) - rank(b));
+        // Calandra (lockReorder): el orden debe ser EXACTAMENTE el inverso al de impresión → se invierten
+        // los grupos Y las órdenes dentro de cada grupo (mismo criterio que el botón "invertir").
+        if (lockReorder) {
+            list.reverse();
+            list.forEach(u => { u.orders = [...u.orders].reverse(); });
+        }
         return list;
     })();
 
@@ -1277,10 +1282,10 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
 
     return createPortal(
         <>
-            <div className="fixed inset-0 bg-zinc-900/60 z-40 flex items-center justify-center animate-in fade-in duration-200" onClick={onClose}>
+            <div className="fixed inset-0 bg-slate-900/85 z-40 flex items-center justify-center pl-16 pt-14 animate-in fade-in duration-200" onClick={onClose}>
                 <div
                     ref={modalRef}
-                    className="bg-white shadow-2xl w-full h-full flex flex-col overflow-hidden animate-in zoom-in-95 duration-300"
+                    className="bg-white shadow-2xl w-full h-full flex flex-col overflow-hidden animate-in zoom-in-95 duration-300 border border-zinc-200/80"
                     onClick={e => e.stopPropagation()}
                 >
 

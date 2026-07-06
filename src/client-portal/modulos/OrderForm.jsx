@@ -814,7 +814,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                         sinDPIBack: sl.archivoDorso?.sinDPI
                     })),
                     metadata: metadata, // NUEVO CAMPO METADATA
-                    notas: generalNote
+                    notas: '' // la nota general viaja en notasGenerales; no repetirla acá (evita duplicado en la Nota)
                 });
             });
 
@@ -947,7 +947,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                 idServicioBase: serviceId,
                 nombreTrabajo: jobName,
                 prioridad: urgency,
-                notasGenerales: (items.some(it => it.printSettings?.mode && it.printSettings.mode !== 'normal') ? '[CONTIENE ARCHIVOS CON ESCALA/RAPORT] ' : '') + generalNote,
+                notasGenerales: generalNote,
 
                 // TELA CLIENTE (top-level: el backend los espera acá)
                 bobinaId: usaTelaCliente ? selectedBobinaId : null,

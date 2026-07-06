@@ -22,13 +22,17 @@ router.get('/file-thumbnail/:fileId', async (req, res) => {
     }
 });
 
+// Impersonación de diseñadores (WEB_DESIGNER + header X-Cliente-CodCliente, validada
+// contra ClienteDisenadores). Para clientes normales es un no-op.
+const { impersonarCliente } = require('../controllers/webDesignerController');
+
 // GET /api/web-orders/my-orders
-router.get('/my-orders', verifyToken, webOrdersController.getClientOrders);
+router.get('/my-orders', verifyToken, impersonarCliente, webOrdersController.getClientOrders);
 // GET /api/web-orders/order/:ordenId/files — archivos + copias de una orden del cliente
-router.get('/order/:ordenId/files', verifyToken, webOrdersController.getOrderFiles);
+router.get('/order/:ordenId/files', verifyToken, impersonarCliente, webOrdersController.getOrderFiles);
 
 // GET /api/web-orders/active-sublimation
-router.get('/active-sublimation', verifyToken, webOrdersController.getActiveSublimationOrders);
+router.get('/active-sublimation', verifyToken, impersonarCliente, webOrdersController.getActiveSublimationOrders);
 
 // DELETE /api/web-orders/incomplete/:id (Eliminar pedido zombie)
 router.delete('/incomplete/:id', verifyToken, webOrdersController.deleteIncompleteOrder);
@@ -101,7 +105,11 @@ router.put('/area-mapping/:codOrden', verifyToken, webOrdersController.updateAre
 
 // Endpoint para creación de pedido desde Cliente Web
 // POST /api/web-orders/create
-router.post('/create', verifyToken, webOrdersController.createWebOrder);
+router.post('/create', verifyToken, impersonarCliente, webOrdersController.createWebOrder);
+
+// POST /api/web-orders/aprobar-pedido — el CLIENTE aprueba un pedido retenido de su diseñador.
+// SIN impersonarCliente a propósito: el diseñador no puede aprobar en nombre del cliente.
+router.post('/aprobar-pedido', verifyToken, webOrdersController.aprobarPedido);
 
 // --- INTEGRACIÓN EXTERNA (API KEY) ---
 const INTEGRATION_KEY = process.env.INTEGRATION_API_KEY || 'macrosoft-secret-key';
@@ -153,7 +161,7 @@ const upload = multer({
     limits: { fileSize: 5 * 1024 * 1024 * 1024 } // 5GB
 });
 
-router.post('/upload-stream', verifyToken, upload.single('file'), webOrdersController.uploadOrderFile);
+router.post('/upload-stream', verifyToken, impersonarCliente, upload.single('file'), webOrdersController.uploadOrderFile);
 
 // --- SUBIDA DE IMÁGENES DE CONFIGURACIÓN (CMS) ---
 const storageConfig = multer.diskStorage({

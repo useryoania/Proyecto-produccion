@@ -22,6 +22,8 @@ import PaymentResult from '../components/pages/PaymentResult';
 import MaintenanceBanner from '../components/common/MaintenanceBanner';
 import { TicketsClienteView } from './modulos/tickets/TicketsClienteView';
 import { TicketThreadWindow } from './modulos/tickets/TicketThreadWindow';
+import { DesignerHomeView } from './modulos/DesignerHomeView';
+import { DesignerOrderPage } from './modulos/DesignerOrderPage';
 
 export const ClientPortalApp = () => {
     return (
@@ -130,6 +132,18 @@ export const ClientPortalApp = () => {
                             <MainLayout>
                                 <TicketThreadWindow />
                             </MainLayout>
+                        </ProtectedRoute>
+                    } />
+
+                    {/* Diseñadores: home (crea pedidos en nombre de sus clientes). El registro es /design (raíz, App.jsx) */}
+                    <Route path="/estudio" element={
+                        <ProtectedRoute>
+                            <DesignerHomeView />
+                        </ProtectedRoute>
+                    } />
+                    <Route path="/estudio/pedido/:serviceId" element={
+                        <ProtectedRoute>
+                            <DesignerOrderPage />
                         </ProtectedRoute>
                     } />
 

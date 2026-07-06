@@ -1005,10 +1005,31 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                         </div>
                     )}
 
+                    {/* Aviso de configuración de impresión (escala/raport) — card propia, arriba de las notas */}
+                    {(() => {
+                        const modeIn = (f) => String(f.Observaciones || f.observaciones || '');
+                        const hasEscala = productionFiles.some(f => /\[ESCALA\]/i.test(modeIn(f)) || /Modo:\s*scale/i.test(modeIn(f)));
+                        const hasRaport = productionFiles.some(f => /\[RAPORT\]/i.test(modeIn(f)) || /Modo:\s*raport/i.test(modeIn(f)));
+                        if (!hasEscala && !hasRaport) return null;
+                        const label = hasEscala && hasRaport ? 'ESCALA y RAPORT' : hasEscala ? 'ESCALA' : 'RAPORT';
+                        const isRaport = hasRaport && !hasEscala;
+                        return (
+                            <div className={`mb-4 border-l-4 p-3 flex gap-3 shadow-sm rounded-r-lg ${isRaport ? 'bg-purple-50 border-purple-400' : 'bg-cyan-50 border-cyan-400'}`}>
+                                <i className={`fa-solid ${isRaport ? 'fa-repeat' : 'fa-expand'} text-lg mt-0.5 ${isRaport ? 'text-purple-500' : 'text-cyan-500'}`}></i>
+                                <div>
+                                    <h4 className={`font-bold text-xs uppercase mb-0.5 ${isRaport ? 'text-purple-900' : 'text-cyan-900'}`}>Configuración de Impresión</h4>
+                                    <p className={`text-sm font-semibold ${isRaport ? 'text-purple-800' : 'text-cyan-800'}`}>Contiene archivos con {label}</p>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
                     {currentOrder.note && (() => {
                         const parts = currentOrder.note.split('||').map(n => n.trim()).filter(Boolean);
                         const fallas = parts.filter(n => /^FALLA:/i.test(n)).map(n => n.replace(/^FALLA:\s*/i, '').trim()).filter(Boolean);
-                        const prod = parts.filter(n => !/^FALLA:/i.test(n));
+                        // Quitar el marcador viejo [CONTIENE ARCHIVOS CON ESCALA/RAPORT] de las notas del cliente
+                        // (ahora se muestra en su propia card arriba).
+                        const prod = parts.filter(n => !/^FALLA:/i.test(n)).map(n => n.replace(/\[CONTIENE ARCHIVOS CON ESCALA\/RAPORT\]\s*/i, '').trim()).filter(Boolean);
                         return (
                             <div className="mb-8 space-y-3">
                                 {prod.length > 0 && (

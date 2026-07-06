@@ -28,12 +28,22 @@ const handleResponse = async (response) => {
     return data;
 };
 
+// Modo diseñador: si hay un cliente elegido (designer_cliente), todas las llamadas viajan
+// con el header de impersonación — el backend valida el vínculo cliente↔diseñador.
+const getImpersonationHeader = () => {
+    try {
+        const dc = JSON.parse(localStorage.getItem('designer_cliente') || 'null');
+        return dc?.codCliente ? { 'X-Cliente-CodCliente': String(dc.codCliente) } : {};
+    } catch { return {}; }
+};
+
 const getHeaders = () => {
     const token = localStorage.getItem('auth_token');
     // console.log("🔑 [ApiClient] Headers token:", token ? "Present" : "Missing");
     return {
         'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        ...getImpersonationHeader()
     };
 };
 
@@ -90,7 +100,7 @@ export const apiClient = {
     // Method to upload files
     postFormData: async (endpoint, formData) => {
         const token = localStorage.getItem('auth_token');
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        const headers = { ...(token ? { 'Authorization': `Bearer ${token}` } : {}), ...getImpersonationHeader() };
 
         const requestOptions = {
             method: 'POST',

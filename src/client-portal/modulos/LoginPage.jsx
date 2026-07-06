@@ -133,6 +133,11 @@ export const LoginPage = () => {
                     setRequireReset(true);
                     return;
                 }
+                // Los diseñadores tienen su propio home (no el portal de cliente)
+                if (result?.role === 'WEB_DESIGNER') {
+                    navigate('/portal/estudio', { replace: true });
+                    return;
+                }
             } else {
                 if (formData.password !== formData.confirmPassword) {
                     throw new Error("Las contraseñas no coinciden");

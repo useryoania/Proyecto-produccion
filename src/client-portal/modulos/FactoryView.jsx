@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { GlassCard } from '../pautas/GlassCard';
 import { apiClient } from '../api/apiClient';
-import { Loader2, RefreshCw, Layers, Trash2, Check, Settings, Circle, Ban, AlertTriangle, Search, Factory, Truck, MessageSquareWarning } from 'lucide-react';
+import { Loader2, RefreshCw, Layers, Trash2, Check, Settings, Circle, Ban, AlertTriangle, Search, Factory, Truck, MessageSquareWarning, Palette, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { ConfirmationModal } from '../pautas/ConfirmationModal';
@@ -200,6 +200,32 @@ export const FactoryView = () => {
         });
     };
 
+    // F4 diseñadores: aprobar un pedido retenido (todas las sub-órdenes con AprobacionPendiente).
+    // Al aprobar, el backend lo activa igual que un pedido normal recién completo.
+    const handleAprobarPedido = (project, e) => {
+        e?.stopPropagation();
+        setModal({
+            isOpen: true,
+            title: 'Aprobar Pedido',
+            message: `Este pedido lo creó tu diseñador${project.disenadorNombre ? ` ${project.disenadorNombre}` : ''}. Al aprobarlo entra a producción.`,
+            type: 'warning',
+            confirmText: 'Aprobar',
+            onConfirm: async () => {
+                setLoading(true);
+                try {
+                    for (const oid of project.pendientesAprobacion) {
+                        await apiClient.post('/web-orders/aprobar-pedido', { ordenId: oid });
+                    }
+                    setPage(1);
+                    if (page === 1) await fetchOrders(1, false);
+                } catch (err) {
+                    alert('Error al aprobar el pedido: ' + err.message);
+                    setLoading(false);
+                }
+            }
+        });
+    };
+
     // Iniciar un reclamo sobre un pedido entregado: lleva al centro de soporte con el modal de
     // nuevo ticket abierto y la orden ya seleccionada (vía state de navegación).
     const iniciarReclamo = (project, e) => {
@@ -291,6 +317,8 @@ export const FactoryView = () => {
                 primerArchivoId: null,
                 thumbCodigo: null,    // CodigoOrden de la sub-orden cuyo thumbnail se muestra (para el path)
                 fechaEntrega: null,   // fecha real de entrega (tomada de la fila ERP entregada)
+                disenadorNombre: null,        // pedido creado por un diseñador autorizado
+                pendientesAprobacion: [],     // OrdenIDs retenidos esperando la aprobación del cliente (F4)
             };
         }
         // Preferir la info de la orden WEB (más completa: tiene área, descripción, etc.)
@@ -306,6 +334,12 @@ export const FactoryView = () => {
             if (!projects[groupKey].primerArchivoId && order.PrimerArchivoID) {
                 projects[groupKey].primerArchivoId = order.PrimerArchivoID;
                 projects[groupKey].thumbCodigo = order.CodigoOrden; // misma sub-orden que el archivo → path correcto
+            }
+            if (!projects[groupKey].disenadorNombre && order.DisenadorNombre) {
+                projects[groupKey].disenadorNombre = order.DisenadorNombre;
+            }
+            if (order.AprobacionPendiente && order.OrdenID != null) {
+                projects[groupKey].pendientesAprobacion.push(order.OrdenID);
             }
         }
         projects[groupKey].subOrders.push(order);
@@ -466,6 +500,8 @@ export const FactoryView = () => {
                         const hasZombies = project.subOrders.some(so => so.Estado === 'Cargando...');
                         const allPending = project.subOrders.every(so => ['Pendiente', 'Cargando...'].includes(so.Estado));
                         const materialList = Array.from(project.materials);
+                        // F4: pedido de diseñador retenido — está en 'Cargando...' pero completo, esperando el OK del cliente
+                        const esperandoAprobacion = project.pendientesAprobacion.length > 0;
 
                         // Reclamo: solo si el pedido está entregado y la entrega fue hace ≤ RECLAMO_WINDOW_DAYS días.
                         const relevantSubs = project.subOrders.filter(so => !(so.CodigoOrden || '').toUpperCase().includes('-F'));
@@ -505,10 +541,22 @@ export const FactoryView = () => {
 
                                         {/* Estado + acción a la derecha */}
                                         <div className="flex items-center gap-1.5 shrink-0">
+                                            {esperandoAprobacion ? (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-amber-500/10 text-amber-400 border-amber-500/30 border">
+                                                    <ShieldCheck size={15} />
+                                                    ESPERA TU APROBACIÓN
+                                                </span>
+                                            ) : (
                                             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${statusConf.bg} ${statusConf.color} ${statusConf.border} border`}>
                                                 {statusConf.icon}
                                                 {statusConf.label}
                                             </span>
+                                            )}
+                                            {esperandoAprobacion && (
+                                                <button onClick={(e) => handleAprobarPedido(project, e)} className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wide text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 transition-all" title="Aprobar y enviar a producción">
+                                                    Aprobar
+                                                </button>
+                                            )}
                                             {projectStatus === 'finalizado' && !isDelivered && (
                                                 <button onClick={(e) => { e.stopPropagation(); navigate('/portal/pickup'); }} className="p-1.5 rounded-lg text-emerald-400 border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all" title="Crear Retiro">
                                                     <Truck size={12} />
@@ -544,6 +592,14 @@ export const FactoryView = () => {
                                             })}
                                         </span>
                                     </div>
+
+                                    {/* Pedido creado por un diseñador autorizado */}
+                                    {project.disenadorNombre && (
+                                        <div className="flex items-center gap-1.5 text-[11px] text-cyan-400/90 font-semibold">
+                                            <Palette size={12} />
+                                            Creado por tu diseñador {project.disenadorNombre}
+                                        </div>
+                                    )}
 
                                     {/* Fila 3: máquina + metros + preview archivo */}
                                     {(project.maquina || project.magnitud || project.driveFileId) && (

@@ -13,6 +13,13 @@ const getCanastosResumen = async (req, res) => {
             SELECT ISNULL(EstadoLogistica, 'Canasto Produccion') AS canasto, COUNT(*) AS total
             FROM Ordenes
             WHERE Estado NOT IN ('CANCELADO', 'Finalizado', 'Entregado')
+              -- Órdenes con remito asociado (algún bulto incluido en un envío) no se muestran
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM Logistica_Bultos b WITH(NOLOCK)
+                  JOIN Logistica_EnvioItems ei WITH(NOLOCK) ON ei.BultoID = b.BultoID
+                  WHERE b.OrdenID = Ordenes.OrdenID
+              )
         `;
 
         if (area && area !== 'TODOS') {
@@ -41,6 +48,13 @@ const getOrdenesPorCanasto = async (req, res) => {
             SELECT OrdenID, CodigoOrden, AreaID, Estado, EstadoLogistica, ISNULL(Cliente, '') as Cliente
             FROM Ordenes
             WHERE Estado NOT IN ('CANCELADO', 'Finalizado', 'Entregado')
+              -- Órdenes con remito asociado (algún bulto incluido en un envío) no se muestran
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM Logistica_Bultos b WITH(NOLOCK)
+                  JOIN Logistica_EnvioItems ei WITH(NOLOCK) ON ei.BultoID = b.BultoID
+                  WHERE b.OrdenID = Ordenes.OrdenID
+              )
         `;
 
         if (canasto) {

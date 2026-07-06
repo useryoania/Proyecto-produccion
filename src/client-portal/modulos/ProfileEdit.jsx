@@ -7,6 +7,7 @@ import { User, UserPen, Mail, Save } from 'lucide-react';
 import { apiClient } from '../api/apiClient';
 import { ClientFormFields, Field, useNomenclators, inputClass } from '../../components/shared/ClientFormFields';
 import { validateClientDocument } from '../../utils/documentValidation';
+import { MisDisenadores } from './MisDisenadores';
 
 export const ProfileEdit = () => {
     const { user, updateProfile } = useAuth();
@@ -194,6 +195,9 @@ export const ProfileEdit = () => {
                     </div>
                 </form>
             </div>
+
+            {/* Diseñadores autorizados a crear pedidos en nombre del cliente */}
+            <MisDisenadores />
         </div>
     );
 };

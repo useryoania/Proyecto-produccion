@@ -50,7 +50,7 @@ export const AuthProvider = ({ children }) => {
             if (cachedSession) {
                 try {
                     const cached = JSON.parse(cachedSession);
-                    if (cached.codCliente || cached.role === 'WEB_CLIENT') {
+                    if (cached.codCliente || cached.role === 'WEB_CLIENT' || cached.role === 'WEB_DESIGNER') {
                         setUser(cached);
                         setIsLoggedIn(true);
                     }
@@ -124,6 +124,7 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('user_session');
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user');
+        localStorage.removeItem('designer_cliente'); // modo diseñador: soltar el cliente impersonado
         window.location.href = '/';
     };
 

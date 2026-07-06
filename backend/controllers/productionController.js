@@ -259,14 +259,14 @@ exports.toggleRollStatus = async (req, res) => {
             });
 
                 } else if (destination === 'calender') {
-                    // Opción C: finalizó en una IMPRESORA → el lote continúa en una CALANDRA
-                    // (la de menos cola), en vez de ir a Control de Calidad.
+                    // Opción C: finalizó en una IMPRESORA → el lote continúa en una CALANDRA:
+                    // una máquina cuyo NOMBRE empiece con "calandra" (la de menos cola), no cualquier no-impresora.
                     const calRes = await new sql.Request(transaction)
                         .input('Area', sql.VarChar, currentRoll.AreaID)
                         .query(`
                             SELECT TOP 1 e.EquipoID
                             FROM dbo.ConfigEquipos e
-                            WHERE e.AreaID = @Area AND e.Activo = 1 AND (e.SeparacionImpresion IS NULL OR e.SeparacionImpresion = 0)
+                            WHERE e.AreaID = @Area AND e.Activo = 1 AND LTRIM(LOWER(e.Nombre)) LIKE 'calandra%'
                             ORDER BY (
                                 SELECT COUNT(*) FROM dbo.Rollos r
                                 WHERE r.MaquinaID = e.EquipoID AND r.Estado NOT IN ('Finalizado','Cerrado','Cancelado')

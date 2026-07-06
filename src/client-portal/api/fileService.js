@@ -466,6 +466,11 @@ export const fileService = {
             if (token) {
                 xhr.setRequestHeader('Authorization', `Bearer ${token}`);
             }
+            // Modo diseñador: subir el archivo EN NOMBRE del cliente elegido (validado server-side)
+            try {
+                const dc = JSON.parse(localStorage.getItem('designer_cliente') || 'null');
+                if (dc?.codCliente) xhr.setRequestHeader('X-Cliente-CodCliente', String(dc.codCliente));
+            } catch (_) { }
 
             if (onProgress) {
                 xhr.upload.onprogress = (event) => {

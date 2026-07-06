@@ -82,7 +82,8 @@ const FilePrintControl = ({ areaCode }) => {
 
   // Sort & Auto-Advance
   const [sortOrder, setSortOrder] = useState('asc'); // 'asc' | 'desc'
-  const [autoAdvance, setAutoAdvance] = useState(true);
+  // Auto-Siguiente DESHABILITADO a pedido: siempre false, el toggle queda visible pero disabled.
+  const [autoAdvance] = useState(false);
 
   // Loading & Metrics
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -975,19 +976,18 @@ const FilePrintControl = ({ areaCode }) => {
             </button>
           </div>
 
-          {/* Auto Advance Toggle (Moved to Header) */}
-          <div className="mt-3 flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+          {/* Auto Advance Toggle — DESHABILITADO (siempre apagado, no clickeable) */}
+          <div className="mt-3 flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 opacity-50">
             <div className="flex items-center gap-2">
-              <i className={`fa-solid fa-forward text-xs ${autoAdvance ? 'text-brand-cyan' : 'text-slate-400'}`}></i>
+              <i className="fa-solid fa-forward text-xs text-slate-400"></i>
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Auto-Siguiente</span>
             </div>
 
             <div
-              onClick={() => setAutoAdvance(!autoAdvance)}
-              className={`w-8 h-4 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ${autoAdvance ? 'bg-brand-cyan' : 'bg-slate-300'}`}
-              title="Avanzar automáticamente al siguiente pedido cuando se completa el actual"
+              className="w-8 h-4 flex items-center rounded-full p-0.5 cursor-not-allowed bg-slate-300"
+              title="Auto-Siguiente deshabilitado"
             >
-              <div className={`bg-white w-3 h-3 rounded-full shadow-sm transform transition-transform duration-200 ${autoAdvance ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              <div className="bg-white w-3 h-3 rounded-full shadow-sm translate-x-0"></div>
             </div>
           </div>
         </div>
@@ -1130,31 +1130,29 @@ const FilePrintControl = ({ areaCode }) => {
                 </div>
               ) : (
                 <div className="flex flex-col overflow-hidden border-b border-slate-200 divide-y divide-slate-200">
-                  <div className="flex items-center justify-between px-4 py-3 bg-slate-50">
+                  <div className="flex items-center justify-between px-6 py-3 bg-slate-50">
                     <div className="text-xs font-black text-slate-500 uppercase tracking-widest">
                       {files.length} ARCHIVOS EN ORDEN
                     </div>
-                    <div className="flex items-center gap-3">
-                      {selectedOrder?.priority && (
-                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${['urgente', 'falla', 'reposición', 'reposicion'].includes(String(selectedOrder.priority).toLowerCase()) ? 'bg-brand-magenta/10 text-brand-magenta border-brand-magenta/20' : 'bg-white text-zinc-400 border-zinc-200'}`}>
-                          {selectedOrder.priority}
-                        </span>
-                      )}
-                      {(() => {
-                        // Suma de lo imprimible: Metros × Copias de cada archivo (sin servicios ni cancelados),
-                        // mismo cálculo que muestra cada tarjeta.
-                        const totalMetros = files.reduce((acc, f) => {
-                          if (f.isService || String(f.EstadoArchivo || '').toUpperCase() === 'CANCELADO') return acc;
-                          return acc + ((parseFloat(f.Metros) || 0) * (parseInt(f.Copias) || 1));
-                        }, 0);
-                        if (totalMetros <= 0) return null;
-                        return (
-                          <div className="text-xs font-black text-brand-cyan uppercase tracking-widest">
-                            Total: {totalMetros.toFixed(2)} m
-                          </div>
-                        );
-                      })()}
-                    </div>
+                    {selectedOrder?.priority && (
+                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border ${['urgente', 'falla', 'reposición', 'reposicion'].includes(String(selectedOrder.priority).toLowerCase()) ? 'bg-brand-magenta/10 text-brand-magenta border-brand-magenta/20' : 'bg-white text-zinc-400 border-zinc-200'}`}>
+                        {selectedOrder.priority}
+                      </span>
+                    )}
+                    {(() => {
+                      // Suma de lo imprimible: Metros × Copias de cada archivo (sin servicios ni cancelados),
+                      // mismo cálculo que muestra cada tarjeta.
+                      const totalMetros = files.reduce((acc, f) => {
+                        if (f.isService || String(f.EstadoArchivo || '').toUpperCase() === 'CANCELADO') return acc;
+                        return acc + ((parseFloat(f.Metros) || 0) * (parseInt(f.Copias) || 1));
+                      }, 0);
+                      if (totalMetros <= 0) return null;
+                      return (
+                        <div className="text-xs font-black text-brand-cyan uppercase tracking-widest">
+                          Total: {totalMetros.toFixed(2)} m
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {files.map(file => (

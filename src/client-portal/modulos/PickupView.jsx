@@ -11,7 +11,7 @@ import Lottie from 'lottie-react';
 import loadingAnim from '../../assets/animations/Loading.json';
 import { useAuth } from '../auth/AuthContext';
 import { apiClient } from '../api/apiClient'; // Assuming user comes from here
-import { CheckCircle, AlertCircle, ChevronRight, Truck, CreditCard, Download, MapPin, MapPinCheck, Package, PackageCheck, PackageOpen, Trash2, Plus, ArrowLeft, X } from 'lucide-react';
+import { CheckCircle, AlertCircle, ChevronRight, Truck, CreditCard, Download, MapPin, MapPinCheck, Package, PackageCheck, PackageOpen, Trash2, Plus, ArrowLeft, X, ShieldX } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 import { CustomButton } from '../pautas/CustomButton';
@@ -20,6 +20,7 @@ import { FormInput } from '../pautas/FormInput';
 
 export const PickupView = () => {
     const { user } = useAuth();
+    const isBloqueado = user?.estado === 'BLOQUEADO';
     const [selectedOrders, setSelectedOrders] = useState(() => {
         try {
             const saved = sessionStorage.getItem('pickup_selected');
@@ -209,6 +210,10 @@ export const PickupView = () => {
     };
 
     const handleCreatePickup = async (shippingOverrides = {}) => {
+        if (isBloqueado) {
+            Swal.fire({ icon: 'error', title: 'Cuenta bloqueada', text: 'Tu cuenta está bloqueada. No podés crear retiros. Contactanos para regularizar tu situación.', confirmButtonColor: '#06b6d4' });
+            return null;
+        }
         if (creatingRef.current) return null;
         creatingRef.current = true;
         setLoading(true);
@@ -1227,6 +1232,19 @@ export const PickupView = () => {
                     <p className="text-zinc-500 uppercase text-xs">Selecciona las órdenes que deseas retirar.</p>
                 </div>
             </div>
+
+            {isBloqueado && (
+                <div className="flex items-start gap-4 bg-red-950/40 border border-red-700/60 rounded-2xl px-5 py-4">
+                    <ShieldX size={36} strokeWidth={1.5} className="text-red-400 shrink-0 mt-0.5" />
+                    <div>
+                        <p className="text-red-300 font-bold text-sm uppercase tracking-wide">Cuenta bloqueada</p>
+                        <p className="text-red-400/80 text-xs mt-1 leading-relaxed">
+                            Tu cuenta está actualmente bloqueada y no podés crear retiros.
+                            Por favor, contactanos para regularizar tu situación.
+                        </p>
+                    </div>
+                </div>
+            )}
 
             {readyOrders.length === 0 ? (
                 <div className="p-8 text-center text-zinc-500">

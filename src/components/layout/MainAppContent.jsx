@@ -75,6 +75,7 @@ const WmsLogisticsPage = lazyWithRetry(() => import('../pages/customer-service/W
 const TelaClienteEstadoCuenta = lazyWithRetry(() => import('../pages/customer-service/TelaClienteEstadoCuenta'));
 const TelaClienteInventarioPage = lazyWithRetry(() => import('../pages/TelaClienteInventarioPage'));
 const NomenclatorsABM = lazyWithRetry(() => import('../pages/admin/NomenclatorsABM')); // <-- ADDED
+const DesignersAdminPage = lazyWithRetry(() => import('../pages/DesignersAdminPage'));
 const SysAdminPage = lazyWithRetry(() => import('../pages/admin/SysAdminPage'));
 const LeadsCRMView = lazyWithRetry(() => import('../pages/ventas/LeadsCRMView'));
 const AuditDepositoView = lazyWithRetry(() => import('../pages/AuditDepositoView'));
@@ -662,6 +663,7 @@ const MainAppContent = ({ menuItems = [] }) => {
                 <Route path="/logistica/pedidos-wms" element={<WmsLogisticsPage />} />
                 <Route path="/admin/clientes-integration" element={<ClientsIntegration />} />
                 <Route path="/admin/duplicate-clients" element={<DuplicateClientsPage />} />
+                <Route path="/designers" element={<DesignersAdminPage />} />
                 <Route path="/admin/helpdesk" element={<HelpDeskAdminView />} />
                 <Route path="/atencion-cliente/helpdesk" element={<HelpDeskAdminView />} />
                 <Route path="/admin/products-integration" element={<ProductsIntegration />} />

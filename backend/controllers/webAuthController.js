@@ -35,6 +35,10 @@ exports.login = asyncHandler(async (req, res) => {
     logger.info(`🔐 [LOGIN RESULT] Matches found: ${result.recordset.length}`);
 
     if (result.recordset.length === 0) {
+        // Login unificado: si no es un cliente, puede ser un DISEÑADOR (mismo formulario del portal)
+        const { tryDesignerLogin } = require('./webDesignerController');
+        if (await tryDesignerLogin(req, res, identifier, password)) return;
+
         trackLogin(null, identifier, req.ip, 'WEB_CLIENT', false, 'Usuario no encontrado');
         audit('LOGIN', { user: identifier, ip: req.ip, type: 'WEB_CLIENT', result: 'FAIL', reason: 'Usuario no encontrado' });
         return res.status(401).json({ success: false, message: 'Usuario incorrecto: No se encontró el cliente.' });
@@ -303,6 +307,12 @@ exports.register = asyncHandler(async (req, res) => {
 // ===================================
 exports.me = asyncHandler(async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "No autorizado" });
+
+    // Sesiones de diseñador: su /me vive en webDesignerController
+    if (req.user.role === 'WEB_DESIGNER') {
+        const { meDesigner } = require('./webDesignerController');
+        return meDesigner(req, res);
+    }
 
     const pool = await getPool();
     const r = await pool.request()

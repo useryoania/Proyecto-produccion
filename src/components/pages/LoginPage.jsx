@@ -393,7 +393,10 @@ export const LoginFormBox = ({ onRequireReset, onLoginSuccess }) => {
             if (onLoginSuccess) {
                 onLoginSuccess(result);
             } else {
-                if (result.userType === 'CLIENT') {
+                if (result.role === 'WEB_DESIGNER') {
+                    // Los diseñadores tienen su home propio (no el portal de cliente)
+                    navigate('/portal/estudio');
+                } else if (result.userType === 'CLIENT') {
                     const params = new URLSearchParams(window.location.search);
                     const redirect = params.get('redirect');
                     navigate(redirect || '/portal/profile');

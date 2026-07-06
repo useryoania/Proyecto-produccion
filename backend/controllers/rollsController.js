@@ -1371,6 +1371,19 @@ exports.getRollosActivos = async (req, res) => {
                     )
                 )
             )
+            -- SB Control: ocultar lotes en una IMPRESORA (SeparacionImpresion=1) que tengan órdenes de tela
+            -- (Sublimacion Tela / Tela de Cliente). Esas van impresora → calandra → control, así que no deben
+            -- aparecer en Control hasta pasar a la calandra. Un lote mixto (tela+papel) se oculta entero.
+            AND (
+                ${isControlView ? 1 : 0} = 0
+                OR NOT (
+                    ISNULL(ce.SeparacionImpresion, 0) = 1
+                    AND EXISTS (
+                        SELECT 1 FROM dbo.Ordenes o WITH (NOLOCK)
+                        WHERE o.RolloID = r.RolloID AND o.Variante LIKE '%Tela%'
+                    )
+                )
+            )
             ORDER BY r.FechaCreacion DESC
         `;
 

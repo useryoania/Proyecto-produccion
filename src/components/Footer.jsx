@@ -263,6 +263,27 @@ export default function Footer() {
               Sumate al equipo
             </button>
 
+            {/* Registro de diseñadores */}
+            <button style={{
+              width: '100%',
+              padding: '10px 18px',
+              background: 'rgba(6, 182, 212, 0.05)',
+              border: '1px solid rgba(6, 182, 212, 0.3)',
+              borderRadius: 999,
+              color: 'rgba(103, 232, 249, 0.85)',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.2s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#22d3ee'; e.currentTarget.style.color = '#22d3ee'; e.currentTarget.style.background = 'rgba(6, 182, 212, 0.12)'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(6, 182, 212, 0.3)'; e.currentTarget.style.color = 'rgba(103, 232, 249, 0.85)'; e.currentTarget.style.background = 'rgba(6, 182, 212, 0.05)'; }}
+              onClick={() => window.location.href = '/design'}
+            >
+              ¿Sos diseñador? Registrate
+            </button>
+
             {/* Separador */}
             <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '4px 0' }} />
 

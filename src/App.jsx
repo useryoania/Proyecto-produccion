@@ -22,6 +22,7 @@ const PrivacyPage = lazy(() => import('./components/pages/PrivacyPage'));
 const GuidesPage = lazy(() => import('./components/pages/GuidesPage'));
 const TemplatesPage = lazy(() => import('./components/pages/TemplatesPage'));
 const ClientPortalApp = lazy(() => import('./client-portal/ClientPortalApp').then(m => ({ default: m.ClientPortalApp })));
+const DesignerRegister = lazy(() => import('./client-portal/modulos/DesignerRegister').then(m => ({ default: m.DesignerRegister })));
 const MainAppContent = lazy(() => import('./components/layout/MainAppContent')); 
 const TotemApp = lazy(() => import('./client-portal/modulos/totem/TotemApp').then(m => ({ default: m.TotemApp })));
 
@@ -86,6 +87,7 @@ function App() {
                 <Route path="/register" element={<RegisterPage />} />
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                 <Route path="/reset-password" element={<ResetPasswordPage />} />
+                <Route path="/design" element={<DesignerRegister />} />
                 <Route path="/portal/*" element={<ClientPortalApp />} />
                 <Route path="/payment-status" element={<PaymentResult />} />
                 <Route path="/totem/*" element={<TotemApp />} />
@@ -114,6 +116,7 @@ function App() {
             <Route path="/privacidad" element={<PrivacyPage />} />
             <Route path="/guias" element={<GuidesPage />} />
             <Route path="/plantillas" element={<TemplatesPage />} />
+            <Route path="/design" element={<DesignerRegister />} />
             <Route path="/portal/*" element={<ClientPortalApp />} />
             <Route path="/payment-status" element={<PaymentResult />} />
             <Route path="/totem/*" element={<TotemApp />} />
