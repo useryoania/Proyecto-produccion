@@ -115,14 +115,14 @@ const ManageBobinaModal = ({ bobina, insumoName, onClose, onSuccess }) => {
 
             if (res.success) {
                 toast.success(`Bobina cerrada. Desecho ajustado.`);
-                onSuccess();
+                onSuccess?.();
                 onClose();
             } else {
                 toast.error(res.message || "Error al cerrar bobina");
             }
         } catch (error) {
             console.error(error);
-            toast.error("Error de conexión");
+            toast.error(error?.response?.data?.error || "Error al cerrar la bobina");
         } finally {
             setLoading(false);
         }

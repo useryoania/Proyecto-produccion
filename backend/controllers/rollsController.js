@@ -1104,7 +1104,9 @@ exports.getRollDetails = async (req, res) => {
 
         // SB: la PRIMERA vez que se abre el lote, fijar la Secuencia por Material A-Z (default
         // histórico) y marcarlo. Después se respeta el orden manual que guarde el usuario.
-        if (String(r.AreaID || '').toUpperCase() === 'SB' && !r.OrdenadoSB) {
+        // NO se toca un lote ya terminado (Finalizado/Cerrado): en el Historial la vista es de solo
+        // lectura y no debe reescribir la secuencia de datos históricos.
+        if (String(r.AreaID || '').toUpperCase() === 'SB' && !r.OrdenadoSB && !['Finalizado', 'Cerrado'].includes(r.Estado)) {
             await pool.request()
                 .input('RID', sql.VarChar(50), rolloId)
                 .query(`
@@ -1128,6 +1130,7 @@ exports.getRollDetails = async (req, res) => {
         const rollObj = {
             id: r.RolloID,
             name: r.Nombre || `Lote ${r.RolloID}`,
+            areaId: r.AreaID, // el front lo usa para agrupar por material (SB) también desde el Historial
             capacity: r.CapacidadMaxima || 100,
             color: r.ColorHex || '#cbd5e1',
             status: r.Estado,

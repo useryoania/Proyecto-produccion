@@ -344,18 +344,19 @@ const MoveOrderModal = ({ isOpen, onClose, onConfirm, currentRollId, areaCode })
     );
 };
 
-const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lockReorder = false }) => {
+const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lockReorder = false, readOnly = false }) => {
     // Referencia para cerrar al hacer clic fuera
     const modalRef = useRef(null);
-
-    // Obtener el area code real de la URL o del roll
-    const currentAreaCode = roll?.areaId || roll?.AreaID || (typeof window !== 'undefined' ? window.location.pathname.split('/')[2] : 'ECOUV');
-    // SB: las órdenes del lote se ordenan por defecto por material/variante (A-Z), no por secuencia manual.
-    const isSB = (currentAreaCode || '').toUpperCase() === 'SB';
 
     // Estado local para datos frescos
     const [freshRoll, setFreshRoll] = React.useState(roll);
     const [loading, setLoading] = React.useState(false);
+
+    // Obtener el area code real: del roll, del detalle fresco (el Historial NO pasa área en el roll,
+    // la trae getDetails), o de la URL como último recurso.
+    const currentAreaCode = roll?.areaId || roll?.AreaID || freshRoll?.areaId || freshRoll?.AreaID || (typeof window !== 'undefined' ? window.location.pathname.split('/')[2] : 'ECOUV');
+    // SB: las órdenes del lote se agrupan/ordenan por material/variante (A-Z), no por secuencia manual.
+    const isSB = (currentAreaCode || '').toUpperCase() === 'SB';
 
     // Metros editables de órdenes de falla (-F): por orden (Magnitud) y total del grupo (independiente).
     const [metersDraft, setMetersDraft] = React.useState({});          // orderId -> string
@@ -374,6 +375,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     const [orderToMove, setOrderToMove] = useState(null);
 
     const openMoveModal = (order) => {
+        if (readOnly) return;
         setOrderToMove(order);
         setIsMoveModalOpen(true);
     };
@@ -417,6 +419,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
 
     // Guardar metros de UNA orden de falla (persiste en Ordenes.Magnitud).
     const persistOrderMeters = async (orderId, value) => {
+        if (readOnly) return;
         try {
             await rollsService.setOrderMagnitud(orderId, value === '' ? null : parseFloat(value));
             loadFreshData(true);
@@ -429,6 +432,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
 
     // Guardar el total de metros de un GRUPO de falla (persiste en MetrosGrupoFalla de todas sus órdenes).
     const persistGroupMeters = async (orderIds, value) => {
+        if (readOnly) return;
         try {
             await rollsService.setFallaGroupMeters(orderIds, value === '' ? null : parseFloat(value));
             loadFreshData(true);
@@ -568,10 +572,12 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
             return cleaned.length === prev.length ? prev : cleaned;
         });
     }, [orderIdsKey]);
-    const isNewOrder = (id) => placedIds !== null && !placedIds.includes(id);
+    // En el Historial (readOnly) no existe el concepto de "orden nueva" (recién asignada/movida):
+    // el lote ya terminó, así que todo se agrupa por material como corresponde (sin bloques "NUEVA").
+    const isNewOrder = (id) => !readOnly && placedIds !== null && !placedIds.includes(id);
 
     const handleAgrupar = async () => {
-        if (!canGroup) return;
+        if (readOnly || !canGroup) return;
         const ids = [...selectedOrderIds];
         setSelectedOrderIds([]);
         // Asentar: si había una orden "nueva" en la selección, deja de ir al final y entra al grupo.
@@ -584,6 +590,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         loadFreshData(true);
     };
     const handleDesagrupar = async (ids) => {
+        if (readOnly) return;
         setFreshRoll(prev => prev ? { ...prev, orders: (prev.orders || []).map(o => ids.includes(o.id) ? { ...o, groupId: null } : o) } : prev);
         try { await rollsService.setOrderGroup(roll.id, ids, false); }
         catch { toast.error('No se pudo desagrupar'); }
@@ -611,8 +618,11 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     // Header "Material / Variante" clickeable: invierte el orden de TODOS los grupos y de las
     // órdenes dentro de cada grupo, y lo persiste en backend.
     const [materialDesc, setMaterialDesc] = useState(false);
+    // Solo Historial (readOnly): toggle de VISTA (no persiste) entre orden de Impresión (default)
+    // y de Calandra (invertido, igual que lockReorder). No toca datos: solo cómo se muestran.
+    const [calandraView, setCalandraView] = useState(false);
     const handleReverseAll = () => {
-        if (lockReorder) return; // máquina no-impresora (calandra): orden fijo Z-A, no se reordena ni persiste
+        if (lockReorder || readOnly) return; // calandra: orden fijo Z-A; historial: solo lectura
         const rev = [...renderUnits].reverse();
         const flatIds = rev.flatMap(u => [...u.orders].reverse().map(o => o.id));
         persistOrder(flatIds);
@@ -624,6 +634,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     const [ordenAsc, setOrdenAsc] = useState(null); // null = nadie clickeó aún (orden manual)
     const handleSortByCode = () => {
         if (lockReorder) return; // calandra: orden fijo, no se reordena ni persiste
+        if (readOnly) return; // historial: solo lectura
         const asc = ordenAsc !== true; // primer click = menor a mayor; después alterna
         const codeNum = (o) => { const m = String(o.code || '').match(/(\d+)/); return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER; };
         const sorted = [...orders].sort((a, b) => (codeNum(a) - codeNum(b)) || String(a.code || '').localeCompare(String(b.code || '')));
@@ -659,9 +670,10 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         // por Secuencia). Solo forzamos que las NUEVAS queden siempre al final (sort estable).
         const rank = (u) => (u.kind === 'new' ? 1 : 0);
         list.sort((a, b) => rank(a) - rank(b));
-        // Calandra (lockReorder): el orden debe ser EXACTAMENTE el inverso al de impresión → se invierten
-        // los grupos Y las órdenes dentro de cada grupo (mismo criterio que el botón "invertir").
-        if (lockReorder) {
+        // Calandra: el orden debe ser EXACTAMENTE el inverso al de impresión → se invierten los grupos
+        // Y las órdenes dentro de cada grupo (mismo criterio que el botón "invertir"). Aplica cuando el
+        // lote está en una calandra (lockReorder) o cuando en el Historial se elige la vista Calandra.
+        if (lockReorder || calandraView) {
             list.reverse();
             list.forEach(u => { u.orders = [...u.orders].reverse(); });
         }
@@ -695,6 +707,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
 
     // Toggle "Impreso": optimista local + persistir en backend (Ordenes.Impreso). Todas las áreas.
     const handleTogglePrinted = (id) => {
+        if (readOnly) return;
         const willPrint = !printedOrderIds.includes(id);
         if (!canTogglePrinted(id)) {
             toast.error(willPrint
@@ -713,6 +726,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     // impresión EN ORDEN global (impresos = prefijo): para marcar, las órdenes anteriores al grupo
     // deben estar impresas; para desmarcar, las posteriores deben estar SIN imprimir.
     const handleToggleGroupPrinted = (unit) => {
+        if (readOnly) return;
         const ids = unit.orders.map(o => o.id);
         if (!ids.length) return;
         const willPrint = !ids.every(id => printedOrderIds.includes(id));
@@ -778,6 +792,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
 
     // Acción de Desasignar (Undo)
     const handleUnassign = async (order) => {
+        if (readOnly) return;
         // Confirmaciones con modal (Swal) en vez de window.confirm nativo. Mismo estilo que handleCancelRoll.
         const confirmModal = (opts) => Swal.fire({
             showCancelButton: true,
@@ -832,7 +847,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     };
 
     const handleUnassignMultiple = async () => {
-        if (!selectedOrderIds.length) return;
+        if (readOnly || !selectedOrderIds.length) return;
 
         if (!window.confirm(`¿Estás seguro de desasignar ${selectedOrderIds.length} órdenes seleccionadas del rollo?`)) {
             return;
@@ -1110,6 +1125,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     };
 
     const handleCancelRoll = async () => {
+        if (readOnly) return;
         const result = await Swal.fire({
             title: '¿Cancelar lote vacío?',
             text: "Esta acción no se puede revertir y el lote desaparecerá.",
@@ -1218,6 +1234,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
 
     // Función para iniciar el cambio de Bobina
     const startSwapProcess = () => {
+        if (readOnly) return;
         if (freshRoll.BobinaID) {
             setIsSwapConfigOpen(true);
         } else {
@@ -1234,7 +1251,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
 
     const handleDragEnd = async (result) => {
         if (!result.destination) return;
-        if (lockReorder) return; // lote en máquina no-impresora (calandra): no se reordena
+        if (lockReorder || readOnly) return; // calandra: no se reordena; historial: solo lectura
 
         if (isSB) {
             // Drag de GRUPOS (bloques): reordeno las unidades y persisto la secuencia plana en backend.
@@ -1375,19 +1392,23 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                             <i className="fa-solid fa-check-circle text-[10px]" />
                                             {freshRoll.CodeBobina || freshRoll.BobinaID}
                                         </span>
+                                        {!readOnly && (
                                         <button onClick={startSwapProcess} className="w-6 h-6 flex items-center justify-center text-zinc-400 hover:text-brand-cyan hover:bg-brand-cyan/10 rounded-lg transition-all" title="Cambiar Bobina">
                                             <i className="fa-solid fa-rotate text-xs" />
                                         </button>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-1.5">
                                         <span className="text-[10px] font-bold text-brand-magenta">Sin asignar</span>
+                                        {!readOnly && (
                                         <button
                                             className="text-[9px] bg-brand-cyan text-white px-2 py-0.5 rounded-lg font-black hover:bg-brand-cyan/90 transition-colors"
                                             onClick={startSwapProcess}
                                         >
                                             ASIGNAR
                                         </button>
+                                        )}
                                     </div>
                                 )}
                                 {orders[0]?.material && (
@@ -1464,11 +1485,26 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                             <div className="min-w-[880px]">
                               <div className="flex items-center px-2 py-3 bg-zinc-50 border-b border-zinc-200 text-[10px] text-zinc-500 uppercase font-black tracking-widest">
                                 <div className="w-10 flex justify-center">
-                                  <input type="checkbox" className="w-4 h-4 rounded border-zinc-300 text-brand-cyan focus:ring-brand-cyan cursor-pointer" checked={orders.length > 0 && selectedOrderIds.length === orders.length} onChange={handleToggleAll} />
+                                  {!readOnly && <input type="checkbox" className="w-4 h-4 rounded border-zinc-300 text-brand-cyan focus:ring-brand-cyan cursor-pointer" checked={orders.length > 0 && selectedOrderIds.length === orders.length} onChange={handleToggleAll} />}
                                 </div>
-                                <button type="button" onClick={handleSortByCode} title="Ordenar por número de orden" className="w-28 px-2 flex items-center gap-1.5 text-[10px] uppercase font-black tracking-widest text-zinc-500 hover:text-brand-cyan transition-colors cursor-pointer">Orden <i className={`fa-solid ${ordenAsc === null ? 'fa-sort text-zinc-300' : ordenAsc ? 'fa-arrow-down-1-9' : 'fa-arrow-up-9-1'}`} /></button>
+                                <button type="button" onClick={handleSortByCode} disabled={readOnly} title="Ordenar por número de orden" className={`w-28 px-2 flex items-center gap-1.5 text-[10px] uppercase font-black tracking-widest text-zinc-500 transition-colors ${readOnly ? 'cursor-default' : 'hover:text-brand-cyan cursor-pointer'}`}>Orden {!readOnly && <i className={`fa-solid ${ordenAsc === null ? 'fa-sort text-zinc-300' : ordenAsc ? 'fa-arrow-down-1-9' : 'fa-arrow-up-9-1'}`} />}</button>
                                 <div className="flex-1 min-w-[150px] px-2">Cliente / Trabajo</div>
+                                {readOnly ? (
+                                  <div className="flex-1 min-w-[150px] px-2 flex items-center gap-2">
+                                    <span>Material / Variante</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCalandraView(v => !v)}
+                                      title="Cambiar vista de orden: Impresión (default) ↔ Calandra (invertido)"
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-wider transition-colors ${calandraView ? 'bg-brand-magenta/10 text-brand-magenta border-brand-magenta/30 hover:bg-brand-magenta/20' : 'bg-brand-cyan/10 text-brand-cyan border-brand-cyan/30 hover:bg-brand-cyan/20'}`}
+                                    >
+                                      <i className={`fa-solid ${calandraView ? 'fa-arrow-up-z-a' : 'fa-arrow-down-a-z'}`} />
+                                      {calandraView ? 'Calandra' : 'Impresión'}
+                                    </button>
+                                  </div>
+                                ) : (
                                 <button type="button" onClick={handleReverseAll} disabled={lockReorder} title={lockReorder ? 'Orden de calandrado (Z-A)' : 'Invertir orden: Impresión (A-Z) ↔ Calandrado (Z-A)'} className={`flex-1 min-w-[150px] px-2 flex items-center gap-1.5 text-[10px] uppercase font-black tracking-widest text-zinc-500 transition-colors ${lockReorder ? 'cursor-default' : 'hover:text-brand-cyan cursor-pointer'}`}>Material / Variante <i className={`fa-solid ${(lockReorder || materialDesc) ? 'fa-arrow-up-z-a' : 'fa-arrow-down-a-z'}`} /></button>
+                                )}
                                 <div className="w-14 text-center"><i className="fa-solid fa-paperclip" /></div>
                                 <div className="w-24 text-center">Metros</div>
                                 <div className="w-28 text-center">Prioridad</div>
@@ -1487,7 +1523,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                         // Basta UNA orden impresa para bloquear el grupo (no se puede mover ni reordenar).
                                         const groupLocked = unit.orders.some(o => printedOrderIds.includes(o.id));
                                         return (
-                                          <Draggable key={unit.sig} draggableId={unit.sig} index={ui} isDragDisabled={!isGroup || groupLocked || unit.kind === 'new' || lockReorder}>
+                                          <Draggable key={unit.sig} draggableId={unit.sig} index={ui} isDragDisabled={!isGroup || groupLocked || unit.kind === 'new' || lockReorder || readOnly}>
                                             {(p, snap) => (
                                               <div ref={p.innerRef} {...p.draggableProps} className={`rounded-xl border overflow-hidden ${snap.isDragging ? 'bg-white shadow-2xl border-brand-cyan/50 ring-1 ring-brand-cyan/30' : unit.kind === 'new' ? 'border-amber-300' : 'border-zinc-200'}`}>
                                                 {isGroup && (
@@ -1498,11 +1534,11 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                         ? <span className="px-1.5 py-0.5 rounded bg-amber-400 text-white text-[9px] font-black tracking-wider" title="Orden nueva: agrupala a su grupo con el botón Agrupar">NUEVA</span>
                                                         : groupLocked
                                                           ? <i className="fa-solid fa-lock text-emerald-500/70" title="Grupo con órdenes impresas (bloqueado)" />
-                                                          : lockReorder ? null : <span {...p.dragHandleProps} className="cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-600" title="Arrastrar grupo"><i className="fa-solid fa-grip-vertical" /></span>} {unit.material}
+                                                          : (lockReorder || readOnly) ? null : <span {...p.dragHandleProps} className="cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-600" title="Arrastrar grupo"><i className="fa-solid fa-grip-vertical" /></span>} {unit.material}
                                                     </span>
                                                     <span className="text-[11px] font-bold text-zinc-500 whitespace-nowrap flex items-center gap-1.5">
-                                                      <input type="checkbox" checked={unit.orders.length > 0 && unit.orders.every(o => printedOrderIds.includes(o.id))} onChange={() => handleToggleGroupPrinted(unit)} onClick={(e) => e.stopPropagation()} title={`Marcar/desmarcar todo el grupo como ${lockReorder ? 'calandrado' : 'impreso'}`} className="w-4 h-4 rounded border-zinc-300 accent-emerald-500 cursor-pointer mr-1" />
-                                                      {unit.orders.length} {unit.orders.length === 1 ? 'orden' : 'órdenes'} · {unit.isFalla && !lockReorder ? (
+                                                      {!readOnly && <input type="checkbox" checked={unit.orders.length > 0 && unit.orders.every(o => printedOrderIds.includes(o.id))} onChange={() => handleToggleGroupPrinted(unit)} onClick={(e) => e.stopPropagation()} title={`Marcar/desmarcar todo el grupo como ${lockReorder ? 'calandrado' : 'impreso'}`} className="w-4 h-4 rounded border-zinc-300 accent-emerald-500 cursor-pointer mr-1" />}
+                                                      {unit.orders.length} {unit.orders.length === 1 ? 'orden' : 'órdenes'} · {unit.isFalla && !lockReorder && !readOnly ? (
                                                         <span className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
                                                           <input
                                                             type="number" step="0.1" min="0"
@@ -1521,7 +1557,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                       ) : (
                                                         <span className="font-black text-brand-cyan">{groupMeters.toFixed(2)} m</span>
                                                       )}
-                                                      {unit.kind === 'manual' && (
+                                                      {!readOnly && unit.kind === 'manual' && (
                                                         <button onClick={() => handleDesagrupar(unit.orders.map(o => o.id))} title="Desagrupar" className="ml-1 w-5 h-5 flex items-center justify-center rounded text-zinc-400 hover:text-brand-magenta hover:bg-brand-magenta/10"><i className="fa-solid fa-link-slash text-[10px]" /></button>
                                                       )}
                                                     </span>
@@ -1531,11 +1567,11 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                   {(ip) => (
                                                     <div ref={ip.innerRef} {...ip.droppableProps}>
                                                 {unit.orders.map((o, oi) => { return (
-                                                  <Draggable key={`o-${o.id}`} draggableId={`o-${o.id}`} index={oi} isDragDisabled={printedOrderIds.includes(o.id) || unit.kind === 'new' || lockReorder}>
+                                                  <Draggable key={`o-${o.id}`} draggableId={`o-${o.id}`} index={oi} isDragDisabled={printedOrderIds.includes(o.id) || unit.kind === 'new' || lockReorder || readOnly}>
                                                     {(op, osnap) => (
                                                   <div ref={op.innerRef} {...op.draggableProps} className={`flex items-center py-2 border-t border-zinc-100 first:border-t-0 transition-colors ${osnap.isDragging ? 'bg-white shadow-lg ring-1 ring-brand-cyan/40' : selectedOrderIds.includes(o.id) ? 'bg-brand-cyan/10' : printedOrderIds.includes(o.id) ? 'bg-emerald-50/60' : 'hover:bg-slate-50'}`}>
                                                     <div className="w-10 flex justify-center">
-                                                      <input type="checkbox" className="w-4 h-4 rounded border-zinc-300 text-brand-cyan focus:ring-brand-cyan cursor-pointer" checked={selectedOrderIds.includes(o.id)} onChange={() => handleToggleOne(o.id)} />
+                                                      {!readOnly && <input type="checkbox" className="w-4 h-4 rounded border-zinc-300 text-brand-cyan focus:ring-brand-cyan cursor-pointer" checked={selectedOrderIds.includes(o.id)} onChange={() => handleToggleOne(o.id)} />}
                                                     </div>
                                                     <div className="w-28 px-2 font-mono text-xs break-all">
                                                       <div className="font-bold text-zinc-700">{o.code || o.CodigoOrden}</div>
@@ -1553,7 +1589,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                       {o.fileCount > 0 ? <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-cyan/10 text-brand-cyan text-[10px] font-black border border-brand-cyan/30">{o.fileCount}</span> : <span className="text-zinc-200 text-xs">—</span>}
                                                     </div>
                                                     <div className="w-24 text-center">
-                                                      {isFalla(o) && !lockReorder ? (
+                                                      {isFalla(o) && !lockReorder && !readOnly ? (
                                                         <span className="inline-flex items-center gap-0.5 justify-center" onClick={(e) => e.stopPropagation()}>
                                                           <input
                                                             type="number" step="0.1" min="0"
@@ -1583,12 +1619,14 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                     </div>
                                                     <div className="w-44 flex items-center justify-center gap-1">
                                                       <button onClick={() => onViewOrder && onViewOrder(o)} className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-400 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all" title="Ver detalle orden"><i className="fa-regular fa-eye text-sm" /></button>
+                                                      {!readOnly && (<>
                                                       <button onClick={() => openMoveModal(o)} className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-400 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all" title="Mover a otro Lote"><i className="fa-solid fa-arrow-right-arrow-left text-sm" /></button>
                                                       <button onClick={() => handleUnassign(o)} className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-400 hover:text-brand-magenta hover:bg-brand-magenta/10 transition-all" title="Sacar del Rollo"><i className="fa-solid fa-rotate-left text-sm" /></button>
                                                       <label className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${canTogglePrinted(o.id) ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'} ${printedOrderIds.includes(o.id) ? 'text-emerald-600 bg-emerald-50' : 'text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50'}`} title={!canTogglePrinted(o.id) ? (printedOrderIds.includes(o.id) ? 'Desmarcá primero las posteriores' : 'Marcá primero las anteriores') : (printedOrderIds.includes(o.id) ? `Marcar como NO ${lockReorder ? 'calandrado' : 'impreso'}` : `Marcar ${lockReorder ? 'calandrado' : 'impreso'}`)}>
                                                         <input type="checkbox" disabled={!canTogglePrinted(o.id)} className="w-4 h-4 rounded border-zinc-300 accent-emerald-500 cursor-pointer disabled:cursor-not-allowed" checked={printedOrderIds.includes(o.id)} onChange={() => handleTogglePrinted(o.id)} />
                                                       </label>
                                                       {!printedOrderIds.includes(o.id) && unit.kind !== 'new' && !lockReorder && <div {...op.dragHandleProps} className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-300 hover:text-zinc-600 cursor-grab active:cursor-grabbing" title="Arrastrar orden"><i className="fa-solid fa-grip-vertical text-sm" /></div>}
+                                                      </>)}
                                                     </div>
                                                   </div>
                                                     )}
@@ -1623,15 +1661,15 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                 <thead className="text-[10px] text-zinc-500 uppercase bg-zinc-50 border-b border-zinc-200 font-black tracking-widest sticky top-0 z-10">
                                     <tr>
                                         <th className="px-4 py-3 w-10 text-center">
-                                            <input
+                                            {!readOnly && <input
                                                 type="checkbox"
                                                 className="w-4 h-4 rounded border-zinc-300 text-brand-cyan focus:ring-brand-cyan cursor-pointer"
                                                 checked={orders.length > 0 && selectedOrderIds.length === orders.length}
                                                 onChange={handleToggleAll}
-                                            />
+                                            />}
                                         </th>
                                         <th className="px-4 py-3 w-10 text-center text-zinc-300">#</th>
-                                        <th className="px-4 py-3 w-28"><button type="button" onClick={handleSortByCode} title="Ordenar por número de orden" className="flex items-center gap-1.5 uppercase font-black tracking-widest hover:text-brand-cyan transition-colors cursor-pointer">Orden <i className={`fa-solid ${ordenAsc === null ? 'fa-sort text-zinc-300' : ordenAsc ? 'fa-arrow-down-1-9' : 'fa-arrow-up-9-1'}`} /></button></th>
+                                        <th className="px-4 py-3 w-28"><button type="button" onClick={handleSortByCode} disabled={readOnly} title="Ordenar por número de orden" className={`flex items-center gap-1.5 uppercase font-black tracking-widest transition-colors ${readOnly ? 'cursor-default' : 'hover:text-brand-cyan cursor-pointer'}`}>Orden {!readOnly && <i className={`fa-solid ${ordenAsc === null ? 'fa-sort text-zinc-300' : ordenAsc ? 'fa-arrow-down-1-9' : 'fa-arrow-up-9-1'}`} />}</button></th>
                                         <th className="px-4 py-3 w-48">Cliente / Trabajo</th>
                                         <th className="px-4 py-3 w-48">Material / Variante</th>
                                         <th className="px-4 py-3 w-16 text-center"><i className="fa-solid fa-paperclip" /></th>
@@ -1665,9 +1703,9 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                                     {unit.isFalla && <span className="px-1.5 py-0.5 rounded bg-brand-magenta text-white text-[9px] font-black tracking-wider shrink-0" title="Grupo de falla (-F)">Falla</span>}<i className="fa-solid fa-layer-group text-brand-cyan" /> {unit.material}
                                                                 </span>
                                                                 <span className="text-[11px] font-bold text-zinc-500 whitespace-nowrap flex items-center gap-1.5">
-                                                                    <input type="checkbox" checked={unit.orders.length > 0 && unit.orders.every(o => printedOrderIds.includes(o.id))} onChange={() => handleToggleGroupPrinted(unit)} onClick={(e) => e.stopPropagation()} title={`Marcar/desmarcar todo el grupo como ${lockReorder ? 'calandrado' : 'impreso'}`} className="w-4 h-4 rounded border-zinc-300 accent-emerald-500 cursor-pointer mr-1" />
+                                                                    {!readOnly && <input type="checkbox" checked={unit.orders.length > 0 && unit.orders.every(o => printedOrderIds.includes(o.id))} onChange={() => handleToggleGroupPrinted(unit)} onClick={(e) => e.stopPropagation()} title={`Marcar/desmarcar todo el grupo como ${lockReorder ? 'calandrado' : 'impreso'}`} className="w-4 h-4 rounded border-zinc-300 accent-emerald-500 cursor-pointer mr-1" />}
                                                                     {unit.orders.length} {unit.orders.length === 1 ? 'orden' : 'órdenes'} · <span className={`font-black ${unit.isFalla ? 'text-zinc-100' : 'text-brand-cyan'}`}>{groupMeters.toFixed(2)} m</span>
-                                                                    {unit.kind === 'manual' && (
+                                                                    {!readOnly && unit.kind === 'manual' && (
                                                                         <button onClick={() => handleDesagrupar(unit.orders.map(o => o.id))} title="Desagrupar" className="ml-1 w-5 h-5 flex items-center justify-center rounded text-zinc-400 hover:text-brand-magenta hover:bg-brand-magenta/10">
                                                                             <i className="fa-solid fa-link-slash text-[10px]" />
                                                                         </button>
@@ -1691,17 +1729,17 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                         >
                                                             <td className="px-2 py-0 align-middle w-10">
                                                                 <div className="flex items-center justify-center gap-1.5 h-full">
-                                                                    {!isSB && !lockReorder && (
+                                                                    {!isSB && !lockReorder && !readOnly && (
                                                                         <div {...provided.dragHandleProps} className="flex items-center text-zinc-300 hover:text-zinc-500 cursor-grab active:cursor-grabbing">
                                                                             <i className="fa-solid fa-grip-vertical text-xs"></i>
                                                                         </div>
                                                                     )}
-                                                                    <input
+                                                                    {!readOnly && <input
                                                                         type="checkbox"
                                                                         className="w-4 h-4 rounded border-zinc-300 text-brand-cyan focus:ring-brand-cyan cursor-pointer"
                                                                         checked={selectedOrderIds.includes(o.id)}
                                                                         onChange={() => handleToggleOne(o.id)}
-                                                                    />
+                                                                    />}
                                                                 </div>
                                                             </td>
                                             <td className="px-4 py-3 text-center text-zinc-300 font-mono text-xs w-10">{idx + 1}</td>
@@ -1764,6 +1802,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                     >
                                                         <i className="fa-regular fa-eye text-sm" />
                                                     </button>
+                                                    {!readOnly && (<>
                                                     <button
                                                         onClick={() => openMoveModal(o)}
                                                         className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-400 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all"
@@ -1798,6 +1837,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                             <i className="fa-solid fa-grip-vertical text-sm" />
                                                         </div>
                                                     )}
+                                                    </>)}
                                                 </div>
                                             </td>
                                                         </tr>
@@ -1849,7 +1889,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                             */}
 
                             {/* Agrupar: solo SB, sin función por ahora (a definir) */}
-                            {isSB && (
+                            {isSB && !readOnly && (
                                 <button
                                     type="button"
                                     onClick={handleAgrupar}
@@ -1864,7 +1904,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
 
                         {/* Right group */}
                         <div className="flex items-center gap-2">
-                            {orders.length === 0 && (
+                            {!readOnly && orders.length === 0 && (
                                 <button
                                     className="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-md shadow-red-500/20 active:scale-95"
                                     onClick={handleCancelRoll}
@@ -1873,7 +1913,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                     <i className="fa-solid fa-trash" /> Cancelar Lote
                                 </button>
                             )}
-                            {selectedOrderIds.length > 0 && (
+                            {!readOnly && selectedOrderIds.length > 0 && (
                                 <>
                                     <button
                                         onClick={handleDownloadFiles}

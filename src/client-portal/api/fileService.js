@@ -199,9 +199,13 @@ const getPdfDimensionsFromFile = (file) => {
                     [widthInPoints, heightInPoints] = [heightInPoints, widthInPoints];
                 }
             }
-            const widthInMeters = (widthInPoints / 72) * 0.0254;
-            const heightInMeters = (heightInPoints / 72) * 0.0254;
-            console.log(`[PDF PARSER] ${result.type}: ${widthInPoints.toFixed(1)}x${heightInPoints.toFixed(1)}pt → ${widthInMeters.toFixed(3)}x${heightInMeters.toFixed(3)}m`);
+            // /UserUnit N: multiplicador de unidad. Los PDF de más de ~5.08m (límite de 14400pt)
+            // vienen con UserUnit (ej. 10) — ignorarlo mide el trabajo N veces más chico.
+            const userUnitMatch = result.data.match(/\/UserUnit\s+([\d.]+)/);
+            const userUnit = userUnitMatch ? (parseFloat(userUnitMatch[1]) || 1) : 1;
+            const widthInMeters = (widthInPoints * userUnit / 72) * 0.0254;
+            const heightInMeters = (heightInPoints * userUnit / 72) * 0.0254;
+            console.log(`[PDF PARSER] ${result.type}: ${widthInPoints.toFixed(1)}x${heightInPoints.toFixed(1)}pt${userUnit !== 1 ? ` (UserUnit ${userUnit})` : ''} → ${widthInMeters.toFixed(3)}x${heightInMeters.toFixed(3)}m`);
             resolve({
                 width: parseFloat(widthInMeters.toFixed(3)),
                 height: parseFloat(heightInMeters.toFixed(3)),
@@ -343,9 +347,11 @@ export const fileService = {
                             heightPt = viewport.height;
                         }
 
-                        const widthM = (widthPt / 72) * 0.0254;
-                        const heightM = (heightPt / 72) * 0.0254;
-                        console.log(`[PDF PARSER] pdf.js: ${widthPt.toFixed(1)}x${heightPt.toFixed(1)}pt → ${widthM.toFixed(3)}x${heightM.toFixed(3)}m`);
+                        // pdf.js expone /UserUnit por página (PDFs gigantes: sin esto se mide N veces más chico)
+                        const uu = page.userUnit || 1;
+                        const widthM = (widthPt * uu / 72) * 0.0254;
+                        const heightM = (heightPt * uu / 72) * 0.0254;
+                        console.log(`[PDF PARSER] pdf.js: ${widthPt.toFixed(1)}x${heightPt.toFixed(1)}pt${uu !== 1 ? ` (UserUnit ${uu})` : ''} → ${widthM.toFixed(3)}x${heightM.toFixed(3)}m`);
                         dims = {
                             width: parseFloat(widthM.toFixed(3)),
                             height: parseFloat(heightM.toFixed(3)),
@@ -399,9 +405,10 @@ export const fileService = {
                                     widthPt = viewport.width;
                                     heightPt = viewport.height;
                                 }
-                                
-                                const pageW = (widthPt / 72) * 0.0254;
-                                const pageH = (heightPt / 72) * 0.0254;
+
+                                const uuPage = page.userUnit || 1;
+                                const pageW = (widthPt * uuPage / 72) * 0.0254;
+                                const pageH = (heightPt * uuPage / 72) * 0.0254;
                                 
                                 if (pageW > maxWidthM) maxWidthM = pageW;
                                 totalHeightM += pageH;

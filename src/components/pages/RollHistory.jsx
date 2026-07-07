@@ -323,6 +323,7 @@ const RollHistory = () => {
                     roll={inspectingRoll}
                     onClose={() => setInspectingRoll(null)}
                     onUpdate={() => { }}
+                    readOnly
                 />
             )}
             

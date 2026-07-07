@@ -82,6 +82,9 @@ router.post('/mp-webhook', webOrdersController.mpWebhook);
 // POST /api/web-orders/totem-lookup (Buscar órdenes por código, SIN AUTH - para tótem)
 router.post('/totem-lookup', webOrdersController.totemLookup);
 
+// POST /api/web-orders/totem-lookup-by-client (Buscar órdenes por QR del cliente, SIN AUTH - para tótem)
+router.post('/totem-lookup-by-client', webOrdersController.totemLookupByClient);
+
 // GET /api/web-orders/totem-verify (Verificar IP del tótem, SIN AUTH)
 router.get('/totem-verify', webOrdersController.totemVerify);
 

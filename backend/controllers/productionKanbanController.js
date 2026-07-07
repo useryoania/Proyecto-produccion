@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../config/db');
 const { changeOrderState } = require('../services/stateManagerService');
 const { registrarAuditoria } = require('../services/trackingService');
+const { validarMetrosFalla } = require('../services/fallaValidationService');
 const logger = require('../utils/logger');
 
 exports.getBoard = async (req, res) => {
@@ -163,6 +164,27 @@ exports.assignRoll = async (req, res) => {
         const pool = await getPool();
         transaction = new sql.Transaction(pool);
         await transaction.begin();
+
+        // Si el destino es una CALANDRA (máquina cuyo nombre empieza con "calandra"), un lote con
+        // órdenes de falla sin metros NO puede entrar — misma regla que al finalizar. Sin esto,
+        // arrastrar el lote directo a la calandra saltearía la validación del metraje de falla.
+        if (mid) {
+            const mRes = await new sql.Request(transaction)
+                .input('MID', sql.Int, mid)
+                .query("SELECT Nombre FROM dbo.ConfigEquipos WHERE EquipoID = @MID");
+            const nombreMaq = (mRes.recordset[0]?.Nombre || '').trim().toLowerCase();
+            if (nombreMaq.startsWith('calandra')) {
+                for (const currentRollId of targets) {
+                    const chk = await validarMetrosFalla(transaction, currentRollId);
+                    if (chk.falta) {
+                        await transaction.rollback();
+                        return res.status(400).json({
+                            error: `No se puede mover el lote a la calandra: falta cargar ${chk.motivo}.`
+                        });
+                    }
+                }
+            }
+        }
 
         for (const currentRollId of targets) {
             // Actualizar Rollo (gestión de equipo, no de estado)

@@ -117,12 +117,7 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
                             </button>
                         </Tippy>
                     </div>
-                    <div className="w-px h-4 bg-zinc-200"></div>
-                    <Tippy content="Ver Detalles">
-                        <button onClick={() => onViewDetails(machine)} className="w-8 h-8 rounded flex items-center justify-center text-brand-cyan hover:bg-brand-cyan/10 transition-all hover:scale-110">
-                            <Info size={16} />
-                        </button>
-                    </Tippy>
+                    {/* Botón "Ver Detalles" de máquina oculto a pedido */}
                 </div>
 
                 {/* 3. Selector de Rollo */}

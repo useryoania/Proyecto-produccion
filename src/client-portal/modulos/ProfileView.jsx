@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { GlassCard } from '../pautas/GlassCard';
-import { Crown, DollarSign, TrendingUp, CheckCircle, Smartphone, Mail, MapPin, Pencil, UserCheck, Package, FileText, User, Bell } from 'lucide-react';
+import { Crown, DollarSign, TrendingUp, CheckCircle, Smartphone, Mail, MapPin, Pencil, UserCheck, Package, FileText, User, Bell, QrCode, Maximize2, X } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { StatusBadge } from '../pautas/StatusBadge';
 import { apiClient } from '../api/apiClient';
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -13,6 +15,7 @@ export const ProfileView = () => {
     const { permission, subscribe, unsubscribe, isSupported } = usePushNotifications();
     const [recentActivity, setRecentActivity] = useState([]);
     const [loadingOrders, setLoadingOrders] = useState(true);
+    const [showQr, setShowQr] = useState(false);
 
     useEffect(() => {
         const fetchOrders = async () => {
@@ -82,6 +85,60 @@ export const ProfileView = () => {
                     <p className="text-xs text-neutral-400 mt-2">Cierre de facturación: 30/Oct</p>
                 </GlassCard>
             </div> */}
+
+            {/* QR de retiro para el tótem: el cliente lo escanea en el lector y ve sus órdenes listas.
+                Codifica `totem-${IDCliente}+${CliIdCliente}` (los dos campos → el tótem valida ambos). */}
+            {user.idCliente && user.cliIdCliente && (
+                <GlassCard className="!p-6">
+                    <div className="flex flex-col sm:flex-row items-center gap-6">
+                        <button
+                            type="button"
+                            onClick={() => setShowQr(true)}
+                            className="shrink-0 flex flex-col items-center gap-1.5 group"
+                            title="Tocá para ampliar"
+                        >
+                            <div className="bg-white p-3 rounded-2xl shadow-lg transition-transform group-hover:scale-[1.03] group-active:scale-95">
+                                <QRCodeSVG value={`totem-${user.idCliente}+${user.cliIdCliente}`} size={140} level="M" />
+                            </div>
+                            <span className="text-brand-cyan/80 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1">
+                                <Maximize2 size={12} /> Tocá para ampliar
+                            </span>
+                        </button>
+                        <div className="text-center sm:text-left">
+                            <div className="flex items-center gap-2 justify-center sm:justify-start mb-1">
+                                <QrCode size={20} className="text-brand-cyan" />
+                                <h3 className="font-bold text-lg text-white">Tu QR de retiro</h3>
+                            </div>
+                            <p className="text-zinc-400 text-sm max-w-md">
+                                Escaneá este código en el lector del tótem de la sucursal y vas a ver al instante
+                                todas tus órdenes listas para retirar. También lo podés mostrar desde el celular.
+                            </p>
+                            <p className="text-zinc-600 text-xs mt-2 uppercase tracking-wider">Cliente {user.idCliente}</p>
+                        </div>
+                    </div>
+                </GlassCard>
+            )}
+
+            {/* Modal QR ampliado (mobile: mostralo grande para escanear en el tótem).
+                Portal a body → queda fijo al viewport real, sin ancestros con transform de por medio. */}
+            {showQr && user.idCliente && user.cliIdCliente && createPortal(
+                <div
+                    className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/85 p-6 animate-fade-in"
+                    onClick={() => setShowQr(false)}
+                >
+                    <div className="bg-white p-6 rounded-3xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        <QRCodeSVG value={`totem-${user.idCliente}+${user.cliIdCliente}`} size={256} level="M" />
+                    </div>
+                    <p className="text-white font-bold uppercase tracking-widest mt-6">Cliente {user.idCliente}</p>
+                    <button
+                        onClick={() => setShowQr(false)}
+                        className="mt-4 flex items-center gap-2 text-white/60 hover:text-white text-sm font-semibold"
+                    >
+                        <X size={16} /> Cerrar
+                    </button>
+                </div>,
+                document.body
+            )}
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Datos Personales */}

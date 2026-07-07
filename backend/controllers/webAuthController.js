@@ -121,6 +121,7 @@ exports.login = asyncHandler(async (req, res) => {
             company: client.NombreFantasia,
             role: 'WEB_CLIENT',
             codCliente: client.CodCliente,
+            cliIdCliente: client.CliIdCliente,
             requireReset: mustReset,
             idCliente: client.IDCliente ? client.IDCliente.trim() : (identifier ? identifier.trim() : ''),
             ruc: client.CioRuc,
@@ -349,6 +350,7 @@ exports.me = asyncHandler(async (req, res) => {
                 vendedorTelefono: u.VendedorTelefono || null,
                 role: 'WEB_CLIENT',
                 codCliente: u.CodCliente,
+                cliIdCliente: u.CliIdCliente,
                 requireReset: u.WebResetPassword || (u.WebPasswordHash == null) || (u.WebPasswordHash === ''),
                 estado: u.ESTADO || 'ACTIVO'
             }

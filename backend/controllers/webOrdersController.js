@@ -2139,6 +2139,63 @@ exports.getPickupOrders = async (req, res) => {
 // ===================================
 // TOTEM: BUSCAR ÓRDENES POR CÓDIGO (SIN AUTH)
 // ===================================
+// Órdenes listas para retirar de un cliente (+ estado de cobranza desde PedidosCobranza).
+// Compartido por totemLookup (búsqueda por N° de orden) y totemLookupByClient (escaneo del QR del cliente).
+async function getClientePickupOrders(pool, cliIdCliente) {
+    const allOrdersRes = await pool.request()
+        .input('cliId', sql.Int, cliIdCliente)
+        .query(`
+            SELECT
+                o.OrdIdOrden AS IdOrden,
+                o.OrdCodigoOrden AS CodigoOrden,
+                o.OrdNombreTrabajo AS NombreTrabajo,
+                o.OrdCantidad AS Cantidad,
+                o.OrdCostoFinal AS CostoFinal,
+                o.OrdFechaEstadoActual AS FechaEstado,
+                e.EOrNombreEstado AS Estado,
+                m.MonSimbolo
+            FROM OrdenesDeposito o WITH(NOLOCK)
+            LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
+            LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
+            WHERE o.CliIdCliente = @cliId
+            AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar', 'Pronto para entregar')
+            AND o.OReIdOrdenRetiro IS NULL
+        `);
+
+    const codigosList = allOrdersRes.recordset.map(o => o.CodigoOrden).filter(Boolean);
+    let cobranzasMap = {};
+    if (codigosList.length > 0) {
+        try {
+            const request = pool.request();
+            const params = codigosList.map((c, i) => {
+                request.input(`doc_${i}`, sql.VarChar(50), c);
+                return `@doc_${i}`;
+            }).join(',');
+            const cobRes = await request.query(`SELECT NoDocERP, MontoTotal, Moneda, EstadoCobro FROM PedidosCobranza WHERE NoDocERP IN (${params})`);
+            cobRes.recordset.forEach(row => { cobranzasMap[row.NoDocERP] = row; });
+        } catch (e) {
+            logger.error("Error PedidosCobranza totem:", e.message);
+        }
+    }
+
+    return allOrdersRes.recordset.map(o => {
+        const docId = o.CodigoOrden || `#${o.IdOrden}`;
+        const cob = cobranzasMap[docId];
+        return {
+            id: docId,
+            rawId: o.IdOrden,
+            desc: o.NombreTrabajo || 'Pedido',
+            quantity: o.Cantidad || '',
+            amount: cob ? parseFloat(cob.MontoTotal) : (parseFloat(o.CostoFinal) || 0),
+            date: o.FechaEstado ? new Date(o.FechaEstado).toLocaleDateString('es-UY') : 'N/A',
+            status: cob?.EstadoCobro === 'Pagado' ? 'PAGADO' : 'LISTO',
+            originalStatus: o.Estado,
+            isPaid: cob?.EstadoCobro === 'Pagado' || false,
+            currency: cob ? cob.Moneda : (o.MonSimbolo || '$'),
+        };
+    });
+}
+
 exports.totemLookup = async (req, res) => {
     try {
         const { orderCode } = req.body;
@@ -2166,61 +2223,8 @@ exports.totemLookup = async (req, res) => {
 
         const client = orderRes.recordset[0];
 
-        // 2. Traer todas las órdenes listas para retirar del mismo cliente
-        const allOrdersRes = await pool.request()
-            .input('cliId', sql.Int, client.CliIdCliente)
-            .query(`
-                SELECT
-                    o.OrdIdOrden AS IdOrden,
-                    o.OrdCodigoOrden AS CodigoOrden,
-                    o.OrdNombreTrabajo AS NombreTrabajo,
-                    o.OrdCantidad AS Cantidad,
-                    o.OrdCostoFinal AS CostoFinal,
-                    o.OrdFechaEstadoActual AS FechaEstado,
-                    e.EOrNombreEstado AS Estado,
-                    m.MonSimbolo
-                FROM OrdenesDeposito o WITH(NOLOCK)
-                LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
-                LEFT JOIN Monedas m WITH(NOLOCK) ON m.MonIdMoneda = o.MonIdMoneda
-                WHERE o.CliIdCliente = @cliId
-                AND e.EOrNombreEstado IN ('Avisado', 'Ingresado', 'Para avisar', 'Pronto para entregar')
-                AND o.OReIdOrdenRetiro IS NULL
-            `);
-
-        // 3. Cruzar con PedidosCobranza para estado de pago
-        const codigosList = allOrdersRes.recordset.map(o => o.CodigoOrden).filter(Boolean);
-        let cobranzasMap = {};
-        if (codigosList.length > 0) {
-            try {
-                const request = pool.request();
-                const params = codigosList.map((c, i) => {
-                    request.input(`doc_${i}`, sql.VarChar(50), c);
-                    return `@doc_${i}`;
-                }).join(',');
-                const cobRes = await request.query(`SELECT NoDocERP, MontoTotal, Moneda, EstadoCobro FROM PedidosCobranza WHERE NoDocERP IN (${params})`);
-                cobRes.recordset.forEach(row => { cobranzasMap[row.NoDocERP] = row; });
-            } catch (e) {
-                logger.error("Error PedidosCobranza totem:", e.message);
-            }
-        }
-
-        // 4. Mapear
-        const orders = allOrdersRes.recordset.map(o => {
-            const docId = o.CodigoOrden || `#${o.IdOrden}`;
-            const cob = cobranzasMap[docId];
-            return {
-                id: docId,
-                rawId: o.IdOrden,
-                desc: o.NombreTrabajo || 'Pedido',
-                quantity: o.Cantidad || '',
-                amount: cob ? parseFloat(cob.MontoTotal) : (parseFloat(o.CostoFinal) || 0),
-                date: o.FechaEstado ? new Date(o.FechaEstado).toLocaleDateString('es-UY') : 'N/A',
-                status: cob?.EstadoCobro === 'Pagado' ? 'PAGADO' : 'LISTO',
-                originalStatus: o.Estado,
-                isPaid: cob?.EstadoCobro === 'Pagado' || false,
-                currency: cob ? cob.Moneda : (o.MonSimbolo || '$'),
-            };
-        });
+        // 2-4. Órdenes listas para retirar del cliente (+ cobranza) — helper compartido.
+        const orders = await getClientePickupOrders(pool, client.CliIdCliente);
 
         res.json({
             success: true,
@@ -2235,6 +2239,56 @@ exports.totemLookup = async (req, res) => {
     } catch (error) {
         logger.error("Error totem lookup:", error);
         res.status(500).json({ success: false, message: "Error al buscar orden." });
+    }
+};
+
+// ===================================
+// TOTEM: LOOKUP POR QR DEL CLIENTE (SIN AUTH)
+// El QR codifica `${IDCliente}totem` (generado en el portal del cliente). Resolvemos el
+// cliente por su IDCliente y devolvemos el MISMO shape que totemLookup → la pantalla de
+// resultados del tótem se muestra igual, sin tener que tipear un número de orden.
+// ===================================
+exports.totemLookupByClient = async (req, res) => {
+    try {
+        const { qr } = req.body;
+        // El QR codifica `totem-${IDCliente}+${CliIdCliente}` (generado en el portal del cliente).
+        // Validamos que AMBOS campos correspondan al MISMO cliente (más difícil de falsificar que
+        // un solo número). CliIdCliente es el FK que usan las órdenes; el sufijo son sus dígitos.
+        const m = String(qr || '').trim().match(/^totem-(.+)\+(\d+)$/i);
+        if (!m) return res.json({ success: false, message: 'QR inválido' });
+        const idCliente = m[1].trim();
+        const cliIdCliente = parseInt(m[2], 10);
+
+        const pool = await getPool();
+        const cliRes = await pool.request()
+            .input('idcli', sql.VarChar(50), idCliente)
+            .input('cliid', sql.Int, cliIdCliente)
+            .query(`
+                SELECT TOP 1 CliIdCliente, IDCliente, Nombre, NombreFantasia
+                FROM Clientes WITH(NOLOCK)
+                WHERE LTRIM(RTRIM(IDCliente)) = @idcli AND CliIdCliente = @cliid
+            `);
+
+        if (!cliRes.recordset.length) {
+            return res.json({ success: false, message: 'Cliente no encontrado' });
+        }
+        const client = cliRes.recordset[0];
+
+        const orders = await getClientePickupOrders(pool, client.CliIdCliente);
+
+        res.json({
+            success: true,
+            client: {
+                name: client.Nombre,
+                company: client.NombreFantasia,
+                idCliente: client.IDCliente
+            },
+            orders
+        });
+
+    } catch (error) {
+        logger.error("Error totem lookup by client:", error);
+        res.status(500).json({ success: false, message: "Error al buscar cliente." });
     }
 };
 

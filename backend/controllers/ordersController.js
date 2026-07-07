@@ -92,6 +92,11 @@ exports.getOrdersByArea = async (req, res) => {
                 o.Magnitud,
                 o.Material,         -- <--- NUEVO: Descripción del Material
                 o.Variante,         -- <--- NUEVO: Código de Stock (1.1.3.1)
+                -- TELA DE CLIENTE (variante con "cliente"): partes de la bobina que eligió el cliente.
+                -- El material a mostrar (Referencia + DescripcionTela capitalizada + Ancho) se arma en el map.
+                ibt.Referencia AS BobRef,
+                ibt.DescripcionTela AS BobDesc,
+                COALESCE(ibt.AnchoReal, ibt.Ancho) AS BobAncho,
                 o.RolloID,
                 o.Nota,
                 o.Tinta,            -- <--- NUEVO: Tinta recuperada
@@ -124,7 +129,8 @@ exports.getOrdersByArea = async (req, res) => {
             FROM dbo.Ordenes o
             LEFT JOIN dbo.ConfigEquipos m ON o.MaquinaID = m.EquipoID
             LEFT JOIN dbo.Clientes c ON o.IdClienteReact = c.IDReact
-            WHERE o.AreaID = @Area 
+            LEFT JOIN dbo.InventarioBobinas ibt ON ibt.BobinaID = o.BobinaTelaID
+            WHERE o.AreaID = @Area
         `;
 
         const request = pool.request();
@@ -189,7 +195,16 @@ exports.getOrdersByArea = async (req, res) => {
             magnitude: o.Magnitud,
             unit: o.UM,                 // <--- Mapeo para el frontend
 
-            material: o.Material,       // Descripción
+            // Tela de Cliente (variante con "cliente") → material = bobina elegida
+            // (Referencia + DescripcionTela en Capital + Ancho); resto → Material.
+            material: (/cliente/i.test(o.Variante || '') && o.BobDesc)
+                ? [
+                    o.BobRef,
+                    String(o.BobDesc).toLowerCase().split(/\s+/).filter(Boolean)
+                        .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+                    o.BobAncho
+                  ].filter(x => x != null && String(x).trim() !== '').join(' ')
+                : o.Material,
             variantCode: o.Variante,    // CodStock
 
             note: o.Nota,
@@ -1730,6 +1745,14 @@ exports.cancelOrder = async (req, res) => {
 
             await transaction.commit();
 
+            // AUTO-CLEANUP: si el lote quedó solo con órdenes muertas (Pronto/finalizadas/canceladas
+            // que siguen vinculadas), cancelarlo y liberar la máquina. El DELETE de arriba solo
+            // cubre el caso "físicamente vacío".
+            if (rollId) {
+                const { cancelarLoteSiVacio } = require('../services/loteCleanupService');
+                await cancelarLoteSiVacio(rollId, req.app.get('socketio'));
+            }
+
             try {
                 if (noDocERP) {
                     const ERPSyncService = require('../services/erpSyncService');
@@ -1974,8 +1997,14 @@ exports.cancelRequest = async (req, res) => {
 
             const noDoc = docRes.recordset[0]?.NoDocERP;
             let rowsAffected = 0;
+            let rolloIdsAfectados = []; // lotes a los que pertenecían las órdenes canceladas (cleanup post-commit)
 
             if (noDoc) {
+                // Capturar los lotes ANTES del UPDATE que pone RolloID = NULL
+                const rollosRes = await new sql.Request(transaction)
+                    .input('NoDoc', sql.VarChar(50), noDoc)
+                    .query("SELECT DISTINCT RolloID FROM Ordenes WHERE NoDocERP = @NoDoc AND RolloID IS NOT NULL");
+                rolloIdsAfectados = rollosRes.recordset.map(r => r.RolloID);
                 // Obtener todas las órdenes activas del pedido con sus estados actuales
                 const ordenesActivas = await new sql.Request(transaction)
                     .input('NoDoc', sql.VarChar(50), noDoc)
@@ -2039,13 +2068,18 @@ exports.cancelRequest = async (req, res) => {
                     `);
             } else {
                 // Fallback: Cancelar solo esta orden
+                const rolloRes = await new sql.Request(transaction)
+                    .input('ID', sql.Int, orderId)
+                    .query("SELECT RolloID FROM Ordenes WHERE OrdenID = @ID AND RolloID IS NOT NULL");
+                if (rolloRes.recordset[0]?.RolloID) rolloIdsAfectados.push(rolloRes.recordset[0].RolloID);
+
                 const r2 = await new sql.Request(transaction)
                     .input('ID', sql.Int, orderId)
                     .input('Obs', sql.NVarChar, obsText)
                     .input('MotivoID', sql.Int, motivoId || null)
                     .input('Detalles', sql.NVarChar, detalles || null)
                     .query(`
-                        UPDATE Ordenes 
+                        UPDATE Ordenes
                         SET RolloID = NULL,
                             MaquinaID = NULL,
                             Secuencia = NULL,
@@ -2083,6 +2117,14 @@ exports.cancelRequest = async (req, res) => {
             }
 
             await transaction.commit();
+
+            // AUTO-CLEANUP: cancelar los lotes que quedaron sin órdenes activas y liberar sus máquinas
+            if (rolloIdsAfectados.length > 0) {
+                const { cancelarLoteSiVacio } = require('../services/loteCleanupService');
+                for (const rid of rolloIdsAfectados) {
+                    await cancelarLoteSiVacio(rid, req.app.get('socketio'));
+                }
+            }
 
             try {
                 if (noDoc) {

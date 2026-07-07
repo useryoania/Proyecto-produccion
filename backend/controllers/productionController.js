@@ -1,5 +1,6 @@
 const { getPool, sql } = require('../config/db');
 const { changeOrderState } = require('../services/stateManagerService');
+const { validarMetrosFalla } = require('../services/fallaValidationService');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
@@ -48,6 +49,14 @@ exports.getProductionBoard = async (req, res) => {
 // 2. CONTROL DE TIEMPOS (PLAY/PAUSE)
 // ==========================================
 const { registrarAuditoria, registrarHistorialOrden } = require('../services/trackingService');
+
+// Guarda para los cambios de estado a nivel LOTE (iniciar/pausar/finalizar/mover):
+// las órdenes ya resueltas dentro del lote (controladas Pronto, con falla esperando
+// reposición, finalizadas, canceladas, entregadas) conservan su estado — p. ej.
+// finalizar la máquina NO debe sacarle el 'Pronto' a una orden ya controlada.
+const GUARD_ORDENES_RESUELTAS =
+    "ISNULL(EstadoenArea,'') NOT IN ('Pronto','Con Falla','Retenido','Finalizado','Entregado','Avisado','Para Avisar','Cancelado') " +
+    "AND Estado NOT IN ('Finalizado','Cancelado','Entregado')";
 
 exports.toggleRollStatus = async (req, res) => {
     try {
@@ -158,9 +167,9 @@ exports.toggleRollStatus = async (req, res) => {
                     detalle  : 'Inicio Produccion - Maquina {maquina} / Lote {rollo}',
                     maquinaId: currentRoll.MaquinaID,
                     rolloId  : currentRoll.RolloID,
-                io       : req.app.get('socketio'),
-                io       : req.app.get('socketio')
-            });
+                    guard    : GUARD_ORDENES_RESUELTAS,
+                    io       : req.app.get('socketio'),
+                });
                 await registrarAuditoria(transaction, userId, 'INICIO_PRODUCCION', `Rollo ${rollId} iniciado`, ip);
 
             } else if (action === 'pause') {
@@ -181,9 +190,9 @@ exports.toggleRollStatus = async (req, res) => {
                     userObj : req.user,
                     detalle : 'Produccion Pausada - Lote {rollo}',
                     rolloId : currentRoll.RolloID,
-                io       : req.app.get('socketio'),
-                io       : req.app.get('socketio')
-            });
+                    guard   : GUARD_ORDENES_RESUELTAS,
+                    io      : req.app.get('socketio'),
+                });
                 await registrarAuditoria(transaction, userId, 'PAUSA_PRODUCCION', `Rollo ${rollId} pausado`, ip);
 
             } else if (action === 'finish') {
@@ -191,48 +200,15 @@ exports.toggleRollStatus = async (req, res) => {
 
                 // === VALIDACIÓN: metros del grupo de falla OBLIGATORIOS al finalizar en una máquina ===
                 // Si el lote tiene órdenes -F, no se puede finalizar (pasar a calandra o enviar a calidad)
-                // hasta que: (1) el grupo de falla tenga su total de metros (MetrosGrupoFalla > 0) y
-                // (2) cada orden -F tenga su metraje (Magnitud > 0).
+                // hasta que el grupo de falla tenga su total y cada orden -F su metraje.
                 // No aplica a 'production' (devolver a la cola es una corrección, no una finalización).
+                // La misma validación se corre al ASIGNAR un lote a una calandra (productionKanbanController),
+                // para que arrastrarlo no saltee este control.
                 if (destination !== 'production') {
-                    const fRes = await new sql.Request(transaction)
-                        .input('RID_F', sql.VarChar(50), currentRoll.RolloID.toString())
-                        .query(`
-                            SELECT CodigoOrden, ISNULL(TRY_CONVERT(DECIMAL(10,2), Magnitud), 0) AS Mag
-                            FROM dbo.Ordenes
-                            WHERE CAST(RolloID AS VARCHAR(50)) = @RID_F
-                              AND CodigoOrden LIKE '%-F%'
-                              AND Estado NOT IN ('Cancelado','Cancelada')
-                        `);
-                    const fallaRows = fRes.recordset || [];
-                    if (fallaRows.length > 0) {
-                        // ¿Existe la columna del total de grupo? (se auto-crea al abrir el detalle del lote)
-                        const colRes = await new sql.Request(transaction)
-                            .query("SELECT COL_LENGTH('dbo.Ordenes','MetrosGrupoFalla') AS L");
-                        let grpFalta = colRes.recordset[0].L === null; // sin columna → el total nunca se cargó
-                        if (!grpFalta) {
-                            const gRes = await new sql.Request(transaction)
-                                .input('RID_G', sql.VarChar(50), currentRoll.RolloID.toString())
-                                .query(`
-                                    SELECT COUNT(*) AS Faltan
-                                    FROM dbo.Ordenes
-                                    WHERE CAST(RolloID AS VARCHAR(50)) = @RID_G
-                                      AND CodigoOrden LIKE '%-F%'
-                                      AND Estado NOT IN ('Cancelado','Cancelada')
-                                      AND ISNULL(MetrosGrupoFalla, 0) <= 0
-                                `);
-                            grpFalta = (gRes.recordset[0].Faltan || 0) > 0;
-                        }
-                        const sinMetros = fallaRows.filter(r => Number(r.Mag) <= 0).map(r => r.CodigoOrden);
-                        if (grpFalta || sinMetros.length > 0) {
-                            await transaction.rollback();
-                            const partes = [];
-                            if (grpFalta) partes.push('el metraje del grupo de falla');
-                            if (sinMetros.length > 0) partes.push('el metraje de cada orden de falla');
-                            return res.status(400).json({
-                                error: `No se puede finalizar el lote: falta cargar ${partes.join(' y ')}.`
-                            });
-                        }
+                    const chk = await validarMetrosFalla(transaction, currentRoll.RolloID);
+                    if (chk.falta) {
+                        await transaction.rollback();
+                        return res.status(400).json({ error: `No se puede finalizar el lote: falta cargar ${chk.motivo}.` });
                     }
                 }
 
@@ -254,9 +230,9 @@ exports.toggleRollStatus = async (req, res) => {
                         userObj : req.user,
                         detalle : 'Fin Proceso - Retorna a Cola / Lote {rollo}',
                         rolloId : currentRoll.RolloID,
-                io       : req.app.get('socketio'),
-                io       : req.app.get('socketio')
-            });
+                        guard   : GUARD_ORDENES_RESUELTAS,
+                        io      : req.app.get('socketio'),
+                    });
 
                 } else if (destination === 'calender') {
                     // Opción C: finalizó en una IMPRESORA → el lote continúa en una CALANDRA:
@@ -287,7 +263,7 @@ exports.toggleRollStatus = async (req, res) => {
                         await new sql.Request(transaction)
                             .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
                             .input('MID', sql.Int, calenderId)
-                            .query('UPDATE dbo.Ordenes SET MaquinaID = @MID WHERE CAST(RolloID AS VARCHAR(50)) = @RID');
+                            .query(`UPDATE dbo.Ordenes SET MaquinaID = @MID WHERE CAST(RolloID AS VARCHAR(50)) = @RID AND ${GUARD_ORDENES_RESUELTAS}`);
                         await changeOrderState(transaction, {
                             target   : { type: 'ROLL', id: currentRoll.RolloID },
                             estado   : 'En Maquina', // el lote ya está en la calandra (una máquina) → En Maquina, no En Lote
@@ -295,6 +271,7 @@ exports.toggleRollStatus = async (req, res) => {
                             detalle  : 'Fin Impresion - Pasa a Calandra {rollo} - Maquina {maquina}',
                             rolloId  : currentRoll.RolloID,
                             maquinaId: calenderId,
+                            guard    : GUARD_ORDENES_RESUELTAS,
                             io       : req.app.get('socketio')
                         });
                         await registrarAuditoria(transaction, userId, 'FIN_IMPRESION_A_CALANDRA', `Rollo ${rollId} pasó a calandra ${calenderId}`, ip);
@@ -305,13 +282,14 @@ exports.toggleRollStatus = async (req, res) => {
                             .query("UPDATE dbo.Rollos SET Estado = 'En Cola', MaquinaID = NULL WHERE CAST(RolloID AS VARCHAR(50)) = @RID");
                         await new sql.Request(transaction)
                             .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
-                            .query('UPDATE dbo.Ordenes SET MaquinaID = NULL WHERE CAST(RolloID AS VARCHAR(50)) = @RID');
+                            .query(`UPDATE dbo.Ordenes SET MaquinaID = NULL WHERE CAST(RolloID AS VARCHAR(50)) = @RID AND ${GUARD_ORDENES_RESUELTAS}`);
                         await changeOrderState(transaction, {
                             target  : { type: 'ROLL', id: currentRoll.RolloID },
                             estado  : 'En Lote',
                             userObj : req.user,
                             detalle : 'Fin Impresion - Sin calandra disponible, vuelve a la cola {rollo}',
                             rolloId : currentRoll.RolloID,
+                            guard   : GUARD_ORDENES_RESUELTAS,
                             io      : req.app.get('socketio')
                         });
                     }
@@ -334,9 +312,9 @@ exports.toggleRollStatus = async (req, res) => {
                         detalle  : 'Fin Impresion - Enviado a Control / Lote {rollo} - Maquina {maquina}',
                         rolloId  : currentRoll.RolloID,
                         maquinaId: currentRoll.MaquinaID,
-                io       : req.app.get('socketio'),
-                io       : req.app.get('socketio')
-            });
+                        guard    : GUARD_ORDENES_RESUELTAS,
+                        io       : req.app.get('socketio'),
+                    });
                     await registrarAuditoria(transaction, userId, 'FIN_PRODUCCION', `Rollo ${rollId} finalizado`, ip);
                 }
             }

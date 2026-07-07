@@ -205,7 +205,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
     );
 
     const [twinfaceSame, setTwinfaceSame] = useState(false);
-    const [applyMaterialToAll, setApplyMaterialToAll] = useState(false);
+    const [applyMaterialToAll, setApplyMaterialToAll] = useState(true); // check por defecto: el material elegido aplica a todo el pedido
 
     const handleApplyMaterialToAll = (checked) => {
         setApplyMaterialToAll(checked);

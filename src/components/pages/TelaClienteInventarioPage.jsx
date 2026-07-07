@@ -307,13 +307,19 @@ const TelaClienteInventarioPage = () => {
         return () => document.removeEventListener("mousedown", handler);
     }, []);
 
-    const bobinasTela = inventory
-        .flatMap(item => (item.ActiveBatches || item.batches || []).filter(b => b.ClienteID != null && b.ClienteID !== ""))
-        .filter(b => {
-            if (!clienteSeleccionado) return true;
-            // String() en ambos lados por si uno es number y el otro string
-            return String(b.ClienteID) === String(clienteSeleccionado.CliIdCliente);
-        });
+    // Búsqueda: por cliente (elegido del dropdown) o por Referencia de bobina (texto tipeado).
+    // Si el texto matchea alguna Referencia, filtramos por ella; si no (ej. estás tipeando un
+    // nombre de cliente), no filtramos las bobinas — así el flujo de selección de cliente sigue igual.
+    const _q = clienteQuery.trim().toLowerCase();
+    const _allBatches = inventory
+        .flatMap(item => (item.ActiveBatches || item.batches || []).filter(b => b.ClienteID != null && b.ClienteID !== ""));
+    const _refMatch = _q.length > 0 && !clienteSeleccionado
+        && _allBatches.some(b => (b.Referencia || '').toLowerCase().includes(_q));
+    const bobinasTela = _allBatches.filter(b => {
+        if (clienteSeleccionado) return String(b.ClienteID) === String(clienteSeleccionado.CliIdCliente);
+        if (_refMatch) return (b.Referencia || '').toLowerCase().includes(_q);
+        return true;
+    });
 
     const pendientes  = bobinasTela.filter(b => b.Estado === "Pendiente");
     const disponibles = bobinasTela.filter(b => b.Estado !== "Pendiente");
@@ -378,7 +384,7 @@ const TelaClienteInventarioPage = () => {
                                 : <Search className="w-4 h-4 text-slate-400 shrink-0" />}
                             <input
                                 type="text"
-                                placeholder="Buscar cliente por nombre o código..."
+                                placeholder="Buscar cliente por nombre, código o referencia..."
                                 className="flex-1 bg-transparent text-sm text-slate-800 placeholder-slate-400 outline-none min-w-0"
                                 value={clienteQuery}
                                 onChange={e => {
@@ -541,7 +547,7 @@ const TelaClienteInventarioPage = () => {
                     bobina={managingBobina.bobina}
                     insumoName={managingBobina.insumoName}
                     onClose={() => setManagingBobina(null)}
-                    onSaved={() => { setManagingBobina(null); loadInventory(); }}
+                    onSuccess={loadInventory}
                 />
             )}
         </div>

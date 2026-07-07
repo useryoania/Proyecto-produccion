@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Package, RefreshCw, CheckCircle, Search, ArrowLeft, Delete, Check, Bell, Megaphone } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Package, RefreshCw, CheckCircle, Search, ArrowLeft, Delete, Check, Bell, Megaphone, QrCode } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Logo } from '../../../components/Logo';
 import Swal from 'sweetalert2';
@@ -152,6 +152,63 @@ export const TotemDashboard = ({ onLogout }) => {
             setSearching(false);
         }
     };
+
+    // ── Escaneo del QR del cliente (lector IR del tótem = teclado + Enter) ──────────
+    // El QR codifica `${IDCliente}totem`. Al escanear, resolvemos el cliente y mostramos
+    // sus órdenes directo (misma pantalla que la búsqueda por N° de orden).
+    const handleQrScan = async (raw) => {
+        setSearching(true);
+        try {
+            const res = await fetch(`${API_BASE}/web-orders/totem-lookup-by-client`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ qr: raw })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setClient(data.client);
+                setOrders(data.orders || []);
+                setSelectedOrders([]);
+            } else {
+                Toast.fire({ icon: 'error', title: data.message || 'QR no reconocido' });
+            }
+        } catch (err) {
+            Toast.fire({ icon: 'error', title: 'Error de conexión' });
+        } finally {
+            setSearching(false);
+        }
+    };
+
+    // Ref al handler (el listener se monta una sola vez y usa siempre la última versión) y
+    // un flag "ocupado" para no disparar un escaneo encima de otra acción.
+    const scanRef = useRef(handleQrScan);
+    scanRef.current = handleQrScan;
+    const blockScanRef = useRef(false);
+    useEffect(() => {
+        blockScanRef.current = searching || creating || announcing || success || !!announceSuccess;
+    }, [searching, creating, announcing, success, announceSuccess]);
+
+    // Lector IR = teclado: teclea el contenido del QR muy rápido y cierra con Enter.
+    // Acumulamos ráfagas de teclas físicas (el teclado en pantalla usa clicks, no keydown,
+    // así que esto NO interfiere con el ingreso manual).
+    useEffect(() => {
+        let buffer = '';
+        let lastTs = 0;
+        const onKeyDown = (e) => {
+            const now = e.timeStamp || 0;
+            if (now - lastTs > 120) buffer = ''; // gap grande → arranca ráfaga nueva
+            lastTs = now;
+            if (e.key === 'Enter') {
+                const scanned = buffer.trim();
+                buffer = '';
+                if (scanned.length >= 3 && !blockScanRef.current) scanRef.current(scanned);
+                return;
+            }
+            if (e.key && e.key.length === 1) buffer += e.key;
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, []);
 
     const handleBack = () => {
         setClient(null);
@@ -513,6 +570,9 @@ export const TotemDashboard = ({ onLogout }) => {
                         <div className="text-center mb-6">
                             <h2 className="text-xl font-bold text-white uppercase">Ingresá tu número de orden</h2>
                             <p className="text-white/40 text-xs mt-0.5 uppercase">Seleccioná el prefijo y escribí el número</p>
+                            <div className="mt-2 inline-flex items-center gap-2 text-custom-cyan/90 text-xs font-bold uppercase tracking-wide">
+                                <QrCode size={16} /> o escaneá tu QR de cliente en el lector
+                            </div>
                         </div>
 
                         <div className="border-t border-white/10 my-2" />

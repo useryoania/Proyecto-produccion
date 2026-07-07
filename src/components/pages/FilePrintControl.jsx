@@ -14,6 +14,9 @@ import { socket } from '../../services/socketService';
 import Toast from '../ui/Toast';
 import { printLabelsHelper } from '../../utils/printHelper';
 
+// Pseudo-lote "Todos": habilita el buscador cross-lote (el backend busca en todos los lotes activos del área).
+const ALL_ROLLS = { id: 'todo', nombre: 'Todos los lotes' };
+
 const SmallRollMetrics = ({ roll, metrics }) => {
   if (!roll) return null;
   const execution = metrics?.stats?.execution || 0;
@@ -108,6 +111,7 @@ const FilePrintControl = ({ areaCode }) => {
   const [reponerCompleto, setReponerCompleto] = useState(false);
   const [actionReason, setActionReason] = useState('');
   const [annotatedImage, setAnnotatedImage] = useState(null); // dataURL del thumbnail con el recuadro de falla
+  const [submittingControl, setSubmittingControl] = useState(false); // request en vuelo: bloquea el Confirmar (evita fallas duplicadas por doble click)
   // En SB no se piden "metros a reponer": la falla (-F) arranca en 0m. Se oculta el campo + el check.
   const isSB = String(areaCode || '').toUpperCase() === 'SB';
 
@@ -207,7 +211,7 @@ const FilePrintControl = ({ areaCode }) => {
     };
 
     const fetchMetrics = async () => {
-      if (activeRoll?.id) {
+      if (activeRoll?.id && activeRoll.id !== 'todo') {
         try {
           const data = await fileControlService.getRolloMetrics(activeRoll.id);
           setActiveRollMetrics(data);
@@ -581,7 +585,10 @@ const FilePrintControl = ({ areaCode }) => {
 
     const ordenesPendientes = orders.filter(o => !isFinalState(o));
 
-    const loteCompleto = ordenesPendientes.length > 0
+    // Con el buscador filtrado, la lista visible NO representa el lote entero → se finaliza SOLO la
+    // orden seleccionada (aunque las visibles estén controladas), no "el lote completo".
+    const loteCompleto = !searchTerm.trim()
+      && ordenesPendientes.length > 0
       && ordenesPendientes.every(o => o.controlled)
       && ordenesPendientes.every(o => (o.failures || 0) === 0);
 
@@ -839,7 +846,7 @@ const FilePrintControl = ({ areaCode }) => {
   };
 
   const handleSubmitModal = async () => {
-    if (!selectedFileForAction) return;
+    if (!selectedFileForAction || submittingControl) return;
 
     if (controlAction === 'FALLA' && !failureType) {
       setToast({ visible: true, message: 'Seleccioná el tipo de falla antes de confirmar', type: 'error' });
@@ -857,6 +864,7 @@ const FilePrintControl = ({ areaCode }) => {
       annotatedImage: controlAction === 'FALLA' ? annotatedImage : null
     };
 
+    setSubmittingControl(true);
     try {
       const res = await fileControlService.controlarArchivo(payload);
       if (res.success) {
@@ -879,6 +887,8 @@ const FilePrintControl = ({ areaCode }) => {
       console.error(e);
       const msg = e?.response?.data?.message || e?.message || 'Error al registrar acción';
       setToast({ visible: true, message: msg, type: 'error' });
+    } finally {
+      setSubmittingControl(false);
     }
   };
 
@@ -911,7 +921,7 @@ const FilePrintControl = ({ areaCode }) => {
             >
               <div className="relative">
                 <ListboxButton className="w-full pl-3 pr-8 py-2 bg-white text-slate-700 border border-slate-200 rounded-xl font-bold text-xs outline-none text-left flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors shadow-sm">
-                  <span className="truncate">{activeRoll ? `Lote #${activeRoll.id} - ${activeRoll.nombre}` : 'Seleccione Lote...'}</span>
+                  <span className="truncate">{activeRoll ? (activeRoll.id === 'todo' ? '🔎 Todos los lotes' : `Lote #${activeRoll.id} - ${activeRoll.nombre}`) : 'Seleccione Lote...'}</span>
                   <ChevronsUpDown size={14} className="text-slate-400 shrink-0 absolute right-3" />
                 </ListboxButton>
                 <Transition
@@ -927,6 +937,17 @@ const FilePrintControl = ({ areaCode }) => {
                         className={({ active }) => `flex items-center px-3 py-2 rounded-lg cursor-pointer text-xs transition-colors ${active ? 'bg-slate-100 text-slate-700' : 'text-slate-500'}`}
                       >
                         <span className="truncate italic">Seleccione Lote...</span>
+                      </ListboxOption>
+                      <ListboxOption
+                        value={ALL_ROLLS}
+                        className={({ active, selected }) =>
+                          `flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer text-xs transition-colors border-b border-slate-100 ${
+                            selected || activeRoll?.id === 'todo' ? 'bg-cyan-50 text-cyan-600 font-bold' : active ? 'bg-slate-50 text-slate-800 font-medium' : 'text-slate-600 font-bold'
+                          }`
+                        }
+                      >
+                        <i className="fa-solid fa-layer-group text-[11px] shrink-0"></i>
+                        <span className="truncate">Todos los lotes (buscar en todos)</span>
                       </ListboxOption>
                       {rollos.map((r) => (
                         <ListboxOption
@@ -992,20 +1013,29 @@ const FilePrintControl = ({ areaCode }) => {
           </div>
         </div>
 
-        {/* Metrics */}
-        {activeRoll && <div className="border-b border-slate-200"><SmallRollMetrics roll={activeRoll} metrics={activeRollMetrics} /></div>}
+        {/* Metrics (no aplica al pseudo-lote "Todos") */}
+        {activeRoll && activeRoll.id !== 'todo' && <div className="border-b border-slate-200"><SmallRollMetrics roll={activeRoll} metrics={activeRollMetrics} /></div>}
 
         {/* List */}
         <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col bg-slate-50">
           {loadingOrders ? (
             <div className="py-8 text-center text-cyan-500"><i className="fa-solid fa-circle-notch fa-spin"></i></div>
           ) : sortedOrders.length === 0 ? (
-            <div className="py-8 text-center text-slate-400 italic text-xs">Sin órdenes</div>
+            <div className="py-8 text-center text-slate-400 italic text-xs">
+              {activeRoll?.id === 'todo' && !searchTerm.trim()
+                ? <>Escribí en el buscador para buscar<br />en todos los lotes del área</>
+                : 'Sin órdenes'}
+            </div>
           ) : (
             sortedOrders.map(o => {
               const isBlocked = (o.meters || 0) <= 0;
               return (
                 <div key={o.id} className={`relative transition-opacity ${isBlocked ? 'opacity-60 grayscale' : ''}`}>
+                  {activeRoll?.id === 'todo' && o.rolloId && (
+                    <div className="absolute top-2 right-2 z-20 text-cyan-600 bg-cyan-50 rounded-full px-2 py-0.5 text-[10px] font-black border border-cyan-200 shadow-sm">
+                      Lote #{o.rolloId}
+                    </div>
+                  )}
                   {isBlocked && (
                     <div className="absolute top-2 right-2 z-20 text-red-500 bg-white/80 rounded-full px-2 py-0.5 text-[10px] font-bold border border-red-200 shadow-sm flex items-center gap-1">
                       <i className="fa-solid fa-ban"></i> 0m
@@ -1194,8 +1224,8 @@ const FilePrintControl = ({ areaCode }) => {
                       <i className="fa-solid fa-check-circle text-2xl"></i>
                     )}
                     <div>
-                      <div className="font-black text-lg">{finalizandoOrden ? 'FINALIZANDO...' : (orders.length > 0 && orders.every(o => o.controlled) && orders.every(o => (o.failures || 0) === 0) ? 'FINALIZAR LOTE COMPLETO' : 'FINALIZAR ORDEN')}</div>
-                      <div className="text-xs opacity-90">{orders.length > 0 && orders.every(o => o.controlled) && orders.every(o => (o.failures || 0) === 0) ? 'Finalizar todas las órdenes del lote a la vez' : 'Todos los archivos listos · Pulsar para cerrar'}</div>
+                      <div className="font-black text-lg">{finalizandoOrden ? 'FINALIZANDO...' : (!searchTerm.trim() && orders.length > 0 && orders.every(o => o.controlled) && orders.every(o => (o.failures || 0) === 0) ? 'FINALIZAR LOTE COMPLETO' : 'FINALIZAR ORDEN')}</div>
+                      <div className="text-xs opacity-90">{!searchTerm.trim() && orders.length > 0 && orders.every(o => o.controlled) && orders.every(o => (o.failures || 0) === 0) ? 'Finalizar todas las órdenes del lote a la vez' : 'Todos los archivos listos · Pulsar para cerrar'}</div>
                     </div>
                   </button>
                 )}
@@ -1366,9 +1396,10 @@ const FilePrintControl = ({ areaCode }) => {
                 <button onClick={closeModal} className="flex-1 py-3 rounded-xl border border-slate-200 font-bold text-slate-500 hover:bg-slate-50 transition-colors">Cancelar</button>
                 <button
                   onClick={handleSubmitModal}
-                  className={`flex-1 py-3 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 ${controlAction === 'FALLA' ? 'bg-[#BD0C7E] shadow-[#BD0C7E]/30 hover:bg-[#9a0a67]' : 'bg-slate-700 shadow-slate-300 hover:bg-slate-800'}`}
+                  disabled={submittingControl}
+                  className={`flex-1 py-3 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed ${controlAction === 'FALLA' ? 'bg-[#BD0C7E] shadow-[#BD0C7E]/30 hover:bg-[#9a0a67]' : 'bg-slate-700 shadow-slate-300 hover:bg-slate-800'}`}
                 >
-                  Confirmar
+                  {submittingControl ? <><i className="fa-solid fa-circle-notch fa-spin mr-2"></i>Enviando...</> : 'Confirmar'}
                 </button>
               </div>
             </div>

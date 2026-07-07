@@ -5,11 +5,18 @@ import { useNavigate } from 'react-router-dom';
 import { ordersService, rollsService } from '../../services/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-toastify';
+import { useAuth } from '../../context/AuthContext';
 
 const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders = [], areaCode, onSuccess }) => {
 
     const navigate = useNavigate();
     const queryClient = useQueryClient();
+    const { user } = useAuth();
+    // Al crear un lote nuevo, el nombre lleva al final "-usuario" que lo crea (sin espacios).
+    const withUser = (base) => {
+        const creador = (user?.usuario || '').trim();
+        return creador ? `${base}-${creador}` : base;
+    };
 
     const [mode, setMode] = useState('new');
     const [rollName, setRollName] = useState('');
@@ -32,9 +39,9 @@ const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders
                 .catch(err => console.error("Error loading rolls:", err))
                 .finally(() => setLoadingRolls(false));
 
-            // Obtener siguiente nombre secuencial del backend
+            // Obtener siguiente nombre secuencial del backend (+ usuario que lo crea)
             rollsService.getNextRollName(areaCode)
-                .then(data => setRollName(data.name))
+                .then(data => setRollName(withUser(data.name)))
                 .catch(() => {
                     // Fallback local si el endpoint falla
                     const now = new Date();
@@ -42,7 +49,7 @@ const RollAssignmentModal = ({ isOpen, onClose, selectedIds = [], selectedOrders
                     const yy = String(now.getFullYear()).slice(2);
                     const mmm = monthNames[now.getMonth()];
                     const dd = String(now.getDate()).padStart(2, '0');
-                    setRollName(`${yy}${mmm}${dd}-${areaCode.toLowerCase()}1`);
+                    setRollName(withUser(`${yy}${mmm}${dd}-${areaCode.toLowerCase()}1`));
                 });
         }
     }, [isOpen, areaCode]);

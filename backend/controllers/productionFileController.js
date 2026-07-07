@@ -18,6 +18,7 @@ async function ensureFallaColumn(pool) {
     _fallaColEnsured = true;
 }
 const { isPedidoCompletoEnArea } = require('../services/pedidoCompletoService');
+const { cancelarLoteSiVacio } = require('../services/loteCleanupService');
 
 /**
  * 1. Obtiene las Órdenes de un Rollo (o todas, o filtradas)
@@ -39,17 +40,18 @@ const getOrdenes = async (req, res) => {
         // DETECCIÓN DE CONTEXTO: VISTA DE CONTROL
         const isControlView = req.baseUrl && req.baseUrl.includes('production-file-control');
 
-        // Si estamos en Control View y NO se seleccionó un rollo específico (Todos), 
-        // devolvemos VACÍO para obligar al usuario a seleccionar un rollo.
-        if (isControlView && cleanRoll === '') {
-            logger.info("[getOrdenes] Control View 'Todos' selected -> Returning empty list to force selection.");
+        const searchTerm = (search && search !== 'undefined' && search.trim() !== '') ? `%${search.trim()}%` : null;
+
+        // Si estamos en Control View y NO se seleccionó un rollo específico (Todos),
+        // devolvemos VACÍO para obligar al usuario a seleccionar un rollo —
+        // SALVO que haya término de búsqueda: "Todos los lotes" permite buscar
+        // una orden en cualquier lote activo del área (filtro estricto abajo).
+        if (isControlView && cleanRoll === '' && !searchTerm) {
             return res.json([]);
         }
 
-        // Si estamos en Control View y NO se seleccionó un rollo específico (Todos), aplicamos filtro estricto.
-        const applyControlFilter = (isControlView && cleanRoll === '') ? 1 : 0; // Este flag ya no se usará si retornamos arriba, pero lo dejo por compatibilidad si quitamos el return.
-
-        const searchTerm = (search && search !== 'undefined' && search.trim() !== '') ? `%${search.trim()}%` : null;
+        // Control View sin rollo específico (búsqueda en todos): filtro estricto por lotes activos.
+        const applyControlFilter = (isControlView && cleanRoll === '') ? 1 : 0;
 
         // Log suprimido — alta frecuencia de polling
 
@@ -87,9 +89,9 @@ const getOrdenes = async (req, res) => {
 
 /* FILTRO DE CONTEXTO CONTROL DE CALIDAD (SI NO HAY ROLLO SELECCIONADO) */
 AND(
-    @ApplyControlFilter = 0 
-                    OR 
-                    O.RolloID IN(SELECT RolloID FROM Rollos WITH(NOLOCK) WHERE Estado IN ('Finalizado', 'En maquina', 'Produccion', 'Imprimiendo'))
+    @ApplyControlFilter = 0
+                    OR
+                    O.RolloID IN(SELECT RolloID FROM Rollos WITH(NOLOCK) WHERE Estado IN ('Finalizado', 'En maquina', 'Produccion', 'Imprimiendo', 'Pausado', 'En Cola'))
 )
 
                 AND O.Estado != 'CANCELADO'
@@ -104,8 +106,12 @@ AND(
             ISNULL(O.EstadoenArea,'') NOT IN ('Pronto', 'PRONTO', 'Retenido', 'RETENIDO')
             OR (
                 ISNULL(O.EstadoenArea,'') IN ('Pronto', 'PRONTO')
-                AND @RolloID IS NOT NULL AND @RolloID <> '' AND @RolloID <> 'todo'
-                AND CAST(O.RolloID AS NVARCHAR(50)) = @RolloID
+                AND (
+                    (@RolloID IS NOT NULL AND @RolloID <> '' AND @RolloID <> 'todo'
+                     AND CAST(O.RolloID AS NVARCHAR(50)) = @RolloID)
+                    -- Buscando en todos los lotes: las Pronto también aparecen (si no, "desaparecen" del buscador)
+                    OR @Search IS NOT NULL
+                )
             )
             OR (
                 ISNULL(O.EstadoenArea,'') IN ('Retenido', 'RETENIDO')
@@ -906,37 +912,9 @@ const postControlArchivo = async (req, res) => {
         await transaction.commit(); // COMMIT PRINCIPAL
 
         // --- AUTO-CLEANUP: Si la orden pertenecía a un lote, verificar si el lote quedó vacío ---
-        // Esto pasa cuando una reposición (-F) se completa y su Estado pasa a 'Pronto',
-        // lo cual la excluye de la vista pero deja el lote visible pero vacío.
+        // (helper compartido: también corre al cancelar/finalizar órdenes fuera de Control)
         if (rolloId) {
-            try {
-                const cleanupRes = await pool.request()
-                    .input('RID', sql.VarChar(50), String(rolloId))
-                    .query(`
-                        SELECT COUNT(*) as OrdenesActivas
-                        FROM dbo.Ordenes
-                        WHERE RolloID = @RID
-                          AND Estado NOT IN ('Finalizado', 'CANCELADO', 'Entregado') AND ISNULL(EstadoenArea,'') NOT IN ('Pronto', 'PRONTO')
-                    `);
-                const ordenesActivas = cleanupRes.recordset[0]?.OrdenesActivas || 0;
-                if (ordenesActivas === 0) {
-                    await pool.request()
-                        .input('RID', sql.VarChar(50), String(rolloId))
-                        .query(`
-                            UPDATE dbo.Rollos
-                            SET Estado = 'Cancelado', MaquinaID = NULL
-                            WHERE CAST(RolloID AS VARCHAR(50)) = @RID
-                              AND Estado IN ('Abierto', 'En Cola', 'En maquina', 'Pausado')
-                        `);
-                    logger.info(`[postControlArchivo] Lote ${rolloId} quedó vacío → cancelado automáticamente.`);
-                    // Notificar a todos los clientes que el lote fue cancelado
-                    if (req.app.get('socketio')) {
-                        req.app.get('socketio').emit('lotes:updated', { rolloId, action: 'cancelled' });
-                    }
-                }
-            } catch (eCleanup) {
-                logger.error(`[postControlArchivo] Error en auto-cleanup lote ${rolloId}: ${eCleanup.message}`);
-            }
+            await cancelarLoteSiVacio(rolloId, req.app.get('socketio'));
         }
 
         // --- RE-AVISO WSP: Si una reposición cliente (-R) se completó, resetear aviso de la madre ---
@@ -1851,10 +1829,11 @@ async function completarOrden(req, res) {
         // Verificar si es una orden de reposición (-F) y obtener código
         const codigoRes = await new sql.Request(transaction)
             .input('OID', sql.Int, ordenId)
-            .query("SELECT CodigoOrden, NoDocERP, AreaID FROM Ordenes WHERE OrdenID = @OID");
+            .query("SELECT CodigoOrden, NoDocERP, AreaID, RolloID FROM Ordenes WHERE OrdenID = @OID");
         const codigoOrden = codigoRes.recordset[0]?.CodigoOrden || '';
         const noDocERP    = codigoRes.recordset[0]?.NoDocERP || null;
         const areaOrden   = codigoRes.recordset[0]?.AreaID || null;
+        const rolloIdOrden = codigoRes.recordset[0]?.RolloID || null;
         const isFallaOrder = /-F\d+$/.test(codigoOrden);
 
         // -F (falla interna) completada sin fallas → Finalizado (su material se incorpora a la
@@ -2020,6 +1999,11 @@ async function completarOrden(req, res) {
             logger.warn(`[completarOrden] Error etiquetas: ${eLabels.message}`);
         }
 
+
+        // AUTO-CLEANUP: si esta era la última orden activa del lote, cancelarlo y liberar la máquina
+        if (rolloIdOrden) {
+            await cancelarLoteSiVacio(rolloIdOrden, req.app.get('socketio'));
+        }
 
         res.json({
             success: true, nuevoEstado, estadoLogistica, totalBultos,

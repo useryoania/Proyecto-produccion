@@ -3,7 +3,17 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, PDFName } = require('pdf-lib');
+
+// /UserUnit de una página pdf-lib (default 1). Los PDF de más de ~5.08m (límite 14400pt)
+// traen UserUnit (ej. 10): sin aplicarlo el trabajo se mide N veces más chico.
+const getPdfUserUnit = (page) => {
+    try {
+        const uu = page.node.get(PDFName.of('UserUnit'));
+        const n = uu && typeof uu.asNumber === 'function' ? uu.asNumber() : NaN;
+        return (Number.isFinite(n) && n > 0) ? n : 1;
+    } catch (_) { return 1; }
+};
 const logger = require('../utils/logger');
 const driveService = require('./driveService');
 
@@ -252,8 +262,9 @@ const processOrderListInternal = async (orderIds, io, targetFileIds = null) => {
                                 const pages = pdfDoc.getPages();
                                 if (pages.length > 0) {
                                     const { width, height } = pages[0].getSize();
-                                    widthM = cmToM(pointsToCm(width));
-                                    heightM = cmToM(pointsToCm(height));
+                                    const uu = getPdfUserUnit(pages[0]);
+                                    widthM = cmToM(pointsToCm(width * uu));
+                                    heightM = cmToM(pointsToCm(height * uu));
                                     measureDone = true;
                                 }
                             } catch (pdfErr) {

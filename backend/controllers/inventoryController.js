@@ -203,9 +203,15 @@ exports.registerConsumption = async (poolInstance, bobinaId, metrosUsados, loteP
 // 4. CIERRE Y CÁLCULO DE DESECHO (MANUAL)
 // ==========================================
 exports.closeBobina = async (req, res) => {
-    const { bobinaId, metrosRemanentesReal, motivo, finish } = req.body;
-    // metrosRemanentesReal: Lo que el operario MIDE que sobró en el rollo de cartón.
+    const { bobinaId, motivo, finish } = req.body;
+    // Metros que el operario MIDE que sobraron en el rollo de cartón.
+    // El modal (ManageBobinaModal) manda "metrosFinales"; se acepta también el nombre viejo.
+    const metrosRemanentesReal = parseFloat(req.body.metrosRemanentesReal ?? req.body.metrosFinales);
     const userId = req.user ? req.user.id : 1;
+
+    if (!Number.isFinite(metrosRemanentesReal) || metrosRemanentesReal < 0) {
+        return res.status(400).json({ error: 'Metros reales sobrantes inválidos.' });
+    }
 
     try {
         const pool = await getPool();
