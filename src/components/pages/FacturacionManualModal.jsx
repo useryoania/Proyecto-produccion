@@ -1364,11 +1364,11 @@ export default function FacturacionManualModal({ onClose, onSuccess, initialData
                                 <option value={0}>Exento 0%</option>
                               </select>
                             </td>
-                            <td className="p-1.5 text-right font-mono text-[11px] text-zinc-500 font-semibold whitespace-nowrap">
-                              <span className={`text-[8px] mr-0.5 ${monedaOp === 'USD' ? 'text-amber-500' : 'text-blue-400'}`}>{monedaOp === 'USD' ? 'U$S' : '$'}</span>{formatMoney(subtotalNeto)}
+                            <td className="p-1.5 text-right font-mono text-xs text-zinc-700 font-bold whitespace-nowrap">
+                              <span className={`text-[10px] mr-0.5 ${monedaOp === 'USD' ? 'text-amber-500' : 'text-blue-400'}`}>{monedaOp === 'USD' ? 'U$S' : '$'}</span>{formatMoney(subtotalNeto)}
                             </td>
-                            <td className="p-1.5 pr-4 text-right font-mono text-xs font-black text-zinc-800 whitespace-nowrap">
-                              <span className={`text-[9px] mr-0.5 ${monedaOp === 'USD' ? 'text-amber-600' : 'text-blue-500'}`}>{monedaOp === 'USD' ? 'U$S' : '$'}</span>{formatMoney(subtotalConIva)}
+                            <td className="p-1.5 pr-4 text-right font-mono text-xs font-black text-zinc-900 whitespace-nowrap">
+                              <span className={`text-[10px] mr-0.5 ${monedaOp === 'USD' ? 'text-amber-600' : 'text-blue-500'}`}>{monedaOp === 'USD' ? 'U$S' : '$'}</span>{formatMoney(subtotalConIva)}
                             </td>
                             <td className="p-1.5 text-center">
                               {formData.Lineas.length > 1 && (
