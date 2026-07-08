@@ -616,6 +616,11 @@ const buscarParaMostrador = async (req, res) => {
         o.OrdIdOrden,
         o.OrdCodigoOrden,
         o.OrdCostoFinal,
+        o.OrdCantidad,
+        o.MonIdMoneda,
+        o.OrdNombreTrabajo,
+        o.OrdEstadoActual,
+        o.OReIdOrdenRetiro,
         eo.EOrNombreEstado  AS estadoOrden,
         mon.MonSimbolo,
         LTRIM(RTRIM(c.Nombre))           AS CliNombre,
@@ -625,7 +630,8 @@ const buscarParaMostrador = async (req, res) => {
         LTRIM(RTRIM(c.Email))            AS CliEmail,
         LTRIM(RTRIM(c.DireccionTrabajo)) AS CliDireccion,
         tc.TClDescripcion,
-        CASE WHEN o.PagIdPago IS NOT NULL THEN 1 ELSE 0 END AS Pagada
+        CASE WHEN o.PagIdPago IS NOT NULL THEN 1 ELSE 0 END AS Pagada,
+        p.PagTipoMovimiento
       FROM OrdenesRetiro r WITH(NOLOCK)
       LEFT JOIN FormasEnvio fe          WITH(NOLOCK) ON fe.ID  = r.LReIdLugarRetiro
       LEFT JOIN EstadosOrdenesRetiro er WITH(NOLOCK) ON er.EORIdEstadoOrden = r.OReEstadoActual
@@ -634,6 +640,7 @@ const buscarParaMostrador = async (req, res) => {
       LEFT JOIN Clientes c               WITH(NOLOCK) ON c.CliIdCliente      = o.CliIdCliente
       LEFT JOIN TiposClientes tc         WITH(NOLOCK) ON tc.TClIdTipoCliente = c.TClIdTipoCliente
       LEFT JOIN EstadosOrdenes eo        WITH(NOLOCK) ON eo.EOrIdEstadoOrden = o.OrdEstadoActual
+      LEFT JOIN Pagos p                  WITH(NOLOCK) ON p.PagIdPago         = o.PagIdPago
       WHERE 1=1
         ${extraWhere}
       ORDER BY r.OReIdOrdenRetiro DESC, o.OrdIdOrden
@@ -642,6 +649,7 @@ const buscarParaMostrador = async (req, res) => {
     // ── Query de sub-órdenes sueltas (sin retiro) — sin filtro de pago
     const ordenSueltaQuery = (extraWhere) => `
       SELECT o.OrdIdOrden, o.OrdCodigoOrden, o.OrdCostoFinal,
+             o.OrdCantidad, o.MonIdMoneda, o.OrdNombreTrabajo, o.OrdEstadoActual, o.OReIdOrdenRetiro,
              eo.EOrNombreEstado AS estadoOrden, mon.MonSimbolo,
              LTRIM(RTRIM(c.Nombre)) AS CliNombre, c.IDCliente AS CliCodigo,
              LTRIM(RTRIM(c.TelefonoTrabajo)) AS CliTelefono,
@@ -649,12 +657,14 @@ const buscarParaMostrador = async (req, res) => {
              LTRIM(RTRIM(c.Email)) AS CliEmail,
              LTRIM(RTRIM(c.DireccionTrabajo)) AS CliDireccion,
              tc.TClDescripcion,
-             CASE WHEN o.PagIdPago IS NOT NULL THEN 1 ELSE 0 END AS Pagada
+             CASE WHEN o.PagIdPago IS NOT NULL THEN 1 ELSE 0 END AS Pagada,
+             p.PagTipoMovimiento
       FROM OrdenesDeposito o WITH(NOLOCK)
       LEFT JOIN Monedas mon         WITH(NOLOCK) ON mon.MonIdMoneda      = o.MonIdMoneda
       LEFT JOIN Clientes c           WITH(NOLOCK) ON c.CliIdCliente       = o.CliIdCliente
       LEFT JOIN TiposClientes tc     WITH(NOLOCK) ON tc.TClIdTipoCliente  = c.TClIdTipoCliente
       LEFT JOIN EstadosOrdenes eo    WITH(NOLOCK) ON eo.EOrIdEstadoOrden  = o.OrdEstadoActual
+      LEFT JOIN Pagos p              WITH(NOLOCK) ON p.PagIdPago          = o.PagIdPago
       WHERE 1=1 ${extraWhere}
       ORDER BY o.OrdIdOrden DESC
     `;
@@ -1098,6 +1108,75 @@ const editarCostoOrden = async (req, res) => {
   }
 };
 
+// ─── Estados de OrdenesDeposito habilitados para cambio administrativo ─────────
+// 5=Listo (Pendiente), 6=Avisado, 7=Pronto, 8=Listo (Pagado), 9=Entregado,
+// 10=Cancelado, 12=Avisar de nuevo (dispara reenvío de WSP en wspAvisos.job.js)
+const ESTADOS_ORDEN_PERMITIDOS = [5, 6, 7, 8, 9, 10, 12];
+
+const cambiarEstadoOrden = async (req, res) => {
+  const { orderId, nuevoEstado } = req.body;
+  const UsuarioModif = req.user?.id || 70;
+
+  const orderIdNum = parseInt(orderId, 10);
+  const nuevoEstadoNum = parseInt(nuevoEstado, 10);
+
+  if (!orderIdNum || !ESTADOS_ORDEN_PERMITIDOS.includes(nuevoEstadoNum)) {
+    return res.status(400).json({ error: 'Faltan datos requeridos o estado inválido (orderId, nuevoEstado).' });
+  }
+
+  let transaction;
+  try {
+    const pool = await getPool();
+    transaction = await pool.transaction();
+    await transaction.begin();
+
+    const ordenRes = await transaction.request()
+      .input('OrderId', sql.Int, orderIdNum)
+      .query('SELECT OrdCodigoOrden, OrdEstadoActual FROM dbo.OrdenesDeposito WHERE OrdIdOrden = @OrderId');
+    if (!ordenRes.recordset.length) throw new Error('Orden no encontrada.');
+    const { OrdCodigoOrden: codigoOrden, OrdEstadoActual: estadoAnterior } = ordenRes.recordset[0];
+
+    await transaction.request()
+      .input('OrderId', sql.Int, orderIdNum)
+      .input('Estado',  sql.Int, nuevoEstadoNum)
+      .query(`
+        UPDATE dbo.OrdenesDeposito
+        SET OrdEstadoActual = @Estado, OrdFechaEstadoActual = GETDATE()
+        WHERE OrdIdOrden = @OrderId
+      `);
+
+    await transaction.request()
+      .input('OrderId', sql.Int, orderIdNum)
+      .input('Estado',  sql.Int, nuevoEstadoNum)
+      .input('Usuario', sql.Int, UsuarioModif)
+      .query(`
+        INSERT INTO dbo.HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+        VALUES (@OrderId, @Estado, GETDATE(), @Usuario)
+      `);
+
+    await transaction.commit();
+
+    try {
+      const erpId = await buscarOrdenErpId(pool, orderIdNum);
+      if (erpId) {
+        await registrarHistorialOrden(
+          pool, erpId, 'Cambio de Estado Administrativo', UsuarioModif,
+          `Orden ${codigoOrden || orderIdNum}: estado ${estadoAnterior ?? '-'} → ${nuevoEstadoNum}`
+        );
+      }
+    } catch (hErr) {
+      logger.warn('[CAJA] No se pudo registrar HistorialOrdenes para cambiar estado:', hErr.message);
+    }
+
+    logger.info(`[CAJA] Cambio de estado orden ${codigoOrden}: ${estadoAnterior} -> ${nuevoEstadoNum}`);
+    res.status(200).json({ success: true, message: 'Estado actualizado correctamente.' });
+  } catch (err) {
+    if (transaction) try { await transaction.rollback(); } catch (e) {}
+    logger.error('[CAMBIAR ESTADO ORDEN ERROR]', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 const desvincularOrdenRetiro = async (req, res) => {
   const { orderId, OReIdOrdenRetiro, formaRetiro } = req.body;
   const UsuarioModif = req.user?.id || 70;
@@ -1429,6 +1508,7 @@ module.exports = {
   createOrdenRetiro, getOrdenesRetiroPorEstados, actualizarOrdenRetiroEstado, marcarOrdenRetiroPronto,
   marcarOrdenRetiroEntregado, ordenesRetiroCaja, getOrdenesRetiroPasarPorCaja, ordenesRetiroMarcarPasarPorCaja, getOrdenesRetiroPorFecha,
   getOrdenesRetiroPorLugar, marcarDespachoEntregadoAutorizado, buscarParaMostrador, getClienteEnvioDatos, getTodasSinRetiro, backfillLugarRetiro, getOrdenesRetiroPorRemito,
-  editarCostoOrden, desvincularOrdenRetiro, cancelarOrdenCaja, exonerarOrdenCaja, revertirExoneracionOrden
+  editarCostoOrden, desvincularOrdenRetiro, cancelarOrdenCaja, exonerarOrdenCaja, revertirExoneracionOrden,
+  cambiarEstadoOrden
 };
 
