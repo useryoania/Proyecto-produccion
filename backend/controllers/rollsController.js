@@ -1148,6 +1148,9 @@ exports.getRollDetails = async (req, res) => {
                     o.OrdenID, o.CodigoOrden, o.Cliente, o.DescripcionTrabajo, 
                     o.Magnitud, o.Material, o.Variante, o.RolloID, 
                     o.Prioridad, o.Estado, o.FechaIngreso, o.Secuencia, o.Tinta, o.NoDocERP, o.IdCabezalERP, o.Nota, o.Impreso, o.Calandrado, o.MetrosGrupoFalla, o.GrupoManual,
+                    o.BobinaTelaID,
+                    -- TELA DE CLIENTE: partes de la bobina elegida (para mostrar como material y agrupar por Referencia)
+                    ibt.Referencia AS BobRef, ibt.DescripcionTela AS BobDesc, COALESCE(ibt.AnchoReal, ibt.Ancho) AS BobAncho,
                     c.IDCliente AS ClienteIdStr,
                     (SELECT COUNT(*) FROM dbo.ArchivosOrden WHERE OrdenID = o.OrdenID) AS CantidadArchivos,
                     (SELECT COUNT(*) FROM dbo.ArchivosOrden WHERE OrdenID = o.OrdenID) AS fileCount,
@@ -1168,13 +1171,25 @@ exports.getRollDetails = async (req, res) => {
                     ) as RelatedStatus
                 FROM dbo.Ordenes o
                 LEFT JOIN dbo.Clientes c ON c.CliIdCliente = o.CliIdCliente
+                LEFT JOIN dbo.InventarioBobinas ibt ON ibt.BobinaID = o.BobinaTelaID
                 WHERE CAST(o.RolloID AS VARCHAR(50)) = @RolloID
                 ORDER BY ISNULL(o.Secuencia, 999999), o.OrdenID ASC
             `);
 
+        // Tela de Cliente (variante con "cliente"): material a mostrar = Referencia + DescripcionTela
+        // (capitalizada) + Ancho; y la Referencia se usa para agrupar (solo se agrupa si es igual).
+        const capTela = (s) => String(s || '').toLowerCase().split(/\s+/).filter(Boolean)
+            .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
         ordersRes.recordset.forEach(o => {
             const magStr = String(o.Magnitud || '0');
             const magVal = parseFloat(magStr.replace(/[^\d.]/g, '') || 0);
+
+            const esTelaCliente = /cliente/i.test(o.Variante || '');
+            const referencia = (esTelaCliente && o.BobRef != null && String(o.BobRef).trim() !== '') ? String(o.BobRef).trim() : null;
+            const materialBobina = (esTelaCliente && o.BobDesc)
+                ? [o.BobRef, capTela(o.BobDesc), o.BobAncho].filter(x => x != null && String(x).trim() !== '').join(' ')
+                : null;
 
             rollObj.orders.push({
                 id: o.OrdenID,
@@ -1185,6 +1200,8 @@ exports.getRollDetails = async (req, res) => {
                 magnitude: magVal,
                 groupFallaMeters: (o.MetrosGrupoFalla !== null && o.MetrosGrupoFalla !== undefined) ? parseFloat(o.MetrosGrupoFalla) : null,
                 material: o.Material,
+                materialBobina,     // Tela de Cliente: material a mostrar (bobina)
+                referencia,         // Tela de Cliente: clave de agrupado (Referencia de la bobina)
                 variantCode: o.Variante,
                 entryDate: o.FechaIngreso,
                 priority: o.Prioridad,

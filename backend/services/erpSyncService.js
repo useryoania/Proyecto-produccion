@@ -594,6 +594,10 @@ class ERPSyncService {
                             .query('SELECT FormaEnvioID FROM Clientes WITH(NOLOCK) WHERE CliIdCliente = @CID');
                         const lugarRetiro = cliRes.recordset[0]?.FormaEnvioID ? parseInt(cliRes.recordset[0].FormaEnvioID) : null;
 
+                        // INSERT atómico anti-carrera: dos escaneos casi simultáneos del mismo pedido
+                        // (bultos seguidos / doble escaneo) pasaban ambos el check de existencia y
+                        // duplicaban la fila. El WHERE NOT EXISTS con UPDLOCK/HOLDLOCK serializa por
+                        // OrdCodigoOrden dentro del mismo statement: el perdedor inserta 0 filas.
                         const insertResult = await pool.request()
                             .input('Cod', sql.VarChar(100), CodigoOrden)
                             .input('Cant', sql.Float, cantidadDecimal)
@@ -612,9 +616,12 @@ class ERPSyncService {
                                     OrdFechaIngresoOrden, OrdUsuarioAlta, OrdEstadoActual, OrdFechaEstadoActual, LReIdLugarRetiro
                                 )
                                 OUTPUT INSERTED.OrdIdOrden
-                                VALUES (
+                                SELECT
                                     @Cod, @Cant, @Cli, @Trab, @Modo, @Prod, @Mon, @Costo,
                                     GETDATE(), @Usr, 1, GETDATE(), @Lugar
+                                WHERE NOT EXISTS (
+                                    SELECT 1 FROM OrdenesDeposito WITH (UPDLOCK, HOLDLOCK)
+                                    WHERE OrdCodigoOrden = @Cod
                                 )
                             `);
 
@@ -624,8 +631,10 @@ class ERPSyncService {
                                 .input('OID', sql.Int, newOrderId)
                                 .input('Usr', sql.Int, userId)
                                 .query(`INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta) VALUES (@OID, 1, GETDATE(), @Usr)`);
+                            logger.info(`[ERPSync] Orden nueva creada: ${CodigoOrden} (ID: ${newOrderId})`);
+                        } else {
+                            logger.info(`[ERPSync] Orden ${CodigoOrden} ya existía (inserción concurrente evitada).`);
                         }
-                        logger.info(`[ERPSync] Orden nueva creada: ${CodigoOrden} (ID: ${newOrderId})`);
                     }
 
                     reactSuccess = true;

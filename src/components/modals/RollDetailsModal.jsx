@@ -527,10 +527,15 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     const allPrinted = totalOrders > 0 && printedCount === totalOrders;
 
     const materialOf = (o) => (o?.material || o?.Material || '').trim();
+    // Tela de Cliente: el material a MOSTRAR es la bobina elegida (Referencia + DescripcionTela + Ancho).
+    const matDisplay = (o) => (o?.materialBobina && String(o.materialBobina).trim()) ? String(o.materialBobina).trim() : materialOf(o);
+    // Clave de AGRUPADO: en Tela de Cliente se agrupa por Referencia de la bobina (solo si es igual);
+    // en el resto, por material. Así dos telas de cliente solo se juntan si comparten Referencia.
+    const groupKeyOf = (o) => (o?.referencia != null && String(o.referencia).trim() !== '') ? ('REF:' + String(o.referencia).trim()) : materialOf(o);
     // Órdenes de falla (-F): se detectan por el código (…-F{archivoId}) y se agrupan aparte de las
-    // normales (mismo criterio de material, pero grupo propio).
+    // normales (mismo criterio de agrupado, pero grupo propio).
     const isFalla = (o) => /-F\d+/i.test(o?.code || o?.CodigoOrden || '');
-    const matKey = (o) => (materialOf(o) || '—') + (isFalla(o) ? '::F' : '');
+    const matKey = (o) => (groupKeyOf(o) || '—') + (isFalla(o) ? '::F' : '');
     // Fecha y hora de ingreso de la orden (FechaIngreso), formato corto dd/mm/aa hh:mm.
     const fmtEntry = (d) => {
         if (!d) return '';
@@ -538,7 +543,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         return isNaN(dt) ? '' : dt.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
     };
     const selectedOrders = orders.filter(o => selectedOrderIds.includes(o.id));
-    const selectedMaterials = [...new Set(selectedOrders.map(materialOf).filter(Boolean))];
+    const selectedMaterials = [...new Set(selectedOrders.map(groupKeyOf).filter(Boolean))];
     // "Agrupar" solo se habilita con 2+ órdenes del MISMO material, del MISMO tipo (todas -F o todas
     // normales — una -F no se agrupa con una normal) y SIN ninguna impresa.
     const selectedHasPrinted = selectedOrders.some(o => printedOrderIds.includes(o.id));
@@ -661,7 +666,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
             else if (manualIdxOf[o.id] !== undefined) { key = 'm' + manualIdxOf[o.id]; kind = 'manual'; }
             else if (matCount[matKey(o)] === 1) { key = 'a:' + matKey(o); kind = 'auto'; }
             else { key = 'lm:' + matKey(o); kind = 'loose'; } // sueltas del mismo material (y mismo tipo -F/normal) = un bloque
-            if (!byKey[key]) { byKey[key] = { key, kind, material: materialOf(o) || '—', isFalla: isFalla(o), orders: [] }; list.push(byKey[key]); }
+            if (!byKey[key]) { byKey[key] = { key, kind, material: matDisplay(o) || '—', isFalla: isFalla(o), orders: [] }; list.push(byKey[key]); }
             byKey[key].orders.push(o);
         });
         // Firma estable por unidad (ids ordenados) — la usan el drag y la marca de bloqueo.
@@ -1582,7 +1587,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                       <div className="text-xs text-zinc-400 truncate mt-0.5">{o.desc || o.DescripcionTrabajo}</div>
                                                     </div>
                                                     <div className="flex-1 min-w-[150px] px-2 overflow-hidden">
-                                                      <div className="font-semibold text-zinc-800 truncate text-sm">{o.material || o.Material || '-'}</div>
+                                                      <div className="font-semibold text-zinc-800 truncate text-sm">{matDisplay(o)}</div>
                                                       {o.variantCode && <div className="text-xs text-zinc-400 truncate mt-0.5">{o.variantCode}</div>}
                                                     </div>
                                                     <div className="w-14 flex justify-center">
@@ -1753,7 +1758,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                             </td>
                                             <td className="px-4 py-3 w-48">
                                                 <div className="font-semibold text-zinc-800 truncate text-sm max-w-[170px]">
-                                                    {o.material || o.Material || '-'}
+                                                    {matDisplay(o)}
                                                 </div>
                                                 {o.variantCode && (
                                                     <div className="text-xs text-zinc-400 truncate mt-0.5 max-w-[170px]">
