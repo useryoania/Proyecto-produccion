@@ -2231,6 +2231,16 @@ async function anularReciboInterno({ tcaId, usuarioId, motivo }) {
         UPDATE dbo.Cont_AsientosCabecera SET AsiEstado = 0
         WHERE TcaIdTransaccion = @TcaId AND ISNULL(SysOrigen,'') <> 'CAJA_EGRESOS'`);
 
+    // 7. Anular el documento contable de respaldo (RECIBO / RECIBO ANTICIPO), si existe.
+    //    Los anticipos generan un DocumentosContables 'RECIBO ANTICIPO' que el flujo
+    //    original no revertía → quedaba "vivo" tras anular. Aquí lo marcamos ANULADO.
+    await new sql.Request(transaction)
+      .input('TcaId', sql.Int, tcaId)
+      .query(`
+        UPDATE dbo.DocumentosContables
+        SET DocEstado = 'ANULADO'
+        WHERE TcaIdTransaccion = @TcaId AND ISNULL(DocEstado,'') <> 'ANULADO'`);
+
     await transaction.commit();
     logger.info(`[CAJA] 🔄 Recibo interno ${tcaId} anulado por usuario ${usuarioId} (${movsRes.recordset.length} movs revertidos).`);
     return { success: true, mensaje: `Recibo ${tcaId} anulado correctamente.` };

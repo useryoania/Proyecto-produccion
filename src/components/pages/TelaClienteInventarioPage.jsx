@@ -24,6 +24,7 @@ const BobinaCard = ({
     onEjecutarConfirm,
 }) => {
     const esPendiente   = bob.Estado === "Pendiente";
+    const esAgotada     = bob.Estado === "Agotado" || bob.Estado === "Cerrado";
     const pctUsado      = bob.MetrosIniciales > 0
         ? Math.round((1 - bob.MetrosRestantes / bob.MetrosIniciales) * 100)
         : 0;
@@ -32,14 +33,18 @@ const BobinaCard = ({
     return (
         <div className={`bg-white rounded-xl shadow border-2 p-4 transition-all ${
             esConfirmando ? "border-amber-400 ring-2 ring-amber-100" :
-            esPendiente   ? "border-amber-300" : "border-slate-200 hover:border-indigo-300"
+            esPendiente   ? "border-amber-300" :
+            esAgotada     ? "border-slate-200 opacity-75" :
+            "border-slate-200 hover:border-indigo-300"
         }`}>
             <div className="flex justify-between items-start mb-3">
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                            esPendiente ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"
-                        }`}>{esPendiente ? "Pendiente" : "Disponible"}</span>
+                            esPendiente ? "bg-amber-100 text-amber-700"
+                            : esAgotada ? "bg-slate-200 text-slate-500"
+                            : "bg-green-100 text-green-700"
+                        }`}>{esPendiente ? "Pendiente" : esAgotada ? "Agotado" : "Disponible"}</span>
                         <span className="text-xs text-slate-400 font-mono">{bob.AreaID}</span>
                     </div>
                     {bob.Referencia && (
@@ -244,6 +249,10 @@ const TelaClienteInventarioPage = () => {
     const [buscandoCliente, setBuscandoCliente]     = useState(false);
     const searchRef                                 = useRef(null);
 
+    // -- Filtros: texto (PRE / tela / bobina) + estado --
+    const [filtroTexto, setFiltroTexto]             = useState("");
+    const [filtroEstado, setFiltroEstado]           = useState("Todas");
+
     useEffect(() => { loadAreas(); }, []);
 
     const loadAreas = async () => {
@@ -266,7 +275,7 @@ const TelaClienteInventarioPage = () => {
         if (selectedAreas.length === 0) return;
         setLoading(true);
         try {
-            const data = await inventoryService.getInventoryByArea(selectedAreas.join(","));
+            const data = await inventoryService.getInventoryByArea(selectedAreas.join(","), { includeAgotadas: true });
             setInventory(data || []);
         } catch (e) {
             toast.error("Error cargando inventario: " + (e?.message || ""));
@@ -315,14 +324,29 @@ const TelaClienteInventarioPage = () => {
         .flatMap(item => (item.ActiveBatches || item.batches || []).filter(b => b.ClienteID != null && b.ClienteID !== ""));
     const _refMatch = _q.length > 0 && !clienteSeleccionado
         && _allBatches.some(b => (b.Referencia || '').toLowerCase().includes(_q));
-    const bobinasTela = _allBatches.filter(b => {
+    const _porCliente = _allBatches.filter(b => {
         if (clienteSeleccionado) return String(b.ClienteID) === String(clienteSeleccionado.CliIdCliente);
         if (_refMatch) return (b.Referencia || '').toLowerCase().includes(_q);
         return true;
     });
 
+    // Filtros por texto (PRE / tela / bobina / cliente) y por estado
+    const _txt  = filtroTexto.trim().toLowerCase();
+    const _norm = (v) => (v == null ? '' : String(v)).toLowerCase();
+    const matchTexto = (b) => !_txt ||
+        [b.Referencia, b.TipoTela, b.DescripcionTela, b.CodigoEtiqueta, b.NombreCliente, b.ClienteID, b.IdCliente]
+            .some(v => _norm(v).includes(_txt));
+    const matchEstado = (b) => {
+        if (filtroEstado === "Todas")      return true;
+        if (filtroEstado === "Disponible") return b.Estado === "Disponible" || b.Estado === "En Uso";
+        if (filtroEstado === "Agotado")    return b.Estado === "Agotado" || b.Estado === "Cerrado";
+        return b.Estado === filtroEstado;
+    };
+    const bobinasTela = _porCliente.filter(b => matchTexto(b) && matchEstado(b));
+
     const pendientes  = bobinasTela.filter(b => b.Estado === "Pendiente");
-    const disponibles = bobinasTela.filter(b => b.Estado !== "Pendiente");
+    const disponibles = bobinasTela.filter(b => b.Estado === "Disponible" || b.Estado === "En Uso");
+    const agotadas    = bobinasTela.filter(b => b.Estado === "Agotado" || b.Estado === "Cerrado");
 
     const abrirConfirmacion = (bob) => {
         setConfirmando({ bobina: bob, insumoName: bob.DescripcionTela || bob.TipoTela });
@@ -430,6 +454,41 @@ const TelaClienteInventarioPage = () => {
                     </div>
                 </div>
 
+                {/* Filtros: texto (PRE / tela / bobina) + estado */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-3 flex flex-col sm:flex-row gap-3 sm:items-center">
+                    <div className="flex items-center gap-2 border-2 border-slate-200 rounded-xl px-3 py-2 bg-slate-50 focus-within:bg-white focus-within:border-indigo-300 flex-1 transition-all">
+                        <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                        <input
+                            type="text"
+                            placeholder="Filtrar por PRE, tela o bobina..."
+                            className="flex-1 bg-transparent text-sm text-slate-800 placeholder-slate-400 outline-none min-w-0"
+                            value={filtroTexto}
+                            onChange={e => setFiltroTexto(e.target.value)}
+                            autoComplete="off"
+                        />
+                        {filtroTexto && (
+                            <button onClick={() => setFiltroTexto("")} className="p-0.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors">
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-1 flex-wrap">
+                        {["Todas", "Pendiente", "Disponible", "Agotado"].map(op => (
+                            <button
+                                key={op}
+                                onClick={() => setFiltroEstado(op)}
+                                className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                                    filtroEstado === op
+                                        ? "bg-indigo-600 text-white border-indigo-600"
+                                        : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                                }`}
+                            >
+                                {op}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
                 {/* Tarjeta del cliente seleccionado */}
                 {clienteSeleccionado && (
                     <div className="bg-white rounded-xl border-2 border-indigo-200 p-4 flex items-center gap-4">
@@ -453,11 +512,12 @@ const TelaClienteInventarioPage = () => {
                 )}
 
                 {bobinasTela.length > 0 && (
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {[
                             { n: bobinasTela.length, label: "Total bobinas", cls: "bg-white border-slate-200 text-slate-800" },
                             { n: pendientes.length,  label: "Pendientes",    cls: "bg-amber-50 border-amber-200 text-amber-600" },
                             { n: disponibles.length, label: "Disponibles",   cls: "bg-green-50 border-green-200 text-green-600" },
+                            { n: agotadas.length,    label: "Agotadas",      cls: "bg-slate-100 border-slate-200 text-slate-500" },
                         ].map(({ n, label, cls }) => (
                             <div key={label} className={`rounded-xl border p-4 text-center ${cls}`}>
                                 <div className="text-2xl font-black">{n}</div>
@@ -519,6 +579,32 @@ const TelaClienteInventarioPage = () => {
                         </h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                         {disponibles.map(bob => (
+                            <BobinaCard
+                                key={bob.BobinaID}
+                                bob={bob}
+                                confirmandoId={confirmando?.bobina?.BobinaID ?? null}
+                                metrosRealesInput={metrosRealesInput} setMetrosRealesInput={setMetrosRealesInput}
+                                anchoInput={anchoInput}               setAnchoInput={setAnchoInput}
+                                pesoInput={pesoInput}                 setPesoInput={setPesoInput}
+                                confirmLoading={confirmLoading}
+                                onConfirmar={abrirConfirmacion}
+                                onCancelarConfirmar={() => setConfirmando(null)}
+                                onEstadoCuenta={setEstadoTelaBobina}
+                                onAdministrar={(b) => setManagingBobina({ bobina: b, insumoName: b.TipoTela })}
+                                onEjecutarConfirm={ejecutarConfirmacion}
+                            />
+                        ))}
+                        </div>
+                    </div>
+                )}
+
+                {!loading && agotadas.length > 0 && (
+                    <div>
+                        <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wide mb-3">
+                            Agotadas ({agotadas.length})
+                        </h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                        {agotadas.map(bob => (
                             <BobinaCard
                                 key={bob.BobinaID}
                                 bob={bob}

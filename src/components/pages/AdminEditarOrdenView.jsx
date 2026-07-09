@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import api from '../../services/apiClient';
 import { toast } from 'sonner';
 import Swal from 'sweetalert2';
+import { useAuth } from '../../context/AuthContext';
+import QuotationEditModal from '../logistics/QuotationEditModal';
 import {
   Search, Loader2, CheckCircle, FileText, User, Phone, Bell, RefreshCw, Package
 } from 'lucide-react';
@@ -263,10 +265,306 @@ function GrupoRetiro({ retiro, ordenes, cliente, onGuardado }) {
   );
 }
 
+// Orden que ya tiene cotización (Ordenes/PedidosCobranza) pero todavía no llegó a
+// OrdenesDeposito (recién se crea esa fila cuando se escanea la etiqueta en depósito).
+// No tiene estado de depósito ni aviso WSP propios todavía, así que sólo se puede
+// editar su cotización — con el mismo editor que usa el resto del sistema
+// (QuotationEditModal, la pestaña "Cotizar Productos" del detalle de orden).
+function TarjetaSinDeposito({ orden, currentUser, onGuardado }) {
+  return (
+    <div className="bg-white rounded-2xl border border-amber-200 shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-amber-100 bg-amber-50/60">
+        <div>
+          <h3 className="font-black text-zinc-800 text-sm uppercase tracking-wider flex items-center gap-2">
+            <FileText size={16} className="text-amber-600" />
+            {orden.CodigoOrden} <span className="text-[10px] text-amber-700 font-black uppercase bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">Aún no en depósito</span>
+          </h3>
+          <p className="text-[11px] text-zinc-500 font-semibold mt-0.5 flex items-center gap-3">
+            <span className="flex items-center gap-1"><User size={11} />{orden.Cliente}</span>
+            <span className="text-zinc-400">Estado ERP: {orden.Estado || '-'}</span>
+          </p>
+        </div>
+      </div>
+      <div className="h-[500px]">
+        <QuotationEditModal
+          embedded
+          noDocERP={orden.CodigoOrden || orden.NoDocERP}
+          currentUser={currentUser}
+          onSaved={onGuardado}
+          propagarADeposito
+        />
+      </div>
+    </div>
+  );
+}
+
+// Barra de solo lectura con los valores tal cual quedaron guardados en una tabla —
+// para verificar visualmente que un cambio se propagó, no para editar acá.
+function BarraValoresCrudos({ tabla, campos }) {
+  return (
+    <div className="px-5 py-2.5 border-t border-zinc-100 bg-zinc-50/80 flex flex-wrap items-center gap-x-5 gap-y-1">
+      <span className="text-[9px] font-black uppercase text-zinc-400 tracking-wider">{tabla}</span>
+      {campos.map(([label, valor]) => (
+        <span key={label} className="text-[11px] font-bold text-zinc-600">
+          {label}: <span className="text-zinc-800 font-black">{valor}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ─── Contenedor: Cobranza (PedidosCobranza + PedidosCobranzaDetalle) ───────────
+// Acá vive la cotización de la orden — mismo editor que usa el resto del sistema
+// (pestaña "Cotizar Productos" del detalle de orden), no uno reinventado. Debajo
+// se muestran los valores crudos tal como quedaron en cada tabla después de guardar.
+function ContenedorCobranza({ codigoOrden, cobranza, currentUser, onGuardado }) {
+  return (
+    <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+      <div className="h-[500px]">
+        <QuotationEditModal
+          embedded
+          noDocERP={codigoOrden}
+          currentUser={currentUser}
+          onSaved={onGuardado}
+          propagarADeposito
+        />
+      </div>
+      {cobranza ? (
+        <>
+          <BarraValoresCrudos
+            tabla={`PedidosCobranza (#${cobranza.PedidoCobranzaID})`}
+            campos={[
+              ['Moneda', cobranza.Moneda],
+              ['MontoTotal', fmt(cobranza.MontoTotal)],
+            ]}
+          />
+          <BarraValoresCrudos
+            tabla="PedidosCobranzaDetalle"
+            campos={[
+              ['Subtotal', fmt(cobranza.Subtotal)],
+              ['Cantidad', cobranza.Cantidad],
+            ]}
+          />
+        </>
+      ) : (
+        <div className="px-5 py-2.5 border-t border-zinc-100 bg-zinc-50/80">
+          <span className="text-[11px] text-zinc-400 font-semibold">No hay fila en PedidosCobranza/PedidosCobranzaDetalle todavía.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Contenedor: OrdenesDeposito ────────────────────────────────────────────────
+// Sólo existe desde que se escanea la etiqueta/QR en depósito. Ahí viven estado,
+// retiro asociado y aviso de WhatsApp.
+function ContenedorDeposito({ deposito, onGuardado }) {
+  const [row, setRow] = useState(() => deposito ? filaDesdeOrden(deposito) : null);
+  const [saving, setSaving] = useState(false);
+  const [notifying, setNotifying] = useState(false);
+
+  if (!deposito || !row) {
+    return (
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b border-zinc-100 bg-zinc-50/60">
+          <h3 className="font-black text-zinc-800 text-xs uppercase tracking-wider flex items-center gap-2">
+            <Package size={14} className="text-brand-cyan" /> OrdenesDeposito
+          </h3>
+        </div>
+        <div className="p-4">
+          <p className="text-[11px] text-zinc-400 font-semibold">Todavía no llegó a depósito (no se escaneó la etiqueta).</p>
+        </div>
+      </div>
+    );
+  }
+
+  const actualizarCampo = (campo, valor) => {
+    setRow(prev => {
+      const next = { ...prev, [campo]: valor };
+      const cant = parseFloat(next.cantidad) || 0;
+      const precio = parseFloat(next.precio) || 0;
+      const total = parseFloat(next.total) || 0;
+      if (campo === 'cantidad' || campo === 'precio') next.total = (cant * precio).toFixed(2);
+      else if (campo === 'total') next.precio = cant > 0 ? (total / cant).toFixed(2) : next.precio;
+      else if (campo === 'monedaId') { next.monedaId = parseInt(valor, 10) || 1; next.simbolo = next.monedaId === 2 ? 'US$' : '$'; }
+      return next;
+    });
+  };
+
+  const guardarCambios = async () => {
+    const cant = parseFloat(row.cantidad) || 0;
+    const total = parseFloat(row.total) || 0;
+    if (cant <= 0) return toast.warning('Cantidad inválida.');
+    if (total < 0) return toast.warning('Total inválido.');
+    setSaving(true);
+    try {
+      const payload = { orderId: row.orderId, nuevoCosto: total, nuevaCantidad: cant, OReIdOrdenRetiro: row.oReId };
+      if (Number(row.monedaId) !== Number(row.origMonedaId)) payload.nuevaMoneda = Number(row.monedaId);
+      await api.post('/apiordenesRetiro/caja/orden/editar', payload);
+      toast.success(`${row.orderNumber} actualizada correctamente.`);
+      onGuardado();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Error al actualizar la orden.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const cambiarEstado = async () => {
+    if (Number(row.estadoNuevo) === Number(row.estado)) { toast.info('Elegí un estado distinto al actual.'); return; }
+    setSaving(true);
+    try {
+      await api.post('/apiordenesRetiro/caja/orden/estado', { orderId: row.orderId, nuevoEstado: row.estadoNuevo });
+      toast.success(`Estado actualizado a "${ESTADOS[row.estadoNuevo]}".`);
+      onGuardado();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Error al cambiar el estado.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const volverAAvisar = async () => {
+    const { isConfirmed } = await Swal.fire({
+      title: `¿Volver a avisar por ${row.orderNumber}?`,
+      html: `<p style="font-size:13px;color:#64748b">Se reenviará el aviso de WhatsApp al cliente.</p>`,
+      showCancelButton: true,
+      confirmButtonText: 'Sí, avisar de nuevo',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#0891b2',
+    });
+    if (!isConfirmed) return;
+    setNotifying(true);
+    try {
+      await api.post('/apiordenesRetiro/caja/orden/estado', { orderId: row.orderId, nuevoEstado: 12 });
+      toast.success(`${row.orderNumber} marcada para reenvío de aviso.`);
+      onGuardado();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Error al marcar el reaviso.');
+    } finally {
+      setNotifying(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b border-zinc-100 bg-zinc-50/60 flex items-center justify-between">
+        <h3 className="font-black text-zinc-800 text-xs uppercase tracking-wider flex items-center gap-2">
+          <Package size={14} className="text-brand-cyan" /> OrdenesDeposito
+        </h3>
+        <span
+          className="inline-block text-[9px] font-black uppercase px-1.5 py-0.5 rounded border"
+          style={row.oReId
+            ? { color: '#0e7490', background: '#ecfeff', borderColor: '#a5f3fc' }
+            : { color: '#71717a', background: '#f4f4f5', borderColor: '#e4e4e7' }}
+        >
+          {row.oReId ? `📦 Retiro ${row.oReId}` : 'Sin retiro'}
+        </span>
+      </div>
+      <div className="p-4 flex flex-col gap-3">
+        {row.bloqueado && <p className="text-[9px] text-emerald-600 font-black uppercase">✓ Pagada — cotización no editable</p>}
+        <div className="grid grid-cols-1 md:grid-cols-[0.8fr_0.7fr_0.8fr_0.8fr] gap-2 items-center bg-slate-50 border border-slate-200 rounded-xl p-3">
+          <select
+            disabled={row.bloqueado}
+            value={row.monedaId}
+            onChange={e => actualizarCampo('monedaId', e.target.value)}
+            className="w-full px-1 py-1.5 text-center font-black text-xs bg-white border border-slate-200 rounded-lg outline-none focus:border-brand-cyan disabled:bg-slate-100 disabled:text-slate-400"
+          >
+            <option value={1}>$ UYU</option>
+            <option value={2}>US$ USD</option>
+          </select>
+          <input
+            type="number" min="0" step="any" disabled={row.bloqueado}
+            value={row.cantidad}
+            onChange={e => actualizarCampo('cantidad', e.target.value)}
+            className="w-full px-2 py-1.5 text-center text-slate-800 font-black text-xs bg-white border border-slate-200 rounded-lg outline-none focus:border-brand-cyan disabled:bg-slate-100 disabled:text-slate-400"
+          />
+          <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:border-brand-cyan">
+            <span className="pl-2 text-[10px] text-slate-400 font-bold shrink-0">{row.simbolo}</span>
+            <input
+              type="number" min="0" step="any" disabled={row.bloqueado}
+              value={row.precio}
+              onChange={e => actualizarCampo('precio', e.target.value)}
+              className="w-full px-1 py-1.5 text-center text-slate-800 font-black text-xs bg-transparent outline-none disabled:text-slate-400"
+            />
+          </div>
+          <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden focus-within:border-brand-cyan">
+            <span className="pl-2 text-[10px] text-slate-400 font-bold shrink-0">{row.simbolo}</span>
+            <input
+              type="number" min="0" step="any" disabled={row.bloqueado}
+              value={row.total}
+              onChange={e => actualizarCampo('total', e.target.value)}
+              className="w-full px-1 py-1.5 text-center text-brand-cyan font-black text-xs bg-transparent outline-none disabled:text-slate-400"
+            />
+          </div>
+          <button
+            onClick={guardarCambios}
+            disabled={saving || row.bloqueado}
+            className="col-span-full bg-brand-cyan hover:bg-brand-cyan/90 disabled:bg-zinc-100 disabled:text-zinc-400 text-white font-black py-2 rounded-xl transition-all flex justify-center items-center gap-2 uppercase tracking-widest text-[10px]"
+          >
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <><CheckCircle size={13} /> Guardar cotización/cantidad</>}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-2 items-center">
+          <select
+            value={row.estadoNuevo}
+            onChange={e => setRow(prev => ({ ...prev, estadoNuevo: parseInt(e.target.value, 10) }))}
+            className="w-full px-2 py-2 text-center font-black text-[11px] bg-white border border-slate-200 rounded-lg outline-none focus:border-brand-cyan"
+          >
+            {Object.entries(ESTADOS).map(([id, nombre]) => <option key={id} value={id}>{nombre}</option>)}
+          </select>
+          <button
+            onClick={cambiarEstado}
+            disabled={saving}
+            className="flex items-center gap-1 bg-zinc-700 hover:bg-zinc-800 disabled:opacity-40 text-white font-black text-[10px] uppercase px-3 py-2 rounded-lg transition-all"
+          >
+            <RefreshCw size={12} /> Cambiar estado
+          </button>
+          <button
+            onClick={volverAAvisar}
+            disabled={notifying}
+            className="flex items-center gap-1 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 font-black text-[10px] uppercase px-3 py-2 rounded-lg transition-all disabled:opacity-40"
+          >
+            {notifying ? <Loader2 size={12} className="animate-spin" /> : <Bell size={12} />} Avisar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Contenedor: OrdenesRetiro (solo lectura) ───────────────────────────────────
+// El total del retiro es una suma derivada (SUM de OrdCostoFinal de sus órdenes);
+// no se edita acá — sólo sirve para confirmar que el cambio de cotización de una
+// orden efectivamente arrastró el total del retiro al que pertenece.
+function ContenedorRetiro({ retiro }) {
+  if (!retiro) return null;
+  return (
+    <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+      <div className="px-5 py-3 border-b border-zinc-100 bg-zinc-50/60">
+        <h3 className="font-black text-zinc-800 text-xs uppercase tracking-wider flex items-center gap-2">
+          <Package size={14} className="text-brand-cyan" /> OrdenesRetiro
+        </h3>
+      </div>
+      <BarraValoresCrudos
+        tabla={`Retiro ${retiro.OReIdOrdenRetiro}`}
+        campos={[
+          ['Estado', retiro.estadoRetiro || retiro.OReEstadoActual],
+          ['Total del retiro', fmt(retiro.OReCostoTotalOrden)],
+          ['Cant. órdenes', retiro.CantidadOrdenes],
+        ]}
+      />
+    </div>
+  );
+}
+
 export default function AdminEditarOrdenView() {
+  const { user } = useAuth();
   const [q, setQ] = useState('');
   const [loading, setLoading] = useState(false);
   const [resultados, setResultados] = useState(null);
+  const [estadoOrden, setEstadoOrden] = useState(null); // { orden, cobranza, deposito } — búsqueda de una orden puntual
 
   const buscar = async (term) => {
     const value = (term ?? q).trim();
@@ -275,12 +573,24 @@ export default function AdminEditarOrdenView() {
       return;
     }
     setLoading(true);
+    setEstadoOrden(null);
+    setResultados(null);
+    const esCodigoRetiro = /^R[A-Za-z]*-?\d+$/i.test(value);
     try {
+      if (!esCodigoRetiro) {
+        try {
+          const { data } = await api.get('/apiordenesRetiro/mostrador/estado', { params: { cod: value } });
+          setEstadoOrden(data);
+          return;
+        } catch (e) {
+          if (e.response?.status !== 404) throw e;
+          // No es un código de orden exacto → probamos búsqueda amplia (cliente/retiro) más abajo
+        }
+      }
       const { data } = await api.get('/apiordenesRetiro/mostrador/buscar', { params: { q: value } });
       setResultados(data);
     } catch (e) {
       toast.error(e.response?.data?.error || 'Error al buscar.');
-      setResultados(null);
     } finally {
       setLoading(false);
     }
@@ -358,11 +668,48 @@ export default function AdminEditarOrdenView() {
         </button>
       </div>
 
-      {resultados && grupos.length === 0 && (
+      {resultados && grupos.length === 0 && (resultados.sinDeposito || []).length === 0 && (
         <p className="text-sm text-zinc-400 font-semibold text-center py-10">Sin resultados para "{q}".</p>
       )}
 
+      {estadoOrden && (
+        <div className="flex flex-col gap-4">
+          <div className="bg-zinc-800 text-white rounded-2xl px-5 py-4 flex items-center justify-between">
+            <div>
+              <h2 className="font-black text-base uppercase tracking-wider">
+                {estadoOrden.orden?.CodigoOrden || estadoOrden.deposito?.OrdCodigoOrden}
+              </h2>
+              <p className="text-[11px] text-zinc-300 font-semibold mt-0.5 flex items-center gap-3">
+                {estadoOrden.orden?.Cliente && <span className="flex items-center gap-1"><User size={11} />{estadoOrden.orden.Cliente}</span>}
+                {estadoOrden.orden?.DescripcionTrabajo && <span>{estadoOrden.orden.DescripcionTrabajo}</span>}
+                {estadoOrden.orden?.Estado && <span className="text-zinc-400">Estado ERP: {estadoOrden.orden.Estado}</span>}
+              </p>
+            </div>
+          </div>
+
+          <ContenedorCobranza
+            codigoOrden={estadoOrden.orden?.CodigoOrden || estadoOrden.deposito?.OrdCodigoOrden}
+            cobranza={estadoOrden.cobranza}
+            currentUser={user}
+            onGuardado={() => buscar(q)}
+          />
+          <ContenedorDeposito
+            deposito={estadoOrden.deposito}
+            onGuardado={() => buscar(q)}
+          />
+          <ContenedorRetiro retiro={estadoOrden.retiro} />
+        </div>
+      )}
+
       <div className="flex flex-col gap-4">
+        {(resultados?.sinDeposito || []).map(orden => (
+          <TarjetaSinDeposito
+            key={`sd-${orden.OrdenID}`}
+            orden={orden}
+            currentUser={user}
+            onGuardado={() => buscar(q)}
+          />
+        ))}
         {grupos.map((g, i) => (
           <GrupoRetiro
             key={g.retiro?.OReIdOrdenRetiro || g.ordenes[0]?.OrdIdOrden || i}

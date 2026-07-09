@@ -28,7 +28,8 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
   const [serieDoc, setSerieDoc]   = useState('A');
   const [observaciones, setObservaciones] = useState('');
   const [procesando, setProcesando] = useState(false);
-  const [pendienteParcial, setPendienteParcial] = useState(null); // { diferencia } cuando pago < deuda
+  const [pendienteParcial, setPendienteParcial] = useState(null); // { falta } cuando pago < deuda
+  const [excedentePago, setExcedentePago]       = useState(null); // { excedente } cuando pago > deuda
 
   // ─── Derivados que los useEffects necesitan (deben declararse antes) ─────────────
   // NOTA: deudasSeleccionadas se recalcula debajo con más contexto,
@@ -50,9 +51,13 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
 
   // ─── Sincronizar moneda del pago cuando cambia la moneda de las deudas ────
   useEffect(() => {
-    // Solo sincronizar si el monto está vacío (el usuario no tocó nada aún)
-    setPagos(prev => prev.map(p =>
-      p.monto === '' ? { ...p, moneda: monedaDeuda, monedaId: monedaDeuda === 'USD' ? 2 : 1 } : p
+    // Al cambiar la moneda de las deudas, fijar la 1ª línea de pago a esa moneda y
+    // limpiar el monto para que el panel lo recalcule en la moneda correcta.
+    // (Evita que quede "pegado" en pesos cuando la deuda es en dólares.)
+    setPagos(prev => prev.map((p, i) =>
+      i === 0
+        ? { ...p, moneda: monedaDeuda, monedaId: monedaDeuda === 'USD' ? 2 : 1, monto: '' }
+        : p
     ));
   }, [monedaDeuda]);
 
@@ -217,7 +222,10 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
   };
 
   // ─── Procesar pago ────────────────────────────────────────────────────────
-  const handleProcesar = async (forzarParcial = false) => {
+  const handleProcesar = async (opts = {}) => {
+    // opts puede ser: {forzarParcial}/{forzarExcedente}, `true` (compat) o un evento de click.
+    const forzarParcial   = opts === true || opts?.forzarParcial === true;
+    const forzarExcedente = opts?.forzarExcedente === true;
     if (seleccionadas.length === 0) return toast.warning('Seleccione al menos una deuda.');
     if (clientesInvolucrados.length > 1) {
       return toast.warning('Solo se pueden pagar deudas de un mismo cliente a la vez.');
@@ -239,13 +247,17 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
 
     const diferencia = totalPagado - totalAPagar;
 
-    // Pago de más → siempre error
-    if (diferencia > 0.01)
-      return toast.error(`El pago excede la deuda en ${simboloDeuda} ${diferencia.toFixed(2)}. Ajuste el monto.`);
+    // Pago de más → confirmar que el excedente queda como saldo a favor del cliente
+    if (diferencia > 0.01 && !forzarExcedente) {
+      setExcedentePago({ excedente: diferencia, totalPagado });
+      setPendienteParcial(null);
+      return;
+    }
 
     // Pago parcial → mostrar banner de confirmación (solo si NO viene de confirmar explícito)
     if (diferencia < -0.01 && !forzarParcial) {
       setPendienteParcial({ falta: Math.abs(diferencia), totalPagado });
+      setExcedentePago(null);
       return;
     }
 
@@ -259,6 +271,8 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
           serieDoc,
           moneda: monedaDeuda,          // ← moneda real de la deuda (USD o UYU)
           monedaId: monedaDeuda === 'USD' ? 2 : 1,
+          cotizacionTC: cotizacion,     // TC global, para normalizar pagos en otra moneda
+          permitirExcedente: true,      // el excedente se guarda como saldo a favor
           observaciones: observaciones || `Pago de deudas combinadas`,
           admin: isAdminCaja,
           // Si alguna deuda no tiene DocIdDocumento → es una orden sin facturar → el backend genera PEDIDO CAJA
@@ -277,16 +291,24 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
           docIdDocumento: d.DocIdDocumento || null,  // para que el backend distinga facturas ya emitidas
           ordIdOrden:     d.OrdIdOrden    || null,   // referencia a la orden original
         })),
-        pagos: pagosValidos.map(p => ({
-          metodoPagoId: parseInt(p.metodoPagoId, 10),
-          monedaId:     parseInt(p.monedaId, 10),
-          montoOriginal: parseFloat(p.monto),
-          cotizacion: p.monedaId === 2 ? cotizacion : 1,
-        })),
+        pagos: pagosValidos.map(p => {
+          // La moneda elegida en el panel vive en p.moneda ('UYU'/'USD'); derivamos
+          // el monedaId de ahí para no enviar un id desactualizado al cambiar el toggle.
+          const monId = p.moneda === 'USD' ? 2 : (p.moneda === 'UYU' ? 1 : (parseInt(p.monedaId, 10) || 1));
+          return {
+            metodoPagoId:  parseInt(p.metodoPagoId, 10),
+            monedaId:      monId,
+            montoOriginal: parseFloat(p.monto),
+            cotizacion:    monId === 2 ? cotizacion : 1,
+          };
+        }),
       });
 
-      toast.success(`Pago registrado: ${seleccionadas.length} deuda(s) por ${simboloDeuda}${fmt(totalPagado)}`);
-      setSeleccionadas([]); setObservaciones(''); setPendienteParcial(null);
+      const excedenteMsg = res.data?.excedente > 0.01
+        ? ` — ${simboloDeuda}${fmt(res.data.excedente)} quedó como saldo a favor`
+        : '';
+      toast.success(`Pago registrado: ${seleccionadas.length} deuda(s) por ${simboloDeuda}${fmt(totalPagado)}${excedenteMsg}`);
+      setSeleccionadas([]); setObservaciones(''); setPendienteParcial(null); setExcedentePago(null);
       setPagos([{ id: Date.now(), metodoPagoId: metodosPago[0]?.MPaIdMetodoPago || '', moneda: 'UYU', monedaId: 1, monto: '' }]);
       cargarDeudas();
       if (onPagoCompletado) onPagoCompletado(res.data);
@@ -346,11 +368,11 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
 
         {/* 3. Sub-tabs */}
         <div className="flex gap-1 px-4 pt-3 bg-white shrink-0 border-b border-slate-100">
-          <button type="button" onClick={() => { setSubTab('docs'); setSeleccionadas([]); setPendienteParcial(null); }}
+          <button type="button" onClick={() => { setSubTab('docs'); setSeleccionadas([]); setPendienteParcial(null); setExcedentePago(null); }}
             className={`flex-1 text-[11px] font-black uppercase tracking-wide py-2.5 border-b-2 transition-colors ${subTab === 'docs' ? 'text-brand-cyan border-brand-cyan' : 'text-slate-400 border-transparent hover:text-slate-600'}`}>
             Documentos con deuda → Recibo
           </button>
-          <button type="button" onClick={() => { setSubTab('ordenes'); setSeleccionadas([]); setPendienteParcial(null); setTipoDoc('40'); setSerieDoc('PC'); }}
+          <button type="button" onClick={() => { setSubTab('ordenes'); setSeleccionadas([]); setPendienteParcial(null); setExcedentePago(null); setTipoDoc('40'); setSerieDoc('PC'); }}
             className={`flex-1 text-[11px] font-black uppercase tracking-wide py-2.5 border-b-2 transition-colors ${subTab === 'ordenes' ? 'text-brand-cyan border-brand-cyan' : 'text-slate-400 border-transparent hover:text-slate-600'}`}>
             Órdenes a facturar
           </button>
@@ -412,8 +434,17 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
             <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 text-[11px] text-amber-800 flex flex-col gap-2">
               <span className="font-black">Pago parcial — falta {simboloDeuda} {pendienteParcial.falta.toFixed(2)}. La deuda queda parcialmente pagada.</span>
               <div className="flex gap-2">
-                <button onClick={() => handleProcesar(true)} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black py-1.5 rounded-lg">Confirmar parcial</button>
+                <button onClick={() => handleProcesar({ forzarParcial: true })} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black py-1.5 rounded-lg">Confirmar parcial</button>
                 <button onClick={() => setPendienteParcial(null)} className="flex-1 bg-white border border-amber-300 text-amber-700 font-black py-1.5 rounded-lg">Cancelar</button>
+              </div>
+            </div>
+          )}
+          {excedentePago && (
+            <div className="bg-sky-50 border border-sky-300 rounded-lg p-3 text-[11px] text-sky-800 flex flex-col gap-2">
+              <span className="font-black">Pago en exceso — {simboloDeuda} {excedentePago.excedente.toFixed(2)} quedará como saldo a favor del cliente.</span>
+              <div className="flex gap-2">
+                <button onClick={() => handleProcesar({ forzarExcedente: true })} className="flex-1 bg-sky-500 hover:bg-sky-600 text-white font-black py-1.5 rounded-lg">Cobrar y dejar a favor</button>
+                <button onClick={() => setExcedentePago(null)} className="flex-1 bg-white border border-sky-300 text-sky-700 font-black py-1.5 rounded-lg">Cancelar</button>
               </div>
             </div>
           )}
@@ -636,7 +667,6 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
           onPagosChange={setPagos}
           totalACubrir={totalAPagar}
           moneda={monedaDeuda}
-          lockMoneda={monedaDeuda}
           cotizacion={cotizacion}
           procesando={procesando}
           onConfirmar={handleProcesar}
@@ -689,13 +719,39 @@ export default function CajaPagoDeudaTab({ sesion, metodosPago = [], cotizacion 
                 </p>
                 <div className="flex gap-2">
                   <button
-                    onClick={() => { handleProcesar(true); }}
+                    onClick={() => { handleProcesar({ forzarParcial: true }); }}
                     className="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-black py-2 px-4 rounded-xl text-sm transition-colors">
                     ✓ Confirmar pago parcial
                   </button>
                   <button
                     onClick={() => setPendienteParcial(null)}
                     className="flex-1 bg-white border-2 border-amber-400 text-amber-700 font-black py-2 px-4 rounded-xl text-sm hover:bg-amber-50 transition-colors">
+                    ✗ Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Banner de confirmación de pago en exceso → saldo a favor */}
+            {excedentePago && (
+              <div className="bg-sky-50 border-2 border-sky-400 text-sky-800 px-5 py-4 rounded-2xl flex flex-col gap-3">
+                <div className="flex items-center gap-2 font-black text-sm">
+                  <AlertTriangle size={18} className="text-sky-500" />
+                  PAGO EN EXCESO — {simboloDeuda} {excedentePago.excedente.toFixed(2)} a saldo a favor
+                </div>
+                <p className="text-xs font-medium text-sky-700">
+                  El monto ingresado ({simboloDeuda} {fmt(excedentePago.totalPagado)}) supera el total de la deuda ({simboloDeuda} {fmt(totalAPagar)}).
+                  La deuda se cancela y el excedente de <strong>{simboloDeuda} {excedentePago.excedente.toFixed(2)}</strong> quedará como <strong>SALDO A FAVOR</strong> del cliente en su cuenta corriente.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { handleProcesar({ forzarExcedente: true }); }}
+                    className="flex-1 bg-sky-500 hover:bg-sky-600 text-white font-black py-2 px-4 rounded-xl text-sm transition-colors">
+                    ✓ Cobrar y dejar saldo a favor
+                  </button>
+                  <button
+                    onClick={() => setExcedentePago(null)}
+                    className="flex-1 bg-white border-2 border-sky-400 text-sky-700 font-black py-2 px-4 rounded-xl text-sm hover:bg-sky-50 transition-colors">
                     ✗ Cancelar
                   </button>
                 </div>
