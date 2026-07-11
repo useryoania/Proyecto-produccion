@@ -57,6 +57,7 @@
 
 const { getPool, sql } = require('../config/db');
 const logger           = require('../utils/logger');
+const { marcarCobranzaPagada, marcarCobranzaPendiente } = require('./cobranzaService');
 const contabilidadSvc  = require('./contabilidadService');
 const contabilidadCore = require('./contabilidadCore'); // ERP + resolverLineasDesdeMotor
 const motorContable    = require('./motorContable');     // Motor de Eventos: fuente de verdad
@@ -937,6 +938,9 @@ async function procesarTransaccion(payload) {
             INSERT INTO dbo.HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
             VALUES ${histValsOd};
           `);
+
+          // Sincronizar la vista de cobranza (Caja/portal/tótem la leen por EstadoCobro)
+          await marcarCobranzaPagada(transaction, ap.orderNumbers);
       }
 
       if (isVirtual) {
@@ -1010,6 +1014,9 @@ async function procesarTransaccion(payload) {
         INSERT INTO dbo.HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
         VALUES ${histVals};
       `);
+
+      // Sincronizar la vista de cobranza (Caja/portal/tótem la leen por EstadoCobro)
+      await marcarCobranzaPagada(transaction, ids);
     }
 
 
@@ -1641,7 +1648,13 @@ async function anularTransaccion({ tcaIdTransaccion, usuarioId, motivo }) {
         );
       `);
 
-    // Revertir OrdenesDeposito
+    // Revertir OrdenesDeposito (capturamos las órdenes ANTES de borrar TcaIdTransaccion,
+    // para poder revertir también la vista de cobranza)
+    const ordAnuladasRes = await new sql.Request(transaction)
+      .input('TcaId', sql.Int, tcaIdTransaccion)
+      .query(`SELECT OrdIdOrden FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE TcaIdTransaccion = @TcaId`);
+    const ordAnuladas = ordAnuladasRes.recordset.map(r => r.OrdIdOrden);
+
     await new sql.Request(transaction)
       .input('TcaId',    sql.Int, tcaIdTransaccion)
       .input('UsuarioId',sql.Int, usuarioId)
@@ -1653,6 +1666,9 @@ async function anularTransaccion({ tcaIdTransaccion, usuarioId, motivo }) {
             OrdFechaEstadoActual = GETDATE()
         WHERE TcaIdTransaccion = @TcaId;
       `);
+
+    // La cobranza vuelve a Pendiente (inverso de marcarCobranzaPagada)
+    await marcarCobranzaPendiente(transaction, ordAnuladas);
 
     await transaction.commit();
     logger.info(`[CAJA] 🔄 Transaccion ${tcaIdTransaccion} anulada por usuario ${usuarioId}.`);

@@ -5,6 +5,7 @@
  */
 const { sql, getPool } = require('../config/db');
 const logger = require('../utils/logger');
+const { marcarCobranzaPagada } = require('./cobranzaService');
 
 /**
  * resolverEstadoPorTipoCliente
@@ -479,6 +480,9 @@ async function registrarPago(transaction, { ordenRetiroId, metodoPagoId, monedaI
             INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
             VALUES ${histValues};
         `);
+
+        // Sincronizar la vista de cobranza (Caja/portal/tótem la leen por EstadoCobro)
+        await marcarCobranzaPagada(transaction, orderNumbers);
     }
 
     // 5. AUTO-CIERRE: si todas las órdenes hijas están pagas → estado 4 (Abonado)

@@ -671,6 +671,28 @@ const FilePrintControl = ({ areaCode }) => {
   };
 
 
+  // Agrega un bulto/etiqueta EXTRA a la orden seleccionada (mismo backend que el modal de Etiquetas).
+  // Útil acá porque al controlar/empaquetar ya se sabe el total real de bultos.
+  const handleAddExtraBulto = async () => {
+    if (!selectedOrder?.id) return;
+    if (!window.confirm(`¿Agregar un bulto EXTRA a la orden ${selectedOrder.code || selectedOrder.id}?`)) return;
+    try {
+      setToast({ visible: true, message: 'Agregando bulto extra...', type: 'info' });
+      const res = await fileControlService.createExtraLabel(selectedOrder.id);
+      if (res?.success) {
+        const total = res?.details?.totalBultos;
+        setToast({ visible: true, message: res.message || 'Bulto extra agregado.', type: 'success' });
+        // Reflejar el nuevo total de etiquetas en la orden (habilita/actualiza el botón Etiquetas)
+        setSelectedOrder(prev => prev ? { ...prev, hasLabels: total ?? ((prev.hasLabels || 0) + 1) } : prev);
+        setOrders(prev => prev.map(o => o.id === selectedOrder.id ? { ...o, hasLabels: total ?? ((o.hasLabels || 0) + 1) } : o));
+      } else {
+        setToast({ visible: true, message: res?.error || 'No se pudo agregar el bulto.', type: 'error' });
+      }
+    } catch (e) {
+      setToast({ visible: true, message: e?.response?.data?.error || e?.message || 'Error al agregar bulto extra.', type: 'error' });
+    }
+  };
+
   const handlePrintLabels = async (ordenIdToPrint) => {
     const id = ordenIdToPrint || selectedOrder?.id;
     if (!id) return;
@@ -1138,6 +1160,16 @@ const FilePrintControl = ({ areaCode }) => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Botón: agregar bulto/etiqueta extra (acá ya se conoce el total real al controlar) */}
+                  <button
+                    onClick={handleAddExtraBulto}
+                    title="Agregar un bulto/etiqueta extra a esta orden"
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-brand-cyan/30 bg-white text-brand-cyan text-xs font-black uppercase tracking-wide hover:bg-brand-cyan/10 transition-all shadow-sm shrink-0"
+                  >
+                    <i className="fa-solid fa-plus"></i>
+                    <span className="hidden sm:inline">Extra</span>
+                  </button>
 
                   {/* Big Counter */}
                   <div className="text-right pl-5 border-l border-slate-100 flex flex-col justify-center">

@@ -1497,6 +1497,13 @@ exports.getClientOrders = async (req, res) => {
                     INNER JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                     LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
                     WHERE c.CodCliente = @cod
+                      -- Un pedido web finalizado también vive en OrdenesDeposito (circuito de retiro):
+                      -- si ya tiene su orden de producción, no contarlo dos veces.
+                      AND NOT EXISTS (
+                          SELECT 1 FROM Ordenes o2 WITH(NOLOCK)
+                          WHERE o2.CodCliente = @cod
+                            AND LTRIM(RTRIM(o2.CodigoOrden)) = LTRIM(RTRIM(o.OrdCodigoOrden))
+                      )
                 `);
             
             const docs = {};
@@ -1607,6 +1614,14 @@ exports.getClientOrders = async (req, res) => {
                     LEFT JOIN Monedas mo WITH(NOLOCK) ON mo.MonIdMoneda = o.MonIdMoneda
                     LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = o.ProIdProducto
                     WHERE c.CodCliente = @cod
+                      -- Un pedido web finalizado también vive en OrdenesDeposito (circuito de retiro):
+                      -- se muestra solo la orden de producción (tiene archivos, magnitud y estados completos).
+                      -- Este ramal queda para pedidos de mostrador que NO existen en Ordenes.
+                      AND NOT EXISTS (
+                          SELECT 1 FROM Ordenes o2 WITH(NOLOCK)
+                          WHERE o2.CodCliente = @cod
+                            AND LTRIM(RTRIM(o2.CodigoOrden)) = LTRIM(RTRIM(o.OrdCodigoOrden))
+                      )
                 ) combined
                 ORDER BY combined.FechaIngreso DESC, combined.OrdenID DESC
                 OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY

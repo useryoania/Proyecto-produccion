@@ -658,7 +658,9 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                     ? parseFloat(it.printSettings.finalHeightM)
                     : (it.file?.height ? (it.file.unit === 'meters' ? it.file.height : (it.file.height / 300) * 0.0254) : 0);
 
-                const finalQty = isSpecialPrint ? 1 : it.copies;
+                // Escala respeta las copias (cada copia es un largo escalado más); Raport NO
+                // (su ancho/largo total YA es el resultado, las copias no lo multiplican).
+                const finalQty = (it.printSettings?.mode === 'raport') ? 1 : it.copies;
 
                 const shouldUseSame = (isDirectaTwinface && twinfaceSame);
                 const fileBackEffective = it.fileBack || (shouldUseSame ? it.file : null);
@@ -945,7 +947,9 @@ const OrderForm = ({ serviceId: propServiceId }) => {
             const usaTelaCliente = selectedBobinaId && ((fabricOrigin === 'TELA CLIENTE' && moldType !== 'SUBLIMACION') || isSubliTelaCliente);
             const largoTotalM = Math.round(items.reduce((acc, it) => {
                 const h = it.printSettings?.finalHeightM || (it.file?.unit === 'meters' ? it.file?.height : (it.file?.height ? (it.file.height / 300) * 0.0254 : 0)) || 0;
-                return acc + (h * (it.copies || 1));
+                // Raport no multiplica por copias (su largo total ya es el resultado); escala/normal sí.
+                const factorCopias = (it.printSettings?.mode === 'raport') ? 1 : (it.copies || 1);
+                return acc + (h * factorCopias);
             }, 0) * 100) / 100;
 
             const payload = {
@@ -1573,7 +1577,9 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                             <div><p className="text-[11px] uppercase font-bold text-zinc-500">Items (Total)</p><p className="text-2xl font-black text-zinc-100">{items.length}</p></div>
                             <div><p className="text-[11px] uppercase font-bold text-zinc-500">Largo Total</p><p className="text-2xl font-black text-cyan-400">{items.reduce((acc, it) => {
                                 const h = it.printSettings?.finalHeightM || (it.file?.unit === 'meters' ? it.file?.height : (it.file?.height ? (it.file.height / 300) * 0.0254 : 0)) || 0;
-                                return acc + (h * (it.copies || 1));
+                                // Raport no multiplica por copias (su largo total ya es el resultado); escala/normal sí.
+                                const factorCopias = (it.printSettings?.mode === 'raport') ? 1 : (it.copies || 1);
+                                return acc + (h * factorCopias);
                             }, 0).toFixed(2)}m</p></div>
                         </div>
                         <CustomButton type="submit" variant="primary" className="w-full md:w-auto px-14 py-5 !bg-cyan-400 !text-zinc-900 hover:!bg-cyan-300 font-black text-lg rounded-2xl shadow-lg shadow-cyan-500/20" isLoading={loading} icon={Save}>Confirmar Pedido</CustomButton>
