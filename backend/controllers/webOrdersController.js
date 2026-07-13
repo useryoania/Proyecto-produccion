@@ -2062,6 +2062,41 @@ exports.getOrderFiles = async (req, res) => {
     }
 };
 
+// GET /api/web-orders/orders-files?ids=1,2,3 — archivos de VARIAS órdenes de un mismo pedido.
+// Necesario para multitela: cada tela (hermana 1/2, 2/2) es una orden distinta con su propio
+// archivo; el detalle expandido debe traerlos TODOS, no solo los de la primera. Scopeado al cliente.
+exports.getOrdersFiles = async (req, res) => {
+    const codCliente = req.user?.codCliente;
+    const ids = String(req.query.ids || '')
+        .split(',').map(n => parseInt(n, 10)).filter(n => Number.isInteger(n) && n > 0);
+    if (!ids.length) return res.json({ success: true, data: [] });
+    try {
+        const pool = await getPool();
+        const request = pool.request().input('cod', sql.Int, codCliente || 0);
+        ids.forEach((id, i) => request.input(`id${i}`, sql.Int, id));
+        const inClause = ids.map((_, i) => `@id${i}`).join(',');
+
+        const result = await request.query(`
+            SELECT ao.ArchivoID,
+                   ao.NombreArchivo,
+                   ISNULL(ao.Copias, 1) AS Copias,
+                   ao.RutaAlmacenamiento,
+                   o.OrdenID,
+                   o.CodigoOrden,
+                   o.Material,          -- la tela de esta hermana
+                   o.Estado
+            FROM dbo.ArchivosOrden ao WITH(NOLOCK)
+            INNER JOIN dbo.Ordenes o WITH(NOLOCK) ON ao.OrdenID = o.OrdenID
+            WHERE ao.OrdenID IN (${inClause}) AND o.CodCliente = @cod
+            ORDER BY o.CodigoOrden ASC, ao.ArchivoID ASC
+        `);
+        res.json({ success: true, data: result.recordset });
+    } catch (err) {
+        logger.error("Error getOrdersFiles:", err);
+        res.status(500).json({ error: "Error al obtener archivos del pedido." });
+    }
+};
+
 // --- ELIMINAR PEDIDO INCOMPLETO (ZOMBIE) ---
 exports.deleteIncompleteOrder = async (req, res) => {
     const codCliente = req.user?.codCliente;

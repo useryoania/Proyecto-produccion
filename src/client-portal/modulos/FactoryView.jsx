@@ -142,12 +142,14 @@ export const FactoryView = () => {
         }
     };
 
-    // Carga (lazy) los archivos + copias de una orden al expandirla.
-    const loadProjectFiles = async (projectId, ordenId) => {
-        if (!ordenId) return;
+    // Carga (lazy) los archivos + copias de TODAS las hermanas del pedido al expandirlo.
+    // En multitela cada tela es una orden distinta → hay que pedir todos los OrdenID, no solo el primero.
+    const loadProjectFiles = async (projectId, ordenIds) => {
+        const ids = (Array.isArray(ordenIds) ? ordenIds : [ordenIds]).filter(Boolean);
+        if (!ids.length) return;
         setProjectFiles(prev => ({ ...prev, [projectId]: { loading: true, files: [] } }));
         try {
-            const res = await apiClient.get(`/web-orders/order/${ordenId}/files`);
+            const res = await apiClient.get(`/web-orders/orders-files?ids=${ids.join(',')}`);
             setProjectFiles(prev => ({ ...prev, [projectId]: { loading: false, files: (res.success && res.data) ? res.data : [] } }));
         } catch (e) {
             setProjectFiles(prev => ({ ...prev, [projectId]: { loading: false, files: [] } }));
@@ -502,6 +504,11 @@ export const FactoryView = () => {
                         const hasZombies = project.subOrders.some(so => so.Estado === 'Cargando...');
                         const allPending = project.subOrders.every(so => ['Pendiente', 'Cargando...'].includes(so.Estado));
                         const materialList = Array.from(project.materials);
+                        // Multitela: el pedido tiene varias telas = varias sub-órdenes WEB (hermanas 1/2, 2/2…),
+                        // cada una con su material, su archivo y su propio estado. Se muestran fila por fila.
+                        const telaSubs = project.subOrders.filter(so =>
+                            so.Origen === 'WEB' && !(so.CodigoOrden || '').toUpperCase().includes('-F'));
+                        const isMultitela = telaSubs.length >= 2;
                         // F4: pedido de diseñador retenido — está en 'Cargando...' pero completo, esperando el OK del cliente
                         const esperandoAprobacion = project.pendientesAprobacion.length > 0;
 
@@ -528,8 +535,14 @@ export const FactoryView = () => {
                                             {(project.id || '').replace(/\s*\(\d+\/\d+\)\s*$/, '')}
                                         </span>
 
-                                        {/* Material en el medio */}
-                                        {materialList.length > 0 && (
+                                        {/* Medio: badge "N telas" en multitela; si no, el material */}
+                                        {isMultitela ? (
+                                            <div className="flex items-center gap-1 flex-1 min-w-0">
+                                                <span className="inline-flex items-center gap-1 text-[10px] text-cyan-300 bg-cyan-400/10 border border-cyan-500/30 px-2 py-0.5 rounded font-bold uppercase tracking-wide">
+                                                    <Layers size={11} /> {telaSubs.length} telas
+                                                </span>
+                                            </div>
+                                        ) : materialList.length > 0 ? (
                                             <div className="flex items-center gap-1 flex-1 min-w-0">
                                                 <span className="text-[10px] text-zinc-400 bg-zinc-800/80 border border-zinc-700/50 px-2 py-0.5 rounded font-bold uppercase tracking-wide truncate">
                                                     {materialList[0]}
@@ -538,8 +551,7 @@ export const FactoryView = () => {
                                                     <span className="text-[10px] text-zinc-500 font-bold shrink-0">+{materialList.length - 1}</span>
                                                 )}
                                             </div>
-                                        )}
-                                        {materialList.length === 0 && <div className="flex-1" />}
+                                        ) : <div className="flex-1" />}
 
                                         {/* Estado + acción a la derecha */}
                                         <div className="flex items-center gap-1.5 shrink-0">
@@ -603,8 +615,60 @@ export const FactoryView = () => {
                                         </div>
                                     )}
 
-                                    {/* Fila 3: máquina + metros + preview archivo */}
-                                    {(project.maquina || project.magnitud || project.driveFileId) && (
+                                    {/* Multitela: una fila por tela (miniatura + material + metros + estado individual) */}
+                                    {isMultitela && (
+                                        <div className="mt-1 border border-zinc-800 rounded-lg overflow-hidden divide-y divide-zinc-800/80">
+                                            {telaSubs.map(so => {
+                                                const sKey = getStatusKey(so.Estado);
+                                                const sConf = STATUS_CONFIG[sKey];
+                                                const parte = (so.CodigoOrden || '').match(/\((\d+\/\d+)\)/)?.[1];
+                                                const soDrive = extractDriveId(so.DriveFileId);
+                                                const thumbSrc = so.PrimerArchivoID
+                                                    ? `/thumbnails/${so.CodigoOrden}/${so.PrimerArchivoID}.jpg`
+                                                    : (soDrive ? `/api/web-orders/file-thumbnail/${soDrive}` : null);
+                                                return (
+                                                    <div key={so.OrdenID || so.CodigoOrden} className="flex items-center gap-3 px-3 py-2 bg-zinc-800/20">
+                                                        <div className="w-10 h-10 rounded-md overflow-hidden border border-zinc-700/60 bg-zinc-800 shrink-0 flex items-center justify-center text-zinc-600">
+                                                            {thumbSrc ? (
+                                                                <img
+                                                                    src={thumbSrc}
+                                                                    alt={so.Material || so.CodigoOrden}
+                                                                    className="w-full h-full object-contain"
+                                                                    onError={e => {
+                                                                        if (e.target.dataset.fb !== '1' && soDrive) {
+                                                                            e.target.dataset.fb = '1';
+                                                                            e.target.src = `/api/web-orders/file-thumbnail/${soDrive}`;
+                                                                            return;
+                                                                        }
+                                                                        e.target.style.display = 'none';
+                                                                        e.target.parentNode.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>';
+                                                                    }}
+                                                                />
+                                                            ) : (
+                                                                <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="text-xs font-bold text-zinc-200 truncate">{so.Material || 'Sin material'}</div>
+                                                            {so.Magnitud != null && (
+                                                                <div className="text-[10px] text-zinc-500 font-medium">
+                                                                    {Number(so.Magnitud).toLocaleString('es-UY', { maximumFractionDigits: 2 })} {so.UM || 'm'}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                        {parte && <span className="text-[10px] text-zinc-500 font-medium shrink-0">Parte {parte}</span>}
+                                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wide shrink-0 ${sConf.bg} ${sConf.color} ${sConf.border} border`}>
+                                                            {sConf.icon}
+                                                            {sConf.label}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+
+                                    {/* Fila 3: máquina + metros + preview archivo (pedidos de una sola tela) */}
+                                    {!isMultitela && (project.maquina || project.magnitud || project.driveFileId) && (
                                         <div className="flex items-center gap-3 mt-0.5">
                                             {/* Preview miniatura Drive */}
                                             {project.driveFileId && (
@@ -689,7 +753,13 @@ export const FactoryView = () => {
                                     onClick={() => {
                                         const willExpand = expandedProject !== project.id;
                                         setExpandedProject(willExpand ? project.id : null);
-                                        if (willExpand && !projectFiles[project.id]) loadProjectFiles(project.id, project.ordenId);
+                                        if (willExpand && !projectFiles[project.id]) {
+                                            // Todas las hermanas WEB del pedido (multitela = varias telas/órdenes)
+                                            const ids = project.subOrders
+                                                .filter(o => o.Origen === 'WEB' && o.OrdenID != null && !(o.CodigoOrden || '').toUpperCase().includes('-F'))
+                                                .map(o => o.OrdenID);
+                                            loadProjectFiles(project.id, ids.length ? ids : project.ordenId);
+                                        }
                                     }}
                                     className="w-full flex items-center justify-center gap-1.5 py-2 border-t border-zinc-800/60 text-[10px] font-bold text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30 transition-all"
                                 >
@@ -738,6 +808,9 @@ export const FactoryView = () => {
                                                                             <span className="absolute top-2 right-2 bg-brand-cyan text-white text-xs font-black px-2 py-0.5 rounded-md shadow-lg">x{f.Copias}</span>
                                                                         </div>
                                                                         <span className="text-[11px] text-zinc-400 text-center leading-tight w-full truncate" title={f.NombreArchivo}>{f.NombreArchivo}</span>
+                                                                        {isMultitela && f.Material && (
+                                                                            <span className="text-[10px] text-cyan-300/80 bg-cyan-400/5 border border-cyan-500/20 px-2 py-0.5 rounded font-bold uppercase tracking-wide truncate max-w-full" title={f.Material}>{f.Material}</span>
+                                                                        )}
                                                                     </div>
                                                                 );
                                                             })}

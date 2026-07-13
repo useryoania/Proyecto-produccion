@@ -30,6 +30,8 @@ const { impersonarCliente } = require('../controllers/webDesignerController');
 router.get('/my-orders', verifyToken, impersonarCliente, webOrdersController.getClientOrders);
 // GET /api/web-orders/order/:ordenId/files — archivos + copias de una orden del cliente
 router.get('/order/:ordenId/files', verifyToken, impersonarCliente, webOrdersController.getOrderFiles);
+// GET /api/web-orders/orders-files?ids=1,2,3 — archivos de todas las hermanas de un pedido (multitela)
+router.get('/orders-files', verifyToken, impersonarCliente, webOrdersController.getOrdersFiles);
 
 // GET /api/web-orders/active-sublimation
 router.get('/active-sublimation', verifyToken, impersonarCliente, webOrdersController.getActiveSublimationOrders);

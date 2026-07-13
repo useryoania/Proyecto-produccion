@@ -488,7 +488,7 @@ const postControlArchivo = async (req, res) => {
                             Magnitud, IdCabezalERP, ProximoServicio, Nota, NoDocERP,
                             FechaEntradaSector, ArchivosCount, Variante, UM,
                             IdClienteReact, CliIdCliente, CodCliente,
-                            IdProductoReact, ProIdProducto, CodArticulo, CostoTotal
+                            IdProductoReact, ProIdProducto, CodArticulo, BobinaTelaID, CostoTotal
                         )
                         SELECT
                             @NewCode, Cliente, GETDATE(), FechaEstimadaEntrega,
@@ -497,7 +497,11 @@ const postControlArchivo = async (req, res) => {
                             (CASE WHEN @IsSB = 1 THEN 0 ELSE Magnitud END), IdCabezalERP, ProximoServicio, @NotaFinal, NoDocERP,
                             GETDATE(), 1, Variante, UM,
                             IdClienteReact, CliIdCliente, CodCliente,
-                            IdProductoReact, ProIdProducto, CodArticulo, 0
+                            IdProductoReact, ProIdProducto, CodArticulo,
+                            -- TELA DE CLIENTE (solo sublimación): la falla hereda la bobina de la madre
+                            -- para mostrar el mismo material que la orden original (la planilla lo arma
+                            -- desde InventarioBobinas). Fuera de SB queda NULL como antes.
+                            CASE WHEN @IsSB = 1 THEN BobinaTelaID ELSE NULL END, 0
                         FROM dbo.Ordenes
                         WHERE OrdenID = @OldID;
 
