@@ -139,18 +139,34 @@ router.get('/variants/:areaId', async (req, res) => {
         const { areaId } = req.params;
         const pool = await getPool();
 
-        const r = await pool.request()
-            .input('AreaID', sql.VarChar, areaId)
-            .query(`
-                SELECT DISTINCT LTRIM(RTRIM(dbo.StockArt.Articulo)) AS Variante,
-                       ISNULL(dbo.StockArt.TipoStock, 'MATERIAL') AS TipoStock,
-                       LTRIM(RTRIM(dbo.StockArt.UM)) AS UM
-                FROM dbo.ConfigMapeoERP
-                INNER JOIN dbo.StockArt ON dbo.ConfigMapeoERP.CodigoERP = dbo.StockArt.Grupo
-                WHERE dbo.ConfigMapeoERP.AreaID_Interno = @AreaID
-                  AND ISNULL(dbo.StockArt.mostrar, 1) = 1
-                ORDER BY Variante
-            `);
+        let r;
+        try {
+            r = await pool.request()
+                .input('AreaID', sql.VarChar, areaId)
+                .query(`
+                    SELECT DISTINCT LTRIM(RTRIM(dbo.StockArt.Articulo)) AS Variante,
+                           ISNULL(dbo.StockArt.TipoStock, 'MATERIAL') AS TipoStock,
+                           LTRIM(RTRIM(dbo.StockArt.UM)) AS UM
+                    FROM dbo.ConfigMapeoERP
+                    INNER JOIN dbo.StockArt ON dbo.ConfigMapeoERP.CodigoERP = dbo.StockArt.Grupo
+                    WHERE dbo.ConfigMapeoERP.AreaID_Interno = @AreaID
+                      AND ISNULL(dbo.StockArt.mostrar, 1) = 1
+                    ORDER BY Variante
+                `);
+        } catch (eCol) {
+            // Base sin la migración ECOUV (columna TipoStock inexistente): fallback legacy
+            // para NO romper las variantes de las demás áreas (DTF, SB, EMB...).
+            r = await pool.request()
+                .input('AreaID', sql.VarChar, areaId)
+                .query(`
+                    SELECT DISTINCT LTRIM(RTRIM(dbo.StockArt.Articulo)) AS Variante
+                    FROM dbo.ConfigMapeoERP
+                    INNER JOIN dbo.StockArt ON dbo.ConfigMapeoERP.CodigoERP = dbo.StockArt.Grupo
+                    WHERE dbo.ConfigMapeoERP.AreaID_Interno = @AreaID
+                      AND ISNULL(dbo.StockArt.mostrar, 1) = 1
+                    ORDER BY Variante
+                `);
+        }
 
         res.json({ success: true, data: r.recordset });
     } catch (e) { res.status(500).json({ error: e.message }); }

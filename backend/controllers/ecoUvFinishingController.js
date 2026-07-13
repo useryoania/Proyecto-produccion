@@ -7,26 +7,45 @@ const logger = require('../utils/logger');
 exports.getFinishingOrders = async (req, res) => {
     try {
         const pool = await getPool();
-        const result = await pool.request().query(`
-            SELECT
-                O.OrdenID, O.CodigoOrden, O.NoDocERP, O.Cliente, O.DescripcionTrabajo, O.Prioridad, O.Estado,
-                O.Material, O.Variante, O.FechaIngreso, O.Magnitud, O.UM, O.Nota, O.EstadoenArea,
-                (SELECT COUNT(*) FROM ServiciosExtraOrden S WHERE S.OrdenID = O.OrdenID) as ExtrasCount,
-                (SELECT COUNT(*) FROM OrdenTerminaciones OT WHERE OT.OrdenID = O.OrdenID) as TermCount,
-                (SELECT COUNT(*) FROM OrdenTerminaciones OT WHERE OT.OrdenID = O.OrdenID AND OT.Estado = 'Pendiente') as TermPendientes
-            FROM Ordenes O
-            WHERE O.AreaID = 'ECOUV'
-              AND O.Estado NOT IN ('Finalizado', 'Entregado', 'Cancelado')
-              AND (
-                    -- Modelo nuevo: orden con terminaciones por archivo
-                    EXISTS (SELECT 1 FROM OrdenTerminaciones OT WHERE OT.OrdenID = O.OrdenID)
-                    -- Legacy: orden-extra separada
-                    OR O.Variante LIKE '%Extra%' OR O.Variante LIKE '%Servicio%' OR O.Variante LIKE '%Materiales%' OR O.Material LIKE '%Extra%'
-              )
-            ORDER BY
-                CASE WHEN O.Prioridad = 'Urgente' THEN 0 ELSE 1 END,
-                O.FechaIngreso DESC
-        `);
+        let result;
+        try {
+            result = await pool.request().query(`
+                SELECT
+                    O.OrdenID, O.CodigoOrden, O.NoDocERP, O.Cliente, O.DescripcionTrabajo, O.Prioridad, O.Estado,
+                    O.Material, O.Variante, O.FechaIngreso, O.Magnitud, O.UM, O.Nota, O.EstadoenArea,
+                    (SELECT COUNT(*) FROM ServiciosExtraOrden S WHERE S.OrdenID = O.OrdenID) as ExtrasCount,
+                    (SELECT COUNT(*) FROM OrdenTerminaciones OT WHERE OT.OrdenID = O.OrdenID) as TermCount,
+                    (SELECT COUNT(*) FROM OrdenTerminaciones OT WHERE OT.OrdenID = O.OrdenID AND OT.Estado = 'Pendiente') as TermPendientes
+                FROM Ordenes O
+                WHERE O.AreaID = 'ECOUV'
+                  AND O.Estado NOT IN ('Finalizado', 'Entregado', 'Cancelado')
+                  AND (
+                        -- Modelo nuevo: orden con terminaciones por archivo
+                        EXISTS (SELECT 1 FROM OrdenTerminaciones OT WHERE OT.OrdenID = O.OrdenID)
+                        -- Legacy: orden-extra separada
+                        OR O.Variante LIKE '%Extra%' OR O.Variante LIKE '%Servicio%' OR O.Variante LIKE '%Materiales%' OR O.Material LIKE '%Extra%'
+                  )
+                ORDER BY
+                    CASE WHEN O.Prioridad = 'Urgente' THEN 0 ELSE 1 END,
+                    O.FechaIngreso DESC
+            `);
+        } catch (eTabla) {
+            // Base sin la migración ECOUV (tabla OrdenTerminaciones inexistente): fallback legacy
+            logger.warn('[Finishing] OrdenTerminaciones no disponible, usando query legacy:', eTabla.message);
+            result = await pool.request().query(`
+                SELECT
+                    O.OrdenID, O.CodigoOrden, O.NoDocERP, O.Cliente, O.DescripcionTrabajo, O.Prioridad, O.Estado,
+                    O.Material, O.Variante, O.FechaIngreso, O.Magnitud, O.UM, O.Nota, O.EstadoenArea,
+                    (SELECT COUNT(*) FROM ServiciosExtraOrden S WHERE S.OrdenID = O.OrdenID) as ExtrasCount
+                FROM Ordenes O
+                WHERE O.AreaID = 'ECOUV'
+                  AND O.Estado NOT IN ('Finalizado', 'Entregado', 'Cancelado')
+                  AND (O.Variante LIKE '%Extra%' OR O.Variante LIKE '%Servicio%' OR O.Variante LIKE '%Materiales%' OR O.Material LIKE '%Extra%')
+                ORDER BY
+                    CASE WHEN O.Prioridad = 'Urgente' THEN 0 ELSE 1 END,
+                    O.FechaIngreso DESC
+            `);
+        }
 
         // Agrupar por NoDocERP para mostrar "Orden 20" en vez de "20(1/3), 20(2/3)"
         const grouped = {};
