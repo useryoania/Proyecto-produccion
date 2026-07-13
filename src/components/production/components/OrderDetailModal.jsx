@@ -34,7 +34,9 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
         const area = String(order?.area || order?.AreaID || currentOrder?.area || currentOrder?.AreaID || '').toUpperCase();
         return area === 'SB' || /^SUB-/i.test(code);
     })();
+    const isTPU = String(order?.area || order?.AreaID || currentOrder?.area || currentOrder?.AreaID || '').toUpperCase() === 'TPU';
     const [files, setFiles] = useState([]);
+    const [uploadingTPU, setUploadingTPU] = useState(false);
     const [configEstados, setConfigEstados] = useState([]);
     const [loadingFiles, setLoadingFiles] = useState(false);
     const [labels, setLabels] = useState([]);
@@ -243,6 +245,19 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
         );
     };
 
+    // TPU: eliminar un archivo de arte (por si el operario se equivocó al subir). Borra la fila.
+    const handleDeleteFileTPU = (fileId) => {
+        if (!confirm('¿Eliminar este archivo? Esta acción no se puede deshacer.')) return;
+        toast.promise(
+            ordersService.deleteFile(fileId),
+            {
+                loading: 'Eliminando...',
+                success: () => { loadData(currentOrder.id, currentOrder.area); onOrderUpdated?.(); return 'Archivo eliminado'; },
+                error: 'Error al eliminar el archivo'
+            }
+        );
+    };
+
     // Carga de Etiquetas
     useEffect(() => {
         if (currentOrder?.id) {
@@ -283,6 +298,64 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                 }
             },
         });
+    };
+
+    // TPU: subir los PDFs de arte (producción) a la orden desde el detalle
+    const handleUploadTPUFiles = async (fileList) => {
+        const todos = Array.from(fileList || []);
+        const validos = todos.filter(f => {
+            const n = (f.name || '').toLowerCase();
+            return n.endsWith('.pdf') || n.endsWith('.plt') || f.type === 'application/pdf';
+        });
+        if (validos.length === 0) return toast.error('Solo se permiten archivos PDF o PLT.');
+        if (validos.length !== todos.length) toast.error('Se ignoraron archivos que no son PDF/PLT.');
+        // Máximo 5 archivos de arte (sin contar los cancelados)
+        const yaHay = productionFiles.filter(f => (f.Estado || f.estado || f.EstadoArchivo || '').toUpperCase() !== 'CANCELADO').length;
+        if (yaHay + validos.length > 5) {
+            return toast.error(`Máximo 5 archivos de arte (ya hay ${yaHay}).`);
+        }
+        if (!currentOrder?.id) return;
+        setUploadingTPU(true);
+        try {
+            for (const f of validos) {
+                await ordersService.uploadProductionFile(currentOrder.id, f);
+            }
+            toast.success(`${validos.length} archivo(s) de arte subido(s).`);
+            loadData(currentOrder.id, currentOrder.area);
+            onOrderUpdated?.();
+        } catch (e) {
+            toast.error('Error al subir: ' + (e?.response?.data?.error || e?.message || ''));
+        } finally {
+            setUploadingTPU(false);
+        }
+    };
+
+    // TPU: enviar la orden a aprobación del cliente (con confirmación)
+    const handleEnviarAprobacion = async () => {
+        if (!currentOrder?.id) return;
+        const nArte = productionFiles.filter(f => (f.Estado || f.estado || f.EstadoArchivo || '').toUpperCase() !== 'CANCELADO').length;
+        if (nArte !== 5) {
+            return toast.error(`Se necesitan exactamente 5 archivos de arte para enviar a aprobación (hay ${nArte}).`);
+        }
+        const r = await Swal.fire({
+            title: '¿Enviar a aprobación del cliente?',
+            html: 'El cliente verá el arte (archivo <b>CMYK</b>) y deberá aprobarlo.<br/>La orden queda <b>retenida</b> hasta que apruebe.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Enviar a aprobación',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#0891b2',
+            customClass: { container: '!z-[99999]' } // por encima del OrderDetailModal (z-[9999])
+        });
+        if (!r.isConfirmed) return;
+        try {
+            await ordersService.enviarAprobacionTPU(currentOrder.id);
+            toast.success('Orden enviada a aprobación del cliente.');
+            loadData(currentOrder.id, currentOrder.area);
+            onOrderUpdated?.();
+        } catch (e) {
+            toast.error('Error: ' + (e?.response?.data?.error || e?.message || ''));
+        }
     };
 
     const handlePrintLabels = () => {
@@ -756,12 +829,21 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                                 onClick={() => startEditing({ ...f, id: fileId })}
                                 title="Editar Dimensiones y Cantidad"
                             />
-                            <ActionButton
-                                icon="fa-ban"
-                                color="red"
-                                onClick={() => startCancellingFile({ ...f, id: fileId })}
-                                title="Cancelar Archivo"
-                            />
+                            {isTPU ? (
+                                <ActionButton
+                                    icon="fa-trash"
+                                    color="red"
+                                    onClick={() => handleDeleteFileTPU(fileId)}
+                                    title="Eliminar archivo"
+                                />
+                            ) : (
+                                <ActionButton
+                                    icon="fa-ban"
+                                    color="red"
+                                    onClick={() => startCancellingFile({ ...f, id: fileId })}
+                                    title="Cancelar Archivo"
+                                />
+                            )}
                         </div>
                     )
                 )}
@@ -1122,6 +1204,14 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                             {/* PESTAÑA: ARCHIVOS DE PRODUCCIÓN */}
                             {activeTab === 'files' && (
                                 <div className="space-y-2 pr-1 custom-scrollbar">
+                                    {isTPU && (
+                                        <label className={`flex items-center justify-center gap-2 py-3 mb-2 rounded-xl border-2 border-dashed transition-colors ${uploadingTPU ? 'border-zinc-200 text-zinc-300 pointer-events-none' : 'border-brand-cyan/40 text-brand-cyan hover:bg-brand-cyan/5 cursor-pointer'}`}>
+                                            <i className={`fa-solid ${uploadingTPU ? 'fa-circle-notch fa-spin' : 'fa-plus'}`}></i>
+                                            <span className="text-xs font-bold uppercase tracking-wide">{uploadingTPU ? 'Subiendo...' : 'Subir arte (PDF / PLT · 5 archivos)'}</span>
+                                            <input type="file" accept="application/pdf,.pdf,.plt" multiple className="hidden" disabled={uploadingTPU}
+                                                onChange={(e) => { handleUploadTPUFiles(e.target.files); e.target.value = ''; }} />
+                                        </label>
+                                    )}
                                     {productionFiles.length === 0 ? (
                                         <div className="py-12 text-center text-zinc-400 italic bg-zinc-50 rounded-xl border border-dashed border-zinc-200">
                                             No hay archivos de impresión cargados.
@@ -1157,6 +1247,17 @@ const OrderDetailModal = ({ order, onClose, onOrderUpdated, readOnly = false }) 
                                                 }, 0).toFixed(2)}m
                                             </span>
                                         </div>
+                                    )}
+                                    {isTPU && productionFiles.length > 0 && (
+                                        currentOrder?.status === 'Cargando...' ? (
+                                            <div className="mt-4 flex items-center justify-center gap-2 py-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs font-bold uppercase tracking-wide">
+                                                <i className="fa-regular fa-clock"></i> Esperando aprobación del cliente
+                                            </div>
+                                        ) : (
+                                            <button onClick={handleEnviarAprobacion} className="mt-4 w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-brand-cyan text-white text-sm font-bold uppercase tracking-wide hover:opacity-90 transition-opacity shadow-sm">
+                                                <i className="fa-solid fa-paper-plane"></i> Enviar a cliente para aprobación
+                                            </button>
+                                        )
                                     )}
                                 </div>
                             )}

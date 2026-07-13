@@ -175,6 +175,20 @@ const OrderForm = ({ serviceId: propServiceId }) => {
             .then(res => setDeliveryTimes(Array.isArray(res) ? res : (res?.data || [])))
             .catch(() => {});
     }, []);
+
+    // TPU — modo (trabajo nuevo vs reusar una matriz) y listado de "Mis matrices"
+    const [tpuMode, setTpuMode] = useState('nuevo');
+    const [matrices, setMatrices] = useState([]);
+    const [matrizSel, setMatrizSel] = useState(null);
+    const [loadingMatrices, setLoadingMatrices] = useState(false);
+    useEffect(() => {
+        if (serviceId !== 'tpu') return;
+        setLoadingMatrices(true);
+        apiClient.get('/web-orders/mis-matrices')
+            .then(res => setMatrices(Array.isArray(res) ? res : (res?.data?.data || res?.data || [])))
+            .catch(() => setMatrices([]))
+            .finally(() => setLoadingMatrices(false));
+    }, [serviceId]);
     const tiempoEntregaTexto = (prio) => {
         const area = serviceInfo?.areaId;
         const row = (deliveryTimes || []).find(t =>
@@ -196,6 +210,19 @@ const OrderForm = ({ serviceId: propServiceId }) => {
             actions.setMoldType('MOLDES CLIENTES');
         }
     }, [serviceId]);
+
+    // TPU: garantizar SIEMPRE 1 item que lleve la cantidad (el submit agrupa por item; un item
+    // sin archivo produce un pedido válido). Reactivo a items.length: si la carga de config vacía
+    // items (setItems([])), se vuelve a crear. Arranca con la cantidad mínima.
+    useEffect(() => {
+        if (serviceId === 'tpu' && items.length === 0) {
+            actions.setItems([{
+                id: Date.now(), file: null, fileBack: null,
+                copies: config.minCopies || 15, material: globalMaterial || '',
+                note: '', doubleSided: false, printSettings: {}
+            }]);
+        }
+    }, [serviceId, items.length]);
 
 
     // Directa 3.20 Twinface Logic (Code 1560)
@@ -466,6 +493,30 @@ const OrderForm = ({ serviceId: propServiceId }) => {
         e.preventDefault();
         if (!jobName.trim()) return addToast('Nombre del proyecto requerido', 'error');
 
+        // TPU — reuso de matriz: flujo aparte (endpoint /reuse-matriz), sin boceto ni archivos.
+        if (serviceId === 'tpu' && tpuMode === 'matriz') {
+            if (!matrizSel) return addToast('Elegí una matriz de "Mis matrices".', 'error');
+            const cant = items[0]?.copies || 0;
+            const minTpu = config.minCopies || 15;
+            if (cant < minTpu) return addToast(`El pedido mínimo para TPU es de ${minTpu} unidades.`, 'error');
+            actions.setLoading(true);
+            try {
+                const resp = await apiClient.post('/web-orders/reuse-matriz', {
+                    matrizOrdenId: matrizSel.OrdenID,
+                    cantidad: cant,
+                    nombreTrabajo: jobName.trim()
+                });
+                const cod = resp?.codigoOrden || resp?.data?.codigoOrden || '';
+                actions.setCreatedOrderIds(cod ? [cod] : []);
+                actions.setShowSuccessModal(true);
+            } catch (err) {
+                addToast('Error al crear el pedido: ' + (err?.response?.data?.error || err?.message || ''), 'error');
+            } finally {
+                actions.setLoading(false);
+            }
+            return;
+        }
+
         const invalidPrintSettings = items.some(it => it.printSettings?.isValid === false);
         if (invalidPrintSettings) {
             return addToast('Hay errores en la configuración de impresión. Revise los items.', 'error');
@@ -481,9 +532,15 @@ const OrderForm = ({ serviceId: propServiceId }) => {
         }
 
         if (serviceId === 'tpu') {
-            const invalidCopies = items.some(it => it.copies < 30);
+            const minTpu = config.minCopies || 15;
+            // (El modo matriz ya se resolvió arriba con return; acá siempre es "trabajo nuevo".)
+            // Modo boceto: el boceto (PNG/JPG/PDF) es obligatorio; con él diseñamos el arte.
+            if (config.bocetoMode && !bocetoFile) {
+                return addToast('Subí el boceto de lo que querés (PNG, JPG o PDF).', 'error');
+            }
+            const invalidCopies = items.length === 0 || items.some(it => (it.copies || 0) < minTpu);
             if (invalidCopies) {
-                return addToast('El pedido mínimo para TPU es de 30 copias por diseño.', 'error');
+                return addToast(`El pedido mínimo para TPU es de ${minTpu} unidades.`, 'error');
             }
             if (isTpuEtiquetaOficial && !tpuForma) {
                 return addToast('Debe seleccionar una Forma para la Etiqueta de Producto Oficial.', 'error');
@@ -1240,6 +1297,107 @@ const OrderForm = ({ serviceId: propServiceId }) => {
 
 
                             {/* Standard Production Files (Items) */}
+                            {serviceId === 'tpu' && (
+                                <div className="space-y-4">
+                                    {/* Selector: trabajo nuevo vs reusar una matriz */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <button type="button" onClick={() => { setTpuMode('nuevo'); setMatrizSel(null); }}
+                                            className={`text-left p-3 rounded-xl border-2 transition-all ${tpuMode === 'nuevo' ? 'border-cyan-400 bg-cyan-400/5' : 'border-zinc-700 hover:border-zinc-600'}`}>
+                                            <div className="text-sm font-bold text-zinc-100">Trabajo nuevo</div>
+                                            <div className="text-[11px] text-zinc-500 mt-0.5">Subís un boceto y diseñamos el arte. Incluye el costo de matriz.</div>
+                                        </button>
+                                        <button type="button" onClick={() => setTpuMode('matriz')}
+                                            className={`text-left p-3 rounded-xl border-2 transition-all ${tpuMode === 'matriz' ? 'border-cyan-400 bg-cyan-400/5' : 'border-zinc-700 hover:border-zinc-600'}`}>
+                                            <div className="text-sm font-bold text-zinc-100">Usar una matriz</div>
+                                            <div className="text-[11px] text-zinc-500 mt-0.5">Reusás un diseño ya hecho. Sin costo de matriz.</div>
+                                        </button>
+                                    </div>
+
+                                    {tpuMode === 'nuevo' ? (
+                                        <div>
+                                            <div className="flex justify-between items-center mb-4">
+                                                <p className="text-sm font-bold uppercase text-zinc-400">Boceto de tu diseño <span className="text-red-400">*</span></p>
+                                            </div>
+                                            <div className="bg-brand-dark p-4 md:rounded-2xl rounded-none border-y border-x-0 md:border-x border-zinc-700/50 shadow-sm -mx-4 md:mx-0 space-y-5">
+                                                <div>
+                                                    <FileUploadZone
+                                                        id="boceto-tpu"
+                                                        label="BOCETO (PNG / JPG / PDF)"
+                                                        selectedFile={bocetoFile}
+                                                        onFileSelected={(f) => handleSpecializedFileUpload(actions.setBocetoFile, f)}
+                                                        color="blue"
+                                                    />
+                                                    {bocetoFile && (
+                                                        <div className="mt-2 text-[10px] font-bold text-zinc-400 bg-zinc-900/60 p-1 px-2 rounded border border-zinc-700/50 w-fit flex gap-1">
+                                                            <FileCode size={12} className="text-cyan-400/60" /> {bocetoFile.name}
+                                                        </div>
+                                                    )}
+                                                    <p className="text-[11px] text-zinc-500 mt-2">Subí una referencia de lo que querés. Nosotros diseñamos los archivos finales y te los enviamos para que los apruebes.</p>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] uppercase font-black text-zinc-400 mb-1">Cantidad (mínimo {config.minCopies || 15})</label>
+                                                    <input
+                                                        type="number"
+                                                        min={config.minCopies || 15}
+                                                        value={items[0]?.copies ?? ''}
+                                                        onChange={(e) => items[0] && actions.updateItem(items[0].id, 'copies', parseInt(e.target.value) || 0)}
+                                                        className="w-full bg-zinc-900/60 border border-zinc-700 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 outline-none"
+                                                        placeholder={String(config.minCopies || 15)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <div className="flex justify-between items-center mb-3">
+                                                <p className="text-sm font-bold uppercase text-zinc-400">Mis matrices</p>
+                                                {matrizSel && <span className="text-[10px] text-cyan-400 font-bold">Seleccionada: {matrizSel.CodigoOrden}</span>}
+                                            </div>
+                                            {loadingMatrices ? (
+                                                <div className="text-zinc-500 text-sm py-10 text-center">Cargando tus matrices…</div>
+                                            ) : matrices.length === 0 ? (
+                                                <div className="text-zinc-500 text-sm py-10 text-center border border-dashed border-zinc-700 rounded-xl">
+                                                    Todavía no tenés matrices finalizadas. Empezá con un trabajo nuevo.
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                                    {matrices.map(m => {
+                                                        const sel = matrizSel?.OrdenID === m.OrdenID;
+                                                        return (
+                                                            <button type="button" key={m.OrdenID} onClick={() => setMatrizSel(m)}
+                                                                className={`text-left rounded-xl border-2 overflow-hidden transition-all ${sel ? 'border-cyan-400 ring-2 ring-cyan-400/30' : 'border-zinc-700 hover:border-zinc-600'}`}>
+                                                                <div className="aspect-square bg-zinc-800 flex items-center justify-center">
+                                                                    <img src={`/thumbnails/${m.CodigoOrden}/${m.CmykArchivoID}.jpg`} alt={m.DescripcionTrabajo || m.CodigoOrden}
+                                                                        className="w-full h-full object-contain"
+                                                                        onError={e => { e.target.style.display = 'none'; }} />
+                                                                </div>
+                                                                <div className="p-2">
+                                                                    <div className="text-xs font-bold text-zinc-200 truncate">{m.DescripcionTrabajo || m.CodigoOrden}</div>
+                                                                    <div className="text-[10px] text-zinc-500 font-mono">{m.CodigoOrden}</div>
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                            {matrizSel && (
+                                                <div className="mt-4">
+                                                    <label className="block text-[10px] uppercase font-black text-zinc-400 mb-1">Cantidad (mínimo {config.minCopies || 15})</label>
+                                                    <input
+                                                        type="number"
+                                                        min={config.minCopies || 15}
+                                                        value={items[0]?.copies ?? ''}
+                                                        onChange={(e) => items[0] && actions.updateItem(items[0].id, 'copies', parseInt(e.target.value) || 0)}
+                                                        className="w-full bg-zinc-900/60 border border-zinc-700 rounded-lg p-2.5 text-white text-sm focus:border-cyan-500 outline-none"
+                                                        placeholder={String(config.minCopies || 15)}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {config.requiresProductionFiles && (
                                 <div>
                                     <div className="flex justify-between items-center mb-4">

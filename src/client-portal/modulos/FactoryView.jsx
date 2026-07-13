@@ -207,7 +207,9 @@ export const FactoryView = () => {
         setModal({
             isOpen: true,
             title: 'Aprobar Pedido',
-            message: `Este pedido lo creó tu diseñador${project.disenadorNombre ? ` ${project.disenadorNombre}` : ''}. Al aprobarlo entra a producción.`,
+            message: project.disenadorNombre
+                ? `Este pedido lo creó tu diseñador ${project.disenadorNombre}. Al aprobarlo entra a producción.`
+                : 'Revisá el arte del pedido. Al aprobarlo, entra a producción.',
             type: 'warning',
             confirmText: 'Aprobar',
             onConfirm: async () => {

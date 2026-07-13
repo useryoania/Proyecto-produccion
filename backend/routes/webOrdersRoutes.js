@@ -166,6 +166,11 @@ const upload = multer({
 
 router.post('/upload-stream', verifyToken, impersonarCliente, upload.single('file'), webOrdersController.uploadOrderFile);
 
+// TPU: "Mis matrices" — pedidos TPU finalizados del cliente con arte, para reusar.
+router.get('/mis-matrices', verifyToken, impersonarCliente, webOrdersController.getMisMatrices);
+// TPU: reusar una matriz — crea el pedido copiando el arte, directo a producción, sin cobrar la matriz.
+router.post('/reuse-matriz', verifyToken, impersonarCliente, webOrdersController.reuseMatrizTPU);
+
 // --- SUBIDA DE IMÁGENES DE CONFIGURACIÓN (CMS) ---
 const storageConfig = multer.diskStorage({
     destination: function (req, file, cb) {

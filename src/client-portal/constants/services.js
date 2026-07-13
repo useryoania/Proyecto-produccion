@@ -215,9 +215,10 @@ export const SERVICES_LIST = [
             fixedVariant: 'TPU',
             materialMode: 'single',
             materialLabel: 'Tipo de TPU',
-            requiresProductionFiles: true,
+            requiresProductionFiles: false, // el cliente NO sube arte final: sube un boceto
+            bocetoMode: true,               // TPU: 1 boceto obligatorio + cantidad
             disableItemNote: true,
-            minCopies: 30,
+            minCopies: 15,
         },
         materials: [
             { Material: 'ETIQUETAS OFICIALES HASTA 4X4' },

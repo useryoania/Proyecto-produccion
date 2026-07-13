@@ -45,6 +45,24 @@ router.get('/history/:id', verifyToken, ordersController.getOrderHistory);
 // 2. GESTIÓN DE ARCHIVOS
 router.put('/file/update', verifyToken, ordersController.updateFile);
 router.post('/file/add', verifyToken, ordersController.addFile);
+
+// Subida de archivo de PRODUCCIÓN (PDF) a una orden existente — uso interno (arte final TPU).
+const multerProd = require('multer');
+const pathProd = require('path');
+const fsProd = require('fs');
+const tmpDirProd = pathProd.join(__dirname, '../uploads/tmp');
+if (!fsProd.existsSync(tmpDirProd)) fsProd.mkdirSync(tmpDirProd, { recursive: true });
+const uploadProdFile = multerProd({
+    storage: multerProd.diskStorage({
+        destination: (req, file, cb) => cb(null, tmpDirProd),
+        filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname)
+    }),
+    limits: { fileSize: 200 * 1024 * 1024 } // 200MB
+});
+router.post('/:ordenId/production-file', verifyToken, uploadProdFile.single('file'), ordersController.uploadProductionFile);
+
+// TPU: enviar la orden a aprobación del cliente (retiene hasta que apruebe el arte).
+router.post('/:ordenId/enviar-aprobacion', verifyToken, ordersController.enviarAprobacionTPU);
 router.post('/file/cancel', verifyToken, ordersController.cancelFile);
 router.post('/reactivate', verifyToken, ordersController.reactivateOrder);
 router.post('/reactivate-request', verifyToken, ordersController.reactivateRequest);

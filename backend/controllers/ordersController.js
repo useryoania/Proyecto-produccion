@@ -79,6 +79,126 @@ const recotizarPedidoDeOrden = async (pool, ordenId, userId = 1, userName = 'Sis
 };
 
 // =====================================================================
+// =====================================================================
+// SUBIR ARCHIVO DE PRODUCCIÓN (PDF) A UNA ORDEN EXISTENTE
+// Uso interno (ej. arte final de TPU). Inserta la fila en ArchivosOrden,
+// sube el binario a Drive y genera el thumbnail (misma maquinaria que la web).
+// =====================================================================
+exports.uploadProductionFile = async (req, res) => {
+    const { ordenId } = req.params;
+    const file = req.file;
+    const fs = require('fs');
+    if (!file || !ordenId) return res.status(400).json({ error: "Falta archivo u orden." });
+
+    const nombreLower = (file.originalname || '').toLowerCase();
+    const esValido = (file.mimetype || '').toLowerCase().includes('pdf') || nombreLower.endsWith('.pdf') || nombreLower.endsWith('.plt');
+    if (!esValido) {
+        if (file.path) { try { fs.unlinkSync(file.path); } catch (_) {} }
+        return res.status(400).json({ error: "Solo se permiten archivos PDF o PLT." });
+    }
+
+    const tmpPath = file.path || null;
+    try {
+        const driveService = require('../services/driveService');
+        const { generateThumbnail } = require('../utils/thumbnailGenerator');
+        const pool = await getPool();
+
+        const ordRes = await pool.request()
+            .input('OID', sql.Int, parseInt(ordenId))
+            .query('SELECT OrdenID, CodigoOrden, AreaID FROM Ordenes WHERE OrdenID = @OID');
+        if (!ordRes.recordset.length) return res.status(404).json({ error: "Orden no encontrada." });
+        const orden = ordRes.recordset[0];
+
+        // Máximo 5 archivos de arte por orden (sin contar cancelados)
+        const cntRes = await pool.request()
+            .input('OID', sql.Int, orden.OrdenID)
+            .query(`SELECT COUNT(*) AS n FROM ArchivosOrden WHERE OrdenID = @OID AND ISNULL(EstadoArchivo,'') <> 'Cancelado'`);
+        if ((cntRes.recordset[0]?.n || 0) >= 5) {
+            return res.status(400).json({ error: 'La orden ya tiene 5 archivos de arte (máximo).' });
+        }
+
+        const finalName = file.originalname;
+
+        // 1. INSERT fila ArchivosOrden (ruta pendiente hasta que suba a Drive)
+        const insRes = await pool.request()
+            .input('OID', sql.Int, orden.OrdenID)
+            .input('Nom', sql.NVarChar(255), finalName)
+            .query(`
+                INSERT INTO ArchivosOrden (OrdenID, NombreArchivo, TipoArchivo, Copias, EstadoArchivo, FechaSubida)
+                OUTPUT INSERTED.ArchivoID
+                VALUES (@OID, @Nom, 'Impresion', 1, 'Pendiente', GETDATE())
+            `);
+        const archivoId = insRes.recordset[0].ArchivoID;
+
+        // 2. Subir binario a Drive
+        const fileInput = tmpPath ? fs.createReadStream(tmpPath) : file.buffer;
+        const driveUrl = await driveService.uploadToDrive(fileInput, finalName, orden.AreaID || 'GENERAL');
+
+        // 3. UPDATE ruta
+        await pool.request()
+            .input('ID', sql.Int, archivoId)
+            .input('Url', sql.VarChar(500), driveUrl)
+            .query('UPDATE ArchivosOrden SET RutaAlmacenamiento = @Url, FechaSubida = GETDATE() WHERE ArchivoID = @ID');
+
+        // 4. Thumbnail (PDF → 1ª página) en background, fire-and-forget
+        try {
+            const buffer = tmpPath ? await fs.promises.readFile(tmpPath) : file.buffer;
+            if (buffer) generateThumbnail(buffer, orden.CodigoOrden, archivoId, finalName).catch(e => logger.warn('[uploadProductionFile] thumb: ' + e.message));
+        } catch (e) { logger.warn('[uploadProductionFile] thumb read: ' + e.message); }
+
+        logger.info(`[uploadProductionFile] Orden ${orden.CodigoOrden}: +archivo ${finalName} (ArchivoID ${archivoId})`);
+        res.json({ success: true, archivoId, nombre: finalName, url: driveUrl });
+    } catch (err) {
+        logger.error('[uploadProductionFile] ' + err.message);
+        res.status(500).json({ error: err.message });
+    } finally {
+        if (tmpPath) { try { fs.unlinkSync(tmpPath); } catch (_) {} }
+    }
+};
+
+// =====================================================================
+// TPU: ENVIAR A APROBACIÓN DEL CLIENTE
+// Retiene la orden (AprobacionPendiente=1, Estado='Cargando...') hasta que el cliente
+// apruebe el arte. Es el inverso de aprobarPedido (webOrdersController), que valida
+// AprobacionPendiente=1 AND Estado='Cargando...' y la reactiva a 'Pendiente'.
+// =====================================================================
+exports.enviarAprobacionTPU = async (req, res) => {
+    const ordenId = parseInt(req.params?.ordenId || req.body?.ordenId);
+    if (!ordenId) return res.status(400).json({ error: 'Falta ordenId.' });
+    try {
+        const pool = await getPool();
+        const check = await pool.request()
+            .input('OID', sql.Int, ordenId)
+            .query(`
+                SELECT o.OrdenID, o.AreaID, o.Estado,
+                       (SELECT COUNT(*) FROM ArchivosOrden ao
+                          WHERE ao.OrdenID = o.OrdenID AND ISNULL(ao.EstadoArchivo,'') <> 'Cancelado') AS archivos
+                FROM Ordenes o WHERE o.OrdenID = @OID
+            `);
+        if (!check.recordset.length) return res.status(404).json({ error: 'Orden no encontrada.' });
+        const o = check.recordset[0];
+        if (String(o.AreaID || '').toUpperCase() !== 'TPU') return res.status(400).json({ error: 'Solo aplica a órdenes TPU.' });
+        if (o.archivos !== 5) return res.status(400).json({ error: `Se necesitan exactamente 5 archivos de arte para enviar a aprobación (hay ${o.archivos}).` });
+        if (o.Estado === 'Cargando...') return res.status(400).json({ error: 'La orden ya está esperando la aprobación del cliente.' });
+
+        await pool.request()
+            .input('OID', sql.Int, ordenId)
+            .query(`UPDATE Ordenes SET AprobacionPendiente = 1, Estado = 'Cargando...', EstadoenArea = 'Cargando...' WHERE OrdenID = @OID`);
+
+        try {
+            const io = req.app.get('socketio');
+            if (io) io.emit('server:ordersUpdated', { count: 1, source: 'tpu-enviar-aprobacion' });
+        } catch (_) {}
+
+        logger.info(`[TPU] Orden ${ordenId} enviada a aprobación del cliente.`);
+        res.json({ success: true });
+    } catch (err) {
+        logger.error('[enviarAprobacionTPU] ' + err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// =====================================================================
 // 1. OBTENER ÓRDENES (ACTUALIZADO: Lee Material, Variante y CodigoOrden)
 // =====================================================================
 exports.getOrdersByArea = async (req, res) => {

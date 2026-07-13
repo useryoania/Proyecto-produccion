@@ -826,6 +826,15 @@ exports.createWebOrder = async (req, res) => {
                 generatedOrders.push(exec.codigoOrden);
                 generatedIDs.push(newOID);
 
+                // TPU trabajo nuevo: cobrar la matriz (artículo 156 = US$15) como línea de facturación.
+                // El reuso de matriz va por /reuse-matriz y NO pasa por acá, así que ahí no se cobra.
+                if (serviceId === 'tpu' && !exec.isExtra && String(exec.areaID || '').toUpperCase() === 'TPU') {
+                    await new sql.Request(transaction)
+                        .input('OID', sql.Int, newOID)
+                        .query(`INSERT INTO ServiciosExtraOrden (OrdenID, CodArt, CodStock, Descripcion, Cantidad, PrecioUnitario, TotalLinea, Observacion, FechaRegistro)
+                                VALUES (@OID, '156', '1.1.10.1', 'Matriz TPU', 1, 0, 0, 'Cargo de matriz (trabajo nuevo TPU)', GETDATE())`);
+                }
+
                 // --- TELA CLIENTE: Descontar metros de la bobina ---
                 // Una sola vez por pedido, en la orden principal. Los metros vienen del body
                 // (magnitud, top-level) porque exec.magnitudInicial de la principal es 0 al crear
@@ -1497,18 +1506,12 @@ exports.getClientOrders = async (req, res) => {
                     INNER JOIN Clientes c WITH(NOLOCK) ON c.CliIdCliente = o.CliIdCliente
                     LEFT JOIN EstadosOrdenes e WITH(NOLOCK) ON e.EOrIdEstadoOrden = o.OrdEstadoActual
                     WHERE c.CodCliente = @cod
-<<<<<<< HEAD
                       -- Un pedido web finalizado también vive en OrdenesDeposito (circuito de retiro):
                       -- si ya tiene su orden de producción, no contarlo dos veces.
                       AND NOT EXISTS (
                           SELECT 1 FROM Ordenes o2 WITH(NOLOCK)
                           WHERE o2.CodCliente = @cod
                             AND LTRIM(RTRIM(o2.CodigoOrden)) = LTRIM(RTRIM(o.OrdCodigoOrden))
-=======
-                      AND NOT EXISTS (
-                          SELECT 1 FROM Ordenes ox WITH(NOLOCK)
-                          WHERE ox.CodigoOrden = o.OrdCodigoOrden AND ox.CodCliente = @cod
->>>>>>> 245737162d3b02a13e86a449c03dd180b880fe37
                       )
                 `);
             
@@ -1577,9 +1580,11 @@ exports.getClientOrders = async (req, res) => {
                         o.UM            AS UM,
                         (SELECT TOP 1 ArchivoID FROM ArchivosOrden WITH(NOLOCK)
                          WHERE OrdenID = o.OrdenID AND RutaAlmacenamiento IS NOT NULL
+                           AND (UPPER(LTRIM(RTRIM(o.AreaID))) <> 'TPU' OR LOWER(NombreArchivo) LIKE '%cmyk%')
                          ORDER BY ArchivoID ASC) AS PrimerArchivoID,
                         (SELECT TOP 1 RutaAlmacenamiento FROM ArchivosOrden WITH(NOLOCK)
                          WHERE OrdenID = o.OrdenID AND RutaAlmacenamiento IS NOT NULL
+                           AND (UPPER(LTRIM(RTRIM(o.AreaID))) <> 'TPU' OR LOWER(NombreArchivo) LIKE '%cmyk%')
                          ORDER BY ArchivoID ASC) AS DriveFileId,
                         ISNULL(o.AprobacionPendiente, 0) AS AprobacionPendiente,
                         o.DisenadorID   AS DisenadorID,
@@ -1620,7 +1625,6 @@ exports.getClientOrders = async (req, res) => {
                     LEFT JOIN Monedas mo WITH(NOLOCK) ON mo.MonIdMoneda = o.MonIdMoneda
                     LEFT JOIN Articulos art WITH(NOLOCK) ON art.ProIdProducto = o.ProIdProducto
                     WHERE c.CodCliente = @cod
-<<<<<<< HEAD
                       -- Un pedido web finalizado también vive en OrdenesDeposito (circuito de retiro):
                       -- se muestra solo la orden de producción (tiene archivos, magnitud y estados completos).
                       -- Este ramal queda para pedidos de mostrador que NO existen en Ordenes.
@@ -1628,13 +1632,6 @@ exports.getClientOrders = async (req, res) => {
                           SELECT 1 FROM Ordenes o2 WITH(NOLOCK)
                           WHERE o2.CodCliente = @cod
                             AND LTRIM(RTRIM(o2.CodigoOrden)) = LTRIM(RTRIM(o.OrdCodigoOrden))
-=======
-                      -- Solo órdenes ERP puras: si ya existe en producción (Ordenes), la card
-                      -- del proyecto la cubre — evita duplicar (y triplicar en multitela).
-                      AND NOT EXISTS (
-                          SELECT 1 FROM Ordenes ox WITH(NOLOCK)
-                          WHERE ox.CodigoOrden = o.OrdCodigoOrden AND ox.CodCliente = @cod
->>>>>>> 245737162d3b02a13e86a449c03dd180b880fe37
                       )
                 ) combined
                 ORDER BY combined.FechaIngreso DESC, combined.OrdenID DESC
@@ -1660,7 +1657,7 @@ exports.aprobarPedido = async (req, res) => {
         }
         if (!ordenId) return res.status(400).json({ error: 'Falta ordenId.' });
 
-        const pool = await poolPromise;
+        const pool = await getPool();
         const check = await pool.request()
             .input('OID', sql.Int, ordenId)
             .input('Cod', sql.Int, codCliente)
@@ -1723,6 +1720,162 @@ exports.aprobarPedido = async (req, res) => {
 
 // GET /api/web-orders/order/:ordenId/files — archivos de una orden del cliente, con COPIAS.
 // Scopeado al cliente logueado (solo ve archivos de sus propias órdenes).
+// TPU — "Mis matrices": pedidos TPU FINALIZADOS del cliente que tienen arte (CMYK),
+// para reusar el diseño sin re-cobrar la matriz. Devuelve el ArchivoID del CMYK para el thumbnail.
+exports.getMisMatrices = async (req, res) => {
+    const codCliente = req.user?.codCliente;
+    if (!codCliente) return res.status(401).json({ error: 'No autenticado.' });
+    try {
+        const pool = await getPool();
+        const result = await pool.request()
+            .input('cod', sql.Int, codCliente)
+            .query(`
+                SELECT o.OrdenID, o.CodigoOrden, o.DescripcionTrabajo, o.Material, o.FechaIngreso,
+                       (SELECT TOP 1 ao.ArchivoID FROM dbo.ArchivosOrden ao WITH(NOLOCK)
+                          WHERE ao.OrdenID = o.OrdenID AND ao.RutaAlmacenamiento IS NOT NULL
+                            AND LOWER(ao.NombreArchivo) LIKE '%cmyk%'
+                          ORDER BY ao.ArchivoID ASC) AS CmykArchivoID,
+                       (SELECT TOP 1 ao.NombreArchivo FROM dbo.ArchivosOrden ao WITH(NOLOCK)
+                          WHERE ao.OrdenID = o.OrdenID AND LOWER(ao.NombreArchivo) LIKE '%cmyk%'
+                          ORDER BY ao.ArchivoID ASC) AS CmykNombre
+                FROM dbo.Ordenes o WITH(NOLOCK)
+                WHERE o.CodCliente = @cod
+                  AND UPPER(LTRIM(RTRIM(o.AreaID))) = 'TPU'
+                  AND o.Estado IN ('Finalizado','FINALIZADO','Entregado','ENTREGADO','Cerrado','CERRADO')
+                  AND EXISTS (SELECT 1 FROM dbo.ArchivosOrden ao WITH(NOLOCK)
+                                WHERE ao.OrdenID = o.OrdenID AND LOWER(ao.NombreArchivo) LIKE '%cmyk%')
+                ORDER BY o.FechaIngreso DESC
+            `);
+        res.json({ success: true, data: result.recordset });
+    } catch (err) {
+        logger.error('Error getMisMatrices:', err);
+        res.status(500).json({ error: 'Error al obtener matrices.' });
+    }
+};
+
+// TPU — Reusar una matriz: crea una orden TPU nueva copiando el arte de una matriz finalizada del
+// cliente, entra DIRECTO a producción (sin aprobación) y NO cobra la matriz (156), solo la producción.
+exports.reuseMatrizTPU = async (req, res) => {
+    const codCliente = req.user?.codCliente;
+    const matrizOrdenId = parseInt(req.body?.matrizOrdenId);
+    const cantidad = parseInt(req.body?.cantidad) || 0;
+    const nombreTrabajo = (req.body?.nombreTrabajo || '').trim();
+    if (!codCliente) return res.status(401).json({ error: 'No autenticado.' });
+    if (!matrizOrdenId || cantidad < 1) return res.status(400).json({ error: 'Faltan datos (matriz y cantidad).' });
+
+    const pool = await getPool();
+    let transaction;
+    try {
+        // 1. Validar la matriz (del cliente, TPU, con arte)
+        const matRes = await pool.request()
+            .input('OID', sql.Int, matrizOrdenId)
+            .input('cod', sql.Int, codCliente)
+            .query(`
+                SELECT o.OrdenID, o.CodigoOrden, o.Material, o.Variante, o.CodArticulo, o.ProIdProducto,
+                       o.CliIdCliente, o.IdClienteReact, o.Cliente, o.UM,
+                       (SELECT COUNT(*) FROM ArchivosOrden ao WHERE ao.OrdenID = o.OrdenID AND ISNULL(ao.EstadoArchivo,'')<>'Cancelado') AS nArch
+                FROM Ordenes o WITH(NOLOCK)
+                WHERE o.OrdenID = @OID AND o.CodCliente = @cod AND UPPER(LTRIM(RTRIM(o.AreaID)))='TPU'`);
+        if (!matRes.recordset.length) return res.status(404).json({ error: 'Matriz no encontrada.' });
+        const mat = matRes.recordset[0];
+        if (!mat.nArch) return res.status(400).json({ error: 'La matriz no tiene arte para reusar.' });
+
+        // 2. Reservar número de pedido
+        const reserveRes = await pool.request().query(`
+            UPDATE ConfiguracionGlobal SET Valor = CAST(ISNULL(CAST(Valor AS INT),0)+1 AS VARCHAR)
+            OUTPUT INSERTED.Valor WHERE Clave='ULTIMOPEDIDOWEB'`);
+        const nuevoNro = parseInt(reserveRes.recordset[0].Valor);
+        const erpDocNumber = `${nuevoNro}`;
+        const codigoOrden = `TPU-${nuevoNro}`;
+        const matCod = (mat.CodigoOrden || '').trim();
+
+        transaction = new sql.Transaction(pool);
+        await transaction.begin();
+
+        // 3. Crear la orden TPU nueva — directo a producción ('Pendiente')
+        const insOrd = await new sql.Request(transaction)
+            .input('Cliente', sql.NVarChar(200), mat.Cliente)
+            .input('CodCli', sql.Int, codCliente)
+            .input('IdCliReact', sql.VarChar(50), mat.IdClienteReact)
+            .input('Desc', sql.NVarChar(300), nombreTrabajo || `Reposición ${matCod}`)
+            .input('Mat', sql.VarChar(255), mat.Material)
+            .input('Var', sql.VarChar(100), mat.Variante || 'TPU')
+            .input('Cod', sql.VarChar(50), codigoOrden)
+            .input('ERP', sql.VarChar(50), erpDocNumber)
+            .input('Nota', sql.NVarChar(sql.MAX), `Reuso de matriz ${matCod}`)
+            .input('Mag', sql.VarChar(50), String(cantidad))
+            .input('CodArt', sql.VarChar(50), mat.CodArticulo)
+            .input('ProId', sql.Int, mat.ProIdProducto)
+            .input('CliId', sql.Int, mat.CliIdCliente)
+            .input('UM', sql.VarChar(20), mat.UM || 'u')
+            .query(`
+                INSERT INTO Ordenes (AreaID, Cliente, CodCliente, IdClienteReact, DescripcionTrabajo, Prioridad,
+                    FechaIngreso, FechaEstimadaEntrega, Material, Variante, CodigoOrden, NoDocERP, Nota, Magnitud,
+                    ProximoServicio, UM, Estado, EstadoenArea, CodArticulo, ProIdProducto, CliIdCliente, FechaEntradaSector)
+                OUTPUT INSERTED.OrdenID
+                VALUES ('TPU', @Cliente, @CodCli, @IdCliReact, @Desc, 'Normal',
+                    GETDATE(), DATEADD(day,3,GETDATE()), @Mat, @Var, @Cod, @ERP, @Nota, @Mag,
+                    'DEPOSITO', @UM, 'Pendiente', 'Pendiente', @CodArt, @ProId, @CliId, GETDATE())`);
+        const newOID = insOrd.recordset[0].OrdenID;
+
+        // 4. Copiar el arte de la matriz (mismas rutas de Drive)
+        const arte = await new sql.Request(transaction)
+            .input('MOID', sql.Int, matrizOrdenId)
+            .query(`SELECT ArchivoID, NombreArchivo, TipoArchivo, Copias, Metros, RutaAlmacenamiento, Ancho, Alto, Observaciones
+                    FROM ArchivosOrden WHERE OrdenID=@MOID AND ISNULL(EstadoArchivo,'')<>'Cancelado' ORDER BY ArchivoID ASC`);
+        const thumbCopies = [];
+        for (const a of arte.recordset) {
+            const ins = await new sql.Request(transaction)
+                .input('OID', sql.Int, newOID)
+                .input('Nom', sql.NVarChar(255), a.NombreArchivo)
+                .input('Tipo', sql.VarChar(50), a.TipoArchivo || 'Impresion')
+                .input('Cop', sql.Int, a.Copias || 1)
+                .input('Met', sql.Decimal(10, 3), a.Metros || 0)
+                .input('Ruta', sql.NVarChar(sql.MAX), a.RutaAlmacenamiento)
+                .input('An', sql.Decimal(10, 2), a.Ancho || 0)
+                .input('Al', sql.Decimal(10, 2), a.Alto || 0)
+                .input('Obs', sql.NVarChar(sql.MAX), a.Observaciones || '')
+                .query(`INSERT INTO ArchivosOrden (OrdenID, NombreArchivo, TipoArchivo, Copias, Metros, EstadoArchivo, FechaSubida, RutaAlmacenamiento, Ancho, Alto, Observaciones)
+                        OUTPUT INSERTED.ArchivoID
+                        VALUES (@OID, @Nom, @Tipo, @Cop, @Met, 'Pendiente', GETDATE(), @Ruta, @An, @Al, @Obs)`);
+            thumbCopies.push({ origId: a.ArchivoID, newId: ins.recordset[0].ArchivoID });
+        }
+
+        await transaction.commit();
+
+        // 5. Copiar thumbnails en disco (best-effort, para que se vean sin regenerar)
+        try {
+            const fs = require('fs'); const path = require('path');
+            const base = process.env.THUMBNAILS_PATH || path.join(__dirname, '../thumbnails');
+            const destDir = path.join(base, codigoOrden);
+            for (const t of thumbCopies) {
+                const src = path.join(base, matCod, `${t.origId}.jpg`);
+                if (fs.existsSync(src)) {
+                    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+                    fs.copyFileSync(src, path.join(destDir, `${t.newId}.jpg`));
+                }
+            }
+        } catch (e) { logger.warn('[reuseMatriz] thumb copy: ' + e.message); }
+
+        // 6. Auto-cotización (cobra la producción por el CodArticulo; NO hay línea 156 = matriz gratis)
+        setImmediate(async () => {
+            try {
+                await ERPSyncService.syncFinalOrderIntegration(erpDocNumber, req.user?.id || 1, req.user?.name || mat.Cliente, null, { skipDeposito: true });
+            } catch (e) { logger.error('[reuseMatriz] cotización: ' + e.message); }
+        });
+
+        const io = req.app.get('socketio');
+        if (io) io.emit('server:ordersUpdated', { count: 1, source: 'tpu-reuse-matriz' });
+
+        logger.info(`[TPU] Reuso de matriz ${matCod} → ${codigoOrden} (OID ${newOID}), cantidad ${cantidad}.`);
+        res.json({ success: true, ordenId: newOID, codigoOrden });
+    } catch (err) {
+        if (transaction) { try { await transaction.rollback(); } catch (_) {} }
+        logger.error('[reuseMatrizTPU] ' + err.message);
+        res.status(500).json({ error: err.message });
+    }
+};
+
 exports.getOrderFiles = async (req, res) => {
     const codCliente = req.user?.codCliente;
     const { ordenId } = req.params;
@@ -1741,6 +1894,9 @@ exports.getOrderFiles = async (req, res) => {
                 FROM dbo.ArchivosOrden ao WITH(NOLOCK)
                 INNER JOIN dbo.Ordenes o WITH(NOLOCK) ON ao.OrdenID = o.OrdenID
                 WHERE ao.OrdenID = @OID AND o.CodCliente = @cod
+                  -- TPU: el cliente solo ve el archivo de aprobación (el que tiene 'cmyk' en el nombre);
+                  -- los otros PDFs del arte son internos. El resto de los servicios ve todos sus archivos.
+                  AND (UPPER(LTRIM(RTRIM(o.AreaID))) <> 'TPU' OR LOWER(ao.NombreArchivo) LIKE '%cmyk%')
                 ORDER BY ao.ArchivoID ASC
             `);
         res.json({ success: true, data: result.recordset });

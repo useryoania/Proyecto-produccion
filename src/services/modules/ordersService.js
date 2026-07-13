@@ -63,6 +63,20 @@ export const ordersService = {
         const response = await api.post('/orders/file/add', fileData);
         return response.data;
     },
+    // Sube un PDF de producción (arte) a una orden existente. Uso interno (TPU).
+    uploadProductionFile: async (ordenId, file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await api.post(`/orders/${ordenId}/production-file`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return response.data;
+    },
+    // TPU: enviar la orden a aprobación del cliente (retiene hasta que apruebe).
+    enviarAprobacionTPU: async (ordenId) => {
+        const response = await api.post(`/orders/${ordenId}/enviar-aprobacion`);
+        return response.data;
+    },
     deleteFile: async (fileId) => {
         const response = await api.delete(`/orders/file/${fileId}`);
         return response.data;
