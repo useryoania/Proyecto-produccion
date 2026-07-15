@@ -210,15 +210,23 @@ async function insertarCliente(cliente) {
     fila[COL.Direccion]    = cliente.direccion  || '';
     fila[COL.IDReact]      = cliente.idReact != null ? String(cliente.idReact) : '';
 
-    await sheets.spreadsheets.values.append({
+    // Escribir con update sobre un rango EXPLÍCITO A{n}:N{n}. NO usar values.append:
+    // su "detección de tabla" arrancaba en la columna B (esta hoja tiene A/B/C vacías en
+    // las filas de datos), corriendo todo +1 → el idCliente caía en E y el idReact se salía de N.
+    const actuales = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         range: `'${SHEET_NAME}'!A:N`,
+    });
+    const nextRow = (actuales.data.values ? actuales.data.values.length : 0) + 1;
+
+    await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `'${SHEET_NAME}'!A${nextRow}:N${nextRow}`,
         valueInputOption: 'USER_ENTERED',
-        insertDataOption: 'INSERT_ROWS',
         requestBody: { values: [fila] },
     });
 
-    return { ok: true };
+    return { ok: true, row: nextRow };
 }
 
 /**
