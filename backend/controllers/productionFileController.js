@@ -497,7 +497,11 @@ const postControlArchivo = async (req, res) => {
                             @NewCode, Cliente, GETDATE(), FechaEstimadaEntrega,
                             Material, DescripcionTrabajo, 'Falla',
                             'Pendiente', 'Pendiente', AreaID,
-                            (CASE WHEN @IsSB = 1 THEN 0 ELSE Magnitud END), IdCabezalERP, ProximoServicio, @NotaFinal, NoDocERP,
+                            -- OJO: '0' entre comillas. Magnitud es NVARCHAR y guarda valores como '40.00';
+                            -- con THEN 0 (int) el CASE resolvía a INT por precedencia de tipos y SQL Server
+                            -- intentaba convertir la Magnitud a entero → "Conversion failed ... '40.00' to
+                            -- data type int" en toda orden con decimales. Ambas ramas deben ser texto.
+                            (CASE WHEN @IsSB = 1 THEN '0' ELSE Magnitud END), IdCabezalERP, ProximoServicio, @NotaFinal, NoDocERP,
                             GETDATE(), 1, Variante, UM,
                             IdClienteReact, CliIdCliente, CodCliente,
                             IdProductoReact, ProIdProducto, CodArticulo,
@@ -912,6 +916,23 @@ const postControlArchivo = async (req, res) => {
                                 WHERE ${filtroFamilia('ParentOrder')}
                                   AND ParentServices.Estado = 'FALLA'
                                   AND ParentServices.Descripcion IN (SELECT Descripcion FROM dbo.ServiciosExtraOrden WHERE OrdenID = @CurrentOrderID);
+
+                                -- Limpiar la marca "[Esperando Reposición]" de las órdenes de la familia que ya
+                                -- no tengan NINGUNA falla pendiente (ni archivos ni servicios). Se agrega al
+                                -- reportar la falla y antes quedaba pegada para siempre: órdenes ya resueltas
+                                -- seguían diciendo que esperaban reposición. Se sacan TODAS las ocurrencias
+                                -- (una orden puede haber acumulado varias) y se recorta el espacio sobrante.
+                                UPDATE ParentOrder
+                                SET Observaciones = NULLIF(LTRIM(RTRIM(
+                                        REPLACE(ISNULL(ParentOrder.Observaciones, ''), ' [Esperando Reposición]', '')
+                                    )), '')
+                                FROM dbo.Ordenes AS ParentOrder
+                                WHERE ${filtroFamilia('ParentOrder')}
+                                  AND ParentOrder.Observaciones LIKE '%[[]Esperando Reposición]%'
+                                  AND NOT EXISTS (SELECT 1 FROM dbo.ArchivosOrden AF
+                                                  WHERE AF.OrdenID = ParentOrder.OrdenID AND AF.EstadoArchivo = 'FALLA')
+                                  AND NOT EXISTS (SELECT 1 FROM dbo.ServiciosExtraOrden SF
+                                                  WHERE SF.OrdenID = ParentOrder.OrdenID AND SF.Estado = 'FALLA');
                             `);
 
                         // Tras curar, si el pedido quedó COMPLETAMENTE resuelto, avisar al frontend para liberar

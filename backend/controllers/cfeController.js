@@ -680,6 +680,9 @@ exports.anularFactura = async (req, res) => {
                 `);
 
             // 4. Revertir OrdenesRetiro
+            // 3/4 (Abonado) → 1 (Ingresado); 8 (Empaquetado y abonado) → 7 (Empaquetado SIN abonar).
+            // OJO: 8 nunca va a 5 (Entregado) — anular un pago no puede "entregar" un retiro que el
+            // cliente todavía no pasó a buscar. El resto de los estados (incluido 5) se preserva.
             await transaction.request()
                 .input('tcaId', sql.Int, tcaId)
                 .query(`
@@ -687,17 +690,19 @@ exports.anularFactura = async (req, res) => {
                     SET PagIdPago = NULL,
                         OReEstadoActual = CASE
                             WHEN OReEstadoActual IN (3, 4) THEN 1
-                            WHEN OReEstadoActual = 8 THEN 5
+                            WHEN OReEstadoActual = 8 THEN 7
                             ELSE OReEstadoActual
                         END,
-                        OReFechaEstadoActual = GETDATE(),
+                        OReFechaEstadoActual = CASE WHEN OReEstadoActual IN (3, 4, 8) THEN GETDATE() ELSE OReFechaEstadoActual END,
                         ORePasarPorCaja = 1
                     WHERE PagIdPago IN (SELECT PagIdPago FROM dbo.Pagos WHERE PagTcaIdTransaccion = @tcaId)
                 `);
 
-            // 5. Insertar histórico
+            // 5. Insertar histórico — SOLO de los retiros cuyo estado realmente cambió (antes insertaba
+            // una fila por TODOS, y un retiro ya Entregado quedaba con un "Entregado" fantasma de quien anuló).
             for (const o of ordRetiroRes.recordset) {
-                const nuevoEstado = (o.OReEstadoActual === 3 || o.OReEstadoActual === 4) ? 1 : (o.OReEstadoActual === 8 ? 5 : o.OReEstadoActual);
+                const nuevoEstado = (o.OReEstadoActual === 3 || o.OReEstadoActual === 4) ? 1 : (o.OReEstadoActual === 8 ? 7 : o.OReEstadoActual);
+                if (nuevoEstado === o.OReEstadoActual) continue;
                 await transaction.request()
                     .input('oreId', sql.Int, o.OReIdOrdenRetiro)
                     .input('estado', sql.Int, nuevoEstado)
@@ -709,14 +714,26 @@ exports.anularFactura = async (req, res) => {
             }
 
             // 6. Revertir OrdenesDeposito
+            // Solo se revierte el estado que puso el PAGO (7 = Pronto para entregar → 6 = Avisado).
+            // Cualquier otro estado se preserva: anular un pago NO des-entrega una orden que el cliente
+            // ya retiró (9 = Entregado). Antes encajaba 6 a lo bruto y "des-entregaba" órdenes.
+            // Se registra en el histórico solo lo que realmente cambió (igual que el retiro, paso 5).
             await transaction.request()
                 .input('tcaId', sql.Int, tcaId)
+                .input('usuarioId', sql.Int, usuarioId)
                 .query(`
+                    DECLARE @cambios TABLE (OrdIdOrden INT, EstadoViejo INT, EstadoNuevo INT);
+
                     UPDATE dbo.OrdenesDeposito
                     SET PagIdPago = NULL,
-                        OrdEstadoActual = 6,
-                        OrdFechaEstadoActual = GETDATE()
-                    WHERE PagIdPago IN (SELECT PagIdPago FROM dbo.Pagos WHERE PagTcaIdTransaccion = @tcaId)
+                        OrdEstadoActual      = CASE WHEN OrdEstadoActual = 7 THEN 6 ELSE OrdEstadoActual END,
+                        OrdFechaEstadoActual = CASE WHEN OrdEstadoActual = 7 THEN GETDATE() ELSE OrdFechaEstadoActual END
+                    OUTPUT inserted.OrdIdOrden, deleted.OrdEstadoActual, inserted.OrdEstadoActual INTO @cambios
+                    WHERE PagIdPago IN (SELECT PagIdPago FROM dbo.Pagos WHERE PagTcaIdTransaccion = @tcaId);
+
+                    INSERT INTO dbo.HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+                    SELECT OrdIdOrden, EstadoNuevo, GETDATE(), @usuarioId
+                    FROM @cambios WHERE EstadoViejo <> EstadoNuevo;
                 `);
         }
 

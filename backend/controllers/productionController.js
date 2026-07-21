@@ -62,6 +62,15 @@ const GUARD_ORDENES_RESUELTAS =
     "ISNULL(EstadoenArea,'') NOT IN ('Pronto','En transito','En Transito','En Tránsito','Ingresado','Pronto para entregar','Con Falla','Retenido','Finalizado','Entregado','Avisado','Para Avisar','Cancelado') " +
     "AND Estado NOT IN ('Finalizado','Cancelado','Entregado')";
 
+// Áreas con IMPRESIÓN PARCIAL (por unidades): al finalizar un lote, las órdenes incompletas NO
+// bloquean — vuelven a la Mesa de Armado conservando su avance (Ordenes.CantidadImpresa) para
+// continuar otro día en un lote nuevo. Ver docs/impresion-parcial-plan.md
+const AREAS_IMPRESION_PARCIAL = ['TPU'];
+
+// Áreas con BLOQUEO DURO al finalizar: el lote no se puede finalizar con órdenes sin marcar
+// (espeja el gate del front en MachineControl). 'DF'/'DTF' son la misma área según el entorno.
+const AREAS_GATE_MARCADO = ['SB', 'DF', 'DTF'];
+
 exports.toggleRollStatus = async (req, res) => {
     try {
         const { rollId, action, destination } = req.body;
@@ -221,16 +230,65 @@ exports.toggleRollStatus = async (req, res) => {
                 // Impresora → Impreso ; no-impresora (calandra) → Calandrado. No aplica a 'production' (volver a la
                 // cola es una corrección, no una finalización). El flag EsImpresora viene de ConfigEquipos.
                 if (destination !== 'production') {
-                    const esImpresora = !!currentRoll.EsImpresora;
-                    const colMarca = esImpresora ? 'Impreso' : 'Calandrado'; // valor interno fijo, no input del cliente
+                    // OJO: SeparacionImpresion puede venir como CHAR ('0'/'1') según el tipo de la
+                    // columna — y un '0' string es TRUTHY en JS: `!!EsImpresora` daba true hasta en
+                    // las calandras y el gate exigía 'Impreso' donde la UI marca 'Calandrado'
+                    // (lotes 100% calandrados imposibles de finalizar). Parse explícito.
+                    const esImpresora = currentRoll.EsImpresora === true || Number(String(currentRoll.EsImpresora ?? '0').trim()) === 1;
+                    const areaRollUp = String(currentRoll.AreaID || '').trim().toUpperCase();
+                    // La marca a exigir: 'Calandrado' SOLO en calandras de SB (única área con calandras);
+                    // en el resto (DTF, TPU, y las impresoras de SB) la marca es 'Impreso'. Si esto usara
+                    // Calandrado en DTF, el gate bloquearía siempre (ahí nadie calandra).
+                    const colMarca = (areaRollUp === 'SB' && !esImpresora) ? 'Calandrado' : 'Impreso'; // valor interno fijo, no input del cliente
                     const marcaRes = await new sql.Request(transaction)
                         .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
                         .query(`SELECT COUNT(*) AS Faltan FROM dbo.Ordenes
                                 WHERE CAST(RolloID AS VARCHAR(50)) = @RID AND ISNULL(${colMarca}, 0) = 0`);
                     const faltanMarca = marcaRes.recordset[0]?.Faltan || 0;
-                    if (faltanMarca > 0) {
+                    const esAreaParcial = AREAS_IMPRESION_PARCIAL.includes(String(currentRoll.AreaID || '').toUpperCase());
+
+                    if (faltanMarca > 0 && esAreaParcial) {
+                        // IMPRESIÓN PARCIAL: las incompletas vuelven a la Mesa de Armado con su avance
+                        // (misma receta que moveOrder con destino null: RolloID/Secuencia/MaquinaID = NULL
+                        // + estado 'Pendiente'). Las completas siguen el flujo normal del lote.
+                        const incompletasRes = await new sql.Request(transaction)
+                            .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
+                            .query(`SELECT OrdenID, CodigoOrden FROM dbo.Ordenes
+                                    WHERE CAST(RolloID AS VARCHAR(50)) = @RID AND ISNULL(${colMarca}, 0) = 0`);
+
+                        for (const o of incompletasRes.recordset) {
+                            await new sql.Request(transaction)
+                                .input('OID', sql.Int, o.OrdenID)
+                                .query(`UPDATE dbo.Ordenes SET RolloID = NULL, Secuencia = NULL, MaquinaID = NULL WHERE OrdenID = @OID`);
+                            await changeOrderState(transaction, {
+                                target : { type: 'ORDER', id: o.OrdenID },
+                                estado : 'Pendiente',
+                                userObj: req.user,
+                                detalle: 'Impresión parcial: vuelve a Mesa de Armado conservando el avance',
+                                io     : req.app.get('socketio'),
+                            });
+                        }
+                        logger.info(`[toggleRollStatus] Impresión parcial: ${incompletasRes.recordset.length} orden(es) del rollo ${currentRoll.RolloID} vuelven a mesa.`);
+
+                        // Si TODAS eran incompletas, el lote quedó vacío: cerrarlo acá mismo.
+                        const restantesRes = await new sql.Request(transaction)
+                            .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
+                            .query(`SELECT COUNT(*) AS C FROM dbo.Ordenes WHERE CAST(RolloID AS VARCHAR(50)) = @RID`);
+                        if ((restantesRes.recordset[0]?.C || 0) === 0) {
+                            await new sql.Request(transaction)
+                                .input('RID', sql.VarChar(50), currentRoll.RolloID.toString())
+                                .query(`UPDATE dbo.BitacoraProduccion SET FechaFin = GETDATE() WHERE CAST(RolloID AS VARCHAR(50)) = @RID AND FechaFin IS NULL;
+                                        UPDATE dbo.Rollos SET Estado = 'Finalizado', MaquinaID = NULL WHERE CAST(RolloID AS VARCHAR(50)) = @RID;`);
+                            await transaction.commit();
+                            const ioEmpty = req.app.get('socketio');
+                            if (ioEmpty) ioEmpty.emit('server:order_updated', { type: 'roll_finished_partial' });
+                            return res.json({ success: true, message: 'Todas las órdenes volvieron a la Mesa de Armado con su avance; el lote quedó finalizado.' });
+                        }
+                    } else if (faltanMarca > 0 && AREAS_GATE_MARCADO.includes(areaRollUp)) {
+                        // Bloqueo duro (SB y DTF, espeja el gate del front en MachineControl):
+                        // en el resto de las áreas el marcado no aplica y se finaliza sin exigirlo.
                         await transaction.rollback();
-                        return res.status(400).json({ error: `No se puede finalizar: faltan ${faltanMarca} orden(es) sin marcar como ${esImpresora ? 'impreso' : 'calandrado'}.` });
+                        return res.status(400).json({ error: `No se puede finalizar: faltan ${faltanMarca} orden(es) sin marcar como ${colMarca === 'Calandrado' ? 'calandrado' : 'impreso'}.` });
                     }
                 }
 
@@ -454,18 +512,23 @@ exports.printEtiquetaLote = async (req, res) => {
         const rollId = String(req.params.id || '');
         const pool = await getPool();
 
+        // La fecha se formatea EN SQL (dd/mm/yyyy, hh:mi) a propósito: el driver lee el DATETIME
+        // (guardado en hora local) como si fuera UTC, y formatearlo después en JS restaba 3h
+        // (un lote finalizado 11:01 se imprimía 08:01). Así sale tal cual quedó guardado.
         const loteRes = await pool.request()
             .input('RID', sql.VarChar(50), rollId)
             .query(`
                 SELECT TOP 1 rl.Nombre AS LoteNombre,
-                       (SELECT MAX(b.FechaFin) FROM dbo.BitacoraProduccion b WITH(NOLOCK)
-                          WHERE CAST(b.RolloID AS VARCHAR(50)) = @RID) AS FechaFin
+                       CONVERT(VARCHAR(10), f.Fin, 103) + ', ' + CONVERT(VARCHAR(5), f.Fin, 108) AS FechaFinStr
                 FROM dbo.Rollos rl WITH(NOLOCK)
+                CROSS APPLY (
+                    SELECT ISNULL((SELECT MAX(b.FechaFin) FROM dbo.BitacoraProduccion b WITH(NOLOCK)
+                                    WHERE CAST(b.RolloID AS VARCHAR(50)) = @RID), GETDATE()) AS Fin
+                ) f
                 WHERE CAST(rl.RolloID AS VARCHAR(50)) = @RID
             `);
         const lote = loteRes.recordset[0] || {};
         const nombreLote = (lote.LoteNombre || `Lote ${rollId}`).trim();
-        const fechaFin = lote.FechaFin ? new Date(lote.FechaFin) : new Date();
 
         const aggRes = await pool.request()
             .input('RID', sql.VarChar(50), rollId)
@@ -482,8 +545,14 @@ exports.printEtiquetaLote = async (req, res) => {
         const urgentes = Number(agg.Urgentes || 0);
         const fallas = Number(agg.Fallas || 0);
 
-        const fechaStr = fechaFin.toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+        // Fallback solo si el rollo no existe (sin fila): ahí sí se formatea en JS, con zona explícita.
+        const fechaStr = lote.FechaFinStr || new Date().toLocaleString('es-UY', { timeZone: 'America/Montevideo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
         const esc = (s) => String(s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+
+        // El nombre del lote se achica según su largo para ocupar el ancho de la etiqueta en vez de
+        // partirse en 3 líneas. Ancho útil = 10cm - 2×0.6cm de padding ≈ 8.8cm ≈ 332px a 96dpi, y en
+        // Arial 900 cada carácter ocupa ~0.62em. Se acota entre 13px y 34px.
+        const loteFont = Math.max(13, Math.min(34, Math.floor(332 / (Math.max(nombreLote.length, 1) * 0.62))));
 
         const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Lote ${esc(nombreLote)}</title>
@@ -491,7 +560,7 @@ exports.printEtiquetaLote = async (req, res) => {
   @page { size: 10cm 15cm; margin: 0; }
   body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; background: #fff; color: #000; }
   .label { width: 10cm; height: 15cm; box-sizing: border-box; padding: 0.7cm 0.6cm; display: flex; flex-direction: column; }
-  .lote { font-size: 30px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; word-break: break-word; line-height: 1.1; border-bottom: 3px solid #000; padding-bottom: 10px; }
+  .lote { font-size: ${loteFont}px; font-weight: 900; text-transform: uppercase; letter-spacing: 0; word-break: break-word; line-height: 1.1; border-bottom: 3px solid #000; padding-bottom: 10px; }
   .row { margin-top: 14px; }
   .lbl { font-size: 13px; font-weight: 800; text-transform: uppercase; color: #555; }
   .val { font-size: 22px; font-weight: 900; }
@@ -504,8 +573,8 @@ exports.printEtiquetaLote = async (req, res) => {
     <div class="lote">${esc(nombreLote)}</div>
     <div class="row"><div class="lbl">Finalizado</div><div class="val">${fechaStr}</div></div>
     <div class="row"><div class="lbl">Metros totales</div><div class="metros">${metros.toFixed(2)} m</div></div>
-    ${urgentes > 0 ? `<div class="banner">CONTIENE ${urgentes} URGENTE${urgentes > 1 ? 'S' : ''}</div>` : ''}
-    ${fallas > 0 ? `<div class="banner">CONTIENE ${fallas} FALLA${fallas > 1 ? 'S' : ''}</div>` : ''}
+    ${urgentes > 0 ? `<div class="banner">${urgentes} URGENTE${urgentes > 1 ? 'S' : ''}</div>` : ''}
+    ${fallas > 0 ? `<div class="banner">${fallas} FALLA${fallas > 1 ? 'S' : ''}</div>` : ''}
   </div>
 </body></html>`;
 

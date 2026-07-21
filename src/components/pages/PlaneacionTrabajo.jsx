@@ -885,9 +885,14 @@ const PlaneacionTrabajo = ({ AreaID }) => {
                         onViewOrder={handleViewOrder}
                         onUpdate={refreshBoard}
                         lockReorder={(() => {
-                            // En SB, si el lote está en una máquina que NO es impresora (calandra), no se reordena dentro del modal.
+                            // El orden de un lote solo se congela en una CALANDRA (ahí la secuencia es la
+                            // inversa de la impresión y no se toca). Se detecta por NOMBRE — el mismo criterio
+                            // que usa el backend para elegir la calandra de destino ('calandra%') — y NO por
+                            // SeparacionImpresion: ese flag está en 0 en impresoras reales (ej. MIMAKI), que
+                            // así quedaban tratadas como calandra y sin poder reordenar sus órdenes.
                             const mach = (localBoardData.machines || []).find(m => (m.rolls || []).some(r => String(r.id) === String(inspectingRollId)));
-                            return String(areaCode || '').toUpperCase() === 'SB' && !!mach && !mach.separacionImpresion;
+                            const esCalandra = !!mach && /^\s*calandra/i.test(String(mach.name || ''));
+                            return String(areaCode || '').toUpperCase() === 'SB' && esCalandra;
                         })()}
                     />
                 )

@@ -10,7 +10,7 @@ const config = {
     database: process.env.DB_DATABASE,
     // Si viene un puerto específico en el .env lo usamos, si no, dejamos que mssql lo maneje dinámicamente
     port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : undefined,
-    requestTimeout: 60000,
+    requestTimeout: 120000,
     options: {
         // Si viene el nombre de una instancia (ej. SQLEXPRESS2025), lo asignamos aquí
         instanceName: process.env.DB_INSTANCE || undefined,

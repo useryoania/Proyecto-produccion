@@ -444,12 +444,22 @@ async function marcarEntregado(transactionOrReq, OReIdOrdenRetiro, fecha, usuari
         const { changeOrderState } = require('./stateManagerService');
         // Make sure to reuse the same request or create a new one safely
         const syncReq = typeof transactionOrReq.request === 'function' ? transactionOrReq.request() : new (require('mssql')).Request(transactionOrReq);
+        // El JOIN con OR (od.OrdCodigoOrden = o.NoDocERP OR = o.CodigoOrden) obligaba a recorrer casi
+        // todo Ordenes × OrdenesDeposito: ningún índice sirve para un OR en el ON, y esto corre UNA VEZ
+        // POR RETIRO — era el grueso de los 75s que tardaba la entrega múltiple (y el bloqueo que
+        // tumbaba Caja/CFE/estantes). Partido en dos ramas UNION, cada una sí usa índice.
+        // UNION (no ALL) deduplica, así que el resultado es el mismo.
         const mainOrdersRes = await syncReq
             .input('RetiroID', require('mssql').Int, OReIdOrdenRetiro)
             .query(`
-                SELECT o.OrdenID 
-                FROM Ordenes o WITH(NOLOCK)
-                INNER JOIN OrdenesDeposito od WITH(NOLOCK) ON (od.OrdCodigoOrden = o.NoDocERP OR od.OrdCodigoOrden = o.CodigoOrden)
+                SELECT o.OrdenID
+                FROM OrdenesDeposito od WITH(NOLOCK)
+                INNER JOIN Ordenes o WITH(NOLOCK) ON o.NoDocERP = od.OrdCodigoOrden
+                WHERE od.OReIdOrdenRetiro = @RetiroID
+                UNION
+                SELECT o.OrdenID
+                FROM OrdenesDeposito od WITH(NOLOCK)
+                INNER JOIN Ordenes o WITH(NOLOCK) ON o.CodigoOrden = od.OrdCodigoOrden
                 WHERE od.OReIdOrdenRetiro = @RetiroID
             `);
             
@@ -539,25 +549,26 @@ async function registrarPago(transaction, { ordenRetiroId, metodoPagoId, monedaI
             : new sql.Request(transaction);
 
         updateReq.input('pagoId', sql.Int, pagoId);
+        updateReq.input('Usr', sql.Int, usuarioId);
         orderNumbers.forEach((oid, i) => updateReq.input(`oid${i}`, sql.Int, parseInt(oid, 10)));
         const inClause = orderNumbers.map((_, i) => `@oid${i}`).join(',');
 
+        // El pago vincula PagIdPago SIEMPRE, pero solo promueve a 7 si la orden no está resuelta:
+        // un pago tardío NO debe "des-entregar" una orden ya retirada (9) ni revivir una
+        // cancelada/perdida (10/11). Historial solo si el estado cambió.
         await updateReq.query(`
-            UPDATE OrdenesDeposito SET PagIdPago = @pagoId, OrdEstadoActual = 7, OrdFechaEstadoActual = GETDATE()
+            DECLARE @cambios TABLE (OrdIdOrden INT, EstadoViejo INT, EstadoNuevo INT);
+
+            UPDATE OrdenesDeposito
+            SET PagIdPago = @pagoId,
+                OrdEstadoActual      = CASE WHEN OrdEstadoActual IN (9,10,11) THEN OrdEstadoActual ELSE 7 END,
+                OrdFechaEstadoActual = CASE WHEN OrdEstadoActual IN (9,10,11) THEN OrdFechaEstadoActual ELSE GETDATE() END
+            OUTPUT inserted.OrdIdOrden, deleted.OrdEstadoActual, inserted.OrdEstadoActual INTO @cambios
             WHERE OrdIdOrden IN (${inClause});
-        `);
 
-        const histReq = typeof transaction.request === 'function'
-            ? transaction.request()
-            : new sql.Request(transaction);
-
-        histReq.input('Usr', sql.Int, usuarioId);
-        orderNumbers.forEach((oid, i) => histReq.input(`oid${i}`, sql.Int, parseInt(oid, 10)));
-        const histValues = orderNumbers.map((_, i) => `(@oid${i}, 7, GETDATE(), @Usr)`).join(',');
-
-        await histReq.query(`
             INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-            VALUES ${histValues};
+            SELECT OrdIdOrden, EstadoNuevo, GETDATE(), @Usr
+            FROM @cambios WHERE EstadoViejo <> EstadoNuevo;
         `);
 
         // Sincronizar la vista de cobranza (Caja/portal/tótem la leen por EstadoCobro)

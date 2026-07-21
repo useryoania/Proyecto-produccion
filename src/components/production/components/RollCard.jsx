@@ -4,6 +4,13 @@ import { Layers, Eye } from 'lucide-react';
 const RollCard = ({ roll, index, onViewDetails, isSelected, onToggleSelect, isMachineView, machineName }) => {
     if (!roll) return null;
 
+    // Impresión PARCIAL (TPU, por unidades): la card muestra "Unidades" (no metros) y el avance
+    // IMPRESOS x/y del lote, para saber de antemano cómo viene cada uno desde la mesa de trabajo.
+    const ordenesLote = roll.orders || [];
+    const isLoteTPU = ordenesLote.length > 0 && ordenesLote.every(o => /^TPU-/i.test(o.code || ''));
+    const unidadesTotales = ordenesLote.reduce((s, o) => s + Math.round(o.magnitude || 0), 0);
+    const unidadesImpresas = ordenesLote.reduce((s, o) => s + (o.cantidadImpresa || 0), 0);
+
     return (
         <div className={`bg-white border rounded-2xl p-3 tablet:p-2 transition-all relative group hover:bg-slate-50 hover:shadow-md ${isSelected ? 'border-brand-cyan bg-brand-cyan/10 z-10' : 'border-zinc-200 hover:z-10'}`}>
             {/* Cabecera Lote */}
@@ -44,9 +51,22 @@ const RollCard = ({ roll, index, onViewDetails, isSelected, onToggleSelect, isMa
                         </div>
                         <div className="w-px h-6 bg-zinc-200"></div>
                         <div className="flex flex-col">
-                            <span className="text-[10px] tablet:text-[9px] text-zinc-400 uppercase font-bold mb-0.5">Metros</span>
-                            <span className="font-black text-brand-cyan text-sm tablet:text-xs leading-none">{parseFloat(roll.totalMeters || roll.usage || 0).toFixed(2)}m</span>
+                            <span className="text-[10px] tablet:text-[9px] text-zinc-400 uppercase font-bold mb-0.5">{isLoteTPU ? 'Unidades' : 'Metros'}</span>
+                            <span className="font-black text-brand-cyan text-sm tablet:text-xs leading-none">
+                                {isLoteTPU ? `${unidadesTotales} u` : `${parseFloat(roll.totalMeters || roll.usage || 0).toFixed(2)}m`}
+                            </span>
                         </div>
+                        {isLoteTPU && (
+                            <>
+                                <div className="w-px h-6 bg-zinc-200"></div>
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] tablet:text-[9px] text-zinc-400 uppercase font-bold mb-0.5">Impresos</span>
+                                    <span className={`font-black text-sm tablet:text-xs leading-none ${unidadesTotales > 0 && unidadesImpresas >= unidadesTotales ? 'text-emerald-500' : unidadesImpresas > 0 ? 'text-amber-500' : 'text-zinc-400'}`}>
+                                        {unidadesImpresas}/{unidadesTotales}
+                                    </span>
+                                </div>
+                            </>
+                        )}
                     </div>
 
                     {/* Botón Ojo */}

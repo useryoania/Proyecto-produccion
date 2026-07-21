@@ -2549,7 +2549,11 @@ exports.getPickupOrders = async (req, res) => {
                 rawId: o.IdOrden,
                 desc: o.NombreTrabajo || 'Pedido',
                 amount: finalAmount,
-                date: o.FechaEstado ? new Date(o.FechaEstado).toLocaleDateString('es-UY') : 'N/A',
+                // Fecha/hora de INGRESO a depósito (no OrdFechaEstadoActual: esa la pisan los flujos
+                // de pago/aviso y hacía "saltar" la fecha a hoy en órdenes viejas re-avisadas)
+                date: o.FechaIngreso
+                    ? new Date(o.FechaIngreso).toLocaleString('es-UY', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '')
+                    : 'N/A',
                 fechaIngreso: o.FechaIngreso || null, // OrdFechaIngresoOrden — para la regla de retiro obligatorio de órdenes +15 días
                 status: isPaid ? 'PAGADO' : 'LISTO',
                 originalStatus: o.Estado,

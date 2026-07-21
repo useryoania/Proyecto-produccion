@@ -686,9 +686,25 @@ class ERPSyncService {
                         } else {
                             throw new Error(erpRes.data?.error || erpRes.data?.message || JSON.stringify(erpRes.data));
                         }
+                    } else {
+                        // Sin token no se envía nada: antes esto pasaba mudo y el pedido quedaba sin sincronizar.
+                        logger.error(`[ERPSync] Sin token de Macrosoft → NO se envió el pedido ${noDocERP} al ERP.`);
                     }
                 } catch (eErp) {
-                    logger.error(`[ERPSync] Error al enviar a ERP Macrosoft: ${eErp.message}`);
+                    // El .message de axios es genérico ("Request failed with status code 500"): la causa real
+                    // la manda el ERP en response.data. Sin eso (y sin saber qué pedido/payload falló) el error
+                    // es indiagnosticable. Se recorta a 600 chars para no inundar el log si contesta un HTML.
+                    const corta = (v) => {
+                        const s = typeof v === 'string' ? v : JSON.stringify(v ?? {});
+                        return s.length > 600 ? s.slice(0, 600) + '…' : s;
+                    };
+                    const httpSt = eErp.response?.status;
+                    logger.error(
+                        `[ERPSync] Error al enviar a ERP Macrosoft (NoDocERP ${noDocERP}): ${eErp.message}` +
+                        (httpSt ? ` | HTTP ${httpSt}` : '') +
+                        ` | respuesta ERP: ${corta(eErp.response?.data)}` +
+                        ` | payload enviado: ${corta(erpPayload)}`
+                    );
                 }
             } // Fin if/else desactivado global
         } else {
@@ -802,8 +818,19 @@ class ERPSyncService {
         try {
             const erpBaseUrl = process.env.ERP_API_URL || 'https://api-user.devmacrosoft.com';
             const res = await axios.post(`${erpBaseUrl}/authenticate`, { username: "user", password: "1234" });
-            return res.data?.token || res.data?.accessToken;
-        } catch (e) { return null; }
+            const tk = res.data?.token || res.data?.accessToken;
+            if (!tk) logger.warn(`[ERPSync] /authenticate respondió ${res.status} pero sin token: ${JSON.stringify(res.data ?? {}).slice(0, 300)}`);
+            return tk;
+        } catch (e) {
+            // Antes devolvía null en silencio: si el login fallaba, el envío se salteaba sin dejar NINGÚN rastro
+            // en el log (parecía que el ERP simplemente no se llamaba).
+            logger.error(
+                `[ERPSync] No se pudo obtener token de Macrosoft: ${e.message}` +
+                (e.response?.status ? ` | HTTP ${e.response.status}` : '') +
+                ` | respuesta: ${JSON.stringify(e.response?.data ?? {}).slice(0, 300)}`
+            );
+            return null;
+        }
     }
 
     /**

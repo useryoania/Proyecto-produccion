@@ -11,6 +11,8 @@ async function ensureOrderColumns(pool) {
             ALTER TABLE dbo.Ordenes ADD Impreso BIT NOT NULL CONSTRAINT DF_Ordenes_Impreso DEFAULT 0;
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'Calandrado' AND Object_ID = Object_ID('dbo.Ordenes'))
             ALTER TABLE dbo.Ordenes ADD Calandrado BIT NOT NULL CONSTRAINT DF_Ordenes_Calandrado DEFAULT 0;
+        IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'CantidadImpresa' AND Object_ID = Object_ID('dbo.Ordenes'))
+            ALTER TABLE dbo.Ordenes ADD CantidadImpresa INT NOT NULL CONSTRAINT DF_Ordenes_CantidadImpresa DEFAULT 0;
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'MetrosGrupoFalla' AND Object_ID = Object_ID('dbo.Ordenes'))
             ALTER TABLE dbo.Ordenes ADD MetrosGrupoFalla DECIMAL(10,2) NULL;
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'GrupoManual' AND Object_ID = Object_ID('dbo.Ordenes'))
@@ -111,6 +113,7 @@ exports.getBoardData = async (req, res) => {
                     o.Secuencia,
                     o.Tinta, -- ✅ AGREGADO
                     o.Impreso, o.Calandrado, -- Estado impreso/calandrado (gate "Finalizar Lote" en planeación)
+                    o.UM, o.CantidadImpresa, -- Impresión parcial (TPU: unidades impresas contra Magnitud)
 
                     -- ✅ SUBCONSULTA PARA CONTAR ARCHIVOS (Usando tu tabla dbo.ArchivosOrden)
                     (SELECT COUNT(*) FROM dbo.ArchivosOrden WITH(NOLOCK) WHERE OrdenID = o.OrdenID) AS CantidadArchivos
@@ -175,6 +178,8 @@ exports.getBoardData = async (req, res) => {
                 ink: o.Tinta, // ✅ Mapeado
                 printed: !!o.Impreso,       // gate "Finalizar Lote": máquina impresora
                 calandered: !!o.Calandrado, // gate "Finalizar Lote": máquina no-impresora (calandra)
+                um: (o.UM || '').trim(),                    // Impresión parcial (TPU)
+                cantidadImpresa: o.CantidadImpresa || 0,    // unidades ya impresas
 
                 // ✅ AQUÍ ASIGNAMOS LA CANTIDAD DE ARCHIVOS
                 fileCount: o.CantidadArchivos || 0
@@ -1154,7 +1159,7 @@ exports.getRollDetails = async (req, res) => {
                 SELECT 
                     o.OrdenID, o.CodigoOrden, o.Cliente, o.DescripcionTrabajo, 
                     o.Magnitud, o.Material, o.Variante, o.RolloID, 
-                    o.Prioridad, o.Estado, o.FechaIngreso, o.Secuencia, o.Tinta, o.NoDocERP, o.IdCabezalERP, o.Nota, o.Impreso, o.Calandrado, o.MetrosGrupoFalla, o.GrupoManual,
+                    o.Prioridad, o.Estado, o.FechaIngreso, o.Secuencia, o.Tinta, o.NoDocERP, o.IdCabezalERP, o.Nota, o.Impreso, o.Calandrado, o.UM, o.CantidadImpresa, o.MetrosGrupoFalla, o.GrupoManual,
                     o.BobinaTelaID,
                     -- TELA DE CLIENTE: partes de la bobina elegida (para mostrar como material y agrupar por Referencia)
                     ibt.Referencia AS BobRef, ibt.DescripcionTela AS BobDesc, COALESCE(ibt.AnchoReal, ibt.Ancho) AS BobAncho,
@@ -1217,6 +1222,8 @@ exports.getRollDetails = async (req, res) => {
                 sequence: o.Secuencia,
                 printed: !!o.Impreso,
                 calandered: !!o.Calandrado,
+                um: (o.UM || '').trim(),                    // Impresión parcial (TPU)
+                cantidadImpresa: o.CantidadImpresa || 0,    // unidades ya impresas
                 groupId: o.GrupoManual,
                 ink: o.Tinta,
                 fileCount: o.CantidadArchivos || o.fileCount || 0,
@@ -1247,7 +1254,15 @@ exports.setOrderPrinted = async (req, res) => {
         await pool.request()
             .input('OID', sql.Int, Number(orderId))
             .input('P', sql.Bit, printed ? 1 : 0)
-            .query('UPDATE dbo.Ordenes SET Impreso = @P WHERE OrdenID = @OID');
+            .query(`
+                UPDATE dbo.Ordenes SET Impreso = @P,
+                    -- Impresión parcial (órdenes por unidades, UM='U'): el tick manual sincroniza
+                    -- el contador para que Impreso y CantidadImpresa nunca queden inconsistentes.
+                    CantidadImpresa = CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(UM,'')))) = 'U'
+                        THEN CASE WHEN @P = 1 THEN ISNULL(TRY_CONVERT(INT, TRY_CONVERT(FLOAT, Magnitud)), CantidadImpresa) ELSE 0 END
+                        ELSE CantidadImpresa END
+                WHERE OrdenID = @OID
+            `);
         res.json({ ok: true });
     } catch (err) {
         logger.error('Error seteando Impreso:', err);
@@ -1273,6 +1288,54 @@ exports.setOrderCalandered = async (req, res) => {
     }
 };
 
+// ==========================================
+// Impresión PARCIAL (TPU / órdenes por unidades): setear cuántas unidades van impresas.
+// El total es Ordenes.Magnitud (UM='U'; los N archivos de la orden son capas de UNA impresión,
+// por eso el contador es POR ORDEN). Ordenes.Impreso queda DERIVADO: 1 solo si el contador
+// llega al total — así el gate de Finalizar, el "x/y impresas" y el tick verde siguen
+// funcionando sin enterarse. El valor es ABSOLUTO (permite corregir para abajo).
+// Ver docs/impresion-parcial-plan.md
+// ==========================================
+exports.setOrderCantidadImpresa = async (req, res) => {
+    const { orderId, cantidad } = req.body;
+    if (!orderId || cantidad === undefined || cantidad === null || isNaN(Number(cantidad))) {
+        return res.status(400).json({ error: 'orderId y cantidad son requeridos' });
+    }
+    try {
+        const pool = await getPool();
+        await ensureOrderColumns(pool);
+
+        const ordRes = await pool.request()
+            .input('OID', sql.Int, Number(orderId))
+            .query(`SELECT UM, Magnitud FROM dbo.Ordenes WITH(NOLOCK) WHERE OrdenID = @OID`);
+        if (!ordRes.recordset.length) return res.status(404).json({ error: 'Orden no encontrada' });
+
+        const um = String(ordRes.recordset[0].UM || '').trim().toUpperCase();
+        if (um !== 'U') {
+            return res.status(400).json({ error: 'La impresión parcial solo aplica a órdenes por unidades (UM = U).' });
+        }
+
+        const result = await pool.request()
+            .input('OID', sql.Int, Number(orderId))
+            .input('C', sql.Int, Math.round(Number(cantidad)))
+            .query(`
+                DECLARE @Total INT = (SELECT ISNULL(TRY_CONVERT(INT, TRY_CONVERT(FLOAT, Magnitud)), 0) FROM dbo.Ordenes WHERE OrdenID = @OID);
+                DECLARE @Val INT = CASE WHEN @C < 0 THEN 0 WHEN @Total > 0 AND @C > @Total THEN @Total ELSE @C END;
+                UPDATE dbo.Ordenes
+                SET CantidadImpresa = @Val,
+                    Impreso = CASE WHEN @Total > 0 AND @Val >= @Total THEN 1 ELSE 0 END
+                WHERE OrdenID = @OID;
+                SELECT @Val AS CantidadImpresa, @Total AS Total, CASE WHEN @Total > 0 AND @Val >= @Total THEN 1 ELSE 0 END AS Impreso;
+            `);
+
+        const row = result.recordset[0] || {};
+        res.json({ ok: true, cantidadImpresa: row.CantidadImpresa || 0, total: row.Total || 0, impreso: !!row.Impreso });
+    } catch (err) {
+        logger.error('Error seteando CantidadImpresa:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
 // Setear la Magnitud (metros) de UNA orden — se usa para editar los metros de las órdenes -F.
 exports.setOrderMagnitud = async (req, res) => {
     const { orderId, magnitud } = req.body;
@@ -1292,27 +1355,9 @@ exports.setOrderMagnitud = async (req, res) => {
     }
 };
 
-// Setear el total de metros de un GRUPO de falla (independiente de la Magnitud por orden).
-// Guarda el mismo valor en MetrosGrupoFalla de TODAS las órdenes del grupo (orderIds).
-exports.setFallaGroupMeters = async (req, res) => {
-    const { orderIds, metros } = req.body;
-    if (!Array.isArray(orderIds) || orderIds.length === 0) return res.status(400).json({ error: 'orderIds requerido' });
-    try {
-        const pool = await getPool();
-        await ensureOrderColumns(pool);
-        const val = (metros === '' || metros === null || metros === undefined) ? null : Number(metros);
-        if (val !== null && Number.isNaN(val)) return res.status(400).json({ error: 'metros inválido' });
-        const ids = orderIds.map(Number).filter(n => Number.isFinite(n));
-        if (ids.length === 0) return res.status(400).json({ error: 'orderIds inválidos' });
-        await pool.request()
-            .input('M', sql.Decimal(10, 2), val)
-            .query(`UPDATE dbo.Ordenes SET MetrosGrupoFalla = @M WHERE OrdenID IN (${ids.join(',')})`);
-        res.json({ ok: true });
-    } catch (err) {
-        logger.error('Error seteando MetrosGrupoFalla:', err);
-        res.status(500).json({ error: err.message });
-    }
-};
+// El total de metros de un grupo de falla ya NO se edita: es la SUMA de las órdenes del grupo,
+// calculada en el detalle del lote. Los metros se cargan por orden (setOrderMagnitud).
+// La columna Ordenes.MetrosGrupoFalla queda solo por compatibilidad con datos viejos.
 
 // ==========================================
 // Agrupar / desagrupar órdenes dentro de un lote (GrupoManual, visual SB)

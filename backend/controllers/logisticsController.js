@@ -1348,9 +1348,13 @@ if (triggerReversal || triggerForward) {
                                                // Línea de cobranza de ESTA orden (no del pedido completo): cada orden hermana
                                                // entra con su propio importe/cantidad/producto para no duplicar el total en el retiro.
                                                // Fallback al comportamiento previo si el detalle no tuviera la orden desglosada.
-                                               const dOrden = details.recordset.find(d => Number(d.OrdenID) === Number(L_OrdenID)) || details.recordset[0];
+                                               // Reposiciones cliente (-R): NUNCA tienen línea propia en PedidosCobranzaDetalle y el
+                                               // fallback a la 1ª línea del pedido les copiaba el costo de la MADRE (el retiro les
+                                               // mostraba importe). Son re-trabajo sin cargo: siempre costo 0 y su propia cantidad.
+                                               const esRepoCliente = /-R\d+$/i.test(oRow.CodigoOrden || '');
+                                               const dOrden = esRepoCliente ? null : (details.recordset.find(d => Number(d.OrdenID) === Number(L_OrdenID)) || details.recordset[0]);
                                                const cantOrden  = (dOrden && dOrden.Cantidad   != null) ? parseFloat(dOrden.Cantidad)   : (parseFloat(oRow.Magnitud) || totalMetros || 0);
-                                               const costoOrden = (dOrden && dOrden.TotalLinea != null) ? parseFloat(dOrden.TotalLinea) : currentMonto;
+                                               const costoOrden = esRepoCliente ? 0 : ((dOrden && dOrden.TotalLinea != null) ? parseFloat(dOrden.TotalLinea) : currentMonto);
                                                const prodOrden  = (dOrden && dOrden.IDProdReact)        ? dOrden.IDProdReact           : (oRow.ProIdProducto || null);
                                                const lugarReq = await poolLocal.request().input('CID', require('mssql').Int, cliPKForDep).query("SELECT FormaEnvioID FROM Clientes WITH(NOLOCK) WHERE CliIdCliente = @CID");
                                                const lugarRetiro = lugarReq.recordset[0]?.FormaEnvioID ? parseInt(lugarReq.recordset[0].FormaEnvioID) : null;

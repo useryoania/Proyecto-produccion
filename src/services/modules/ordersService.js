@@ -15,6 +15,13 @@ export const ordersService = {
         const response = await api.get('/orders/failed', { params });
         return response.data;
     },
+    // Tarjeta "Canceladas" del Panel de Control. Faltaba: el Dashboard la pasaba como queryFn y quedaba
+    // undefined → OrdersCard hacía queryFn(areaKey) → TypeError → data undefined → mostraba 0 sin desglose.
+    getCancelledSummary: async (areaKey) => {
+        const params = areaKey ? { area: areaKey } : {};
+        const response = await api.get('/orders/cancelled', { params });
+        return response.data;
+    },
     create: async (orderData) => {
         const response = await api.post('/orders', orderData);
         return response.data;

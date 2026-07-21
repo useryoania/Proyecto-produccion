@@ -624,6 +624,9 @@ exports.asignarRetiroAEstante = async (req, res) => {
         }
 
     } catch (err) {
+        // OJO: era el ÚNICO catch mudo del archivo — un lock de DB tuvo esto fallando por timeout
+        // durante 2 horas (16/07/26) sin dejar una sola línea de log. Siempre loguear acá.
+        logger.error(`[ASIGNAR ESTANTE] Error asignando ${req.body?.ordenRetiro || '?'}:`, err.message);
         res.status(400).json({ error: err.message });
     }
 };
@@ -892,40 +895,61 @@ exports.marcarRetiroEntregadoMultiple = async (req, res) => {
 
     try {
         const pool = await getPool();
-        const transaction = new sql.Transaction(pool);
-        await transaction.begin();
+        const fechaEntrega = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
+        const UsuarioAlta = req.user?.id || 70;
 
-        try {
-            const fechaEntrega = moment().tz('America/Montevideo').format('YYYY-MM-DD HH:mm:ss');
-            const UsuarioAlta = req.user?.id || 70;
+        // Se ordenan los IDs numéricamente de menor a mayor ANTES de actualizar.
+        // Esto es CRÍTICO para evitar Deadlocks (Error 1205) en SQL Server,
+        // ya que garantiza que las transacciones bloqueen los recursos siempre en el mismo orden.
+        const ordenesOrdenadas = ordenesParaEntregar
+            .map(ord => ({ ord, id: parseInt((ord || '').replace(/^[A-Za-z]+-0*/, ''), 10) }))
+            .filter(x => !isNaN(x.id))
+            .sort((a, b) => a.id - b.id);
 
-            // 1. Marcar entregadas en DB
-            // Se ordenan los IDs numéricamente de menor a mayor ANTES de actualizar.
-            // Esto es CRÍTICO para evitar Deadlocks (Error 1205) en SQL Server,
-            // ya que garantiza que las transacciones bloqueen los recursos siempre en el mismo orden.
-            const ordenesOrdenadas = ordenesParaEntregar
-                .map(ord => ({ ord, id: parseInt((ord || '').replace(/^[A-Za-z]+-0*/, ''), 10) }))
-                .filter(x => !isNaN(x.id))
-                .sort((a, b) => a.id - b.id);
+        // UNA TRANSACCIÓN POR RETIRO (antes: una sola para todo el lote).
+        // Entregar N retiros retenía locks X sobre OrdenesDeposito/OrdenesRetiro/OcupacionEstantes
+        // durante TODO el lote — se midieron 75s en una sola request — y en ese lapso moría por
+        // timeout cualquier otra operación (Caja, edición de CFE, asignar a estante), dejando además
+        // transacciones huérfanas. Ahora el lock dura lo que tarda UNA orden.
+        // Contrapartida: si una falla, las anteriores YA quedaron entregadas (no es todo-o-nada).
+        const entregadas = [];
+        const fallidas   = [];
 
-            for (const item of ordenesOrdenadas) {
+        for (const item of ordenesOrdenadas) {
+            const transaction = new sql.Transaction(pool);
+            await transaction.begin();
+            try {
                 logger.info(`[ENTREGADO MULTIPLE] ${item.ord} -> OReId ${item.id}`);
                 // marcarEntregado actualiza el historial, estados y ya elimina de OcupacionEstantes
                 await marcarEntregado(transaction, item.id, new Date(fechaEntrega), UsuarioAlta);
+                await transaction.commit();
+                entregadas.push(item.ord);
+            } catch (errItem) {
+                try { await transaction.rollback(); } catch (e) { /* ya abortada */ }
+                logger.error(`[ENTREGADO MULTIPLE] Falló ${item.ord}: ${errItem.message}`);
+                fallidas.push(item.ord);
             }
-
-            await transaction.commit();
-
-            // EMITIR EVENTO SOCKET.IO
-            const io = req.app.get('socketio');
-            if (io) io.emit('retiros:update', { type: 'entregado', ordenesRetiro: ordenesParaEntregar });
-
-            res.json({ success: true, message: 'Órdenes seleccionadas entregadas exitosamente.' });
-
-        } catch (innerErr) {
-            try { await transaction.rollback(); } catch (e) { /* already rolled back */ }
-            throw innerErr;
         }
+
+        // EMITIR EVENTO SOCKET.IO — solo con las que realmente se entregaron
+        if (entregadas.length > 0) {
+            const io = req.app.get('socketio');
+            if (io) io.emit('retiros:update', { type: 'entregado', ordenesRetiro: entregadas });
+        }
+
+        if (fallidas.length === 0) {
+            return res.json({ success: true, message: 'Órdenes seleccionadas entregadas exitosamente.', entregadas });
+        }
+        if (entregadas.length === 0) {
+            return res.status(500).json({ error: `No se pudo entregar ninguna orden (${fallidas.join(', ')}).`, fallidas });
+        }
+        // Entrega PARCIAL: se devuelve error (el front solo trata 2xx como éxito) para que el
+        // operario vea cuáles no salieron y la pantalla se refresque con el estado real.
+        return res.status(409).json({
+            error: `Se entregaron ${entregadas.length} de ${ordenesOrdenadas.length}. Fallaron: ${fallidas.join(', ')}.`,
+            entregadas,
+            fallidas
+        });
 
     } catch (err) {
         logger.error("Error al entregar selección múltiple:", err);

@@ -62,19 +62,34 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
     const isFalla = (machine.status || '').toLowerCase().includes('falla');
     // Impresora = flag SeparacionImpresion de ConfigEquipos (columna dedicada, se marca en el modal de
     // equipos). En impresoras la banderita continúa el lote en una calandra en vez de ir a Calidad.
-    const isPrinter = !!machine.separacionImpresion;
-    // En SB, un lote que está en una máquina que NO es impresora (ej. calandra) no se puede draggear.
-    const lockDrag = String(areaCode || '').toUpperCase() === 'SB' && !isPrinter;
+    // Parse robusto: el flag puede llegar como bit, número o CHAR '0'/'1' (un '0' string es truthy).
+    const isPrinter = machine.separacionImpresion === true || Number(String(machine.separacionImpresion ?? '0').trim()) === 1;
+    const isSB = String(areaCode || '').toUpperCase() === 'SB';
+    // Solo en una CALANDRA se congela el lote (no se draggea ni se reordena). Se detecta por NOMBRE,
+    // igual que el backend cuando busca la calandra de destino — no por SeparacionImpresion, que está
+    // en 0 en impresoras reales como MIMAKI y las hacía pasar por calandra.
+    const esCalandra = /^\s*calandra/i.test(String(machine.name || ''));
+    const lockDrag = isSB && esCalandra;
 
-    // Bloqueo duro de "Finalizar Lote": no se puede finalizar mientras queden órdenes del lote activo
-    // sin marcar como impreso (impresora) o calandrado (no-impresora). Misma regla que el modal (allPrinted).
+    // Bloqueo duro de "Finalizar Lote": SB y DTF. Mientras queden órdenes del lote activo sin
+    // marcar (impreso; calandrado solo en calandras de SB) no se puede finalizar. Misma regla que
+    // el modal (allPrinted). En el resto de las áreas el marcado no aplica: se finaliza sin exigirlo.
     // Fail-open: si el board todavía no manda el flag (backend viejo), NO bloquea — evita trabar la planta
     // si el frontend se deploya antes que el backend.
-    const printedField = isPrinter ? 'printed' : 'calandered';
+    // La marca a exigir: 'calandered' SOLO en calandras de SB (única área con calandras);
+    // en el resto (DTF, TPU, impresoras de SB) la marca es 'printed'.
+    const isDTF = ['DF', 'DTF'].includes(String(areaCode || '').toUpperCase());
+    const printedField = (isSB && !isPrinter) ? 'calandered' : 'printed';
     const rollOrders = activeRoll?.orders || [];
     const hasMarkData = rollOrders.some(o => o[printedField] !== undefined);
-    const unmarkedCount = hasMarkData ? rollOrders.filter(o => !o[printedField]).length : 0;
+    // Bloqueo duro: SB y DTF — para finalizar, todo el lote debe estar marcado.
+    const unmarkedCount = ((isSB || isDTF) && hasMarkData) ? rollOrders.filter(o => !o[printedField]).length : 0;
     const canFinish = isRunning && unmarkedCount === 0;
+    // Impresión PARCIAL (TPU): finalizar no se bloquea — las órdenes incompletas (contador
+    // CantidadImpresa < Magnitud) vuelven a la Mesa de Armado conservando su avance (lo hace el
+    // backend al finalizar). Acá solo se detectan para AVISAR en el modal de confirmación.
+    const isPartialArea = String(areaCode || '').toUpperCase() === 'TPU';
+    const incompletas = (isPartialArea && hasMarkData) ? rollOrders.filter(o => !o[printedField]) : [];
 
     return (
         <div className={`min-w-0 bg-white rounded-2xl shadow-lg border-t-4 flex flex-col max-h-full transition-colors
@@ -122,9 +137,11 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
                             </button>
                         </Tippy>
                         <Tippy content={canFinish
-                            ? 'Finalizar Lote'
+                            ? (incompletas.length > 0
+                                ? `Finalizar Lote — ${incompletas.length} incompleta${incompletas.length === 1 ? '' : 's'} vuelve${incompletas.length === 1 ? '' : 'n'} a la Mesa de Armado`
+                                : 'Finalizar Lote')
                             : (unmarkedCount > 0
-                                ? `Faltan ${unmarkedCount} orden${unmarkedCount === 1 ? '' : 'es'} sin marcar como ${isPrinter ? 'impreso' : 'calandrado'}`
+                                ? `Faltan ${unmarkedCount} orden${unmarkedCount === 1 ? '' : 'es'} sin marcar como ${printedField === 'calandered' ? 'calandrado' : 'impreso'}`
                                 : 'Finalizar Lote')}>
                             {/* span para que el tooltip se muestre aun con el botón deshabilitado */}
                             <span className="inline-flex">
@@ -335,6 +352,19 @@ const MachineControl = ({ machine, onAssign, onToggleStatus, onViewDetails, onUn
                                         : '¿El lote ha terminado completamente o debe continuar en otro equipo?'}
                                 </p>
                             </div>
+                            {/* Impresión PARCIAL (TPU): aviso de qué órdenes vuelven a la mesa con su avance */}
+                            {isPartialArea && incompletas.length > 0 && (
+                                <div className="w-full bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-left">
+                                    <div className="text-[11px] font-black text-amber-700 uppercase tracking-wide mb-1">
+                                        <i className="fa-solid fa-rotate-left mr-1" />
+                                        {incompletas.length} orden{incompletas.length === 1 ? '' : 'es'} incompleta{incompletas.length === 1 ? '' : 's'} → vuelve{incompletas.length === 1 ? '' : 'n'} a la Mesa de Armado
+                                    </div>
+                                    <div className="text-[11px] font-bold text-amber-600 leading-snug max-h-20 overflow-y-auto">
+                                        {incompletas.map(o => `${o.code} (${o.cantidadImpresa || 0}/${Math.max(1, Math.round(o.magnitude || 0))})`).join(' · ')}
+                                    </div>
+                                    <div className="text-[10px] text-amber-500 mt-1">Conservan las unidades ya impresas y continúan otro día en un lote nuevo.</div>
+                                </div>
+                            )}
                         </div>
                         <div className="px-6 pb-6 bg-white">
                             <div className="flex flex-col gap-2.5">

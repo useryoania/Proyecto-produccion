@@ -120,19 +120,26 @@ const realizarPago = async (req, res) => {
     if (orderNumbers && orderNumbers.length > 0) {
       const orderIdsList = orderNumbers.join(', ');
 
+      // El pago vincula PagIdPago SIEMPRE, pero solo promueve el estado a 7 (Pronto para entregar)
+      // si la orden no está resuelta: un pago tardío (cuenta corriente) NO debe "des-entregar" una
+      // orden ya retirada (9) ni revivir una cancelada/perdida (10/11). Historial solo si cambió.
       await transaction.request()
         .input('pagoId', sql.Int, pagoId)
+        .input('usuarioId', sql.Int, usuarioId)
         .query(`
-          UPDATE OrdenesDeposito
-          SET PagIdPago = @pagoId, OrdEstadoActual = 7, OrdFechaEstadoActual = GETDATE()
-          WHERE OrdIdOrden IN (${orderIdsList});
-        `);
+          DECLARE @cambios TABLE (OrdIdOrden INT, EstadoViejo INT, EstadoNuevo INT);
 
-      const historicoValues = orderNumbers.map(id => `(${id}, 7, GETDATE(), ${usuarioId})`).join(', ');
-      await transaction.request().query(`
-        INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-        VALUES ${historicoValues};
-      `);
+          UPDATE OrdenesDeposito
+          SET PagIdPago = @pagoId,
+              OrdEstadoActual      = CASE WHEN OrdEstadoActual IN (9,10,11) THEN OrdEstadoActual ELSE 7 END,
+              OrdFechaEstadoActual = CASE WHEN OrdEstadoActual IN (9,10,11) THEN OrdFechaEstadoActual ELSE GETDATE() END
+          OUTPUT inserted.OrdIdOrden, deleted.OrdEstadoActual, inserted.OrdEstadoActual INTO @cambios
+          WHERE OrdIdOrden IN (${orderIdsList});
+
+          INSERT INTO HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+          SELECT OrdIdOrden, EstadoNuevo, GETDATE(), @usuarioId
+          FROM @cambios WHERE EstadoViejo <> EstadoNuevo;
+        `);
     }
 
     // ── 4. AUTO-CIERRE del Retiro si todas sus órdenes están pagas ────────────

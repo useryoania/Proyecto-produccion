@@ -770,7 +770,7 @@ async function procesarTransaccion(payload) {
   }
 
   const transaction = pool.transaction();
-  await transaction.begin();
+  await transaction.begin(sql.ISOLATION_LEVEL.READ_COMMITTED); // OJO: ISOLATION_LEVEL en singular (el plural no existe en mssql)
 
   let tcaIdTransaccion = null;
   const pagosCreados   = [];
@@ -927,7 +927,7 @@ async function procesarTransaccion(payload) {
               // Auto-descubrimiento: buscar hijos en BD
               const hijasRes = await new sql.Request(transaction)
                 .input('RID', sql.Int, refId)
-                .query('SELECT OrdIdOrden FROM dbo.OrdenesDeposito WHERE OReIdOrdenRetiro = @RID');
+                .query('SELECT OrdIdOrden FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE OReIdOrdenRetiro = @RID');
               const hijasIds = hijasRes.recordset.map(x => x.OrdIdOrden);
               // Guardar en ap.orderNumbers para que PASO 4 los use al actualizar estados
               ap.orderNumbers = hijasIds;
@@ -987,7 +987,7 @@ async function procesarTransaccion(payload) {
         const cueFallback = await new sql.Request(transaction)
           .input('Cli', sql.Int,         header.clienteId)
           .input('T',   sql.VarChar(20), cueTipoDeuda)
-          .query('SELECT CueIdCuenta FROM dbo.CuentasCliente WHERE CliIdCliente=@Cli AND CueTipo=@T AND CueActiva=1');
+          .query('SELECT CueIdCuenta FROM dbo.CuentasCliente WITH(NOLOCK) WHERE CliIdCliente=@Cli AND CueTipo=@T AND CueActiva=1');
 
         if (cueFallback.recordset.length) {
           const cueIdFb = cueFallback.recordset[0].CueIdCuenta;
@@ -1047,25 +1047,29 @@ async function procesarTransaccion(payload) {
       // 1. Marcar siempre como pagas las OrdenesDeposito hijas
       //    ap.orderNumbers ya fue poblado en PASO 3.5 si estaba vacío (auto-descubrimiento)
       if (ap.orderNumbers && ap.orderNumbers.length > 0) {
-          const reqOd = new sql.Request(transaction).input('PagId', sql.Int, primerPagIdPago).input('TcaId', sql.Int, tcaIdTransaccion);
+          const reqOd = new sql.Request(transaction)
+            .input('PagId', sql.Int, primerPagIdPago)
+            .input('TcaId', sql.Int, tcaIdTransaccion)
+            .input('UsuarioId', sql.Int, usuarioId);
           ap.orderNumbers.forEach((id, i) => reqOd.input(`id${i}`, sql.Int, id));
           const inClauseOd = ap.orderNumbers.map((_, i) => `@id${i}`).join(',');
 
+          // El pago vincula PagIdPago SIEMPRE, pero solo promueve a 7 si la orden no está resuelta:
+          // un pago tardío (cuenta corriente) NO debe "des-entregar" una orden ya retirada (9)
+          // ni revivir una cancelada/perdida (10/11). Historial solo si el estado cambió.
           await reqOd.query(`
+            DECLARE @cambios TABLE (OrdIdOrden INT, EstadoViejo INT, EstadoNuevo INT);
+
             UPDATE dbo.OrdenesDeposito
             SET PagIdPago        = @PagId,
-                OrdEstadoActual  = 7,
-                OrdFechaEstadoActual = GETDATE()
+                OrdEstadoActual      = CASE WHEN OrdEstadoActual IN (9,10,11) THEN OrdEstadoActual ELSE 7 END,
+                OrdFechaEstadoActual = CASE WHEN OrdEstadoActual IN (9,10,11) THEN OrdFechaEstadoActual ELSE GETDATE() END
+            OUTPUT inserted.OrdIdOrden, deleted.OrdEstadoActual, inserted.OrdEstadoActual INTO @cambios
             WHERE OrdIdOrden IN (${inClauseOd});
-          `);
 
-          const histReqOd = new sql.Request(transaction).input('UsuarioId', sql.Int, usuarioId);
-          ap.orderNumbers.forEach((id, i) => histReqOd.input(`id${i}`, sql.Int, id));
-          const histValsOd = ap.orderNumbers.map((_, i) => `(@id${i}, 7, GETDATE(), @UsuarioId)`).join(',');
-
-          await histReqOd.query(`
             INSERT INTO dbo.HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-            VALUES ${histValsOd};
+            SELECT OrdIdOrden, EstadoNuevo, GETDATE(), @UsuarioId
+            FROM @cambios WHERE EstadoViejo <> EstadoNuevo;
           `);
 
           // Sincronizar la vista de cobranza (Caja/portal/tótem la leen por EstadoCobro)
@@ -1127,21 +1131,22 @@ async function procesarTransaccion(payload) {
       ids.forEach((id, i) => req.input(`id${i}`, sql.Int, id));
       const inClause = ids.map((_, i) => `@id${i}`).join(',');
 
+      req.input('UsuarioId', sql.Int, usuarioId);
+      // Mismo criterio que arriba: PagIdPago siempre, estado 7 solo si no está resuelta (9/10/11),
+      // historial solo si cambió.
       await req.query(`
+        DECLARE @cambios TABLE (OrdIdOrden INT, EstadoViejo INT, EstadoNuevo INT);
+
         UPDATE dbo.OrdenesDeposito
         SET PagIdPago        = @PagId,
-            OrdEstadoActual  = 7,
-            OrdFechaEstadoActual = GETDATE()
+            OrdEstadoActual      = CASE WHEN OrdEstadoActual IN (9,10,11) THEN OrdEstadoActual ELSE 7 END,
+            OrdFechaEstadoActual = CASE WHEN OrdEstadoActual IN (9,10,11) THEN OrdFechaEstadoActual ELSE GETDATE() END
+        OUTPUT inserted.OrdIdOrden, deleted.OrdEstadoActual, inserted.OrdEstadoActual INTO @cambios
         WHERE OrdIdOrden IN (${inClause});
-      `);
 
-      const histReq = new sql.Request(transaction).input('UsuarioId', sql.Int, usuarioId);
-      ids.forEach((id, i) => histReq.input(`id${i}`, sql.Int, id));
-      const histVals = ids.map((_, i) => `(@id${i}, 7, GETDATE(), @UsuarioId)`).join(',');
-
-      await histReq.query(`
         INSERT INTO dbo.HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-        VALUES ${histVals};
+        SELECT OrdIdOrden, EstadoNuevo, GETDATE(), @UsuarioId
+        FROM @cambios WHERE EstadoViejo <> EstadoNuevo;
       `);
 
       // Sincronizar la vista de cobranza (Caja/portal/tótem la leen por EstadoCobro)
@@ -1525,8 +1530,8 @@ async function procesarTransaccion(payload) {
                   const mapRes = await new sql.Request(transaction)
                     .query(`
                       SELECT e.OrdenID
-                      FROM dbo.Ordenes e
-                      JOIN dbo.OrdenesDeposito od ON e.CodigoOrden = od.OrdCodigoOrden
+                      FROM dbo.Ordenes e WITH(NOLOCK)
+                      JOIN dbo.OrdenesDeposito od WITH(NOLOCK) ON e.CodigoOrden = od.OrdCodigoOrden
                       WHERE od.OrdIdOrden IN (${allOdIds.join(',')})
                     `);
                   const erpIds = mapRes.recordset.map(r => r.OrdenID);
@@ -1756,52 +1761,68 @@ async function anularTransaccion({ tcaIdTransaccion, usuarioId, motivo }) {
       .input('TcaId',    sql.Int, tcaIdTransaccion)
       .input('UsuarioId',sql.Int, usuarioId)
       .query(`
-        -- 1. Insertar en el histórico de estados
+        -- 1. Insertar en el histórico de estados — SOLO de los retiros que realmente cambian
+        --    (3/4/8); antes insertaba una fila por TODOS y ensuciaba el historial con estados
+        --    repetidos a nombre de quien anulaba.
         INSERT INTO dbo.HistoricoEstadosOrdenesRetiro
           (OReIdOrdenRetiro, EORIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-        SELECT OReIdOrdenRetiro, 
+        SELECT OReIdOrdenRetiro,
           CASE
             WHEN OReEstadoActual IN (3,4) THEN 1   -- Abonado → Pendiente
-            WHEN OReEstadoActual = 8      THEN 5    -- Empaquetado y abonado → Entregado
+            WHEN OReEstadoActual = 8      THEN 7    -- Empaquetado y abonado → Empaquetado SIN abonar
             ELSE OReEstadoActual
           END, GETDATE(), @UsuarioId
         FROM dbo.OrdenesRetiro WITH(NOLOCK)
         WHERE PagIdPago IN (
             SELECT PagIdPago FROM dbo.Pagos WHERE PagTcaIdTransaccion = @TcaId
-        );
+        )
+          AND OReEstadoActual IN (3, 4, 8);
 
-        -- 2. Desvincular pagos y revertir estados
+        -- 2. Desvincular pagos y revertir estados. OJO: 8 nunca va a 5 (Entregado) — anular un
+        --    pago no puede "entregar" un retiro que el cliente todavía no pasó a buscar.
         UPDATE dbo.OrdenesRetiro
         SET PagIdPago        = NULL,
             OReEstadoActual  = CASE
               WHEN OReEstadoActual IN (3,4) THEN 1   -- Abonado → Pendiente
-              WHEN OReEstadoActual = 8      THEN 5    -- Empaquetado y abonado → Entregado
+              WHEN OReEstadoActual = 8      THEN 7    -- Empaquetado y abonado → Empaquetado SIN abonar
               ELSE OReEstadoActual
             END,
-            OReFechaEstadoActual = GETDATE(),
+            OReFechaEstadoActual = CASE WHEN OReEstadoActual IN (3,4,8) THEN GETDATE() ELSE OReFechaEstadoActual END,
             ORePasarPorCaja      = 1
         WHERE PagIdPago IN (
             SELECT PagIdPago FROM dbo.Pagos WHERE PagTcaIdTransaccion = @TcaId
         );
       `);
 
-    // Revertir OrdenesDeposito (capturamos las órdenes ANTES de borrar TcaIdTransaccion,
-    // para poder revertir también la vista de cobranza)
+    // Revertir OrdenesDeposito. OJO: OrdenesDeposito NO tiene columna TcaIdTransaccion — el vínculo
+    // orden↔transacción es vía Pagos (PagIdPago → PagTcaIdTransaccion), igual que en cfeController.
+    // (El código anterior filtraba por esa columna inexistente y la anulación EXPLOTABA siempre.)
+    // Capturamos las órdenes ANTES de soltar PagIdPago, para revertir también la vista de cobranza.
     const ordAnuladasRes = await new sql.Request(transaction)
       .input('TcaId', sql.Int, tcaIdTransaccion)
-      .query(`SELECT OrdIdOrden FROM dbo.OrdenesDeposito WITH(NOLOCK) WHERE TcaIdTransaccion = @TcaId`);
+      .query(`SELECT OrdIdOrden FROM dbo.OrdenesDeposito WITH(NOLOCK)
+              WHERE PagIdPago IN (SELECT PagIdPago FROM dbo.Pagos WHERE PagTcaIdTransaccion = @TcaId)`);
     const ordAnuladas = ordAnuladasRes.recordset.map(r => r.OrdIdOrden);
 
+    // Solo se revierte el estado que puso el PAGO (7 = Pronto para entregar → 6 = Avisado).
+    // Cualquier otro estado se preserva: anular un pago NO des-entrega una orden que el cliente ya
+    // retiró (9 = Entregado). Antes encajaba 6 a lo bruto y "des-entregaba" órdenes, sin dejar rastro.
     await new sql.Request(transaction)
       .input('TcaId',    sql.Int, tcaIdTransaccion)
       .input('UsuarioId',sql.Int, usuarioId)
       .query(`
+        DECLARE @cambios TABLE (OrdIdOrden INT, EstadoViejo INT, EstadoNuevo INT);
+
         UPDATE dbo.OrdenesDeposito
-        SET PagIdPago           = NULL,
-            TcaIdTransaccion    = NULL,
-            OrdEstadoActual     = 6,       -- Cancelado/Pendiente Pago
-            OrdFechaEstadoActual = GETDATE()
-        WHERE TcaIdTransaccion = @TcaId;
+        SET PagIdPago            = NULL,
+            OrdEstadoActual      = CASE WHEN OrdEstadoActual = 7 THEN 6 ELSE OrdEstadoActual END,
+            OrdFechaEstadoActual = CASE WHEN OrdEstadoActual = 7 THEN GETDATE() ELSE OrdFechaEstadoActual END
+        OUTPUT inserted.OrdIdOrden, deleted.OrdEstadoActual, inserted.OrdEstadoActual INTO @cambios
+        WHERE PagIdPago IN (SELECT PagIdPago FROM dbo.Pagos WHERE PagTcaIdTransaccion = @TcaId);
+
+        INSERT INTO dbo.HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+        SELECT OrdIdOrden, EstadoNuevo, GETDATE(), @UsuarioId
+        FROM @cambios WHERE EstadoViejo <> EstadoNuevo;
       `);
 
     // La cobranza vuelve a Pendiente (inverso de marcarCobranzaPagada)

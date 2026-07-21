@@ -369,24 +369,44 @@ exports.notifyAction = async (req, res) => {
 
     const { getPool } = require('../config/db');
     const pool = await getPool();
-    const sqlCodes = codigos.map(c => `'${c.trim()}'`).join(',');
+    const usuarioId = req.user?.id || 1;
+    // IN parametrizado: los códigos vienen del body, nunca concatenarlos al SQL.
+    const bindCodes = (request) => codigos.map((c, i) => {
+      request.input(`c${i}`, sql.VarChar(100), String(c).trim());
+      return `@c${i}`;
+    }).join(',');
 
     if (accion === 'ESTADO') {
-        await pool.request().query(`
+        // "Avisar nuevamente" NO toca órdenes resueltas (9/10/11): el 26/06/26 este UPDATE sin
+        // guard devolvió a la cola de avisos ~60 órdenes YA ENTREGADAS y el job de WhatsApp las
+        // re-avisó a todas. Además deja rastro en el historial (antes cambiaba estado en silencio).
+        const reqEstado = pool.request().input('Usr', sql.Int, usuarioId);
+        const inCodes = bindCodes(reqEstado);
+        await reqEstado.query(`
+          DECLARE @cambios TABLE (OrdIdOrden INT, EstadoViejo INT, EstadoNuevo INT);
+
           UPDATE dbo.OrdenesDeposito
           SET OrdEstadoActual = 12, OrdFechaEstadoActual = GETDATE()
-          WHERE OrdCodigoOrden IN (${sqlCodes})
+          OUTPUT inserted.OrdIdOrden, deleted.OrdEstadoActual, inserted.OrdEstadoActual INTO @cambios
+          WHERE OrdCodigoOrden IN (${inCodes})
+            AND OrdEstadoActual NOT IN (9, 10, 11);
+
+          INSERT INTO dbo.HistoricoEstadosOrdenes (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
+          SELECT OrdIdOrden, EstadoNuevo, GETDATE(), @Usr
+          FROM @cambios WHERE EstadoViejo <> EstadoNuevo;
         `);
-        return res.json({ success: true, message: `Estado cambiado a 'Avisar nuevamente' para ${codigos.length} órdenes.` });
-    } 
-    
+        return res.json({ success: true, message: `Estado cambiado a 'Avisar nuevamente' para ${codigos.length} órdenes (las entregadas/canceladas no se tocan).` });
+    }
+
     if (accion === 'EMAIL') {
         const { sendMail } = require('../services/emailService');
-        const { recordset } = await pool.request().query(`
+        const reqEmail = pool.request();
+        const inCodesEmail = bindCodes(reqEmail);
+        const { recordset } = await reqEmail.query(`
           SELECT o.OrdCodigoOrden, c.Email
           FROM dbo.OrdenesDeposito o WITH(NOLOCK)
           LEFT JOIN dbo.Clientes c WITH(NOLOCK) ON o.CliIdCliente = c.CliIdCliente
-          WHERE o.OrdCodigoOrden IN (${sqlCodes}) AND c.Email IS NOT NULL AND DATALENGTH(LTRIM(RTRIM(c.Email))) > 0
+          WHERE o.OrdCodigoOrden IN (${inCodesEmail}) AND c.Email IS NOT NULL AND DATALENGTH(LTRIM(RTRIM(c.Email))) > 0
         `);
 
         let sentCount = 0;

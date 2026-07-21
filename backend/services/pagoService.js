@@ -279,18 +279,25 @@ async function registrarPagoCompleto(opts) {
 
     // ── 5. OrdenesDeposito ────────────────────────────────────────────────────
     if (ordIds.length) {
+      // El pago vincula PagIdPago SIEMPRE, pero solo promueve a 7 si la orden no está resuelta:
+      // un pago tardío NO debe "des-entregar" una orden ya retirada (9) ni revivir una
+      // cancelada/perdida (10/11). Historial solo si el estado cambió.
       await transaction.request()
         .input('PagoId', sql.Int, pagoId)
         .query(`
+          DECLARE @cambios TABLE (OrdIdOrden INT, EstadoViejo INT, EstadoNuevo INT);
+
           UPDATE dbo.OrdenesDeposito
-          SET PagIdPago = @PagoId, OrdEstadoActual = 7, OrdFechaEstadoActual = GETDATE()
+          SET PagIdPago = @PagoId,
+              OrdEstadoActual      = CASE WHEN OrdEstadoActual IN (9,10,11) THEN OrdEstadoActual ELSE 7 END,
+              OrdFechaEstadoActual = CASE WHEN OrdEstadoActual IN (9,10,11) THEN OrdFechaEstadoActual ELSE GETDATE() END
+          OUTPUT inserted.OrdIdOrden, deleted.OrdEstadoActual, inserted.OrdEstadoActual INTO @cambios
           WHERE OrdIdOrden IN (${ordIds.join(',')});
 
           INSERT INTO dbo.HistoricoEstadosOrdenes
             (OrdIdOrden, EOrIdEstadoOrden, HEOFechaEstado, HEOUsuarioAlta)
-          SELECT OrdIdOrden, 7, GETDATE(), ${usuarioId}
-          FROM   dbo.OrdenesDeposito
-          WHERE  OrdIdOrden IN (${ordIds.join(',')});
+          SELECT OrdIdOrden, EstadoNuevo, GETDATE(), ${usuarioId}
+          FROM @cambios WHERE EstadoViejo <> EstadoNuevo;
         `);
     }
 

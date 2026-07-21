@@ -139,7 +139,7 @@ const getHistorialCliente = async (req, res) => {
 
 // ─────────────────────────────────────────────
 
-/** GET /api/contabilidad/caja/sesion/actual ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â sesión activa de hoy */
+/** GET /api/contabilidad/caja/sesion/actual -> sesión activa de hoy */
 const getSesionActual = async (req, res) => {
   try {
     const pool = await getPool();
@@ -211,7 +211,7 @@ const cerrarSesion = async (req, res) => {
       .input('MontoFinalUSD', sql.Decimal(18,2), parseFloat(montoFinalUSD))
       .input('Observaciones', sql.NVarChar(500), observaciones || null)
       .execute('SP_CerrarSesionCaja');
-    logger.info(`[CAJA] ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â´ Caja cerrada. Sesión: ${id}. Diferencia: ${result.recordset[0]?.Diferencia}`);
+    logger.info(`[CAJA] -> Caja cerrada. Sesión: ${id}. Diferencia: ${result.recordset[0]?.Diferencia}`);
     return res.json({ success:true, resumen:result.recordset[0] });
   } catch (err) {
     logger.error('[CAJA] cerrarSesion:', err.message);
@@ -219,7 +219,7 @@ const cerrarSesion = async (req, res) => {
   }
 };
 
-/** GET /api/contabilidad/caja/sesion/:id/resumen ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â totales de una sesión */
+/** GET /api/contabilidad/caja/sesion/:id/resumen -> totales de una sesión */
 const getResumenSesion = async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) return res.status(400).json({ success:false, error:'ID inválido.' });
@@ -245,7 +245,7 @@ const getResumenSesion = async (req, res) => {
   } catch (err) { return res.status(500).json({ success:false, error:err.message }); }
 };
 
-/** GET /api/contabilidad/caja/resumen-diario ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â totales del día actual para administrador */
+/** GET /api/contabilidad/caja/resumen-diario -> totales del día actual para administrador */
 const getResumenDiario = async (req, res) => {
   try {
     const pool = await getPool();
@@ -510,7 +510,7 @@ const getSiguienteNumero = async (req, res) => {
   } catch (err) { return res.status(500).json({ success:false, error:err.message }); }
 };
 
-/** GET /api/contabilidad/caja/secuencias ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â todas las series activas */
+/** GET /api/contabilidad/caja/secuencias -> todas las series activas */
 const getSecuencias = async (req, res) => {
   try {
     const pool = await getPool();
@@ -1447,7 +1447,7 @@ const procesarPagoDeuda = async (req, res) => {
           `);
 
         if (!ddeRes.recordset.length) {
-          logger.warn(`[PAGO-DEUDA] DeudaDocumento #${ddeId} no encontrada ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â saltada.`);
+          logger.warn(`[PAGO-DEUDA] DeudaDocumento #${ddeId} no encontrada -> saltada.`);
           continue;
         }
 
@@ -2101,7 +2101,7 @@ const procesarPagoDeuda = async (req, res) => {
       }
 
       await transaction.commit();
-      logger.info(`[PAGO-DEUDA] Cli=${header.clienteId} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ${aplicaciones.length} deuda(s) ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â Total: ${totalImputado}`);
+      logger.info(`[PAGO-DEUDA] Cli=${header.clienteId} -> ${aplicaciones.length} deuda(s) -> Total: ${totalImputado.toFixed(2)} ${monedaBaseStr}`);
 
       const s = io(req); if (s) s.emit('actualizado', { type: 'pago-deuda' });
 
@@ -3361,7 +3361,7 @@ module.exports = {
 /**
  * POST /contabilidad/caja/imputar-anticipo-deuda
  * Usa el saldo a favor que ya tiene el cliente para cancelar una deuda específica.
- * NO ingresa plata nueva ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â solo mueve el saldo existente.
+ * NO ingresa plata nueva -> solo mueve el saldo existente.
  */
 async function imputarAnticipoADeuda(req, res) {
   const { cuentaId, ddeIdDocumento, monto, clienteId } = req.body;

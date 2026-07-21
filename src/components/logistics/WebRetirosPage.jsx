@@ -671,6 +671,32 @@ const ShelfSlot = ({
 
 // La configuración visual de los estantes ahora se trae de la BDD dinámicamente.
 
+// Mapeo ÚNICO de un retiro de /web-retiros/locales al formato de las cards de empaques.
+// Antes había 3 copias casi iguales que fueron divergiendo: la del load inicial no traía
+// fechaAlta (primer render sin chip de minutos y con otro orden → "salto" al llegar el sync)
+// y la del sync de fondo perdía receptor/teléfono. Cualquier campo nuevo se agrega ACÁ.
+const mapRetiroLocal = (r) => ({
+  ordenDeRetiro: r.OrdIdRetiro,
+  idcliente: r.NombreCliente || r.CodCliente || 'Ecommerce',
+  CliNombre: r.NombreCliente || null,
+  CliCodigoCliente: r.CodCliente || null,
+  ReceptorNombre: r.ReceptorNombre || null,
+  CliTelefono: r.ReceptorTelefono || r.CliTelefono || null,
+  monto: r.Monto || 0,
+  moneda: r.Moneda || 'UYU',
+  pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
+  pagoHandy: !!r.ReferenciaPago,
+  fechaAlta: r.fechaAlta || r.FechaAlta || null,
+  TClDescripcion: r.TClDescripcion || '',
+  lugarRetiro: r.LugarRetiro || null,
+  agenciaNombre: r.AgenciaNombre || null,
+  direccionEnvio: r.DireccionEnvio || null,
+  departamentoEnvio: r.DepartamentoEnvio || null,
+  localidadEnvio: r.LocalidadEnvio || null,
+  orders: r.BultosJSON ? JSON.parse(r.BultosJSON)
+    : (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(c => ({ orderNumber: c.trim(), orderId: c.trim() })) : []),
+});
+
 const WebRetirosPage = () => {
 
   // ——— HELPER: Calcula el estante destino según los últimos 2 dígitos del retiro ———
@@ -793,26 +819,7 @@ const WebRetirosPage = () => {
         const { data: retirosData } = await api.get('/web-retiros/locales');
         formattedRetiros = (retirosData || [])
           .filter(r => r.Estado === 1 || r.Estado === 3)
-          .map(r => ({
-            ordenDeRetiro: r.OrdIdRetiro,
-            idcliente: r.NombreCliente || r.CodCliente || 'Ecommerce',
-            CliNombre: r.NombreCliente || null,
-            CliCodigoCliente: r.CodCliente || null,
-            ReceptorNombre: r.ReceptorNombre || null,
-            CliTelefono: r.ReceptorTelefono || r.CliTelefono || null,
-            monto: r.Monto || 0,
-            moneda: r.Moneda || 'UYU',
-            pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
-            pagoHandy: !!r.ReferenciaPago,
-            TClDescripcion: r.TClDescripcion || '',
-            lugarRetiro: r.LugarRetiro || null,
-            agenciaNombre: r.AgenciaNombre || null,
-            direccionEnvio: r.DireccionEnvio || null,
-            departamentoEnvio: r.DepartamentoEnvio || null,
-            localidadEnvio: r.LocalidadEnvio || null,
-            orders: r.BultosJSON ? JSON.parse(r.BultosJSON) :
-              (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() })) : [])
-          }));
+          .map(mapRetiroLocal);
       } catch (e) {
         console.warn('[WebRetiros] /web-retiros/locales no disponible:', e.message);
       }
@@ -925,23 +932,7 @@ const WebRetirosPage = () => {
             const refreshed = res.data
               .filter(r => r.Estado === 1 || r.Estado === 3)
               .filter(r => !inFlightOrdersRef.current.has(r.OrdIdRetiro))
-              .map(r => ({
-                ordenDeRetiro: r.OrdIdRetiro,
-                idcliente: r.NombreCliente || r.CodCliente || 'Ecommerce',
-                monto: r.Monto || 0,
-                moneda: r.Moneda || 'UYU',
-                pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
-                pagoHandy: !!r.ReferenciaPago,
-                fechaAlta: r.fechaAlta || r.FechaAlta,
-                TClDescripcion: r.TClDescripcion || '',
-                lugarRetiro: r.LugarRetiro || null,
-                agenciaNombre: r.AgenciaNombre || null,
-                direccionEnvio: r.DireccionEnvio || null,
-                departamentoEnvio: r.DepartamentoEnvio || null,
-                localidadEnvio: r.LocalidadEnvio || null,
-                orders: r.BultosJSON ? JSON.parse(r.BultosJSON) :
-                  (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(code => ({ orderNumber: code.trim(), orderId: code.trim() })) : [])
-              }));
+              .map(mapRetiroLocal);
             setApiOrders(refreshed);
           });
         }).catch(e => console.error('Fallo en sync de fondo:', e));
@@ -972,23 +963,7 @@ const WebRetirosPage = () => {
         .filter(r => r.Estado === 1 || r.Estado === 3)
         // No re-agregar órdenes que están siendo asignadas ahora mismo (evita flash)
         .filter(r => !inFlightOrdersRef.current.has(r.OrdIdRetiro))
-        .map(r => ({
-          ordenDeRetiro: r.OrdIdRetiro,
-          idcliente: r.NombreCliente || r.CodCliente || 'Ecommerce',
-          monto: r.Monto || 0,
-          moneda: r.Moneda || 'UYU',
-          pagorealizado: r.Estado === 3 || r.Estado === 8 ? 1 : 0,
-          pagoHandy: !!r.ReferenciaPago,
-          fechaAlta: r.fechaAlta || r.FechaAlta,
-          TClDescripcion: r.TClDescripcion || '',
-          lugarRetiro: r.LugarRetiro || null,
-          agenciaNombre: r.AgenciaNombre || null,
-          direccionEnvio: r.DireccionEnvio || null,
-          departamentoEnvio: r.DepartamentoEnvio || null,
-          localidadEnvio: r.LocalidadEnvio || null,
-          orders: r.BultosJSON ? JSON.parse(r.BultosJSON)
-            : (r.OrdenesCodigos ? r.OrdenesCodigos.split(',').map(c => ({ orderNumber: c.trim(), orderId: c.trim() })) : []),
-        }));
+        .map(mapRetiroLocal);
       setApiOrders(newOrders);
     } catch (e) { console.warn('[fetchPendingUpdate]', e); }
   }, []);

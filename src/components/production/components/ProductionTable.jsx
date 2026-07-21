@@ -25,6 +25,8 @@ const TABLET_HIDDEN_DEFAULT = {
 export default function ProductionTable({ rowData = [], onRowSelected, selectedRowIds, onRowClick, columnDefs: propColumnDefs, toolbarContent, flashingRowIds = [] }) {
 
     const [rowSelection, setRowSelection] = useState({});
+    // Orden por columna (hoy: botón en Material, para juntar todas las órdenes del mismo material)
+    const [sorting, setSorting] = useState([]);
     const [columnVisibility, setColumnVisibility] = useState(() => (IS_TABLET ? { ...TABLET_HIDDEN_DEFAULT } : {}));
 
     // Sincronizar estado interno de selección hacia arriba (prop onRowSelected)
@@ -296,10 +298,12 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
         columns,
         state: {
             rowSelection,
+            sorting,
             columnVisibility: { ...emptyColumns, ...columnVisibility }
         },
         enableRowSelection: true,
         onRowSelectionChange: setRowSelection,
+        onSortingChange: setSorting,
         onColumnVisibilityChange: setColumnVisibility,
         getRowId: row => row.id, // Usar el ID real de la base de datos
         getCoreRowModel: getCoreRowModel(),
@@ -379,8 +383,32 @@ export default function ProductionTable({ rowData = [], onRowSelected, selectedR
                                             minWidth: header.column.columnDef.minSize || 50 
                                         }}
                                     >
-                                        <div className="flex items-center justify-center gap-2 w-full overflow-hidden">
-                                            <span className="truncate block w-full text-center">{flexRender(header.column.columnDef.header, header.getContext())}</span>
+                                        <div className="flex items-center justify-center gap-1 w-full overflow-hidden">
+                                            <span className="truncate block text-center">{flexRender(header.column.columnDef.header, header.getContext())}</span>
+                                            {/* Agrupar por material: ordena la planilla por esa columna, así todas
+                                                las órdenes del mismo material quedan juntas. 1 clic A→Z, 2 clics Z→A,
+                                                3 clics vuelve al orden original. */}
+                                            {header.column.id === 'material' && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); header.column.toggleSorting(); }}
+                                                    title={
+                                                        header.column.getIsSorted() === 'asc' ? 'Ordenado por material (A→Z) — clic para invertir'
+                                                        : header.column.getIsSorted() === 'desc' ? 'Ordenado por material (Z→A) — clic para quitar el orden'
+                                                        : 'Agrupar por material'
+                                                    }
+                                                    className={`shrink-0 w-5 h-5 flex items-center justify-center rounded transition-colors ${
+                                                        header.column.getIsSorted()
+                                                            ? 'text-brand-cyan bg-brand-cyan/10'
+                                                            : 'text-zinc-400 hover:text-brand-cyan hover:bg-brand-cyan/10'
+                                                    }`}
+                                                >
+                                                    <i className={`fa-solid text-[10px] ${
+                                                        header.column.getIsSorted() === 'asc' ? 'fa-arrow-down-a-z'
+                                                        : header.column.getIsSorted() === 'desc' ? 'fa-arrow-up-z-a'
+                                                        : 'fa-layer-group'
+                                                    }`} />
+                                                </button>
+                                            )}
                                         </div>
                                         {/* Agarrador para redimensionar centrado sobre el borde real */}
                                         {header.column.getCanResize() && (

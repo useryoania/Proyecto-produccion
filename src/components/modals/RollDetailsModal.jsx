@@ -360,7 +360,6 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
 
     // Metros editables de órdenes de falla (-F): por orden (Magnitud) y total del grupo (independiente).
     const [metersDraft, setMetersDraft] = React.useState({});          // orderId -> string
-    const [groupMetersDraft, setGroupMetersDraft] = React.useState({}); // groupKey -> string
 
     // Panel de resumen (órdenes/archivos/bobina/capacidad) colapsable hacia arriba: más lugar para la tabla.
     const [statsCollapsed, setStatsCollapsed] = React.useState(false);
@@ -427,19 +426,6 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         } catch (e) {
             console.error('Error guardando metros de la orden', e);
             toast.error('No se pudieron guardar los metros de la orden');
-        }
-    };
-
-    // Guardar el total de metros de un GRUPO de falla (persiste en MetrosGrupoFalla de todas sus órdenes).
-    const persistGroupMeters = async (orderIds, value) => {
-        if (readOnly) return;
-        try {
-            await rollsService.setFallaGroupMeters(orderIds, value === '' ? null : parseFloat(value));
-            loadFreshData(true);
-            if (onUpdate) onUpdate();
-        } catch (e) {
-            console.error('Error guardando metros del grupo', e);
-            toast.error('No se pudieron guardar los metros del grupo');
         }
     };
 
@@ -523,7 +509,45 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     }, [backendPrintedKey]);
     const printedMeters = orders.reduce((sum, o) => sum + (printedOrderIds.includes(o.id) ? (o.magnitude || 0) : 0), 0);
     const printedCount = orders.filter(o => printedOrderIds.includes(o.id)).length;
-    const printedPercent = totalMeters > 0 ? Math.min((printedMeters / totalMeters) * 100, 100) : 0;
+
+    // ── Impresión PARCIAL (solo TPU, por unidades) ─────────────────────────────
+    // El contador CantidadImpresa (contra Magnitud = unidades pedidas) reemplaza al tick binario:
+    // un trabajo de 1000 escudos se va cargando de a tandas (200 hoy, 300 mañana). El backend
+    // deriva Ordenes.Impreso (1 recién al completar) → printedOrderIds se sincroniza acá para que
+    // el header, el gate de Finalizar y el "x/y impresas" sigan funcionando sin enterarse.
+    // Ver docs/impresion-parcial-plan.md
+    const esOrdenTPU = (o) => /^TPU-/i.test(o?.code || '');
+    const isLoteTPU = totalOrders > 0 && orders.every(esOrdenTPU);
+    const [cantidadesLocal, setCantidadesLocal] = useState({});
+    const [editandoCantidad, setEditandoCantidad] = useState(null); // orderId en edición
+    const getCantidadImpresa = (o) => cantidadesLocal[o.id] !== undefined ? cantidadesLocal[o.id] : (o.cantidadImpresa || 0);
+    const getTotalUnidades = (o) => Math.max(1, Math.round(o.magnitude || 0));
+    const printedUnits = orders.reduce((s, o) => s + (esOrdenTPU(o) ? Math.min(getCantidadImpresa(o), getTotalUnidades(o)) : 0), 0);
+
+    // Al llegar datos frescos del server, soltar los overrides locales (el server es la verdad)
+    const backendCantidadKey = orders.map(o => `${o.id}:${o.cantidadImpresa || 0}`).join(',');
+    useEffect(() => { setCantidadesLocal({}); }, [backendCantidadKey]);
+
+    const handleGuardarCantidad = async (o, rawValue) => {
+        const total = getTotalUnidades(o);
+        const nuevo = Math.max(0, Math.min(parseInt(rawValue, 10) || 0, total));
+        const previo = getCantidadImpresa(o);
+        setEditandoCantidad(null);
+        if (nuevo === previo) return;
+        // Optimista: contador + estado "impresa" derivado
+        setCantidadesLocal(prev => ({ ...prev, [o.id]: nuevo }));
+        setPrintedOrderIds(prev => nuevo >= total ? [...new Set([...prev, o.id])] : prev.filter(x => x !== o.id));
+        try {
+            await rollsService.setCantidadImpresa(o.id, nuevo);
+        } catch (e) {
+            setCantidadesLocal(prev => ({ ...prev, [o.id]: previo }));
+            setPrintedOrderIds(prev => previo >= total ? [...new Set([...prev, o.id])] : prev.filter(x => x !== o.id));
+            toast.error('No se pudo guardar el avance de impresión');
+        }
+    };
+
+    // En TPU la barra de avance usa unidades reales (los parciales cuentan); en el resto, metros de órdenes completas.
+    const printedPercent = totalMeters > 0 ? Math.min(((isLoteTPU ? printedUnits : printedMeters) / totalMeters) * 100, 100) : 0;
     const allPrinted = totalOrders > 0 && printedCount === totalOrders;
 
     const materialOf = (o) => (o?.material || o?.Material || '').trim();
@@ -697,6 +721,42 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
             list.reverse();
             list.forEach(u => { u.orders = [...u.orders].reverse(); });
         }
+
+        // ── Invariante impresos-prefijo (solo vista de impresión, lote vivo) ──────────────
+        // La máquina consume la lista EN ORDEN: una orden SIN imprimir que quede ANTES de una ya
+        // impresa está fuera de secuencia — la impresora ya pasó por ahí. Pasa al agregar una orden
+        // a un lote que ya arrancó: el agrupado por material la mete en un grupo ya consumido
+        // (ej: nueva orden de la 1ª tela cuando la 2ª tela ya se imprimió). Esas órdenes se
+        // extraen a un bloque NUEVA al FINAL de la cola, que es donde van a imprimirse de verdad.
+        if (!readOnly && !lockReorder && !calandraView) {
+            const printedSet = new Set(printedOrderIds);
+            const flat = list.flatMap(u => u.orders.map(o => o.id));
+            const lastPrintedIdx = flat.reduce((acc, id, i) => (printedSet.has(id) ? i : acc), -1);
+            if (lastPrintedIdx > 0) {
+                const outOfSeq = new Set(flat.filter((id, i) => i < lastPrintedIdx && !printedSet.has(id)));
+                if (outOfSeq.size > 0) {
+                    const tail = [];
+                    list.forEach(u => {
+                        const fuera = u.orders.filter(o => outOfSeq.has(o.id));
+                        if (fuera.length) {
+                            u.orders = u.orders.filter(o => !outOfSeq.has(o.id));
+                            // 'new' (NUEVA) SOLO si la orden es realmente nueva en el lote; si es una orden
+                            // de siempre que quedó fuera de secuencia, va como 'outseq' — mismo lugar (el
+                            // final, que es donde se va a imprimir) pero sin mentir con el cartel NUEVA.
+                            const todasNuevas = fuera.every(o => isNewOrder(o.id));
+                            tail.push({
+                                key: 'seq:' + u.key,
+                                kind: todasNuevas ? 'new' : 'outseq',
+                                material: u.material, isFalla: u.isFalla, orders: fuera,
+                            });
+                        }
+                    });
+                    const pruned = list.filter(u => u.orders.length > 0).concat(tail);
+                    pruned.forEach(u => { u.sig = u.orders.map(o => o.id).slice().sort((a, b) => a - b).join(','); });
+                    return pruned;
+                }
+            }
+        }
         return list;
     })();
 
@@ -761,6 +821,13 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
             return;
         }
         setPrintedOrderIds(prev => willPrint ? [...new Set([...prev, ...ids])] : prev.filter(x => !ids.includes(x)));
+        // TPU: el toggle grupal sincroniza también los contadores de unidades
+        // (el backend hace lo mismo en DB: tick manual → CantidadImpresa = total/0)
+        setCantidadesLocal(prev => {
+            const next = { ...prev };
+            unit.orders.filter(esOrdenTPU).forEach(o => { next[o.id] = willPrint ? getTotalUnidades(o) : 0; });
+            return next;
+        });
         ids.forEach(id => {
             (lockReorder ? rollsService.setCalandered : rollsService.setPrinted)(id, willPrint).catch(() => {
                 setPrintedOrderIds(prev => willPrint ? prev.filter(x => x !== id) : [...new Set([...prev, id])]);
@@ -1273,6 +1340,27 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         if (!result.destination) return;
         if (lockReorder || readOnly) return; // calandra: no se reordena; historial: solo lectura
 
+        // La máquina imprime EN ORDEN: las impresas tienen que ser un prefijo de la lista. Un drop que
+        // deje una orden sin imprimir por encima de una ya impresa se RECHAZA (antes se persistía y
+        // después el reacomodo la mandaba al final marcada como NUEVA, que no era ni su lugar ni su
+        // etiqueta). Devuelve true si el orden propuesto rompe el invariante.
+        const rompeSecuencia = (flatIds) => {
+            const printedSet = new Set(printedOrderIds);
+            let vistoSinImprimir = false;
+            for (const id of flatIds) {
+                if (printedSet.has(id)) { if (vistoSinImprimir) return true; }
+                else vistoSinImprimir = true;
+            }
+            return false;
+        };
+        const persistSiValido = (flatIds) => {
+            if (rompeSecuencia(flatIds)) {
+                toast.error(`No se puede mover por encima de las órdenes ya ${lockReorder ? 'calandradas' : 'impresas'} (se procesa en orden)`);
+                return;
+            }
+            persistOrder(flatIds);
+        };
+
         if (isSB) {
             // Drag de GRUPOS (bloques): reordeno las unidades y persisto la secuencia plana en backend.
             if (result.type === 'GROUP') {
@@ -1280,7 +1368,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                 const newUnits = [...renderUnits];
                 const [moved] = newUnits.splice(result.source.index, 1);
                 newUnits.splice(result.destination.index, 0, moved);
-                persistOrder(newUnits.flatMap(u => u.orders.map(o => o.id)));
+                persistSiValido(newUnits.flatMap(u => u.orders.map(o => o.id)));
                 return;
             }
             // Drag de ÓRDENES dentro del mismo grupo
@@ -1294,7 +1382,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                 ord.splice(result.destination.index, 0, moved);
                 return { ...u, orders: ord };
             });
-            persistOrder(newUnits.flatMap(u => u.orders.map(o => o.id)));
+            persistSiValido(newUnits.flatMap(u => u.orders.map(o => o.id)));
             return;
         }
 
@@ -1302,6 +1390,11 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         const items = Array.from(orders);
         const [reorderedItem] = items.splice(result.source.index, 1);
         items.splice(result.destination.index, 0, reorderedItem);
+
+        if (rompeSecuencia(items.map(o => o.id || o.OrdenID))) {
+            toast.error(`No se puede mover por encima de las órdenes ya ${lockReorder ? 'calandradas' : 'impresas'} (se procesa en orden)`);
+            return;
+        }
 
         const newOrders = items.map((o, idx) => ({ ...o, sequence: idx + 1, Secuencia: idx + 1 }));
         setFreshRoll(prev => ({ ...prev, orders: newOrders }));
@@ -1388,9 +1481,9 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                 <i className="fa-solid fa-ruler-horizontal text-sm" />
                             </div>
                             <div>
-                                <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest tablet:tracking-wide">Total m</div>
+                                <div className="text-[9px] font-black text-zinc-400 uppercase tracking-widest tablet:tracking-wide">{isLoteTPU ? 'Total u' : 'Total m'}</div>
                                 <div className="text-2xl tablet:text-lg font-black text-zinc-800 leading-none">
-                                    {totalMeters.toFixed(2)}<span className="text-xs text-zinc-400 font-bold ml-0.5">m</span>
+                                    {isLoteTPU ? Math.round(totalMeters) : totalMeters.toFixed(2)}<span className="text-xs text-zinc-400 font-bold ml-0.5">{isLoteTPU ? 'u' : 'm'}</span>
                                 </div>
                             </div>
                         </div>
@@ -1445,8 +1538,8 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                     Total {lockReorder ? 'Calandrado' : 'Impreso'}
                                 </span>
                                 <span className="text-xs font-bold text-zinc-600">
-                                    <span className={`text-emerald-600 ${allPrinted ? 'font-black' : ''}`}>{printedMeters.toFixed(1)}</span>
-                                    <span className="text-zinc-400"> / {totalMeters.toFixed(1)}m</span>
+                                    <span className={`text-emerald-600 ${allPrinted ? 'font-black' : ''}`}>{isLoteTPU ? printedUnits : printedMeters.toFixed(1)}</span>
+                                    <span className="text-zinc-400"> / {isLoteTPU ? `${Math.round(totalMeters)} u` : `${totalMeters.toFixed(1)}m`}</span>
                                 </span>
                             </div>
                             <div className={`w-full h-2.5 rounded-full overflow-hidden ${allPrinted ? 'bg-emerald-100' : 'bg-zinc-100'}`}>
@@ -1545,38 +1638,33 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                         return (
                                           <Draggable key={unit.sig} draggableId={unit.sig} index={ui} isDragDisabled={!isGroup || groupLocked || unit.kind === 'new' || lockReorder || readOnly}>
                                             {(p, snap) => (
-                                              <div ref={p.innerRef} {...p.draggableProps} className={`rounded-xl border overflow-hidden ${snap.isDragging ? 'bg-white shadow-2xl border-brand-cyan/50 ring-1 ring-brand-cyan/30' : unit.kind === 'new' ? 'border-amber-300' : 'border-zinc-200'}`}>
+                                              <div ref={p.innerRef} {...p.draggableProps} className={`rounded-xl border overflow-hidden ${snap.isDragging ? 'bg-white shadow-2xl border-brand-cyan/50 ring-1 ring-brand-cyan/30' : (unit.kind === 'new' || unit.kind === 'outseq') ? 'border-amber-300' : 'border-zinc-200'}`}>
                                                 {isGroup && (
-                                                  <div className={`flex items-center justify-between gap-2 px-4 py-2 tablet:px-2 tablet:py-1 ${unit.kind === 'new' ? 'bg-amber-50' : unit.isFalla ? 'bg-brand-magenta/50' : 'bg-zinc-100/70'}`}>
+                                                  <div className={`flex items-center justify-between gap-2 px-4 py-2 tablet:px-2 tablet:py-1 ${(unit.kind === 'new' || unit.kind === 'outseq') ? 'bg-amber-50' : unit.isFalla ? 'bg-brand-magenta/50' : 'bg-zinc-100/70'}`}>
                                                     <span className="text-xs font-black text-zinc-700 uppercase tracking-wide flex items-center gap-2 truncate">
                                                       {unit.isFalla && <span className="px-1.5 py-0.5 rounded bg-brand-magenta text-white text-[9px] font-black tracking-wider shrink-0" title="Grupo de falla (-F)">Falla</span>}
                                                       {unit.kind === 'new'
                                                         ? <span className="px-1.5 py-0.5 rounded bg-amber-400 text-white text-[9px] font-black tracking-wider" title="Orden nueva: agrupala a su grupo con el botón Agrupar">NUEVA</span>
+                                                        : unit.kind === 'outseq'
+                                                        ? <><span className="px-1.5 py-0.5 rounded bg-amber-400 text-white text-[9px] font-black tracking-wider shrink-0" title="Quedó por encima de órdenes ya impresas: se muestra al final, que es donde se va a imprimir. Podés arrastrarla a su lugar (debajo de lo impreso).">FUERA DE ORDEN</span>
+                                                           {(lockReorder || readOnly) ? null : <span {...p.dragHandleProps} className="cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-600" title="Arrastrar grupo"><i className="fa-solid fa-grip-vertical" /></span>}</>
                                                         : groupLocked
                                                           ? <i className="fa-solid fa-lock text-emerald-500/70" title="Grupo con órdenes impresas (bloqueado)" />
                                                           : (lockReorder || readOnly) ? null : <span {...p.dragHandleProps} className="cursor-grab active:cursor-grabbing text-zinc-300 hover:text-zinc-600" title="Arrastrar grupo"><i className="fa-solid fa-grip-vertical" /></span>} {unit.material}
                                                     </span>
                                                     <span className="text-[11px] font-bold text-zinc-500 whitespace-nowrap flex items-center gap-1.5">
                                                       {!readOnly && <input type="checkbox" checked={unit.orders.length > 0 && unit.orders.every(o => printedOrderIds.includes(o.id))} onChange={() => handleToggleGroupPrinted(unit)} onClick={(e) => e.stopPropagation()} title={`Marcar/desmarcar todo el grupo como ${lockReorder ? 'calandrado' : 'impreso'}`} className="w-4 h-4 rounded border-zinc-300 accent-emerald-500 cursor-pointer mr-1" />}
-                                                      {unit.orders.length} {unit.orders.length === 1 ? 'orden' : 'órdenes'} · {unit.isFalla && !lockReorder && !readOnly ? (
-                                                        <span className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-                                                          <input
-                                                            type="number" step="0.1" min="0"
-                                                            value={(() => { const k = 'F:' + String(unit.material || ''); if (groupMetersDraft[k] !== undefined) return groupMetersDraft[k]; const st = unit.orders.find(o => o.groupFallaMeters != null); return st != null ? st.groupFallaMeters : ''; })()}
-                                                            onChange={(e) => { const k = 'F:' + String(unit.material || ''); setGroupMetersDraft(prev => ({ ...prev, [k]: e.target.value })); }}
-                                                            onBlur={(e) => persistGroupMeters(unit.orders.map(o => o.id), e.target.value)}
-                                                            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                                                            className="w-16 text-right font-black text-zinc-800 bg-white/90 border border-white/60 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-white"
-                                                            placeholder="0"
-                                                            title="Total de metros del grupo de falla (independiente de cada orden)"
-                                                          />
-                                                          <span className="text-zinc-100 font-black">m</span>
-                                                        </span>
-                                                      ) : unit.isFalla ? (
-                                                        <span className="font-black text-zinc-100">{(() => { const st = unit.orders.find(o => o.groupFallaMeters != null); return st != null ? Number(st.groupFallaMeters).toFixed(2) : '0.00'; })()} m</span>
-                                                      ) : (
-                                                        <span className="font-black text-brand-cyan">{groupMeters.toFixed(2)} m</span>
-                                                      )}
+                                                      {/* El total del grupo SIEMPRE es la suma de sus órdenes — también en los grupos de
+                                                          falla, donde antes era un número aparte que se cargaba a mano y podía no coincidir
+                                                          con la suma real. Los metros se editan por orden (columna METROS); acá solo se
+                                                          muestran sumados. */}
+                                                      {unit.orders.length} {unit.orders.length === 1 ? 'orden' : 'órdenes'} · {' '}
+                                                      <span
+                                                        className={`font-black ${unit.isFalla ? 'text-zinc-100' : 'text-brand-cyan'}`}
+                                                        title={unit.isFalla ? 'Suma de los metros de las órdenes del grupo (se edita en cada orden)' : undefined}
+                                                      >
+                                                        {groupMeters.toFixed(2)} m
+                                                      </span>
                                                       {!readOnly && unit.kind === 'manual' && (
                                                         <button onClick={() => handleDesagrupar(unit.orders.map(o => o.id))} title="Desagrupar" className="ml-1 w-5 h-5 flex items-center justify-center rounded text-zinc-400 hover:text-brand-magenta hover:bg-brand-magenta/10"><i className="fa-solid fa-link-slash text-[10px]" /></button>
                                                       )}
@@ -1837,7 +1925,40 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                     >
                                                         <i className="fa-solid fa-rotate-left text-sm" />
                                                     </button>
-                                                    {/* 4ta acción: marcar impreso (visual) */}
+                                                    {/* 4ta acción: avance de impresión — TPU: contador por unidades; resto: tick binario */}
+                                                    {esOrdenTPU(o) ? (
+                                                        <div onClick={e => e.stopPropagation()} className="flex items-center">
+                                                            {editandoCantidad === o.id ? (
+                                                                <input
+                                                                    autoFocus
+                                                                    type="number"
+                                                                    min={0}
+                                                                    max={getTotalUnidades(o)}
+                                                                    defaultValue={getCantidadImpresa(o)}
+                                                                    onBlur={e => handleGuardarCantidad(o, e.target.value)}
+                                                                    onKeyDown={e => {
+                                                                        if (e.key === 'Enter') e.target.blur();
+                                                                        if (e.key === 'Escape') setEditandoCantidad(null);
+                                                                    }}
+                                                                    className="w-16 text-center text-xs font-black border-2 border-brand-cyan rounded-lg py-1 outline-none"
+                                                                />
+                                                            ) : (
+                                                                <button
+                                                                    disabled={readOnly}
+                                                                    onClick={() => !readOnly && setEditandoCantidad(o.id)}
+                                                                    title="Unidades impresas / total — clic para cargar el avance del día"
+                                                                    className={`px-2 py-1 rounded-lg text-[11px] font-black border whitespace-nowrap transition-colors ${getCantidadImpresa(o) >= getTotalUnidades(o)
+                                                                        ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                                                        : getCantidadImpresa(o) > 0
+                                                                            ? 'bg-amber-50 text-amber-600 border-amber-300'
+                                                                            : 'bg-white text-zinc-400 border-zinc-200 hover:border-brand-cyan/50 hover:text-brand-cyan'}`}
+                                                                >
+                                                                    {getCantidadImpresa(o) >= getTotalUnidades(o) && <i className="fa-solid fa-check mr-1" />}
+                                                                    {getCantidadImpresa(o)}/{getTotalUnidades(o)}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    ) : (
                                                     <label
                                                         className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all ${canTogglePrinted(o.id) ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'} ${printedOrderIds.includes(o.id) ? 'text-emerald-600 bg-emerald-50' : 'text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
                                                         title={!canTogglePrinted(o.id) ? (printedOrderIds.includes(o.id) ? 'Desmarcá primero las posteriores' : 'Marcá primero las anteriores') : (printedOrderIds.includes(o.id) ? `Marcar como NO ${lockReorder ? 'calandrado' : 'impreso'}` : `Marcar ${lockReorder ? 'calandrado' : 'impreso'}`)}
@@ -1851,6 +1972,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                             onChange={() => handleTogglePrinted(o.id)}
                                                         />
                                                     </label>
+                                                    )}
                                                     {/* Drag del GRUPO entero (solo SB), a la derecha del tick de impreso */}
                                                     {isSB && !lockReorder && (
                                                         <div {...provided.dragHandleProps} className="w-7 h-7 flex items-center justify-center rounded-lg text-zinc-300 hover:text-zinc-600 cursor-grab active:cursor-grabbing" title="Arrastrar grupo">

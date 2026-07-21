@@ -30,12 +30,14 @@ export const rollsService = {
         const { data } = await api.post('/rolls/order-calandered', { orderId, calandered });
         return data;
     },
-    setOrderMagnitud: async (orderId, magnitud) => {
-        const { data } = await api.post('/rolls/order-magnitud', { orderId, magnitud });
+    // Impresión parcial (TPU): setea las unidades impresas de una orden (valor absoluto).
+    // El backend deriva Ordenes.Impreso (1 al completar) y clampa 0..Magnitud.
+    setCantidadImpresa: async (orderId, cantidad) => {
+        const { data } = await api.post('/rolls/order-cantidad-impresa', { orderId, cantidad });
         return data;
     },
-    setFallaGroupMeters: async (orderIds, metros) => {
-        const { data } = await api.post('/rolls/falla-group-meters', { orderIds, metros });
+    setOrderMagnitud: async (orderId, magnitud) => {
+        const { data } = await api.post('/rolls/order-magnitud', { orderId, magnitud });
         return data;
     },
     setOrderGroup: async (rollId, orderIds, group) => {
