@@ -637,6 +637,126 @@ exports.downloadOrdersZip = async (req, res) => {
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DESCARGA ARCHIVO POR ARCHIVO (sin ZIP)
+// El flujo del ZIP baja todo a memoria del navegador antes de descomprimir, lo que
+// pesa en lotes grandes. Acá el front pide primero el manifiesto (qué archivos y con
+// qué nombre) y después baja cada uno por separado, escribiéndolo apenas llega.
+// La convención de nombres es la MISMA que la del ZIP (helper compartido) para que
+// los dos caminos produzcan archivos idénticos.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const sanitizeFileName = (str) => (str || '').replace(/\//g, '-').replace(/[<>:"\\|?*]/g, ' ').trim();
+
+/**
+ * Devuelve los archivos de las órdenes con su nombre final ya resuelto.
+ * El índice "Archivo N de M" se calcula por orden, ordenando por ArchivoID.
+ */
+async function buildFilesManifest(orderIds) {
+    const ids = (orderIds || []).map(n => parseInt(n)).filter(n => !isNaN(n));
+    if (!ids.length) return [];
+
+    const pool = await getPool();
+    const filesQuery = await pool.request().query(`
+        SELECT
+            AO.ArchivoID, AO.RutaAlmacenamiento, AO.NombreArchivo, AO.Copias,
+            O.OrdenID, O.CodigoOrden, O.Cliente, O.DescripcionTrabajo,
+            ISNULL(R.Nombre, 'Lote ' + CAST(O.RolloID as VARCHAR)) as RollName
+        FROM dbo.ArchivosOrden AO
+        INNER JOIN dbo.Ordenes O ON AO.OrdenID = O.OrdenID
+        LEFT JOIN dbo.Rollos R ON O.RolloID = R.RolloID
+        WHERE O.OrdenID IN (${ids.join(',')})
+    `);
+
+    const byOrder = {};
+    filesQuery.recordset.forEach(f => {
+        if (!byOrder[f.OrdenID]) byOrder[f.OrdenID] = [];
+        byOrder[f.OrdenID].push(f);
+    });
+
+    const out = [];
+    for (const oId in byOrder) {
+        const group = byOrder[oId].sort((a, b) => a.ArchivoID - b.ArchivoID);
+        group.forEach((f, idx) => {
+            const sourcePath = f.RutaAlmacenamiento || '';
+            let ext = path.extname(f.NombreArchivo || '').toLowerCase();
+            if (!ext) ext = path.extname(sourcePath).split('?')[0].toLowerCase();
+            if (!ext) ext = '.pdf';
+
+            let finalName = (f.NombreArchivo && f.NombreArchivo.length > 10)
+                ? sanitizeFileName(f.NombreArchivo)
+                : `${f.CodigoOrden}_${sanitizeFileName(f.Cliente)}_${sanitizeFileName(f.DescripcionTrabajo)} Archivo ${idx + 1} de ${group.length} (x${f.Copias || 1} COPIAS)`;
+            if (!finalName.toLowerCase().endsWith(ext)) finalName += ext;
+
+            out.push({ ...f, finalName });
+        });
+    }
+    return out;
+}
+
+/** POST /measurements/files-manifest → { rollName, files: [{ archivoId, fileName, codigoOrden }] } */
+exports.getOrdersFilesManifest = async (req, res) => {
+    const { orderIds } = req.body;
+    if (!orderIds || orderIds.length === 0) return res.status(400).json({ error: 'No se recibieron IDs de órdenes' });
+    try {
+        const files = await buildFilesManifest(orderIds);
+        if (!files.length) return res.status(404).json({ error: 'No se encontraron archivos para las órdenes seleccionadas' });
+        res.json({
+            rollName: files[0].RollName || null,
+            files: files.map(f => ({ archivoId: f.ArchivoID, fileName: f.finalName, codigoOrden: f.CodigoOrden })),
+        });
+    } catch (err) {
+        logger.error('[files-manifest] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+/** GET /measurements/file/:archivoId → sirve UN archivo en streaming (Drive / http / disco). */
+exports.downloadSingleFile = async (req, res) => {
+    const archivoId = parseInt(req.params.archivoId);
+    if (isNaN(archivoId)) return res.status(400).send('archivoId inválido');
+
+    try {
+        const pool = await getPool();
+        const r = await pool.request()
+            .input('AID', sql.Int, archivoId)
+            .query('SELECT ArchivoID, RutaAlmacenamiento, NombreArchivo FROM dbo.ArchivosOrden WHERE ArchivoID = @AID');
+        if (!r.recordset.length) return res.status(404).send('Archivo no encontrado');
+
+        const file = r.recordset[0];
+        const sourcePath = file.RutaAlmacenamiento || '';
+
+        // Archivos grandes desde Drive/URL: sin esto el socket puede cortar por keep-alive.
+        req.socket.setTimeout(0);
+        const nombreDescarga = sanitizeFileName(file.NombreArchivo) || `archivo_${archivoId}`;
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(nombreDescarga)}`);
+
+        if (sourcePath.includes('drive.google.com')) {
+            const driveId = getDriveId(sourcePath);
+            if (!driveId) return res.status(400).send('No se pudo identificar el archivo de Drive');
+            const { stream, mimeType, size } = await driveService.getFileStream(driveId);
+            if (mimeType) res.setHeader('Content-Type', mimeType);
+            if (size) res.setHeader('Content-Length', size);
+            stream.on('error', (e) => { logger.error(`[download-file ${archivoId}] Drive stream:`, e); if (!res.headersSent) res.status(502).end(); });
+            return stream.pipe(res);
+        }
+
+        if (sourcePath.startsWith('http')) {
+            const response = await axios({ url: sourcePath, method: 'GET', responseType: 'stream', timeout: 600000 });
+            if (response.headers['content-type']) res.setHeader('Content-Type', response.headers['content-type']);
+            if (response.headers['content-length']) res.setHeader('Content-Length', response.headers['content-length']);
+            return response.data.pipe(res);
+        }
+
+        if (fs.existsSync(sourcePath)) return res.sendFile(path.resolve(sourcePath));
+
+        return res.status(404).send('El archivo no está disponible en el origen');
+    } catch (err) {
+        logger.error(`[download-file ${archivoId}] Error:`, err);
+        if (!res.headersSent) res.status(500).send('Error descargando el archivo: ' + err.message);
+    }
+};
+
 // NEW: Server Side Process Wrapper
 exports.processFilesServerSide = async (req, res) => {
     const { fileIds } = req.body;

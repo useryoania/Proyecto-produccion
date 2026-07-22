@@ -182,6 +182,23 @@ exports.assignRoll = async (req, res) => {
                             error: `No se puede mover el lote a la calandra: falta cargar ${chk.motivo}.`
                         });
                     }
+
+                    // A la calandra solo entra un lote TERMINADO DE IMPRIMIR: si quedan órdenes sin
+                    // marcar como impresas, todavía le falta pasar por la impresora. Espeja el gate
+                    // del botón Finalizar, que es el otro camino por el que un lote llega a la calandra.
+                    const impRes = await new sql.Request(transaction)
+                        .input('RID_IMP', sql.VarChar(50), String(currentRollId))
+                        .query(`SELECT COUNT(*) AS Faltan FROM dbo.Ordenes
+                                WHERE CAST(RolloID AS VARCHAR(50)) = @RID_IMP
+                                  AND ISNULL(Impreso, 0) = 0
+                                  AND Estado NOT IN ('Cancelado','Cancelada')`);
+                    const faltanImp = impRes.recordset[0]?.Faltan || 0;
+                    if (faltanImp > 0) {
+                        await transaction.rollback();
+                        return res.status(400).json({
+                            error: `No se puede mover el lote a la calandra: faltan ${faltanImp} orden(es) sin marcar como impresas.`
+                        });
+                    }
                 }
             }
         }

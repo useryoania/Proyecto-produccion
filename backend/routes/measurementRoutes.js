@@ -18,6 +18,10 @@ router.post('/auto-measure', controller.measureFiles);
 router.post('/process-batch', controller.processBatch);
 router.post('/download-zip', controller.downloadOrdersZip);
 
+// Descarga archivo por archivo (sin ZIP): primero el manifiesto, después cada archivo suelto.
+router.post('/files-manifest', controller.getOrdersFilesManifest);
+router.get('/file/:archivoId', controller.downloadSingleFile);
+
 // Local Download Structure
 router.post('/process-batch-by-orders', controller.processOrdersBatch);
 

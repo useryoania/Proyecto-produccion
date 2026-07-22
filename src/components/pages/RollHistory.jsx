@@ -158,14 +158,44 @@ const RollHistory = () => {
         },
         {
             accessorKey: 'FechaCreacion',
-            header: () => <div className="text-center">Fecha Creación</div>,
+            header: () => <div className="text-center">Fecha</div>,
+            // OJO: 150 es el valor mágico que esta tabla interpreta como "ancho automático"
+            // (ver el style del <th>). Dejarlo así hace que FECHA siga repartiendo el sobrante con
+            // ESTADO y MÁQUINA y ninguna columna se corra de lugar.
             size: 150,
             cell: info => {
-                const date = new Date(info.getValue());
+                // Creación y finalización lado a lado, cada una con fecha arriba y hora abajo:
+                //   FECHA CREACIÓN | FECHA FINALIZACIÓN
+                //   HORA CREACIÓN  | HORA FINALIZACIÓN
+                // La finalización sale de la última FechaFin de la bitácora del lote; si todavía no
+                // se finalizó, va un guion.
+                const parse = (v) => {
+                    const d = v ? new Date(v) : null;
+                    return (!d || isNaN(d)) ? null : d;
+                };
+                const creado = parse(info.getValue());
+                const finalizado = parse(info.row.original.FechaFinalizacion);
+                // Formato compacto para que las dos fechas entren sin ensanchar la columna:
+                // fecha DD/MM/YY y hora 24hs (sin AM/PM).
+                const fFecha = (d) => d.toLocaleDateString('es-UY', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                const fHora  = (d) => d.toLocaleTimeString('es-UY', { hour: '2-digit', minute: '2-digit', hour12: false });
+                const Bloque = ({ date, color, title }) => (
+                    <div className="flex flex-col text-center whitespace-nowrap" title={title}>
+                        {date ? (
+                            <>
+                                <span className={`font-medium text-xs ${color}`}>{fFecha(date)}</span>
+                                <span className="text-zinc-400 text-xs">{fHora(date)}</span>
+                            </>
+                        ) : (
+                            <span className="text-zinc-300">—</span>
+                        )}
+                    </div>
+                );
                 return (
-                    <div className="flex flex-col text-center">
-                        <span className="text-zinc-700 font-medium">{date.toLocaleDateString()}</span>
-                        <span className="text-zinc-400 text-xs">{date.toLocaleTimeString()}</span>
+                    <div className="flex items-center justify-center gap-2">
+                        <Bloque date={creado} color="text-zinc-700" title="Creación del lote" />
+                        <div className="w-px self-stretch bg-zinc-200" />
+                        <Bloque date={finalizado} color="text-emerald-600" title="Finalización del lote" />
                     </div>
                 );
             }

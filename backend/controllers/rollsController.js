@@ -1616,6 +1616,10 @@ exports.getRollHistory = async (req, res) => {
                 r.Nombre as name,
                 r.Estado as status,
                 r.FechaCreacion,
+                -- Fecha de finalización: la última FechaFin de la bitácora del rollo (se sella al
+                -- finalizar el lote en la máquina). NULL si el lote todavía no se finalizó.
+                (SELECT MAX(bp.FechaFin) FROM dbo.BitacoraProduccion bp WITH(NOLOCK)
+                  WHERE CAST(bp.RolloID AS VARCHAR(50)) = CAST(r.RolloID AS VARCHAR(50))) as FechaFinalizacion,
                 r.AreaID,
                 (SELECT COUNT(*) FROM dbo.Ordenes WHERE RolloID = r.RolloID) as orderCount,
                 r.MaquinaID,

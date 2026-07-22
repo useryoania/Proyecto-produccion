@@ -28,7 +28,11 @@ export const PrintSettingsPanel = ({
     disableScaling = false,
     hideRaport = false,   // oculta el modo Raport (servicios que no lo usan, ej: EcoUV)
     hideScale = false,    // oculta el modo A Escala (ej: tela doble cara Twinface en Directa)
-    hideHeader = false
+    hideHeader = false,
+    // MEDIDA FIJA (banderas): el material se imprime a una medida exacta, así que materialMaxWidthM
+    // ES el ancho requerido — NO se le descuenta el margen no imprimible de 3cm (si no, un archivo
+    // de 1.55 contra un material de 1.55 rebotaba contra un tope de 1.52).
+    medidaFija = false
 }) => {
     // ... (rest of vars)
     const mode = values.mode || 'normal';
@@ -62,7 +66,10 @@ export const PrintSettingsPanel = ({
         // software (1.8005 vs 1.80) "cae" al cm exacto en vez de saltar al siguiente y rebotar.
         const ceil2 = (v) => Math.ceil(Number(((v - TOLERANCIA_ANCHO_M) * 100).toFixed(6))) / 100;
         // Sin material (maxRaw<=0) → max = Infinity, así no se valida el ancho hasta elegir material.
-        const max = maxRaw > 0.03 ? Math.round((maxRaw - 0.03) * 100) / 100 : (maxRaw > 0 ? maxRaw : Infinity);
+        // Medida fija: maxRaw ya ES el ancho exigido, no se le descuentan los 3cm no imprimibles.
+        const max = medidaFija
+            ? (maxRaw > 0 ? maxRaw : Infinity)
+            : (maxRaw > 0.03 ? Math.round((maxRaw - 0.03) * 100) / 100 : (maxRaw > 0 ? maxRaw : Infinity));
 
         if (currentMode === 'normal') {
             const wR = ceil2(w);

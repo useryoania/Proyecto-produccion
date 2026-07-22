@@ -502,7 +502,10 @@ const PlaneacionTrabajo = ({ AreaID }) => {
             await productionService.toggleStatus(rollId, action, destination);
             // Al finalizar un lote (enviar a Calidad) se imprime su etiqueta térmica automáticamente.
             // No aplica a destination 'production' (volver a la cola es una corrección, no una finalización).
-            if (action === 'finish' && destination !== 'production') {
+            // EXCEPCIÓN DF (DTF): en esa área no se imprime ninguna etiqueta al finalizar (a pedido).
+            const areaUp = String(areaCode || '').toUpperCase();
+            const imprimeEtiquetaAlFinalizar = !['DF', 'DTF'].includes(areaUp);
+            if (action === 'finish' && destination !== 'production' && imprimeEtiquetaAlFinalizar) {
                 printEtiquetaLote(rollId);
             }
             refreshBoard();

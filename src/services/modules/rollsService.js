@@ -92,6 +92,19 @@ export const rollsService = {
         const response = await api.post('/measurements/process-batch-by-orders', { orderIds });
         return response.data;
     },
+    // Descarga archivo por archivo (sin ZIP): 1) manifiesto, 2) cada archivo suelto.
+    // Evita bajar todo a memoria del navegador como hace el ZIP.
+    getFilesManifest: async (orderIds) => {
+        const { data } = await api.post('/measurements/files-manifest', { orderIds });
+        return data; // { rollName, files: [{ archivoId, fileName, codigoOrden }] }
+    },
+    downloadSingleFile: async (archivoId, onProgress) => {
+        const response = await api.get(`/measurements/file/${archivoId}`, {
+            responseType: 'blob',
+            onDownloadProgress: (e) => { if (onProgress) onProgress(e.loaded, e.total); },
+        });
+        return response.data;
+    },
     downloadZip: async (orderIds, onProgress) => {
         const response = await api.post('/measurements/download-zip', { 
             orderIds,

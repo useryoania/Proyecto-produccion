@@ -1085,66 +1085,73 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
             downloadManager.start(`Descarga Lote ${freshRoll?.id || 'Nuevo'}`);
 
             const downloadTask = async () => {
-                const blob = await rollsService.downloadZip(selectedOrderIds, (loaded, total) => {
-                    downloadManager.updateDownloadProgress(loaded, total);
-                });
-
-                if (supportsFileSystem && dirHandle) {
-                    const JSZip = (await import("jszip")).default;
-                    const zip = await JSZip.loadAsync(blob);
-
-                    const rollFolderName = freshRoll.name || `Lote ${freshRoll.id || 'Nuevo'}`;
-                    const safeFolderName = rollFolderName.replace(/[<>:"/\\|?*]/g, '_').trim();
-
-                    let rollHandle;
-                    try {
-                        rollHandle = await dirHandle.getDirectoryHandle(safeFolderName, { create: true });
-                    } catch (e) {
-                        rollHandle = dirHandle;
-                    }
-
-                    const zipEntries = Object.entries(zip.files).filter(([_, entry]) => !entry.dir);
-                    
-                    if (zipEntries.length === 0) {
-                        downloadManager.error('El ZIP recibido está vacío. Revisa que las órdenes tengan archivos subidos.');
-                        toast.error('El ZIP del servidor llegó vacío.');
-                        return;
-                    }
-                    
-                    downloadManager.startProcessing(zipEntries.length);
-
-                    let fileCount = 0;
-                    const writeErrors = [];
-                    for (const [relativePath, zipEntry] of zipEntries) {
-                        const fileName = relativePath.split('/').pop();
-                        try {
-                            const fileHandle = await rollHandle.getFileHandle(fileName, { create: true });
-                            const writable = await fileHandle.createWritable();
-                            const content = await zipEntry.async('blob');
-                            await writable.write(content);
-                            await writable.close();
-                            fileCount++;
-                            downloadManager.updateProcessingProgress(fileCount);
-                        } catch (writeErr) {
-                            console.error("❌ Error escribiendo:", fileName, writeErr);
-                            writeErrors.push(`${fileName}: ${writeErr.message}`);
-                        }
-                    }
-                    
-                    if (fileCount === 0) {
-                        throw new Error(`No se pudo escribir ningún archivo en la carpeta. Primer error: ${writeErrors[0] || 'permiso denegado o carpeta inaccesible'}`);
-                    }
-                    
-                    downloadManager.finish();
-                    if (writeErrors.length > 0) {
-                        toast.warning(`${fileCount} archivos descargados en "${safeFolderName}" (${writeErrors.length} fallaron).`);
-                    } else {
-                        toast.success(`${fileCount} archivos descargados en "${safeFolderName}"`);
-                    }
-                } else {
+                // Sin File System API (HTTP inseguro / Firefox / Safari) no se puede escribir en una
+                // carpeta: ahí sigue conviniendo el ZIP (una sola descarga en vez de N del navegador).
+                if (!supportsFileSystem || !dirHandle) {
+                    const blob = await rollsService.downloadZip(selectedOrderIds, (loaded, total) => {
+                        downloadManager.updateDownloadProgress(loaded, total);
+                    });
                     saveAsZip(blob);
                     downloadManager.finish();
                     toast.success("ZIP descargado");
+                    return;
+                }
+
+                // ── Descarga ARCHIVO POR ARCHIVO ──────────────────────────────────
+                // Se pide el manifiesto y se baja cada archivo por separado, escribiéndolo
+                // apenas llega. Así no se acumula todo el lote en memoria del navegador.
+                const manifest = await rollsService.getFilesManifest(selectedOrderIds);
+                const archivos = manifest?.files || [];
+
+                if (archivos.length === 0) {
+                    downloadManager.error('Las órdenes seleccionadas no tienen archivos.');
+                    toast.error('No hay archivos para descargar.');
+                    return;
+                }
+
+                const rollFolderName = freshRoll.name || `Lote ${freshRoll.id || 'Nuevo'}`;
+                const safeFolderName = rollFolderName.replace(/[<>:"/\\|?*]/g, '_').trim();
+
+                let rollHandle;
+                try {
+                    rollHandle = await dirHandle.getDirectoryHandle(safeFolderName, { create: true });
+                } catch (e) {
+                    rollHandle = dirHandle;
+                }
+
+                downloadManager.startProcessing(archivos.length);
+
+                let fileCount = 0;
+                const writeErrors = [];
+                for (const [idx, arch] of archivos.entries()) {
+                    const nombre = (arch.fileName || `archivo_${arch.archivoId}`).replace(/[<>:"/\\|?*]/g, '_');
+                    downloadManager.updateSubTask(`${idx + 1}/${archivos.length} · ${nombre}`);
+                    try {
+                        const blob = await rollsService.downloadSingleFile(arch.archivoId, (loaded, total) => {
+                            downloadManager.updateDownloadProgress(loaded, total);
+                        });
+                        const fileHandle = await rollHandle.getFileHandle(nombre, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                        fileCount++;
+                        downloadManager.updateProcessingProgress(fileCount);
+                    } catch (fileErr) {
+                        // Un archivo caído no corta la descarga del resto.
+                        console.error("❌ Error con archivo:", nombre, fileErr);
+                        writeErrors.push(`${nombre}: ${fileErr.message}`);
+                    }
+                }
+
+                if (fileCount === 0) {
+                    throw new Error(`No se pudo descargar ningún archivo. Primer error: ${writeErrors[0] || 'permiso denegado o carpeta inaccesible'}`);
+                }
+
+                downloadManager.finish();
+                if (writeErrors.length > 0) {
+                    toast.warning(`${fileCount} de ${archivos.length} archivos descargados en "${safeFolderName}" (${writeErrors.length} fallaron).`);
+                } else {
+                    toast.success(`${fileCount} archivos descargados en "${safeFolderName}"`);
                 }
             };
 

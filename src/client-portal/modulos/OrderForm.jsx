@@ -390,6 +390,22 @@ const OrderForm = ({ serviceId: propServiceId }) => {
         (globalMaterial && globalMaterial.toUpperCase().includes('TWOFACE'))
     );
 
+    // Ancho y largo-fijo del material de un ítem. `largoFijo > 0` = el artículo se imprime a MEDIDA
+    // FIJA (articulos.largoimprimible, ej. Bandera Confeccionada): el archivo debe medir exactamente
+    // ancho x largoFijo (±2mm) y no aplica el tope "ancho - 3cm".
+    const itemMatInfo = (item) => {
+        const isSingleMat = config.materialMode === 'single' && !config.allowItemMaterialOverride;
+        const itemMat = isSingleMat ? globalMaterial : (item?.material || globalMaterial);
+        // Sin material seleccionado → ancho null, para no validar todavía.
+        if (!itemMat || !String(itemMat).trim()) return { ancho: null, largoFijo: 0 };
+        const matList = dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || []);
+        const foundMat = matList.find(m => (m.Material || m.Descripcion || m) === itemMat);
+        return {
+            ancho: resolveMaterialWidth(foundMat || itemMat),
+            largoFijo: (foundMat && typeof foundMat === 'object') ? (parseFloat(foundMat.Largo) || 0) : 0,
+        };
+    };
+
     const [twinfaceSame, setTwinfaceSame] = useState(false);
     const [applyMaterialToAll, setApplyMaterialToAll] = useState(true); // check por defecto: el material elegido aplica a todo el pedido
 
@@ -546,6 +562,11 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                         const matList = dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || []);
                         const matObj = matList.find(m => (m.Material || m.Descripcion || m) === itemMaterial) || itemMaterial;
                         maxWidth = resolveMaterialWidth(matObj);
+                        // MEDIDA FIJA también en Sublimación (ej. Bandera Confeccionada): si el artículo
+                        // define largoimprimible, el archivo va a medida exacta y no aplica el "ancho - 3cm".
+                        if (matObj && typeof matObj === 'object') {
+                            largoFijo = parseFloat(matObj.Largo) || 0;
+                        }
                     } else {
                         selectedMatName = null;
                         maxWidth = 1.83;
@@ -554,6 +575,7 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                     if (isSubliTelaCliente && selectedBobinaAncho) {
                         selectedMatName = clientFabricName ? `bobina ${clientFabricName}` : 'la bobina seleccionada';
                         maxWidth = parseFloat(selectedBobinaAncho);
+                        largoFijo = 0;
                     }
                 } else {
                     selectedMatName = globalMaterial;
@@ -586,14 +608,13 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                 const maxPrintableWidth = Math.round((maxWidth - 0.03) * 100) / 100;
 
                 if (largoFijo > 0) {
-                    // MEDIDA FIJA (banderas): ancho y largo del archivo deben coincidir EXACTO
-                    // (al cm) con anchoimprimible x largoimprimible del artículo.
+                    // MEDIDA FIJA (banderas): ancho y largo del archivo deben coincidir con
+                    // anchoimprimible x largoimprimible del artículo, admitiendo la misma TOLERANCIA_ANCHO_M
+                    // (2mm) que el resto del form — distintos software exportan con diferencias mínimas.
+                    // La orientación IMPORTA: un archivo rotado (largo x ancho) no se acepta.
                     const fileHeightM = result.unit === 'meters' ? result.height : (result.height / 300) * 0.0254;
-                    const wCm = Math.round(Number((fileWidthM * 100).toFixed(6)));
-                    const hCm = Math.round(Number((fileHeightM * 100).toFixed(6)));
-                    const expWCm = Math.round(Number((maxWidth * 100).toFixed(6)));
-                    const expHCm = Math.round(Number((largoFijo * 100).toFixed(6)));
-                    if (wCm !== expWCm || hCm !== expHCm) {
+                    const fueraDeTolerancia = (real, esperado) => Math.abs(real - esperado) > TOLERANCIA_ANCHO_M + 1e-9;
+                    if (fueraDeTolerancia(fileWidthM, maxWidth) || fueraDeTolerancia(fileHeightM, largoFijo)) {
                         actions.setErrorModalMessage(
                             `"${selectedMatName}" se imprime a MEDIDA FIJA: el archivo debe medir exactamente ${maxWidth.toFixed(2)}m de ancho x ${largoFijo.toFixed(2)}m de largo. Tu archivo mide ${fileWidthM.toFixed(2)}m x ${fileHeightM.toFixed(2)}m. Ajustá el archivo a la medida exacta.`
                         );
@@ -1738,8 +1759,17 @@ const OrderForm = ({ serviceId: propServiceId }) => {
 
                                                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                                                     <div className={isBlackoutSelected ? "md:col-span-4" : "md:col-span-6"}>
-                                                        <FileUploadZone id={item.id} label={isBlackoutSelected ? "Frente" : (config.productionFileLabel || "Archivo")} selectedFile={item.file} onFileSelected={(f) => handleFileUpload(item.id, 'file', f)} />
-                                                        {item.file && <div className="mt-2 text-[10px] font-bold text-zinc-400 bg-zinc-900/60 p-1 px-2 rounded border border-zinc-700/50 w-fit flex gap-1"><FileCode size={12} className="text-cyan-400/60" /> {item.file.name}</div>}
+                                                        {/* modoBandera: solo en materiales de medida fija (Bandera Confeccionada) se muestra
+                                                            la miniatura con la guía de 2,5 cm y el modal de la bandera terminada. */}
+                                                        <FileUploadZone id={item.id} label={isBlackoutSelected ? "Frente" : (config.productionFileLabel || "Archivo")} selectedFile={item.file} onFileSelected={(f) => handleFileUpload(item.id, 'file', f)} modoBandera={itemMatInfo(item).largoFijo > 0} />
+                                                        {item.file && (
+                                                            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                                                <div className="text-[10px] font-bold text-zinc-400 bg-zinc-900/60 p-1 px-2 rounded border border-zinc-700/50 w-fit flex items-center gap-1"><FileCode size={12} className="text-cyan-400/60" /> {item.file.name}</div>
+                                                                {itemMatInfo(item).largoFijo > 0 && (
+                                                                    <div className="text-[10px] font-black uppercase tracking-wider text-emerald-400/90 bg-emerald-500/10 p-1 px-2 rounded border border-emerald-500/30 w-fit flex items-center gap-1"><CheckCircle size={11} /> Listo para procesar</div>
+                                                                )}
+                                                            </div>
+                                                        )}
                                                         {item.file && item.file.pageCount != null && (
                                                             <div className="mt-1 text-[10px] font-bold text-zinc-500 bg-zinc-900/40 px-2 py-0.5 rounded border border-zinc-700/40 w-fit flex items-center gap-1">
                                                                 <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-zinc-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -1772,21 +1802,15 @@ const OrderForm = ({ serviceId: propServiceId }) => {
                                                             <PrintSettingsPanel
                                                                 originalWidthM={item.file.unit === 'meters' ? item.file.width : (item.file.width / 300) * 0.0254}
                                                                 originalHeightM={item.file.unit === 'meters' ? item.file.height : (item.file.height / 300) * 0.0254}
-                                                                materialMaxWidthM={(() => {
-                                                                    const isSingleMat = config.materialMode === 'single' && !config.allowItemMaterialOverride;
-                                                                    const itemMat = isSingleMat ? globalMaterial : (item.material || globalMaterial);
-                                                                    // Sin material seleccionado → null, para no validar el ancho todavía.
-                                                                    if (!itemMat || !String(itemMat).trim()) return null;
-                                                                    const matList = dynamicMaterials.length > 0 ? dynamicMaterials : (serviceInfo?.materials || []);
-                                                                    const foundMat = matList.find(m => (m.Material || m.Descripcion || m) === itemMat);
-                                                                    return resolveMaterialWidth(foundMat || itemMat);
-                                                                })()}
+                                                                materialMaxWidthM={itemMatInfo(item).ancho}
+                                                                medidaFija={itemMatInfo(item).largoFijo > 0}
                                                                 values={item.printSettings || {}} copies={item.copies}
                                                                 onCopiesChange={(v) => actions.updateItem(item.id, 'copies', v)}
                                                                 onChange={(s) => actions.updateItem(item.id, 'printSettings', s)}
-                                                                disableScaling={serviceId === 'tpu' || serviceId?.toUpperCase() === 'DF'}
-                                                                hideRaport={!!config.hideRaport || isDirectaTwinface}
-                                                                hideScale={isDirectaTwinface}
+                                                                // Medida fija: escalar o raportar cambiaría el tamaño final y rompería la medida exigida.
+                                                                disableScaling={serviceId === 'tpu' || serviceId?.toUpperCase() === 'DF' || itemMatInfo(item).largoFijo > 0}
+                                                                hideRaport={!!config.hideRaport || isDirectaTwinface || itemMatInfo(item).largoFijo > 0}
+                                                                hideScale={isDirectaTwinface || itemMatInfo(item).largoFijo > 0}
                                                             />
                                                         )}
                                                     </div>
