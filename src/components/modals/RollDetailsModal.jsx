@@ -517,11 +517,16 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     // el header, el gate de Finalizar y el "x/y impresas" sigan funcionando sin enterarse.
     // Ver docs/impresion-parcial-plan.md
     const esOrdenTPU = (o) => /^TPU-/i.test(o?.code || '');
+    // Impresión parcial también en Impresión Directa (prefijo DIR-). DIRECTA cuenta piezas O metros
+    // según el artículo (o.um): 'U'=piezas (entero), otra=metros (decimal). TPU es siempre 'U'.
+    const esOrdenParcial = (o) => /^(TPU|DIR)-/i.test(o?.code || '');
+    const esUnidadesOrden = (o) => String(o?.um || '').trim().toUpperCase() === 'U';
     const isLoteTPU = totalOrders > 0 && orders.every(esOrdenTPU);
     const [cantidadesLocal, setCantidadesLocal] = useState({});
     const [editandoCantidad, setEditandoCantidad] = useState(null); // orderId en edición
     const getCantidadImpresa = (o) => cantidadesLocal[o.id] !== undefined ? cantidadesLocal[o.id] : (o.cantidadImpresa || 0);
-    const getTotalUnidades = (o) => Math.max(1, Math.round(o.magnitude || 0));
+    // Total objetivo: piezas → redondeo a entero; metros → magnitud exacta (con decimales)
+    const getTotalUnidades = (o) => esUnidadesOrden(o) ? Math.max(1, Math.round(o.magnitude || 0)) : Math.max(0, Number(o.magnitude) || 0);
     const printedUnits = orders.reduce((s, o) => s + (esOrdenTPU(o) ? Math.min(getCantidadImpresa(o), getTotalUnidades(o)) : 0), 0);
 
     // Al llegar datos frescos del server, soltar los overrides locales (el server es la verdad)
@@ -530,7 +535,9 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
 
     const handleGuardarCantidad = async (o, rawValue) => {
         const total = getTotalUnidades(o);
-        const nuevo = Math.max(0, Math.min(parseInt(rawValue, 10) || 0, total));
+        // Piezas → entero; metros → 2 decimales
+        const parsed = esUnidadesOrden(o) ? Math.round(parseFloat(rawValue) || 0) : Math.round((parseFloat(rawValue) || 0) * 100) / 100;
+        const nuevo = Math.max(0, Math.min(parsed, total));
         const previo = getCantidadImpresa(o);
         setEditandoCantidad(null);
         if (nuevo === previo) return;
@@ -825,7 +832,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         // (el backend hace lo mismo en DB: tick manual → CantidadImpresa = total/0)
         setCantidadesLocal(prev => {
             const next = { ...prev };
-            unit.orders.filter(esOrdenTPU).forEach(o => { next[o.id] = willPrint ? getTotalUnidades(o) : 0; });
+            unit.orders.filter(esOrdenParcial).forEach(o => { next[o.id] = willPrint ? getTotalUnidades(o) : 0; });
             return next;
         });
         ids.forEach(id => {
@@ -1932,8 +1939,8 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                     >
                                                         <i className="fa-solid fa-rotate-left text-sm" />
                                                     </button>
-                                                    {/* 4ta acción: avance de impresión — TPU: contador por unidades; resto: tick binario */}
-                                                    {esOrdenTPU(o) ? (
+                                                    {/* 4ta acción: avance de impresión — TPU/Directa: contador (piezas o metros); resto: tick binario */}
+                                                    {esOrdenParcial(o) ? (
                                                         <div onClick={e => e.stopPropagation()} className="flex items-center">
                                                             {editandoCantidad === o.id ? (
                                                                 <input
@@ -1941,6 +1948,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                                     type="number"
                                                                     min={0}
                                                                     max={getTotalUnidades(o)}
+                                                                    step={esUnidadesOrden(o) ? 1 : 0.01}
                                                                     defaultValue={getCantidadImpresa(o)}
                                                                     onBlur={e => handleGuardarCantidad(o, e.target.value)}
                                                                     onKeyDown={e => {
@@ -1953,7 +1961,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                                 <button
                                                                     disabled={readOnly}
                                                                     onClick={() => !readOnly && setEditandoCantidad(o.id)}
-                                                                    title="Unidades impresas / total — clic para cargar el avance del día"
+                                                                    title={esUnidadesOrden(o) ? 'Piezas impresas / total — clic para cargar el avance del día' : 'Metros impresos / total — clic para cargar el avance del día'}
                                                                     className={`px-2 py-1 rounded-lg text-[11px] font-black border whitespace-nowrap transition-colors ${getCantidadImpresa(o) >= getTotalUnidades(o)
                                                                         ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
                                                                         : getCantidadImpresa(o) > 0

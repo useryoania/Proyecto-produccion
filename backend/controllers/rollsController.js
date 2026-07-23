@@ -12,7 +12,12 @@ async function ensureOrderColumns(pool) {
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'Calandrado' AND Object_ID = Object_ID('dbo.Ordenes'))
             ALTER TABLE dbo.Ordenes ADD Calandrado BIT NOT NULL CONSTRAINT DF_Ordenes_Calandrado DEFAULT 0;
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'CantidadImpresa' AND Object_ID = Object_ID('dbo.Ordenes'))
-            ALTER TABLE dbo.Ordenes ADD CantidadImpresa INT NOT NULL CONSTRAINT DF_Ordenes_CantidadImpresa DEFAULT 0;
+            ALTER TABLE dbo.Ordenes ADD CantidadImpresa DECIMAL(10,2) NOT NULL CONSTRAINT DF_Ordenes_CantidadImpresa DEFAULT 0;
+        -- Auto-heal: bases donde la columna se creó como INT (TPU unidades) → ampliar a DECIMAL para
+        -- soportar también metros (Impresión Directa cuenta piezas O metros según el artículo).
+        IF EXISTS (SELECT 1 FROM sys.columns c JOIN sys.types t ON c.system_type_id = t.system_type_id
+                   WHERE c.Name = 'CantidadImpresa' AND c.Object_ID = Object_ID('dbo.Ordenes') AND t.name = 'int')
+            ALTER TABLE dbo.Ordenes ALTER COLUMN CantidadImpresa DECIMAL(10,2) NOT NULL;
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'MetrosGrupoFalla' AND Object_ID = Object_ID('dbo.Ordenes'))
             ALTER TABLE dbo.Ordenes ADD MetrosGrupoFalla DECIMAL(10,2) NULL;
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'GrupoManual' AND Object_ID = Object_ID('dbo.Ordenes'))
@@ -1256,10 +1261,12 @@ exports.setOrderPrinted = async (req, res) => {
             .input('P', sql.Bit, printed ? 1 : 0)
             .query(`
                 UPDATE dbo.Ordenes SET Impreso = @P,
-                    -- Impresión parcial (órdenes por unidades, UM='U'): el tick manual sincroniza
-                    -- el contador para que Impreso y CantidadImpresa nunca queden inconsistentes.
-                    CantidadImpresa = CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(UM,'')))) = 'U'
-                        THEN CASE WHEN @P = 1 THEN ISNULL(TRY_CONVERT(INT, TRY_CONVERT(FLOAT, Magnitud)), CantidadImpresa) ELSE 0 END
+                    -- Impresión parcial (TPU por unidades UM='U'; DIRECTA por piezas o metros): el tick
+                    -- manual sincroniza el contador para que Impreso y CantidadImpresa nunca queden
+                    -- inconsistentes. DECIMAL para conservar metros; el resto de áreas no se toca.
+                    CantidadImpresa = CASE
+                        WHEN UPPER(LTRIM(RTRIM(ISNULL(UM,'')))) = 'U' OR UPPER(LTRIM(RTRIM(ISNULL(AreaID,'')))) = 'DIRECTA'
+                        THEN CASE WHEN @P = 1 THEN ISNULL(TRY_CONVERT(DECIMAL(10,2), TRY_CONVERT(FLOAT, Magnitud)), CantidadImpresa) ELSE 0 END
                         ELSE CantidadImpresa END
                 WHERE OrdenID = @OID
             `);
@@ -1307,20 +1314,28 @@ exports.setOrderCantidadImpresa = async (req, res) => {
 
         const ordRes = await pool.request()
             .input('OID', sql.Int, Number(orderId))
-            .query(`SELECT UM, Magnitud FROM dbo.Ordenes WITH(NOLOCK) WHERE OrdenID = @OID`);
+            .query(`SELECT UM, Magnitud, AreaID FROM dbo.Ordenes WITH(NOLOCK) WHERE OrdenID = @OID`);
         if (!ordRes.recordset.length) return res.status(404).json({ error: 'Orden no encontrada' });
 
-        const um = String(ordRes.recordset[0].UM || '').trim().toUpperCase();
-        if (um !== 'U') {
-            return res.status(400).json({ error: 'La impresión parcial solo aplica a órdenes por unidades (UM = U).' });
+        const um   = String(ordRes.recordset[0].UM || '').trim().toUpperCase();
+        const area = String(ordRes.recordset[0].AreaID || '').trim().toUpperCase();
+        // Áreas con impresión parcial habilitada. TPU va por unidades (UM='U'); DIRECTA puede ir por
+        // unidades O metros según el artículo (el contador se ajusta abajo). Otras áreas sin UM='U' se rechazan.
+        const AREAS_PARCIAL = ['TPU', 'DIRECTA'];
+        if (!AREAS_PARCIAL.includes(area) && um !== 'U') {
+            return res.status(400).json({ error: 'La impresión parcial no está habilitada para esta área.' });
         }
+
+        // Unidades → entero; metros (u otra UM) → 2 decimales. La columna es DECIMAL(10,2), sirve a ambos.
+        const esUnidades = um === 'U';
+        const cantNum = esUnidades ? Math.round(Number(cantidad)) : Math.round(Number(cantidad) * 100) / 100;
 
         const result = await pool.request()
             .input('OID', sql.Int, Number(orderId))
-            .input('C', sql.Int, Math.round(Number(cantidad)))
+            .input('C', sql.Decimal(10, 2), cantNum)
             .query(`
-                DECLARE @Total INT = (SELECT ISNULL(TRY_CONVERT(INT, TRY_CONVERT(FLOAT, Magnitud)), 0) FROM dbo.Ordenes WHERE OrdenID = @OID);
-                DECLARE @Val INT = CASE WHEN @C < 0 THEN 0 WHEN @Total > 0 AND @C > @Total THEN @Total ELSE @C END;
+                DECLARE @Total DECIMAL(10,2) = (SELECT ISNULL(TRY_CONVERT(DECIMAL(10,2), TRY_CONVERT(FLOAT, Magnitud)), 0) FROM dbo.Ordenes WHERE OrdenID = @OID);
+                DECLARE @Val DECIMAL(10,2) = CASE WHEN @C < 0 THEN 0 WHEN @Total > 0 AND @C > @Total THEN @Total ELSE @C END;
                 UPDATE dbo.Ordenes
                 SET CantidadImpresa = @Val,
                     Impreso = CASE WHEN @Total > 0 AND @Val >= @Total THEN 1 ELSE 0 END
