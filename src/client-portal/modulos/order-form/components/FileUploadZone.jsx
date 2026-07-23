@@ -5,6 +5,17 @@ import { UploadCloud, CheckCircle } from 'lucide-react';
 // Guía de margen de seguridad dibujada sobre la vista previa: 2,5 cm hacia adentro del arte.
 const MARGEN_SEGURIDAD_M = 0.025;
 
+// Fondo tipo damero (como Photoshop) para que se vea qué partes del arte son TRANSPARENTES.
+// Se usa en DTF, donde el arte va sobre film transparente. No toca los píxeles del archivo.
+const DAMERO = {
+    backgroundColor: '#6b7280',
+    backgroundImage:
+        'linear-gradient(45deg, #9ca3af 25%, transparent 25%), linear-gradient(-45deg, #9ca3af 25%, transparent 25%), ' +
+        'linear-gradient(45deg, transparent 75%, #9ca3af 75%), linear-gradient(-45deg, transparent 75%, #9ca3af 75%)',
+    backgroundSize: '16px 16px',
+    backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
+};
+
 /**
  * Vista de la bandera terminada: muestra SOLO el área útil del arte (lo de adentro de la guía
  * punteada) y, con `flamear`, la ondula como tela con un shader WebGL propio (sin librerías).
@@ -15,13 +26,18 @@ const MARGEN_SEGURIDAD_M = 0.025;
 const VistaBandera = ({ src, fx, fy, utilW, utilH, flamear }) => {
     const canvasRef = useRef(null);
     const flamearRef = useRef(flamear);
+    const arrancarRef = useRef(null); // reanuda el loop cuando se enciende "Flamear"
     const [img, setImg] = useState(null);
 
     // Resolución del canvas: ancho fijo y alto según la proporción real del área útil.
     const W = 1280;
     const H = Math.max(1, Math.round(W * (utilH / utilW)));
 
-    useEffect(() => { flamearRef.current = flamear; }, [flamear]);
+    // Al encender el flameo hay que reanudar el loop, que se detiene solo cuando la tela queda quieta.
+    useEffect(() => {
+        flamearRef.current = flamear;
+        if (flamear && arrancarRef.current) arrancarRef.current();
+    }, [flamear]);
 
     useEffect(() => {
         let vivo = true;
@@ -126,9 +142,13 @@ const VistaBandera = ({ src, fx, fy, utilW, utilH, flamear }) => {
         gl.clearColor(0, 0, 0, 0);
 
         // El toggle no recrea nada: la amplitud persigue suavemente su objetivo en cada frame.
+        // El loop se DETIENE cuando la tela queda quieta (amp=0 y flamear apagado): antes seguía
+        // redibujando a 60fps un canvas enorme (un arte de 0,90×4,00 m son ~1280×5700 px) para
+        // mostrar una imagen estática, y se notaba en la fluidez del modal. Al encender "Flamear"
+        // se reanuda desde el useEffect de abajo.
         let raf = 0;
         let amp = flamearRef.current ? 0.045 : 0;
-        const inicio = performance.now();
+        let inicio = performance.now();
         const frame = (now) => {
             const objetivo = flamearRef.current ? 0.045 : 0;
             amp += (objetivo - amp) * 0.08;
@@ -137,24 +157,34 @@ const VistaBandera = ({ src, fx, fy, utilW, utilH, flamear }) => {
             gl.uniform1f(uT, (now - inicio) / 1000);
             gl.uniform1f(uAmp, amp);
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            if (amp === 0 && !flamearRef.current) { raf = 0; return; } // en reposo: no seguir animando
+            raf = requestAnimationFrame(frame);
+        };
+        arrancarRef.current = () => {
+            if (raf) return;             // ya está animando
+            inicio = performance.now();
             raf = requestAnimationFrame(frame);
         };
         raf = requestAnimationFrame(frame);
 
         return () => {
             cancelAnimationFrame(raf);
+            arrancarRef.current = null;
             const lose = gl.getExtension('WEBGL_lose_context');
             if (lose) lose.loseContext();
         };
     }, [img, fx, fy, W, H]);
 
-    return <canvas ref={canvasRef} width={W} height={H} className="w-full h-auto block" />;
+    // El canvas manda el tamaño del modal: w/h en auto, con tope de 90vh/90vw MENOS lo que ocupan
+    // el header y los padding. Sin restar eso, en mobile (ej. 400x800) la imagen a 90vh + el título
+    // superaban la pantalla y el modal se cortaba.
+    return <canvas ref={canvasRef} width={W} height={H} className="w-auto h-auto max-h-[calc(94vh-5rem)] max-w-[calc(95vw-2.5rem)] object-contain block" />;
 };
 
 // `modoBandera`: EXCLUSIVO de materiales de medida fija (Bandera Confeccionada). Solo ahí tiene
 // sentido la miniatura con la guía de 2,5 cm y el modal con la vista de la bandera terminada.
 // En el resto de los servicios/archivos la zona se comporta como siempre (ícono + nombre).
-export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: Icon = UploadCloud, color = "blue", multiple = false, modoBandera = false }) => {
+export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: Icon = UploadCloud, color = "blue", multiple = false, modoBandera = false, quitarFondoPdf = false }) => {
     const [isOver, setIsOver] = useState(false);
     const [modalAbierto, setModalAbierto] = useState(false);
     const [flamear, setFlamear] = useState(false);
@@ -170,7 +200,10 @@ export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: 
     // fileService para medir. Si algo falla, queda el ícono de check de siempre.
     const [preview, setPreview] = useState(null);
     useEffect(() => {
-        const sel = (multiple || !modoBandera) ? null : selectedFile;
+        // La miniatura se genera para CUALQUIER material y área (antes solo en modoBandera, así que
+        // fuera de Bandera Confeccionada el cliente no veía lo que estaba subiendo). Lo que sigue
+        // siendo exclusivo de medida fija es la guía de margen (margenGuia), no la vista previa.
+        const sel = multiple ? null : selectedFile;
         if (!sel) { setPreview(null); return; }
 
         // El File real: o es el propio `sel`, o viene adentro en `fileData`.
@@ -198,13 +231,23 @@ export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: 
                     if (cancelado) return;
                     const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
                     const page = await pdf.getPage(1);
-                    // Escala para que el lado mayor quede en ~320px (nítido sin gastar memoria).
+                    // Lado mayor a ~1600px: la miniatura necesita poco, pero la MISMA imagen se usa
+                    // en el modal ampliado. Con 320px la vista previa se mostraba a su tamaño real
+                    // (una tira diminuta) porque max-h/max-w solo limitan, no agrandan.
                     const base = page.getViewport({ scale: 1 });
-                    const viewport = page.getViewport({ scale: 320 / Math.max(base.width, base.height) });
+                    const viewport = page.getViewport({ scale: 1600 / Math.max(base.width, base.height) });
                     const canvas = document.createElement('canvas');
                     canvas.width = Math.ceil(viewport.width);
                     canvas.height = Math.ceil(viewport.height);
-                    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                    // background transparente: pdf.js por defecto RELLENA el canvas de BLANCO antes
+                    // de dibujar, y eso tapaba la transparencia real del PDF (en DTF el arte va sobre
+                    // film transparente, como se ve al abrirlo en Photoshop). Con esto el PNG queda
+                    // con el alpha del archivo, sin tocar un solo píxel del arte.
+                    await page.render({
+                        canvasContext: canvas.getContext('2d'),
+                        viewport,
+                        background: 'rgba(0,0,0,0)',
+                    }).promise;
                     if (!cancelado) setPreview(canvas.toDataURL('image/png'));
                 } catch (e) {
                     console.warn('[FileUploadZone] No se pudo generar la vista previa del PDF:', e);
@@ -217,7 +260,7 @@ export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: 
             cancelado = true;
             URL.revokeObjectURL(objectUrl);
         };
-    }, [selectedFile, multiple, modoBandera]);
+    }, [selectedFile, multiple, quitarFondoPdf]);
 
     const handleDrop = (e) => {
         e.preventDefault();
@@ -301,10 +344,12 @@ export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: 
                     // así no se repite el nombre dos veces.
                     // El wrapper se ajusta al tamaño real de la imagen, así la guía punteada calza exacto.
                     <div
-                        className="relative inline-block animate-in fade-in duration-500 cursor-zoom-in"
+                        className="relative inline-block animate-in fade-in duration-500 cursor-zoom-in rounded overflow-hidden"
                         // stopPropagation: si no, el click burbujea al recuadro y abre el selector de archivo.
                         onClick={(e) => { e.stopPropagation(); setModalAbierto(true); }}
-                        title="Ver cómo queda la bandera"
+                        title={modoBandera ? "Ver cómo queda la bandera" : "Ampliar vista previa"}
+                        // DTF: damero detrás del arte para ver la transparencia (el arte va sobre film).
+                        style={quitarFondoPdf ? DAMERO : undefined}
                     >
                         <img
                             src={preview}
@@ -358,12 +403,20 @@ export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: 
                 onClick={() => setModalAbierto(false)}
             >
                 <div
-                    className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-4 w-full max-w-3xl shadow-2xl animate-in zoom-in-95 duration-200"
+                    // El modal se ESTIRA lo que la imagen necesite: sin max-h propio (si lo tiene,
+                    // comprime la imagen antes de que llegue a su tope y sobra espacio adentro).
+                    // Quien pone el límite es la imagen (max-h/max-w abajo). El max-w acá es solo
+                    // para que el nombre largo del archivo no estire el modal fuera de pantalla.
+                    className="relative bg-zinc-900 border border-zinc-700 rounded-2xl p-3 w-auto h-auto max-w-[95vw] shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col"
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                        <div className="min-w-0">
-                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400/80">Vista del arte terminado</p>
+                    <div className="flex items-center justify-between gap-3 mb-3 shrink-0 max-w-full">
+                        <div className="min-w-0 flex-1">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-400/80">
+                                {modoBandera ? 'Vista del arte terminado' : 'Vista previa del archivo'}
+                            </p>
+                            {/* min-w-0 + flex-1 + truncate: sin esto el nombre largo no se recorta y
+                                empuja el ancho del modal (se veía en mobile). */}
                             <p className="text-xs font-bold text-zinc-300 truncate">{selectedFile?.name}</p>
                         </div>
                         <button
@@ -374,18 +427,39 @@ export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: 
                         >×</button>
                     </div>
 
-                    <div className="bg-zinc-950/60 rounded-xl p-4 flex items-center justify-center">
-                        <VistaBandera
-                            src={preview}
-                            fx={recorte.fx}
-                            fy={recorte.fy}
-                            utilW={recorte.utilW}
-                            utilH={recorte.utilH}
-                            flamear={flamear}
-                        />
+                    {/* En DTF el arte va sobre film transparente: se muestra sobre damero (como
+                        Photoshop) para distinguir qué es transparente y qué es tinta blanca.
+                        El archivo NO se modifica. */}
+                    <div
+                        className="rounded-xl p-2 flex items-center justify-center"
+                        style={quitarFondoPdf ? DAMERO : { backgroundColor: 'rgba(9,9,11,.6)' }}
+                    >
+                        {/* Solo bandera usa el canvas WebGL (necesario para el flameo y el recorte del
+                            margen). Para el resto alcanza un <img>: el canvas redibuja a 60fps un
+                            lienzo enorme (un arte de 0,90×4,00 m son ~1280×5700 px) y hacía que el
+                            modal se sintiera lento sin ningún beneficio. */}
+                        {modoBandera ? (
+                            <VistaBandera
+                                src={preview}
+                                fx={recorte.fx}
+                                fy={recorte.fy}
+                                utilW={recorte.utilW}
+                                utilH={recorte.utilH}
+                                flamear={flamear}
+                            />
+                        ) : (
+                            <img
+                                src={preview}
+                                alt="Vista previa del archivo"
+                                className="w-auto h-auto max-h-[calc(94vh-5rem)] max-w-[calc(95vw-2.5rem)] object-contain block"
+                            />
+                        )}
                     </div>
 
-                    <div className="flex items-center justify-between gap-3 mt-3">
+                    {/* Pie: el aviso del margen y el flamear son EXCLUSIVOS de bandera confeccionada
+                        (medida fija). En el resto de los materiales el modal es solo la vista previa. */}
+                    {modoBandera && (
+                    <div className="flex items-center justify-between gap-3 mt-3 shrink-0">
                         <p className="text-[10px] text-zinc-500 font-bold leading-tight">
                             {margenGuia
                                 ? `Se ocultaron los ${MARGEN_SEGURIDAD_M * 100} cm del borde que se usan en la confección.`
@@ -406,6 +480,7 @@ export const FileUploadZone = ({ id, onFileSelected, selectedFile, label, icon: 
                             Flamear
                         </button>
                     </div>
+                    )}
                 </div>
             </div>,
             document.body

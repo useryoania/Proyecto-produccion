@@ -468,6 +468,10 @@ const PlaneacionTrabajo = ({ AreaID }) => {
     };
 
     const handleToggleMachineStatus = async (rollId, action, destination) => {
+        // Máquina donde está el lote AHORA. Se resuelve ANTES del await: al finalizar en una impresora
+        // el backend reasigna el lote a la calandra, así que después ya no se sabría de dónde salió.
+        const machDelLote = (localBoardData?.machines || []).find(m => (m.rolls || []).some(r => String(r.id) === String(rollId)));
+
         // Actualización optimista para Play/Pause
         if (action === 'start' || action === 'pause') {
             queryClient.cancelQueries({ queryKey: ['productionBoard', areaCode] });
@@ -500,12 +504,19 @@ const PlaneacionTrabajo = ({ AreaID }) => {
 
         try {
             await productionService.toggleStatus(rollId, action, destination);
-            // Al finalizar un lote (enviar a Calidad) se imprime su etiqueta térmica automáticamente.
+            // Al finalizar un lote se imprime su etiqueta térmica automáticamente.
             // No aplica a destination 'production' (volver a la cola es una corrección, no una finalización).
             // EXCEPCIÓN DF (DTF): en esa área no se imprime ninguna etiqueta al finalizar (a pedido).
+            // SOLO en máquinas marcadas como IMPRESORA (flag SeparacionImpresion de ConfigEquipos, el
+            // que se tilda en el modal de equipos): la etiqueta acompaña al lote impreso hacia la
+            // calandra. Al finalizar en una calandra (el lote va a Calidad) no se imprime nada.
             const areaUp = String(areaCode || '').toUpperCase();
             const imprimeEtiquetaAlFinalizar = !['DF', 'DTF'].includes(areaUp);
-            if (action === 'finish' && destination !== 'production' && imprimeEtiquetaAlFinalizar) {
+            // OJO: separacionImpresion puede venir como CHAR ('0'/'1') y un '0' string es TRUTHY en JS
+            // (mismo problema que ya se corrigió en el gate del backend). Parse explícito.
+            const sepImp = machDelLote?.separacionImpresion;
+            const esImpresora = sepImp === true || Number(String(sepImp ?? '0').trim()) === 1;
+            if (action === 'finish' && destination !== 'production' && imprimeEtiquetaAlFinalizar && esImpresora) {
                 printEtiquetaLote(rollId);
             }
             refreshBoard();
@@ -896,6 +907,12 @@ const PlaneacionTrabajo = ({ AreaID }) => {
                             const mach = (localBoardData.machines || []).find(m => (m.rolls || []).some(r => String(r.id) === String(inspectingRollId)));
                             const esCalandra = !!mach && /^\s*calandra/i.test(String(mach.name || ''));
                             return String(areaCode || '').toUpperCase() === 'SB' && esCalandra;
+                        })()}
+                        avancePorCopias={(() => {
+                            // MIMAKI: el avance de impresión se carga por COPIAS (contador parcial) en vez
+                            // del tick binario. Se detecta por nombre de máquina, igual que la calandra.
+                            const mach = (localBoardData.machines || []).find(m => (m.rolls || []).some(r => String(r.id) === String(inspectingRollId)));
+                            return !!mach && /^\s*mimaki/i.test(String(mach.name || ''));
                         })()}
                     />
                 )

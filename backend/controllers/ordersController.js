@@ -2813,6 +2813,17 @@ exports.reactivateOrder = async (req, res) => {
 
             res.json({ success: true, estadoRestaurado: estadoRestaurar });
 
+            // Push al cliente: contraparte del aviso de cancelación ('Pedido cancelado'), para que se
+            // entere de que su pedido volvió a estar activo. {code} lo reemplaza el servicio por el
+            // CodigoOrden. Fire-and-forget: si falla, no afecta la reactivación (ya commiteada).
+            pushService.sendToOrderClient(orderId, {
+                title: 'Pedido reactivado',
+                body: 'Tu pedido {code} fue reactivado y vuelve a estar en curso.',
+                url: '/portal/pickup',
+                actions: [{ action: 'pedidos', title: 'Ver mis pedidos' }],
+                actionUrls: { pedidos: '/portal/factory' },
+            }).catch(err => logger.error('[WebPush Trigger] Error:', err.message));
+
         } catch (inner) {
             await transaction.rollback();
             throw inner;

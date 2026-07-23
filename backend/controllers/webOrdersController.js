@@ -172,18 +172,16 @@ async function generateHandyReceipt({ transactionId, ordenRetiro, orders, totalA
 }
 
 // ===================================
-// TOTEM: VERIFICAR IP (SIN AUTH)
+// TOTEM: VERIFICAR AUTORIZACIÓN (SIN AUTH)
 // ===================================
+// Valida el TOKEN DE DISPOSITIVO, no la IP: el local dejó de tener IP fija. Esta ruta NO lleva
+// el middleware totemAuth a propósito — tiene que poder responder { authorized: false } para que
+// el tótem muestre la pantalla de bloqueo, en vez de cortar con un 401.
 exports.totemVerify = (req, res) => {
-    const allowedIp = process.env.TOTEM_ALLOWED_IP;
-    if (!allowedIp) {
-        return res.json({ authorized: true }); // Si no hay IP configurada, permitir (dev mode)
-    }
-    // req.ip puede ser IPv6-mapped (::ffff:192.168.1.1) o IPv4 directo
-    const clientIp = (req.ip || '').replace(/^::ffff:/, '');
-    const authorized = clientIp === allowedIp;
-    logger.info(`[TOTEM] IP check: ${clientIp} vs ${allowedIp} → ${authorized ? '✅' : '❌'}`);
-    res.json({ authorized, ip: clientIp });
+    const { totemTokenOk } = require('../middleware/totemAuth');
+    const authorized = totemTokenOk(req);
+    if (!authorized) logger.warn(`[TOTEM] Verify rechazado (token ausente o inválido) desde ${req.ip}`);
+    res.json({ authorized });
 };
 
 // --- CONSTANTES Y MAPEOS ---
@@ -1475,6 +1473,31 @@ exports.uploadOrderFile = async (req, res) => {
             fileInput = require('fs').createReadStream(file.path);
         } else {
             fileInput = file.buffer;
+        }
+
+        // ── Validación DURA de páginas: rechazar PDFs de arte multipágina ANTES de subir nada.
+        //    Regla: 1 archivo de arte = 1 página. La validación del front (pdf.js) tiene un hueco —
+        //    si no puede contar deja pageCount=null y NO bloquea, así entraban PDFs de 2 páginas
+        //    (mal medidos, además, porque solo se medía la 1ª). pdf-lib en el server es confiable y
+        //    cubre este punto por el que pasan todas las subidas del portal. Solo aplica al arte
+        //    (type='ORDEN'); las referencias (REF) pueden ser multipágina.
+        const esArtePdf = type === 'ORDEN'
+            && ((file.mimetype || '').toLowerCase().includes('pdf') || (finalName || '').toLowerCase().endsWith('.pdf'));
+        if (esArtePdf) {
+            try {
+                const pdfBuf = file.buffer || await require('fs').promises.readFile(file.path);
+                const { PDFDocument } = require('pdf-lib');
+                const pdfDoc = await PDFDocument.load(pdfBuf, { ignoreEncryption: true, updateMetadata: false });
+                const paginas = pdfDoc.getPageCount();
+                if (paginas > 1) {
+                    logger.warn(`[UploadStream] RECHAZADO ${finalName}: PDF de ${paginas} páginas (solo se permite 1).`);
+                    return res.status(400).json({ error: `El archivo tiene ${paginas} páginas. Solo se permite 1 página por archivo.` });
+                }
+            } catch (ePdf) {
+                // pdf-lib no pudo abrirlo (corrupto/encriptado atípico). No se bloquea por NO poder contar:
+                // la regla es rechazar multipágina detectada, no trabar archivos ilegibles.
+                logger.warn(`[UploadStream] No se pudo contar páginas de ${finalName}: ${ePdf.message}`);
+            }
         }
 
         const driveUrl = await driveService.uploadToDrive(fileInput, finalName, area || 'GENERAL');

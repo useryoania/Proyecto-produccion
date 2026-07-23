@@ -116,7 +116,11 @@ exports.getBoardData = async (req, res) => {
                     o.UM, o.CantidadImpresa, -- Impresión parcial (TPU: unidades impresas contra Magnitud)
 
                     -- ✅ SUBCONSULTA PARA CONTAR ARCHIVOS (Usando tu tabla dbo.ArchivosOrden)
-                    (SELECT COUNT(*) FROM dbo.ArchivosOrden WITH(NOLOCK) WHERE OrdenID = o.OrdenID) AS CantidadArchivos
+                    (SELECT COUNT(*) FROM dbo.ArchivosOrden WITH(NOLOCK) WHERE OrdenID = o.OrdenID) AS CantidadArchivos,
+
+                    -- Copias del arte: total contra el que se cuenta el avance en MIMAKI (metros = copias × alto)
+                    (SELECT ISNULL(SUM(ISNULL(Copias, 1)), 0) FROM dbo.ArchivosOrden WITH(NOLOCK)
+                      WHERE OrdenID = o.OrdenID AND ISNULL(EstadoArchivo,'') <> 'CANCELADO') AS TotalCopias
 
                 FROM dbo.Ordenes o WITH(NOLOCK)
                 WHERE o.AreaID = @AreaID
@@ -179,7 +183,8 @@ exports.getBoardData = async (req, res) => {
                 printed: !!o.Impreso,       // gate "Finalizar Lote": máquina impresora
                 calandered: !!o.Calandrado, // gate "Finalizar Lote": máquina no-impresora (calandra)
                 um: (o.UM || '').trim(),                    // Impresión parcial (TPU)
-                cantidadImpresa: o.CantidadImpresa || 0,    // unidades ya impresas
+                cantidadImpresa: o.CantidadImpresa || 0,    // unidades/copias ya impresas
+                totalCopias: o.TotalCopias || 0,            // total de copias del arte (avance en MIMAKI)
 
                 // ✅ AQUÍ ASIGNAMOS LA CANTIDAD DE ARCHIVOS
                 fileCount: o.CantidadArchivos || 0
@@ -1166,6 +1171,9 @@ exports.getRollDetails = async (req, res) => {
                     c.IDCliente AS ClienteIdStr,
                     (SELECT COUNT(*) FROM dbo.ArchivosOrden WHERE OrdenID = o.OrdenID) AS CantidadArchivos,
                     (SELECT COUNT(*) FROM dbo.ArchivosOrden WHERE OrdenID = o.OrdenID) AS fileCount,
+                    -- Copias del arte: total contra el que se cuenta el avance en MIMAKI (metros = copias × alto)
+                    (SELECT ISNULL(SUM(ISNULL(Copias, 1)), 0) FROM dbo.ArchivosOrden
+                      WHERE OrdenID = o.OrdenID AND ISNULL(EstadoArchivo,'') <> 'CANCELADO') AS TotalCopias,
                     -- ✅ SUBQUERY FOR GLOBAL STATUS (Sibling Orders via Root Match)
                     (
                         SELECT O2.AreaID, O2.Estado 
@@ -1223,7 +1231,8 @@ exports.getRollDetails = async (req, res) => {
                 printed: !!o.Impreso,
                 calandered: !!o.Calandrado,
                 um: (o.UM || '').trim(),                    // Impresión parcial (TPU)
-                cantidadImpresa: o.CantidadImpresa || 0,    // unidades ya impresas
+                cantidadImpresa: o.CantidadImpresa || 0,    // unidades/copias ya impresas
+                totalCopias: o.TotalCopias || 0,            // total de copias del arte (avance en MIMAKI)
                 groupId: o.GrupoManual,
                 ink: o.Tinta,
                 fileCount: o.CantidadArchivos || o.fileCount || 0,
@@ -1255,11 +1264,26 @@ exports.setOrderPrinted = async (req, res) => {
             .input('OID', sql.Int, Number(orderId))
             .input('P', sql.Bit, printed ? 1 : 0)
             .query(`
+                -- Total del contador parcial: unidades (UM='U', TPU) o copias del arte si el lote
+                -- está en MIMAKI. NULL si la orden no usa contador (ahí no se toca CantidadImpresa).
+                DECLARE @TotalParcial INT = (
+                    SELECT CASE
+                        WHEN UPPER(LTRIM(RTRIM(ISNULL(o.UM,'')))) = 'U'
+                            THEN ISNULL(TRY_CONVERT(INT, TRY_CONVERT(FLOAT, o.Magnitud)), 0)
+                        WHEN LOWER(LTRIM(ISNULL(ce.Nombre,''))) LIKE 'mimaki%'
+                            THEN (SELECT ISNULL(SUM(ISNULL(Copias,1)),0) FROM dbo.ArchivosOrden WITH(NOLOCK)
+                                   WHERE OrdenID = o.OrdenID AND ISNULL(EstadoArchivo,'') <> 'CANCELADO')
+                        ELSE NULL END
+                    FROM dbo.Ordenes o WITH(NOLOCK)
+                    LEFT JOIN dbo.Rollos r WITH(NOLOCK) ON r.RolloID = o.RolloID
+                    LEFT JOIN dbo.ConfigEquipos ce WITH(NOLOCK) ON ce.EquipoID = ISNULL(o.MaquinaID, r.MaquinaID)
+                    WHERE o.OrdenID = @OID
+                );
                 UPDATE dbo.Ordenes SET Impreso = @P,
-                    -- Impresión parcial (órdenes por unidades, UM='U'): el tick manual sincroniza
-                    -- el contador para que Impreso y CantidadImpresa nunca queden inconsistentes.
-                    CantidadImpresa = CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(UM,'')))) = 'U'
-                        THEN CASE WHEN @P = 1 THEN ISNULL(TRY_CONVERT(INT, TRY_CONVERT(FLOAT, Magnitud)), CantidadImpresa) ELSE 0 END
+                    -- Impresión parcial: el tick manual sincroniza el contador para que Impreso y
+                    -- CantidadImpresa nunca queden inconsistentes.
+                    CantidadImpresa = CASE WHEN @TotalParcial IS NOT NULL
+                        THEN CASE WHEN @P = 1 THEN @TotalParcial ELSE 0 END
                         ELSE CantidadImpresa END
                 WHERE OrdenID = @OID
             `);
@@ -1310,16 +1334,35 @@ exports.setOrderCantidadImpresa = async (req, res) => {
             .query(`SELECT UM, Magnitud FROM dbo.Ordenes WITH(NOLOCK) WHERE OrdenID = @OID`);
         if (!ordRes.recordset.length) return res.status(404).json({ error: 'Orden no encontrada' });
 
+        // Dos modos de impresión parcial:
+        //  · UM='U' (TPU): el total son las UNIDADES pedidas (Ordenes.Magnitud).
+        //  · Lote en MIMAKI: el total son las COPIAS del arte (SUM de ArchivosOrden.Copias). Ahí la
+        //    orden va por metros (UM='m') y los metros salen de copias × alto, así que el avance
+        //    real se cuenta en copias impresas.
         const um = String(ordRes.recordset[0].UM || '').trim().toUpperCase();
+        let porCopias = false;
         if (um !== 'U') {
-            return res.status(400).json({ error: 'La impresión parcial solo aplica a órdenes por unidades (UM = U).' });
+            const maqRes = await pool.request()
+                .input('OID', sql.Int, Number(orderId))
+                .query(`SELECT ISNULL(ce.Nombre,'') AS Maquina
+                        FROM dbo.Ordenes o WITH(NOLOCK)
+                        LEFT JOIN dbo.Rollos r WITH(NOLOCK) ON r.RolloID = o.RolloID
+                        LEFT JOIN dbo.ConfigEquipos ce WITH(NOLOCK) ON ce.EquipoID = ISNULL(o.MaquinaID, r.MaquinaID)
+                        WHERE o.OrdenID = @OID`);
+            porCopias = /^\s*mimaki/i.test(String(maqRes.recordset[0]?.Maquina || ''));
+            if (!porCopias) {
+                return res.status(400).json({ error: 'La impresión parcial solo aplica a órdenes por unidades (UM = U) o a lotes en MIMAKI.' });
+            }
         }
 
         const result = await pool.request()
             .input('OID', sql.Int, Number(orderId))
             .input('C', sql.Int, Math.round(Number(cantidad)))
             .query(`
-                DECLARE @Total INT = (SELECT ISNULL(TRY_CONVERT(INT, TRY_CONVERT(FLOAT, Magnitud)), 0) FROM dbo.Ordenes WHERE OrdenID = @OID);
+                DECLARE @Total INT = ${porCopias
+                    ? `(SELECT ISNULL(SUM(ISNULL(Copias, 1)), 0) FROM dbo.ArchivosOrden WITH(NOLOCK)
+                        WHERE OrdenID = @OID AND ISNULL(EstadoArchivo,'') <> 'CANCELADO')`
+                    : `(SELECT ISNULL(TRY_CONVERT(INT, TRY_CONVERT(FLOAT, Magnitud)), 0) FROM dbo.Ordenes WHERE OrdenID = @OID)`};
                 DECLARE @Val INT = CASE WHEN @C < 0 THEN 0 WHEN @Total > 0 AND @C > @Total THEN @Total ELSE @C END;
                 UPDATE dbo.Ordenes
                 SET CantidadImpresa = @Val,
@@ -1455,6 +1498,16 @@ exports.getRollosActivos = async (req, res) => {
                         WHERE o.RolloID = r.RolloID AND o.Variante LIKE '%Tela%'
                     )
                 )
+            )
+            -- ASIGNAR A LOTE: no se ofrecen los lotes que ya están en una CALANDRA. Ese lote ya pasó
+            -- por la impresora, así que sumarle órdenes nuevas las dejaría sin imprimir. Se detecta por
+            -- NOMBRE ('calandra%'), el mismo criterio que usa el resto del sistema (no SeparacionImpresion,
+            -- que está en 0 en impresoras reales como MIMAKI). Los lotes sin máquina (Mesa de Armado)
+            -- siguen apareciendo. En Control de Calidad NO aplica: ahí se controla justamente lo calandrado.
+            AND (
+                ${isControlView ? 1 : 0} = 1
+                OR ce.Nombre IS NULL
+                OR LOWER(LTRIM(ce.Nombre)) NOT LIKE 'calandra%'
             )
             ORDER BY r.FechaCreacion DESC
         `;

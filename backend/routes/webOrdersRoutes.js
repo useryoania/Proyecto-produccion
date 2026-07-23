@@ -81,20 +81,27 @@ router.post('/pickup-orders/mp-payment', verifyToken, webOrdersController.initMp
 // POST /api/web-orders/mp-webhook (Webhook Callback desde MercadoPago)
 router.post('/mp-webhook', webOrdersController.mpWebhook);
 
-// POST /api/web-orders/totem-lookup (Buscar órdenes por código, SIN AUTH - para tótem)
-router.post('/totem-lookup', webOrdersController.totemLookup);
+// ── TÓTEM ────────────────────────────────────────────────────────────────────
+// No llevan verifyToken (el tótem no tiene usuario logueado) pero SÍ totemAuth: exigen el token
+// de dispositivo. Antes estaban totalmente abiertas y el único control era un chequeo de IP en el
+// front, que solo escondía la pantalla. Con TOTEM_TOKEN vacío el middleware deja pasar (dev).
+const { totemAuth } = require('../middleware/totemAuth');
 
-// POST /api/web-orders/totem-lookup-by-client (Buscar órdenes por QR del cliente, SIN AUTH - para tótem)
-router.post('/totem-lookup-by-client', webOrdersController.totemLookupByClient);
+// POST /api/web-orders/totem-lookup (Buscar órdenes por código)
+router.post('/totem-lookup', totemAuth, webOrdersController.totemLookup);
 
-// GET /api/web-orders/totem-verify (Verificar IP del tótem, SIN AUTH)
+// POST /api/web-orders/totem-lookup-by-client (Buscar órdenes por QR del cliente)
+router.post('/totem-lookup-by-client', totemAuth, webOrdersController.totemLookupByClient);
+
+// GET /api/web-orders/totem-verify (¿este equipo está autorizado?) — SIN totemAuth a propósito:
+// debe poder contestar { authorized:false } para que el tótem muestre la pantalla de bloqueo.
 router.get('/totem-verify', webOrdersController.totemVerify);
 
-// POST /api/web-orders/totem-create-pickup (Crear retiro desde tótem, SIN AUTH)
-router.post('/totem-create-pickup', webOrdersController.totemCreatePickup);
+// POST /api/web-orders/totem-create-pickup (Crear retiro desde tótem)
+router.post('/totem-create-pickup', totemAuth, webOrdersController.totemCreatePickup);
 
-// POST /api/web-orders/totem-announce (Anunciarse con orden de retiro, SIN AUTH)
-router.post('/totem-announce', webOrdersController.totemAnnounce);
+// POST /api/web-orders/totem-announce (Anunciarse con orden de retiro)
+router.post('/totem-announce', totemAuth, webOrdersController.totemAnnounce);
 
 // POST /api/web-orders/handy-refund (Solicitar Devolución a Handy)
 router.post('/handy-refund', verifyToken, webOrdersController.createHandyRefund);

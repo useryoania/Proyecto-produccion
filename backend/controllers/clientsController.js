@@ -310,14 +310,20 @@ exports.getAllMacrosoftClients = async (req, res) => {
 
 // Buscar Clientes (Autocompletado)
 exports.searchClients = async (req, res) => {
-    const { q } = req.query; // Lo que escribe el usuario
+    // El término se recorta y se acota: los nombres salen de columnas CHAR y arrastran decenas de
+    // espacios de padding ("Vestir Corporativo SRL" + 130 espacios). Al buscar con ese texto, el
+    // valor superaba el NVarChar(100) declarado y SQL rechazaba el parámetro entero
+    // ("Data type 0xE7 has an invalid data length") → 500. Además el padding nunca matchea.
+    const termino = String(req.query.q ?? '').trim().slice(0, 100);
     try {
+        if (!termino) return res.json([]);
         const pool = await getPool();
         const result = await pool.request()
-            .input('term', sql.NVarChar(100), `%${q}%`)
+            .input('term', sql.NVarChar(200), `%${termino}%`)
             .query('SELECT TOP 10 * FROM dbo.Clientes WHERE Nombre LIKE @term OR IDCliente LIKE @term OR NombreFantasia LIKE @term');
         res.json(result.recordset);
     } catch (err) {
+        logger.error(`[clients/search] Error buscando "${termino}": ${err.message}`);
         res.status(500).json({ error: err.message });
     }
 };

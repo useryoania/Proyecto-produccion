@@ -152,7 +152,9 @@ exports.previewOnDemand = async (req, res) => {
             try {
                 if (reqIdReact) {
                     const parsedReact = parseInt(reqIdReact);
-                    if (!isNaN(parsedReact)) {
+                    // IDReact 0 no es un vínculo válido (fallback de "sin cliente"): en Clientes hay
+                    // filas con IDReact = 0 y matchearlas asigna la orden a un cliente real al azar.
+                    if (!isNaN(parsedReact) && parsedReact > 0) {
                         let creq = await pool.request()
                             .input('c', sql.Int, parsedReact)
                             .query("SELECT TOP 1 CliIdCliente, IDCliente, Nombre FROM Clientes WHERE IDReact = @c");

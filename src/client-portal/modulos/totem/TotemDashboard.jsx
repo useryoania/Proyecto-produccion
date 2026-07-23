@@ -5,6 +5,7 @@ import { Logo } from '../../../components/Logo';
 import Swal from 'sweetalert2';
 import Lottie from 'lottie-react';
 import confettiAnim from '../../../assets/animations/confetti.json';
+import { totemHeaders } from './totemAuth';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -135,7 +136,7 @@ export const TotemDashboard = ({ onLogout }) => {
         try {
             const res = await fetch(`${API_BASE}/web-orders/totem-lookup`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: totemHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ orderCode: fullCode })
             });
             const data = await res.json();
@@ -161,7 +162,7 @@ export const TotemDashboard = ({ onLogout }) => {
         try {
             const res = await fetch(`${API_BASE}/web-orders/totem-lookup-by-client`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: totemHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ qr: raw })
             });
             const data = await res.json();
@@ -266,7 +267,7 @@ export const TotemDashboard = ({ onLogout }) => {
 
             const res = await fetch(`${API_BASE}/web-orders/totem-create-pickup`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: totemHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({
                     orders: selectedOrders,
                     totalCost: totalCost.toFixed(2),
@@ -323,7 +324,7 @@ export const TotemDashboard = ({ onLogout }) => {
         try {
             const res = await fetch(`${API_BASE}/web-orders/totem-announce`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: totemHeaders({ 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ ordenRetiroNum: announceNumber })
             });
             const data = await res.json();

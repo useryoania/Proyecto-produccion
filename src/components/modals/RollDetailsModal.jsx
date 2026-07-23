@@ -344,7 +344,7 @@ const MoveOrderModal = ({ isOpen, onClose, onConfirm, currentRollId, areaCode })
     );
 };
 
-const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lockReorder = false, readOnly = false }) => {
+const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lockReorder = false, readOnly = false, avancePorCopias = false }) => {
     // Referencia para cerrar al hacer clic fuera
     const modalRef = useRef(null);
 
@@ -518,10 +518,16 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     // Ver docs/impresion-parcial-plan.md
     const esOrdenTPU = (o) => /^TPU-/i.test(o?.code || '');
     const isLoteTPU = totalOrders > 0 && orders.every(esOrdenTPU);
+    // MIMAKI (avancePorCopias): mismo contador pero el total son las COPIAS del arte, no las
+    // unidades — ahí la orden va por metros (metros = copias × alto) y el avance real se cuenta
+    // en copias impresas. El resto de las máquinas sigue con el tick binario.
+    const usaContador = (o) => esOrdenTPU(o) || avancePorCopias;
     const [cantidadesLocal, setCantidadesLocal] = useState({});
     const [editandoCantidad, setEditandoCantidad] = useState(null); // orderId en edición
     const getCantidadImpresa = (o) => cantidadesLocal[o.id] !== undefined ? cantidadesLocal[o.id] : (o.cantidadImpresa || 0);
-    const getTotalUnidades = (o) => Math.max(1, Math.round(o.magnitude || 0));
+    const getTotalUnidades = (o) => avancePorCopias && !esOrdenTPU(o)
+        ? Math.max(1, Math.round(o.totalCopias || 0))
+        : Math.max(1, Math.round(o.magnitude || 0));
     const printedUnits = orders.reduce((s, o) => s + (esOrdenTPU(o) ? Math.min(getCantidadImpresa(o), getTotalUnidades(o)) : 0), 0);
 
     // Al llegar datos frescos del server, soltar los overrides locales (el server es la verdad)
@@ -556,10 +562,11 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     // Clave de AGRUPADO: en Tela de Cliente se agrupa por Referencia de la bobina (solo si es igual);
     // en el resto, por material. Así dos telas de cliente solo se juntan si comparten Referencia.
     const groupKeyOf = (o) => (o?.referencia != null && String(o.referencia).trim() !== '') ? ('REF:' + String(o.referencia).trim()) : materialOf(o);
-    // Órdenes de falla (-F): se detectan por el código (…-F{archivoId}) y se agrupan aparte de las
-    // normales (mismo criterio de agrupado, pero grupo propio).
+    // Órdenes de falla (-F): se detectan por el código (…-F{archivoId}). Se agrupan por MATERIAL
+    // junto con las normales (antes iban a un grupo propio con header magenta). El indicador de
+    // falla va en la FILA de cada orden (su prioridad), no en el header del grupo.
     const isFalla = (o) => /-F\d+/i.test(o?.code || o?.CodigoOrden || '');
-    const matKey = (o) => (groupKeyOf(o) || '—') + (isFalla(o) ? '::F' : '');
+    const matKey = (o) => (groupKeyOf(o) || '—');
     // Fecha y hora de ingreso de la orden (FechaIngreso), formato corto dd/mm/aa hh:mm.
     const fmtEntry = (d) => {
         if (!d) return '';
@@ -568,11 +575,10 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     };
     const selectedOrders = orders.filter(o => selectedOrderIds.includes(o.id));
     const selectedMaterials = [...new Set(selectedOrders.map(groupKeyOf).filter(Boolean))];
-    // "Agrupar" solo se habilita con 2+ órdenes del MISMO material, del MISMO tipo (todas -F o todas
-    // normales — una -F no se agrupa con una normal) y SIN ninguna impresa.
+    // "Agrupar" se habilita con 2+ órdenes del MISMO material y SIN ninguna impresa. Las -F ya no
+    // son un tipo aparte: se agrupan con las normales del mismo material como cualquier otra.
     const selectedHasPrinted = selectedOrders.some(o => printedOrderIds.includes(o.id));
-    const selectedFallaKinds = [...new Set(selectedOrders.map(isFalla))];
-    const canGroup = selectedOrders.length >= 2 && selectedMaterials.length === 1 && selectedFallaKinds.length === 1 && !selectedHasPrinted;
+    const canGroup = selectedOrders.length >= 2 && selectedMaterials.length === 1 && !selectedHasPrinted;
 
     // Grupos manuales — persistidos en BACKEND (Ordenes.GrupoManual). Se derivan de las órdenes:
     // las que comparten GrupoManual (>=2) forman un grupo.
@@ -700,12 +706,11 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         orders.forEach(o => {
             let key, kind;
             if (!isSB) { key = 'l:' + o.id; kind = 'loose'; }
-            else if (isFalla(o)) { key = 'f:' + matKey(o); kind = 'auto'; } // -F: SIEMPRE en su grupo propio (header magenta), aunque sea recién movida/asignada — no pasa por el bloque "nueva" amarillo
             else if (isNewOrder(o.id)) { key = 'new:' + o.id; kind = 'new'; } // recién asignada/movida → bloque propio al final
             else if (manualIdxOf[o.id] !== undefined) { key = 'm' + manualIdxOf[o.id]; kind = 'manual'; }
             else if (matCount[matKey(o)] === 1) { key = 'a:' + matKey(o); kind = 'auto'; }
-            else { key = 'lm:' + matKey(o); kind = 'loose'; } // sueltas del mismo material (y mismo tipo -F/normal) = un bloque
-            if (!byKey[key]) { byKey[key] = { key, kind, material: matDisplay(o) || '—', isFalla: isFalla(o), orders: [] }; list.push(byKey[key]); }
+            else { key = 'lm:' + matKey(o); kind = 'loose'; } // sueltas del mismo material (fallas incluidas) = un bloque
+            if (!byKey[key]) { byKey[key] = { key, kind, material: matDisplay(o) || '—', orders: [] }; list.push(byKey[key]); }
             byKey[key].orders.push(o);
         });
         // Firma estable por unidad (ids ordenados) — la usan el drag y la marca de bloqueo.
@@ -747,7 +752,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                             tail.push({
                                 key: 'seq:' + u.key,
                                 kind: todasNuevas ? 'new' : 'outseq',
-                                material: u.material, isFalla: u.isFalla, orders: fuera,
+                                material: u.material, orders: fuera,
                             });
                         }
                     });
@@ -821,11 +826,11 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
             return;
         }
         setPrintedOrderIds(prev => willPrint ? [...new Set([...prev, ...ids])] : prev.filter(x => !ids.includes(x)));
-        // TPU: el toggle grupal sincroniza también los contadores de unidades
+        // TPU / MIMAKI: el toggle grupal sincroniza también los contadores (unidades o copias)
         // (el backend hace lo mismo en DB: tick manual → CantidadImpresa = total/0)
         setCantidadesLocal(prev => {
             const next = { ...prev };
-            unit.orders.filter(esOrdenTPU).forEach(o => { next[o.id] = willPrint ? getTotalUnidades(o) : 0; });
+            unit.orders.filter(usaContador).forEach(o => { next[o.id] = willPrint ? getTotalUnidades(o) : 0; });
             return next;
         });
         ids.forEach(id => {
@@ -1607,7 +1612,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                 <div className="w-10 flex justify-center">
                                   {!readOnly && <input type="checkbox" className="w-4 h-4 rounded border-zinc-300 text-brand-cyan focus:ring-brand-cyan cursor-pointer" checked={orders.length > 0 && selectedOrderIds.length === orders.length} onChange={handleToggleAll} />}
                                 </div>
-                                <button type="button" onClick={handleSortByCode} disabled={readOnly} title="Ordenar por número de orden" className={`w-28 px-2 flex items-center gap-1.5 text-[10px] uppercase font-black tracking-widest text-zinc-500 transition-colors ${readOnly ? 'cursor-default' : 'hover:text-brand-cyan cursor-pointer'}`}>Orden {!readOnly && <i className={`fa-solid ${ordenAsc === null ? 'fa-sort text-zinc-300' : ordenAsc ? 'fa-arrow-down-1-9' : 'fa-arrow-up-9-1'}`} />}</button>
+                                <button type="button" onClick={handleSortByCode} disabled={readOnly} title="Ordenar por número de orden" className={`w-36 px-2 flex items-center gap-1.5 text-[10px] uppercase font-black tracking-widest text-zinc-500 transition-colors ${readOnly ? 'cursor-default' : 'hover:text-brand-cyan cursor-pointer'}`}>Orden {!readOnly && <i className={`fa-solid ${ordenAsc === null ? 'fa-sort text-zinc-300' : ordenAsc ? 'fa-arrow-down-1-9' : 'fa-arrow-up-9-1'}`} />}</button>
                                 <div className="flex-1 min-w-[150px] px-2">Cliente / Trabajo</div>
                                 {readOnly ? (
                                   <div className="flex-1 min-w-[150px] px-2 flex items-center gap-2">
@@ -1647,9 +1652,8 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                             {(p, snap) => (
                                               <div ref={p.innerRef} {...p.draggableProps} className={`rounded-xl border overflow-hidden ${snap.isDragging ? 'bg-white shadow-2xl border-brand-cyan/50 ring-1 ring-brand-cyan/30' : (unit.kind === 'new' || unit.kind === 'outseq') ? 'border-amber-300' : 'border-zinc-200'}`}>
                                                 {isGroup && (
-                                                  <div className={`flex items-center justify-between gap-2 px-4 py-2 tablet:px-2 tablet:py-1 ${(unit.kind === 'new' || unit.kind === 'outseq') ? 'bg-amber-50' : unit.isFalla ? 'bg-brand-magenta/50' : 'bg-zinc-100/70'}`}>
+                                                  <div className={`flex items-center justify-between gap-2 px-4 py-2 tablet:px-2 tablet:py-1 ${(unit.kind === 'new' || unit.kind === 'outseq') ? 'bg-amber-50' : 'bg-zinc-100/70'}`}>
                                                     <span className="text-xs font-black text-zinc-700 uppercase tracking-wide flex items-center gap-2 truncate">
-                                                      {unit.isFalla && <span className="px-1.5 py-0.5 rounded bg-brand-magenta text-white text-[9px] font-black tracking-wider shrink-0" title="Grupo de falla (-F)">Falla</span>}
                                                       {unit.kind === 'new'
                                                         ? <span className="px-1.5 py-0.5 rounded bg-amber-400 text-white text-[9px] font-black tracking-wider" title="Orden nueva: agrupala a su grupo con el botón Agrupar">NUEVA</span>
                                                         : unit.kind === 'outseq'
@@ -1661,15 +1665,10 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                     </span>
                                                     <span className="text-[11px] font-bold text-zinc-500 whitespace-nowrap flex items-center gap-1.5">
                                                       {!readOnly && <input type="checkbox" checked={unit.orders.length > 0 && unit.orders.every(o => printedOrderIds.includes(o.id))} onChange={() => handleToggleGroupPrinted(unit)} onClick={(e) => e.stopPropagation()} title={`Marcar/desmarcar todo el grupo como ${lockReorder ? 'calandrado' : 'impreso'}`} className="w-4 h-4 rounded border-zinc-300 accent-emerald-500 cursor-pointer mr-1" />}
-                                                      {/* El total del grupo SIEMPRE es la suma de sus órdenes — también en los grupos de
-                                                          falla, donde antes era un número aparte que se cargaba a mano y podía no coincidir
-                                                          con la suma real. Los metros se editan por orden (columna METROS); acá solo se
-                                                          muestran sumados. */}
+                                                      {/* El total del grupo SIEMPRE es la suma de sus órdenes (las de falla incluidas).
+                                                          Los metros se editan por orden (columna METROS); acá solo se muestran sumados. */}
                                                       {unit.orders.length} {unit.orders.length === 1 ? 'orden' : 'órdenes'} · {' '}
-                                                      <span
-                                                        className={`font-black ${unit.isFalla ? 'text-zinc-100' : 'text-brand-cyan'}`}
-                                                        title={unit.isFalla ? 'Suma de los metros de las órdenes del grupo (se edita en cada orden)' : undefined}
-                                                      >
+                                                      <span className="font-black text-brand-cyan">
                                                         {groupMeters.toFixed(2)} m
                                                       </span>
                                                       {!readOnly && unit.kind === 'manual' && (
@@ -1684,11 +1683,13 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                 {unit.orders.map((o, oi) => { return (
                                                   <Draggable key={`o-${o.id}`} draggableId={`o-${o.id}`} index={oi} isDragDisabled={printedOrderIds.includes(o.id) || unit.kind === 'new' || lockReorder || readOnly}>
                                                     {(op, osnap) => (
-                                                  <div ref={op.innerRef} {...op.draggableProps} className={`flex items-center py-2 tablet:py-1 border-t border-zinc-100 first:border-t-0 transition-colors ${osnap.isDragging ? 'bg-white shadow-lg ring-1 ring-brand-cyan/40' : selectedOrderIds.includes(o.id) ? 'bg-brand-cyan/10' : printedOrderIds.includes(o.id) ? 'bg-emerald-50/60' : 'hover:bg-slate-50'}`}>
+                                                  <div ref={op.innerRef} {...op.draggableProps} className={`flex items-center py-2 tablet:py-1 border-t border-zinc-100 first:border-t-0 transition-colors ${osnap.isDragging ? 'bg-white shadow-lg ring-1 ring-brand-cyan/40' : selectedOrderIds.includes(o.id) ? 'bg-brand-cyan/10' : isFalla(o) ? 'bg-brand-magenta/10' : printedOrderIds.includes(o.id) ? 'bg-emerald-50/60' : 'hover:bg-slate-50'}`}>
                                                     <div className="w-10 flex justify-center">
                                                       {!readOnly && <input type="checkbox" className="w-4 h-4 rounded border-zinc-300 text-brand-cyan focus:ring-brand-cyan cursor-pointer" checked={selectedOrderIds.includes(o.id)} onChange={() => handleToggleOne(o.id)} />}
                                                     </div>
-                                                    <div className="w-28 px-2 font-mono text-xs break-all">
+                                                    {/* w-36 (no w-28): los códigos de falla (…-F10759) no entran en 28 y se partían
+                                                        a mitad de número. break-words en vez de break-all: solo corta si no entra. */}
+                                                    <div className="w-36 px-2 font-mono text-xs break-words">
                                                       <div className="font-bold text-zinc-700">{o.code || o.CodigoOrden}</div>
                                                       {o.entryDate && <div className="text-[10px] font-normal text-zinc-400 mt-0.5">{fmtEntry(o.entryDate)}</div>}
                                                     </div>
@@ -1704,6 +1705,8 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                       {o.fileCount > 0 ? <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-brand-cyan/10 text-brand-cyan text-[10px] font-black border border-brand-cyan/30">{o.fileCount}</span> : <span className="text-zinc-200 text-xs">—</span>}
                                                     </div>
                                                     <div className="w-24 text-center">
+                                                      {/* Los metros de la falla se editan SOLO en la impresora: en la calandra
+                                                          (lockReorder) y en el Historial (readOnly) van como texto fijo. */}
                                                       {isFalla(o) && !lockReorder && !readOnly ? (
                                                         <span className="inline-flex items-center gap-0.5 justify-center" onClick={(e) => e.stopPropagation()}>
                                                           <input
@@ -1737,9 +1740,44 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                       {!readOnly && (<>
                                                       <button onClick={() => openMoveModal(o)} className="w-7 h-7 tablet:w-6 tablet:h-6 flex items-center justify-center rounded-lg text-zinc-400 hover:text-brand-cyan hover:bg-brand-cyan/10 transition-all" title="Mover a otro Lote"><i className="fa-solid fa-arrow-right-arrow-left text-sm tablet:text-xs" /></button>
                                                       <button onClick={() => handleUnassign(o)} className="w-7 h-7 tablet:w-6 tablet:h-6 flex items-center justify-center rounded-lg text-zinc-400 hover:text-brand-magenta hover:bg-brand-magenta/10 transition-all" title="Sacar del Rollo"><i className="fa-solid fa-rotate-left text-sm tablet:text-xs" /></button>
+                                                      {/* Avance de impresión — TPU: contador por unidades; MIMAKI: contador por copias; resto: tick binario */}
+                                                      {usaContador(o) ? (
+                                                        <div onClick={e => e.stopPropagation()} className="flex items-center">
+                                                          {editandoCantidad === o.id ? (
+                                                            <input
+                                                              autoFocus
+                                                              type="number"
+                                                              min={0}
+                                                              max={getTotalUnidades(o)}
+                                                              defaultValue={getCantidadImpresa(o)}
+                                                              onBlur={e => handleGuardarCantidad(o, e.target.value)}
+                                                              onKeyDown={e => {
+                                                                if (e.key === 'Enter') e.target.blur();
+                                                                if (e.key === 'Escape') setEditandoCantidad(null);
+                                                              }}
+                                                              className="w-16 text-center text-xs font-black border-2 border-brand-cyan rounded-lg py-1 outline-none"
+                                                            />
+                                                          ) : (
+                                                            <button
+                                                              disabled={readOnly}
+                                                              onClick={() => !readOnly && setEditandoCantidad(o.id)}
+                                                              title={`${avancePorCopias && !esOrdenTPU(o) ? 'Copias' : 'Unidades'} impresas / total — clic para cargar el avance`}
+                                                              className={`px-2 py-1 rounded-lg text-[11px] font-black border whitespace-nowrap transition-colors ${getCantidadImpresa(o) >= getTotalUnidades(o)
+                                                                ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                                                : getCantidadImpresa(o) > 0
+                                                                  ? 'bg-amber-50 text-amber-600 border-amber-300'
+                                                                  : 'bg-white text-zinc-400 border-zinc-200 hover:border-brand-cyan/50 hover:text-brand-cyan'}`}
+                                                            >
+                                                              {getCantidadImpresa(o) >= getTotalUnidades(o) && <i className="fa-solid fa-check mr-1" />}
+                                                              {getCantidadImpresa(o)}/{getTotalUnidades(o)}
+                                                            </button>
+                                                          )}
+                                                        </div>
+                                                      ) : (
                                                       <label className={`w-7 h-7 tablet:w-6 tablet:h-6 flex items-center justify-center rounded-lg transition-all ${canTogglePrinted(o.id) ? 'cursor-pointer' : 'opacity-40 cursor-not-allowed'} ${printedOrderIds.includes(o.id) ? 'text-emerald-600 bg-emerald-50' : 'text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50'}`} title={!canTogglePrinted(o.id) ? (printedOrderIds.includes(o.id) ? 'Desmarcá primero las posteriores' : 'Marcá primero las anteriores') : (printedOrderIds.includes(o.id) ? `Marcar como NO ${lockReorder ? 'calandrado' : 'impreso'}` : `Marcar ${lockReorder ? 'calandrado' : 'impreso'}`)}>
                                                         <input type="checkbox" disabled={!canTogglePrinted(o.id)} className="w-4 h-4 rounded border-zinc-300 accent-emerald-500 cursor-pointer disabled:cursor-not-allowed" checked={printedOrderIds.includes(o.id)} onChange={() => handleTogglePrinted(o.id)} />
                                                       </label>
+                                                      )}
                                                       {!printedOrderIds.includes(o.id) && unit.kind !== 'new' && !lockReorder && <div {...op.dragHandleProps} className="w-7 h-7 tablet:w-6 tablet:h-6 flex items-center justify-center rounded-lg text-zinc-300 hover:text-zinc-600 cursor-grab active:cursor-grabbing" title="Arrastrar orden"><i className="fa-solid fa-grip-vertical text-sm tablet:text-xs" /></div>}
                                                       </>)}
                                                     </div>
@@ -1784,7 +1822,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                             />}
                                         </th>
                                         <th className="px-4 py-3 w-10 text-center text-zinc-300">#</th>
-                                        <th className="px-4 py-3 w-28"><button type="button" onClick={handleSortByCode} disabled={readOnly} title="Ordenar por número de orden" className={`flex items-center gap-1.5 uppercase font-black tracking-widest transition-colors ${readOnly ? 'cursor-default' : 'hover:text-brand-cyan cursor-pointer'}`}>Orden {!readOnly && <i className={`fa-solid ${ordenAsc === null ? 'fa-sort text-zinc-300' : ordenAsc ? 'fa-arrow-down-1-9' : 'fa-arrow-up-9-1'}`} />}</button></th>
+                                        <th className="px-4 py-3 w-36"><button type="button" onClick={handleSortByCode} disabled={readOnly} title="Ordenar por número de orden" className={`flex items-center gap-1.5 uppercase font-black tracking-widest transition-colors ${readOnly ? 'cursor-default' : 'hover:text-brand-cyan cursor-pointer'}`}>Orden {!readOnly && <i className={`fa-solid ${ordenAsc === null ? 'fa-sort text-zinc-300' : ordenAsc ? 'fa-arrow-down-1-9' : 'fa-arrow-up-9-1'}`} />}</button></th>
                                         <th className="px-4 py-3 w-48">Cliente / Trabajo</th>
                                         <th className="px-4 py-3 w-48">Material / Variante</th>
                                         <th className="px-4 py-3 w-16 text-center"><i className="fa-solid fa-paperclip" /></th>
@@ -1811,15 +1849,15 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                 return (
                                                 <React.Fragment key={unit.key}>
                                                 {isGroup && (
-                                                    <tr className={`${unit.isFalla ? 'bg-brand-magenta/50' : 'bg-zinc-100/70'} select-none ${ui === 0 ? '' : '[&>td]:border-t-8 [&>td]:border-zinc-200'}`}>
+                                                    <tr className={`bg-zinc-100/70 select-none ${ui === 0 ? '' : '[&>td]:border-t-8 [&>td]:border-zinc-200'}`}>
                                                         <td colSpan="10" className="px-4 py-2.5">
                                                             <div className="flex items-center justify-between gap-2">
                                                                 <span className="text-xs font-black text-zinc-700 uppercase tracking-wide flex items-center gap-2 truncate">
-                                                                    {unit.isFalla && <span className="px-1.5 py-0.5 rounded bg-brand-magenta text-white text-[9px] font-black tracking-wider shrink-0" title="Grupo de falla (-F)">Falla</span>}<i className="fa-solid fa-layer-group text-brand-cyan" /> {unit.material}
+                                                                    <i className="fa-solid fa-layer-group text-brand-cyan" /> {unit.material}
                                                                 </span>
                                                                 <span className="text-[11px] font-bold text-zinc-500 whitespace-nowrap flex items-center gap-1.5">
                                                                     {!readOnly && <input type="checkbox" checked={unit.orders.length > 0 && unit.orders.every(o => printedOrderIds.includes(o.id))} onChange={() => handleToggleGroupPrinted(unit)} onClick={(e) => e.stopPropagation()} title={`Marcar/desmarcar todo el grupo como ${lockReorder ? 'calandrado' : 'impreso'}`} className="w-4 h-4 rounded border-zinc-300 accent-emerald-500 cursor-pointer mr-1" />}
-                                                                    {unit.orders.length} {unit.orders.length === 1 ? 'orden' : 'órdenes'} · <span className={`font-black ${unit.isFalla ? 'text-zinc-100' : 'text-brand-cyan'}`}>{groupMeters.toFixed(2)} m</span>
+                                                                    {unit.orders.length} {unit.orders.length === 1 ? 'orden' : 'órdenes'} · <span className="font-black text-brand-cyan">{groupMeters.toFixed(2)} m</span>
                                                                     {!readOnly && unit.kind === 'manual' && (
                                                                         <button onClick={() => handleDesagrupar(unit.orders.map(o => o.id))} title="Desagrupar" className="ml-1 w-5 h-5 flex items-center justify-center rounded text-zinc-400 hover:text-brand-magenta hover:bg-brand-magenta/10">
                                                                             <i className="fa-solid fa-link-slash text-[10px]" />
@@ -1840,7 +1878,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                                 ...provided.draggableProps.style,
                                                                 ...(snapshot.isDragging ? { display: 'table', tableLayout: 'fixed' } : {})
                                                             }}
-                                                            className={`transition-colors group ${selectedOrderIds.includes(o.id) ? 'bg-brand-cyan/10' : printedOrderIds.includes(o.id) ? 'bg-emerald-50/60' : 'hover:bg-slate-50'} ${snapshot.isDragging ? 'bg-white shadow-xl ring-1 ring-brand-cyan/50 opacity-90' : ''} ${(!isGroup && isSB && ui !== 0 && oi === 0) ? '[&>td]:border-t-8 [&>td]:border-zinc-200' : ''}`}
+                                                            className={`transition-colors group ${selectedOrderIds.includes(o.id) ? 'bg-brand-cyan/10' : isFalla(o) ? 'bg-brand-magenta/10' : printedOrderIds.includes(o.id) ? 'bg-emerald-50/60' : 'hover:bg-slate-50'} ${snapshot.isDragging ? 'bg-white shadow-xl ring-1 ring-brand-cyan/50 opacity-90' : ''} ${(!isGroup && isSB && ui !== 0 && oi === 0) ? '[&>td]:border-t-8 [&>td]:border-zinc-200' : ''}`}
                                                         >
                                                             <td className="px-2 py-0 align-middle w-10">
                                                                 <div className="flex items-center justify-center gap-1.5 h-full">
@@ -1858,7 +1896,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                                 </div>
                                                             </td>
                                             <td className="px-4 py-3 text-center text-zinc-300 font-mono text-xs w-10">{idx + 1}</td>
-                                            <td className="px-4 py-3 font-mono text-xs w-28 break-all">
+                                            <td className="px-4 py-3 font-mono text-xs w-36 break-words">
                                                 <div className="font-bold text-zinc-700">{o.code || o.CodigoOrden}</div>
                                                 {o.entryDate && <div className="text-[10px] text-zinc-400 mt-0.5 whitespace-nowrap">{fmtEntry(o.entryDate)}</div>}
                                             </td>
@@ -1932,8 +1970,9 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                     >
                                                         <i className="fa-solid fa-rotate-left text-sm" />
                                                     </button>
-                                                    {/* 4ta acción: avance de impresión — TPU: contador por unidades; resto: tick binario */}
-                                                    {esOrdenTPU(o) ? (
+                                                    {/* 4ta acción: avance de impresión — TPU: contador por unidades; MIMAKI: contador
+                                                        por copias; resto: tick binario */}
+                                                    {usaContador(o) ? (
                                                         <div onClick={e => e.stopPropagation()} className="flex items-center">
                                                             {editandoCantidad === o.id ? (
                                                                 <input
@@ -1953,7 +1992,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                                 <button
                                                                     disabled={readOnly}
                                                                     onClick={() => !readOnly && setEditandoCantidad(o.id)}
-                                                                    title="Unidades impresas / total — clic para cargar el avance del día"
+                                                                    title={`${avancePorCopias && !esOrdenTPU(o) ? 'Copias' : 'Unidades'} impresas / total — clic para cargar el avance`}
                                                                     className={`px-2 py-1 rounded-lg text-[11px] font-black border whitespace-nowrap transition-colors ${getCantidadImpresa(o) >= getTotalUnidades(o)
                                                                         ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
                                                                         : getCantidadImpresa(o) > 0

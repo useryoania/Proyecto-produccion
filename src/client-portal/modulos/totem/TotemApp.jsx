@@ -4,6 +4,7 @@ import { TotemDashboard } from './TotemDashboard';
 import { ShieldX } from 'lucide-react';
 import { Logo } from '../../../components/Logo'
 import ParticlesCanvas from '../../../components/ui/ParticlesCanvas';
+import { activarDesdeURL, totemHeaders } from './totemAuth';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const INACTIVITY_TIMEOUT = 2 * 60 * 1000; // 2 minutes
@@ -13,11 +14,13 @@ export const TotemApp = () => {
     const [sessionKey, setSessionKey] = useState(0);
     const timeoutRef = useRef(null);
 
-    // Verify IP on mount
+    // Autorización por TOKEN DE DISPOSITIVO (antes era por IP; el local ya no tiene IP fija).
+    // Si la URL trae ?activar=TOKEN se guarda en este equipo y queda activado para siempre.
     useEffect(() => {
         const verify = async () => {
+            activarDesdeURL();
             try {
-                const res = await fetch(`${API_BASE}/web-orders/totem-verify`);
+                const res = await fetch(`${API_BASE}/web-orders/totem-verify`, { headers: totemHeaders() });
                 const data = await res.json();
                 if (data.authorized) {
                     setScreen('welcome');

@@ -35,14 +35,17 @@ export const FloatingDownloadPanel = () => {
 
     // Calcular velocidad de descarga
     useEffect(() => {
-        if (state.phase !== 'downloading') {
+        // También en 'processing': la descarga archivo-por-archivo reporta bytes en esa fase y sin
+        // esto la velocidad quedaba siempre en 0.
+        if (state.phase !== 'downloading' && state.phase !== 'processing') {
             setSpeedBytes(0);
             setLastBytes(0);
             return;
         }
 
         const interval = setInterval(() => {
-            setSpeedBytes(state.bytesDownloaded - lastBytes);
+            // Al pasar al archivo siguiente los bytes vuelven a 0 → el delta da negativo: se ignora.
+            setSpeedBytes(Math.max(0, state.bytesDownloaded - lastBytes));
             setLastBytes(state.bytesDownloaded);
         }, 1000);
 
@@ -162,6 +165,14 @@ export const FloatingDownloadPanel = () => {
                             ) : state.phase === 'processing' ? (
                                 <>
                                     <span>Archivo {state.currentFile} de {state.totalFiles}</span>
+                                    {/* Bytes del archivo EN CURSO: sin esto, bajando uno pesado el panel
+                                        quedaba clavado en "Archivo 3 de 11" y parecía colgado. */}
+                                    {state.bytesDownloaded > 0 && (
+                                        <span className="text-cyan-600">
+                                            {formatBytes(state.bytesDownloaded)}{state.totalBytes > 0 ? ` / ${formatBytes(state.totalBytes)}` : ''}
+                                        </span>
+                                    )}
+                                    {speedBytes > 0 && <span className="text-cyan-600">{formatSpeed(speedBytes)}</span>}
                                     <span>{percentage}%</span>
                                 </>
                             ) : state.phase === 'done' ? (

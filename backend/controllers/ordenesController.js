@@ -175,9 +175,12 @@ const getOrdenByCodigo = async (req, res) => {
 
 // Helper: Buscar Cliente Local por IDReact que llega en QR
 const getClientePorIDReact = async (pool, idReactQR) => {
-  // Si el valor no puede ser un entero válido, no hay match posible
+  // Si el valor no puede ser un entero válido, no hay match posible.
+  // '0' TAMPOCO es un vínculo válido: es el fallback que estampa la etiqueta cuando la orden
+  // no tiene cliente (LabelGenerationService), y en Clientes hay filas con IDReact = 0 —
+  // matchearlas asignaba TODAS las órdenes huérfanas a un cliente real al azar (TOP 1).
   const idNum = parseInt(String(idReactQR).replace(',', '.'), 10);
-  if (isNaN(idNum)) return null;
+  if (isNaN(idNum) || idNum <= 0) return null;
 
   const result = await pool.request()
     .input('IDReactQR', sql.Int, idNum)

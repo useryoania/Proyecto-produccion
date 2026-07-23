@@ -83,7 +83,9 @@ exports.createPlanillaOrder = async (req, res) => {
             // 1. Intentar por IDReact primero si viene explícito
             if (clienteInfo.idReact) {
                 const parsedReact = parseInt(clienteInfo.idReact);
-                if (!isNaN(parsedReact)) {
+                // IDReact 0 no es un vínculo válido (fallback de "sin cliente"): en Clientes hay
+                // filas con IDReact = 0 y matchearlas asigna la orden a un cliente real al azar.
+                if (!isNaN(parsedReact) && parsedReact > 0) {
                     logger.info(`🔍 Buscando cliente por IDReact explícito: ${parsedReact}...`);
                     const clientSearch = await pool.request()
                         .input('Val', sql.Int, parsedReact)
