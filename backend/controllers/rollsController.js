@@ -15,9 +15,21 @@ async function ensureOrderColumns(pool) {
             ALTER TABLE dbo.Ordenes ADD CantidadImpresa DECIMAL(10,2) NOT NULL CONSTRAINT DF_Ordenes_CantidadImpresa DEFAULT 0;
         -- Auto-heal: bases donde la columna se creó como INT (TPU unidades) → ampliar a DECIMAL para
         -- soportar también metros (Impresión Directa cuenta piezas O metros según el artículo).
+        -- OJO: no se puede ALTER COLUMN si tiene un DEFAULT colgado (error 5074). Hay que soltar el
+        -- constraint (nombre buscado dinámico: puede diferir entre bases), alterar y recrearlo.
         IF EXISTS (SELECT 1 FROM sys.columns c JOIN sys.types t ON c.system_type_id = t.system_type_id
                    WHERE c.Name = 'CantidadImpresa' AND c.Object_ID = Object_ID('dbo.Ordenes') AND t.name = 'int')
+        BEGIN
+            DECLARE @dfCantImp sysname = (
+                SELECT dc.name FROM sys.default_constraints dc
+                JOIN sys.columns c ON c.object_id = dc.parent_object_id AND c.column_id = dc.parent_column_id
+                WHERE dc.parent_object_id = OBJECT_ID('dbo.Ordenes') AND c.name = 'CantidadImpresa'
+            );
+            IF @dfCantImp IS NOT NULL
+                EXEC('ALTER TABLE dbo.Ordenes DROP CONSTRAINT ' + @dfCantImp);
             ALTER TABLE dbo.Ordenes ALTER COLUMN CantidadImpresa DECIMAL(10,2) NOT NULL;
+            ALTER TABLE dbo.Ordenes ADD CONSTRAINT DF_Ordenes_CantidadImpresa DEFAULT 0 FOR CantidadImpresa;
+        END
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'MetrosGrupoFalla' AND Object_ID = Object_ID('dbo.Ordenes'))
             ALTER TABLE dbo.Ordenes ADD MetrosGrupoFalla DECIMAL(10,2) NULL;
         IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = 'GrupoManual' AND Object_ID = Object_ID('dbo.Ordenes'))
@@ -95,7 +107,9 @@ exports.getBoardData = async (req, res) => {
                 FROM dbo.Rollos r WITH(NOLOCK)
                 LEFT JOIN dbo.Usuarios u WITH(NOLOCK) ON r.UsuarioID = u.IdUsuario
                 WHERE r.AreaID = @AreaID
-                  AND r.Estado IN ('Abierto', 'En Cola', 'En maquina', 'Producción', 'Pausado')
+                  -- UPPER(): la app guarda el estado con casing inconsistente ('En cola' vs 'En Cola')
+                  -- y con collation case-sensitive un IN literal deja lotes afuera → el modal los ve vacíos.
+                  AND UPPER(LTRIM(RTRIM(r.Estado))) NOT IN ('CERRADO', 'FINALIZADO', 'CANCELADO')
             `);
 
         // B. TRAER ÓRDENES (Consulta Completa con Conteo de Archivos)
@@ -130,8 +144,10 @@ exports.getBoardData = async (req, res) => {
                 FROM dbo.Ordenes o WITH(NOLOCK)
                 WHERE o.AreaID = @AreaID
                 AND (
-                    -- Órdenes dentro de un lote ACTIVO: se cuentan TODAS (total del lote, igual que el detalle)
-                    o.RolloID IN (SELECT RolloID FROM dbo.Rollos WITH(NOLOCK) WHERE AreaID = @AreaID AND Estado IN ('Abierto', 'En Cola', 'En maquina', 'Producción', 'Pausado'))
+                    -- Órdenes dentro de un lote ACTIVO: se cuentan TODAS (total del lote, igual que el detalle).
+                    -- MISMO filtro (case-insensitive) que el SELECT de rollos de arriba: si acá se listan
+                    -- menos estados, el lote se ve en la máquina pero sus órdenes no llegan nunca.
+                    o.RolloID IN (SELECT RolloID FROM dbo.Rollos WITH(NOLOCK) WHERE AreaID = @AreaID AND UPPER(LTRIM(RTRIM(Estado))) NOT IN ('CERRADO', 'FINALIZADO', 'CANCELADO'))
                     -- Órdenes sin lote (pendientes en la mesa): solo las activas
                     OR (o.RolloID IS NULL AND o.Estado NOT IN ('Entregado', 'Finalizado', 'Cancelado') AND ISNULL(o.EstadoenArea,'') NOT IN ('Pronto', 'PRONTO'))
                 )
@@ -1242,7 +1258,17 @@ exports.getRollDetails = async (req, res) => {
                 ink: o.Tinta,
                 fileCount: o.CantidadArchivos || o.fileCount || 0,
                 note: o.Nota,
-                services: o.RelatedStatus ? JSON.parse(o.RelatedStatus).map(s => ({ area: s.AreaID, status: s.Estado })) : []
+                // RelatedStatus viene de un FOR JSON PATH: si llega cortado/mal formado, un JSON.parse
+                // suelto tira TODO el detalle del lote (500) y el modal queda vacío. Se degrada a [].
+                services: (() => {
+                    if (!o.RelatedStatus) return [];
+                    try {
+                        return JSON.parse(o.RelatedStatus).map(s => ({ area: s.AreaID, status: s.Estado }));
+                    } catch (e) {
+                        logger.warn(`[getRollDetails] RelatedStatus ilegible en orden ${o.OrdenID}: ${e.message}`);
+                        return [];
+                    }
+                })()
             });
 
             rollObj.currentUsage += magVal;

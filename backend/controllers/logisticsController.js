@@ -2290,6 +2290,10 @@ exports.getAreaStock = async (req, res) => {
                 AND o.OrdenID IS NOT NULL
                 AND ${sqlExistsHermanaNoPronta('o')}
             )
+            -- Fallas internas (-F): sus bultos circulan por planta con etiqueta, pero una -F NUNCA se
+            -- despacha sola — su material se incorpora al pedido madre. No se ofrecen en Crear Remito.
+            -- (Bultos sin orden asociada, ej. recepciones, siguen apareciendo: el IS NULL los conserva.)
+            AND (o.CodigoOrden IS NULL OR o.CodigoOrden NOT LIKE '%-F%')
         `;
 
         if (areaId && areaId !== 'TODOS') {

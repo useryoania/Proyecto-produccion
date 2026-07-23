@@ -1274,12 +1274,30 @@ exports.getOrderFullDetails = async (req, res) => {
     try {
         const pool = await getPool();
         const r = await pool.request().input('ID', sql.Int, req.params.id).query(`
-            SELECT O.*, C.IDCliente
+            SELECT O.*, C.IDCliente,
+                   ibt.Referencia AS BobRef, ibt.DescripcionTela AS BobDesc,
+                   COALESCE(ibt.AnchoReal, ibt.Ancho) AS BobAncho
             FROM Ordenes O
             LEFT JOIN Clientes C ON C.CliIdCliente = O.CliIdCliente
+            LEFT JOIN dbo.InventarioBobinas ibt WITH(NOLOCK) ON ibt.BobinaID = O.BobinaTelaID
             WHERE O.OrdenID = @ID
         `);
-        res.json(r.recordset[0]);
+        const row = r.recordset[0];
+        if (row) {
+            // Tela de Cliente: el material a mostrar es la BOBINA elegida (Referencia +
+            // DescripcionTela capitalizada + Ancho) — misma regla que getOrdersByArea. Sin esto,
+            // el detalle de orden mostraba el material genérico ("Tela Cliente (Minimo 5mts)")
+            // en vez de qué tela es.
+            if (/cliente/i.test(row.Variante || '') && row.BobDesc) {
+                row.Material = [
+                    row.BobRef,
+                    String(row.BobDesc).toLowerCase().split(/\s+/).filter(Boolean)
+                        .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+                    row.BobAncho
+                ].filter(x => x != null && String(x).trim() !== '').join(' ');
+            }
+        }
+        res.json(row);
     } catch (e) { res.status(500).json({ error: e.message }); }
 };
 

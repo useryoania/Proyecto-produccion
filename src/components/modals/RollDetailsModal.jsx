@@ -357,6 +357,10 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     const currentAreaCode = roll?.areaId || roll?.AreaID || freshRoll?.areaId || freshRoll?.AreaID || (typeof window !== 'undefined' ? window.location.pathname.split('/')[2] : 'ECOUV');
     // SB: las órdenes del lote se agrupan/ordenan por material/variante (A-Z), no por secuencia manual.
     const isSB = (currentAreaCode || '').toUpperCase() === 'SB';
+    // DF (DTF): marcado LIBRE — se puede marcar/desmarcar impresa CUALQUIER orden, sin exigir que
+    // las anteriores estén impresas (no aplica el invariante impresos-prefijo ni el bloque FUERA DE
+    // ORDEN ni el rechazo de drags por secuencia). Pedido del usuario: solo /area/df.
+    const marcadoLibre = (currentAreaCode || '').toUpperCase() === 'DF';
 
     // Metros editables de órdenes de falla (-F): por orden (Magnitud) y total del grupo (independiente).
     const [metersDraft, setMetersDraft] = React.useState({});          // orderId -> string
@@ -573,6 +577,9 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     const allPrinted = totalOrders > 0 && printedCount === totalOrders;
 
     const materialOf = (o) => (o?.material || o?.Material || '').trim();
+    // Bandera confeccionada (medida fija): además de los metros se muestra CUÁNTAS banderas son
+    // (los metros solos no lo dicen: 3.6m pueden ser 4 banderas de 0.9). Copias = ArchivosOrden.Copias.
+    const copiasBandera = (o) => /confeccionada/i.test(materialOf(o)) ? Math.round(o?.totalCopias || 0) : 0;
     // Tela de Cliente: el material a MOSTRAR es la bobina elegida (Referencia + DescripcionTela + Ancho).
     const matDisplay = (o) => (o?.materialBobina && String(o.materialBobina).trim()) ? String(o.materialBobina).trim() : materialOf(o);
     // Clave de AGRUPADO: en Tela de Cliente se agrupa por Referencia de la bobina (solo si es igual);
@@ -749,7 +756,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         // a un lote que ya arrancó: el agrupado por material la mete en un grupo ya consumido
         // (ej: nueva orden de la 1ª tela cuando la 2ª tela ya se imprimió). Esas órdenes se
         // extraen a un bloque NUEVA al FINAL de la cola, que es donde van a imprimirse de verdad.
-        if (!readOnly && !lockReorder && !calandraView) {
+        if (!readOnly && !lockReorder && !calandraView && !marcadoLibre) {
             const printedSet = new Set(printedOrderIds);
             const flat = list.flatMap(u => u.orders.map(o => o.id));
             const lastPrintedIdx = flat.reduce((acc, id, i) => (printedSet.has(id) ? i : acc), -1);
@@ -787,6 +794,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
     const canTogglePrinted = (id) => {
         const idx = flatVisualIds.indexOf(id);
         if (idx < 0) return false;
+        if (marcadoLibre) return true; // DF: cualquier orden, en cualquier momento
         if (printedOrderIds.includes(id)) return flatVisualIds.slice(idx + 1).every(pid => !printedOrderIds.includes(pid));
         return flatVisualIds.slice(0, idx).every(pid => printedOrderIds.includes(pid));
     };
@@ -833,11 +841,11 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         const willPrint = !ids.every(id => printedOrderIds.includes(id));
         const firstIdx = flatVisualIds.indexOf(ids[0]);
         const lastIdx = flatVisualIds.indexOf(ids[ids.length - 1]);
-        if (willPrint && !flatVisualIds.slice(0, firstIdx).every(pid => printedOrderIds.includes(pid))) {
+        if (!marcadoLibre && willPrint && !flatVisualIds.slice(0, firstIdx).every(pid => printedOrderIds.includes(pid))) {
             toast.error(`Tenés que marcar ${lockReorder ? 'calandrados' : 'impresos'} los grupos anteriores primero (se procesa en orden)`);
             return;
         }
-        if (!willPrint && !flatVisualIds.slice(lastIdx + 1).every(pid => !printedOrderIds.includes(pid))) {
+        if (!marcadoLibre && !willPrint && !flatVisualIds.slice(lastIdx + 1).every(pid => !printedOrderIds.includes(pid))) {
             toast.error('Primero desmarcá los grupos/órdenes posteriores');
             return;
         }
@@ -1373,6 +1381,7 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
         // después el reacomodo la mandaba al final marcada como NUEVA, que no era ni su lugar ni su
         // etiqueta). Devuelve true si el orden propuesto rompe el invariante.
         const rompeSecuencia = (flatIds) => {
+            if (marcadoLibre) return false; // DF: sin invariante de secuencia, todo drop vale
             const printedSet = new Set(printedOrderIds);
             let vistoSinImprimir = false;
             for (const id of flatIds) {
@@ -1737,7 +1746,14 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                                           <span className="text-[10px] text-zinc-400">m</span>
                                                         </span>
                                                       ) : (
-                                                        <><span className="font-black text-zinc-800 text-sm tablet:text-xs">{o.magnitude || 0}</span><span className="text-[10px] text-zinc-400 ml-0.5">m</span></>
+                                                        <>
+                                                          <span className="font-black text-zinc-800 text-sm tablet:text-xs">{o.magnitude || 0}</span><span className="text-[10px] text-zinc-400 ml-0.5">m</span>
+                                                          {copiasBandera(o) > 0 && (
+                                                            <div className="text-[10px] font-bold text-brand-cyan leading-tight" title="Cantidad de banderas (copias del arte)">
+                                                              {copiasBandera(o)} {copiasBandera(o) === 1 ? 'bandera' : 'banderas'}
+                                                            </div>
+                                                          )}
+                                                        </>
                                                       )}
                                                     </div>
                                                     <div className="w-28 tablet:w-24 flex justify-center">
@@ -1947,6 +1963,11 @@ const RollDetailsModal = ({ roll, onClose, onViewOrder, onUpdate = () => { }, lo
                                             <td className="px-4 py-3 text-center w-20">
                                                 <span className="font-black text-zinc-800 text-sm">{o.magnitude || 0}</span>
                                                 <span className="text-[10px] text-zinc-400 ml-0.5">m</span>
+                                                {copiasBandera(o) > 0 && (
+                                                    <div className="text-[10px] font-bold text-brand-cyan leading-tight" title="Cantidad de banderas (copias del arte)">
+                                                        {copiasBandera(o)} {copiasBandera(o) === 1 ? 'bandera' : 'banderas'}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-center w-28">
                                                 <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider border

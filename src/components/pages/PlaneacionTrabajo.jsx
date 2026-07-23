@@ -894,7 +894,15 @@ const PlaneacionTrabajo = ({ AreaID }) => {
             {
                 inspectingRollId && (
                     <RollDetailsModal
-                        roll={activeRolls.find(r => r.id === inspectingRollId) || pendingRolls.find(r => r.id === inspectingRollId) || { id: inspectingRollId, name: 'Cargando...', orders: [] }}
+                        roll={(() => {
+                            const mismoId = (r) => String(r?.id) === String(inspectingRollId);
+                            const enTablero = activeRolls.find(mismoId) || pendingRolls.find(mismoId);
+                            if (enTablero) return enTablero;
+                            // Lote que está en una máquina y no vino en el tablero de lotes: al menos
+                            // mostramos su nombre real (del tablero de máquinas); el detalle lo completa el fetch.
+                            const enMaquina = (localBoardData.machines || []).flatMap(m => m.rolls || []).find(mismoId);
+                            return { id: inspectingRollId, name: enMaquina?.Nombre || 'Cargando...', orders: [] };
+                        })()}
                         onClose={() => setInspectingRollId(null)}
                         onViewOrder={handleViewOrder}
                         onUpdate={refreshBoard}
